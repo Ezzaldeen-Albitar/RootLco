@@ -419,12 +419,17 @@ describe('the attribute-change ledger', () => {
    * `P1-27-INT-026` (D3). The ledger stores an `actor_id` and the column headed
    * "Changed by" printed that uuid.
    *
-   * The producer is written and pushed on
-   * `remediation/p1-14-actor-display-identity` and NOT merged, so on
-   * `origin/develop` today the operation still publishes an id and no name.
-   * These cases drive the CONSUMER through both worlds directly, which is why
-   * they can pass while `FE-029` is blocked: the point is that no merge order
+   * The producer has since merged (PR #212, head `76e37f0`), so
+   * `veh.vehicle-history` now publishes `actorName` and `FE-029` is closed.
+   * These cases are UNCHANGED by that, and deliberately so: they drive the
+   * CONSUMER through both worlds directly, which is why they passed while the
+   * producer was still pending and why they keep their value now. The point was
+   * never "a name arrives" — it is that no merge order, in either direction,
    * can put a uuid back on screen.
+   *
+   * The absent-field case is therefore not dead weight after the merge. A
+   * rollback of the producer, an older API in a mixed deployment, or a caller
+   * without `iam.user.read` all still produce it.
    *
    * The three cases below are the whole contract: a name is shown when there is
    * one, and the SAME safe sentence when there is not — whether that is because

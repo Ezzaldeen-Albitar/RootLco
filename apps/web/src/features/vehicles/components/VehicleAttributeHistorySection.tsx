@@ -121,21 +121,29 @@ export function VehicleAttributeHistorySection({ locale, messages, vehicleId }: 
         id: 'actor',
         headerKey: 'vehicles.history.actor',
         // This column printed a raw actor uuid under a heading that says "who".
-        // It does not any more — but note the tense: on `origin/develop` TODAY
-        // the operation publishes an `actor_id` and NO name, so this cell reads
-        // "User unavailable" for every row.
         //
-        // The producer is written and pushed on
-        // `remediation/p1-14-actor-display-identity` (`210aac2`), which resolves
-        // the actor through the IAM module's provider-free directory
-        // (`P1-27-INT-026`). `P1-27-FE-029` is BLOCKED on that pull request and
-        // is disclosed as blocked in `final-canonical-remediation.md`. This
-        // consumer is deliberately written for both worlds so the merge order
-        // cannot put a uuid back on screen.
+        // The producer has now LANDED. `veh.vehicle-history` resolves the actor
+        // through the IAM module's provider-free directory (`P1-27-INT-026`)
+        // and publishes `actorName`, merged to `develop` as PR #212 (head
+        // `76e37f0`, merge commit `61d8ded`; `210aac2` — the SHA the earlier
+        // revision of this comment named as pending — is an ancestor of it).
+        // `P1-27-FE-029` is no longer blocked.
         //
-        // `undefined` and `null` render identically and deliberately: absent
-        // means the API predates the identity surface, null means this caller
-        // may not be told. Neither is a licence to print the identifier.
+        // The previous revision said "on `origin/develop` TODAY the operation
+        // publishes an `actor_id` and NO name, so this cell reads 'User
+        // unavailable' for every row". That was true when written and is not
+        // now; it is corrected rather than deleted because a comment describing
+        // a merge WINDOW is exactly the kind of claim that rots silently, and
+        // this phase has been bitten by that repeatedly.
+        //
+        // The cell is UNCHANGED by the merge, which was the point of writing it
+        // for both worlds: it never reads `actorId`, so no merge order could
+        // put a uuid back on screen.
+        //
+        // `undefined` and `null` still render identically and deliberately:
+        // absent means the API predates the identity surface, null means this
+        // caller holds `veh.vehicle.read` without `iam.user.read` and may not be
+        // told. Neither is a licence to print the identifier.
         cell: (row) =>
           row.actorName == null ? (
             <span className="text-caption text-text-muted">

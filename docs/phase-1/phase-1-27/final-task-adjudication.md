@@ -53,62 +53,77 @@ All 33 are adjudicated below.
 
 ## Summary
 
-| task      | verdict                | status            | root             |
-| --------- | ---------------------- | ----------------- | ---------------- |
-| `FE-002`  | `REAL_P1_27_DEFECT`    | FIXED `600f70e`   | itself           |
-| `FE-003`  | `AUDIT_FALSE_NEGATIVE` | FIXED `52a230a`   | itself           |
-| `FE-004`  | `REAL_P1_27_DEFECT`    | FIXED `b6ce9ae`   | itself           |
-| `FE-007`  | `DUPLICATE_FINDING`    | FIXED `915b861`   | `SEC-001`        |
-| `FE-008`  | `DUPLICATE_FINDING`    | FIXED `915b861`   | `SEC-001`        |
-| `FE-009`  | `DUPLICATE_FINDING`    | FIXED `915b861`   | `SEC-001`        |
-| `FE-010`  | `DUPLICATE_FINDING`    | FIXED `915b861`   | `SEC-001`        |
-| `FE-013`  | `REAL_P1_27_DEFECT`    | FIXED `c415432`   | itself           |
-| `FE-015`  | `REAL_P1_27_DEFECT`    | FIXED `fc5e155`   | itself           |
-| `FE-016`  | `REAL_P1_27_DEFECT`    | FIXED `72f2fcb`   | itself           |
-| `FE-017`  | `TEST_OR_GATE_DEFECT`  | FIXED `52a230a`   | itself           |
-| `FE-018`  | `REAL_P1_27_DEFECT`    | FIXED `fc5e155`   | itself           |
-| `FE-019`  | `REAL_P1_27_DEFECT`    | FIXED `8daf8e9`   | itself           |
-| `FE-020`  | `REAL_P1_27_DEFECT`    | FIXED `bb4ebfd`   | itself           |
-| `FE-021`  | `DUPLICATE_FINDING`    | FIXED `0272e1d`   | `FE-024`         |
-| `FE-022`  | `DUPLICATE_FINDING`    | FIXED `0272e1d`   | `FE-024`         |
-| `FE-023`  | `DUPLICATE_FINDING`    | FIXED `915b861`   | `SEC-001`        |
-| `FE-024`  | `REAL_P1_27_DEFECT`    | FIXED `0272e1d`   | itself           |
-| `FE-026`  | `REAL_P1_27_DEFECT`    | FIXED `72f2fcb`   | itself           |
-| `FE-028`  | `REAL_P1_27_DEFECT`    | FIXED `0272e1d`   | itself           |
-| `FE-029`  | `REAL_P1_27_DEFECT`    | BLOCKED           | P1-14 backend PR |
-| `SEC-001` | `REAL_P1_27_DEFECT`    | FIXED `915b861`   | itself           |
-| `SEC-002` | `AUDIT_FALSE_NEGATIVE` | FIXED `evidence`  | itself           |
-| `SEC-003` | `DUPLICATE_FINDING`    | FIXED `915b861`   | `SEC-001`        |
-| `SEC-004` | `TEST_OR_GATE_DEFECT`  | FIXED `600f70e`   | itself           |
-| `QA-001`  | `REAL_P1_27_DEFECT`    | FIXED `0272e1d`   | itself           |
-| `QA-002`  | `REAL_P1_27_DEFECT`    | FIXED `0272e1d`   | itself           |
-| `QA-003`  | `TEST_OR_GATE_DEFECT`  | FIXED `0c19f51`   | itself           |
-| `QA-005`  | `TEST_OR_GATE_DEFECT`  | OPEN (final head) | itself           |
-| `DO-002`  | `AUDIT_FALSE_NEGATIVE` | no change needed  | itself           |
-| `DOC-001` | `TEST_OR_GATE_DEFECT`  | FIXED (records)   | itself           |
-| `DOC-002` | `REAL_P1_27_DEFECT`    | FIXED (records)   | itself           |
-| `FE-001`  | `DUPLICATE_FINDING`    | FIXED `600f70e`   | `FE-002`         |
+| task      | verdict                | status            | root      |
+| --------- | ---------------------- | ----------------- | --------- |
+| `FE-002`  | `REAL_P1_27_DEFECT`    | FIXED `600f70e`   | itself    |
+| `FE-003`  | `AUDIT_FALSE_NEGATIVE` | FIXED `52a230a`   | itself    |
+| `FE-004`  | `REAL_P1_27_DEFECT`    | FIXED `b6ce9ae`   | itself    |
+| `FE-007`  | `DUPLICATE_FINDING`    | FIXED `915b861`   | `SEC-001` |
+| `FE-008`  | `DUPLICATE_FINDING`    | FIXED `915b861`   | `SEC-001` |
+| `FE-009`  | `DUPLICATE_FINDING`    | FIXED `915b861`   | `SEC-001` |
+| `FE-010`  | `DUPLICATE_FINDING`    | FIXED `915b861`   | `SEC-001` |
+| `FE-013`  | `REAL_P1_27_DEFECT`    | FIXED `c415432`   | itself    |
+| `FE-015`  | `REAL_P1_27_DEFECT`    | FIXED `fc5e155`   | itself    |
+| `FE-016`  | `REAL_P1_27_DEFECT`    | FIXED `72f2fcb`   | itself    |
+| `FE-017`  | `TEST_OR_GATE_DEFECT`  | FIXED `52a230a`   | itself    |
+| `FE-018`  | `REAL_P1_27_DEFECT`    | FIXED `fc5e155`   | itself    |
+| `FE-019`  | `REAL_P1_27_DEFECT`    | FIXED `8daf8e9`   | itself    |
+| `FE-020`  | `REAL_P1_27_DEFECT`    | FIXED `bb4ebfd`   | itself    |
+| `FE-021`  | `DUPLICATE_FINDING`    | FIXED `0272e1d`   | `FE-024`  |
+| `FE-022`  | `DUPLICATE_FINDING`    | FIXED `0272e1d`   | `FE-024`  |
+| `FE-023`  | `DUPLICATE_FINDING`    | FIXED `915b861`   | `SEC-001` |
+| `FE-024`  | `REAL_P1_27_DEFECT`    | FIXED `0272e1d`   | itself    |
+| `FE-026`  | `REAL_P1_27_DEFECT`    | FIXED `72f2fcb`   | itself    |
+| `FE-028`  | `REAL_P1_27_DEFECT`    | FIXED `0272e1d`   | itself    |
+| `FE-029`  | `REAL_P1_27_DEFECT`    | FIXED (PR #212)   | itself    |
+| `SEC-001` | `REAL_P1_27_DEFECT`    | FIXED `915b861`   | itself    |
+| `SEC-002` | `AUDIT_FALSE_NEGATIVE` | FIXED `evidence`  | itself    |
+| `SEC-003` | `DUPLICATE_FINDING`    | FIXED `915b861`   | `SEC-001` |
+| `SEC-004` | `TEST_OR_GATE_DEFECT`  | FIXED `600f70e`   | itself    |
+| `QA-001`  | `REAL_P1_27_DEFECT`    | FIXED `0272e1d`   | itself    |
+| `QA-002`  | `REAL_P1_27_DEFECT`    | FIXED `0272e1d`   | itself    |
+| `QA-003`  | `TEST_OR_GATE_DEFECT`  | FIXED `0c19f51`   | itself    |
+| `QA-005`  | `TEST_OR_GATE_DEFECT`  | OPEN (final head) | itself    |
+| `DO-002`  | `AUDIT_FALSE_NEGATIVE` | no change needed  | itself    |
+| `DOC-001` | `TEST_OR_GATE_DEFECT`  | FIXED (records)   | itself    |
+| `DOC-002` | `REAL_P1_27_DEFECT`    | FIXED (records)   | itself    |
+| `FE-001`  | `DUPLICATE_FINDING`    | FIXED `600f70e`   | `FE-002`  |
 
 ```
 ADJUDICATED       = 33
-FIXED             = 30
+FIXED             = 31
 NO_CHANGE_NEEDED  =  1     DO-002
-BLOCKED           =  1     FE-029
+BLOCKED           =  0     (was 1: FE-029, unblocked by PR #212)
 OPEN              =  1     QA-005
 
-RESOLVED   / 42   = 40
-UNRESOLVED / 42   =  2
+RESOLVED   / 42   = 41
+UNRESOLVED / 42   =  1
 ```
 
-**Both unresolved items are blocked on the same external thing: pull-request
-creation.**
+The previous revision of this block read `FIXED = 30`, `BLOCKED = 1`,
+`RESOLVED = 40`, `UNRESOLVED = 2`. `FE-029` moved from BLOCKED to FIXED when
+PR #212 merged. `QA-005` is the single remaining item and can only be measured
+at the final head.
 
-`FE-029` needs `remediation/p1-14-actor-display-identity` merged; the Backend
-half is written, green and pushed, and this environment has no authenticated way
-to open a PR. `QA-005` needs clean-room and hosted-CI evidence recorded at the
-FINAL head, and there is no final head until the remediation PR merges — and
-re-recording before then produces a document that is stale on arrival, which is
-the defect `QA-005` reports in the first place.
+**Superseded — the external block is gone.** Both Backend pull requests were
+created and merged through protected `develop`:
+
+| PR   | branch                                       | head SHA  | merge commit |
+| ---- | -------------------------------------------- | --------- | ------------ |
+| #213 | `remediation/p1-27-backend-partner-identity` | `8451427` | `1045c15`    |
+| #212 | `remediation/p1-14-actor-display-identity`   | `76e37f0` | `61d8ded`    |
+
+Both are merge commits, verified by second parent rather than by the merge
+screen. `210aac2` — the SHA this document names below as D3's head — is an
+ancestor of `76e37f0`, not a different change.
+
+`FE-029` is therefore **closed**, not blocked; see its section below.
+
+`QA-005` remains open by design and for the original reason: it needs clean-room
+and hosted-CI evidence recorded at the FINAL head, and there is no final head
+until the Frontend PR merges. Re-recording before then produces a document that
+is stale on arrival, which is the defect `QA-005` reports in the first place. It
+is the last thing done, deliberately.
 
 The durable half of `QA-005` is done: `apps/web/tests/p1-27-doc-reconciliation.test.ts`
 reconciles the records against the repository, so the next drift is a build
@@ -402,7 +417,50 @@ deployment decision and inventing one here would be the actual error.
 
 ## Blocked
 
-### `FE-029` — `REAL_P1_27_DEFECT` — BLOCKED on the P1-14 backend PR
+### `FE-029` — `REAL_P1_27_DEFECT` — CLOSED
+
+**Superseded.** The section below was written while the producer was unmerged
+and is kept verbatim beneath this note, because the reproduction it records is
+the evidence that the fix was a fix. What changed is only that the block lifted.
+
+PR #212 (head `76e37f0`) merged to `develop` as merge commit `61d8ded`.
+`veh.vehicle-history` now publishes `actorName`, resolved through the IAM
+module's provider-free `iamDirectory()` and gated on `iam.user.read`.
+
+**Verified on the integrated tree, not on either half alone:**
+
+- `tests/backend/p1-17-vehicle-history.test.ts` — 8/8 against a live PostgreSQL,
+  including "names the actor for a caller who may read users" and "withholds the
+  name from a caller who may not, without failing the read".
+- `apps/web/tests/vehicle-screens.dom.test.tsx` +
+  `timeline-actor-identity.dom.test.tsx` — 38/38.
+
+**Four mutations, each executed and each reverted:**
+
+| #   | mutation                                                  | result                                                                                                                          |
+| --- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | consumer falls back to `actorId` when `actorName` is null | 2 fail — the `null` case and the absent case; "names the person" correctly survives                                             |
+| 2   | consumer prints `actorId` unconditionally                 | all 3 fail                                                                                                                      |
+| 3   | producer's `nameActors` resolves nothing                  | 1 fails — "names the actor"; the withholding case correctly survives, because with nothing resolved every caller gets `null`    |
+| 4   | producer drops the `iam.user.read` guard                  | 1 fails — `expected 'History Writer' to be null`: a caller holding only `veh.vehicle.read` is handed a staff member's real name |
+
+Mutations 3 and 4 are why the two backend cases are only evidence as a PAIR.
+Unwiring resolution kills the naming case but not the withholding case; removing
+the guard kills the withholding case but not the naming case. Either case alone
+is satisfiable by a broken implementation.
+
+Mutation 4 is the one that matters beyond correctness: without the guard the
+operation publishes a CRM-adjacent staff directory to exactly the caller
+`docs/database/veh-ownership-visibility-matrix.md` gives an opaque identifier.
+
+The consumer was NOT changed by this closure. Its diff against the merge is
+mechanically comment-only — verified by filtering the diff to non-comment lines,
+which is empty. It was written for both worlds precisely so no merge order could
+put a uuid back on screen, and that property is what the mutations confirm.
+
+---
+
+**The original entry, as written while blocked:**
 
 **Auditor claim.** `actorName` is never published by the API, so the "Changed by"
 column can never name anybody; the projection carries `actorId` only.
@@ -577,16 +635,30 @@ register claims automated proof that does not exist.
 
 ## What this means for closure
 
-Eleven of thirty-three are fixed on this branch and one is fixed but blocked on a
-pull request this environment cannot create. Twenty-one remain open, and they are
-not a uniform set: `FE-003`, `FE-004`, `FE-013`, `FE-020`, `FE-024`, `SEC-002`
-and `DO-002` are product defects, while `QA-001` through `QA-005`, `DOC-001` and
-`DOC-002` are missing proof and missing records for behaviour that may well be
-correct.
+**This paragraph was itself stale, and that is worth recording rather than
+quietly overwriting.** It read:
 
-P1-27 is not at 42/42 and this document does not claim it is. It replaces a
-disputed pair of numbers with a list of named, reproduced, individually
-adjudicated items — which is the thing that can actually be worked through.
+> Eleven of thirty-three are fixed on this branch and one is fixed but blocked on
+> a pull request this environment cannot create. Twenty-one remain open …
+
+The Summary table above was maintained as each item landed; this prose was not.
+By the time the two Backend pull requests merged, the table showed exactly two
+non-closed rows and the prose still claimed twenty-one. A reader who trusted the
+narrative over the table would have been told the phase was in far worse shape
+than the repository said.
+
+That is `DOC-001`'s own defect — a record drifting from the thing it records —
+occurring inside the document that adjudicates `DOC-001`. It is corrected here
+and the original is quoted above so the drift is visible rather than erased.
+
+**The Summary table is the live status.** As of this head: thirty-two of
+thirty-three are closed, and `QA-005` alone remains open — deliberately, because
+it can only be measured at the final head.
+
+P1-27 is not claimed at 42/42 by this document. It replaces a disputed pair of
+numbers with a list of named, reproduced, individually adjudicated items — which
+is the thing that can actually be worked through. The re-audit of all 42 canonical
+tasks against the integrated tree is a separate exercise and reports separately.
 
 **P1-27 remains `OWNER ACCEPTANCE: FAIL`.** No gate record is written, `main` is
 untouched, and the phase is not closed.

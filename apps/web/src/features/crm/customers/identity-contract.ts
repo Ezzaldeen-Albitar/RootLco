@@ -78,15 +78,28 @@ export interface TimelineEntry {
    * timeline reads a name the moment one is published, without a second change
    * here.
    *
-   * **Nothing publishes it today, and no branch does.** `actorName` occurs
-   * nowhere in `apps/api`; `crm.customer-timeline` returns `actor_id` alone.
-   * The pending `remediation/p1-14-actor-display-identity` closes the VEHICLE
-   * half only — its five files are under `iam/` and `vehicle/`, none under
-   * `crm/` — so this branch of the timeline cell is unreachable now AND after
-   * that merge, and "Recorded by" reads the safe sentence for every human row.
-   * That is the honest outcome and it is recorded beside `FE-029` in
-   * `final-canonical-remediation.md`; a uuid was never an option, and the field
-   * is kept rather than deleted so the wiring is a Backend change alone.
+   * **The CUSTOMER timeline still publishes no name.** `crm.customer-timeline`
+   * returns `actor_id` alone, so this branch of the cell is unreachable and
+   * "Recorded by" reads the safe sentence for every human row. A uuid was never
+   * an option; the field is kept rather than deleted so the wiring, when it
+   * comes, is a Backend change alone.
+   *
+   * Two supporting claims here were true when written and are now corrected
+   * rather than removed, because the conclusion above survives them both and
+   * the difference is worth being able to check:
+   *
+   *   - "`actorName` occurs nowhere in `apps/api`" is FALSE since PR #212
+   *     (`76e37f0`) merged. It is published by `veh.vehicle-history`. The true
+   *     statement is narrower and is the one that matters here: it occurs
+   *     nowhere under `apps/api/src/modules/crm/`.
+   *   - "its five files" pinned a count to another branch's diff, which rots by
+   *     construction — that branch ended at nine files. The load-bearing fact is
+   *     not how many files it touched but WHERE: `iam/` and `vehicle/`, none
+   *     under `crm/`.
+   *
+   * So `FE-029` (the vehicle half) is closed, and the customer timeline is
+   * still waiting on a CRM-side producer. Those are two different things and
+   * this docblock previously ran them together.
    */
   readonly actorName?: string | null;
 }

@@ -13,6 +13,14 @@ that happens twice.
 
 ## 1. Live checkpoint
 
+**This section is a dated checkpoint, not live state.** It records the tree at
+the moment the remediation was written; both Backend branches have since merged
+and `origin/develop` has moved. The superseding checkpoint is immediately below
+it, and the original is kept because the reasoning in §2 depends on what was true
+then.
+
+### 1a. As written
+
 | Ref                                                      | SHA                                        |
 | -------------------------------------------------------- | ------------------------------------------ |
 | `remediation/p1-27-final-canonical-blockers` (candidate) | `2ff4820ac368ac97a1c86f4653de647155ebf140` |
@@ -21,6 +29,26 @@ that happens twice.
 | `origin/main` (protected, untouched)                     | `f085d82001a43de51725707426d5c10eb134c004` |
 
 One worktree. Clean tree. `P1-G27` absent. P1-28 absent.
+
+### 1b. Superseding checkpoint — both Backend remediations merged
+
+| Ref                                                  | SHA                                        |
+| ---------------------------------------------------- | ------------------------------------------ |
+| `origin/develop` (protected)                         | `61d8ded` — merge of PR #212               |
+| PR #213 `remediation/p1-27-backend-partner-identity` | head `8451427` → merge commit `1045c15`    |
+| PR #212 `remediation/p1-14-actor-display-identity`   | head `76e37f0` → merge commit `61d8ded`    |
+| `origin/main` (protected, still untouched)           | `f085d82001a43de51725707426d5c10eb134c004` |
+
+Both are merge commits — verified by reading each merge's second parent, not by
+trusting the merge screen. Merge-commit only, no squash, no rebase, no force, no
+direct push to a protected branch.
+
+`210aac2` is an **ancestor** of `76e37f0`, not a competing SHA: the D3 branch
+gained three further commits before merging (a docblock correction; coverage for
+the environment accessors the composition guard newly made visible; and a fix for
+the operation-coverage gate grazing the 5 s timeout under `--coverage`).
+
+`P1-G27` still absent. P1-28 still absent. `main` still untouched.
 
 ---
 
@@ -46,6 +74,21 @@ git merge-base --is-ancestor d0a6008 HEAD            → true
 
 **`D3_STATE = PUSHED_BACKEND_BRANCH_NOT_MERGED`**, with the frontend half already
 in the candidate branch.
+
+**Re-established after the merges**, same commands, opposite answers on the two
+that mattered:
+
+```
+git merge-base --is-ancestor 210aac2 origin/develop  → true
+git merge-base --is-ancestor 210aac2 HEAD            → true
+git merge-base --is-ancestor 76e37f0 origin/develop  → true    (D3 head as merged)
+git merge-base --is-ancestor 8451427 origin/develop  → true    (D2 backend head as merged)
+```
+
+**`D3_STATE = MERGED`.** The transcript above is left standing rather than
+rewritten: a checkpoint that silently updates itself cannot be checked, and the
+whole point of §2 is that a chronology was once left implicit and caused a
+contradiction.
 
 The discarded branch was the **first** attempt. It composed `iamModule()`, which
 made `veh.vehicle-history` answer 500, and it was deleted unpushed. The surviving
@@ -86,16 +129,25 @@ temporally-valid link would answer "which employee record is current" rather tha
 "who did this".
 
 Gated on `iam.user.read`, the same code `iam.user-detail` requires, so nothing
-widens. A caller without it sees "User unavailable" — strictly less information
-than the uuid it replaces.
+widens.
+
+The rest of this paragraph used to read: a caller without it "sees 'User
+unavailable' — strictly less information than the uuid it replaces". That is
+wrong twice, and the same sentence was corrected in `actor-identity.ts` and
+`identity-directory-service.ts` for the same reasons. `WithActor<T>` is
+ADDITIVE, so `actorId` is still on the wire for every caller and nothing was
+taken away; and "User unavailable" is a phrase the FRONTEND chooses, while this
+module publishes an absence. The narrowing that does hold is the one that
+matters: an unentitled caller gets no name, and learns nothing they did not
+already have.
 
 ### 3.3 Evidence
 
-| Suite                                                | Result                                                                                                          |
-| ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| `tests/foundation/iam-directory-composition.test.ts` | 5 — `iamDirectory()` composes with every provider variable unset while `iamModule()` still throws               |
-| `tests/backend/p1-17-vehicle-history.test.ts`        | 8 — the same row read by two callers differing only in `iam.user.read` names a person for one and not the other |
-| `apps/web/tests/vehicle-screens.dom.test.tsx`        | 27 — name shown; `null` and _absent_ both render "User unavailable"; the uuid is absent from rendered text      |
+| Suite                                                | Result                                                                                                                                                    |
+| ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tests/foundation/iam-directory-composition.test.ts` | 5 — `iamDirectory()` composes with every provider variable unset while `iamModule()` still throws                                                         |
+| `tests/backend/p1-17-vehicle-history.test.ts`        | 8 — the same row read by two callers differing only in `iam.user.read` names a person for one and not the other                                           |
+| `apps/web/tests/vehicle-screens.dom.test.tsx`        | 29 — name shown; `null` and _absent_ both render "User unavailable"; the uuid is absent from rendered text (was recorded as 27; re-measured at this head) |
 
 Mutation-proved four ways: reintroducing `installIamRuntime()` fails 4 of 5
 foundation tests; dropping the permission check fails the withholding test;
@@ -208,10 +260,32 @@ inside a display-name remediation is how an unrelated regression gets shipped.
 
 ---
 
-## 7. `PR_CREATION_BLOCKED`
+## 7. `PR_CREATION_BLOCKED` — RESOLVED
 
-Both merges require a GitHub pull request. No authenticated mechanism exists in
-this environment:
+**Resolved.** The Product Owner authorised pull-request creation through the
+already-authenticated browser session, and both Backend pull requests were
+created and merged that way:
+
+```
+PR #213  remediation/p1-27-backend-partner-identity  head 8451427  →  merge 1045c15
+PR #212  remediation/p1-14-actor-display-identity    head 76e37f0  →  merge 61d8ded
+```
+
+Nothing below was bypassed to achieve it. Every required check ran to completion
+at the exact head before each merge (#213: 20 successful; #212: 19 successful,
+1 skipped by change detection), both merges are merge commits, and no protected
+branch was pushed to directly. One incident is worth recording because it is the
+kind of thing that produces a wrong-base merge: GitHub pre-fills a new pull
+request against the repository's DEFAULT branch, which here is `main`. A first
+attempt (#211) was created that way — 194 commits, 1014 files — and was closed
+unused. `main` remains untouched.
+
+The diagnosis below stands as written and remains accurate about the SHELL
+environment; it was simply not the only avenue.
+
+### The environment as diagnosed
+
+No authenticated mechanism exists in the shell:
 
 - `gh` is not on `PATH` and is not in any standard install location
 - `GITHUB_TOKEN`, `GH_TOKEN`, `GITHUB_PAT`, `GH_ENTERPRISE_TOKEN`,
@@ -273,15 +347,21 @@ The remaining findings include, verified by hand where quoted:
   `isNarrowed()` cannot see criteria held outside `TableRequest`.
 - `FE-029` — `actorName` is not published by the API on this branch, because the
   Backend half is on an unmerged branch. Expected, and it resolves on merge.
-- **The CRM half of the same field has no producer on ANY branch**, and this was
-  not disclosed until an adversarial recheck found it. `actorName` occurs nowhere
-  in `apps/api` (verified repository-wide), and
-  `remediation/p1-14-actor-display-identity` (`210aac2`) touches five files, all
-  under `iam/` and `vehicle/` — none under `crm/`. So the customer timeline's
-  "Recorded by" column reads the safe sentence for **every human row**, now and
-  after that pull request merges. No uuid is shown, which is the requirement, and
-  the field is retained rather than deleted so that wiring it is a Backend change
-  alone. Owned by P1-16 Backend, not by this phase.
+- **The CRM half of the same field has no producer**, and this was not disclosed
+  until an adversarial recheck found it. The customer timeline's "Recorded by"
+  column reads the safe sentence for **every human row**. No uuid is shown, which
+  is the requirement, and the field is retained rather than deleted so that
+  wiring it is a Backend change alone. Owned by P1-16 Backend, not by this phase.
+
+  Two supporting statements here are corrected rather than deleted, because the
+  conclusion survives both and the correction is the point. "`actorName` occurs
+  nowhere in `apps/api` (verified repository-wide)" became false the moment
+  PR #212 merged — it is published by `veh.vehicle-history`. And "touches five
+  files" pinned a count to a branch that ended at nine. The load-bearing fact was
+  never the count but the LOCATION: `iam/` and `vehicle/`, none under `crm/`.
+  That is still true, so the customer timeline is still unwired and this bullet
+  still holds.
+
 - `FE-022`, `FE-023`, `FE-024` — missing permission gating and, for the
   electric-drive write, no test of any kind.
 - `DOC-001`, `DOC-002`, `QA-005` — documents that name their own proof are stale

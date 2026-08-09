@@ -70,11 +70,11 @@ test they shipped without: every web test mocks the adapter, so the whole
 resolution path could have returned an empty map and the Frontend suite would
 have stayed green.
 
-**Either merge order is now safe, and neither is free.** On `develop` today the
-relationships cell renders `row.partnerId` — the uuid. So Backend-first leaves
-that uuid on screen until the Frontend merges, and Frontend-first renders
-"Customer unavailable" until the Backend merges. The handoff prescribes
-Backend-first for review reasons and says so.
+**Either merge order was safe, and neither was free.** While both halves were
+open, `develop` rendered `row.partnerId` — the uuid — so Backend-first left that
+uuid on screen until the Frontend merged, and Frontend-first rendered "Customer
+unavailable" until the Backend merged. Backend-first was prescribed for review
+reasons and is what happened: PR #213 merged first (`8451427` → `1045c15`).
 
 `PartyLabel` was hardened for the second window: it tests `== null` rather than
 `=== null`, because the row arrives as a typed CAST rather than a parse, so a
@@ -83,16 +83,25 @@ would have rendered an EMPTY cell — which says nothing at all, and is worse th
 either the sentence or the identifier. An earlier version of this paragraph
 attributed the window to the wrong merge order.
 
-### D3 — actor identity (Backend, NOT MERGED)
+### D3 — actor identity (Backend, MERGED as PR #212)
 
 `veh.vehicle_attribute_history` stores an `actor_id` and no name. Composing IAM
 to resolve it was impossible without Supabase configuration, because
 `iamModule()`'s composition root boots the provider — a coupling two earlier
 phases routed around in prose. `iamDirectory()` is a second, provider-free root.
 
-**Blocked.** The branch `remediation/p1-14-actor-display-identity` at
-`210aac2dc05edafdb8d8c88555517173f124d85c` is pushed and green; this environment
-cannot create a pull request. `FE-029` cannot pass until it merges.
+**Merged.** `remediation/p1-14-actor-display-identity` head `76e37f0` merged to
+`develop` as merge commit `61d8ded`. This section previously read "**Blocked.**
+… this environment cannot create a pull request", which was true at the time.
+`210aac2`, the SHA it named, is an ancestor of `76e37f0`; the branch gained three
+further commits before merging — a docblock correction, coverage for the
+environment accessors the composition guard made visible, and a fix for the
+operation-coverage gate grazing the 5 s timeout under `--coverage`.
+
+`FE-029` is closed. Four mutations were executed and reverted against the
+integrated tree; the pair that matters is that unwiring resolution kills the
+naming case while removing the `iam.user.read` guard kills the withholding case,
+so neither case alone would have been evidence.
 
 ### D4 — cursor precision
 
