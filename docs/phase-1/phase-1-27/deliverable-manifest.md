@@ -957,7 +957,7 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
 <!-- derived: lines docs/phase-1/phase-1-27/findings/p1-27-int-006-cursor-precision.md = 166 -->
 <!-- derived: lines docs/phase-1/phase-1-27/independent-task-audit.md = 137 -->
 <!-- derived: lines docs/phase-1/phase-1-27/installed-chrome-review.md = 215 -->
-<!-- derived: lines docs/phase-1/phase-1-27/open-decisions.md = 837 -->
+<!-- derived: lines docs/phase-1/phase-1-27/open-decisions.md = 978 -->
 <!-- derived: lines docs/phase-1/phase-1-27/operator-guide.md = 205 -->
 <!-- derived: lines docs/phase-1/phase-1-27/owner-acceptance-checklist.md = 128 -->
 <!-- derived: lines docs/phase-1/phase-1-27/owner-acceptance-fail-remediation.md = 193 -->

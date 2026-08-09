@@ -1,6 +1,6 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import ar from '../src/i18n/messages/ar.json';
 import en from '../src/i18n/messages/en.json';
 import {
@@ -11,13 +11,28 @@ import {
   VIOLATION_KEY_PREFIX,
   assertBaseUrl,
   controlNameFor,
+  failureMessageKey,
   fieldErrorsOf,
   violationKeysOf,
   violationMessageKey,
   type ApiFailure,
   type Violation,
 } from '@/lib/api/client';
+import { requiresIdempotencyKey, resolveOperation } from '@/lib/api/operation-contract';
 import { fromFailure } from '@/lib/forms/action-result';
+
+/**
+ * The session cookie, and nothing else about the client, is stubbed.
+ *
+ * `readSessionToken` reaches for `next/headers`, which has no request scope in a
+ * unit run. Replacing it lets `authorizedClient()` build a REAL `ApiClient` so
+ * the adapter cases below exercise the shipped contract decision and the shipped
+ * header assembly, with only `fetch` swapped out. Stubbing `server-client`
+ * itself — the usual shortcut — would replace the very object under test.
+ */
+vi.mock('next/headers', () => ({
+  cookies: async () => ({ get: (name: string) => ({ name, value: 'test-session-token' }) }),
+}));
 
 const BASE = 'https://api.example.test';
 
@@ -27,6 +42,12 @@ function respond(status: number, body?: unknown, headers: Record<string, string>
     headers: { 'content-type': 'application/json', ...headers },
   });
 }
+
+// `vi.stubGlobal('fetch', …)` is used by the adapter cases at the end of this
+// file. Left in place it would outlive them and silently serve every later run.
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 function clientWith(fetchImpl: typeof fetch, options: Record<string, unknown> = {}) {
   return new ApiClient({
@@ -770,17 +791,23 @@ describe('P1-27-QA-004 — conflict copy follows the catalog code', () => {
   });
 
   it('reaches the concurrency sentence from no other catalog code', async () => {
-    const others = [
-      'ERR-RES-002',
-      'ERR-INT-001',
-      'ERR-DOC-001',
-      'ERR-NTF-001',
-      'ERR-TRN-001',
-      'ERR-WO-001',
-      'ERR-WO-002',
-      'ERR-DIA-001',
-      'ERR-QMS-001',
-    ];
+    /*
+     * The set is DERIVED from the API's own catalog, not typed here.
+     *
+     * This list used to be nine codes a person wrote down. It happened to be
+     * complete on the day it was written, which is the most dangerous state for
+     * a hand-written list to be in: it passes, so nobody rechecks it, and the
+     * next 409 the backend defines is silently outside the assertion. The
+     * failure that would allow is exactly the one this describe exists to
+     * prevent — a new conflict code inheriting "Someone else changed this".
+     *
+     * `conflictCodes()` reads `catalog.ts` and selects `status: 409`, so a code
+     * added there joins this case without anybody remembering to add it.
+     */
+    const others = conflictCodes().filter((code) => code !== 'ERR-CON-001');
+    // Anti-vacuity. A regex that stopped matching would produce an empty list
+    // and a passing test that checked nothing.
+    expect(others.length).toBeGreaterThanOrEqual(9);
     for (const code of others) {
       const state = await conflictState({ status: 409, code, correlationId: `corr-${code}` });
       expect(state.messageKey, `${code} must not claim a concurrent edit`).toBe(BLOCKED);
@@ -839,7 +866,122 @@ describe('P1-27-QA-004 — conflict copy follows the catalog code', () => {
 
 const REPO_ROOT = join(process.cwd(), '..', '..');
 const API_PROBLEM_FILE = join(REPO_ROOT, 'apps', 'api', 'src', 'server', 'errors', 'problem.ts');
+const API_CATALOG_FILE = join(REPO_ROOT, 'apps', 'api', 'src', 'server', 'errors', 'catalog.ts');
+const API_ROUTES_DIR = join(REPO_ROOT, 'apps', 'api', 'src', 'app', 'api', 'v1');
 const WEB_CLIENT_FILE = join(process.cwd(), 'src', 'lib', 'api', 'client.ts');
+const CRM_FEATURE_DIR = join(process.cwd(), 'src', 'features', 'crm');
+const VEHICLE_FEATURE_DIR = join(process.cwd(), 'src', 'features', 'vehicles');
+const OPEN_DECISIONS_FILE = join(REPO_ROOT, 'docs', 'phase-1', 'phase-1-27', 'open-decisions.md');
+
+/**
+ * Every catalog code the API publishes at HTTP 409.
+ *
+ * Read out of `catalog.ts` rather than listed, for the reason given at the one
+ * case that consumes it. The entry shape is `'ERR-XXX-NNN': { … status: N … }`,
+ * and the closing brace is matched at its known two-space indentation so a
+ * nested object inside an entry cannot end it early.
+ */
+function conflictCodes(): string[] {
+  const source = withoutComments(readFileSync(API_CATALOG_FILE, 'utf8'));
+  const entry = /'(ERR-[A-Z]+-\d+)'\s*:\s*\{([\s\S]*?)\n {2}\}/g;
+  const codes: string[] = [];
+  for (const match of source.matchAll(entry)) {
+    const code = match[1];
+    const body = match[2];
+    if (code === undefined || body === undefined) continue;
+    if (/\bstatus:\s*409\b/.test(body)) codes.push(code);
+  }
+  return codes;
+}
+
+/** Every `.ts`/`.tsx` file under a directory, recursively. */
+function sourceFilesUnder(directory: string): string[] {
+  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const full = join(directory, entry.name);
+    if (entry.isDirectory()) return sourceFilesUnder(full);
+    return entry.name.endsWith('.ts') || entry.name.endsWith('.tsx') ? [full] : [];
+  });
+}
+
+interface AdapterWrite {
+  readonly method: string;
+  readonly path: string;
+  readonly file: string;
+}
+
+/**
+ * Every mutation the CRM and Vehicle adapters actually emit, read out of their
+ * source.
+ *
+ * ## Why this is derived and not listed
+ *
+ * `p1-27-qa.test.ts` asserts eleven hand-written `[method, path]` pairs against
+ * `requiresIdempotencyKey`. Eleven is not the number of writes this phase
+ * performs — this derivation finds **twenty-three**, and the twelve it adds
+ * include `PATCH /vehicles/{vehicleId}`, which is the single operation
+ * `P1-27-INT-003` was raised about. A list a person maintains agrees with
+ * whatever that person last remembered; it cannot notice a write somebody adds
+ * next week, which is exactly when the omission costs something.
+ *
+ * ## The two call shapes, and the guard that stops a third appearing silently
+ *
+ * Most adapters call `client.send('POST', path, body)` with the method as a
+ * literal at the call site. Two helpers take the path and supply the rest:
+ * `write(previous, parse, 'PUT', path, key)` keeps its method at the call site
+ * and so is read by the same pattern, while `writeVehicle(previous, parse, path,
+ * key)` fixes `POST` inside the helper and is read separately.
+ *
+ * A third shape would be invisible to both patterns, so `sendCallSites` counts
+ * every `client.send` in the two trees and the case below asserts the count is
+ * accounted for. That is the difference between a derivation and a cleverer
+ * hand-list.
+ */
+function adapterWrites(): AdapterWrite[] {
+  const found = new Map<string, AdapterWrite>();
+  const literal = /'(POST|PUT|PATCH|DELETE)'\s*,\s*(`[^`]*`|'[^']*')/g;
+  const vehicleHelper = /writeVehicle[<(][\s\S]*?,\s*(`[^`]*`)/g;
+
+  const normalize = (raw: string): string =>
+    raw
+      .slice(1, -1)
+      // The two path builders, resolved to what they return.
+      .replace(/\$\{base\([^}]*\)\}/g, '/api/v1/customers/CID')
+      .replace(/\$\{vehicleBase\([^}]*\)\}/g, '/api/v1/vehicles/VID')
+      // Any other interpolation is a single id segment.
+      .replace(/\$\{[^}]*\}/g, 'ID');
+
+  for (const file of [
+    ...sourceFilesUnder(CRM_FEATURE_DIR),
+    ...sourceFilesUnder(VEHICLE_FEATURE_DIR),
+  ]) {
+    const source = withoutComments(readFileSync(file, 'utf8'));
+    for (const match of source.matchAll(literal)) {
+      const method = match[1];
+      const raw = match[2];
+      if (method === undefined || raw === undefined) continue;
+      const path = normalize(raw);
+      if (!path.startsWith('/api/v1/')) continue;
+      found.set(`${method} ${path}`, { method, path, file });
+    }
+    for (const match of source.matchAll(vehicleHelper)) {
+      const raw = match[1];
+      if (raw === undefined) continue;
+      const path = normalize(raw);
+      if (!path.startsWith('/api/v1/')) continue;
+      found.set(`POST ${path}`, { method: 'POST', path, file });
+    }
+  }
+  return [...found.values()];
+}
+
+/** Every `client.send` call in the two feature trees, however it is shaped. */
+function sendCallSites(): number {
+  return [...sourceFilesUnder(CRM_FEATURE_DIR), ...sourceFilesUnder(VEHICLE_FEATURE_DIR)].reduce(
+    (total, file) =>
+      total + (withoutComments(readFileSync(file, 'utf8')).match(/client\.send[<(]/g) ?? []).length,
+    0
+  );
+}
 
 interface DeclaredField {
   readonly name: string;
@@ -1054,5 +1196,271 @@ describe('P1-27-QA-002 — the client contract is derived from the API contract'
         `client.ts reads problem.${field}, which the API never sends`
       ).toBe(true);
     }
+  });
+});
+
+/**
+ * `P1-27-QA-004` — the concurrency semantics this phase ACTUALLY has.
+ *
+ * ## The determination, and the reading behind it
+ *
+ * `canonical-plan.md` §5.3 names the task "Concurrency **and** idempotency". It
+ * names no mechanism, and the words "optimistic concurrency", "record version",
+ * "If-Match" and "ETag" appear nowhere in that plan as a P1-27 deliverable. §10
+ * — "What every Frontend task owes" — asks for "conflict **where applicable**",
+ * and the qualifier is doing real work.
+ *
+ * §4 settles what may be done about it here: "**No new Backend feature
+ * development is allowed inside the P1-27 Frontend branch.**" Registering a CRM
+ * or Vehicle write `versionGuarded: true` is a Backend route declaration, a
+ * repository predicate and a service signature. It cannot be done from
+ * `apps/web` at all, and §4 forbids doing it from this branch.
+ *
+ * So the requirement this phase can discharge is TRUTHFULNESS about the
+ * semantics that exist. The decision is recorded as `P1-27-OD-005` in
+ * `open-decisions.md`, and the last case below binds this file to that entry so
+ * the two cannot drift apart.
+ *
+ * ## The semantics, established against the API source rather than assumed
+ *
+ * The platform HAS a complete optimistic-concurrency mechanism —
+ * `apps/api/src/server/db/concurrency.ts`, `ERR-CON-001` at 409, `ERR-CON-002`
+ * at 428 — and forty route modules use it. **No CRM or Vehicle route is among
+ * them.** Nothing under those routes reads `expectedVersion` either, so an
+ * `If-Match` sent from here would be parsed and then discarded: worse than
+ * absent, because it would look like protection.
+ *
+ * `ERR-CON-001` IS raised on these writes, and that is the nuance a flat "no
+ * concurrency detection at all" gets wrong. But the version it guards on is one
+ * the SERVICE read in the same transaction — `vehicle-write-service.ts` reads
+ * `currentState` and then guards the UPDATE with it, and
+ * `customer-governance-service.ts` does the same — so it catches a writer
+ * landing inside the server's own SELECT→UPDATE window and cannot catch a lost
+ * update across an operator's read → edit → submit cycle. From the client's
+ * position that is last-writer-wins, which is what `P1-27-INT-009` records.
+ */
+describe('P1-27-QA-004 — the concurrency semantics are stated, not overstated', () => {
+  /** Every API route module the P1-27 adapters actually write to. */
+  function routeModulesUnderTest(): string[] {
+    const roots = new Set(
+      adapterWrites().flatMap((write) => {
+        const segment = write.path.replace('/api/v1/', '').split('/')[0];
+        return segment === undefined ? [] : [segment];
+      })
+    );
+    expect(roots.size, 'no route roots derived from the adapters').toBeGreaterThanOrEqual(3);
+    return [...roots].flatMap((root) => sourceFilesUnder(join(API_ROUTES_DIR, root)));
+  }
+
+  it('confirms the platform mechanism exists, so its absence here is a choice and not a gap in the reading', () => {
+    // Anti-vacuity in the strongest form: had `versionGuarded` been renamed
+    // platform-wide, every assertion below would pass by finding nothing.
+    const guarded = sourceFilesUnder(API_ROUTES_DIR).filter((file) =>
+      /versionGuarded:\s*true/.test(readFileSync(file, 'utf8'))
+    );
+    expect(guarded.length, 'no route declares versionGuarded at all').toBeGreaterThanOrEqual(20);
+  });
+
+  it('finds no CRM or Vehicle write registered version-guarded', () => {
+    const modules = routeModulesUnderTest();
+    expect(modules.length).toBeGreaterThanOrEqual(10);
+    for (const file of modules) {
+      expect(
+        /versionGuarded:\s*true/.test(readFileSync(file, 'utf8')),
+        `${file} is versionGuarded — the last-writer-wins statement in open-decisions.md P1-27-OD-005 is now false and must be retracted`
+      ).toBe(false);
+    }
+  });
+
+  it('finds no CRM or Vehicle route that would honour an If-Match even if one were sent', () => {
+    // The sharper half. A route could read `expectedVersion` without declaring
+    // itself guarded; none does, which is why sending the header from here would
+    // not merely be useless but misleading.
+    for (const file of routeModulesUnderTest()) {
+      expect(
+        readFileSync(file, 'utf8').includes('expectedVersion'),
+        `${file} reads expectedVersion — a client could then guard, and P1-27-OD-005 must be revisited`
+      ).toBe(false);
+    }
+  });
+
+  it('sends no If-Match from any CRM or Vehicle adapter', () => {
+    // The client half of the same statement. `ifMatch` is a real parameter of
+    // `send`, and P1-26 administration adapters do use it against routes that
+    // ARE guarded; the point is that no P1-27 adapter does.
+    const offenders = [
+      ...sourceFilesUnder(CRM_FEATURE_DIR),
+      ...sourceFilesUnder(VEHICLE_FEATURE_DIR),
+    ].filter((file) => /\bifMatch\b\s*:/.test(withoutComments(readFileSync(file, 'utf8'))));
+    expect(offenders, 'a P1-27 adapter sends If-Match to a route that discards it').toEqual([]);
+  });
+
+  it('promises no detection it lacks: the concurrency sentence is reachable from one code only', () => {
+    // The user-facing consequence, asserted over the DERIVED 409 set rather than
+    // a sample. `state.conflict.title` is "Someone else changed this"; it must
+    // be reachable from `ERR-CON-001`, which genuinely means it, and from
+    // nothing else.
+    expect((en as Record<string, string>)['state.conflict.title']).toBeDefined();
+    const codes = conflictCodes();
+    expect(codes.length).toBeGreaterThanOrEqual(10);
+    for (const code of codes) {
+      const claimed = failureMessageKey({
+        ok: false,
+        kind: 'conflict',
+        status: 409,
+        problem: { code },
+        correlationId: null,
+      });
+      expect(claimed === 'state.conflict.title', `${code}`).toBe(code === 'ERR-CON-001');
+    }
+  });
+
+  it('binds the decision record, so the sentence cannot age out of agreement with the code', () => {
+    /*
+     * The gate. `open-decisions.md` `P1-27-OD-005` states that no P1-27 write is
+     * version-guarded and that concurrent edits are last-writer-wins. That is a
+     * claim about `apps/api` written in a document — precisely the shape of
+     * statement this phase has repeatedly shipped as false.
+     *
+     * So the document must carry the entry, and the cases above must agree with
+     * the repository. If a Backend phase later guards these routes, the two
+     * cases above fail and this one names the document that must change with
+     * them.
+     */
+    const decisions = readFileSync(OPEN_DECISIONS_FILE, 'utf8');
+    expect(decisions).toContain('`P1-27-OD-005`');
+    expect(decisions).toContain('last-writer-wins');
+    expect(decisions).toContain('P1-27-INT-009');
+    expect(decisions).toMatch(/\*\*Review by:\*\*\s*2026-11-30/);
+    expect(decisions).toMatch(/\*\*Owner:\*\*/);
+  });
+});
+
+/**
+ * `P1-27-QA-004` — the idempotency half, derived and then proved on the wire.
+ *
+ * Three judges called the existing coverage *sampled* rather than *proved*, and
+ * they were right twice over:
+ *
+ *  1. The set of writes was **eleven pairs a person typed**. The adapters emit
+ *     twenty-three. The twelve missing include `PATCH /vehicles/{vehicleId}` —
+ *     the operation `P1-27-INT-003` exists about — and `PUT
+ *     /customers/{customerId}/status`, both of which answer `400 ERR-INT-002`
+ *     before authorization if the key is ever dropped.
+ *  2. Every assertion stopped at `requiresIdempotencyKey`, a pure function.
+ *     That it returns `true` says nothing about whether a header reaches a
+ *     request: `send` could stop defaulting it, or `#request` could stop
+ *     writing it, and every one of those cases would still pass.
+ *
+ * So the set is derived from the adapters, and the last case drives a REAL
+ * adapter through the REAL `ApiClient` with only `fetch` replaced, and reads the
+ * header off the request that adapter actually produced.
+ */
+describe('P1-27-QA-004 — idempotency is derived from the adapters, not listed', () => {
+  it('accounts for every client.send in the two feature trees', () => {
+    // The completeness guard. Eleven direct literal-method sends plus the two
+    // helper wrappers is thirteen; a new call shape moves this number and fails
+    // here rather than quietly falling out of the derivation.
+    expect(sendCallSites()).toBe(13);
+  });
+
+  it('derives more writes than the hand-written list contained', () => {
+    const writes = adapterWrites();
+    expect(writes.length).toBeGreaterThanOrEqual(23);
+    const keys = writes.map((write) => `${write.method} ${write.path}`);
+    // The four the hand-written list omitted, named so a regression is legible.
+    expect(keys).toContain('PATCH /api/v1/vehicles/ID');
+    expect(keys).toContain('PATCH /api/v1/vehicles/ID/status');
+    expect(keys).toContain('PUT /api/v1/customers/CID/status');
+    expect(keys).toContain('POST /api/v1/customers/individuals');
+  });
+
+  it('resolves every derived write to a published operation, so none relies on the fail-open', () => {
+    /*
+     * `requiresIdempotencyKey` returns `true` for an UNKNOWN path by design —
+     * sending a spare header is cheap, omitting a required one breaks the
+     * feature. That fail-open means a blanket "expect(true)" over these paths
+     * would pass even if the generated table had resolved none of them.
+     *
+     * So resolution is asserted first, and the key decision is then compared to
+     * the operation's own `idempotent` flag rather than to a constant.
+     */
+    for (const { method, path } of adapterWrites()) {
+      const operation = resolveOperation(method, path);
+      expect(operation, `${method} ${path} resolves to no published operation`).not.toBeNull();
+      expect(
+        requiresIdempotencyKey(method, path),
+        `${method} ${path} disagrees with its published contract`
+      ).toBe(operation?.idempotent);
+    }
+  });
+
+  it('finds every derived write idempotent, which is why the key must be defaulted', () => {
+    const notIdempotent = adapterWrites().filter(
+      ({ method, path }) => resolveOperation(method, path)?.idempotent !== true
+    );
+    expect(notIdempotent).toEqual([]);
+  });
+
+  it('puts an idempotency-key on the wire for a request a real adapter produced', async () => {
+    /*
+     * The end-to-end case, and deliberately the vehicle PATCH: it is the
+     * operation `P1-27-INT-003` was raised about, the one a method-based rule
+     * gets wrong, and the one whose failure was invisible because the resulting
+     * 400 rendered as a validation banner naming no field.
+     *
+     * Only `fetch` is replaced. `updateVehicleAction` is the shipped adapter,
+     * `authorizedClient()` builds a real `ApiClient`, `send` makes the real
+     * contract decision and `#request` assembles the real headers. The session
+     * cookie is stubbed because `next/headers` has no request scope in a unit
+     * run — that is the environment, not the contract under test.
+     */
+    const seen: Headers[] = [];
+    const stub = vi.fn(async (_url: string, init?: RequestInit) => {
+      seen.push(new Headers(init?.headers));
+      return respond(200, { vehicleId: 'v1', changedColumns: ['color'] });
+    });
+    vi.stubGlobal('fetch', stub);
+
+    const { updateVehicleAction } = await import('@/features/vehicles/profile-api');
+    const state = await updateVehicleAction(
+      '3f2504e0-4f89-41d3-9a0c-0305e82c3301',
+      { color: 'blue' },
+      {} as never
+    );
+
+    expect(state.status, 'the adapter did not reach the network').toBe('success');
+    expect(stub).toHaveBeenCalledTimes(1);
+
+    const headers = seen[0] as Headers;
+    const key = headers.get('idempotency-key');
+    expect(key, 'the vehicle PATCH reached the wire with no idempotency key').not.toBeNull();
+    // 8–200 characters, per the backend's own bound. A UUID is 36.
+    expect((key ?? '').length).toBeGreaterThanOrEqual(8);
+    expect((key ?? '').length).toBeLessThanOrEqual(200);
+    // The same request must NOT carry a version guard: this route discards it.
+    expect(headers.get('if-match')).toBeNull();
+
+    const [url] = stub.mock.calls[0] as unknown as [string];
+    expect(url).toContain('/api/v1/vehicles/3f2504e0-4f89-41d3-9a0c-0305e82c3301');
+  });
+
+  it('puts no idempotency-key on a read a real adapter produced', async () => {
+    // The other direction, through the same adapter module. A key on a GET is
+    // harmless today, but the contract says reads carry none and an assertion
+    // that only ever checks the positive case cannot see a regression to
+    // "always send".
+    const seen: Headers[] = [];
+    const stub = vi.fn(async (_url: string, init?: RequestInit) => {
+      seen.push(new Headers(init?.headers));
+      return respond(200, { id: 'v1' });
+    });
+    vi.stubGlobal('fetch', stub);
+
+    const { readVehicle } = await import('@/features/vehicles/profile-api');
+    await readVehicle('3f2504e0-4f89-41d3-9a0c-0305e82c3301');
+
+    expect(stub).toHaveBeenCalled();
+    expect((seen[0] as Headers).get('idempotency-key')).toBeNull();
   });
 });

@@ -71,6 +71,7 @@ repository.
 | `P1-27-OD-002` | The customer-creation section model (Owner defect 6) | Scope decision with a Backend prerequisite     | **Open — partly addressed**                      |
 | `P1-27-OD-003` | A candidate count on either duplicate queue          | Engineering decision, ratification requested   | **Open — implemented decision-neutrally**        |
 | `P1-27-OD-004` | Vehicle document creation                            | Capability gap with a scope decision behind it | **Open — no create operation exists**            |
+| `P1-27-OD-005` | Concurrency semantics for CRM and Vehicle writes     | Engineering decision, ratification requested   | **Decided — last-writer-wins, stated and gated** |
 
 ### 0.3 What every entry states
 
@@ -788,6 +789,146 @@ worked around one would be building on a fact the platform does not hold.
 | Vehicle documents are in scope, phase named   | `RMC-08` (page shape), `VHM-08` (title and type on the projection), `RMC-04` (entity token) and a `shared.document.read` code are Backend work; the section then gains a create path and a real document table |
 | Vehicle documents are read-only for the pilot | The current section stands unchanged; the caveat sentence becomes permanent rather than provisional                                                                                                            |
 | No answer                                     | The section keeps listing what exists and keeps stating precisely what it cannot show. Nothing is implied that is not there                                                                                    |
+
+---
+
+## `P1-27-OD-005` — concurrency semantics for CRM and Vehicle writes
+
+**Type:** engineering decision, ratification requested · **Status:** **Decided —
+last-writer-wins, stated and gated**
+
+**Owner:** Backend remediation, **P1-16** (customers) and **P1-17** (vehicles),
+by the `P1-27-INT-###` route in [`canonical-plan.md`](canonical-plan.md) §4.
+No Frontend phase can own it — see "Why this could not be built here".
+· **Review by:** 2026-11-30
+
+**The decision.** P1-27 ships **last-writer-wins** on every CRM and Vehicle
+write, states it where an operator can see it, and claims no detection it does
+not have. It does **not** add client-supplied optimistic concurrency, and it
+does **not** send `If-Match` from any P1-27 adapter.
+
+This follows the `P1-20-A-06` precedent ("No alert routing"): a capability is
+deliberately not delivered, the reason is that delivering it here could only
+produce an **unverifiable claim**, and the non-delivery is written down rather
+than left for a reader to discover.
+
+### The semantics, established against the API source
+
+Five facts, each checked against `apps/api` rather than inferred from a
+docblock. The first is the one a shorter summary gets wrong.
+
+| fact                                                                                                                                                                                            | where                                                                                  |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| The platform **has** a complete optimistic-concurrency mechanism — a `record_version` column, `If-Match` parsing, `ERR-CON-001` (409) and `ERR-CON-002` (428) — and **40 route modules** use it | `apps/api/src/server/db/concurrency.ts`; `route-handler.ts:323`                        |
+| **Not one** route under `customers/`, `customer-duplicates/`, `vehicles/` or `vehicle-duplicates/` declares `versionGuarded: true`                                                              | every route module under those four trees                                              |
+| **Not one** of them reads `expectedVersion` either, so an `If-Match` sent from here would be parsed by `parseIfMatch(headers, false)` and then **discarded**                                    | `route-handler.ts:323`, `:351`                                                         |
+| `ERR-CON-001` **is** genuinely raised on these writes — but the version guarding the UPDATE is one the **service itself read in the same transaction**, not one the caller supplied             | `vehicle-write-service.ts:115` → `:132`; `customer-governance-service.ts:159` → `:180` |
+| So the mechanism catches a writer landing inside the server's own SELECT→UPDATE window, and cannot catch a lost update across an operator's read → edit → submit cycle                          | the same two call paths                                                                |
+
+The fourth row is why "there is no concurrency detection at all" would be the
+wrong summary, and the fifth is why "the record is protected" would also be
+wrong. From the client's position the result is **last-writer-wins**.
+
+### Why `P1-27-INT-009` is not a blocker under the exact canonical wording
+
+`P1-27-INT-009` is correct and is not disputed. It is not a blocker because
+nothing in the canonical wording asks this phase for the thing it records as
+missing:
+
+| canonical sentence                                                                                                                 | what it asks for                                                                                                                                                                                       |
+| ---------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| §5.3 — `P1-27-QA-004` **"Concurrency and idempotency"**                                                                            | A task title. It names no mechanism. "Optimistic concurrency", "record version", "If-Match" and "ETag" appear nowhere in `canonical-plan.md` as a P1-27 deliverable                                    |
+| §10 — what every Frontend task owes: "… **conflict where applicable** …"                                                           | Conflict handling, qualified. It is applicable and it is delivered: ten catalog codes answer 409 and the client selects its sentence from `problem.code`, not from the kind                            |
+| §6 — each test id "will expand into the required path matrix (… conflict, duplicate, **stale version**, **concurrent update**, …)" | A per-task **test** path matrix. A test path cannot manufacture a server capability, and the same matrix lists `timeout` and `cancellation`, which are likewise conditions tested where they can occur |
+| §4 — "**No new Backend feature development is allowed inside the P1-27 Frontend branch.**"                                         | The prohibition that decides it. See below                                                                                                                                                             |
+
+### Why this could not be built here
+
+Registering `veh.vehicle-update` or `crm.preference-set` `versionGuarded: true`
+is a **Backend route declaration**, plus a repository predicate, plus a service
+signature that accepts a caller version, plus an OpenAPI change. None of it
+exists in `apps/web`, and §4 forbids putting it in this branch. §9 makes the
+same point structurally: `apps/api/src/**` and `supabase/**` require
+`APPS_API_EXECUTABLE_DIFF=0` at merge.
+
+A Frontend-side version check would be worse than the honest absence. The server
+does not apply it, so it would refuse saves the platform would have accepted
+while still losing every update the platform actually loses — a check that
+changes who is inconvenienced without changing what is lost.
+
+This is the method `canonical-plan.md` §7 already uses for exactly this shape of
+gap. `FE-020` is recorded there as: a dedicated VIN verification workflow "is
+Backend feature work and is **out of P1-27 scope**", with the truthful subset
+shipped instead. `P1-27-OD-005` is that ruling applied to concurrency.
+
+### What the interface does today
+
+| behaviour                           | detail                                                                                                                                                                                    |
+| ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| No `If-Match` is ever sent          | Zero CRM and zero Vehicle adapters pass `ifMatch`. The four P1-26 administration adapters that do send it call routes that **are** guarded                                                |
+| `recordVersion` is shown, not spent | The customer and vehicle detail reads publish it and the handler emits an `ETag`. It is displayed as a record fact. Both contracts say in the type that it is **published and not used**  |
+| One 409 claims a concurrent edit    | `ERR-CON-001` → "Someone else changed this", which is true when it is shown. The other nine 409 codes → "This change cannot be saved", which states the refusal without inventing a cause |
+| A bare 409 fails safe               | A conflict carrying no `code` gets the sentence that claims nothing, not the concurrency one                                                                                              |
+| Nothing promises detection          | No screen, label or help text says an edit is protected against another operator's save                                                                                                   |
+
+### The gate that stops this sentence ageing
+
+A statement about `apps/api` written in a `docs/` file is the exact shape this
+phase has repeatedly shipped as false. So this entry is **bound to executable
+checks** in `apps/web/tests/api-client.test.ts`, describe
+_"P1-27-QA-004 — the concurrency semantics are stated, not overstated"_:
+
+| the check                                                                                                          | what it would catch                                                                                 |
+| ------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------- |
+| At least 20 route modules declare `versionGuarded: true`                                                           | A platform-wide rename that would make every check below pass by finding nothing                    |
+| No route module the P1-27 adapters write to declares `versionGuarded: true`                                        | A Backend phase closing the gap — at which point **this entry becomes false and must be retracted** |
+| None of those modules reads `expectedVersion`                                                                      | A route honouring `If-Match` without declaring itself guarded                                       |
+| No CRM or Vehicle adapter passes `ifMatch`                                                                         | A Frontend edit that starts sending a header the route discards                                     |
+| Over the 409 set **derived from `catalog.ts`**, only `ERR-CON-001` reaches the concurrency copy                    | A newly defined 409 code inheriting "Someone else changed this"                                     |
+| This document carries `P1-27-OD-005`, the words `last-writer-wins`, `P1-27-INT-009`, an owner and this review date | This entry being deleted, renamed or left without a review date while the code still relies on it   |
+
+The route set those checks run over is **derived from the adapters' own source**,
+so a screen that starts writing to a fifth route tree brings that tree into the
+check without anyone remembering to add it.
+
+### What is needed to close it
+
+A Backend remediation on a **separate protected branch**, per `canonical-plan.md`
+§4. Specified so the integrator does not have to re-derive it:
+
+| step                 | exactly what                                                                                                                                                                                                                                                     |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Mechanism            | The one already in the repository. `versionGuardFragment` for the SET/WHERE, `assertVersionMatched` for the row count, `parseIfMatch` at the edge — **no new mechanism, and no new catalog code**: `ERR-CON-001` and `ERR-CON-002` already exist and are correct |
+| Routes               | `PATCH /vehicles/{vehicleId}`, `PATCH /vehicles/{vehicleId}/status`, `PUT /customers/{customerId}/status`, `PUT /customers/{customerId}/preferences` — the writes that edit a long-lived record an operator reads first                                          |
+| Not routes           | Append-only sub-resource POSTs (notes, alerts, tags, contacts, addresses, consents, restrictions, ownerships, plates, odometer readings). Appending a row has no prior version to be stale against, and guarding it would demand a version for nothing           |
+| Service signatures   | `changeLifecycle` and `VehicleWriteService.update` take the caller's `expectedVersion` and pass **it** to the repository instead of the value they just read at `vehicle-write-service.ts:115` / `customer-governance-service.ts:159`                            |
+| Backend tests        | For each route: a stale version → 409 `ERR-CON-001`; a missing header → 428 `ERR-CON-002`; a current version → success **and `record_version` incremented exactly once**; two concurrent writers with the same expected version → exactly one wins               |
+| Contract             | `versionGuarded: true` on each operation, `openapi.v1.json` regenerated — `document.ts:197` adds the `IfMatch` parameter and the 428 automatically                                                                                                               |
+| Frontend, afterwards | The detail reads already publish `recordVersion`; the edit forms carry it as a hidden field and pass `ifMatch`, exactly as the P1-26 administration forms already do. `ERR-CON-001` already maps to the correct sentence, so no copy changes                     |
+| This entry           | Retracted. The two `versionGuarded` checks above fail on the same commit, which is what forces it                                                                                                                                                                |
+
+### Three Backend docblocks that describe this differently, recorded not fixed
+
+Found while establishing the facts above. Each is in a Backend-owned file, so
+none is touched here; each overstates what the code does, and a reader trusting
+any of them would conclude the guard is already wired.
+
+| file                                              | the sentence                                                                                          | why it is wrong                                                                                                                 |
+| ------------------------------------------------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `customers/[customerId]/route.ts:11-13`           | "the write routes have always demanded `If-Match`, and no operation published the value to put in it" | True of the 40 guarded routes platform-wide; **false of every CRM write route**, none of which demands it                       |
+| `customers/[customerId]/preferences/route.ts:6-9` | "That version is what a client puts in `If-Match` on the PUT below"                                   | `crm.preference-set` is declared `idempotent: true` and **not** `versionGuarded`, and the handler never reads `expectedVersion` |
+| `customer-governance-service.ts:16`               | "The lifecycle update carries the `record_version` **the caller's read observed**"                    | It carries `current.recordVersion`, which the service read itself at `:159`. `changeLifecycle` takes no caller version          |
+
+These belong to P1-16 and should be corrected by the same remediation that
+closes this entry, or before it if that is sooner.
+
+### What changes when the Owner answers
+
+| answer                                                  | consequence                                                                                                                                                |
+| ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Ratified — last-writer-wins is acceptable for the pilot | Nothing changes in P1-27. The review date stands, so the decision is re-examined rather than forgotten                                                     |
+| Optimistic concurrency is required                      | The table above is the specification. It is Backend work on a separate protected branch; the Frontend change afterwards is a hidden field and one argument |
+| No answer                                               | The current behaviour stands and keeps saying what it is. Nothing is implied that is not there                                                             |
 
 ---
 
