@@ -49,9 +49,12 @@ on:
         description: >-
           Pull-request head branch name. `static-quality` resolves it against
           `.github/ci-baselines/phase-ownership-profiles.json` to pick the
-          changed-file ownership profile. Empty outside a pull request, where
-          the question does not apply — ownership is decided before the merge,
-          not after it.
+          changed-file ownership profile. Leave it empty ONLY on a `push` or
+          `workflow_dispatch`: there `check-phase-ownership.mjs
+          --resolve-context` resolves the profile from the pushed ref instead,
+          or declares a skip if that ref is protected. A caller running on
+          `pull_request` that omits this is REFUSED — an empty value used to
+          disable the gate in silence.
         required: false
         type: string
         default: ''
@@ -274,41 +277,47 @@ jobs:
       # branch — including Backend ones the profile cannot pass — get judged
       # against `p1-26-frontend` for the whole of two phases.
       #
-      # Pull-request time is the right time and the only time the inputs exist:
-      # ownership is decided before a merge, not after it. On a protected push
-      # the step says so rather than skipping in silence.
+      # A pull request is the richest context, but it is NOT the only one this
+      # step can answer in, and the first version of it treated every other
+      # context as a reason to exit 0. `protected-develop-verification.yml`
+      # passes neither input, so on every push to `develop` and `main` the step
+      # printed a sentence and judged nothing; `pr-ci.yml` fires on
+      # `workflow_dispatch` too, where the pull-request fields are empty and the
+      # same silent 0 followed. A step that exits 0 BECAUSE IT COULD NOT RUN is
+      # this phase's defect class, reintroduced by the fix for it.
+      #
+      # `decideOwnershipRun()` in `scripts/ci/check-phase-ownership.mjs` now
+      # makes that decision, in a module `tests/ci/phase-ownership.test.ts` can
+      # call: a pull request
+      # resolves the profile from the head branch, a push or dispatch on an
+      # ORDINARY branch resolves it from the pushed ref, a push on a protected
+      # branch is a DECLARED skip written to the step summary and to
+      # `phase-ownership-context.json` in the evidence artefact, and anything
+      # else — including a `pull_request` run whose caller forgot the inputs —
+      # is refused with exit 1.
       # =======================================================================
       - name: Changed-file ownership
         if: inputs.task == 'static-quality'
         env:
           HEAD_BRANCH: ${{ inputs.head-branch }}
           BASE_REF: ${{ inputs.base-ref }}
+          OWNERSHIP_EVENT_NAME: ${{ github.event_name }}
+          OWNERSHIP_REF_NAME: ${{ github.ref_name }}
         run: |
           set -euo pipefail
-          if [ -z "${HEAD_BRANCH}" ] || [ -z "${BASE_REF}" ]; then
-            echo "Changed-file ownership is a PULL-REQUEST question and this run has no pull-request context"
-            echo "  head-branch='${HEAD_BRANCH}' base-ref='${BASE_REF}'"
-            echo "  Every commit reaching a protected branch passed this gate on the pull request that merged it."
-            exit 0
+          # Exits 1 when the context is unusable, so `set -e` refuses the run
+          # rather than falling through to a skip.
+          node scripts/ci/check-phase-ownership.mjs --resolve-context \
+            --env-out ownership-context.env \
+            --json phase-ownership-context.json
+          # Every value here is validated against `^[A-Za-z0-9._/-]+$` and
+          # single-quoted by the writer; no branch name is ever emitted.
+          . ./ownership-context.env
+          if [ "${OWNERSHIP_ACTION}" = "check" ]; then
+            PHASE_OWNERSHIP_PROFILE="${OWNERSHIP_PROFILE}" \
+            PHASE_OWNERSHIP_BASE="${OWNERSHIP_BASE}" \
+              npm run validate:phase-ownership
           fi
-          profile="$(node -e '
-            const fs = require("node:fs");
-            const doc = JSON.parse(fs.readFileSync(".github/ci-baselines/phase-ownership-profiles.json", "utf8"));
-            const branch = process.env.HEAD_BRANCH;
-            const rule = (doc.rules ?? []).find((r) => branch.startsWith(r.branchPrefix));
-            if (!rule) {
-              process.stderr.write(`::error::branch \x60${branch}\x60 declares no changed-file ownership profile. ` +
-                "Add a rule to .github/ci-baselines/phase-ownership-profiles.json saying which parts of the " +
-                "repository this branch is allowed to change. Refusing to judge it against another phase\x27s " +
-                "declaration, which is how every branch came to be measured against p1-26-frontend.\n");
-              process.exit(1);
-            }
-            process.stdout.write(rule.profile);
-          ')"
-          echo "branch '${HEAD_BRANCH}' -> ownership profile '${profile}'"
-          PHASE_OWNERSHIP_PROFILE="${profile}" \
-          PHASE_OWNERSHIP_BASE="origin/${BASE_REF}" \
-            npm run validate:phase-ownership
 
       - name: Route ↔ OpenAPI registry parity
         if: inputs.task == 'static-quality'
@@ -706,6 +715,7 @@ jobs:
           if-no-files-found: ignore
           path: |
             workflow-security.json
+            phase-ownership-context.json
             route-parity.json
             test-honesty.json
             openapi-totals.json

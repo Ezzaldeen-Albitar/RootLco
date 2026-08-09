@@ -91,6 +91,64 @@ export const SCAN_ROOTS = [
 export const ROOT_AUTHORITY = 'docs/phase-1/phase-1-27/canonical-plan.md';
 
 /**
+ * Phase modules that live OUTSIDE every scan root, listed rather than scanned.
+ *
+ * ## The fact
+ *
+ * The D1 remediation moved shared code out of `features/` — `RecordForm` to
+ * `@/components/forms`, the customer directory to `@/lib/customers`, the match
+ * explanations and scores to `@/components/duplicates` and `@/lib/duplicates`,
+ * the party widgets to `@/components/party`. The files left behind in
+ * `features/crm/customers/` are re-export shims that say so in their own
+ * docblocks. Ten `.ts`/`.tsx` files, imported directly by the scanned trees, are
+ * therefore unambiguously this phase's surface and are collected by no root.
+ *
+ * ## Why they are not simply added to `SCAN_ROOTS`
+ *
+ * Because `SCAN_ROOTS` is not a free variable. It is bound in two directions by
+ * documents this branch does not own:
+ *
+ *   - `canonical-plan.md` §9 (lines 327-329) names the three trees, and
+ *     `tests/ci/p1-27-frontend-gate.test.ts` re-derives the expected root list
+ *     from that text and asserts `SCAN_ROOTS` equals it — including that the
+ *     plan declares exactly three. Adding a root without amending the plan makes
+ *     the gate contradict its own authority, which is the defect the third root
+ *     was added to fix, pointing the other way.
+ *   - `check-p1-27-doc-counts.mjs` publishes `p1-27-frontend-gate` (69) and
+ *     `p1-27-frontend-gate:trees` (3) as derived markers, and four documents
+ *     carry them.
+ *
+ * And a wider widening is worse, not better: measured across the 110 `.ts`/
+ * `.tsx` files under `apps/web/src` that no root collects, a rule fires in 16 of
+ * them — `features/administration`, `features/authentication`, `lib/api`,
+ * `components/gallery`, `lib/observability`. Those are other phases' surfaces
+ * and several of those lines are correct (`lib/observability/client-log.ts` IS
+ * the logger the console rule tells people to use). Widening to `apps/web/src`
+ * turns sixteen correct lines red, which is how the last extension nearly went
+ * wrong before `assertedScopes()` was written to tell an asserted scope from a
+ * displayed one.
+ *
+ * ## What is done instead
+ *
+ * `tests/ci/p1-27-frontend-gate.test.ts` runs every rule over these directories
+ * as they stand and asserts nothing fires — measured, not assumed: **0 of 10
+ * files**, today. So the coverage a fourth root would have bought is asserted,
+ * over exactly the files it would have covered, without contradicting a document
+ * this branch cannot amend. The day a violation lands there, the case goes red
+ * and the extension becomes a conversation with evidence attached.
+ *
+ * This is a NARROWING of the residual exposure `risk-register.md:214` already
+ * records, not a closure of it.
+ */
+export const UNCOLLECTED_PHASE_MODULES = Object.freeze([
+  'apps/web/src/components/forms',
+  'apps/web/src/components/party',
+  'apps/web/src/components/duplicates',
+  'apps/web/src/lib/customers',
+  'apps/web/src/lib/duplicates',
+]);
+
+/**
  * The scope names this platform resolves server-side and the client must never
  * assert. Exported so the rule and its tests read one list.
  */
@@ -327,8 +385,52 @@ export const RULES = [
   },
 ];
 
-const EXTENSIONS = /\.(ts|tsx)$/;
-const SKIP_DIRS = new Set(['node_modules', '.next', 'coverage']);
+export const EXTENSIONS = /\.(ts|tsx)$/;
+export const SKIP_DIRS = new Set(['node_modules', '.next', 'coverage']);
+
+/**
+ * Would a real run of this gate COLLECT this path?
+ *
+ * ## Why the question needs an answer of its own
+ *
+ * `evaluate()` takes `{path, source}` pairs and applies every rule to every pair
+ * it is handed. It does not, and should not, ask where the path came from — the
+ * walker decides that. But that means an assertion of the form
+ *
+ *     evaluate([{ path: 'anything/at/all.ts', source: 'console.log(x)' }])
+ *
+ * proves the RULE fires and proves nothing whatever about whether CI would ever
+ * open that file. Called with `apps/web/src/components/forms/RecordForm.tsx` and
+ * `apps/web/src/lib/customers/directory.ts` — two files this phase owns and no
+ * `SCAN_ROOT` contains — `evaluate()` reports violations for a gate run that
+ * would never have seen either. A test written that way reads as coverage and is
+ * a statement about a string.
+ *
+ * So the collection decision is exported. An assertion that wants to prove the
+ * gate enforces something in CI asserts `collects(path)` as well as the rule.
+ *
+ * ## What it mirrors
+ *
+ * Exactly what `main()` and `walk()` do, and nothing else: a path under one of
+ * the `SCAN_ROOTS`, with a `.ts` or `.tsx` extension, no segment of which is a
+ * skipped directory. Separators are normalised, so a caller may pass either
+ * form. Existence is deliberately NOT consulted — the question is whether the
+ * gate's rules reach that location, which is answerable for a file that does not
+ * exist yet, and that is the interesting case.
+ *
+ * @param {string} path repository-relative
+ * @returns {boolean}
+ */
+export function collects(path) {
+  const normalised = String(path ?? '')
+    .split(/[\\/]/)
+    .filter(Boolean);
+  if (normalised.length === 0) return false;
+  if (!EXTENSIONS.test(normalised[normalised.length - 1])) return false;
+  if (normalised.some((segment) => SKIP_DIRS.has(segment))) return false;
+  const asPosix = normalised.join('/');
+  return SCAN_ROOTS.some((root) => asPosix.startsWith(`${root.split(sep).join('/')}/`));
+}
 
 /**
  * Source with comments removed.
