@@ -152,6 +152,204 @@ describe('requiresIdempotencyKey', () => {
   });
 });
 
+/**
+ * `P1-27-SEC-004` — the AUDIT-EVENT half, which had no executable assertion.
+ *
+ * ## What was missing, precisely
+ *
+ * `SEC-004` is "security audit-event coverage". Its console half is strong and
+ * its correlation half found a shipped defect. Its audit half asserted nothing
+ * at all: `auditClass` occurred in `apps/web` only inside docblocks — thirteen
+ * in `src/`, two in `tests/`, every one of them prose. Sentences such as "Both
+ * writes here are `idempotent: true` and both are `auditClass: privileged`"
+ * (`features/crm/customers/identity-api.ts:21`) were unfalsifiable, because the
+ * generated table carried `template`, `method`, `operationId` and `idempotent`
+ * and no audit class. Nothing in this tier COULD derive one.
+ *
+ * The fact was published the whole time. `docs/api/openapi.v1.json` carries
+ * `x-audit-class` on **all 243** operations, written by
+ * `apps/api/src/server/openapi/document.ts:228` straight off the registration.
+ * What made it look absent is that the NAME `auditClass` appears in that
+ * document zero times. Reading for the name rather than the extension is how a
+ * fact that was already there got recorded as unbuildable.
+ *
+ * So the generator now carries it, and these are the assertions that make it a
+ * checkable fact rather than a docblock.
+ */
+
+/**
+ * The audit-class vocabulary, pinned against the backend's own union.
+ *
+ * `apps/api/src/server/auth/operation-registry.ts:42`:
+ *
+ *     export type AuditClass = 'none' | 'privileged' | 'approval' | 'financial'
+ *       | 'export' | 'security';
+ *
+ * Restated rather than imported, because `apps/web` may not import API source —
+ * that boundary is enforced by `validate:module-boundaries`. Restating it is
+ * only safe because the assertion below is an INCLUSION check: a class the
+ * document publishes that is not named here fails, which is exactly the signal
+ * wanted when the backend's vocabulary moves and this tier's understanding of it
+ * has gone stale.
+ */
+const AUDIT_CLASSES: readonly string[] = [
+  'none',
+  'privileged',
+  'approval',
+  'financial',
+  'export',
+  'security',
+];
+
+/** Every `crm.*` / `veh.*` operation — the surface P1-27 is about. */
+const P1_27_OPERATIONS = PUBLISHED_OPERATIONS.filter((operation) =>
+  /^(crm|veh)\./.test(operation.operationId)
+);
+
+describe('P1-27-SEC-004 — the published audit class is carried, and asserted', () => {
+  it('publishes an audit class for EVERY operation, with none left blank', () => {
+    // The generator emits `''` for a missing extension rather than defaulting to
+    // `'none'`, precisely so this case can exist. A default would make an
+    // operation that declares nothing indistinguishable from one that declares
+    // it writes no audit event, and this assertion would then be unable to fail.
+    const blank = PUBLISHED_OPERATIONS.filter((operation) => operation.auditClass === '');
+    expect(
+      blank.map((operation) => `${operation.method} ${operation.template}`),
+      'these operations publish no x-audit-class at all'
+    ).toEqual([]);
+  });
+
+  it('is not vacuous — the table really is populated with distinct classes', () => {
+    // Without this, every assertion in this describe would pass against a table
+    // whose `auditClass` was `'none'` on all 243 rows, or against a generator
+    // that had silently stopped reading the extension.
+    expect(PUBLISHED_OPERATIONS.length).toBeGreaterThan(200);
+    const distinct = new Set(PUBLISHED_OPERATIONS.map((operation) => operation.auditClass));
+    expect(distinct.size).toBeGreaterThan(1);
+    expect(distinct.has('none')).toBe(true);
+    expect(distinct.has('privileged')).toBe(true);
+    expect(distinct.has('security')).toBe(true);
+  });
+
+  it('publishes no class outside the backend vocabulary', () => {
+    const unknown = [
+      ...new Set(
+        PUBLISHED_OPERATIONS.map((operation) => operation.auditClass).filter(
+          (auditClass) => !AUDIT_CLASSES.includes(auditClass)
+        )
+      ),
+    ];
+    expect(unknown, 'unrecognised audit class — has AuditClass changed?').toEqual([]);
+  });
+
+  it('never publishes a WRITE without a class — the rule, stated as a rule', () => {
+    // Broader than the P1-27 partition below and deliberately so: it holds for
+    // every mutation the contract publishes, not only for the two feature trees
+    // this phase owns, so a new write in any module is covered the day it lands.
+    const writes = PUBLISHED_OPERATIONS.filter(
+      (operation) => operation.method !== 'GET' && operation.method !== 'HEAD'
+    );
+    expect(writes.length).toBeGreaterThan(100);
+    const undeclared = writes.filter(
+      (operation) => !AUDIT_CLASSES.includes(operation.auditClass) || operation.auditClass === ''
+    );
+    expect(undeclared.map((operation) => `${operation.method} ${operation.template}`)).toEqual([]);
+  });
+
+  it('classifies every P1-27 write as privileged and every P1-27 read as none', () => {
+    /*
+     * The sentence `task-traceability.md` §4 states in prose, executed.
+     *
+     * Both halves are asserted because only one of them can fail interestingly
+     * on its own: a read that quietly became `privileged` is a change in what
+     * the backend records about a lookup, and a write that quietly became
+     * `none` is a mutation that stopped being attributable. Currently 27 writes
+     * and 28 reads; the floors below are what stop this passing against a filter
+     * that matched nothing.
+     */
+    const reads = P1_27_OPERATIONS.filter((operation) => operation.method === 'GET');
+    const writes = P1_27_OPERATIONS.filter((operation) => operation.method !== 'GET');
+    expect(reads.length, 'no P1-27 reads were selected').toBeGreaterThanOrEqual(25);
+    expect(writes.length, 'no P1-27 writes were selected').toBeGreaterThanOrEqual(25);
+
+    const misclassifiedReads = reads
+      .filter((operation) => operation.auditClass !== 'none')
+      .map((operation) => `${operation.operationId} is ${operation.auditClass}`);
+    const misclassifiedWrites = writes
+      .filter((operation) => operation.auditClass !== 'privileged')
+      .map((operation) => `${operation.operationId} is ${operation.auditClass}`);
+
+    expect(misclassifiedReads).toEqual([]);
+    expect(misclassifiedWrites).toEqual([]);
+  });
+
+  it('gives the class of an operation resolved from a CONCRETE path', () => {
+    // The table being right is one fact; the client reaching the right row from
+    // the path it actually calls is another. These go through the resolver.
+    const cases: readonly [string, string, string, string][] = [
+      ['POST', '/api/v1/customers/individuals', 'crm.individual-create', 'privileged'],
+      ['POST', '/api/v1/customers/abc/merge', 'crm.customer-merge', 'privileged'],
+      ['GET', '/api/v1/customers/abc', 'crm.customer-read', 'none'],
+      ['POST', '/api/v1/vehicles', 'veh.vehicle-create', 'privileged'],
+      ['GET', '/api/v1/vehicles', 'veh.vehicle-search', 'none'],
+      ['PATCH', '/api/v1/vehicles/abc/status', 'veh.vehicle-status-change', 'privileged'],
+      // Not a P1-27 operation, and named anyway: the attachment authorization the
+      // vehicle documents section calls is `security`, not `privileged`, and a
+      // rule that only ever saw two values would not notice if it stopped being.
+      [
+        'POST',
+        '/api/v1/attachments/documents/abc/download-authorizations',
+        'shared.attachment-download-authorize',
+        'security',
+      ],
+    ];
+    for (const [method, path, operationId, auditClass] of cases) {
+      const operation = resolveOperation(method, path);
+      expect(operation?.operationId, `${method} ${path}`).toBe(operationId);
+      expect(operation?.auditClass, `${method} ${path}`).toBe(auditClass);
+    }
+  });
+
+  it('makes the docblock claims in the feature trees checkable', () => {
+    /*
+     * The specific sentences that were prose. Each names an operation and a
+     * class; each is now the assertion rather than the commentary.
+     *
+     *  - `features/crm/customers/identity-api.ts:21` — "Both writes here are
+     *    `idempotent: true` and both are `auditClass: privileged`".
+     *  - `features/vehicles/history-contract.ts:14` — "All three writes are
+     *    `idempotent: true` and `auditClass: privileged`".
+     *  - `features/vehicles/relations-contract.ts:13` — "All four writes are
+     *    `idempotent: true` and `auditClass: privileged`".
+     *  - `features/vehicles/catalogue-api.ts:23` — "All `veh.vehicle.read`,
+     *    `auditClass: none`".
+     */
+    const claims: readonly [string, string, boolean][] = [
+      ['crm.customer-merge', 'privileged', true],
+      ['crm.duplicate-review', 'privileged', true],
+      ['veh.vehicle-ownership-transfer', 'privileged', true],
+      ['veh.vehicle-plate-assign', 'privileged', true],
+      ['veh.vehicle-odometer-record', 'privileged', true],
+      ['veh.vehicle-relationship-list', 'none', false],
+      ['veh.catalogue-make-list', 'none', false],
+      ['veh.catalogue-model-list', 'none', false],
+      ['veh.catalogue-trim-list', 'none', false],
+      ['veh.catalogue-body-type-list', 'none', false],
+      ['veh.catalogue-powertrain-type-list', 'none', false],
+    ];
+    for (const [operationId, auditClass, idempotent] of claims) {
+      const operation = PUBLISHED_OPERATIONS.find(
+        (candidate) => candidate.operationId === operationId
+      );
+      // The lookup itself is asserted: a renamed operation must fail here rather
+      // than make the two expectations below vanish into an optional chain.
+      expect(operation, `${operationId} is not in the published contract`).toBeDefined();
+      expect(operation?.auditClass, operationId).toBe(auditClass);
+      expect(operation?.idempotent, operationId).toBe(idempotent);
+    }
+  });
+});
+
 describe('the nine operations this finding was about', () => {
   // Named individually rather than counted, because a count passes against the
   // wrong nine.

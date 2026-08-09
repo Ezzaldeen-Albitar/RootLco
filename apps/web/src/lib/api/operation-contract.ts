@@ -6,6 +6,18 @@
  * not of the HTTP method, and the published contract states it. This module is
  * the lookup; `idempotent-operations.ts` is the generated table.
  *
+ * ## `resolveOperation` also answers the audit class (`P1-27-SEC-004`)
+ *
+ * The resolved `PublishedOperation` carries `auditClass`, the published
+ * `x-audit-class`. **No runtime path in this client reads it, and none should**
+ * — the backend writes the audit event; the browser neither can nor may. It is
+ * carried because it was otherwise underivable here: `auditClass` appeared in
+ * `apps/web` only inside docblocks, so "this write is `auditClass: privileged`"
+ * was a sentence with nothing behind it. Its consumers are the assertions in
+ * `tests/operation-contract.test.ts` and `tests/p1-27-qa.test.ts`, which is a
+ * deliberate choice rather than an oversight: an unused runtime helper would be
+ * the same "declared but never wired" defect this phase has repeatedly shipped.
+ *
  * ## The literal segment must win
  *
  * `/customers/companies` and `/customers/{customerId}` both have two segments,
