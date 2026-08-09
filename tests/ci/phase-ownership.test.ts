@@ -590,4 +590,38 @@ describe('the step is wired to the decision, and the callers are wired to the st
     // nothing, which is the failure mode this whole file is about.
     expect(checked, 'no pull-request caller of static-quality was found at all').toBeGreaterThan(0);
   });
+
+  it('every pull-request caller of web-quality passes base-ref', () => {
+    /*
+     * The same silent skip, one task over, and it was live.
+     *
+     * `web-quality` gained a touched-file coverage floor. `coverage-gate.mjs`
+     * skips that rule when the changed-file list is empty, and the list is built
+     * from `base-ref` — which this caller did not pass. So the reusable workflow
+     * defaulted it to `''`, the changed-files step wrote an empty list, and a
+     * 60% floor that the baseline described as refusing an untested edit could
+     * not fire on a single pull request, with every job green.
+     *
+     * `static-quality` is asserted above for exactly this reason. Nothing
+     * asserted it for `web-quality`, so widening the step's `if:` looked like
+     * the fix and left the caller untouched.
+     */
+    const callers = readdirSync(WORKFLOWS).filter((f) => f.endsWith('.yml'));
+    let checked = 0;
+    for (const file of callers) {
+      const source = readFileSync(join(WORKFLOWS, file), 'utf8');
+      if (!source.includes('_reusable-node-quality.yml')) continue;
+      if (!source.includes('task: web-quality')) continue;
+      if (!firesOnPullRequest(source)) continue;
+      const job = source.slice(source.indexOf('task: web-quality'));
+      const body = job.slice(0, job.indexOf('\n\n') === -1 ? undefined : job.indexOf('\n\n'));
+      expect(
+        body,
+        `${file} calls web-quality on a pull request without base-ref, so its touched-file ` +
+          'coverage floor inspects nothing'
+      ).toContain('base-ref:');
+      checked += 1;
+    }
+    expect(checked, 'no pull-request caller of web-quality was found at all').toBeGreaterThan(0);
+  });
 });

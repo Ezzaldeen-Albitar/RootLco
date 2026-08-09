@@ -164,6 +164,14 @@ jobs:
     with:
       task: web-quality
       ref: ${{ needs.change-detection.outputs.head-sha }}
+      # REQUIRED, and its absence was silent. `web-quality` now carries a
+      # touched-file coverage floor, and `coverage-gate.mjs` skips that rule
+      # entirely when the changed-file list is empty. Without this input the
+      # reusable workflow defaults `base-ref` to '', the changed-files step takes
+      # its else branch and writes an EMPTY list, and the 60% floor governs
+      # nothing while every job stays green — the floor's own baseline
+      # meanwhile claiming it refuses an untested edit.
+      base-ref: ${{ github.event.pull_request.base.ref }}
     permissions:
       contents: read
 
