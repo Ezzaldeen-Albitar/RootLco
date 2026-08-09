@@ -37,6 +37,20 @@ const schema = z.object({
    * test asserts the two agree.
    */
   NEXT_PUBLIC_API_BASE_URL: z.string().url().default('http://localhost:3000'),
+  /**
+   * Where client diagnostics are delivered, if a deployment operates a sink.
+   *
+   * **Optional, with no default, on purpose.** `P1-27-DO-002` is about the
+   * monitoring adapter having had zero production callers; the answer is a
+   * caller a deployment can switch on, not a URL invented here. Unset means
+   * `installConfiguredMonitoringAdapter` installs nothing and
+   * `currentAdapter()` stays `null` — the documented, tested default. No vendor
+   * is named and no external service is claimed to exist.
+   *
+   * Setting it is not sufficient on its own: the origin must also appear in
+   * `connect-src` in `src/proxy.ts`, or the browser blocks the delivery.
+   */
+  NEXT_PUBLIC_CLIENT_MONITORING_URL: z.string().url().optional(),
 });
 
 export type PublicEnv = z.infer<typeof schema>;
@@ -45,6 +59,7 @@ function read(): PublicEnv {
   const parsed = schema.safeParse({
     NEXT_PUBLIC_APP_ENV: process.env.NEXT_PUBLIC_APP_ENV,
     NEXT_PUBLIC_API_BASE_URL: process.env.NEXT_PUBLIC_API_BASE_URL,
+    NEXT_PUBLIC_CLIENT_MONITORING_URL: process.env.NEXT_PUBLIC_CLIENT_MONITORING_URL,
   });
 
   if (!parsed.success) {

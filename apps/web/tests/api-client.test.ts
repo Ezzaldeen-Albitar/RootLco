@@ -1,12 +1,21 @@
 import { describe, expect, it, vi } from 'vitest';
+import ar from '../src/i18n/messages/ar.json';
+import en from '../src/i18n/messages/en.json';
 import {
   ApiClient,
   CORRELATION_HEADER,
   FAILURE_MESSAGE_KEY,
+  VIOLATION_FALLBACK_KEY,
+  VIOLATION_KEY_PREFIX,
   assertBaseUrl,
+  controlNameFor,
   fieldErrorsOf,
+  violationKeysOf,
+  violationMessageKey,
   type ApiFailure,
+  type Violation,
 } from '@/lib/api/client';
+import { fromFailure } from '@/lib/forms/action-result';
 
 const BASE = 'https://api.example.test';
 
@@ -223,23 +232,65 @@ describe('problem details are mapped to a kind', () => {
     expect((result as ApiFailure).kind).toBe(kind);
   });
 
+  /**
+   * The two tests below used to run against a problem document **this repository
+   * has never sent** (`P1-27-QA-002`).
+   *
+   * The first asserted `problem.errorCode`; the API emits `code`. The second
+   * asserted `problem.errors` as a map of field to sentences; the API emits
+   * `violations`, a list of `{ path, rule }` pairs carrying no prose at all.
+   * Both passed, because both fixtures were written from the client's
+   * declaration rather than from `apps/api/src/server/errors/problem.ts`. What
+   * they proved was that the client agreed with itself.
+   *
+   * What that cost: `fieldErrorsOf` read `problem.errors`, so it returned `{}`
+   * for every real validation failure, and no form in CRM or Vehicle could show
+   * a field-level error. A green suite over an invented fixture is worse than no
+   * suite, because it answers the question nobody asks again.
+   *
+   * The fixtures below are the real shape. Every field in them appears in
+   * `ProblemDocument`, and no field of `ProblemDocument` is spelled differently.
+   */
   it('keeps the problem document for a caller that needs the error code', async () => {
     const fetchImpl = vi.fn(async () =>
-      respond(403, { title: 'Forbidden', status: 403, errorCode: 'ERR-IAM-001' })
-    );
-    const result = (await clientWith(fetchImpl as never).get('/x')) as ApiFailure;
-    expect(result.problem?.errorCode).toBe('ERR-IAM-001');
-  });
-
-  it('flattens field errors for a form resolver', async () => {
-    const fetchImpl = vi.fn(async () =>
-      respond(422, {
-        status: 422,
-        errors: { name: ['Name is required', 'and too short'], amount: ['Not a decimal'] },
+      respond(403, {
+        type: 'urn:rootlco:error:ERR-IAM-001',
+        title: 'Permission denied',
+        status: 403,
+        code: 'ERR-IAM-001',
+        correlationId: 'srv-corr-1',
+        requiredPermissions: ['iam.role.read'],
       })
     );
     const result = (await clientWith(fetchImpl as never).get('/x')) as ApiFailure;
-    expect(fieldErrorsOf(result)).toEqual({ name: 'Name is required', amount: 'Not a decimal' });
+    expect(result.problem?.code).toBe('ERR-IAM-001');
+    // Sent by the API and previously undeclared, so a caller could not read them
+    // without a cast.
+    expect(result.problem?.correlationId).toBe('srv-corr-1');
+    expect(result.problem?.requiredPermissions).toEqual(['iam.role.read']);
+  });
+
+  it('flattens field violations for a form resolver, as translation keys', async () => {
+    const fetchImpl = vi.fn(async () =>
+      respond(422, {
+        type: 'urn:rootlco:error:ERR-VAL-001',
+        title: 'Validation failed',
+        status: 422,
+        code: 'ERR-VAL-001',
+        correlationId: 'srv-corr-2',
+        violations: [
+          { path: 'body.givenName', rule: 'too_small' },
+          // A second complaint about the same control. The first wins.
+          { path: 'body.givenName', rule: 'invalid_format' },
+          { path: 'body.preferredLocale', rule: 'too_big' },
+        ],
+      })
+    );
+    const result = (await clientWith(fetchImpl as never).get('/x')) as ApiFailure;
+    expect(fieldErrorsOf(result)).toEqual({
+      givenName: 'form.violation.too_small',
+      preferredLocale: 'form.violation.too_big',
+    });
   });
 
   it('returns no field errors for a non-validation failure, without a guard', async () => {
@@ -347,8 +398,11 @@ describe('mutations', () => {
 
 describe('what a user may be told', () => {
   it('maps every failure kind to a translation key, never to server text', () => {
-    // `problem.detail` is server-authored and can name an internal path, a table
-    // or a constraint. It is deliberately absent from this map.
+    // This comment used to warn against `problem.detail`. There is no such wire
+    // field — the only prose the problem document carries is `title`, written
+    // for a developer reading an error catalog and in English, in a product that
+    // is Arabic-first. `title` is deliberately absent from this map, and the
+    // point stands: what a user is shown is a key this application owns.
     const kinds = [
       'unauthenticated',
       'forbidden',
@@ -365,5 +419,293 @@ describe('what a user may be told', () => {
     for (const kind of kinds) {
       expect(FAILURE_MESSAGE_KEY[kind], kind).toMatch(/^(state|form)\./);
     }
+  });
+});
+
+/**
+ * `P1-27-QA-002` — the client's declared contract is now the real one.
+ *
+ * ## What was false
+ *
+ * `ProblemDetails` declared `detail`, `instance`, `errorCode` and
+ * `errors: Record<string, string[]>`. The API — `apps/api/src/server/errors/problem.ts:25-44`
+ * — publishes `type`, `title`, `status`, `code`, `correlationId`, and
+ * optionally `violations`, `retryAfterSeconds`, `contract` and
+ * `requiredPermissions`. Not one of the four declared extension fields exists on
+ * the wire.
+ *
+ * `fieldErrorsOf` read `problem.errors`. It therefore returned `{}` for every
+ * real 422 that has ever been sent, and no form in CRM or Vehicle could show a
+ * field-level error. The old tests passed because their fixtures were copied
+ * from the declaration.
+ *
+ * ## What these tests do differently
+ *
+ * Every fixture below is the shape `problemFor` builds. The rule tokens are
+ * tokens that appear in `apps/api/src`, and the paths are path forms that appear
+ * there — `toViolations` joins the request part to the Zod issue path, so
+ * `body.preferredLocale` and a bare `body` are both real.
+ */
+
+const REAL_RULES = [
+  'invalid_type',
+  'too_small',
+  'too_big',
+  'required',
+  'max_length',
+  'not_found',
+  'not_owned',
+  'custom',
+  'empty_patch',
+  'unknown_reference',
+  'unknown_currency',
+  'unit_mismatch',
+  'branch_company_mismatch',
+  'invalid_format',
+] as const;
+
+function validationFailure(violations: readonly Violation[]): ApiFailure {
+  return {
+    ok: false,
+    kind: 'validation',
+    status: 422,
+    problem: {
+      type: 'urn:rootlco:error:ERR-VAL-001',
+      title: 'Validation failed',
+      status: 422,
+      code: 'ERR-VAL-001',
+      correlationId: 'corr-violation',
+      violations,
+    },
+    correlationId: 'corr-violation',
+  };
+}
+
+describe('a violation path names a control', () => {
+  it.each([
+    ['body.preferredLocale', 'preferredLocale'],
+    ['body.contactPointId', 'contactPointId'],
+    ['query.limit', 'limit'],
+    ['query.branchId', 'branchId'],
+    // `toViolations` joins the whole Zod path, so a nested or indexed field
+    // arrives with its parents attached. The leaf is the control.
+    ['body.contactPoints.0.value', 'value'],
+    // Hand-thrown violations in the API sometimes carry no request part at all.
+    ['sequenceCode', 'sequenceCode'],
+    ['path.userId', 'userId'],
+  ])('%s names the control %s', (path, control) => {
+    expect(controlNameFor(path)).toBe(control);
+  });
+
+  it.each(['body', 'query', 'path', 'params'])(
+    'a bare %s names no control, because it is about the whole request',
+    (path) => {
+      expect(controlNameFor(path)).toBeNull();
+    }
+  );
+});
+
+describe('a field violation reaches the right control with the right key', () => {
+  it('maps the real path form to the control the form actually renders', () => {
+    // `CustomerCreateScreen` reads `state.fieldErrors?.['preferredLocale']`. If
+    // the key were `body.preferredLocale` the control would show nothing, which
+    // is indistinguishable on screen from the empty map the old code returned.
+    const failure = validationFailure([{ path: 'body.preferredLocale', rule: 'too_small' }]);
+    expect(fieldErrorsOf(failure)).toEqual({ preferredLocale: 'form.violation.too_small' });
+  });
+
+  it('keeps the first violation per control and drops the rest, in wire order', () => {
+    const failure = validationFailure([
+      { path: 'body.givenName', rule: 'required' },
+      { path: 'body.givenName', rule: 'too_big' },
+      { path: 'body.familyName', rule: 'max_length' },
+    ]);
+    expect(fieldErrorsOf(failure)).toEqual({
+      givenName: 'form.violation.required',
+      familyName: 'form.violation.max_length',
+    });
+  });
+
+  it('returns nothing for a failure that is not a validation failure', () => {
+    const denied: ApiFailure = {
+      ok: false,
+      kind: 'forbidden',
+      status: 403,
+      problem: { code: 'ERR-IAM-001', requiredPermissions: ['crm.customer.write'] },
+      correlationId: 'corr-denied',
+    };
+    expect(fieldErrorsOf(denied)).toEqual({});
+    expect(violationKeysOf(denied).formKeys).toEqual([]);
+  });
+
+  it('never returns anything that is not a translation key', () => {
+    // The API sends no prose in a violation, and nothing in this path may invent
+    // any. A response that tries — an extra `message` field — must be ignored,
+    // not rendered.
+    const failure = validationFailure([
+      { path: 'body.givenName', rule: 'too_small', message: '<b>Name is too short</b>' },
+    ] as unknown as readonly Violation[]);
+    for (const value of Object.values(fieldErrorsOf(failure))) {
+      expect(value.startsWith(VIOLATION_KEY_PREFIX), value).toBe(true);
+    }
+  });
+});
+
+describe('a rule the catalogue does not carry falls back rather than leaking', () => {
+  /**
+   * The API emits well over eighty distinct rule tokens across eleven backend
+   * modules and gains more each phase, so the catalogue cannot be exhaustive and
+   * the fallback is the normal path, not the exceptional one.
+   *
+   * The token below is asserted to be absent from BOTH catalogues first. Without
+   * that assertion this test would silently stop testing the fallback the day
+   * someone added a message for it.
+   */
+  const UNCATALOGUED = 'unregistered_aggregate';
+
+  it('is a rule no message file carries', () => {
+    const key = `${VIOLATION_KEY_PREFIX}${UNCATALOGUED}`;
+    expect(Object.keys(en)).not.toContain(key);
+    expect(Object.keys(ar)).not.toContain(key);
+  });
+
+  it('maps it to the fallback key', () => {
+    expect(violationMessageKey(UNCATALOGUED)).toBe(VIOLATION_FALLBACK_KEY);
+    const failure = validationFailure([{ path: 'body.aggregate', rule: UNCATALOGUED }]);
+    expect(fieldErrorsOf(failure)).toEqual({ aggregate: VIOLATION_FALLBACK_KEY });
+  });
+
+  it('maps a rule token that is a lookalike of a key, not a key', () => {
+    // A response that sends `rule: 'invalid'` gets the fallback because the
+    // catalogue happens to carry it; a response that sends something shaped like
+    // a path must not be able to reach outside the namespace.
+    expect(violationMessageKey('../../state.error.title')).toBe(VIOLATION_FALLBACK_KEY);
+    expect(violationMessageKey('')).toBe(VIOLATION_FALLBACK_KEY);
+  });
+});
+
+describe('a violation about the whole request is not swallowed', () => {
+  it('surfaces at form level as the banner key', () => {
+    // `empty_patch` — a save with nothing changed. It names no control, so
+    // before this it was dropped and the operator saw a refusal with no reason.
+    const failure = validationFailure([{ path: 'body', rule: 'empty_patch' }]);
+    const keys = violationKeysOf(failure);
+    expect(keys.fieldErrors).toEqual({});
+    expect(keys.formKeys).toEqual(['form.violation.empty_patch']);
+
+    const state = fromFailure(failure, 1);
+    expect(state.status).toBe('invalid');
+    expect(state.messageKey).toBe('form.violation.empty_patch');
+    // One shape. No new field for a screen to forget to render — every form in
+    // this phase already renders `messageKey`.
+    expect(state.fieldErrors).toBeUndefined();
+  });
+
+  it('carries both halves when the response carries both', () => {
+    const failure = validationFailure([
+      { path: 'body', rule: 'empty_patch' },
+      { path: 'body.givenName', rule: 'required' },
+    ]);
+    const state = fromFailure(failure, 2);
+    expect(state.messageKey).toBe('form.violation.empty_patch');
+    expect(state.fieldErrors).toEqual({ givenName: 'form.violation.required' });
+  });
+
+  it('still lets a deliberately uninformative override win', () => {
+    // Sign-in. Every distinguishable failure there is an enumeration oracle, and
+    // a whole-request violation leaking past the override would reopen it.
+    const failure = validationFailure([{ path: 'body', rule: 'empty_patch' }]);
+    expect(fromFailure(failure, 3, 'auth.signIn.failed').messageKey).toBe('auth.signIn.failed');
+  });
+
+  it('falls back to the generic banner when there is no whole-request violation', () => {
+    const failure = validationFailure([{ path: 'body.givenName', rule: 'required' }]);
+    expect(fromFailure(failure, 4).messageKey).toBe('form.formError');
+  });
+});
+
+describe('every key this path can emit exists in both catalogues', () => {
+  /**
+   * Read from the message files, never from a list copied into this test. A
+   * copied list would pass while the catalogue was empty, which is exactly the
+   * failure this whole task is about.
+   */
+  const enKeys = new Set(Object.keys(en));
+  const arKeys = new Set(Object.keys(ar));
+
+  it('is not vacuous — the catalogue really does carry violation messages', () => {
+    const namespaced = [...enKeys].filter((key) => key.startsWith(VIOLATION_KEY_PREFIX));
+    expect(namespaced.length).toBeGreaterThanOrEqual(REAL_RULES.length + 1);
+  });
+
+  it('resolves the fallback in both languages', () => {
+    expect(enKeys).toContain(VIOLATION_FALLBACK_KEY);
+    expect(arKeys).toContain(VIOLATION_FALLBACK_KEY);
+  });
+
+  it.each(REAL_RULES)('%s resolves in both languages', (rule) => {
+    const key = violationMessageKey(rule);
+    // Not the fallback: each of these tokens is one a form can really produce,
+    // so a generic message for it would be a silent downgrade.
+    expect(key, `${rule} silently fell back`).toBe(`${VIOLATION_KEY_PREFIX}${rule}`);
+    expect(enKeys, `${key} missing from en`).toContain(key);
+    expect(arKeys, `${key} missing from ar`).toContain(key);
+  });
+
+  it('defines the same violation keys in both files, and no empty message', () => {
+    const inEn = [...enKeys].filter((key) => key.startsWith(VIOLATION_KEY_PREFIX)).sort();
+    const inAr = [...arKeys].filter((key) => key.startsWith(VIOLATION_KEY_PREFIX)).sort();
+    expect(inAr).toEqual(inEn);
+    for (const key of inEn) {
+      expect(String((en as Record<string, string>)[key]).trim().length, key).toBeGreaterThan(0);
+      expect(String((ar as Record<string, string>)[key]).trim().length, key).toBeGreaterThan(0);
+      // The Arabic file must contain Arabic. A copy-paste that leaves the
+      // English string behind reads as translated to anyone who does not read
+      // Arabic and is invisible to a key-completeness check.
+      expect(/[؀-ۿ]/.test(String((ar as Record<string, string>)[key])), key).toBe(true);
+    }
+  });
+
+  it('emits nothing outside its own namespace, for any rule token at all', () => {
+    for (const rule of [...REAL_RULES, 'unknown_thing', 'x', '__proto__', 'a.b.c']) {
+      expect(violationMessageKey(rule).startsWith(VIOLATION_KEY_PREFIX), rule).toBe(true);
+    }
+  });
+});
+
+describe('a hostile response cannot reshape the result', () => {
+  it('treats a __proto__ path as an ordinary control name', () => {
+    const failure = validationFailure([
+      { path: 'body.__proto__', rule: 'custom' },
+      { path: 'body.givenName', rule: 'required' },
+    ]);
+    const errors = fieldErrorsOf(failure);
+    expect(errors['givenName']).toBe('form.violation.required');
+    // The prototype of a fresh object is untouched: nothing was written through
+    // a setter.
+    expect(Object.getPrototypeOf({})).toBe(Object.prototype);
+    expect(({} as Record<string, unknown>)['givenName']).toBeUndefined();
+  });
+
+  it('ignores a violation that is not two strings', () => {
+    const failure = validationFailure([
+      null,
+      { path: 'body.givenName' },
+      { rule: 'required' },
+      { path: 42, rule: 'required' },
+      { path: 'body.familyName', rule: 'required' },
+    ] as unknown as readonly Violation[]);
+    expect(fieldErrorsOf(failure)).toEqual({ familyName: 'form.violation.required' });
+  });
+
+  it('ignores violations that are not a list', () => {
+    const failure: ApiFailure = {
+      ok: false,
+      kind: 'validation',
+      status: 422,
+      problem: { violations: 'nope' } as never,
+      correlationId: 'corr-hostile',
+    };
+    expect(fieldErrorsOf(failure)).toEqual({});
   });
 });
