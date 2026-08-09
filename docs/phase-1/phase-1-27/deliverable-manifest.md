@@ -385,7 +385,7 @@ records.
 
 ## 6. Test files
 
-### 6.1 Web unit and component — `apps/web/tests` (70 files, 1467 cases, 0 failed)
+### 6.1 Web unit and component — `apps/web/tests` (70 files, 1493 cases, 0 failed)
 
 **The file half of that heading is derived. The case half is a measurement, and
 this section now says which is which** (`E-03`).

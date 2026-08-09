@@ -588,11 +588,19 @@ describe('the status selects offer only moves the server will accept', () => {
    * legitimate and was told nothing.
    *
    * Present tense is wrong now and this said "reads". The ProblemDetails
-   * correction made the client read `violations`, and
-   * `vehicle-profile-field-errors.dom.test.tsx` drives a real 422 through to
-   * the control it names. The option sets below are still the primary fix — an
-   * option whose only answer is a 422 should not be offered — and are what this
-   * block asserts.
+   * correction made the client read `violations`, and the describe block lower
+   * in THIS file — "the field errors a real 422 carries reach the controls it
+   * names" — drives a real 422 through to the control it names.
+   *
+   * That sentence first named a separate file, `vehicle-profile-field-errors`,
+   * which was written and then folded into this one when it pushed the web test
+   * file count past the figure the deliverable manifest asserts. The reference
+   * was not updated with the move, so a docblock named a file that does not
+   * exist — in the commit that corrected two other docblocks for saying things
+   * that were not true. Caught by the adversarial pass, not by any gate.
+   *
+   * The option sets below are still the primary fix — an option whose only
+   * answer is a 422 should not be offered — and are what this block asserts.
    *
    * These assert the OPTION SETS, because that is where the defect lived. The
    * panel-level gating is covered above and is a different question.
