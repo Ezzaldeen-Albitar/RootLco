@@ -61,8 +61,15 @@ Counted precisely, because these numbers drifted once already and are now
 reconciled against the filesystem by `tests/ci/documented-counts.test.ts`:
 **9 reusable workflows**, **7 top-level workflows** (the six above plus the
 retained `ci.yml`), **1 composite action**, **44 scripts in `scripts/ci`**,
-**13 baselines**, **25 documents** under `docs/engineering/ci-automation`, and
+**14 baselines**, **25 documents** under `docs/engineering/ci-automation`, and
 **14 workflow-security rules**.
+
+The baseline count moved from 13 to 14 in `P1-27-QA-001`, which added
+`coverage-baseline.web.json` — the first coverage baseline the web tier has ever
+had. Until then `apps/web/vitest.config.ts` declared two projects and no
+`coverage` block at all, the repository-root config's `include` list was entirely
+`apps/api/src`, and neither committed coverage baseline mentioned `apps/web`, so
+"Unit and component coverage" was a task with nothing measuring either half.
 
 The `scripts/ci` count moved from 27 to 28 in the Main Branch Governance and
 Ruleset Alignment gate, which added `check-promotion-source.mjs` — the gate that
