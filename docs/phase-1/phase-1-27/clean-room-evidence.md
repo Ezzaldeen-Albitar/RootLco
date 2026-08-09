@@ -10,27 +10,53 @@ a warm cache or a file that was never committed can all carry the result.
 
 ---
 
-## The two SHAs, and why they cannot be one
+## SUPERSEDED — this record awaits the final candidate
 
-A measurement changes the tree it is recorded in. The commit that writes this
-page is necessarily a descendant of the commit the page describes, so a document
-that names a single head is either describing its own parent without saying so or
-naming a head it never ran against. This one names both:
+**Everything under "What was measured" describes head
+`356f1a1e937e819b9db94f40a2d6f04f98f9ae39` and is no longer current.** It is kept
+rather than deleted, and it must not be quoted as this phase's clean-room result.
 
-| property              | value                                                                       |
-| --------------------- | --------------------------------------------------------------------------- |
-| `CODE_CANDIDATE_SHA`  | `356f1a1e937e819b9db94f40a2d6f04f98f9ae39`                                   |
-| `EVIDENCE_RECORD_SHA` | the commit carrying this file — a descendant, **documents only**             |
+### The claim that was false, and why it is not simply re-pointed
 
-The distinction is only harmless because of the second half: the recording
-commits change documents and nothing else, so every code-derived number below is
-identical at both heads. `tests/ci/p1-27-evidence-manifest.test.ts` re-derives
-the counts from the repository on every run rather than trusting this page, which
-is what makes that claim checkable instead of asserted.
+This section previously read:
 
-This is the honest shape of the problem, not a workaround for it. The audit's
-complaint was never that two SHAs existed — it was that the page pinned one,
-seven characters long, forty-seven commits behind the tree, and said nothing.
+> | `EVIDENCE_RECORD_SHA` | the commit carrying this file — a descendant,
+> **documents only** |
+>
+> The distinction is only harmless because of the second half: the recording
+> commits change documents and nothing else, so every code-derived number below
+> is identical at both heads.
+
+`git diff --name-only 356f1a1e..HEAD` returned **five non-document paths**. The
+justification was false when it was written, and the only check on it asserted
+that the *sentence was present* — a docblock stating a rule the code does not
+implement, which is this phase's named dominant defect class, appearing in the
+document that records the phase.
+
+Re-pointing `CODE_CANDIDATE_SHA` at a newer head would repeat the mistake in a
+fresher form. The rule is stated as a derivation instead:
+
+```text
+CODE_CANDIDATE_SHA     the newest commit touching any non-document path
+EVIDENCE_RECORD_SHA    the commit carrying this file
+EXECUTABLE_DIFF_COUNT  git diff --name-only CODE_CANDIDATE_SHA..EVIDENCE_RECORD_SHA
+                       excluding docs/ and *.md
+```
+
+`DOCUMENTATION_ONLY_RECORDING` may be claimed **only** when
+`EXECUTABLE_DIFF_COUNT` is exactly zero. It is not a phrase to be written on a
+page; it is a number produced by that command.
+
+### Why there is no current measurement
+
+The branch is still receiving code. Round five refuted the previous candidate —
+three product defects, a form-reset inventory that could not see the files
+containing them, and a web test-count floor satisfied by a suite in which nothing
+executed — so the head described below is not a candidate for anything.
+
+A clean room recorded against a moving branch is stale on arrival, which is the
+defect `P1-27-QA-005` was raised about. The measurement is taken ONCE, against
+the true final candidate, and **`QA-005` is OPEN until that candidate exists.**
 
 ---
 
@@ -57,12 +83,21 @@ then every tier run in that copy.
 | `verify:classifications`          | pass                                                |
 | `validate:*` exceptions           | two, named below, both properties of the room       |
 
-The web figure is the count `tests/ci/p1-27-evidence-manifest.test.ts` reconciles
-against the tree: **65 web test files** on disk, every one of them matched by a
+The web figure above was 65 files at that head. The count reconciled against the
+LIVE tree is stated in `## Current tree` below; it moves as the branch does,
+which is why a superseded block must never be the thing a test reads.
+
+Every web test file must be matched by a
 `vitest` project. That last clause is a separate assertion for a reason — the
 `logic` project includes `tests/**/*.test.ts` and `dom` includes
 `tests/**/*.dom.test.{ts,tsx}`, so a plain `*.test.tsx` matches neither and would
 sit in the tree looking like coverage while running nowhere.
+
+## Current tree
+
+Derived on every run by `tests/ci/p1-27-evidence-manifest.test.ts` rather than
+recorded by hand. The live web suite holds **66 web test files**, every one of
+them matched by a `vitest` project.
 
 ## Hosted corroboration at the same head
 

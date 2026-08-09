@@ -9,24 +9,29 @@ hosted green run prove different things, and neither is a superset of the other.
 
 ---
 
-## The exact-head run this phase closes on
+## SUPERSEDED — an exact-head run, at a head that is no longer the candidate
 
-`P1-27-QA-005` asked for hosted-CI evidence at the head under audit, and found
-none. This is that record. It names the same `CODE_CANDIDATE_SHA` as
-`clean-room-evidence.md`, and `tests/ci/p1-27-evidence-manifest.test.ts` fails if
-the two documents ever disagree about which tree they describe.
+`P1-27-QA-005` asked for hosted-CI evidence at the head under audit and found
+none. This was that record, and it is kept as history rather than deleted.
 
-| property             | value                                                                                |
-| -------------------- | ------------------------------------------------------------------------------------ |
-| Pull request         | #214 → `develop`                                                                     |
-| `CODE_CANDIDATE_SHA` | `356f1a1e937e819b9db94f40a2d6f04f98f9ae39`                                           |
-| Workflow run         | `31312531302`                                                                        |
-| Required checks      | **20 completed · 0 failed · 0 pending**                                              |
-| `ci-gate`            | **Go** — 13 governed jobs, every one `accepted: yes`                                 |
-| CodeQL open alerts   | **0**, repository-wide, not merely on this ref                                       |
-| Dependency policy    | pass — 0 production advisories, 0 development, 0 prohibited packages                 |
-| Secret scan          | pass                                                                                 |
-| Container image      | `sha256:a8d1c7af634328f14b03cbfe3b1eea2debfc8001a0974f9276545c47d88e50d4`, 197.2 MiB |
+**It is not this phase's closing evidence.** Round five refuted the candidate it
+describes, and `clean-room-evidence.md` explains why the measurement is taken
+once, against the true final candidate. Until that exists, this page names no
+current head — a stale head presented as current is exactly the defect `QA-005`
+was raised about, and re-pointing it at a newer head each time the branch moves
+would reproduce that defect in a fresher form.
+
+| property           | value                                                                                |
+| ------------------ | ------------------------------------------------------------------------------------ |
+| Pull request       | #214 → `develop`                                                                     |
+| Head at that time  | `356f1a1e937e819b9db94f40a2d6f04f98f9ae39` — **superseded**                          |
+| Workflow run       | `31312531302`                                                                        |
+| Required checks    | **20 completed · 0 failed · 0 pending**                                              |
+| `ci-gate`          | **Go** — 13 governed jobs, every one `accepted: yes`                                 |
+| CodeQL open alerts | **0**, repository-wide, not merely on this ref                                       |
+| Dependency policy  | pass — 0 production advisories, 0 development, 0 prohibited packages                 |
+| Secret scan        | pass                                                                                 |
+| Container image    | `sha256:a8d1c7af634328f14b03cbfe3b1eea2debfc8001a0974f9276545c47d88e50d4`, 197.2 MiB |
 
 The per-tier totals, the coverage figures and the RLS matrix are recorded once,
 in `clean-room-evidence.md`, so the two records cannot drift into disagreeing

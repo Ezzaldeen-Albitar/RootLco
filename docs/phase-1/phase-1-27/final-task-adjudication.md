@@ -85,7 +85,7 @@ All 33 are adjudicated below.
 | `QA-001`  | `REAL_P1_27_DEFECT`    | FIXED `0272e1d`     | itself    |
 | `QA-002`  | `REAL_P1_27_DEFECT`    | FIXED `0272e1d`     | itself    |
 | `QA-003`  | `TEST_OR_GATE_DEFECT`  | FIXED `0c19f51`     | itself    |
-| `QA-005`  | `TEST_OR_GATE_DEFECT`  | FIXED `ed7b942`     | itself    |
+| `QA-005`  | `TEST_OR_GATE_DEFECT`  | OPEN (reopened)     | itself    |
 | `DO-002`  | `AUDIT_FALSE_NEGATIVE` | no change needed    | itself    |
 | `DOC-001` | `TEST_OR_GATE_DEFECT`  | FIXED (records)     | itself    |
 | `DOC-002` | `TEST_OR_GATE_DEFECT`  | FIXED (both halves) | itself    |
@@ -93,10 +93,10 @@ All 33 are adjudicated below.
 
 ```
 ADJUDICATED       = 33
-FIXED             = 32
+FIXED             = 31
 NO_CHANGE_NEEDED  =  1     DO-002  -- see the retraction below; this is wrong
 BLOCKED           =  0     (was 1: FE-029, unblocked by PR #212)
-OPEN              =  0     (was 1: QA-005, closed at ed7b942)
+OPEN              =  1     QA-005, REOPENED -- its evidence describes a superseded head
 ```
 
 ## RETRACTED — this block said `RESOLVED / 42 = 42` and that does not follow

@@ -28,20 +28,20 @@
       "bytes": 3724
     },
     "docs/phase-1/phase-1-27/ci-evidence.md": {
-      "sha256": "d9163b2689ff819ab446621e875dd92def2518485ea0836e40343dce36ebb92d",
-      "bytes": 6873
+      "sha256": "df1c12e79ed9fd24b19e9bffcdea9a9d3f27279be101996abc965363be0086b1",
+      "bytes": 7195
     },
     "docs/phase-1/phase-1-27/clean-room-evidence.md": {
-      "sha256": "9315c09cd4aaaa579d00e1ee53167a23c92fed84887d5eea133f9fead34caf88",
-      "bytes": 10472
+      "sha256": "6d02dbaa2f8ed65ae5f6b806d5619169f3f62fd1028d5ed94097560d71396a0b",
+      "bytes": 11623
     },
     "docs/phase-1/phase-1-27/contract-archaeology.md": {
       "sha256": "5832747388575cc788af0304cc972882b4c33e135b6c92f60740695b99143661",
       "bytes": 24145
     },
     "docs/phase-1/phase-1-27/deliverable-manifest.md": {
-      "sha256": "8ccb7953ba53b1dfc8b6ac3991e4559f07bd05ef8729d19db7ad86ba5b7dbf76",
-      "bytes": 117994
+      "sha256": "06fbea06585bbf4145ea55530b81afc4255014dbf72bbb25e7b91ce8cd133053",
+      "bytes": 118255
     },
     "docs/phase-1/phase-1-27/developer-guide.md": {
       "sha256": "0480b4042b48e3ae9d0df7b44966097e1a808b5642c59940851a96ee7a22b7e2",
@@ -64,8 +64,8 @@
       "bytes": 27435
     },
     "docs/phase-1/phase-1-27/final-task-adjudication.md": {
-      "sha256": "499e2b035616587e74ca80d6eb8a956ea15e6641e39b3805c78e2d361e335ce6",
-      "bytes": 61548
+      "sha256": "bcb0f3f7447f353c471a4765bab05ad9e343e8502034eda504bc261688c6a435",
+      "bytes": 61574
     },
     "docs/phase-1/phase-1-27/finding-phase-disposition.md": {
       "sha256": "1636f04e7a7448e6f56f4702d7f06c9d5a413c442b4f66394e1a6dc3593b0aa2",

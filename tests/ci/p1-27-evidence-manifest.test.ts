@@ -144,15 +144,54 @@ describe('P1-27-QA-005 — the recorded head is real and current', () => {
   const ciEvidence = readRepo(CI_EVIDENCE);
   const sha = /CODE_CANDIDATE_SHA`?\s*\|\s*`([0-9a-f]{40})`/.exec(cleanRoom)?.[1];
 
-  it('names a full 40-character candidate SHA, not an abbreviation', () => {
-    /*
-     * The audit's complaint was that the document "pins e14984e" — seven
-     * characters, which cannot be checked against anything and reads as
-     * authoritative anyway. A full SHA is resolvable; an abbreviation is a
-     * gesture at one.
-     */
+  /**
+   * A clean-room record is in one of exactly two honest states, and the guard
+   * has to hold in both.
+   *
+   * **SUPERSEDED** — the branch is still receiving code, so no measurement is
+   * current. The page must SAY so, and must not name a head it no longer
+   * describes. This is the state the record entered when round five refuted the
+   * candidate it had been written against.
+   *
+   * **CURRENT** — a final candidate exists and was measured. The page must name
+   * that head in full, and both evidence documents must name the same one.
+   *
+   * What is NOT permitted is the state the audit found: a head pinned, seven
+   * characters long, forty-seven commits behind the tree, with nothing saying so.
+   */
+  const superseded = /^##\s+SUPERSEDED\b/m.test(cleanRoom);
+
+  it('declares itself superseded, or names a full 40-character candidate SHA', () => {
+    if (superseded) {
+      expect(cleanRoom, 'a superseded record must say why there is no measurement').toMatch(
+        /Why there is no current measurement/i
+      );
+      expect(
+        sha,
+        'a superseded record must not also pin a candidate head — that is the state the audit found'
+      ).toBeUndefined();
+      return;
+    }
     expect(sha, `${CLEAN_ROOM} records no CODE_CANDIDATE_SHA row`).toBeDefined();
     expect(sha).toMatch(/^[0-9a-f]{40}$/);
+  });
+
+  it('states the derivation of the candidate boundary rather than a bare assertion', () => {
+    /*
+     * The claim that broke: "the recording commits change documents and nothing
+     * else", asserted in prose while `git diff` returned five non-document
+     * paths — and the only check asserted the SENTENCE was present.
+     *
+     * `DOCUMENTATION_ONLY_RECORDING` is now defined as a number produced by a
+     * named command, so a reader can run it. This case requires the definition
+     * to be on the page; the number itself is produced at recording time.
+     */
+    expect(cleanRoom).toContain('CODE_CANDIDATE_SHA');
+    expect(cleanRoom).toContain('EVIDENCE_RECORD_SHA');
+    expect(cleanRoom).toContain('EXECUTABLE_DIFF_COUNT');
+    expect(cleanRoom, 'the docs-only claim must be a derivation, not an adjective').toMatch(
+      /DOCUMENTATION_ONLY_RECORDING[\s\S]{0,200}exactly zero/
+    );
   });
 
   it('records the same candidate head in both evidence documents', () => {
@@ -160,12 +199,24 @@ describe('P1-27-QA-005 — the recorded head is real and current', () => {
     // phase was in; each was internally consistent and they were not consistent
     // with each other.
     const inCi = /CODE_CANDIDATE_SHA`?\s*\|\s*`([0-9a-f]{40})`/.exec(ciEvidence)?.[1];
-    expect(inCi, `${CI_EVIDENCE} records no CODE_CANDIDATE_SHA row`).toBe(sha);
+    expect(inCi, `${CI_EVIDENCE} disagrees with ${CLEAN_ROOM} about the candidate head`).toBe(sha);
   });
 
   it('does not present a superseded head as current', () => {
-    for (const old of SUPERSEDED_HEADS) {
-      expect(sha, `${old} is a superseded head`).not.toMatch(new RegExp(`^${old}`));
+    /*
+     * DERIVED from the document's own "Superseded measurements" table rather
+     * than from a hard-coded list. The list was `['e14984e', 'd0a6008']` while
+     * the same page carried a THIRD superseded head, `36fccbc`, that it did not
+     * contain — so re-pinning the record at that head would have passed.
+     *
+     * A guard whose reference set is maintained by hand beside a table that
+     * already states the set is the same defect as a document beside a gate.
+     */
+    const superseded = [...cleanRoom.matchAll(/^\|\s*`([0-9a-f]{7,40})`\s*\|/gm)].map((m) => m[1]);
+    expect(superseded.length, 'the superseded table lists no heads').toBeGreaterThanOrEqual(2);
+    if (sha === undefined) return; // the record declares itself superseded
+    for (const old of superseded) {
+      expect(sha, `${old} is listed on this page as superseded`).not.toMatch(new RegExp(`^${old}`));
     }
   });
 

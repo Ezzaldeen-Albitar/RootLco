@@ -119,9 +119,9 @@ exists, never as an argument that it works.
 | Feature source under the P1-27 ownership gate                          | **43**                                                             | command 2                                                                  |
 | Router pages (CRM and Vehicle)                                         | **8**                                                              | command 1                                                                  |
 | Shared-foundation source files changed by the phase or its remediation | **13** named in §5.5                                               | command 1, cross-read against the task register and the remediation record |
-| Web unit and component test files                                      | **65**                                                             | commands 1 and 8                                                           |
+| Web unit and component test files                                      | **66**                                                             | commands 1 and 8                                                           |
 | Playwright specification files                                         | **9** (2 anonymous, 7 authenticated)                               | commands 11 and 12                                                         |
-| Root CI-contract test files                                            | **33**                                                             | commands 1 and 10                                                          |
+| Root CI-contract test files                                            | **34**                                                             | commands 1 and 10                                                          |
 | CI gate scripts under `scripts/ci`                                     | **42** in the directory, **6** introduced or changed by this phase | command 1; the six are the `scripts/ci` rows of §7.1                       |
 | Web gate scripts under `apps/web/scripts`                              | **4** in the directory, **1** introduced by this phase             | command 1                                                                  |
 | Phase documentation under `docs/phase-1/phase-1-27`                    | **15** tracked                                                     | command 1, filtered to `.git/index` — see §1.3                             |
@@ -313,13 +313,16 @@ records.
 
 ## 6. Test files
 
-### 6.1 Web unit and component — `apps/web/tests` (65 files, 1216 cases, 0 failed)
+### 6.1 Web unit and component — `apps/web/tests` (66 files, 1231 cases, 0 failed)
 
 **The per-file table below is SUPERSEDED and is kept as a snapshot, not a
 status** (`MAN-04`). It records 39 files and 803 cases — the tier as it stood
-when the manifest was written. `npm run test:web` on this head reports **64
-files, 1208 passed, 0 failed, 0 skipped**, and the difference is entirely files
-this branch added while closing the Owner-acceptance findings and four rounds of
+when the manifest was written. `npm run test:web` reports the totals in the heading above, which the
+reconciliation test derives from the live tree on every run rather than from this
+sentence. Two earlier revisions stated 39/803 and then 64/1208 here while the
+heading beside them said something else — a stale number is bad, and two stale
+numbers disagreeing on one page is worse. The difference is entirely files this
+branch added while closing the Owner-acceptance findings and four rounds of
 adversarial review.
 
 A hand-maintained per-file table of a tier that grows every commit is stale on
