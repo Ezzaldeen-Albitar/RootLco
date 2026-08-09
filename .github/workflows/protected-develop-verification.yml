@@ -167,6 +167,12 @@ jobs:
   # so the last step derives what executed from the Playwright report and fails
   # unless every authenticated spec file contributed at least one executed test.
   # ===========================================================================
+  # NOT GOVERNED BY protected-gate. This job is absent from that gate's `needs`,
+  # so the gate can report Go while this check is red. Stated inside the job
+  # block rather than only in the file header because the check that requires it
+  # slices from the job name, and a sentence that lives above the slice is a
+  # sentence the reader of the job does not see. Repaying it is described in
+  # `.github/ci-baselines/unrun-test-tiers.json` under `howToClose`.
   authenticated-browser:
     name: authenticated-browser
     runs-on: ubuntu-latest

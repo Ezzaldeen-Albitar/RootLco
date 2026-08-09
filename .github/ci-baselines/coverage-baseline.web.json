@@ -31,9 +31,7 @@
   "whatTheHeadroomGuarantees": "With the 0.5 pp tolerance on top, the gate trips on: a net loss of more than 167 covered LINES, more than 9 covered FUNCTIONS, or more than 36 covered BRANCHES, at a constant denominator. Those are the bounds the numbers actually enforce, stated as bounds rather than as a slogan about deleting a file.",
   "denominatorTrapNote": "KNOWN TRAP, recorded because this project has already been bitten by it: a coverage percentage can FALL because v8 newly ENTERS code that was previously never loaded, so the module joins the denominator carrying its uncovered lines with it. `coverage.all` is true in apps/web/vitest.config.ts precisely so that cannot happen silently — every file matching the include list is already in the denominator whether a test imports it or not. If a metric still falls, cover the code. Never lower these numbers to make a run pass, and never raise them from a local measurement.",
   "touchedFileMinimum": 60,
-  "touchedFileExemptPrefixes": [
-    "apps/web/src/app/"
-  ],
+  "touchedFileExemptPrefixes": ["apps/web/src/app/"],
   "touchedFileNote": "The exemption is for the ROUTE tier only, and it is temporary rather than principled. `apps/web/src/app/[locale]/(dashboard)/**` is at 7.62% line coverage (162/2125 across 26 files) — async React Server Components that no test currently renders. A 60% touched-file floor over them would refuse every pull request that edits a page, for a gap this establishment run is RECORDING rather than fixing. It is NOT a claim that a route cannot be unit-tested; those files are deliberately still inside the measurement (see the exclusion comment in apps/web/vitest.config.ts), they simply carry their zeros in the global number instead of blocking unrelated work. Remove this prefix once the route tier is covered.",
   "knownGaps": [
     {
@@ -47,10 +45,7 @@
     },
     {
       "id": "zero-coverage-library-modules",
-      "paths": [
-        "apps/web/src/lib/format.ts",
-        "apps/web/src/lib/use-persisted-flag.ts"
-      ],
+      "paths": ["apps/web/src/lib/format.ts", "apps/web/src/lib/use-persisted-flag.ts"],
       "measured": 0,
       "raw": "0/31 and 0/40 lines",
       "why": "Two library modules with no test at all. They are the honest weak spot of this tier and are recorded rather than excluded. Note the consequence: they are NOT under the touched-file exemption, so a pull request that edits either is refused by the 60% touched-file floor until it carries a test. That is the gate working, not a fault to pre-empt."
