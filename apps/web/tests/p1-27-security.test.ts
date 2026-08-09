@@ -1,8 +1,13 @@
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CRM_PERMISSIONS, VEHICLE_PERMISSIONS, holds } from '@/features/crm/permissions';
+import { WRITE_PERMISSIONS, permittedWrites } from '@/features/crm/customers/governance-contract';
+import {
+  addNoteAction,
+  imposeRestrictionAction,
+} from '@/features/crm/customers/governance-actions';
 import { requiresIdempotencyKey, resolveOperation } from '@/lib/api/operation-contract';
 import { companyFilterQuery, query } from '@/lib/api/read-operation';
 import {
@@ -143,13 +148,129 @@ const PHASE_ROUTES = walk(ROUTES).filter((p) => /[\\/](crm|vehicles)[\\/]/.test(
  * upload-path rule most of all, since a file-input would be added to a form
  * component and nowhere else.
  */
-const MOVED_OUT = [
-  'components/party',
-  'components/duplicates',
-  'components/forms',
-  'lib/customers',
-  'lib/duplicates',
-];
+
+/* ------------------------------------------------------------------ *
+ * "The phase's surface" was defined three incompatible ways
+ * ------------------------------------------------------------------ */
+
+/**
+ * Every `@/components/*` and `@/lib/*` module directory the scanned trees IMPORT.
+ *
+ * ## The defect this replaces
+ *
+ * `MOVED_OUT` was a hand-written list of five directories, and so is the gate's
+ * `UNCOLLECTED_PHASE_MODULES`. Two hand-written lists of five, and a third
+ * definition in `SCAN_ROOTS` — three incompatible answers to "what is this
+ * phase's surface".
+ *
+ * A hand-written list can only fail when one of ITS entries goes missing. It can
+ * never fail because something was never added, which is the failure that
+ * happened: measured against the imports the scanned trees actually make, the
+ * five entries were 5 of 12 — and the largest omission was
+ * `components/data-table`, imported by 15 of the 51 scanned files and holding
+ * `DataTable.tsx`, the component that renders every customer and vehicle row on
+ * screen. Six sweeps claiming to cover "the phase's WHOLE surface" had never
+ * opened the file that draws the data they are about.
+ *
+ * ## The direction is now the other way round
+ *
+ * This function DERIVES the set from the source. `MODULE_DISPOSITION` below must
+ * carry a decision for every directory it returns, and nothing else — asserted
+ * as an equality — so a new import fails here and has to be decided, rather than
+ * being absent by construction and invisible forever.
+ *
+ * Read from the comment-STRIPPED sources, so a docblock naming `@/lib/anything`
+ * is not mistaken for an import of it. That matters here more than anywhere: the
+ * docblocks in these trees name modules precisely when explaining why they are
+ * NOT used.
+ */
+function importedModuleDirectories(): readonly string[] {
+  const found = new Set<string>();
+  const scanned = [
+    ...PHASE_FILES,
+    ...PHASE_ROUTES.map((path) => ({ path, source: code(readFileSync(path, 'utf8')) })),
+  ];
+  for (const { source } of scanned) {
+    for (const match of source.matchAll(/['"](@\/(?:components|lib)\/[^'"]+)['"]/g)) {
+      // `@/components/data-table/DataTable` → `components/data-table`, and
+      // `@/lib/page-metadata` (a FILE, not a directory) → `lib/page-metadata`.
+      // One rule for both, because the distinction is a fact about the
+      // filesystem and not about the import.
+      const directory = (match[1] ?? '').split('/').slice(1, 3).join('/');
+      if (directory) found.add(directory);
+    }
+  }
+  return [...found].sort();
+}
+
+/**
+ * What was DECIDED about each imported module, one entry per directory.
+ *
+ * Seven of these are newly visible, and each is a decision made here rather than
+ * an omission: `data-table`, `primitives`, `shell`, `states`, `lib/forms`,
+ * `lib/page-metadata` are folded in, and `lib/api` is not.
+ *
+ * ## Why `lib/api` is excluded, measured rather than asserted
+ *
+ * It is the platform transport, not this phase's surface, and folding it in
+ * would turn three pieces of CORRECT code red — the same "sixteen correct lines"
+ * trap the gate's own `UNCOLLECTED_PHASE_MODULES` docblock records:
+ *
+ *   - `idempotent-operations.ts` is the generated operation catalogue. It
+ *     CONTAINS `/exports` and `download-authorizations` as data — the very
+ *     operations the `SEC-002` sweeps prove this phase never CALLS. A sweep that
+ *     read the catalogue would accuse it of being the thing it is a list of.
+ *   - `read-operation.ts` names `tenantId` because it is the guard that REFUSES
+ *     one, which `SEC-001` asserts three cases above.
+ *   - `session-cookie.ts` carries `tenantId` because a server-side session
+ *     legitimately holds the resolved scope. Refusing that would refuse the
+ *     mechanism the whole phase depends on.
+ *
+ * That exclusion is not taken on trust: `pins the exclusion` below runs the
+ * sweeps over `lib/api` and asserts those three files are the ONLY matches, so a
+ * genuine violation landing there goes red instead of hiding behind the word
+ * "excluded".
+ */
+const MODULE_DISPOSITION = {
+  /** Renders every customer and vehicle row. Was in NO list, by either name. */
+  'components/data-table': 'in-surface',
+  'components/duplicates': 'in-surface',
+  'components/forms': 'in-surface',
+  'components/party': 'in-surface',
+  /** `Icon`, rendered inside P1-27 controls. */
+  'components/primitives': 'in-surface',
+  /** `PageHeader`, and the locale switcher that carries table state across it. */
+  'components/shell': 'in-surface',
+  /** `States` — every denial, error and empty state these screens render. */
+  'components/states': 'in-surface',
+  /** The platform transport. Excluded, with the exclusion measured below. */
+  'lib/api': 'platform-transport',
+  'lib/customers': 'in-surface',
+  'lib/duplicates': 'in-surface',
+  /** `action-result` and `field-errors` — what a refused write becomes. */
+  'lib/forms': 'in-surface',
+  'lib/page-metadata': 'in-surface',
+} as const satisfies Readonly<Record<string, 'in-surface' | 'platform-transport'>>;
+
+/** The modules folded into `PHASE_SURFACE`, derived from the decisions above. */
+const MOVED_OUT = Object.entries(MODULE_DISPOSITION)
+  .filter(([, disposition]) => disposition === 'in-surface')
+  .map(([directory]) => directory);
+
+/**
+ * Every `.ts`/`.tsx` source of one module, whether it is a directory or a file.
+ *
+ * `@/lib/page-metadata` is a FILE (`src/lib/page-metadata.ts`), so a walk that
+ * assumed a directory would throw `ENOENT` on it — and dropping it to avoid that
+ * would be the omission this whole section exists to stop.
+ */
+function moduleSources(relative: string): readonly { path: string; source: string }[] {
+  const base = join(process.cwd(), 'src', ...relative.split('/'));
+  const resolved = [base, `${base}.ts`, `${base}.tsx`].find((candidate) => existsSync(candidate));
+  if (resolved === undefined) throw new Error(`${relative} resolves to nothing under src/`);
+  const files = statSync(resolved).isDirectory() ? walk(resolved) : [resolved.split(sep).join('/')];
+  return files.map((path) => ({ path, source: code(readFileSync(path, 'utf8')) }));
+}
 
 /**
  * The P1-27 gate module itself, imported so a rule can never be RESTATED here.
@@ -193,14 +314,14 @@ const GATE = (await import(
 
 const PHASE_SURFACE = [
   ...PHASE_FILES,
-  ...MOVED_OUT.flatMap((rel) => walk(join(process.cwd(), 'src', ...rel.split('/')))).map(
-    (path) => ({
-      path,
-      source: code(readFileSync(path, 'utf8')),
-    })
-  ),
+  ...MOVED_OUT.flatMap((relative) => moduleSources(relative)),
   ...PHASE_ROUTES.map((path) => ({ path, source: code(readFileSync(path, 'utf8')) })),
 ];
+
+/** A surface path as `components/data-table/table-state.ts`, for readable pins. */
+function underSrc(path: string): string {
+  return path.split(/[\\/]src[\\/]/).pop() ?? path;
+}
 
 describe('P1-27-SEC-001 — permission and resolved scope', () => {
   it('found the surface it is about to make claims about', () => {
@@ -229,12 +350,88 @@ describe('P1-27-SEC-001 — permission and resolved scope', () => {
       'components/duplicates/MatchExplanation.tsx',
       'lib/customers/directory.ts',
       'lib/duplicates/explanations.ts',
+      // The one that was in NO list — not in `MOVED_OUT`, not in the gate's
+      // `UNCOLLECTED_PHASE_MODULES` — while rendering every customer and
+      // vehicle row an operator sees.
+      'components/data-table/DataTable.tsx',
     ]) {
       expect(
         PHASE_SURFACE.some((f) => f.path.endsWith(required)),
         `${required} is P1-27 surface and is outside the sweep`
       ).toBe(true);
     }
+  });
+
+  it('decides every module the scanned trees import, rather than listing five by hand', () => {
+    /*
+     * The direction that makes an omission FAIL.
+     *
+     * An equality, both ways at once: a directory the trees import with no entry
+     * in `MODULE_DISPOSITION` fails as an addition, and an entry naming a module
+     * nothing imports any more fails as a stale one. The old hand-written
+     * `MOVED_OUT` could do neither — it held five of the twelve and the seven it
+     * omitted were invisible, because a list cannot notice what was never put in
+     * it.
+     */
+    const imported = importedModuleDirectories();
+    // Anti-vacuity: the derivation really read something. A regex that matched
+    // nothing would make the equality below a comparison of two empty sets.
+    expect(imported.length, 'no module imports were discovered — the derivation is broken').toBe(
+      12
+    );
+    expect(imported, 'a module the CRM/vehicle trees import has no recorded disposition').toEqual(
+      Object.keys(MODULE_DISPOSITION).sort()
+    );
+  });
+
+  it('pins the exclusion of lib/api to the three files that earn it', () => {
+    /*
+     * `platform-transport` is the only disposition that keeps a module OUT, so it
+     * is the only place this section could hide a violation. It is measured.
+     *
+     * Every SEC-002 absence rule is run over `lib/api` here. Three files match,
+     * each for a reason stated in `MODULE_DISPOSITION`, and they are named. A
+     * fourth match — or a new match in one of the three — fails, and the reader
+     * is told the exclusion has stopped being true rather than discovering it by
+     * reading the word "excluded" and believing it.
+     */
+    const ABSENCE_RULES: readonly [string, RegExp][] = [
+      ['export', /\/export|-export|exportC|downloadAll/],
+      ['export-operation', /export-authorize|export-catalogue|\/exports\b/],
+      ['client-extraction', /new Blob\(|createObjectURL|download=|text\/csv|application\/pdf/],
+      ['attachment-download', /attachment-download|download-authorizations/],
+      ['file-access', /new FormData\(|multipart\/form-data|type="file"|FileReader|\.files\b/],
+      ['storage', /localStorage|sessionStorage|indexedDB|document\.cookie/],
+      ['unescaped-html', /dangerouslySetInnerHTML/],
+      ['invented-limit', /MAX_(FILE|UPLOAD|IMAGE|MEDIA)_|ACCEPTED_(FILE|MIME|IMAGE)|accept=/],
+      ['client-asserted-scope', /['"]?(tenantId|companyId|branchId)['"]?\s*[:,]/],
+    ];
+
+    const sources = moduleSources('lib/api');
+    expect(sources.length, 'lib/api was not read').toBeGreaterThan(4);
+
+    const matches = new Set<string>();
+    for (const { path, source } of sources) {
+      for (const [, pattern] of ABSENCE_RULES)
+        if (pattern.test(source)) matches.add(underSrc(path));
+    }
+    expect(
+      [...matches].sort(),
+      'the lib/api exclusion no longer describes what is in lib/api'
+    ).toEqual([
+      // The generated operation catalogue. It LISTS the export and download
+      // operations; this phase calls neither, which the SEC-002 cases prove.
+      'lib/api/idempotent-operations.ts',
+      // The guard that REFUSES a client-asserted scope.
+      'lib/api/read-operation.ts',
+      // A server-side session legitimately holds the resolved tenant.
+      'lib/api/session-cookie.ts',
+    ]);
+
+    // And the sweeps really are the ones the SEC-002 cases run: a rule set that
+    // matched nothing anywhere would satisfy the equality above with an empty
+    // set. The console rule is proved separately, against the gate.
+    expect(ABSENCE_RULES.length).toBeGreaterThan(8);
   });
 
   it('strips comments without blinding itself to code', () => {
@@ -397,13 +594,24 @@ describe('P1-27-SEC-002 — sensitive data, export, documents and media', () => 
      * calls on every page to preserve page and sort across a language change —
      * so the deny-list guards the one place table state DOES cross a navigation.
      */
+    /*
+     * This pinned `[]`, and it could only do so because `components/data-table`
+     * was outside the surface. Folding the table in makes the DEFINING module
+     * visible — `toSearchParams` is declared in `table-state.ts` and called from
+     * nowhere in `src/`, which is the fact the paragraph above rests on.
+     *
+     * So the pin is the definition rather than the empty set, and it is the
+     * stronger statement of the two: a caller appearing anywhere on the surface
+     * adds a second entry and fails, and the definition being deleted or moved
+     * fails too. `[]` would have gone on passing through both.
+     */
     const writers = PHASE_SURFACE.filter(({ source }) =>
       /toSearchParams|history\.(push|replace)State|window\.location\.search\s*=/.test(source)
     );
     expect(
-      writers.map((f) => f.path),
+      writers.map((f) => underSrc(f.path)).sort(),
       'a P1-27 screen started publishing table state to the URL'
-    ).toEqual([]);
+    ).toEqual(['components/data-table/table-state.ts']);
 
     // And the live deny-list is genuinely applied where table state DOES travel.
     expect(isForbiddenUrlKey('search')).toBe(true);
@@ -742,6 +950,349 @@ describe('P1-27-SEC-003 — abuse cases and privilege escalation', () => {
   });
 });
 
+/* ------------------------------------------------------------------ *
+ * SEC-003's OTHER half — privilege escalation — which nothing asserted
+ * ------------------------------------------------------------------ */
+
+/**
+ * `P1-27-SEC-003` reads **"Abuse-case and privilege-escalation controls"**
+ * (`canonical-plan.md:183`). Two obligations joined by "and".
+ *
+ * The four cases above are all abuse-case controls: no merge caller, no
+ * duplicate-scan caller, an idempotency key on every write, and no invented
+ * operation. **Not one of them is about privilege escalation**, and no other
+ * suite covers it either:
+ *
+ *   - `p1-27-permission-route-binding.dom.test.tsx` proves `SEC-001`'s binding —
+ *     that the route's `permittedWrites(session.permissions)` expression really
+ *     reaches the rendered controls — and its own docblock says in plain words
+ *     "Not a security boundary, and this file does not pretend otherwise".
+ *     Proving a wire is not proving an escalation is refused.
+ *   - `write-permission-gating.dom.test.tsx` hands the screen a `writes` map it
+ *     constructs itself, so it cannot see where the map comes from.
+ *
+ * So this section is the missing proof, and it is deliberately NOT another
+ * assertion that a button is hidden.
+ *
+ * ## Why hiding a button is the wrong thing to assert
+ *
+ * The CRM write server actions carry no local permission check. `holds(` appears
+ * **zero times** in `governance-actions.ts`, `profile-actions.ts` and
+ * `creation-actions.ts`, and `action-support.ts` says why in its own docblock:
+ * "No action re-checks a permission. The Backend decides." That is the correct
+ * design and it is also the thing that decides what an escalation proof can be.
+ *
+ * An operator who lacks a capability sees no control. An ATTACKER does not use
+ * the control — they invoke the action directly, and on this architecture that
+ * invocation reaches the wire. So the honest proof is not "the button is
+ * absent"; it is:
+ *
+ *   1. a read-only session obtains no write surface;
+ *   2. a SIBLING write capability confers no unrelated write surface;
+ *   3. a forged direct invocation IS issued, the API refuses it, and the
+ *      interface reports that refusal truthfully rather than as a success;
+ *   4. the client cannot even NAME another tenant, so cross-tenant mutation is
+ *      decided at tiers this one cannot reach — cited and checked, not asserted.
+ */
+describe('P1-27-SEC-003 — privilege escalation, proved as escalation', () => {
+  const CUSTOMER = '2f1e0f6a-5c2d-4a5b-8f2c-1a2b3c4d5e6f';
+  const REASON = 'Unpaid invoices past the agreed terms.';
+  const IDLE = { status: 'idle' } as const;
+
+  /** A restriction submission, exactly as `RecordForm` assembles one. */
+  function restrictionForm(): FormData {
+    const form = new FormData();
+    form.append('restrictionType', 'no_credit');
+    form.append('reason', REASON);
+    return form;
+  }
+
+  beforeEach(() => {
+    captured.length = 0;
+    cookieJar.token = 'session-token-for-tenant-a';
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('1/4 gives a session holding ONLY a read permission no write surface at all', () => {
+    const permits = permittedWrites([CRM_PERMISSIONS.customerRead]);
+
+    // Anti-vacuity. An empty `WritePermits` would satisfy "nothing granted"
+    // perfectly while proving that no write surface exists to be granted.
+    const kinds = Object.keys(WRITE_PERMISSIONS);
+    expect(kinds.length, 'there are no write surfaces to escalate to').toBeGreaterThanOrEqual(9);
+    expect(Object.keys(permits).sort()).toEqual([...kinds].sort());
+
+    const granted = kinds.filter((kind) => permits[kind as keyof typeof permits]);
+    expect(
+      granted,
+      `crm.customer.read conferred these write surfaces: ${granted.join(', ')}`
+    ).toEqual([]);
+
+    // The positive control: the same function DOES say yes when the code is
+    // held, so the emptiness above is a fact about the read permission and not
+    // about a calculation that answers no to everything.
+    const everything = permittedWrites(Object.values(WRITE_PERMISSIONS));
+    expect(kinds.filter((kind) => everything[kind as keyof typeof everything]).sort()).toEqual(
+      [...kinds].sort()
+    );
+  });
+
+  it('2/4 gives a SIBLING write capability no unrelated write surface', () => {
+    /*
+     * The escalation this shape is about: an operator trusted to author a note
+     * must not, by holding `crm.customer.note.write`, acquire the authority to
+     * impose a commercial restriction on the same customer.
+     *
+     * Exhaustive over every kind, and derived rather than listed. `contact`,
+     * `address` and `preference` genuinely SHARE `crm.customer.profile.write` —
+     * one code governs three surfaces — so the expectation for each kind is
+     * computed from `WRITE_PERMISSIONS` itself. Writing the expected sets by
+     * hand would have to restate that sharing, and a restatement of the table
+     * under test is a test that agrees with itself.
+     *
+     * This is the case the mutation is aimed at. Every message names the code
+     * and the kind, so a failure says WHICH capability leaked.
+     */
+    const kinds = Object.keys(WRITE_PERMISSIONS) as (keyof typeof WRITE_PERMISSIONS)[];
+    const codes = new Set(Object.values(WRITE_PERMISSIONS));
+
+    /*
+     * The loop is only meaningful if the codes are genuinely DISTINCT and at
+     * least one is genuinely SHARED — both shapes have to be exercised, or the
+     * derivation of `governed` is untested in one direction.
+     *
+     * Stated as those two properties rather than as a count. The first draft
+     * here pinned `codes.size` to 6 and this case failed on its first run: five
+     * codes govern nine surfaces. The number was wrong, and a number is the
+     * wrong thing to assert in any case — `WRITE_PERMISSIONS` belongs to the
+     * feature, and pinning its cardinality from a security suite would fail on a
+     * legitimate tenth surface while proving nothing about escalation.
+     */
+    expect(
+      codes.size,
+      'every write shares one code — there is no sibling to leak to'
+    ).toBeGreaterThan(1);
+    expect(
+      codes.size,
+      'no code governs more than one surface — the shared-code branch is never taken'
+    ).toBeLessThan(kinds.length);
+
+    for (const kind of kinds) {
+      const code = WRITE_PERMISSIONS[kind];
+      const permits = permittedWrites([CRM_PERMISSIONS.customerRead, code]);
+      const granted = kinds.filter((k) => permits[k]).sort();
+      const governed = kinds.filter((k) => WRITE_PERMISSIONS[k] === code).sort();
+      expect(
+        granted,
+        `a session holding only ${code} (for the ${kind} surface) was granted ` +
+          `[${granted.join(', ')}] — ${code} governs [${governed.join(', ')}]`
+      ).toEqual(governed);
+    }
+  });
+
+  it('2/4 records that the write actions carry no local permission check', () => {
+    /*
+     * A TRIPWIRE on the premise the next case rests on, not a prohibition.
+     *
+     * The forged-invocation proof below is only the right proof while the client
+     * has no gate of its own — that is what makes "the request is issued and the
+     * server refuses it" the honest claim rather than "the client stopped it".
+     * If a local check is ever added, this fails, and whoever added it is told
+     * that the escalation model changed and this section has to be rewritten to
+     * match — instead of the section quietly proving the wrong thing.
+     */
+    const actions = PHASE_FILES.filter((f) => /-actions\.ts$|action-support\.ts$/.test(f.path));
+    expect(actions.length, 'no write-action modules were found').toBeGreaterThan(2);
+    for (const { path, source } of actions) {
+      expect(
+        source.match(/\bholds\s*\(/g) ?? [],
+        `${path} now re-checks a permission locally — the escalation model changed, ` +
+          'and the forged-invocation case below is no longer the proof SEC-003 needs'
+      ).toEqual([]);
+    }
+  });
+
+  it('3/4 issues a forged write with no capability, and the API refusal is what stops it', async () => {
+    /*
+     * The escalation case itself.
+     *
+     * `imposeRestrictionAction` is invoked directly — no screen, no session
+     * permissions, nothing that could have hidden a control. It is the most
+     * privileged customer write in the phase (`crm.customer.restriction.manage`,
+     * its own code precisely because refusing to serve a customer is not the
+     * same authority as raising an alert).
+     *
+     * Two things are asserted, and the FIRST is the uncomfortable one: the
+     * request goes out. That is the truth about this architecture and stating it
+     * is the point — a reader must not come away believing the client refused
+     * anything. What stops the escalation is the 403, and what the interface owes
+     * the operator is to say so.
+     */
+    backendAnswering(403, {
+      type: 'urn:rootlco:error:ERR-IAM-002',
+      code: 'ERR-IAM-002',
+      status: 403,
+    });
+
+    const state = await imposeRestrictionAction(CUSTOMER, IDLE, restrictionForm());
+
+    // The forged call REACHED the wire. No client-side gate refused it.
+    expect(captured, 'the forged write never reached the transport').toHaveLength(1);
+    expect(onlyRequest().url).toBe(`${API_ORIGIN}/api/v1/customers/${CUSTOMER}/restrictions`);
+    // And it carried the operator's real payload, so it is a genuine attempt
+    // rather than an empty request that would satisfy any assertion about it.
+    expect(onlyRequest().body).toContain('no_credit');
+
+    // The refusal is what the operator is told, truthfully.
+    expect(state.status, 'a refused escalation was not reported as denied').toBe('denied');
+    expect(state.messageKey).toBe('state.denied.title');
+    // Never the success sentence for the write that did not happen.
+    expect(state.messageKey).not.toBe('crm.customers.restrictions.imposed');
+    // And a reference an operator can quote, or the denial cannot be traced.
+    expect(typeof state.correlationId, 'the denial carries no correlation reference').toBe(
+      'string'
+    );
+
+    // The sentence itself exists in BOTH catalogues and says what happened. A
+    // key that resolved to nothing would render as the key, and an Arabic
+    // operator would be told nothing at all.
+    for (const catalogue of [EN, AR]) {
+      expect(Object.keys(catalogue)).toContain('state.denied.title');
+      expect(Object.keys(catalogue)).toContain('state.denied.description');
+    }
+    expect(EN['state.denied.title']?.toLowerCase()).toContain('access');
+    expect(EN['state.denied.description']?.toLowerCase()).toContain('permission');
+    expect(EN['state.denied.title']).not.toBe(AR['state.denied.title']);
+  });
+
+  it('3/4 does not report every outcome as denied, so the case above discriminates', async () => {
+    /*
+     * The control. Without it, "the forged write was denied" is equally
+     * consistent with an action that reports `denied` whatever the server says —
+     * which would make the escalation proof pass against a client that had
+     * stopped reading the response.
+     *
+     * The SAME call, the SAME absent capability, and a server that accepts:
+     * `success`. So `denied` above came from the 403 and from nothing else.
+     */
+    backendAnswering(201, { id: 'r1' });
+    const accepted = await imposeRestrictionAction(CUSTOMER, IDLE, restrictionForm());
+    expect(accepted.status).toBe('success');
+    expect(accepted.messageKey).toBe('crm.customers.restrictions.imposed');
+
+    // And a second capability, so the mapping is not a property of one action.
+    vi.unstubAllGlobals();
+    captured.length = 0;
+    backendAnswering(403, { type: 'urn:rootlco:error:ERR-IAM-002', status: 403 });
+    const note = new FormData();
+    note.append('body', 'A note the caller has no capability to author.');
+    const refused = await addNoteAction(CUSTOMER, IDLE, note);
+    expect(captured, 'the forged note never reached the transport').toHaveLength(1);
+    expect(refused.status).toBe('denied');
+  });
+
+  it('4/4 cannot name another tenant on a forged write — the tiers that decide are cited', async () => {
+    /*
+     * ## The plain answer first
+     *
+     * **This tier cannot prove that tenant A fails to mutate tenant B, and it is
+     * structurally unable to.** The client never names a tenant. It sends a
+     * bearer token and a payload; the tenant is derived from the token by the
+     * API and applied by the database. There is no request this suite could
+     * construct that would be a cross-tenant mutation ATTEMPT, so there is
+     * nothing here whose refusal could be observed.
+     *
+     * What IS proved here is the half that belongs to this tier: a forged write
+     * carries no scope in its URL, its headers or its body, so the client cannot
+     * assert a tenancy even when nothing is stopping it from trying.
+     *
+     * ## And the tiers that DO decide, cited from this record
+     *
+     * The citations are READ and checked rather than written in prose, for the
+     * same reason `QA-001`'s exclusion citations are: three of those named a file
+     * that never mentioned the adapter, and nothing noticed. A citation nobody
+     * checks is a sentence.
+     *
+     * This deliberately couples a web test to two backend-owned files. That is
+     * the cost of the citation being true, and it is the smaller cost: the
+     * alternative is a paragraph asserting a chain nobody re-reads.
+     */
+    backendAnswering(201, { id: 'r1' });
+    await imposeRestrictionAction(CUSTOMER, IDLE, restrictionForm());
+
+    const { url, headers, body } = onlyRequest();
+    expect(scopeParamsIn(url), 'the forged write asserted a scope in its URL').toEqual([]);
+    expect(scopeHeadersIn(headers), 'the forged write asserted a scope in a header').toEqual([]);
+    expect(body, 'the forged write asserted a scope in its body').not.toMatch(
+      /tenant|company|branch/i
+    );
+    // Anti-vacuity: there really WAS a body, so "no scope in it" is a fact about
+    // a request rather than about an empty string.
+    expect(body.length).toBeGreaterThan(0);
+    // The caller is identified by the bearer, and by nothing else.
+    expect(headers.get('authorization')).toBe('Bearer session-token-for-tenant-a');
+
+    const repositoryRoot = join(process.cwd(), '..', '..');
+    const read = (...parts: string[]) => readFileSync(join(repositoryRoot, ...parts), 'utf8');
+
+    // 1. The API binds the operation to the capability this whole section is
+    //    about, and declares its scope. The client's opinion is not consulted.
+    const route = read(
+      'apps',
+      'api',
+      'src',
+      'app',
+      'api',
+      'v1',
+      'customers',
+      '[customerId]',
+      'restrictions',
+      'route.ts'
+    );
+    expect(route, 'the restriction route no longer binds the capability').toContain(
+      "permissions: ['crm.customer.restriction.manage']"
+    );
+    expect(route).toContain("scope: 'tenant'");
+
+    // 2. The tenant applied to the transaction comes from the resolved
+    //    PRINCIPAL — never from anything the request carried.
+    expect(
+      read('apps', 'api', 'src', 'server', 'db', 'transaction.ts'),
+      'the transaction context no longer derives the tenant from the principal'
+    ).toContain("['app.tenant_id', context.principal.tenantId]");
+
+    // 3. The database reads that transaction-local setting, and nothing else.
+    expect(read('supabase', 'migrations', '0002_base_schemas.sql')).toContain(
+      "SELECT NULLIF(current_setting('app.tenant_id', true), '')::uuid;"
+    );
+
+    // 4. And the row this forged write would have created is refused by an
+    //    INSERT policy that compares against it. This is the row that decides.
+    const migration = read(
+      'supabase',
+      'migrations',
+      '20260719096000_crm_customer_restrictions.sql'
+    );
+    expect(migration, 'the restriction insert policy is gone').toContain(
+      'ins_customer_restrictions_tenant'
+    );
+    expect(migration).toMatch(
+      /FOR INSERT TO app_runtime WITH CHECK \(tenant_id = iam\.current_tenant_id\(\)\)/
+    );
+
+    /*
+     * The gap that remains, stated rather than papered over: no CI job executes
+     * a two-tenant proof. `apps/web/tests/e2e/authenticated/isolation.spec.ts` is
+     * the suite that would, it is gated behind `ROOTLCO_E2E_AUTH=1`, and the
+     * QA-003 section at the foot of this file pins that debt in executable form.
+     * SEC-003's cross-tenant conjunct is therefore NARROWED here, not closed.
+     */
+  });
+});
+
 describe('P1-27-SEC-004 — audit-event coverage', () => {
   it('surfaces a correlation reference on every failure path', () => {
     // An operator who cannot quote a correlation reference cannot have an
@@ -1071,6 +1622,14 @@ function scopeHeadersIn(headers: Headers): string[] {
 interface CapturedRequest {
   readonly url: string;
   readonly headers: Headers;
+  /**
+   * The serialised request body, or `''` for a read.
+   *
+   * Added for the privilege-escalation section: a scope in a JSON body is
+   * exactly as wrong as one in a query string, and a sweep that only looked at
+   * the URL and the headers would have said nothing about a forged write.
+   */
+  readonly body: string;
 }
 
 const captured: CapturedRequest[] = [];
@@ -1099,7 +1658,11 @@ function backendAnswering(status: number, body: unknown): void {
   vi.stubGlobal(
     'fetch',
     vi.fn(async (url: string, init?: RequestInit) => {
-      captured.push({ url: String(url), headers: new Headers(init?.headers) });
+      captured.push({
+        url: String(url),
+        headers: new Headers(init?.headers),
+        body: typeof init?.body === 'string' ? init.body : '',
+      });
       return new Response(JSON.stringify(body), {
         status,
         headers: {
