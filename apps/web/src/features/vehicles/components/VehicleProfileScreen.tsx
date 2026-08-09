@@ -587,6 +587,26 @@ function EditPanel({
   const set = (name: string, value: string) =>
     setValues((current) => ({ ...current, [name]: value }));
 
+  /*
+   * The last hop of the 422 path (`P1-27-INT-028`).
+   *
+   * `fromFailure` maps the backend's `violations` onto `state.fieldErrors`,
+   * keyed by control name, and this panel rendered NONE of them: `Outcome`
+   * showed the banner key and nothing else, the text controls took no `error`,
+   * and `VinField` was mounted here without the `error` prop the create screen
+   * already passes it. So a 422 that named `body.color` — the one thing the
+   * server says that an operator can act on — arrived as "The form could not be
+   * saved." beside four fields, none of them marked.
+   *
+   * The keys match the control names because `controlNameFor` takes the leaf of
+   * the violation path: `body.color` → `color`, which is the `name` this form
+   * submits and the key `values` holds. One vocabulary, not a mapping table.
+   *
+   * A value here is always a catalogue KEY, never server prose — see
+   * `action-result.ts` — so every render site translates.
+   */
+  const errorFor = (field: string): string | undefined => state.fieldErrors?.[field];
+
   return (
     <form action={submit} className="rounded-lg border border-border bg-surface p-4">
       <h2 className="text-section-title font-medium text-text-primary">
@@ -601,6 +621,7 @@ function EditPanel({
           onChange={(v) => set('vin', v)}
           excludeVehicleId={vehicle.id}
           maxLength={MAX_VIN_INPUT}
+          error={errorFor('vin')}
         />
         <Text
           messages={messages}
@@ -610,6 +631,7 @@ function EditPanel({
           value={values.displayNumber ?? ''}
           onChange={set}
           maxLength={MAX_DISPLAY_NUMBER}
+          error={errorFor('displayNumber')}
         />
         <Text
           messages={messages}
@@ -619,6 +641,7 @@ function EditPanel({
           value={values.color ?? ''}
           onChange={set}
           maxLength={MAX_COLOR}
+          error={errorFor('color')}
         />
         <Text
           messages={messages}
@@ -628,6 +651,7 @@ function EditPanel({
           value={values.modelYear ?? ''}
           onChange={set}
           maxLength={4}
+          error={errorFor('modelYear')}
         />
       </div>
 
@@ -718,7 +742,13 @@ function StatusPanel({
             name="lifecycleStatus"
             defaultValue={lifecycle}
             onChange={(event) => setLifecycle(event.target.value)}
-            className="mt-1 w-full rounded-md border border-border bg-surface px-2 py-1.5 text-body text-text-primary"
+            aria-invalid={state.fieldErrors?.lifecycleStatus ? true : undefined}
+            aria-describedby={
+              state.fieldErrors?.lifecycleStatus ? `${formId}-lifecycle-error` : undefined
+            }
+            className={`mt-1 w-full rounded-md border bg-surface px-2 py-1.5 text-body text-text-primary ${
+              state.fieldErrors?.lifecycleStatus ? 'border-error' : 'border-border'
+            }`}
           >
             <option value="">{translate(messages, 'vehicles.profile.leaveUnchanged')}</option>
             {/*
@@ -733,9 +763,16 @@ function StatusPanel({
 
               The refusal was also invisible, which is what made it worth fixing
               rather than tolerating: the platform publishes field detail as
-              `violations` and the client reads `errors` (`P1-27-INT-028`), so
-              `Outcome` showed only "The form could not be saved." An operator
-              choosing a plausible-looking option learned nothing.
+              `violations` and the client read `errors`, a field the API has
+              never sent (`P1-27-INT-028`), so `Outcome` showed only "The form
+              could not be saved." An operator choosing a plausible-looking
+              option learned nothing.
+
+              Both halves are closed now. The client reads `violations`, and the
+              key it produces is rendered on the select below rather than
+              dropped — so a graph the menu somehow got wrong is reported ON the
+              control that offered it. The menu is still the primary fix: an
+              option that can only fail should not be offered at all.
             */}
             {/* Judged against what the WORKSHOP select currently holds, because
                 both axes submit in one request and the server's rule is stated
@@ -746,6 +783,24 @@ function StatusPanel({
               </option>
             ))}
           </select>
+          {/*
+            `body.lifecycleStatus` from the server — `not_settable`, `no_change`,
+            `invalid_transition`, all three raised by `vehicle-lifecycle.ts` as
+            `ERR-VAL-001` — and also the panel's OWN refusal, which was just as
+            invisible: submitting with neither axis chosen returns
+            `invalid({ lifecycleStatus: 'vehicles.profile.chooseAStatus' })`, and
+            with nothing rendering `fieldErrors` that sentence reached nobody
+            while the banner said only "The form could not be saved."
+          */}
+          {state.fieldErrors?.lifecycleStatus ? (
+            <p
+              id={`${formId}-lifecycle-error`}
+              role="alert"
+              className="mt-1 text-caption text-error"
+            >
+              {translateDynamic(messages, state.fieldErrors.lifecycleStatus)}
+            </p>
+          ) : null}
         </div>
 
         <div>
@@ -758,7 +813,13 @@ function StatusPanel({
             name="workshopStatus"
             defaultValue={workshop}
             onChange={(event) => setWorkshop(event.target.value)}
-            className="mt-1 w-full rounded-md border border-border bg-surface px-2 py-1.5 text-body text-text-primary"
+            aria-invalid={state.fieldErrors?.workshopStatus ? true : undefined}
+            aria-describedby={
+              state.fieldErrors?.workshopStatus ? `${formId}-workshop-error` : undefined
+            }
+            className={`mt-1 w-full rounded-md border bg-surface px-2 py-1.5 text-body text-text-primary ${
+              state.fieldErrors?.workshopStatus ? 'border-error' : 'border-border'
+            }`}
           >
             <option value="">{translate(messages, 'vehicles.profile.leaveUnchanged')}</option>
             {/* Same rule on the workshop axis (`vehicle-lifecycle.ts:68-74`),
@@ -769,6 +830,18 @@ function StatusPanel({
               </option>
             ))}
           </select>
+          {/* `body.workshopStatus`, the second axis. Both travel in ONE request
+              and the server judges the resulting pair, so either can be the one
+              named. */}
+          {state.fieldErrors?.workshopStatus ? (
+            <p
+              id={`${formId}-workshop-error`}
+              role="alert"
+              className="mt-1 text-caption text-error"
+            >
+              {translateDynamic(messages, state.fieldErrors.workshopStatus)}
+            </p>
+          ) : null}
         </div>
       </div>
 
@@ -845,6 +918,7 @@ function Text({
   value,
   onChange,
   maxLength,
+  error,
 }: {
   readonly messages: Messages;
   readonly id: string;
@@ -853,6 +927,14 @@ function Text({
   readonly value: string;
   readonly onChange: (name: string, value: string) => void;
   readonly maxLength: number;
+  /**
+   * The SERVER's verdict on this field, as a catalogue key.
+   *
+   * The same shape `VinField`, `VehicleCreateScreen`'s `TextField` and
+   * `VehicleDuplicateReviewScreen`'s reason box already take. This control
+   * accepted none, which is why a 422 naming a field could not reach it.
+   */
+  readonly error?: string | undefined;
 }) {
   return (
     <div>
@@ -867,8 +949,23 @@ function Text({
         value={value}
         onChange={(event) => onChange(name, event.target.value)}
         maxLength={maxLength}
-        className="mt-1 w-full rounded-md border border-border bg-surface px-2 py-1.5 text-body text-text-primary"
+        // Wired, not merely rendered. A message a sighted operator can see
+        // beside a box that announces itself as valid is half a fix.
+        aria-invalid={error ? true : undefined}
+        aria-describedby={error ? `${id}-error` : undefined}
+        className={`mt-1 w-full rounded-md border bg-surface px-2 py-1.5 text-body text-text-primary ${
+          error ? 'border-error' : 'border-border'
+        }`}
       />
+      {error ? (
+        // `role="alert"` because it arrives after a submit the operator has
+        // already turned away from. Translated, because `fieldErrors` carries
+        // catalogue keys — rendering the key would put `form.violation.too_big`
+        // on screen.
+        <p id={`${id}-error`} role="alert" className="mt-1 text-caption text-error">
+          {translateDynamic(messages, error)}
+        </p>
+      ) : null}
     </div>
   );
 }

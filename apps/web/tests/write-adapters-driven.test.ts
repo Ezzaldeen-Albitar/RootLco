@@ -51,8 +51,14 @@ vi.mock('@/lib/api/server-client', () => ({
   authorizedClient: () => authorizedClient(),
 }));
 
-const { WRITE_DRIVES, DRIVE_IDS, exportedWriteAdapters, formOf } =
-  await import('./support/write-drives');
+const {
+  WRITE_DRIVES,
+  DRIVE_IDS,
+  exportedWriteAdapters,
+  formOf,
+  writeAdapterNamesIn,
+  writeAdapterSourceFiles,
+} = await import('./support/write-drives');
 
 const creation = await import('@/features/crm/customers/creation-actions');
 const governance = await import('@/features/crm/customers/governance-actions');
@@ -151,6 +157,64 @@ describe('every write adapter the feature trees export is executed', () => {
       phantom,
       `these drives name an adapter that is not exported:\n  ${phantom.join('\n  ')}`
     ).toEqual([]);
+  });
+
+  /*
+   * The completeness check above is only as wide as the walk underneath it, and
+   * the walk had two holes: it matched `^export async function (\w+Action)` and
+   * it read `.ts` files. So `export const fooAction = async (…) => …`, and any
+   * adapter living in a `.tsx`, were discovered by nothing — the set comparison
+   * would still have reported the same twenty-three, still green, with the new
+   * adapter executed by no test at all.
+   *
+   * Nothing in either tree takes those forms today, which is precisely why the
+   * hole could not be found by asserting against the tree. These put the forms
+   * in front of the scanner directly.
+   */
+  const CONST_ARROW_ADAPTER = [
+    "'use server';",
+    'export const probeAction = async (previous: unknown, form: FormData) => {',
+    '  return { status: "idle", previous, form };',
+    '};',
+  ].join('\n');
+
+  it('discovers an adapter declared as a const arrow, not only as a function', () => {
+    expect(writeAdapterNamesIn(CONST_ARROW_ADAPTER)).toEqual(['probeAction']);
+    // With a type annotation between the name and the `=`, which is how a
+    // typed handler is normally written.
+    expect(writeAdapterNamesIn('export const probeAction: FormAction = async () => ({});')).toEqual(
+      ['probeAction']
+    );
+    // And a promise-returning adapter that is not declared `async`.
+    expect(writeAdapterNamesIn('export function probeAction() { return send(); }')).toEqual([
+      'probeAction',
+    ]);
+    // A name in a docblock is still not an export: the stripper runs first.
+    expect(writeAdapterNamesIn('/** export const ghostAction = async () => {}; */')).toEqual([]);
+  });
+
+  it('fails closed when a const-arrow adapter is added and driven by nothing', () => {
+    /*
+     * The negative control, and the case that fails if the widening is ever
+     * reverted: run the completeness comparison over the real discovery PLUS
+     * one const-arrow adapter, and the undriven list must name it. Before the
+     * widening `writeAdapterNamesIn` returned nothing for this source, the
+     * undriven list was empty, and the suite reported full coverage of a write
+     * it had never executed.
+     */
+    const driven = WRITE_DRIVES.map((drive) => drive.name);
+    const discovered = [...exportedWriteAdapters(), ...writeAdapterNamesIn(CONST_ARROW_ADAPTER)];
+    expect(discovered.filter((name) => !driven.includes(name))).toEqual(['probeAction']);
+  });
+
+  it('reads .tsx files, where an adapter can sit beside the screen that calls it', () => {
+    const files = writeAdapterSourceFiles();
+    // Both extensions, and the `.tsx` count asserted non-zero rather than the
+    // filter inspected — a filter that lists an extension it never reaches is
+    // the shape of the defect being closed.
+    expect(files.filter((file) => file.endsWith('.tsx')).length).toBeGreaterThan(0);
+    expect(files.filter((file) => file.endsWith('.ts')).length).toBeGreaterThan(0);
+    expect(files.every((file) => file.endsWith('.ts') || file.endsWith('.tsx'))).toBe(true);
   });
 
   it('actually issues exactly one request for each one', async () => {
