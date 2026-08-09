@@ -1,7 +1,7 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CRM_PERMISSIONS, VEHICLE_PERMISSIONS, holds } from '@/features/crm/permissions';
 import { requiresIdempotencyKey, resolveOperation } from '@/lib/api/operation-contract';
 import { companyFilterQuery, query } from '@/lib/api/read-operation';
@@ -12,6 +12,7 @@ import {
   toSearchParams,
 } from '@/components/data-table/table-state';
 import { PUBLISHED_OPERATIONS } from '@/lib/api/idempotent-operations';
+import { searchCustomerDirectory } from '@/lib/customers/directory';
 import {
   DOCUMENT_LIST_PERMISSION,
   MEDIA_BLOCKING_DECISION,
@@ -19,6 +20,24 @@ import {
 } from '@/features/vehicles/documents-contract';
 import enMessages from '../src/i18n/messages/en.json';
 import arMessages from '../src/i18n/messages/ar.json';
+
+/**
+ * The session cookie, faked, so the REAL server read path can run here.
+ *
+ * `next/headers` is the only thing in that path that needs a request context.
+ * Replacing it — and nothing else — means `authorizedClient()`, `ApiClient` and
+ * the query builder are all the shipped code, and the only substitution below
+ * this line is the transport itself. See the `P1-27-QA-003` section at the foot
+ * of this file, which is the only place it is used.
+ */
+const cookieJar = vi.hoisted(() => ({ token: 'session-token-for-tenant-a' }));
+
+vi.mock('next/headers', () => ({
+  cookies: async () => ({
+    get: (name: string) =>
+      cookieJar.token === null ? undefined : { name, value: cookieJar.token },
+  }),
+}));
 
 /** The two catalogues, as plain lookups. A key missing from one is a real gap. */
 const EN = enMessages as Record<string, string>;
@@ -970,5 +989,338 @@ describe('P1-27-SEC-004 — audit-event coverage', () => {
       expect(source, path).toContain("'use server'");
       expect(source, path).not.toMatch(/\bfetch\(/);
     }
+  });
+});
+
+/**
+ * `P1-27-QA-003` — tenant, company and branch isolation.
+ *
+ * ## Read this before believing the section title
+ *
+ * **This tier cannot close QA-003, and does not claim to.** Isolation is
+ * enforced by the server: the token identifies the caller, the backend resolves
+ * tenant, company and branch from it, and a row belonging to another tenant is
+ * refused before it is selected. The only proof that the refusal WORKS is a
+ * proof against a real database with two real tenants, and in this repository
+ * that is `tests/e2e/authenticated/isolation.spec.ts` — which is gated behind
+ * `ROOTLCO_E2E_AUTH=1` and runs in no CI job. That gap is real and is not
+ * papered over here.
+ *
+ * The obvious substitute — stub the transport so it answers as a different
+ * tenant would, and assert the read layer refuses the row — was attempted and
+ * abandoned, because it cannot be built honestly: **the client has nothing to
+ * compare the row against.** `CustomerSearchHit`
+ * carries `id`, `displayNumber`, `displayName`, `partyType`, `lifecycleStatus`
+ * and `createdAt` — no tenant, no company, no branch. A row belonging to another
+ * tenant is byte-for-byte indistinguishable from one belonging to this one, so a
+ * client-side "refusal" could only ever be theatre: a check that passes every
+ * input and would be cited later as evidence of a control that never existed.
+ * The last thing this phase needs is another assertion that agrees with itself.
+ *
+ * ## So what IS proved here, at a tier that actually runs
+ *
+ * Four true things, each with a control that shows the instrument can fail:
+ *
+ * 1. The real read path, driven end to end with only the transport replaced,
+ *    sends NO scope — not in the query string and not in a header. The
+ *    operator's own criteria do travel, which is what stops "no scope found"
+ *    from being satisfied by an empty request.
+ * 2. The caller is identified by the session bearer alone.
+ * 3. The URL the real path produces is byte-identical to what the guarded query
+ *    builder produces, so the builder that REFUSES a scope key is on the path a
+ *    read actually takes — not merely exported nearby.
+ * 4. When the server refuses — which is how isolation reaches a screen — the
+ *    read layer propagates the refusal instead of rendering it as an empty list.
+ *    An operator must never read "you may not see this" as "there is nothing
+ *    here".
+ *
+ * And one thing is pinned as a FACT rather than as a desired property: the row
+ * payload and the session share no scope field. If a future payload ever gains
+ * one, that case fails, and the reader who fixes it will be told that a
+ * client-side comparison has become possible for the first time.
+ */
+
+/** Where the client points when nothing sets `NEXT_PUBLIC_API_BASE_URL`. */
+const API_ORIGIN = 'http://localhost:3000';
+
+/** Every spelling of a scope this application refuses to assert from a client. */
+const SCOPE_NAMES = [
+  'tenantId',
+  'companyId',
+  'branchId',
+  'tenant_id',
+  'company_id',
+  'branch_id',
+] as const;
+
+/** Scope parameters present in a URL. The instrument, checked below before use. */
+function scopeParamsIn(url: string): string[] {
+  const parameters = new URL(url).searchParams;
+  return SCOPE_NAMES.filter((name) => parameters.has(name)).sort();
+}
+
+/** Header names that name a scope. Same question, other half of the request. */
+function scopeHeadersIn(headers: Headers): string[] {
+  const found: string[] = [];
+  headers.forEach((_value, name) => {
+    if (/tenant|company|branch/i.test(name)) found.push(name);
+  });
+  return found.sort();
+}
+
+interface CapturedRequest {
+  readonly url: string;
+  readonly headers: Headers;
+}
+
+const captured: CapturedRequest[] = [];
+
+/**
+ * The one request the read path issued.
+ *
+ * Throws rather than returning undefined, so a case that asserts a property of
+ * "the request" can never pass by asserting it of nothing — the failure mode
+ * that makes a transport observation worthless.
+ */
+function onlyRequest(): CapturedRequest {
+  const first = captured[0];
+  if (!first) throw new Error('the read path issued no request at all');
+  return first;
+}
+
+/**
+ * A backend that answers with `body`, recording what it was asked.
+ *
+ * Only `fetch` is replaced. `searchCustomerDirectory`, `authorizedClient`,
+ * `ApiClient` and `query` are all the shipped implementations, so what is
+ * observed here is the request the application really assembles.
+ */
+function backendAnswering(status: number, body: unknown): void {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (url: string, init?: RequestInit) => {
+      captured.push({ url: String(url), headers: new Headers(init?.headers) });
+      return new Response(JSON.stringify(body), {
+        status,
+        headers: {
+          'content-type': status >= 400 ? 'application/problem+json' : 'application/json',
+        },
+      });
+    })
+  );
+}
+
+const TABLE_REQUEST = { page: 1, pageSize: 25, sort: null, filters: [], search: '' } as const;
+
+/**
+ * A page as the backend publishes one — and every row in it belongs to a
+ * DIFFERENT tenant than the session does.
+ *
+ * Nothing in the payload says so. That is the point, and it is why no assertion
+ * below claims the client detected it.
+ */
+const PAGE_FROM_ANOTHER_TENANT = {
+  items: [
+    {
+      id: '9a1d3c77-0e5b-4a2f-b8d1-6c4e2f0a7b95',
+      displayNumber: 'C-000991',
+      displayName: 'A customer of some other tenant',
+      partyType: 'organization',
+      lifecycleStatus: 'active',
+      createdAt: '2026-01-01T00:00:00.000Z',
+    },
+  ],
+  nextCursor: null,
+  hasMore: false,
+};
+
+describe('P1-27-QA-003 — what the client tier can prove about isolation', () => {
+  beforeEach(() => {
+    captured.length = 0;
+    cookieJar.token = 'session-token-for-tenant-a';
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('the instrument fires — a request that DOES carry a scope is detected', () => {
+    // The positive control. Without it, "no scope found" is equally consistent
+    // with a detector that finds nothing anywhere.
+    for (const name of SCOPE_NAMES) {
+      expect(scopeParamsIn(`${API_ORIGIN}/api/v1/customers?name=ali&${name}=x`)).toEqual([name]);
+    }
+    expect(scopeParamsIn(`${API_ORIGIN}/api/v1/customers?name=ali`)).toEqual([]);
+
+    const leaky = new Headers({ authorization: 'Bearer x', 'x-tenant-id': 't' });
+    expect(scopeHeadersIn(leaky)).toEqual(['x-tenant-id']);
+    expect(scopeHeadersIn(new Headers({ authorization: 'Bearer x' }))).toEqual([]);
+  });
+
+  it('sends no tenant, company or branch on the real read path', async () => {
+    backendAnswering(200, PAGE_FROM_ANOTHER_TENANT);
+    await searchCustomerDirectory(TABLE_REQUEST, null, { name: 'Nadia' });
+
+    expect(captured).toHaveLength(1);
+    const { url } = onlyRequest();
+    expect(url.startsWith(`${API_ORIGIN}/api/v1/customers?`)).toBe(true);
+    // Anti-vacuity: the request really did carry the operator's criteria, so an
+    // empty scope list is a fact about the request rather than about an empty
+    // one that was never sent.
+    expect(new URL(url).searchParams.get('name')).toBe('Nadia');
+    expect(new URL(url).searchParams.get('limit')).toBe('25');
+    expect(scopeParamsIn(url)).toEqual([]);
+  });
+
+  it('identifies the caller by the session bearer, and by nothing else', async () => {
+    backendAnswering(200, PAGE_FROM_ANOTHER_TENANT);
+    await searchCustomerDirectory(TABLE_REQUEST, null, { name: 'Nadia' });
+
+    const { headers } = onlyRequest();
+    expect(headers.get('authorization')).toBe('Bearer session-token-for-tenant-a');
+    expect(scopeHeadersIn(headers)).toEqual([]);
+  });
+
+  it('builds that URL with the builder that REFUSES a scope, not beside it', async () => {
+    /*
+     * The guard is only worth anything if the read path goes through it. Rather
+     * than reading the source and hoping, the URL the application actually sent
+     * is compared with what `query()` produces for the same parameters: equal
+     * strings mean the observed request came out of the guarded builder.
+     */
+    backendAnswering(200, PAGE_FROM_ANOTHER_TENANT);
+    await searchCustomerDirectory(TABLE_REQUEST, null, { name: 'Nadia' });
+
+    const expected =
+      `${API_ORIGIN}/api/v1/customers` + query({ cursor: null, limit: 25, name: 'Nadia' });
+    expect(onlyRequest().url).toBe(expected);
+
+    // And that builder refuses every scope spelling, while letting a real search
+    // criterion through — the negative and the positive of the same rule.
+    for (const name of SCOPE_NAMES) {
+      expect(() => query({ [name]: 'x' })).toThrow(new RegExp(name));
+    }
+    expect(query({ name: 'Nadia' })).toBe('?name=Nadia');
+  });
+
+  it('propagates the server refusal instead of rendering it as an empty list', async () => {
+    /*
+     * This is how server-enforced isolation reaches a screen. A record the
+     * caller's scope does not cover comes back as a refusal, and the one way the
+     * client can get isolation wrong is to turn that refusal into content —
+     * "no results" reads to an operator as "there is nothing here", which is a
+     * false statement about the tenant's own data.
+     */
+    for (const [status, expected] of [
+      [403, 'denied'],
+      [404, 'not-found'],
+      [401, 'expired'],
+    ] as const) {
+      backendAnswering(status, { type: 'urn:rootlco:error:ERR-IAM-001', status });
+      const page = await searchCustomerDirectory(TABLE_REQUEST, null, { name: 'Nadia' });
+      expect(page.status, `HTTP ${status}`).toBe(expected);
+      expect(page.rows, `HTTP ${status}`).toEqual([]);
+      expect(page.hasMore).toBe(false);
+      vi.unstubAllGlobals();
+    }
+
+    // The control: a 200 is NOT reported as a refusal, so the case above is not
+    // passing because every outcome maps to one.
+    backendAnswering(200, PAGE_FROM_ANOTHER_TENANT);
+    const ok = await searchCustomerDirectory(TABLE_REQUEST, null, { name: 'Nadia' });
+    expect(ok.status).toBe('ok');
+  });
+
+  it('CANNOT refuse a cross-tenant row, because the payload carries no tenant', async () => {
+    /*
+     * Stated as a limitation, proved as a fact, and deliberately not dressed up
+     * as a control.
+     *
+     * The stub answers with a page whose row belongs to another tenant. The read
+     * path returns it, because there is no field on it to compare against
+     * `SessionSummary.tenantId` — the row's own tenancy is not on the wire.
+     * A real backend does not send this; only a compromised or misconfigured one
+     * would, and detecting that is beyond what any client-tier test can do.
+     *
+     * `apps/web/tests/e2e/authenticated/isolation.spec.ts` is where the real
+     * claim lives, and it is gated behind `ROOTLCO_E2E_AUTH=1` and runs in no CI
+     * job. QA-003 is therefore NOT closed by this file.
+     */
+    backendAnswering(200, PAGE_FROM_ANOTHER_TENANT);
+    const page = await searchCustomerDirectory(TABLE_REQUEST, null, { name: 'Nadia' });
+    expect(page.status).toBe('ok');
+    expect(page.rows).toHaveLength(1);
+  });
+
+  it('pins the absence that makes the limitation above structural', () => {
+    /*
+     * A TRIPWIRE, not a preference. If `CustomerSearchHit` ever gains a tenant,
+     * company or branch field, this fails — and whoever fixes it is told the
+     * thing worth knowing: a client-side isolation comparison has become
+     * possible for the first time, and QA-003 could then be narrowed at this
+     * tier rather than deferred to a suite nothing runs.
+     */
+    const contract = readFileSync(
+      join(process.cwd(), 'src', 'lib', 'customers', 'directory-contract.ts'),
+      'utf8'
+    );
+    const hit = /interface\s+CustomerSearchHit\s*\{([\s\S]*?)\n\}/.exec(code(contract))?.[1];
+    expect(hit, 'CustomerSearchHit was not found — this assertion examined nothing').toBeDefined();
+
+    const fields = [...(hit ?? '').matchAll(/readonly\s+([A-Za-z_$][\w$]*)\s*\??:/g)]
+      .flatMap((match) => (match[1] === undefined ? [] : [match[1]]))
+      .sort();
+    // Anti-vacuity: the row type really was read, and it really does have fields.
+    expect(fields).toEqual([
+      'createdAt',
+      'displayName',
+      'displayNumber',
+      'id',
+      'lifecycleStatus',
+      'partyType',
+    ]);
+    for (const name of SCOPE_NAMES) {
+      expect(fields, `CustomerSearchHit now carries ${name}`).not.toContain(name);
+    }
+
+    // The session, by contrast, knows all three. The asymmetry is the reason the
+    // comparison cannot be made: one side has the answer and the other has no
+    // question to ask.
+    const session = code(
+      readFileSync(
+        join(process.cwd(), 'src', 'features', 'authentication', 'types', 'session.ts'),
+        'utf8'
+      )
+    );
+    expect(session).toContain('tenantId');
+    expect(session).toContain('companyIds');
+    expect(session).toContain('branchIds');
+  });
+
+  it('names the suite that DOES prove isolation, and keeps its debt declared', () => {
+    /*
+     * The gap is asserted in executable form so it cannot survive only as a
+     * sentence in a document. If the spec is deleted, or the gate is removed, or
+     * the debt is quietly dropped from the register, this fails and the phase
+     * record has to be corrected rather than rot.
+     *
+     * `tests/ci/e2e-tier-coverage.test.ts` owns the other direction — a declared
+     * spec that IS executed also fails, so a declaration cannot hide a runnable
+     * tier. This case only holds the pointer from the security obligation to it.
+     */
+    const spec = readFileSync(
+      join(process.cwd(), 'tests', 'e2e', 'authenticated', 'isolation.spec.ts'),
+      'utf8'
+    );
+    expect(spec.length).toBeGreaterThan(0);
+
+    const config = readFileSync(join(process.cwd(), 'playwright.config.ts'), 'utf8');
+    expect(config).toContain('ROOTLCO_E2E_AUTH');
+
+    const register = readFileSync(
+      join(process.cwd(), '..', '..', '.github', 'ci-baselines', 'unrun-test-tiers.json'),
+      'utf8'
+    );
+    expect(register).toContain('apps/web/tests/e2e/authenticated/isolation.spec.ts');
   });
 });

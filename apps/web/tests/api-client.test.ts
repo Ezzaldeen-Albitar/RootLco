@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import ar from '../src/i18n/messages/ar.json';
 import en from '../src/i18n/messages/en.json';
@@ -800,5 +802,257 @@ describe('P1-27-QA-004 — conflict copy follows the catalog code', () => {
     // edit here cannot quietly restore the false claim.
     expect(FAILURE_MESSAGE_KEY.conflict).toBe(CONCURRENCY);
     expect(FAILURE_MESSAGE_KEY.validation).toBe('form.formError');
+  });
+});
+
+/**
+ * `P1-27-QA-002` — the client's error contract is DERIVED from the API's, not
+ * agreed with it by hand.
+ *
+ * ## Why the cases above were not enough
+ *
+ * Everything before this point asserts against a fixture a person typed. Those
+ * fixtures were corrected once already — they used to describe `detail`,
+ * `instance`, `errorCode` and `errors`, none of which the API has ever sent —
+ * and correcting them fixed the past, not the future. Rename `violations` in
+ * `apps/api/src/server/errors/problem.ts` and every case above still passes: a
+ * hand-written literal agrees with whatever the client believes and knows
+ * nothing about what the API publishes. That was measured by doing it, not
+ * assumed.
+ *
+ * ## What this does instead
+ *
+ * It reads both declarations off disk and compares the field sets. Neither list
+ * is written down here; a copied list would be the same manual agreement that
+ * rotted the last one, moved one indirection further away. A rename on either
+ * side now fails a case that names the field.
+ *
+ * ## What it does NOT claim
+ *
+ * It compares NAMES and OPTIONALITY, not TypeScript types. Full type
+ * equivalence needs a compiler, and `apps/api` and `apps/web` are separate
+ * programs with separate `tsconfig`s. Names and optionality are what both
+ * shipped defects were made of — `errorCode` for `code`, `errors` for
+ * `violations` — and a check that catches those honestly is worth more than a
+ * type-level one that does not exist.
+ */
+
+const REPO_ROOT = join(process.cwd(), '..', '..');
+const API_PROBLEM_FILE = join(REPO_ROOT, 'apps', 'api', 'src', 'server', 'errors', 'problem.ts');
+const WEB_CLIENT_FILE = join(process.cwd(), 'src', 'lib', 'api', 'client.ts');
+
+interface DeclaredField {
+  readonly name: string;
+  readonly optional: boolean;
+}
+
+/**
+ * Source with comments removed, so PROSE about a field is never mistaken for the
+ * field.
+ *
+ * Both files carry docblocks that name fields the code does not declare —
+ * `client.ts` explains at length that `detail`, `instance`, `errorCode` and
+ * `errors` are NOT on the wire — so a scanner that read those sentences as code
+ * would report exactly the drift it exists to deny. This repository has made
+ * that mistake before.
+ */
+function withoutComments(source: string): string {
+  return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
+}
+
+/** The text between the braces of `interface <name>`, or null if there is none. */
+function interfaceBody(source: string, name: string): string | null {
+  const declaration = new RegExp(`\\binterface\\s+${name}\\b`).exec(source);
+  if (!declaration) return null;
+  const open = source.indexOf('{', declaration.index);
+  if (open < 0) return null;
+  let depth = 0;
+  for (let i = open; i < source.length; i += 1) {
+    if (source[i] === '{') depth += 1;
+    else if (source[i] === '}') {
+      depth -= 1;
+      if (depth === 0) return source.slice(open + 1, i);
+    }
+  }
+  return null;
+}
+
+/**
+ * The properties declared directly on an interface body.
+ *
+ * Depth is tracked over `{}`, `()` and `[]` so a member whose type is an inline
+ * object contributes ONE field and not three — the API declares `violations` as
+ * `readonly { readonly path: string; readonly rule: string }[]`, and a reader
+ * that flattened it would invent `path` and `rule` as envelope fields and then
+ * report drift against a client that correctly does not have them.
+ *
+ * `<>` is deliberately NOT tracked: an arrow type would leave `>` unbalanced and
+ * drive the depth negative, and splitting a generic on its comma is harmless
+ * because the tail of such a split matches no property name and is dropped.
+ */
+function membersOf(body: string): DeclaredField[] {
+  const fragments: string[] = [];
+  let depth = 0;
+  let current = '';
+  for (const character of body) {
+    if (character === '{' || character === '(' || character === '[') depth += 1;
+    else if (character === '}' || character === ')' || character === ']') depth -= 1;
+    if (depth === 0 && (character === ';' || character === ',' || character === '\n')) {
+      fragments.push(current);
+      current = '';
+      continue;
+    }
+    current += character;
+  }
+  fragments.push(current);
+
+  const fields: DeclaredField[] = [];
+  for (const fragment of fragments) {
+    const match = /^\s*(?:readonly\s+)?([A-Za-z_$][\w$]*)\s*(\??)\s*:/.exec(fragment);
+    const name = match?.[1];
+    if (name === undefined) continue;
+    fields.push({ name, optional: match?.[2] === '?' });
+  }
+  return fields;
+}
+
+/** Every property of a named interface in a file on disk. Throws when absent. */
+function declaredFields(file: string, name: string): DeclaredField[] {
+  const body = interfaceBody(withoutComments(readFileSync(file, 'utf8')), name);
+  if (body === null) throw new Error(`${file} declares no interface ${name}`);
+  return membersOf(body);
+}
+
+function fieldNames(fields: readonly DeclaredField[]): string[] {
+  return fields.map((field) => field.name).sort();
+}
+
+describe('the declaration reader is checked before it is believed', () => {
+  const FIXTURE = [
+    '/** A docblock naming a ghostField that is not declared. */',
+    'export interface Sample {',
+    '  // a line comment naming anotherGhost',
+    '  readonly plain: string;',
+    '  readonly maybe?: number;',
+    '  readonly nested: readonly { readonly path: string; readonly rule: string }[];',
+    '  readonly mapped: Record<string, string[]>;',
+    '  readonly url: string; // https://example.test/keep-me',
+    '}',
+  ].join('\n');
+
+  it('reads every member exactly once, including one whose type is an inline object', () => {
+    const body = interfaceBody(withoutComments(FIXTURE), 'Sample');
+    expect(body).not.toBeNull();
+    expect(membersOf(body as string)).toEqual([
+      { name: 'plain', optional: false },
+      { name: 'maybe', optional: true },
+      // `path` and `rule` belong to the NESTED type, not to `Sample`.
+      { name: 'nested', optional: false },
+      { name: 'mapped', optional: false },
+      { name: 'url', optional: false },
+    ]);
+  });
+
+  it('never reports a field that only a comment mentions', () => {
+    const found = fieldNames(
+      membersOf(interfaceBody(withoutComments(FIXTURE), 'Sample') as string)
+    );
+    expect(found).not.toContain('ghostField');
+    expect(found).not.toContain('anotherGhost');
+  });
+
+  it('fails loudly when the interface it was asked for is not there', () => {
+    // The failure mode that would matter most. If a rename made
+    // `ProblemDocument` unfindable, an empty list would compare equal to another
+    // empty list and every derivation below would pass on nothing.
+    expect(() => declaredFields(API_PROBLEM_FILE, 'NoSuchInterface')).toThrow(/NoSuchInterface/);
+  });
+
+  it('is reading the real files, not a path that resolved to nothing', () => {
+    expect(readFileSync(API_PROBLEM_FILE, 'utf8')).toContain('export interface ProblemDocument');
+    expect(readFileSync(WEB_CLIENT_FILE, 'utf8')).toContain('export interface ProblemDetails');
+  });
+});
+
+describe('P1-27-QA-002 — the client contract is derived from the API contract', () => {
+  const apiDocument = declaredFields(API_PROBLEM_FILE, 'ProblemDocument');
+  const webDetails = declaredFields(WEB_CLIENT_FILE, 'ProblemDetails');
+
+  it('found a non-trivial declaration on both sides', () => {
+    expect(apiDocument.length).toBeGreaterThanOrEqual(5);
+    expect(webDetails.length).toBeGreaterThanOrEqual(5);
+  });
+
+  it('declares the SAME field names on both sides of the wire', () => {
+    // The assertion both shipped defects would have failed: `errorCode` against
+    // `code`, and `errors` against `violations`.
+    expect(fieldNames(webDetails)).toEqual(fieldNames(apiDocument));
+  });
+
+  it('declares every field optional on the client, because the body is untrusted', () => {
+    // The API guarantees `type`, `title`, `status`, `code` and `correlationId`
+    // on every document it builds. The CLIENT parses whatever arrived, which may
+    // be a proxy's error page. Required there, optional here — deliberately
+    // asymmetric, so this is asserted rather than derived from the API side.
+    expect(webDetails.filter((field) => !field.optional)).toEqual([]);
+  });
+
+  it('mirrors every conditionally sent field, and keeps it optional', () => {
+    const conditional = apiDocument.filter((field) => field.optional).map((field) => field.name);
+    // Anti-vacuity: the API really does have conditional fields today. If it
+    // stopped having them, this case would pass by looping over nothing.
+    expect(conditional.length).toBeGreaterThanOrEqual(3);
+    for (const name of conditional) {
+      const mirror = webDetails.find((field) => field.name === name);
+      expect(mirror, `${name} is sent by the API and not declared by the client`).toBeDefined();
+      expect(mirror?.optional, `${name} must be optional on the client`).toBe(true);
+    }
+  });
+
+  it('derives the VIOLATION member type too, not only the envelope', () => {
+    /*
+     * The envelope check alone would miss the drift that actually cost a
+     * feature. `fieldErrorsOf` reads `violation.path` and `violation.rule`; a
+     * rename INSIDE the member type leaves `violations` spelled identically on
+     * both sides and breaks every form's field-level error just as completely.
+     *
+     * The API declares the member inline, so it is read out of the
+     * `ProblemDocument` body rather than from an interface of its own.
+     */
+    const body = interfaceBody(
+      withoutComments(readFileSync(API_PROBLEM_FILE, 'utf8')),
+      'ProblemDocument'
+    ) as string;
+    const inline = /\bviolations\??\s*:[^;\n]*?\{([^}]*)\}/.exec(body)?.[1];
+    expect(inline, 'the API no longer declares violations as an inline object').toBeDefined();
+
+    const apiViolation = membersOf(inline ?? '');
+    expect(apiViolation.length).toBeGreaterThanOrEqual(2);
+    expect(fieldNames(apiViolation)).toEqual(
+      fieldNames(declaredFields(WEB_CLIENT_FILE, 'Violation'))
+    );
+  });
+
+  it('reads, in running code, only fields the API actually sends', () => {
+    /*
+     * The bridge from "the declarations agree" to "the client works". Two
+     * declarations can match perfectly while the implementation dereferences a
+     * third name that is in neither — which is precisely what `fieldErrorsOf`
+     * did with `problem.errors`. The names the code reads are collected from the
+     * source and checked against the DERIVED set, never against a list typed
+     * here.
+     */
+    const clientCode = withoutComments(readFileSync(WEB_CLIENT_FILE, 'utf8'));
+    const declared = new Set(fieldNames(apiDocument));
+    const read = [...clientCode.matchAll(/\bproblem\??\.([A-Za-z_$][\w$]*)/g)].flatMap((m) =>
+      m[1] === undefined ? [] : [m[1]]
+    );
+    expect(read.length).toBeGreaterThan(0);
+    for (const field of read) {
+      expect(
+        declared.has(field),
+        `client.ts reads problem.${field}, which the API never sends`
+      ).toBe(true);
+    }
   });
 });
