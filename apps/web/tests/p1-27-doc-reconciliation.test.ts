@@ -284,6 +284,97 @@ describe('QA-005 — the evidence records point at this branch', () => {
   });
 });
 
+describe('the adjudication summary is DERIVED from its own rows', () => {
+  /*
+   * The defect this exists to stop, found by an adversarial recheck: the
+   * document's closing prose read "Twenty-one remain open" while its own Summary
+   * table listed exactly two non-closed rows. The table was maintained as work
+   * landed; the sentence beneath it was not, and nothing in the repository could
+   * tell them apart.
+   *
+   * So the prose may not state a total that the rows do not support. Note the
+   * direction: this does not pin a NUMBER — pinning one would need editing every
+   * time a task closes, which is the same hand-maintenance defect wearing a test
+   * as a disguise. It pins the RELATIONSHIP.
+   */
+  const STATUS = /^\|\s*`[A-Z]+-\d{3}`\s*\|[^|]*\|\s*([A-Z][A-Za-z ()`0-9]*?)\s*\|/;
+
+  function summaryRows() {
+    return read('final-task-adjudication.md')
+      .split('\n')
+      .map((line) => STATUS.exec(line))
+      .filter((m): m is RegExpExecArray => m !== null)
+      .map((m) => (m[1] ?? '').trim());
+  }
+
+  it('finds the task rows at all, so every case below can fail', () => {
+    const rows = summaryRows();
+    expect(rows.length, 'no `TASK-000 | verdict | status` rows matched').toBeGreaterThanOrEqual(30);
+  });
+
+  it('states no open-task total that contradicts the rows', () => {
+    const rows = summaryRows();
+    const unresolved = rows.filter((s) => /^(OPEN|BLOCKED)/.test(s)).length;
+
+    /*
+     * Written-out numbers, because that is how the offending sentence was
+     * written — "Twenty-one remain open", not "21". A digit-only check would
+     * have missed the very defect that prompted this.
+     */
+    const WORDS: Record<string, number> = {
+      zero: 0, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7,
+      eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12, thirteen: 13,
+      fourteen: 14, fifteen: 15, sixteen: 16, seventeen: 17, eighteen: 18,
+      nineteen: 19, twenty: 20, 'twenty-one': 21, 'twenty-two': 22,
+      'twenty-three': 23, 'thirty-three': 33,
+    };
+
+    /*
+     * Blockquoted lines are EXCLUDED, and that exclusion is the whole
+     * difficulty. This document is required to preserve superseded claims
+     * rather than delete them, so the stale sentence "Twenty-one remain open"
+     * still appears — quoted, under a heading explaining that it was wrong.
+     *
+     * The first version of this case had no such exclusion and duly failed on
+     * the document's own correction, which would have forced the record to
+     * erase its history to stay green. That is exactly the trap the
+     * `CLOSURE_BANNERS` case above documents hitting twice; this is the third
+     * time, so it is written down rather than merely fixed.
+     *
+     * A quoted claim is history. An unquoted one is an assertion. Only
+     * assertions are checked.
+     */
+    const live = read('final-task-adjudication.md')
+      .split('\n')
+      .filter((line) => !line.trimStart().startsWith('>'))
+      .join('\n');
+
+    const claims = [...live.matchAll(/([A-Za-z-]+|\d+)\s+remain\s+open/gi)].map((m) => {
+      const token = (m[1] ?? '').toLowerCase();
+      return /^\d+$/.test(token) ? Number(token) : WORDS[token];
+    });
+
+    for (const claimed of claims) {
+      if (claimed === undefined) continue; // not a number word — nothing to check
+      expect(
+        claimed,
+        `the prose claims ${claimed} remain open; the Summary table has ${unresolved} OPEN/BLOCKED row(s)`
+      ).toBe(unresolved);
+    }
+  });
+
+  it('does not record a task as both fixed and unresolved', () => {
+    // A row cannot be FIXED and OPEN at once. Catches a half-applied edit, which
+    // is how a status table drifts in the first place.
+    const rows = summaryRows();
+    for (const status of rows) {
+      const fixed = /^FIXED/.test(status);
+      const unresolved = /^(OPEN|BLOCKED)/.test(status);
+      expect(fixed && unresolved, `contradictory status cell: "${status}"`).toBe(false);
+    }
+  });
+});
+
 describe('this file is not vacuous', () => {
   it('reads real documents from the real phase directory', () => {
     const files = readdirSync(PHASE);
