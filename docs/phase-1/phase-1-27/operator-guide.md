@@ -48,9 +48,9 @@ Being able to add a note does not let you record a consent decision, and being
 able to raise an alert does not let you impose a restriction — refusing to serve
 someone and flagging them are different authorities.
 
-If a section shows "you do not have permission", you are not seeing an error and
-you are not seeing an empty section. You are being told the records exist and
-are not yours to see.
+If a section shows "You do not have access", you are not seeing an error and you
+are not seeing an empty section. You are being told the records exist and are
+not yours to see.
 
 **Notes may be incomplete.** When some notes are restricted from you, the screen
 says so above the list. An operator who cannot tell "there are three notes" from
@@ -146,22 +146,29 @@ somebody looked at it would fill the audit log with people looking.
 
 ## What a failure message means
 
-Four different things can go wrong and they now read differently, because the
-right next step is different for each.
+Five different things can go wrong and they read differently, because the right
+next step is different for each.
 
-| what you see                        | what happened                               | what to do                                               |
-| ----------------------------------- | ------------------------------------------- | -------------------------------------------------------- |
-| **You do not have permission**      | The records exist; they are not yours       | Ask an administrator; retrying will not help             |
-| **Temporarily unavailable** + Retry | Too many requests, or the service hiccupped | Wait a moment and press Retry. Quote the reference       |
-| **Your session has ended**          | You have been signed out                    | Sign in again. There is no Retry, because it cannot work |
-| **Something went wrong** + Retry    | A genuine fault                             | Retry once, then report it with the reference            |
+| what you see                     | what happened                               | what to do                                                  |
+| -------------------------------- | ------------------------------------------- | ----------------------------------------------------------- |
+| **You do not have access**       | The records exist; they are not yours       | Ask an administrator; retrying will not help                |
+| **Service unavailable** + Retry  | Too many requests, or the service hiccupped | Wait a moment and press Retry. Quote the reference          |
+| **Your session has ended**       | You have been signed out                    | Sign in again. There is no Retry, because it cannot work    |
+| **Something went wrong** + Retry | A genuine fault                             | Retry once, then report it with the reference               |
+| **Not found**                    | The record is not there                     | Check the reference you followed; there is nothing to retry |
 
 **The reference code** shown with a failure is what lets support find your exact
 request in the system log. Quote it. Without it a report is "it broke this
 morning", which cannot be traced.
 
-Before this phase all four of these read as "something went wrong", including the
+Before this phase all five of these read as "something went wrong", including the
 one that just meant you were searching quickly.
+
+The wording above is quoted from the product, not paraphrased. Two of these rows
+used to say "You do not have permission" and "Temporarily unavailable" — phrases
+that read well and appear on no screen, so an operator searching for what this
+guide told them to look for would have found nothing. The check that keeps them
+honest now reads the message catalogue rather than this page.
 
 ---
 

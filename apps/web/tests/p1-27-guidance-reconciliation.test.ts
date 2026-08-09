@@ -1,8 +1,9 @@
 import { readFileSync, readdirSync, existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { STATUS_BY_KIND, query } from '@/lib/api/read-operation';
+import { STATUS_BY_KIND, query, type ReadFailureStatus } from '@/lib/api/read-operation';
 import { normalizeVinForDisplay } from '@/features/vehicles/contract';
+import en from '../src/i18n/messages/en.json';
 
 /**
  * `DOC-002` — the guidance half.
@@ -56,11 +57,27 @@ const FEATURE_ROOTS = [
   join(WEB_SRC, 'features', 'vehicles'),
 ];
 
-/** Files directly in a feature root — the trees the guide's table describes. */
-function rootFiles(dir: string): readonly string[] {
-  return readdirSync(dir).filter(
-    (name) => name.endsWith('.ts') && statSync(join(dir, name)).isFile()
-  );
+/**
+ * Every `.ts`/`.tsx` file under a feature root, RECURSIVELY.
+ *
+ * It walked one level at first, which made the developer guide's sentence —
+ * "every file in either tree that opens with `'use server'`" — wider than the
+ * check behind it. All thirteen adapters happen to sit at the root today, so the
+ * sentence was true and the check was not what made it true: a `'use server'`
+ * file added under `components/` would have escaped the partition while the
+ * guide went on claiming it could not.
+ *
+ * That is the same defect class this file exists for, one level down, so the
+ * walker was widened rather than the sentence narrowed.
+ */
+function treeFiles(dir: string): readonly string[] {
+  const out: string[] = [];
+  for (const entry of readdirSync(dir)) {
+    const path = join(dir, entry);
+    if (statSync(path).isDirectory()) out.push(...treeFiles(path));
+    else if (entry.endsWith('.ts') || entry.endsWith('.tsx')) out.push(path);
+  }
+  return out;
 }
 
 describe('the operator guide describes the product that was built', () => {
@@ -119,35 +136,58 @@ describe('the operator guide describes the product that was built', () => {
     expect(OPERATOR).toMatch(/\*\*I, O and Q are preserved exactly as entered\*\*/);
   });
 
-  it('names four failure meanings that are four distinct states in the code', () => {
+  it('quotes the failure wording the operator actually sees, from the catalogue', () => {
     /*
-     * The guide's table promises the operator that "you do not have permission",
-     * "temporarily unavailable", "your session has ended" and "something went
-     * wrong" mean different things and want different responses. That is only
-     * true while the code maps them apart — collapse any two and the table
-     * becomes advice to do the wrong thing.
+     * The first version of this case was CIRCULAR and shipped that way.
+     *
+     * It listed four strings taken from the operator guide and asserted the
+     * operator guide contained them. Two of the four — "You do not have
+     * permission" and "Temporarily unavailable" — are in no message catalogue at
+     * all: the product says "You do not have access" and "Service unavailable".
+     * So the guide sent an operator looking for words no screen shows, and the
+     * check written to stop exactly that kind of claim confirmed it instead.
+     *
+     * A document may not be its own evidence. The rows are now derived from the
+     * catalogue, so rewording the UI fails this case rather than silently making
+     * the guide wrong.
      */
+    const shown = (key: string): string => {
+      const value = (en as Record<string, unknown>)[key];
+      expect(typeof value, `${key} is not in the catalogue`).toBe('string');
+      return value as string;
+    };
+
+    // Every state a read failure can resolve to, from the type that defines them.
+    const STATES: Record<ReadFailureStatus, string> = {
+      denied: 'state.denied.title',
+      unavailable: 'state.unavailable.title',
+      expired: 'state.expired.title',
+      error: 'state.error.title',
+      'not-found': 'state.notFound.title',
+    };
+
+    for (const key of Object.values(STATES)) {
+      expect(OPERATOR, `the guide does not quote ${key}`).toContain(shown(key));
+    }
+
+    // And they are five DISTINCT sentences. Collapsing any two would make the
+    // table advice to do the wrong thing while every string above still resolved.
+    const sentences = Object.values(STATES).map(shown);
+    expect(new Set(sentences).size, 'two failure states read identically').toBe(sentences.length);
+
+    // The mapping that puts a transport kind into one of those states, which is
+    // what makes the table's "what happened" column true.
     expect(STATUS_BY_KIND.forbidden).toBe('denied');
     expect(STATUS_BY_KIND['rate-limited']).toBe('unavailable');
     expect(STATUS_BY_KIND.unauthenticated).toBe('expired');
     expect(STATUS_BY_KIND.server).toBe('error');
+    expect(STATUS_BY_KIND['not-found']).toBe('not-found');
 
-    const distinct = new Set([
-      STATUS_BY_KIND.forbidden,
-      STATUS_BY_KIND['rate-limited'],
-      STATUS_BY_KIND.unauthenticated,
-      STATUS_BY_KIND.server,
-    ]);
-    expect(distinct.size, 'the four rows must stay four states').toBe(4);
-
-    for (const row of [
-      'You do not have permission',
-      'Temporarily unavailable',
-      'Your session has ended',
-      'Something went wrong',
-    ]) {
-      expect(OPERATOR).toContain(row);
-    }
+    // The guide calls the list exhaustive. It must therefore count them right —
+    // it said "Four" while the code has always had five.
+    expect(OPERATOR, 'the guide states a count the code contradicts').toContain(
+      'Five different things can go wrong'
+    );
   });
 
   it('is right that no screen decides what the operator may see', () => {
@@ -254,9 +294,7 @@ describe('the developer guide describes the repository that exists', () => {
     const expand = (pattern: string): readonly string[] => {
       const brace = /\{([^}]+)\}/.exec(pattern);
       if (!brace) return [pattern];
-      return (brace[1] ?? '')
-        .split(',')
-        .map((option) => pattern.replace(brace[0], option.trim()));
+      return (brace[1] ?? '').split(',').map((option) => pattern.replace(brace[0], option.trim()));
     };
 
     const unresolved: string[] = [];
@@ -290,13 +328,9 @@ describe('the developer guide describes the repository that exists', () => {
      * anything else fails here rather than quietly making the guide wrong again.
      */
     const serverFiles = FEATURE_ROOTS.flatMap((dir) =>
-      rootFiles(dir)
-        .filter((name) => /^['"]use server['"]/.test(readFileSync(join(dir, name), 'utf8').trim()))
-        .map((name) =>
-          join(dir, name)
-            .slice(WEB_SRC.length + 1)
-            .replace(/\\/g, '/')
-        )
+      treeFiles(dir)
+        .filter((path) => /^['"]use server['"]/.test(readFileSync(path, 'utf8').trim()))
+        .map((path) => path.slice(WEB_SRC.length + 1).replace(/\\/g, '/'))
     );
     expect(serverFiles.length, 'both trees must still ship adapters').toBeGreaterThanOrEqual(13);
 
