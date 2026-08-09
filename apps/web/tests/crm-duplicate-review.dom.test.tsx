@@ -304,4 +304,36 @@ describe('this file is not vacuous', () => {
       ).toContain('dismissed')
     );
   });
+
+  it('reaches the THIRD state too, and writes nothing while filtering', async () => {
+    /*
+     * The twin of the vehicle queue's case, for the same reason the case above
+     * is a twin. `DUPLICATE_STATUSES` is `['open', 'dismissed', 'merged']`; a
+     * filter can be live for one option and dead for another if the select's
+     * value is mapped rather than passed, so the third is asserted.
+     *
+     * And `crm.duplicate-scan` is a privileged audited WRITE that creates
+     * candidate rows. Opening the queue is already covered above; CHANGING THE
+     * FILTER was not, and it is the interaction an operator repeats.
+     */
+    const user = userEvent.setup();
+    render();
+    await screen.findByText('Nadia Khoury');
+
+    await user.selectOptions(
+      screen.getByLabelText(en['crm.customers.column.status']),
+      en['crm.duplicateStatus.merged']
+    );
+
+    await waitFor(() =>
+      expect(
+        listDuplicates.mock.calls.map((call) => call[0]),
+        'the third status option is decorative'
+      ).toContain('merged')
+    );
+    expect(
+      reviewDuplicateAction,
+      'filtering the queue performed a privileged write'
+    ).not.toHaveBeenCalled();
+  });
 });

@@ -444,6 +444,43 @@ describe('the vehicle duplicate queue', () => {
     );
   });
 
+  it('reaches the THIRD state too, and writes nothing while filtering', async () => {
+    /*
+     * `VEHICLE_DUPLICATE_STATUSES` is `['open', 'dismissed', 'merged']`. The case
+     * above proves the second; a filter can be live for one option and dead for
+     * another if the select's value is mapped rather than passed, so the third
+     * is asserted rather than assumed. It reads "Combined" here and "Merged" in
+     * the CRM queue — different words, one state.
+     *
+     * The second half is the property that makes this queue safe to look at.
+     * `veh.vehicle-duplicate-scan` is a privileged audited WRITE that creates
+     * candidate rows: a queue that "refreshed" by scanning would write audit
+     * history every time somebody changed a filter, and the audit log would fill
+     * with people looking rather than people deciding. Opening the queue is
+     * already covered; CHANGING THE FILTER was not, and it is the interaction an
+     * operator repeats.
+     */
+    const user = userEvent.setup();
+    render();
+    await screen.findByText('93%');
+
+    await user.selectOptions(
+      screen.getByLabelText(en['crm.customers.column.status']),
+      en['vehicles.duplicateStatus.merged']
+    );
+
+    await waitFor(() =>
+      expect(
+        listVehicleDuplicates.mock.calls.map((call) => call[0]),
+        'the third status option is decorative'
+      ).toContain('merged')
+    );
+    expect(
+      reviewVehicleDuplicateAction,
+      'filtering the queue performed a privileged write'
+    ).not.toHaveBeenCalled();
+  });
+
   /**
    * Owner acceptance reversed this test's premise.
    *
