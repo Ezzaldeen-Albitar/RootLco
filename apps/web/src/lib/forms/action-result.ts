@@ -1,4 +1,4 @@
-import { FAILURE_MESSAGE_KEY, violationKeysOf, type ApiFailure } from '@/lib/api/client';
+import { failureMessageKey, violationKeysOf, type ApiFailure } from '@/lib/api/client';
 
 /**
  * What a Server Action gives back to a form.
@@ -130,7 +130,7 @@ export function fromFailure(
   const { fieldErrors, formKeys } = violationKeysOf(failure);
   return {
     status,
-    messageKey: messageKeyOverride ?? formKeys[0] ?? FAILURE_MESSAGE_KEY[failure.kind],
+    messageKey: messageKeyOverride ?? formKeys[0] ?? failureMessageKey(failure),
     ...(Object.keys(fieldErrors).length > 0 ? { fieldErrors } : {}),
     correlationId: failure.correlationId,
     attempt,

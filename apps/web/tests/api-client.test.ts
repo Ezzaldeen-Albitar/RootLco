@@ -709,3 +709,96 @@ describe('a hostile response cannot reshape the result', () => {
     expect(fieldErrorsOf(failure)).toEqual({});
   });
 });
+
+/**
+ * P1-27-QA-004 — a conflict must say what actually happened.
+ *
+ * Every 409 used to render `state.conflict.title`, "Someone else changed this",
+ * because `FAILURE_MESSAGE_KEY` maps a KIND and every 409 is one kind. The error
+ * catalog defines ten codes at 409. The vehicle module raises `ERR-RES-002`
+ * twelve times — a lifecycle state that refuses the write, a merged and read-only
+ * vehicle, a candidate already decided, a unique index rejecting the row — and
+ * none of those is another person editing the record.
+ *
+ * These cases drive a REAL request through the client, because the mapping is
+ * only worth anything if it survives the path a screen actually takes.
+ */
+describe('P1-27-QA-004 — conflict copy follows the catalog code', () => {
+  async function conflictState(problem: unknown) {
+    const fetchImpl = vi.fn(async () => respond(409, problem));
+    const failure = (await clientWith(fetchImpl as never).send(
+      'PATCH',
+      '/api/v1/vehicles/3f2504e0-4f89-41d3-9a0c-0305e82c3301',
+      { colour: 'blue' }
+    )) as ApiFailure;
+    expect(failure.kind).toBe('conflict');
+    return fromFailure(failure, 1);
+  }
+
+  const CONCURRENCY = 'state.conflict.title';
+  const BLOCKED = 'state.conflict.blocked.title';
+
+  it('keeps the concurrency sentence for the one code that means it', async () => {
+    const state = await conflictState({
+      type: 'urn:rootlco:error:ERR-CON-001',
+      title: 'Record version conflict',
+      status: 409,
+      code: 'ERR-CON-001',
+      correlationId: 'corr-con',
+    });
+    expect(state.status).toBe('conflict');
+    expect(state.messageKey).toBe(CONCURRENCY);
+  });
+
+  it('does not claim a concurrent edit for a lifecycle or uniqueness refusal', async () => {
+    const state = await conflictState({
+      type: 'urn:rootlco:error:ERR-RES-002',
+      title: 'Resource already exists',
+      status: 409,
+      code: 'ERR-RES-002',
+      correlationId: 'corr-res',
+    });
+    expect(state.messageKey).toBe(BLOCKED);
+    expect(state.messageKey).not.toBe(CONCURRENCY);
+  });
+
+  it('fails safe to the sentence that claims nothing when there is no code', async () => {
+    const state = await conflictState({ status: 409, correlationId: 'corr-bare' });
+    expect(state.messageKey).toBe(BLOCKED);
+  });
+
+  it('reaches the concurrency sentence from no other catalog code', async () => {
+    const others = [
+      'ERR-RES-002',
+      'ERR-INT-001',
+      'ERR-DOC-001',
+      'ERR-NTF-001',
+      'ERR-TRN-001',
+      'ERR-WO-001',
+      'ERR-WO-002',
+      'ERR-DIA-001',
+      'ERR-QMS-001',
+    ];
+    for (const code of others) {
+      const state = await conflictState({ status: 409, code, correlationId: `corr-${code}` });
+      expect(state.messageKey, `${code} must not claim a concurrent edit`).toBe(BLOCKED);
+    }
+  });
+
+  it('publishes both sentences in both catalogues', () => {
+    for (const key of [CONCURRENCY, BLOCKED, 'state.conflict.blocked.description']) {
+      expect(Object.keys(en), `en is missing ${key}`).toContain(key);
+      expect(Object.keys(ar), `ar is missing ${key}`).toContain(key);
+      expect((en as Record<string, string>)[key]).not.toBe('');
+      expect((ar as Record<string, string>)[key]).not.toBe((en as Record<string, string>)[key]);
+    }
+  });
+
+  it('leaves the kind map itself pointing at the concurrency sentence, unread for conflicts', () => {
+    // The map is still exported and still correct about every other kind. The
+    // point of the change is that a CONFLICT no longer reads it, so a future
+    // edit here cannot quietly restore the false claim.
+    expect(FAILURE_MESSAGE_KEY.conflict).toBe(CONCURRENCY);
+    expect(FAILURE_MESSAGE_KEY.validation).toBe('form.formError');
+  });
+});
