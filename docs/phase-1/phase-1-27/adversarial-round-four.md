@@ -94,11 +94,31 @@ guide contains them. Two of the four are in no message catalogue at all.
 | `ADJ-01`                              | **FIXED** `cf39f80` — the ten anonymous unresolved ids named, each with its commit                                                    |
 | `ADJ-02`                              | **FIXED** `cf39f80` — `setLogAdapter` never existed; it is `setMonitoringAdapter`                                                     |
 | `ADJ-03`                              | **FIXED** `cf39f80` — the preamble no longer closes the phase's one open item                                                         |
-| `F1`, `F2`, `F4`                      | open — vehicle lifecycle cross-axis rules and the stale read after a status change                                                    |
-| `R1`…`R4`, `G-04`, `G-05`             | open — test and gate weaknesses                                                                                                       |
-| `MAN-01`…`MAN-04`, `TRC-01`, `TRC-02` | open — manifest and traceability figures                                                                                              |
+| `F1`, `F2`                            | **FIXED** `6b634db` — the cross-axis rule now judges the RESULTING pair, in both directions                                           |
+| `F4`                                  | **FIXED** `6b634db` — the panel re-reads the vehicle after a successful change                                                        |
+| `R1`                                  | **FIXED** `7ed5150` — `components/forms` joined the security surface                                                                  |
+| `R2`                                  | **FIXED** `7ed5150` — `canListDocuments` asserted in both directions                                                                  |
+| `R3`                                  | **FIXED** `7ed5150` — the two inspected tags named, not counted                                                                       |
+| `R4`                                  | **FIXED** `7ed5150` — the docblock no longer misdescribes the sweeps it dismissed                                                     |
+| `G-04`                                | **FIXED** `7ed5150` — the gate widened to "any `console.*`" as the guide always claimed                                               |
+| `G-05`                                | **FIXED** `7ed5150` — row count pinned, so a row cannot vanish under the floor                                                        |
+| `MAN-01`…`MAN-04`, `TRC-01`, `TRC-02` | **FIXED** `b537399` — six figures corrected AND derived by three reconciliation cases                                                 |
 
-`PRE_QA005_PASS_REFUTED` is therefore **not** zero, and the candidate freeze does
-not proceed until it is. That is the whole purpose of running this pass before
-the freeze rather than after it: every one of these would otherwise have been
-found by the Product Owner, or not at all.
+```
+CLOSED = 27
+OPEN   =  0
+```
+
+**One thing is recorded and NOT closed**, deliberately: an intermittent failure
+in `record-form-consumers.dom.test.tsx` — three occurrences, always the same
+case, never reproducible under observation. A `waitFor` default timeout against a
+~1.6 s case was identified and fixed, and the failure recurred once afterwards,
+so that is a real hazard removed but **not** the proven cause. The message has
+never been captured.
+
+It is not called a flake. A flake is a name for not having looked.
+
+`PRE_QA005_PASS_REFUTED = 0`. The candidate may now be frozen — which is the
+whole purpose of running this pass before the freeze rather than after it. Every
+one of these twenty-seven would otherwise have been found by the Product Owner,
+or not at all.
