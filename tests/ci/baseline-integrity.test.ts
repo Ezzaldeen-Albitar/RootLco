@@ -164,6 +164,70 @@ describe('committed baselines', () => {
     }
   });
 
+  it('every tier that CI summarises carries a floor, including web', () => {
+    /*
+     * `summarise-vitest.mjs` reads `tiers[label].minTests`. A label with no entry
+     * does not fail — it prints a warning and runs the tier with the anti-shrink
+     * guard switched off, which is indistinguishable from a green run to anyone
+     * reading the check list.
+     *
+     * `web` was that tier for the whole of P1-27. It grew from 39 test files to
+     * 65 while carrying no floor at all, and every hosted run said so in an
+     * annotation nobody was required to read: "no minimum test count is recorded
+     * for tier `web`, so a shrinking suite would not be detected."
+     *
+     * The labels are derived from the workflow that passes them, so a new tier
+     * cannot be summarised without also being floored.
+     */
+    const workflow = readFileSync(
+      join(process.cwd(), '.github', 'workflows', '_reusable-node-quality.yml'),
+      'utf8'
+    );
+    const summarised = [...workflow.matchAll(/--input\s+\S+\s+--label\s+(\w+)/g)].map(
+      (m) => m[1] ?? ''
+    );
+    expect(summarised, 'no summarise-vitest invocation was found').not.toEqual([]);
+    expect(summarised, 'the web tier must be summarised by this workflow').toContain('web');
+
+    const tiers = read('test-count-baseline.json').tiers as Record<string, unknown>;
+    const unfloored = summarised.filter((label) => tiers[label] === undefined);
+    expect(
+      unfloored,
+      'a tier is summarised with no floor, so summarise-vitest only warns and a shrinking suite passes'
+    ).toEqual([]);
+  });
+
+  it('leaves each floor enough headroom for churn but not for a deleted file', () => {
+    /*
+     * The rule `unitFloorCaveat` states in prose, asserted: a floor equal to its
+     * own measurement is "a transcript of the last run rather than a guard", and
+     * one set far below "could have absorbed an entire deleted test file without
+     * complaint".
+     *
+     * So headroom must be strictly positive — otherwise the next commit moves the
+     * floor — and small relative to the tier. Ten per cent is the widest any
+     * current tier sits (backend, 5.8%); the bound here is deliberately looser
+     * than every real value so it catches a floor set carelessly, not one set
+     * differently.
+     */
+    const tiers = Object.entries(
+      read('test-count-baseline.json').tiers as Record<
+        string,
+        { minTests: number; measured: number }
+      >
+    );
+    for (const [tier, entry] of tiers) {
+      const headroom = entry.measured - entry.minTests;
+      expect(headroom, `${tier}: a floor equal to its measurement is a transcript`).toBeGreaterThan(
+        0
+      );
+      expect(
+        headroom / entry.measured,
+        `${tier}: headroom is wide enough to swallow a deleted test file`
+      ).toBeLessThan(0.1);
+    }
+  });
+
   it('every exception carries an owner, a reason and an expiry that has not passed', () => {
     const now = Date.now();
     for (const [file, key] of [
