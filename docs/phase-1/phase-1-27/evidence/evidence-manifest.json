@@ -128,12 +128,12 @@
       "bytes": 159611
     },
     "docs/phase-1/phase-1-27/task-matrix-verdicts.json": {
-      "sha256": "ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356",
-      "bytes": 3
+      "sha256": "37ecd64addf97f35ff1d8ec59f97d8dc1fe1fd5ebade613a06df95f5ba6b742c",
+      "bytes": 79289
     },
     "docs/phase-1/phase-1-27/task-matrix.json": {
-      "sha256": "5f0302f3349f4c08ea79d28511bffcf910213e5fa3a946def5182f8e7ee679e5",
-      "bytes": 67247
+      "sha256": "b4ea764922ddb4fcfbdbdd6218d687f9a64e05b6f745fc25b55c49f0ff904694",
+      "bytes": 111908
     },
     "docs/phase-1/phase-1-27/task-register.md": {
       "sha256": "cd69f6c21f390d54e812fa652ea27eb89042ea068f7a6b22ac698c2476b498bf",
