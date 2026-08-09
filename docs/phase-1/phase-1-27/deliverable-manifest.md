@@ -60,15 +60,15 @@ states it because the file states it.
 
 ### 1.2 Anchors
 
-| anchor                                                                     | value                                                                                                                                                                           |
-| -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| protected `origin/develop`                                                 | `19f370b982ebd7750612239154311f0036e5c34e`                                                                                                                                      |
-| working branch                                                             | `docs/p1-27-registers-and-program`, head `9de1a3c3940722097d8f630dd8c7bfc180881da6` — **one documentation commit ahead of `develop`**, and carrying untracked documents besides |
-| that commit                                                                | `docs(p1-27): correct an overstatement, and measure the drawer`, read from `.git/logs/refs/heads/docs/p1-27-registers-and-program`                                              |
-| protected `origin/main`                                                    | `f085d82001a43de51725707426d5c10eb134c004` — **untouched by this phase**                                                                                                        |
-| migrations on the branch <!-- derived: files supabase/migrations = 120 --> | **120** `.sql` files under `supabase/migrations`                                                                                                                                |
-| published API surface                                                      | **243** operations across **203** paths                                                                                                                                         |
-| `P1-G27` gate record                                                       | **does not exist**, and must not be created — §11                                                                                                                               |
+| anchor                     | value                                                                                                                                                                           |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| protected `origin/develop` | `19f370b982ebd7750612239154311f0036e5c34e`                                                                                                                                      |
+| working branch             | `docs/p1-27-registers-and-program`, head `9de1a3c3940722097d8f630dd8c7bfc180881da6` — **one documentation commit ahead of `develop`**, and carrying untracked documents besides |
+| that commit                | `docs(p1-27): correct an overstatement, and measure the drawer`, read from `.git/logs/refs/heads/docs/p1-27-registers-and-program`                                              |
+| protected `origin/main`    | `f085d82001a43de51725707426d5c10eb134c004` — **untouched by this phase**                                                                                                        |
+| migrations on the branch   | **120** `.sql` files under `supabase/migrations`                                                                                                                                |
+| published API surface      | **243** operations across **203** paths                                                                                                                                         |
+| `P1-G27` gate record       | **does not exist**, and must not be created — §11                                                                                                                               |
 
 ### 1.3 What a reader should reconcile against
 
@@ -114,21 +114,21 @@ exists, never as an argument that it works.
 
 ## 3. Deliverable totals
 
-| category                                                                               | artefacts                                                          | how counted                                                                |
-| -------------------------------------------------------------------------------------- | ------------------------------------------------------------------ | -------------------------------------------------------------------------- |
-| Feature source under the P1-27 ownership gate                                          | **43**                                                             | command 2                                                                  |
-| Router pages (CRM and Vehicle)                                                         | **8**                                                              | command 1                                                                  |
-| Shared-foundation source files changed by the phase or its remediation                 | **13** named in §5.5                                               | command 1, cross-read against the task register and the remediation record |
-| Web unit and component test files <!-- derived: files apps/web/tests = 66 -->          | **66**                                                             | commands 1 and 8                                                           |
-| Playwright specification files                                                         | **9** (2 anonymous, 7 authenticated)                               | commands 11 and 12                                                         |
-| Root CI-contract test files <!-- derived: files tests/ci = 36 -->                      | **36**                                                             | commands 1 and 10                                                          |
-| CI gate scripts under `scripts/ci` <!-- derived: files scripts/ci = 44 -->             | **44** in the directory, **7** introduced or changed by this phase | command 1; the six are the `scripts/ci` rows of §7.1                       |
-| Web gate scripts under `apps/web/scripts` <!-- derived: files apps/web/scripts = 4 --> | **4** in the directory, **1** introduced by this phase             | command 1                                                                  |
-| Phase documentation under `docs/phase-1/phase-1-27`                                    | **15** tracked                                                     | command 1, filtered to `.git/index` — see §1.3                             |
-| Product planning documentation under `docs/product`                                    | **11** tracked                                                     | command 1, filtered to `.git/index` — see §1.3                             |
-| Local acceptance tooling under `scripts/dev/owner-acceptance`                          | **8**                                                              | command 1                                                                  |
-| Mutation identifiers in the `M-OA` family                                              | **20**                                                             | command 1, reading `scripts/ci/hostile-mutations.mjs`                      |
-| Migrations added                                                                       | **0** — the count stays at 120                                     | command 1                                                                  |
+| category                                                               | artefacts                                                          | how counted                                                                |
+| ---------------------------------------------------------------------- | ------------------------------------------------------------------ | -------------------------------------------------------------------------- |
+| Feature source under the P1-27 ownership gate                          | **43**                                                             | command 2                                                                  |
+| Router pages (CRM and Vehicle)                                         | **8**                                                              | command 1                                                                  |
+| Shared-foundation source files changed by the phase or its remediation | **13** named in §5.5                                               | command 1, cross-read against the task register and the remediation record |
+| Web unit and component test files                                      | **66**                                                             | commands 1 and 8                                                           |
+| Playwright specification files                                         | **9** (2 anonymous, 7 authenticated)                               | commands 11 and 12                                                         |
+| Root CI-contract test files                                            | **36**                                                             | commands 1 and 10                                                          |
+| CI gate scripts under `scripts/ci`                                     | **44** in the directory, **7** introduced or changed by this phase | command 1; the six are the `scripts/ci` rows of §7.1                       |
+| Web gate scripts under `apps/web/scripts`                              | **4** in the directory, **1** introduced by this phase             | command 1                                                                  |
+| Phase documentation under `docs/phase-1/phase-1-27`                    | **15** tracked                                                     | command 1, filtered to `.git/index` — see §1.3                             |
+| Product planning documentation under `docs/product`                    | **11** tracked                                                     | command 1, filtered to `.git/index` — see §1.3                             |
+| Local acceptance tooling under `scripts/dev/owner-acceptance`          | **8**                                                              | command 1                                                                  |
+| Mutation identifiers in the `M-OA` family                              | **20**                                                             | command 1, reading `scripts/ci/hostile-mutations.mjs`                      |
+| Migrations added                                                       | **0** — the count stays at 120                                     | command 1                                                                  |
 
 ---
 
@@ -414,12 +414,12 @@ anonymous tier had been fixed before merge.
 
 ### 6.4 Root tiers
 
-| tier                                                       | files                                           | cases                                                                                                                                                        | how measured                 |
-| ---------------------------------------------------------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------- |
-| `npm run test` — the root unit and contract aggregate      | **77**                                          | **1680**                                                                                                                                                     | command 9                    |
-| of which `tests/ci`                                        | **31**                                          | **638**                                                                                                                                                      | command 10                   |
-| `tests/backend` <!-- derived: files tests/backend = 80 --> | **80** test files (85 files in the directory)   | **not run here** — needs a running PostgreSQL                                                                                                                | command 1 for the file count |
-| `tests/db` <!-- derived: files tests/db = 139 -->          | **139** test files (142 files in the directory) | **not run here** — needs a running PostgreSQL. **Recorded** as 1636 / 1636 in [`owner-acceptance-fail-remediation.md`](owner-acceptance-fail-remediation.md) | command 1 for the file count |
+| tier                                                  | files                                           | cases                                                                                                                                                        | how measured                 |
+| ----------------------------------------------------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------- |
+| `npm run test` — the root unit and contract aggregate | **77**                                          | **1680**                                                                                                                                                     | command 9                    |
+| of which `tests/ci`                                   | **31**                                          | **638**                                                                                                                                                      | command 10                   |
+| `tests/backend`                                       | **80** test files (85 files in the directory)   | **not run here** — needs a running PostgreSQL                                                                                                                | command 1 for the file count |
+| `tests/db`                                            | **139** test files (142 files in the directory) | **not run here** — needs a running PostgreSQL. **Recorded** as 1636 / 1636 in [`owner-acceptance-fail-remediation.md`](owner-acceptance-fail-remediation.md) | command 1 for the file count |
 
 The four `tests/ci` files this phase introduced or that carry its gates are
 `p1-27-frontend-gate.test.ts` (26), `plain-language-gate.test.ts` (21),
@@ -764,3 +764,16 @@ Two claims that look wrong and are right, recorded so nobody "corrects" them:
 the record honest; it says nothing about whether the product works. **P1-27
 closes only when the Product Owner manually tests the running application and
 returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
+
+<!-- The counts in this document's tables are checked against the tree by
+     `validate:p1-27-doc-counts`. The markers live here, outside every table:
+     an earlier revision put them in the label column and broke two other gates
+     whose regexes read the label and the number as adjacent cells. -->
+
+<!-- derived: files apps/web/tests = 66 -->
+<!-- derived: files tests/ci = 36 -->
+<!-- derived: files scripts/ci = 44 -->
+<!-- derived: files apps/web/scripts = 4 -->
+<!-- derived: files supabase/migrations = 120 -->
+<!-- derived: files tests/db = 139 -->
+<!-- derived: files tests/backend = 80 -->
