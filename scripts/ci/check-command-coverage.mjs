@@ -61,7 +61,14 @@ const WEB = '@rootlco/web';
  *                   lifecycle). Running it in CI would hang or mutate state.
  *   environment   — needs a live database, Docker or credentials, so it runs in
  *                   its own workflow job rather than from the local aggregate.
+ *
+ * These four are the WHOLE vocabulary, and that is now enforced rather than
+ * described. `evaluate()` skips anything that is not `required`, so an
+ * unrecognised tier — a fifth word somebody invented, or `requird` — silently
+ * means "not a gate". One entry was registered `optional` and nothing noticed.
  */
+export const TIERS = Object.freeze(['required', 'informational', 'interactive', 'environment']);
+
 export const REGISTER = Object.freeze([
   // --- root: repository-level quality gates ---------------------------------
   { name: 'lint', owner: ROOT, tier: 'required', why: 'repository tooling, tests and configs' },
@@ -148,7 +155,11 @@ export const REGISTER = Object.freeze([
   {
     name: 'evidence:p1-27',
     owner: ROOT,
-    tier: 'optional',
+    // `informational`, not `optional`. `optional` is not one of the four tiers
+    // this register defines, and `evaluate()` treats ANY unrecognised string as
+    // "not a gate" — so a typo like `requird` would silently unenforce a real
+    // one. The vocabulary is now asserted by `tests/ci/command-coverage.test.ts`.
+    tier: 'informational',
     // The writer. Deliberately NOT required: a CI job that ran this would repair
     // the drift the required check exists to report, and a gate that fixes its
     // own failure is not a gate.

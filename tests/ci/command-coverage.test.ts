@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import {
   AGGREGATE,
   REGISTER,
+  TIERS,
   edgesOf,
   evaluate,
   key,
@@ -22,6 +23,47 @@ import {
 
 const ROOT = 'root';
 const WEB = '@rootlco/web';
+
+describe('the tier vocabulary is closed', () => {
+  /*
+   * `evaluate()` does `if (entry.tier !== 'required') continue`, so ANY string
+   * that is not one of the four defined tiers means "not a gate". An adversarial
+   * review found one entry registered `optional` — a fifth word, defined
+   * nowhere, silently exempt — and observed that `requird` would unenforce a
+   * real gate the same way. Nothing read the tier vocabulary at all.
+   */
+  it('registers every command under one of the four defined tiers', () => {
+    const stray = REGISTER.filter((entry) => !TIERS.includes(entry.tier)).map(
+      (entry) => `${entry.owner}::${entry.name} -> "${entry.tier}"`
+    );
+    expect(stray, 'an unrecognised tier is silently "not a gate"').toEqual([]);
+  });
+
+  it('has a vocabulary the docblock actually defines', () => {
+    // Both directions: a tier used but undocumented is the defect above; a tier
+    // documented but unusable would be a rule nobody can follow.
+    const source = readFileSync(
+      join(process.cwd(), 'scripts', 'ci', 'check-command-coverage.mjs'),
+      'utf8'
+    );
+    for (const tier of TIERS) {
+      expect(source, `${tier} is in the vocabulary and not described`).toContain(`*   ${tier}`);
+    }
+    expect(TIERS).toContain('required');
+    expect(TIERS.length, 'the vocabulary is empty or unbounded').toBe(4);
+  });
+
+  it('still classifies at least one command under each tier it defines', () => {
+    // A tier nothing uses is a tier nobody maintains, and it would drift into
+    // the "unrecognised" case without anyone noticing.
+    for (const tier of TIERS) {
+      expect(
+        REGISTER.some((entry) => entry.tier === tier),
+        `no command is registered as ${tier}`
+      ).toBe(true);
+    }
+  });
+});
 
 describe('npm run edges', () => {
   it('follows a plain invocation', () => {
