@@ -153,6 +153,24 @@ export const REGISTER = Object.freeze([
     why: 'every P1-27 evidence document is digested, and the digests match the bytes',
   },
   {
+    name: 'validate:p1-27-matrix',
+    owner: ROOT,
+    tier: 'required',
+    // The canonical 42-task authority. This phase once counted 33 adjudicated
+    // items as 42 canonical tasks with nine listed nowhere, so the universe is
+    // derived from `canonical-plan.md` and this refuses any drift between the
+    // plan, the recorded verdicts and the committed matrix.
+    why: 'the 42-task matrix still matches the canonical plan and the recorded verdicts',
+  },
+  {
+    name: 'matrix:p1-27',
+    owner: ROOT,
+    tier: 'informational',
+    // The writer, for the same reason `evidence:p1-27` is not required: a CI job
+    // that regenerated the matrix would repair the drift the check reports.
+    why: 'regenerates the canonical P1-27 task matrix',
+  },
+  {
     name: 'evidence:p1-27',
     owner: ROOT,
     // `informational`, not `optional`. `optional` is not one of the four tiers
