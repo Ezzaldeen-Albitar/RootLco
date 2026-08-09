@@ -395,6 +395,129 @@ describe('the adjudication summary is DERIVED from its own rows', () => {
   });
 });
 
+describe('the manifest states counts the repository can confirm', () => {
+  /*
+   * `MAN-01`…`MAN-04`. Four figures in `deliverable-manifest.md` were wrong at
+   * once, and every one of them is countable in a second:
+   *
+   *   - the ownership gate's file count (said 40, reports 43) — quoted as gate
+   *     OUTPUT, in the document the `DOC-001` fix edited to close that very
+   *     desync and closed everywhere except inside itself;
+   *   - `scripts/ci` (said 40, holds 41), while `final-task-adjudication.md`
+   *     said 41 and treated it as settled — two canonical records disagreeing
+   *     about a directory listing;
+   *   - the CRM and vehicle source trees (said 18 and 22, hold 20 and 23),
+   *     omitting `profile-actions.ts`, which carries two canonical write call
+   *     sites;
+   *   - the web tier (said 39 files / 803 cases, runs 64 / 1208).
+   *
+   * A number a reader can check in a second, wrong in a document whose purpose
+   * is to be checked, is worse than no number. These are derived now.
+   */
+  const REPO_ROOT = join(process.cwd(), '..', '..');
+
+  function countFiles(dir: string, match: RegExp): number {
+    const walk = (d: string): string[] =>
+      readdirSync(d, { withFileTypes: true }).flatMap((entry) => {
+        const path = join(d, entry.name);
+        return entry.isDirectory() ? walk(path) : match.test(entry.name) ? [path] : [];
+      });
+    return walk(dir).length;
+  }
+
+  it('counts scripts/ci and both feature trees as they are', () => {
+    const manifest = read('deliverable-manifest.md');
+
+    const ciScripts = countFiles(join(REPO_ROOT, 'scripts', 'ci'), /\.mjs$/);
+    expect(manifest, `scripts/ci holds ${ciScripts} .mjs files`).toContain(
+      `**${ciScripts}** in the directory`
+    );
+
+    const crm = countFiles(join(process.cwd(), 'src', 'features', 'crm'), /\.tsx?$/);
+    const vehicles = countFiles(join(process.cwd(), 'src', 'features', 'vehicles'), /\.tsx?$/);
+    expect(manifest, `the CRM tree holds ${crm} files`).toContain(`crm/\` (${crm} files)`);
+    expect(manifest, `the vehicle tree holds ${vehicles} files`).toContain(
+      `vehicles/\` (${vehicles} files)`
+    );
+
+    // The gate's own number, from the gate's own source of truth: the two trees
+    // it walks. Quoting gate output the gate does not produce is `MAN-01`.
+    expect(manifest, `the ownership gate reports ${crm + vehicles} files`).toContain(
+      `**${crm + vehicles} files across 2 trees, 0 failures**`
+    );
+  });
+
+  it('states a web tier total that matches the tier', () => {
+    // Not the per-file table, which is explicitly a superseded snapshot — the
+    // HEADING, which is the live claim a reader takes away.
+    const files = countFiles(join(process.cwd(), 'tests'), /\.test\.tsx?$/);
+    expect(read('deliverable-manifest.md'), `the web tier has ${files} files`).toContain(
+      `\`apps/web/tests\` (${files} files,`
+    );
+  });
+});
+
+describe('every test case the traceability document quotes actually exists', () => {
+  /*
+   * `TRC-01`. §2 of that document defines the Proof column as "a test file and
+   * the **case within it**, quoted from the test's own title". Six titles have
+   * been found not to exist across two rounds — two were fixed by the `DOC-001`
+   * remediation and four survived it, in the document whose entire purpose is to
+   * let a reader follow a task to the thing that proves it.
+   *
+   * A quoted title that matches nothing is worse than no citation: a reader
+   * greps for it, finds nothing, and cannot tell whether the test was deleted or
+   * never written. Checked mechanically now, because it has recurred every time
+   * it was fixed by hand.
+   */
+  const TEST_DIR = join(process.cwd(), 'tests');
+
+  function allTestSource(): string {
+    const walk = (dir: string): string[] =>
+      readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+        const path = join(dir, entry.name);
+        return entry.isDirectory() ? walk(path) : /\.test\.tsx?$/.test(entry.name) ? [path] : [];
+      });
+    return walk(TEST_DIR)
+      .map((path) => readFileSync(path, 'utf8'))
+      .join('\n');
+  }
+
+  it('resolves every quoted case title to a real test', () => {
+    const source = allTestSource();
+    expect(source.length, 'no test source was read').toBeGreaterThan(10_000);
+
+    /*
+     * Titles are quoted in the document as "…" inside a Proof cell that also
+     * names a `*.test.ts` file. Only those are checked — prose in double quotes
+     * elsewhere is not a citation, and treating it as one is how a sweep starts
+     * reporting sentences.
+     */
+    const doc = read(join('evidence', 'task-traceability.md'));
+
+    /*
+     * Only cells that name a test FILE are read for titles, and a title may
+     * itself contain an escaped quote — `"treats a MISSING flag as \"…\""` — so
+     * the span allows escapes. The first version did not, truncated two titles
+     * at their inner quote, and reported both as missing: a sweep inventing its
+     * own findings, which is the failure mode a sweep must not have.
+     */
+    const runs = [
+      ...doc.matchAll(/`[\w.-]+\.test\.tsx?`\s*—\s*((?:"(?:[^"\\]|\\.)*"(?:,\s*)?)+)/g),
+    ];
+    const cited = runs
+      .flatMap((run) => [...(run[1] ?? '').matchAll(/"((?:[^"\\]|\\.)*)"/g)])
+      .map((m) => (m[1] ?? '').replace(/\\"/g, '"'))
+      .filter((title) => title.length >= 12);
+    expect(cited.length, 'no quoted case titles were found to check').toBeGreaterThan(3);
+
+    const missing = cited.filter((title) => !source.includes(title));
+    expect(missing, 'the document quotes a test case title that exists in no test file').toEqual(
+      []
+    );
+  });
+});
+
 describe('this file is not vacuous', () => {
   it('reads real documents from the real phase directory', () => {
     const files = readdirSync(PHASE);

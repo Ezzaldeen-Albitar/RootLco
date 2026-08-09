@@ -116,13 +116,13 @@ exists, never as an argument that it works.
 
 | category                                                               | artefacts                                                          | how counted                                                                |
 | ---------------------------------------------------------------------- | ------------------------------------------------------------------ | -------------------------------------------------------------------------- |
-| Feature source under the P1-27 ownership gate                          | **40**                                                             | command 2                                                                  |
+| Feature source under the P1-27 ownership gate                          | **43**                                                             | command 2                                                                  |
 | Router pages (CRM and Vehicle)                                         | **8**                                                              | command 1                                                                  |
 | Shared-foundation source files changed by the phase or its remediation | **13** named in §5.5                                               | command 1, cross-read against the task register and the remediation record |
 | Web unit and component test files                                      | **39**                                                             | commands 1 and 8                                                           |
 | Playwright specification files                                         | **9** (2 anonymous, 7 authenticated)                               | commands 11 and 12                                                         |
 | Root CI-contract test files                                            | **31**                                                             | commands 1 and 10                                                          |
-| CI gate scripts under `scripts/ci`                                     | **40** in the directory, **5** introduced or changed by this phase | command 1; the five are the `scripts/ci` rows of §7.1                      |
+| CI gate scripts under `scripts/ci`                                     | **41** in the directory, **5** introduced or changed by this phase | command 1; the five are the `scripts/ci` rows of §7.1                      |
 | Web gate scripts under `apps/web/scripts`                              | **4** in the directory, **1** introduced by this phase             | command 1                                                                  |
 | Phase documentation under `docs/phase-1/phase-1-27`                    | **15** tracked                                                     | command 1, filtered to `.git/index` — see §1.3                             |
 | Product planning documentation under `docs/product`                    | **11** tracked                                                     | command 1, filtered to `.git/index` — see §1.3                             |
@@ -175,16 +175,16 @@ every advance of local `develop` in the sequence above was a fast-forward from
 
 ## 5. Source files
 
-### 5.1 The two trees the P1-27 ownership gate owns — 40 files
+### 5.1 The two trees the P1-27 ownership gate owns — 43 files
 
-`validate:p1-27-frontend` reports **40 files across 2 trees, 0 failures**. Those
+`validate:p1-27-frontend` reports **43 files across 2 trees, 0 failures**. Those
 40 are §5.2 and §5.3 together. The gate refuses to pass a rule that inspected
 zero files, and it runs its own `selfTest()` on **every** invocation — a comment
 stripper that over-matched would turn all six rules into scans over empty strings
 and report clean, which is the one failure mode the per-rule anti-vacuity checks
 cannot see.
 
-### 5.2 CRM — `apps/web/src/features/crm/` (18 files)
+### 5.2 CRM — `apps/web/src/features/crm/` (20 files)
 
 | path                                              | carries                                                                                               |
 | ------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
@@ -207,7 +207,7 @@ cannot see.
 | `customers/components/DuplicateReviewScreen.tsx`  | The CRM duplicate queue                                                                               |
 | `customers/components/RecordForm.tsx`             | The shared write form, gated on a successful read                                                     |
 
-### 5.3 Vehicle — `apps/web/src/features/vehicles/` (22 files)
+### 5.3 Vehicle — `apps/web/src/features/vehicles/` (23 files)
 
 | path                                            | carries                                                                                                                                     |
 | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -313,9 +313,23 @@ records.
 
 ## 6. Test files
 
-### 6.1 Web unit and component — `apps/web/tests` (39 files, 803 cases, 0 failed)
+### 6.1 Web unit and component — `apps/web/tests` (64 files, 1208 cases, 0 failed)
 
-Measured by command 8, run twice with identical results.
+**The per-file table below is SUPERSEDED and is kept as a snapshot, not a
+status** (`MAN-04`). It records 39 files and 803 cases — the tier as it stood
+when the manifest was written. `npm run test:web` on this head reports **64
+files, 1208 passed, 0 failed, 0 skipped**, and the difference is entirely files
+this branch added while closing the Owner-acceptance findings and four rounds of
+adversarial review.
+
+A hand-maintained per-file table of a tier that grows every commit is stale on
+arrival; it was already stale by 24 files and 386 cases before anyone noticed.
+The headline totals above are what the reconciliation test now derives from a
+live measurement, and `p1-27-doc-reconciliation.test.ts` fails if this heading
+and the tier disagree. The rows are left because a snapshot that shows only the
+final state cannot be checked against the run that produced it.
+
+Original measurement, by command 8, run twice with identical results:
 
 | cases | file                                   |     | cases | file                                      |
 | ----- | -------------------------------------- | --- | ----- | ----------------------------------------- |

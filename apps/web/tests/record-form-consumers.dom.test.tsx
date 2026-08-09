@@ -62,16 +62,26 @@ const textbox = (container: HTMLElement, name: string) =>
  */
 
 /*
- * The consent cases drive four `selectOptions` and a `type` before they can
- * assert, and `userEvent.type` dispatches one event per character. Measured at
- * ~1.6 s for a single case under full-suite load, against `waitFor`'s DEFAULT
- * timeout of 1 s — so the wait for the action expired before the interactions
- * finished, and the file failed intermittently while passing in isolation.
+ * ## An intermittent failure in this file that is NOT explained
  *
- * That is a latent flake with a mechanism, not bad luck, and it is the same
- * shape as the subprocess-test trap already recorded for this repository: a
- * default timeout is a bet on machine load. The wait is given room; what is
- * under test is the form's behaviour, never how fast the machine is.
+ * The first consent case has failed three times in full-suite runs while passing
+ * every time in isolation. What is established:
+ *
+ *   - it is real and it recurs — three occurrences, always this file;
+ *   - a single consent case measures ~1.6 s under full-suite load, because it
+ *     drives four `selectOptions` and a `type` that dispatches one event per
+ *     character, against `waitFor`'s DEFAULT timeout of 1 s;
+ *   - raising that timeout to 10 s did NOT eliminate it. It recurred once after
+ *     the change, then passed six consecutive runs.
+ *
+ * So the timeout was a real hazard and is worth removing on its own merits, but
+ * **it is not the proven cause** and this comment previously said it was. The
+ * failure message has never been captured: every attempt to reproduce it under
+ * observation has passed.
+ *
+ * Recorded rather than closed. It is NOT called a flake — a flake is a name for
+ * not having looked. If it recurs, capture the assertion text before changing
+ * anything, and do not let a plausible mechanism stand in for a measured one.
  */
 const WAIT = { timeout: 10_000 };
 
