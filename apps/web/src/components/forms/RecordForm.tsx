@@ -187,10 +187,38 @@ export function RecordForm({
               </label>
 
               {field.kind === 'select' ? (
+                /*
+                 * `key` + `defaultValue`, NOT a plain controlled `value`
+                 * (`NEW-FE-01`).
+                 *
+                 * This was `value={values[field.name] ?? ''}` and the docblock
+                 * above claims entered values survive a failure. For every TEXT
+                 * field that is true. For a select it was not, and the reason it
+                 * was invisible is that the reset target and the default
+                 * COINCIDED: both are the empty placeholder, so a form nobody
+                 * had touched looked identical either way.
+                 *
+                 * Pick a real option, submit, hit a 503, and the choice reverted
+                 * to the placeholder while the text beside it survived. Eleven
+                 * P1-27 write surfaces render through this component.
+                 *
+                 * React resets the form DOM once the Server Action settles, and
+                 * on the render that follows the `value` prop is unchanged — so
+                 * the reconciler writes nothing and the reset wins. `key` on the
+                 * attempt forces a remount; `defaultValue` seeds that mount from
+                 * state AND is what `form.reset()` restores to. `onChange` was
+                 * already correct and stays.
+                 *
+                 * Found by rendering this component directly for the first time.
+                 * It was predicted when the identical defect was fixed on the
+                 * customer-creation form and recorded as `NEW-FE-01` rather than
+                 * changed blind; this is that follow-up, now with a test.
+                 */
                 <select
+                  key={`${field.name}-${state.attempt ?? 0}`}
                   id={id}
                   name={field.name}
-                  value={values[field.name] ?? ''}
+                  defaultValue={values[field.name] ?? ''}
                   onChange={(event) => set(field.name, event.target.value)}
                   required={field.required}
                   aria-invalid={errorKey ? true : undefined}

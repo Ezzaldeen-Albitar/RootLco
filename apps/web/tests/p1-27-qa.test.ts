@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { STATUS_BY_KIND } from '@/lib/api/read-operation';
@@ -119,9 +119,55 @@ function componentNames(): readonly string[] {
     // ships" false by construction.
     join(process.cwd(), 'src', 'components', 'party'),
     join(process.cwd(), 'src', 'components', 'duplicates'),
+    /*
+     * `RecordForm` is a P1-27 deliverable and was outside this inventory.
+     *
+     * Its own docblock says why it exists: "React resets an uncontrolled form
+     * once a Server Action completes … Every field here is controlled … **This
+     * is the same defect `FE-004` hit** and it is the reason this component
+     * exists rather than a `<form>` per section." Six customer component writes
+     * and five vehicle writes render through it, so a regression in it is a
+     * regression in eleven P1-27 surfaces at once.
+     *
+     * The FILE, not the directory. `Field.tsx` and `MoneyField.tsx` beside it
+     * are pre-P1-27 (`4af54ba`), and pulling the whole directory in would demand
+     * P1-27 coverage for components another phase shipped. Naming the file makes
+     * that a decision rather than an oversight — which is the same reason the
+     * two shared trees above are listed individually.
+     */
+    join(process.cwd(), 'src', 'components', 'forms', 'RecordForm.tsx'),
   ];
   const names = new Set<string>();
+
+  /** Every component name one `.tsx` file exports. */
+  const collect = (file: string) => {
+    const source = readFileSync(file, 'utf8');
+    for (const m of source.matchAll(/^export function ([A-Z]\w+)/gm)) {
+      if (m[1]) names.add(m[1]);
+    }
+    /*
+     * `export const Foo = (…) => …` as well, which the original pattern could
+     * not see. A value export such as `MODEL_YEAR_BOUNDS` is NOT a component
+     * and is excluded by requiring an arrow within the declaration head —
+     * counting it would demand "coverage" for a constant.
+     */
+    for (const m of source.matchAll(/^export const ([A-Z]\w+)\b/gm)) {
+      const head = source
+        .slice(m.index ?? 0)
+        .split('\n')
+        .slice(0, 8)
+        .join('\n');
+      if (m[1] && head.includes('=>')) names.add(m[1]);
+    }
+  };
+
   const walk = (dir: string) => {
+    // A root may be a single FILE, so that one component can be named without
+    // adopting its neighbours. Without this the entry above would throw ENOTDIR.
+    if (!statSync(dir).isDirectory()) {
+      collect(dir);
+      return;
+    }
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
       const full = join(dir, entry.name);
       if (entry.isDirectory()) {
@@ -129,24 +175,7 @@ function componentNames(): readonly string[] {
         continue;
       }
       if (!entry.name.endsWith('.tsx')) continue;
-      const source = readFileSync(full, 'utf8');
-      for (const m of source.matchAll(/^export function ([A-Z]\w+)/gm)) {
-        if (m[1]) names.add(m[1]);
-      }
-      /*
-       * `export const Foo = (…) => …` as well, which the original pattern could
-       * not see. A value export such as `MODEL_YEAR_BOUNDS` is NOT a component
-       * and is excluded by requiring an arrow within the declaration head —
-       * counting it would demand "coverage" for a constant.
-       */
-      for (const m of source.matchAll(/^export const ([A-Z]\w+)\b/gm)) {
-        const head = source
-          .slice(m.index ?? 0)
-          .split('\n')
-          .slice(0, 8)
-          .join('\n');
-        if (m[1] && head.includes('=>')) names.add(m[1]);
-      }
+      collect(full);
     }
   };
   for (const root of roots) walk(root);

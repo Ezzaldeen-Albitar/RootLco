@@ -74,6 +74,42 @@ const PHASE_FILES = [...walk(join(FEATURES, 'crm')), ...walk(join(FEATURES, 'veh
 /** Every route segment under the dashboard, CRM and vehicles alike. */
 const PHASE_ROUTES = walk(ROUTES).filter((p) => /[\\/](crm|vehicles)[\\/]/.test(p));
 
+/**
+ * The phase's WHOLE surface, including the parts that left `features/`.
+ *
+ * `PHASE_FILES` walks `features/crm` and `features/vehicles` and nothing else,
+ * which was the entire phase surface when it was written. It is not any more.
+ * D1 and D2 moved real P1-27 code out, because a feature may never import
+ * another feature and both trees needed the same customer selector and the same
+ * duplicate explanations:
+ *
+ *   components/party/CustomerSelector.tsx   components/party/PartyLabel.tsx
+ *   components/duplicates/MatchExplanation.tsx
+ *   lib/customers/directory.ts              lib/customers/directory-contract.ts
+ *   lib/duplicates/explanations.ts          lib/duplicates/score.ts
+ *
+ * Seven files that render customer names and duplicate evidence — precisely the
+ * material `SEC-002` is about — sat outside every sweep that claims to cover
+ * "the CRM and vehicle surface". The routes were outside it too.
+ *
+ * `PHASE_FILES` is left as it is, so the `SEC-001` and `SEC-003` cases keep
+ * asserting exactly what they asserted before; only the `SEC-002` sweeps move to
+ * the wider set. Narrowing a passing rule while widening another in one commit
+ * is how a regression hides.
+ */
+const MOVED_OUT = ['components/party', 'components/duplicates', 'lib/customers', 'lib/duplicates'];
+
+const PHASE_SURFACE = [
+  ...PHASE_FILES,
+  ...MOVED_OUT.flatMap((rel) => walk(join(process.cwd(), 'src', ...rel.split('/')))).map(
+    (path) => ({
+      path,
+      source: code(readFileSync(path, 'utf8')),
+    })
+  ),
+  ...PHASE_ROUTES.map((path) => ({ path, source: code(readFileSync(path, 'utf8')) })),
+];
+
 describe('P1-27-SEC-001 — permission and resolved scope', () => {
   it('found the surface it is about to make claims about', () => {
     // Without this the sweeps below pass on an empty array and this whole file
@@ -83,6 +119,30 @@ describe('P1-27-SEC-001 — permission and resolved scope', () => {
     // And the stripper left real code behind. A `code()` that returned '' would
     // make every absence sweep in this file vacuous at once.
     expect(PHASE_FILES.filter((f) => f.source.includes('export')).length).toBeGreaterThan(20);
+
+    /*
+     * And the WIDER surface really is wider, by the files that left `features/`.
+     *
+     * Without this, `PHASE_SURFACE` could silently collapse back to
+     * `PHASE_FILES` — a renamed directory, a moved file, a typo in `MOVED_OUT` —
+     * and every SEC-002 sweep would go on passing while covering less than it
+     * says. Named individually rather than by count alone, because a count is
+     * satisfied by any seven files and these seven are the ones that render
+     * customer names and duplicate evidence.
+     */
+    expect(PHASE_SURFACE.length).toBeGreaterThan(PHASE_FILES.length + 10);
+    for (const required of [
+      'components/party/CustomerSelector.tsx',
+      'components/party/PartyLabel.tsx',
+      'components/duplicates/MatchExplanation.tsx',
+      'lib/customers/directory.ts',
+      'lib/duplicates/explanations.ts',
+    ]) {
+      expect(
+        PHASE_SURFACE.some((f) => f.path.endsWith(required)),
+        `${required} is P1-27 surface and is outside the sweep`
+      ).toBe(true);
+    }
   });
 
   it('strips comments without blinding itself to code', () => {
@@ -245,7 +305,7 @@ describe('P1-27-SEC-002 — sensitive data, export, documents and media', () => 
      * calls on every page to preserve page and sort across a language change —
      * so the deny-list guards the one place table state DOES cross a navigation.
      */
-    const writers = PHASE_FILES.filter(({ source }) =>
+    const writers = PHASE_SURFACE.filter(({ source }) =>
       /toSearchParams|history\.(push|replace)State|window\.location\.search\s*=/.test(source)
     );
     expect(
@@ -265,7 +325,7 @@ describe('P1-27-SEC-002 — sensitive data, export, documents and media', () => 
     // Bulk extraction of customer or vehicle records is not a P1-27 task and no
     // screen offers it. An export added later must be a deliberate decision
     // with its own permission, not an affordance that appeared.
-    for (const { path, source } of PHASE_FILES) {
+    for (const { path, source } of PHASE_SURFACE) {
       expect(source, path).not.toMatch(/\/export|-export|exportC|downloadAll/);
     }
   });
@@ -273,13 +333,13 @@ describe('P1-27-SEC-002 — sensitive data, export, documents and media', () => 
   it('offers no upload path of any kind', () => {
     // `P1-OD-025` must decide accepted types, size limits and storage before a
     // vehicle media operation can exist. There is none to call.
-    for (const { path, source } of PHASE_FILES) {
+    for (const { path, source } of PHASE_SURFACE) {
       expect(source, path).not.toMatch(/FormData\(\)|multipart\/form-data|type="file"/);
     }
   });
 
   it('never renders unescaped HTML from any server value', () => {
-    for (const { path, source } of PHASE_FILES) {
+    for (const { path, source } of PHASE_SURFACE) {
       expect(source, path).not.toContain('dangerouslySetInnerHTML');
     }
   });
