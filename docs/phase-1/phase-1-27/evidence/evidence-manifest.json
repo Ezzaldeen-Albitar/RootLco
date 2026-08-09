@@ -5,7 +5,7 @@
   "whatThisProves": "An evidence document cannot be edited without this file changing in the same diff. Digests are over file BYTES, so an encoding change counts as a change.",
   "whatThisDoesNotProve": "This is not a tamper-proof seal. Anyone able to edit a document is able to re-run the generator and commit both. It removes SILENT revision, not revision.",
   "selfExclusion": "This manifest is the only path excluded from its own digest set, because a file containing its own hash has no fixed point. tests/ci/p1-27-evidence-manifest.test.ts asserts the exclusion is exactly this one path.",
-  "fileCount": 33,
+  "fileCount": 34,
   "files": {
     "docs/phase-1/phase-1-27/adversarial-round-five.md": {
       "sha256": "9d2f08c1c76032b535e3f63559feae42a7f043ec5098675ee7171fbfb301a687",
@@ -34,6 +34,10 @@
     "docs/phase-1/phase-1-27/clean-room-evidence.md": {
       "sha256": "6d02dbaa2f8ed65ae5f6b806d5619169f3f62fd1028d5ed94097560d71396a0b",
       "bytes": 11623
+    },
+    "docs/phase-1/phase-1-27/continuation-checkpoint.md": {
+      "sha256": "d926cfdcc9d4ff2afe09972d632ba8354674617c5c28c58dfa3a93bbd4f4378b",
+      "bytes": 10328
     },
     "docs/phase-1/phase-1-27/contract-archaeology.md": {
       "sha256": "5832747388575cc788af0304cc972882b4c33e135b6c92f60740695b99143661",
