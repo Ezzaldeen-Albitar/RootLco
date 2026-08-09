@@ -820,7 +820,7 @@
   "vehicles.captureMethod.reception": "Reception",
   "vehicles.column.bodyType": "Body type",
   "vehicles.column.make": "Make",
-  "vehicles.column.makeUnavailable": "Make not available to you",
+  "vehicles.column.makeUnrecognised": "Make not recognised",
   "vehicles.column.mergedInto": "Merged into another vehicle",
   "vehicles.column.model": "Model",
   "vehicles.column.modelYear": "Year",

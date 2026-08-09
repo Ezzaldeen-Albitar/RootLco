@@ -4,6 +4,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
 import { renderLtr, renderRtl } from './render';
+import type { CatalogueResult } from '@/features/vehicles/catalogue-api';
+
+/** A healthy make catalogue — see the note in `vehicle-screens.dom.test.tsx`. */
+const CATALOGUE_OK: CatalogueResult = {
+  status: 'ok',
+  options: [],
+  truncated: false,
+  correlationId: null,
+};
 
 /**
  * "I have not searched yet" and "I searched and found nothing" are different
@@ -121,7 +130,9 @@ describe('the customer search distinguishes "not searched" from "no match"', () 
 
 describe('the vehicle search distinguishes them as well', () => {
   const render = (canCreate = true) =>
-    renderLtr(<VehicleSearchScreen locale="en" messages={en} canCreate={canCreate} makes={[]} />);
+    renderLtr(
+      <VehicleSearchScreen locale="en" messages={en} canCreate={canCreate} makes={CATALOGUE_OK} />
+    );
 
   it('says nothing about results before a search is run', () => {
     const { container } = render();
@@ -160,7 +171,7 @@ describe('the vehicle search distinguishes them as well', () => {
   it('says it in Arabic too', async () => {
     const user = userEvent.setup();
     const { container } = renderRtl(
-      <VehicleSearchScreen locale="ar" messages={ar} canCreate makes={[]} />
+      <VehicleSearchScreen locale="ar" messages={ar} canCreate makes={CATALOGUE_OK} />
     );
     await user.type(screen.getByLabelText(ar['vehicles.search.plate']), 'ZZ-9999{Enter}');
     expect(await screen.findByText(ar['vehicles.search.noMatch'])).toBeInTheDocument();

@@ -395,6 +395,46 @@ describe('P1-27-SEC-004 — audit-event coverage', () => {
     }
   });
 
+  it('renders the reference on the ROUTE failure states, not only inside adapters', () => {
+    /*
+     * The sweep above walks `PHASE_FILES` — `src/features` — and never opens a
+     * route. So it asserted that every adapter CARRIES a correlation reference
+     * out of a failure, and nothing asserted that any screen ever SHOWS one.
+     *
+     * That blind spot held a real defect. `crm/customers/[customerId]/page.tsx`
+     * rendered `<BackendUnavailableState messages={messages} />` with no
+     * reference, twelve lines below a `<PermissionDeniedState>` that passed one,
+     * and beside a vehicle profile route that passed one too. The backend
+     * outcome carried it the whole way; the last line dropped it — on the one
+     * state where an operator has nothing else to quote. `correlationId` is an
+     * optional prop (`States.tsx:199`), so the compiler had no opinion either.
+     *
+     * This walks the rendered TAGS. A file-level `includes('correlationId')`
+     * would have passed on that page, because the denial branch above already
+     * contained the word.
+     */
+    const FAILURE_STATES = /<(BackendUnavailableState|ErrorState)\b([^>]*)>/g;
+
+    let inspected = 0;
+    for (const path of PHASE_ROUTES) {
+      const source = readFileSync(path, 'utf8');
+      for (const match of source.matchAll(FAILURE_STATES)) {
+        inspected += 1;
+        const [, component = '', attributes = ''] = match;
+        expect(
+          attributes,
+          `${path} renders <${component}> without a correlation reference — ` +
+            'an operator seeing this state has nothing to quote'
+        ).toContain('correlationId');
+      }
+    }
+
+    // The sweep must have looked at something. Without this it passes on a
+    // renamed component or a changed route layout by matching nothing, which is
+    // exactly how the adapter sweep above missed these routes for so long.
+    expect(inspected, 'no route failure state was inspected').toBeGreaterThan(0);
+  });
+
   it('never logs a server value to the browser console', () => {
     for (const { path, source } of PHASE_FILES) {
       expect(source, path).not.toMatch(/console\.(log|info|debug|warn|error)\(/);

@@ -4,6 +4,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
 import { renderLtr, renderRtl } from './render';
+import type { CatalogueResult } from '@/features/vehicles/catalogue-api';
+import type { VehicleSearchHit } from '@/features/vehicles/contract';
 
 /**
  * The vehicle screens, in a DOM (`P1-27-QA-001`).
@@ -48,15 +50,44 @@ const { VehicleDuplicateReviewScreen } =
 const { VehicleAttributeHistorySection } =
   await import('@/features/vehicles/components/VehicleAttributeHistorySection');
 
-const HIT = {
+/**
+ * A healthy make catalogue.
+ *
+ * `VehicleSearchScreen` takes the whole `CatalogueResult` rather than an options
+ * array, because the Make column has to tell "the catalogue failed" apart from
+ * "this id is not in the catalogue" — those were one indistinguishable `Map`
+ * miss, and the column reported both as a permission denial.
+ */
+const CATALOGUE_OK: CatalogueResult = {
+  status: 'ok',
+  options: [
+    { id: 'make-toyota', scope: 'platform', code: 'TOYOTA', name: 'Toyota', status: 'active' },
+  ],
+  truncated: false,
+  correlationId: null,
+};
+
+/**
+ * TYPED, and it was not.
+ *
+ * This fixture reached the screen through `vi.fn()` and a `readonly unknown[]`
+ * page, so nothing checked it against `VehicleSearchHit`. It had drifted: it
+ * carried `plateNumber`, which the contract does not publish, and omitted the
+ * REQUIRED `workshopStatus` — which put a raw message key on screen in three
+ * tests that were green the whole time.
+ *
+ * The annotation is the fix. `tsconfig.json` includes the test tree, so from
+ * here the compiler owns this drift rather than a reviewer.
+ */
+const HIT: VehicleSearchHit = {
   id: 'a1b2c3d4-0000-4000-8000-000000000001',
   displayNumber: 'V-0001',
   vin: 'JH4KA7561PC008269',
-  plateNumber: '12-3456',
   makeId: null,
   modelId: null,
   modelYear: 2019,
   lifecycleStatus: 'active',
+  workshopStatus: 'none',
   powertrainCategory: 'ice',
   mergedIntoId: null,
   createdAt: '2026-08-04T10:00:00.000Z',
@@ -117,7 +148,9 @@ beforeEach(() => {
 
 describe('vehicle search asks nothing until it is asked', () => {
   const render = (canCreate = false) =>
-    renderLtr(<VehicleSearchScreen locale="en" messages={en} canCreate={canCreate} makes={[]} />);
+    renderLtr(
+      <VehicleSearchScreen locale="en" messages={en} canCreate={canCreate} makes={CATALOGUE_OK} />
+    );
 
   it('calls the backend zero times on mount', () => {
     render();
@@ -155,6 +188,59 @@ describe('vehicle search asks nothing until it is asked', () => {
   it('offers the creation link only to an operator who may create', async () => {
     render(false);
     expect(screen.queryByText(en['vehicles.create.title'])).not.toBeInTheDocument();
+  });
+
+  /*
+   * `P1-27-FE-017` — the Make column must not accuse the operator.
+   *
+   * The page reduced a five-state catalogue outcome to `status === 'ok' ?
+   * options : []`, so a failed catalogue read and an id genuinely absent from a
+   * healthy catalogue arrived as the same `Map` miss. The column then printed
+   * its one fallback: "Make not available to you" — asserting a permission that
+   * cannot be the cause, because `veh.catalogue-make-list` needs the same
+   * capability the page already gated on. On a catalogue failure it said it on
+   * every row at once.
+   *
+   * Three renders, three different sentences, from the same unresolved id.
+   */
+  async function searchWithCatalogue(makes: CatalogueResult) {
+    const user = userEvent.setup();
+    renderLtr(<VehicleSearchScreen locale="en" messages={en} canCreate={false} makes={makes} />);
+    await user.type(screen.getByLabelText(en['vehicles.search.plate']), '12-3456{Enter}');
+    await screen.findByText('V-0001');
+  }
+
+  const UNRESOLVED: VehicleSearchHit = { ...HIT, makeId: 'make-not-in-this-catalogue' };
+
+  it('says the CATALOGUE failed when the catalogue failed', async () => {
+    searchVehicles.mockResolvedValue(page([UNRESOLVED]));
+    await searchWithCatalogue({ ...CATALOGUE_OK, status: 'unavailable', options: [] });
+    expect(screen.getByText(en['vehicles.create.catalogueUnavailable'])).toBeInTheDocument();
+    // The accusation must be gone, not merely joined by a second sentence.
+    expect(screen.queryByText('Make not available to you')).not.toBeInTheDocument();
+  });
+
+  it('says the catalogue was CUT SHORT when it was truncated', async () => {
+    searchVehicles.mockResolvedValue(page([UNRESOLVED]));
+    await searchWithCatalogue({ ...CATALOGUE_OK, truncated: true });
+    expect(screen.getByText(en['vehicles.create.catalogueTruncated'])).toBeInTheDocument();
+  });
+
+  it('says only that the make is UNRECOGNISED when the catalogue is healthy', async () => {
+    searchVehicles.mockResolvedValue(page([UNRESOLVED]));
+    await searchWithCatalogue(CATALOGUE_OK);
+    expect(screen.getByText(en['vehicles.column.makeUnrecognised'])).toBeInTheDocument();
+    // This is the only one of the three that is genuinely about the row, and
+    // even it does not blame the reader.
+    expect(en['vehicles.column.makeUnrecognised']).not.toMatch(/you|permission|access/i);
+  });
+
+  it('still resolves a make that IS in the catalogue', async () => {
+    // The control. Without it the three cases above would pass against a column
+    // that had simply stopped resolving anything.
+    searchVehicles.mockResolvedValue(page([{ ...HIT, makeId: 'make-toyota' }]));
+    await searchWithCatalogue(CATALOGUE_OK);
+    expect(screen.getByText('Toyota')).toBeInTheDocument();
   });
 
   /*
@@ -520,7 +606,9 @@ describe('the same screens in Arabic and RTL', () => {
   });
 
   it('renders vehicle search right-to-left with Arabic copy', () => {
-    renderRtl(<VehicleSearchScreen locale="ar" messages={ar} canCreate={false} makes={[]} />);
+    renderRtl(
+      <VehicleSearchScreen locale="ar" messages={ar} canCreate={false} makes={CATALOGUE_OK} />
+    );
     expect(screen.getByText(ar['vehicles.search.idleTitle'])).toBeInTheDocument();
     // A VIN field must stay LTR even in an RTL layout, or the characters
     // reorder and the operator cannot check what they typed.

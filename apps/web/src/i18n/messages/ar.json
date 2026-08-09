@@ -820,7 +820,7 @@
   "vehicles.captureMethod.reception": "الاستقبال",
   "vehicles.column.bodyType": "نوع الهيكل",
   "vehicles.column.make": "الصانع",
-  "vehicles.column.makeUnavailable": "الصانع غير متاح لك",
+  "vehicles.column.makeUnrecognised": "صانع غير معروف",
   "vehicles.column.mergedInto": "مدموجة في مركبة أخرى",
   "vehicles.column.model": "الطراز",
   "vehicles.column.modelYear": "السنة",

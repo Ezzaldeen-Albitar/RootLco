@@ -80,7 +80,26 @@ export default async function CustomerProfilePage({
     return frame(<SessionExpiredState messages={messages} />);
   }
   if (result.status !== 'ok') {
-    return frame(<BackendUnavailableState messages={messages} />);
+    /*
+     * The reference is carried HERE too, and it was not.
+     *
+     * `PermissionDeniedState` twelve lines up already passes it, and the vehicle
+     * profile's equivalent branch passes it
+     * (`vehicles/[vehicleId]/page.tsx:85`) — so this route dropped it on the one
+     * outcome where an operator most needs something to quote. A denial is
+     * self-explanatory; "the service is unavailable" is not, and without a
+     * reference the only thing they can report is the time of day.
+     *
+     * `SEC-004` swept `features/**` for `correlationId` and never opened a route
+     * file, so the omission sat inside its blind spot; the prop is optional
+     * (`States.tsx:199`), so nothing else objected either.
+     */
+    return frame(
+      <BackendUnavailableState
+        messages={messages}
+        correlationId={result.correlationId ?? undefined}
+      />
+    );
   }
 
   return (

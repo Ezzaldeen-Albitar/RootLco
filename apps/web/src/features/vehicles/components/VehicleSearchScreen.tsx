@@ -11,7 +11,7 @@ import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { Locale } from '@/i18n/config';
 import { searchVehicles } from '../api';
-import type { CatalogueOption } from '../catalogue-api';
+import type { CatalogueResult } from '../catalogue-api';
 import {
   EMPTY_CRITERIA,
   POWERTRAIN_CATEGORIES,
@@ -55,7 +55,7 @@ interface Props {
   readonly messages: Messages;
   readonly canCreate: boolean;
   /** Resolved once on the server, for the make/model columns. */
-  readonly makes: readonly CatalogueOption[];
+  readonly makes: CatalogueResult;
 }
 
 export function VehicleSearchScreen({ locale, messages, canCreate, makes }: Props) {
@@ -215,7 +215,7 @@ function VehicleSearchResults({
   /** `veh.vehicle.create` — gates the offer to create the vehicle not found. */
   readonly canCreate: boolean;
   readonly criteria: VehicleSearchCriteria;
-  readonly makes: readonly CatalogueOption[];
+  readonly makes: CatalogueResult;
 }) {
   const load = useCallback(
     (request: TableRequest, cursor: string | null) => searchVehicles(criteria, request, cursor),
@@ -224,7 +224,10 @@ function VehicleSearchResults({
   const table = useServerTable<VehicleSearchHit>(load, { initial: INITIAL_REQUEST });
   const router = useRouter();
 
-  const makeById = useMemo(() => new Map(makes.map((make) => [make.id, make.name])), [makes]);
+  const makeById = useMemo(
+    () => new Map((makes.status === 'ok' ? makes.options : []).map((m) => [m.id, m.name])),
+    [makes]
+  );
 
   const columns = useMemo<readonly Column<VehicleSearchHit>[]>(
     () => [
@@ -259,13 +262,35 @@ function VehicleSearchResults({
       {
         id: 'make',
         headerKey: 'vehicles.column.make',
-        // Search publishes `makeId` and NO name — only the detail read resolves
-        // labels. The id is matched against the catalogue this page already
-        // loaded. Three outcomes, and they are three different facts:
-        //   - no makeId          -> the vehicle has no make recorded
-        //   - makeId, resolved   -> the name
-        //   - makeId, unresolved -> a make this caller cannot see, said plainly
-        //                           rather than rendered as a raw uuid
+        /*
+         * Search publishes `makeId` and NO name — only the detail read resolves
+         * labels — so the id is matched against the catalogue this page loaded.
+         *
+         * FOUR outcomes, because an unresolved id has more than one cause and
+         * they are not interchangeable:
+         *   - no makeId                  -> the vehicle has no make recorded
+         *   - resolved                   -> the name
+         *   - unresolved, catalogue bad  -> the CATALOGUE failed or was cut short
+         *   - unresolved, catalogue good -> this id is genuinely not in it
+         *
+         * The third case is the one that was wrong. This comment used to promise
+         * three outcomes and the code delivered two, with the fallback reading
+         * "Make not available to you" — a sentence asserting a permission. That
+         * assertion cannot be true here: `veh.catalogue-make-list` requires the
+         * capability the page has already gated on, so a caller who reaches this
+         * table can always see the catalogue. What actually fails is the read —
+         * a 429 or a timeout, which `read-operation.ts` classifies as
+         * `unavailable`, "try again shortly", not a fault and certainly not a
+         * denial. And when the catalogue fails, EVERY row says it at once, so
+         * the whole column accused the operator of lacking access they hold.
+         *
+         * The two catalogue sentences are the ones FE-018 already ships and
+         * translates (`vehicles.create.catalogueUnavailable` / `…Truncated`);
+         * nothing new is invented here. No per-row retry and no per-row
+         * reference: the catalogue is read once per page, so if a reference is
+         * ever wanted it belongs once, beside the table, from
+         * `makes.correlationId`.
+         */
         cell: (row) => {
           if (row.makeId === null) {
             return (
@@ -275,13 +300,15 @@ function VehicleSearchResults({
             );
           }
           const name = makeById.get(row.makeId);
-          return (
-            name ?? (
-              <span className="text-text-muted">
-                {translate(messages, 'vehicles.column.makeUnavailable')}
-              </span>
-            )
-          );
+          if (name !== undefined) return name;
+
+          const key =
+            makes.status !== 'ok'
+              ? 'vehicles.create.catalogueUnavailable'
+              : makes.truncated
+                ? 'vehicles.create.catalogueTruncated'
+                : 'vehicles.column.makeUnrecognised';
+          return <span className="text-text-muted">{translate(messages, key)}</span>;
         },
       },
       {
