@@ -1,17 +1,42 @@
-import { existsSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { dirname, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
+  ROOT_AUTHORITY,
   RULES,
   SCAN_ROOTS,
+  SCOPE_NAMES,
+  assertNotSymlink,
+  assertedScopes,
   evaluate,
+  fires,
+  literalMask,
   selfTest,
   stripComments,
 } from '../../scripts/ci/check-p1-27-frontend.mjs';
 
 /** The repository root, resolved from this file rather than from the cwd. */
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
+
+/** Every `.ts`/`.tsx` under a directory, the way the gate itself walks one. */
+function listSources(dir: string, out: string[] = []): string[] {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      if (['node_modules', '.next', 'coverage'].includes(entry.name)) continue;
+      listSources(path, out);
+    } else {
+      // The same refusal the gate applies, so the case below asserting the live
+      // trees are symlink-free is driving the real policy rather than a copy
+      // that happens to agree with it.
+      assertNotSymlink(entry, path);
+      if (/\.(ts|tsx)$/.test(entry.name)) out.push(path);
+    }
+  }
+  return out;
+}
+const countSources = (dir: string) => listSources(dir).length;
 
 /**
  * The P1-27 frontend gate (`P1-27-DO-001`).
@@ -96,6 +121,149 @@ describe('the gate does not accuse the explanation of the rule', () => {
     ].join('\n');
     const { failures } = evaluate(withViolation(prose));
     expect(failures.filter((f) => f.startsWith(`${ruleId}:`))).toEqual([]);
+  });
+});
+
+describe('no-client-asserted-scope tells ASSERTING a scope from DISPLAYING one', () => {
+  /**
+   * The rule means "never place a scope into a request", and for the whole of
+   * P1-27 it was implemented as "never mention one". The difference was
+   * invisible while the gate scanned two trees and became a false accusation the
+   * moment the third canonical tree was added: `profile/page.tsx` renders
+   * `value={session.tenantId}` — a scope the SERVER resolved, shown read-only to
+   * the operator who is signed in to it.
+   *
+   * Allow-listing that file was the wrong fix twice over: it is the mechanism
+   * this gate already lost a rule to (`no-duplicate-scan-on-a-queue`), and it
+   * would have exempted every future line in the file as well.
+   *
+   * These cases pin the line in BOTH directions, so inverting the distinction —
+   * exempting what goes into a request, flagging what is read out of a session —
+   * fails here rather than passing quietly.
+   */
+  const rule = RULES.find((r: { id: string }) => r.id === 'no-client-asserted-scope');
+
+  const ASSERTIONS: readonly [string, string][] = [
+    ['a body property', 'const body = { tenantId: id };'],
+    ['a snake_case body property', 'const p = { branch_id: session.branch };'],
+    ['a shorthand property', 'const path = query({ tenantId, cursor });'],
+    ['a query string', "const url = '/api/v1/customers?tenant_id=' + id;"],
+    ['a template query string', 'const url = `/api/v1/customers?tenantId=${id}`;'],
+    ['a path interpolation', 'const url = `/api/v1/tenants/${companyId}/customers`;'],
+    ['a URLSearchParams key', "params.set('branchId', chosen);"],
+    ['a session value interpolated INTO a URL', 'const u = `/x?c=${session.company_id}`;'],
+  ];
+
+  const DISPLAYS: readonly [string, string][] = [
+    [
+      'the profile screen showing the resolved tenant',
+      'return <Definition value={session.tenantId} />;',
+    ],
+    ['an optional-chained read', 'const shown = account?.company_id;'],
+    ['a read passed to a presentational component', 'return <Row id={session.branchId} mono />;'],
+  ];
+
+  it.each(ASSERTIONS)('flags %s', (_what, source) => {
+    expect(assertedScopes(source).length, source).toBeGreaterThan(0);
+    expect(fires(rule, source), source).toBe(true);
+  });
+
+  it.each(DISPLAYS)('permits %s', (_what, source) => {
+    expect(assertedScopes(source), source).toEqual([]);
+    expect(fires(rule, source), source).toBe(false);
+  });
+
+  it('is not vacuous in either direction — the two sets are disjoint and non-empty', () => {
+    /*
+     * The inversion guard. A `detect` that always returned true would pass every
+     * ASSERTION case; one that always returned false would pass every DISPLAY
+     * case. Only a rule that separates them passes both sets, and this states
+     * that requirement as one assertion rather than leaving it implicit in the
+     * two `it.each` blocks above.
+     */
+    const flagged = ASSERTIONS.filter(([, s]) => fires(rule, s)).length;
+    const permitted = DISPLAYS.filter(([, s]) => !fires(rule, s)).length;
+    expect(flagged, 'the rule flags nothing').toBe(ASSERTIONS.length);
+    expect(permitted, 'the rule permits nothing').toBe(DISPLAYS.length);
+    expect(ASSERTIONS.length).toBeGreaterThan(3);
+    expect(DISPLAYS.length).toBeGreaterThan(1);
+  });
+
+  it('reaches the real file, and clears it — the profile screen is scanned, not exempted', () => {
+    /*
+     * The distinction is proved against the actual source, not only against
+     * fixtures. If somebody re-broke the rule into a bare name match this file
+     * would be reported; if somebody allow-listed it instead, `allow` would stop
+     * being empty and the invariant below would fail.
+     */
+    const profile = join(
+      REPO_ROOT,
+      'apps/web/src/app/[locale]/(dashboard)/profile/page.tsx'.split('/').join(sep)
+    );
+    const source = stripComments(readFileSync(profile, 'utf8'));
+    expect(source, 'the profile screen no longer displays the resolved tenant').toContain(
+      'session.tenantId'
+    );
+    expect(assertedScopes(source), 'a read-only display was reported as an assertion').toEqual([]);
+    expect(rule?.allow, 'the rule was fixed with an exemption instead of a distinction').toEqual(
+      []
+    );
+  });
+
+  it('covers every scope name it declares', () => {
+    // A name added to `SCOPE_NAMES` and left out of the pattern would be a rule
+    // that names a scope it cannot see.
+    for (const name of SCOPE_NAMES) {
+      expect(assertedScopes(`const b = { ${name}: x };`).length, name).toBeGreaterThan(0);
+      expect(assertedScopes(`const v = session.${name};`), name).toEqual([]);
+    }
+  });
+
+  it('knows where a string ends, so a scope after one is still judged', () => {
+    // The literal mask is the part most likely to go wrong silently. A mask that
+    // never closed would classify the whole file as a string; one that never
+    // opened would miss every query-string assertion.
+    const mask = literalMask("const a = 'x'; const b = { tenantId: 1 };");
+    expect(mask[11], 'the character inside the quotes is literal').toBe(true);
+    expect(mask[mask.length - 2], 'the mask never closed the string').toBe(false);
+  });
+});
+
+describe('a directory symlink is refused rather than walked past (QA005-12)', () => {
+  /*
+   * `Dirent.isDirectory()` is FALSE for a symlink pointing at a directory —
+   * readdir does not stat through the link. So `if (entry.isDirectory())` walks
+   * past it and the extension test then rejects it as a file: the tree beyond it
+   * is never read and nothing says so.
+   *
+   * Driven with a synthetic Dirent rather than a real link, because creating one
+   * on Windows needs a privilege the developer machine does not have — and a
+   * test that silently skips on one platform is the defect this phase is made of.
+   */
+  it('throws, naming the path, when an entry is a symbolic link', () => {
+    expect(() =>
+      assertNotSymlink({ isDirectory: () => false, isSymbolicLink: () => true }, 'a/b/link')
+    ).toThrow(/a\/b\/link is a symbolic link/);
+  });
+
+  it('says why, so the reader knows the tree beyond it was never scanned', () => {
+    expect(() =>
+      assertNotSymlink({ isDirectory: () => false, isSymbolicLink: () => true }, 'x')
+    ).toThrow(/silently scan nothing/);
+  });
+
+  it('lets an ordinary file through', () => {
+    expect(() =>
+      assertNotSymlink({ isDirectory: () => false, isSymbolicLink: () => false }, 'a.ts')
+    ).not.toThrow();
+  });
+
+  it('the live trees contain no symlink, so the gate reads what it claims to', () => {
+    // The property the refusal exists to guarantee, asserted against the real
+    // trees: if one ever appears, the gate exits 2 rather than reporting clean.
+    for (const root of SCAN_ROOTS) {
+      expect(() => listSources(join(REPO_ROOT, root))).not.toThrow();
+    }
   });
 });
 
@@ -214,13 +382,75 @@ describe('a rule that measures nothing is a failure, not a pass', () => {
   });
 });
 
-describe('the scan roots are both of this phase’s trees', () => {
-  it('names CRM and vehicles, not one of them', () => {
-    // A gate that scanned only `crm` would have reported clean over every
-    // vehicle screen in Waves 7–12.
-    const roots = SCAN_ROOTS.map((r: string) => r.split(/[\\/]/).join('/'));
+describe('the scan roots are ALL THREE of this phase’s trees', () => {
+  /**
+   * The plan is the authority, and it is re-read here rather than remembered.
+   *
+   * `canonical-plan.md` §9 names three trees. `SCAN_ROOTS` named two, under a
+   * docblock asserting there were two — a declaration contradicting the plan, in
+   * the gate that exists to enforce the plan. 43 files were scanned and 26 were
+   * not: 38% of the canonical Frontend surface, containing the customer detail
+   * screen that `SEC-001` and `SEC-003` are about.
+   *
+   * Deriving the expected set from the plan is what makes this case fail if the
+   * third tree is removed again — a hard-coded list of three would be one more
+   * thing somebody could edit in the same commit as the constant.
+   */
+  const plan = readFileSync(join(REPO_ROOT, ROOT_AUTHORITY), 'utf8');
+  const declaredInPlan = [...plan.matchAll(/`(apps\/web\/src\/[^`]*?)\/\*\*`/g)]
+    .map((m) => m[1] as string)
+    .filter((path, index, all) => all.indexOf(path) === index)
+    .sort();
+  const roots = SCAN_ROOTS.map((r: string) => r.split(/[\\/]/).join('/')).sort();
+
+  it('reads the plan at all, so nothing below can pass over an empty list', () => {
+    expect(plan.length).toBeGreaterThan(2000);
+    expect(declaredInPlan.length, 'the canonical plan declares no Frontend tree').toBe(3);
+  });
+
+  it('scans exactly the trees the canonical plan declares Frontend work lives in', () => {
+    expect(roots, `${ROOT_AUTHORITY} and SCAN_ROOTS disagree about the Frontend surface`).toEqual(
+      declaredInPlan
+    );
+  });
+
+  it('names the dashboard route tree specifically — it was the one that was missing', () => {
+    // Stated separately from the derivation above so the regression has a case
+    // of its own. Removing the third entry fails here by name.
+    expect(roots).toContain('apps/web/src/app/[locale]/(dashboard)');
     expect(roots).toContain('apps/web/src/features/crm');
     expect(roots).toContain('apps/web/src/features/vehicles');
+  });
+
+  it('every declared root exists and holds source the gate can inspect', () => {
+    // A root that no longer matches reports clean over nothing. `evaluate()`
+    // fails a whole-run scan of zero files; this fails a single dead root, which
+    // the whole-run guard cannot see while the other two still return files.
+    for (const root of SCAN_ROOTS) {
+      const dir = join(REPO_ROOT, root);
+      expect(existsSync(dir), `${root} does not exist`).toBe(true);
+      expect(statSync(dir).isDirectory(), `${root} is not a directory`).toBe(true);
+      const count = countSources(dir);
+      expect(
+        count,
+        `${root} contains no .ts or .tsx file — the gate scans it and learns nothing`
+      ).toBeGreaterThan(0);
+    }
+  });
+
+  it('actually opens the file SEC-001 and SEC-003 are about', () => {
+    /*
+     * The concrete consequence of the omission, asserted as a fact about the
+     * file set rather than about the root list: with two roots this file was
+     * invisible to all six rules.
+     */
+    const scanned = SCAN_ROOTS.flatMap((root: string) =>
+      listSources(join(REPO_ROOT, root)).map((p) => relative(REPO_ROOT, p).split(sep).join('/'))
+    );
+    expect(scanned).toContain(
+      'apps/web/src/app/[locale]/(dashboard)/crm/customers/[customerId]/page.tsx'
+    );
+    expect(scanned.length, 'the gate must scan the whole canonical surface').toBeGreaterThan(60);
   });
 
   it('exempts NO file from the duplicate-scan rule', () => {

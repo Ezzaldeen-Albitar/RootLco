@@ -52,6 +52,35 @@ export const MANIFEST_PATH = `${PHASE_DIR}/evidence/evidence-manifest.json`;
 const DIGESTED = ['.md', '.json'];
 
 /**
+ * A symlink inside the evidence tree is REFUSED (`QA005-12`).
+ *
+ * `Dirent.isDirectory()` is FALSE for a symlink that points at a directory:
+ * `readdir` reports the link, not its target. So `if (entry.isDirectory())` does
+ * not recurse into it, the extension test then rejects it as a file, and every
+ * document beyond it is silently absent from a manifest whose entire claim is
+ * that it covers everything. The re-walk in
+ * `tests/ci/p1-27-evidence-manifest.test.ts` was written to be INDEPENDENT and
+ * shared the same blind spot, so the two would have agreed about a tree neither
+ * had read.
+ *
+ * Following the link instead is not the safer option here: a link can point
+ * outside the phase directory or at an ancestor, and a digest manifest that
+ * silently covers files from elsewhere is worse than one that stops.
+ *
+ * So this throws, `main()` turns it into exit 2, and the reader is told the
+ * path. Every walker in this phase now applies the same policy.
+ */
+export function assertNotSymlink(entry, path) {
+  if (typeof entry.isSymbolicLink === 'function' && entry.isSymbolicLink()) {
+    throw new Error(
+      `${path} is a symbolic link. The P1-27 evidence walkers refuse symlinks: a link is ` +
+        'invisible to `isDirectory()`, so everything beyond it would be missing from the ' +
+        'manifest with nothing to say so.'
+    );
+  }
+}
+
+/**
  * Every digestible file under the phase directory, repository-relative, sorted.
  *
  * Sorted because the manifest is committed: an unstable order would produce a
@@ -67,7 +96,10 @@ export function evidenceFiles(root = ROOT) {
     for (const entry of entries) {
       const child = `${rel}/${entry.name}`;
       if (entry.isDirectory()) walk(child);
-      else if (DIGESTED.some((ext) => entry.name.endsWith(ext))) out.push(child);
+      else {
+        assertNotSymlink(entry, child);
+        if (DIGESTED.some((ext) => entry.name.endsWith(ext))) out.push(child);
+      }
     }
   };
   walk(PHASE_DIR);

@@ -25,6 +25,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import {
+  assertNotSymlink,
   buildManifest,
   evidenceFiles,
   digest,
@@ -60,13 +61,22 @@ const CI_EVIDENCE = `${PHASE_DIR}/ci-evidence.md`;
  */
 const SUPERSEDED_HEADS = ['e14984e', 'd0a6008'];
 
-/** Every `*.test.ts(x)` under a workspace's `tests` tree, repository-relative. */
+/**
+ * Every `*.test.ts(x)` under a workspace's `tests` tree, repository-relative.
+ *
+ * Applies the same symlink refusal as the generator (`QA005-12`): a directory
+ * symlink reports `isDirectory() === false`, so an unguarded walk skips the tree
+ * beyond it and every count derived from this function would silently shrink.
+ */
 function testFiles(relativeDir: string): string[] {
   const out: string[] = [];
   const walk = (rel: string) => {
     for (const entry of readdirSync(join(ROOT, rel), { withFileTypes: true })) {
       if (entry.isDirectory()) walk(`${rel}/${entry.name}`);
-      else if (/\.test\.tsx?$/.test(entry.name)) out.push(`${rel}/${entry.name}`);
+      else {
+        assertNotSymlink(entry, `${rel}/${entry.name}`);
+        if (/\.test\.tsx?$/.test(entry.name)) out.push(`${rel}/${entry.name}`);
+      }
     }
   };
   walk(relativeDir);
@@ -116,7 +126,13 @@ describe('P1-27-QA-005 — the evidence package is sealed', () => {
     const walk = (rel: string) => {
       for (const entry of readdirSync(join(ROOT, rel), { withFileTypes: true })) {
         if (entry.isDirectory()) walk(`${rel}/${entry.name}`);
-        else if (/\.(md|json)$/.test(entry.name)) everything.push(`${rel}/${entry.name}`);
+        else {
+          // This re-walk is supposed to be INDEPENDENT of the generator. It
+          // shared the generator's symlink blind spot, so the two would have
+          // agreed about a tree neither of them had read (`QA005-12`).
+          assertNotSymlink(entry, `${rel}/${entry.name}`);
+          if (/\.(md|json)$/.test(entry.name)) everything.push(`${rel}/${entry.name}`);
+        }
       }
     };
     walk(PHASE_DIR);
@@ -130,6 +146,39 @@ describe('P1-27-QA-005 — the evidence package is sealed', () => {
     // "tamper-proof" stops checking. The document has to say what it is.
     expect(manifest.whatThisDoesNotProve).toMatch(/not a tamper-proof seal/i);
     expect(manifest.whatThisDoesNotProve).toMatch(/re-run the generator/i);
+  });
+
+  it('refuses a symlink rather than walking past it (QA005-12)', () => {
+    /*
+     * Both walkers here and the generator's own shared one blind spot:
+     * `entry.isDirectory()` is FALSE for a Dirent that is a directory symlink,
+     * so `if (entry.isDirectory())` never recurses and the extension test then
+     * discards it as a file. Everything beyond the link would be missing from a
+     * manifest whose one claim is that it covers everything — and the
+     * "independent" re-walk above would have agreed, because it made the same
+     * mistake.
+     *
+     * Driven with a synthetic Dirent: creating a real symlink needs a Windows
+     * privilege the developer machine does not have, and a case that skips
+     * itself on one platform proves nothing on that platform.
+     */
+    expect(() =>
+      assertNotSymlink({ isDirectory: () => false, isSymbolicLink: () => true }, 'evidence/link')
+    ).toThrow(/evidence\/link is a symbolic link/);
+    expect(() =>
+      assertNotSymlink({ isDirectory: () => false, isSymbolicLink: () => true }, 'x')
+    ).toThrow(/missing from the/);
+    expect(() =>
+      assertNotSymlink({ isDirectory: () => false, isSymbolicLink: () => false }, 'a.md')
+    ).not.toThrow();
+  });
+
+  it('reads a phase tree that contains no symlink, so the digest set is the whole set', () => {
+    // The guarantee the refusal buys, asserted against the real tree: if a link
+    // ever appears, `evidenceFiles` throws and `--check` exits 2 rather than
+    // reporting a manifest that is in sync with a partial walk.
+    expect(() => evidenceFiles(ROOT)).not.toThrow();
+    expect(() => testFiles('apps/web/tests')).not.toThrow();
   });
 
   it('is byte-identical to what the generator produces now', () => {
