@@ -80,10 +80,23 @@ guide contains them. Two of the four are in no message catalogue at all.
 
 ## Disposition
 
-| id         | status                                                                                                                  |
-| ---------- | ----------------------------------------------------------------------------------------------------------------------- |
-| `R-01`     | **FIXED** `04885f5` — checkbox `key` + `defaultChecked`; both directions asserted at the real consumer, mutation-proved |
-| all others | open at the time of writing; each closed with its own commit and mutation below                                         |
+| id                                    | status                                                                                                                                |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `R-01`                                | **FIXED** `04885f5` — checkbox `key` + `defaultChecked`; both directions at the real consumer                                         |
+| `G-01`                                | **FIXED** `9fedf02` — the circular case now derives from the message catalogue                                                        |
+| `G-02`                                | **FIXED** `9fedf02` — five failure rows, quoting the copy the product actually shows                                                  |
+| `G-03`                                | **FIXED** `9fedf02` — the walker made recursive, so the guide's sentence is true                                                      |
+| `R-02`                                | **FIXED** `8e6767a` — six creation selects, `attempt` threaded into `CatalogueSelect`                                                 |
+| `R-03`                                | **FIXED** `8e6767a` — status select AND block confirmation; the screen and the guard no longer disagree                               |
+| `R-04`                                | **FIXED** `8e6767a` — both status axes given state and a remount key                                                                  |
+| `FE-028-01`                           | **FIXED** `c12ef8a` — a `loadKey` change now resets the page as well as the cursor stack                                              |
+| `F3`                                  | **FIXED** `c12ef8a` — the parse half of the domain rule; and the opposite bound recorded (`2026-02-30` rolls over, so it is accepted) |
+| `ADJ-01`                              | **FIXED** `cf39f80` — the ten anonymous unresolved ids named, each with its commit                                                    |
+| `ADJ-02`                              | **FIXED** `cf39f80` — `setLogAdapter` never existed; it is `setMonitoringAdapter`                                                     |
+| `ADJ-03`                              | **FIXED** `cf39f80` — the preamble no longer closes the phase's one open item                                                         |
+| `F1`, `F2`, `F4`                      | open — vehicle lifecycle cross-axis rules and the stale read after a status change                                                    |
+| `R1`…`R4`, `G-04`, `G-05`             | open — test and gate weaknesses                                                                                                       |
+| `MAN-01`…`MAN-04`, `TRC-01`, `TRC-02` | open — manifest and traceability figures                                                                                              |
 
 `PRE_QA005_PASS_REFUTED` is therefore **not** zero, and the candidate freeze does
 not proceed until it is. That is the whole purpose of running this pass before
