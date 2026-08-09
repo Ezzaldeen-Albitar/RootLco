@@ -8,8 +8,8 @@
   "fileCount": 36,
   "files": {
     "docs/phase-1/phase-1-27/adversarial-round-five.md": {
-      "sha256": "911dceba0e717b40b760ad898fcbc1ca8cb6ccfe56e0edb75179b8bdb1468f81",
-      "bytes": 67337
+      "sha256": "ffb7805031988e7ec63a2de1d15d52866fe93575d36c3d5b90d9b7e74f087769",
+      "bytes": 112301
     },
     "docs/phase-1/phase-1-27/adversarial-round-four.md": {
       "sha256": "94ec35bfa05c2b112a2dbd780bf157338d20a2c73dc8bfff598f27ddbb0e94a7",
@@ -44,7 +44,7 @@
       "bytes": 24145
     },
     "docs/phase-1/phase-1-27/deliverable-manifest.md": {
-      "sha256": "60e7a749249866bb131cf9b3e9befbf25ddd913f73c1aa043d944eddddb145f0",
+      "sha256": "43c536f594e2bf99370ff082c0e48e3af26c7964e9f94c50f732defbbfb10af8",
       "bytes": 136427
     },
     "docs/phase-1/phase-1-27/developer-guide.md": {
@@ -52,20 +52,20 @@
       "bytes": 9286
     },
     "docs/phase-1/phase-1-27/evidence/change-log.md": {
-      "sha256": "31a13b0ea921ab22ba52cc87a2513cb80dc0f08fae40f2ab8b34ac8c96ff96db",
-      "bytes": 25947
+      "sha256": "5d4070b36a8226a5e9f8d440e84a76921e26a6f8dabbb92748950cd41fd1c2e4",
+      "bytes": 35282
     },
     "docs/phase-1/phase-1-27/evidence/task-traceability.md": {
-      "sha256": "77211d65908bc2dbaf77464733ea1fa6a08808ac7926a4d7e976e83c045bde12",
-      "bytes": 102396
+      "sha256": "dbc0a3a8427c1a4d0dccca2e57ec6033003bf5ca7aa9d1993038772c00d5f029",
+      "bytes": 106111
     },
     "docs/phase-1/phase-1-27/evidence/test-catalogue-traceability.json": {
-      "sha256": "0d6f4cd5001582743468b6b9bbab0ba93710a9f88c0036489c416de1a59650a2",
-      "bytes": 29424
+      "sha256": "b755f0d48b83f17912e67ca4c2b2324ee7d9e95d8ce0afef851cee18b9fef5ff",
+      "bytes": 29747
     },
     "docs/phase-1/phase-1-27/evidence/test-catalogue-traceability.md": {
-      "sha256": "0d69af625dfaf772f7cf7b0aeee2497ecc4a474352e98edd536117aaac7cb119",
-      "bytes": 20226
+      "sha256": "71a416e828eec57b372ead6469f3bf9e8b88df56533d1f14248301cc7dd5b057",
+      "bytes": 21502
     },
     "docs/phase-1/phase-1-27/execution-checkpoint.md": {
       "sha256": "8b188bd16dec828cb3d7bc5349dca04aec460686f7cc1582493b347b0265c2db",
@@ -84,8 +84,8 @@
       "bytes": 125899
     },
     "docs/phase-1/phase-1-27/finding-task-map.json": {
-      "sha256": "b165433c52d6c2bf879aecd78f347dea27bb564296424b769d507e291cfed68b",
-      "bytes": 22885
+      "sha256": "9396f26501f3803f7fa1bf7d41a35dadfe60b6368275e299c5904a53b538aa1e",
+      "bytes": 24540
     },
     "docs/phase-1/phase-1-27/findings.md": {
       "sha256": "7f4bf9f24fc0577b5c5c60bdea2268a233337ec8396e836ec192030d01eeaab9",
@@ -140,12 +140,12 @@
       "bytes": 167968
     },
     "docs/phase-1/phase-1-27/task-matrix-verdicts.json": {
-      "sha256": "4885029e8f91340bc986d4a7d2fab8ced84ece9b0b948f3dfa332b03a01669b7",
-      "bytes": 147495
+      "sha256": "b5022c6cc6f1c2afc1cce7cabf5d2130f5da54997481c5c871b73613d78ea8ac",
+      "bytes": 182629
     },
     "docs/phase-1/phase-1-27/task-matrix.json": {
-      "sha256": "3a5e761adff9df57cb774a184013c83221401ada588f5c0339a42fce01c6b553",
-      "bytes": 164567
+      "sha256": "8a7d8f8a91428bd67c9e80e02f3b55c8bdd2b59f181416019dbb42224ac1a501",
+      "bytes": 199859
     },
     "docs/phase-1/phase-1-27/task-register.md": {
       "sha256": "cd69f6c21f390d54e812fa652ea27eb89042ea068f7a6b22ac698c2476b498bf",

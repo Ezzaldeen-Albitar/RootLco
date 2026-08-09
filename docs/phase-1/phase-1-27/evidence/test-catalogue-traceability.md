@@ -80,12 +80,34 @@ executable case · 0 with no proof at all.**
 
 <!-- derived: catalogue ids = 29 -->
 <!-- derived: catalogue files = 20 -->
-<!-- derived: catalogue titles = 138 -->
+<!-- derived: catalogue titles = 139 -->
 
-**20** distinct test files carry them, and **138** quoted case titles are checked
+**20** distinct test files carry them, and **139** quoted case titles are checked
 against the file that is said to hold them. Those two figures were prose — "16
 distinct test files" and "109 quoted case titles" — until the rebinding below
 moved both and nothing said so. They are read out of the JSON now.
+
+**"Checked against the file" was weaker than it read, until `26eab7e`.** The check
+matched a quoted title against the RAW source, so a title appearing in a COMMENT
+satisfied it. Two live citations were exploiting that, and both are corrected
+here rather than deleted:
+
+- `TC-P1-27-CRM-014` quoted **"rejects a value outside the vocabulary"** against
+  `crm-governance-writes.test.ts`, whose only occurrence of that string is a
+  comment at `:217` recording that the case had MOVED to
+  `governance-write-validation.test.ts` — where it was then renamed. The title
+  named no case anywhere in the repository. It now cites the case that really
+  carries the obligation, **"refuses a restriction type outside the CHECK
+  constraint"**.
+- `TC-P1-27-CRM-010` quoted **"excludes expired"** twice for the same file. A
+  repeated title inflates a count and resolves perfectly — the `A42-10` shape,
+  one document over. It now names one occurrence plus the two consent-status
+  cases in `governance-write-validation.test.ts`.
+
+`checkCatalogue` strips comments before matching and refuses a title quoted twice
+for one file, so neither can come back. That is the fourth scanner in this phase
+found reading prose as code, which is why the fix is in the gate and not only in
+the data.
 
 <!-- derived: rows catalogue-table = 29 -->
 

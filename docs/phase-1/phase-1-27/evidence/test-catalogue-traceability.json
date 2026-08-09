@@ -193,13 +193,20 @@
       "provenBy": [
         {
           "file": "apps/web/tests/crm-governance-writes.test.ts",
-          "cases": ["excludes expired", "excludes expired"]
+          "cases": ["excludes expired"]
         },
         {
           "file": "apps/web/tests/crm-customer-components.dom.test.tsx",
           "cases": [
             "states that the history is append-only",
             "renders an unconstrained source exactly as stored"
+          ]
+        },
+        {
+          "file": "apps/web/tests/governance-write-validation.test.ts",
+          "cases": [
+            "refuses a consent status a client may not record",
+            "accepts the two statuses a client may record"
           ]
         }
       ]
@@ -265,10 +272,7 @@
       "provenBy": [
         {
           "file": "apps/web/tests/crm-governance-writes.test.ts",
-          "cases": [
-            "offers exactly the restriction types the constraint admits",
-            "rejects a value outside the vocabulary"
-          ]
+          "cases": ["offers exactly the restriction types the constraint admits"]
         },
         {
           "file": "apps/web/tests/crm-customer-components.dom.test.tsx",
@@ -276,6 +280,10 @@
             "reveals nothing about restrictions when the read is denied",
             "does not offer the write form when the read was denied"
           ]
+        },
+        {
+          "file": "apps/web/tests/governance-write-validation.test.ts",
+          "cases": ["refuses a restriction type outside the CHECK constraint"]
         }
       ]
     },

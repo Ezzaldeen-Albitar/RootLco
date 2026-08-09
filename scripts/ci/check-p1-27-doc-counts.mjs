@@ -884,13 +884,50 @@ export function checkCatalogue(root = ROOT) {
     );
   }
 
+  /*
+   * COMMENTS ARE STRIPPED, and that is not a refinement.
+   *
+   * This matched a quoted title against the RAW source, so a title mentioned in
+   * a comment counted as a case. Measured at `26eab7e`, one citation was
+   * satisfied that way and by nothing else: `TC-P1-27-CRM-014` quoted "rejects a
+   * value outside the vocabulary" against `crm-governance-writes.test.ts:217`,
+   * where the only occurrence is a comment recording that the case MOVED — and
+   * the case it moved to had been renamed, so the title existed in no test in
+   * the repository. A record whose whole purpose is to stop a citation
+   * hollowing out was reading prose as code, which is the same defect this
+   * phase has now recorded in four separate scanners.
+   *
+   * `literals: 'keep'` is required, not incidental: the titles being matched
+   * ARE string literals, so blanking them would make every citation fail.
+   */
   const sources = new Map();
   const readTest = (relative) => {
     if (sources.has(relative)) return sources.get(relative);
     const path = native(root, relative);
-    const text = existsSync(path) ? readFileSync(path, 'utf8') : null;
+    const text = existsSync(path) ? stripComments(readFileSync(path, 'utf8')) : null;
     sources.set(relative, text);
     return text;
+  };
+
+  /**
+   * A citation's titles, checked against the file and against each other.
+   *
+   * The duplicate check is `A42-10` repeating: an evidence cell named four cases
+   * of which two were the identical string, and the file held three. A repeated
+   * title inflates a count while resolving perfectly.
+   */
+  const checkTitles = (where, proof, text) => {
+    const seen = new Set();
+    for (const title of proof.cases ?? []) {
+      if (seen.has(title)) {
+        problems.push(`${where} quotes "${title}" twice for ${proof.file} — that is not two cases`);
+        continue;
+      }
+      seen.add(title);
+      if (!text.includes(title)) {
+        problems.push(`${where} quotes "${title}", which is in no case of ${proof.file}`);
+      }
+    }
   };
 
   let covered = 0;
@@ -911,11 +948,7 @@ export function checkCatalogue(root = ROOT) {
         problems.push(`${id} cites ${proof.file}, which does not exist`);
         continue;
       }
-      for (const title of proof.cases ?? []) {
-        if (!text.includes(title)) {
-          problems.push(`${id} quotes "${title}", which is in no case of ${proof.file}`);
-        }
-      }
+      checkTitles(id, proof, text);
     }
   }
   if (catalogue.covered !== covered) {
@@ -964,11 +997,7 @@ export function checkCatalogue(root = ROOT) {
         problems.push(`"${row.path}" cites ${proof.file}, which does not exist`);
         continue;
       }
-      for (const title of proof.cases ?? []) {
-        if (!text.includes(title)) {
-          problems.push(`"${row.path}" quotes "${title}", which is in no case of ${proof.file}`);
-        }
-      }
+      checkTitles(`"${row.path}"`, proof, text);
     }
   }
   if (catalogue.matrixDischarged !== false) {

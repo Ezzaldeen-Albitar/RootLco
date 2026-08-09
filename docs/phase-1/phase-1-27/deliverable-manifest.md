@@ -933,7 +933,7 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
 <!-- derived: cases navigation.test.ts = 22 -->
 <!-- LINE-COUNT MARKERS. Regenerated, never typed. -->
 
-<!-- derived: lines docs/phase-1/phase-1-27/adversarial-round-five.md = 279 -->
+<!-- derived: lines docs/phase-1/phase-1-27/adversarial-round-five.md = 338 -->
 <!-- derived: lines docs/phase-1/phase-1-27/adversarial-round-four.md = 147 -->
 <!-- derived: lines docs/phase-1/phase-1-27/blocker-remediation-plan.md = 497 -->
 <!-- derived: lines docs/phase-1/phase-1-27/canonical-plan.md = 340 -->
@@ -943,16 +943,16 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
 <!-- derived: lines docs/phase-1/phase-1-27/contract-archaeology.md = 416 -->
 <!-- derived: lines docs/phase-1/phase-1-27/deliverable-manifest.md = 984 -->
 <!-- derived: lines docs/phase-1/phase-1-27/developer-guide.md = 170 -->
-<!-- derived: lines docs/phase-1/phase-1-27/evidence/change-log.md = 344 -->
+<!-- derived: lines docs/phase-1/phase-1-27/evidence/change-log.md = 483 -->
 <!-- derived: lines docs/phase-1/phase-1-27/evidence/evidence-manifest.json = 155 -->
-<!-- derived: lines docs/phase-1/phase-1-27/evidence/task-traceability.md = 400 -->
-<!-- derived: lines docs/phase-1/phase-1-27/evidence/test-catalogue-traceability.json = 820 -->
-<!-- derived: lines docs/phase-1/phase-1-27/evidence/test-catalogue-traceability.md = 265 -->
+<!-- derived: lines docs/phase-1/phase-1-27/evidence/task-traceability.md = 432 -->
+<!-- derived: lines docs/phase-1/phase-1-27/evidence/test-catalogue-traceability.json = 828 -->
+<!-- derived: lines docs/phase-1/phase-1-27/evidence/test-catalogue-traceability.md = 287 -->
 <!-- derived: lines docs/phase-1/phase-1-27/execution-checkpoint.md = 289 -->
 <!-- derived: lines docs/phase-1/phase-1-27/final-canonical-remediation.md = 448 -->
 <!-- derived: lines docs/phase-1/phase-1-27/final-task-adjudication.md = 956 -->
 <!-- derived: lines docs/phase-1/phase-1-27/finding-phase-disposition.md = 428 -->
-<!-- derived: lines docs/phase-1/phase-1-27/finding-task-map.json = 486 -->
+<!-- derived: lines docs/phase-1/phase-1-27/finding-task-map.json = 506 -->
 <!-- derived: lines docs/phase-1/phase-1-27/findings.md = 887 -->
 <!-- derived: lines docs/phase-1/phase-1-27/findings/p1-27-int-006-cursor-precision.md = 166 -->
 <!-- derived: lines docs/phase-1/phase-1-27/independent-task-audit.md = 137 -->
@@ -966,8 +966,8 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
 <!-- derived: lines docs/phase-1/phase-1-27/preflight/final-readiness.md = 169 -->
 <!-- derived: lines docs/phase-1/phase-1-27/reception-read-surface-plan.md = 592 -->
 <!-- derived: lines docs/phase-1/phase-1-27/risk-register.md = 583 -->
-<!-- derived: lines docs/phase-1/phase-1-27/task-matrix-verdicts.json = 1052 -->
-<!-- derived: lines docs/phase-1/phase-1-27/task-matrix.json = 1396 -->
+<!-- derived: lines docs/phase-1/phase-1-27/task-matrix-verdicts.json = 1094 -->
+<!-- derived: lines docs/phase-1/phase-1-27/task-matrix.json = 1442 -->
 <!-- derived: lines docs/phase-1/phase-1-27/task-register.md = 295 -->
 <!-- derived: lines docs/product/README.md = 443 -->
 <!-- derived: lines docs/product/owner-workflow-requirements.md = 356 -->

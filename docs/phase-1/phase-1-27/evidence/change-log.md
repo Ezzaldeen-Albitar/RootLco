@@ -230,17 +230,128 @@ Three waves, and the last of them is why this section exists at all.
   twenty-six of their twenty-eight fields, so no non-Frontend task could reach
   PASS on the matrix's own rule however good the implementation was. All thirteen
   are populated. **None was raised to PASS**: the honest verdict for each is
-  PARTIAL, and each names what remains in terms someone can act on. Four are
-  worth reading — `SEC-004` (the audit-event half has no executable assertion at
-  all; `auditClass` exists in `apps/web` only inside comments), `QA-001` (there is
-  no coverage measurement for `apps/web` whatsoever), `QA-002` (nothing derives
-  the client's problem-document interface from the API's, so it can rot in
-  silence a second time) and `DO-002` (the documented way to switch monitoring on
-  cannot work, because `connect-src` takes no parameter for the sink).
+  PARTIAL, and each names what remains in terms someone can act on. Four were
+  worth reading, and **all four are now closed — see "The four PARTIAL verdicts,
+  answered" below.** As they stood at `9eff8bd`: `SEC-004` (the audit-event half
+  had no executable assertion at all; `auditClass` existed in `apps/web` only
+  inside comments), `QA-001` (there was no coverage measurement for `apps/web`
+  whatsoever), `QA-002` (nothing derived the client's problem-document interface
+  from the API's, so it could rot in silence a second time) and `DO-002` (the
+  documented way to switch monitoring on could not work, because `connect-src`
+  took no parameter for the sink). **Those four sentences are preserved in the
+  past tense rather than deleted**; each was true when written and each is false
+  at `26eab7e`, and a change log that silently updates a defect description is
+  how a reader loses the ability to tell a fix from a rewrite.
 - **The findings that were in no register.** `H-01` … `H-11` existed only inside
   `task-matrix.json` cells. They are registered, re-verified against this head
   rather than copied, and three more were added for defects `continuation-checkpoint.md`
-  §8.4 states in prose and no register carried.
+  §8.4 states in prose and no register carried. The register now runs to `H-16`
+  and is re-derived rather than carried; five of its rows were published `OPEN`
+  against a tree that already held their fix, which
+  `adversarial-round-five.md` records as a finding about itself.
+
+### The four PARTIAL verdicts, answered
+
+Four branches ran in parallel and merged as one wave — `6d33739`
+(`p1-27/core-api-boundary`), `bff8c71` (`p1-27/security-wiring`), `673fadb`
+(`p1-27/frontend-coverage`), `821239d` (`p1-27/ci-gates`) — followed by `5d28569`,
+`00d187b` and `26eab7e`. Each of the four PARTIAL verdicts above named exactly
+what would close it, and each was closed by building that thing rather than by
+arguing the verdict down.
+
+- **`SEC-004` — the audit class (`6ba21e4`).** The record said the remedy was
+  "buildable today: `openapi.v1.json` publishes `x-audit-class`; extend the
+  generator to carry it". It does now:
+  `scripts/ci/generate-idempotent-operations.mjs` reads the extension and writes
+  `auditClass` onto all 243 `PublishedOperation` entries with six distinct values.
+  The assertion is not a list — `p1-27-qa.test.ts:811` resolves the operation
+  behind each of the twenty-three EXECUTED write adapters and requires
+  `privileged`, and `:844` does the same for each list adapter and requires
+  `none`. That is stronger than the prose it replaces, because it fails if the
+  application calls an operation the contract does not publish at all.
+- **`QA-001` — coverage measured for the first time (`82acb66`, `00d187b`).**
+  `apps/web/vitest.config.ts` gained a root-level `coverage` block — root-level
+  deliberately, because with `projects` Vitest ignores a per-project block without
+  warning — and `.github/ci-baselines/coverage-baseline.web.json` records the
+  establishment run as LOCAL and says so. Two things in it are worth carrying
+  forward. The `include` glob has to escape `[locale]` and `(dashboard)`: written
+  as they appear on disk they are a character class and a group, matching **0
+  files** instead of 26, which would have dropped every route from the measurement
+  while the percentage went UP. And `coverage.all` is `true` so nothing can
+  silently join the denominator later — the trap where a percentage FALLS because
+  v8 newly entered code. Nothing is excluded, and the exclusion list says so: the
+  dashboard routes at 7.62% and two zero-coverage library modules are recorded as
+  `knownGaps` rather than deleted, because excluding them would delete the finding
+  and raise the number.
+- **`QA-002` — the client contract derived from the API's (`5048c8f`).**
+  `api-client.test.ts:977-1050` reads `ProblemDocument` off disk from
+  `apps/api/src/server/errors/problem.ts` and `ProblemDetails` off disk from
+  `lib/api/client.ts` and requires the same field names, every client field
+  optional, and the violation member type derived too. The reader is proved before
+  it is trusted (`:930-976`) — two empty field lists compare equal, so an
+  unparsed file would otherwise pass the comparison it was meant to make.
+- **`DO-002` — the enablement path made to work (`f0ce4bf`).** Two docblocks told
+  the reader to add the sink origin to `connect-src` "in `src/proxy.ts`", a file
+  where no directive is written and which could not hold one. `contentSecurityPolicy`
+  now takes `monitoringUrl`, `src/proxy.ts:43-46` passes the same variable the
+  beacon uses, only the ORIGIN is emitted, a non-`http(s)` value is dropped rather
+  than interpolated, and with the variable unset the header is byte identical.
+  **`DO-002` is still `PARTIAL`**, for one reason and a different one: alert
+  routing is the third word of the task name and nothing in `apps/web` defines a
+  threshold, a route or a recipient.
+
+### The authenticated tier, and a claim withdrawn (`7c60549`)
+
+`DO-001` and `QA-003` were both `PARTIAL` for the same reason: the authenticated
+browser tier — the repository's only end-to-end tenant-isolation proof and its
+only route-level accessibility proof — was gated behind `ROOTLCO_E2E_AUTH=1`, and
+no workflow set it. `.github/ci-baselines/unrun-test-tiers.json` had recorded that
+a hosted runner could not be given a live Supabase, a live API and a real account.
+**That was false and the file now says so in its own words:** a hosted runner has
+Docker and the Supabase CLI is a devDependency of this repository. The
+`authenticated-browser` job in `protected-develop-verification.yml` starts the
+stack, bootstraps the real operator and a second tenant, runs the production API
+build as a database login holding neither SUPERUSER nor BYPASSRLS, sets the
+variable, and then fails unless every authenticated spec contributed an executed
+test.
+
+What did NOT change, and is recorded rather than glossed: the job runs on pushes
+to `develop` and `main` only, so a green pull request still does not include it,
+and **it has never executed on a hosted runner even once**. That is why the task
+matrix now carries a `PROTECTED_REPROOF` column separate from `FINAL_VERDICT` — a
+feature that is complete and a re-run that is unpaid are different states, and
+recording both as `PARTIAL` made the register unable to tell them apart.
+
+### The web coverage floor that could not fire (`00d187b`, `26eab7e`)
+
+The touched-file coverage minimum was added and then found to be unable to fail,
+four ways at once, by an adversarial pass over the same wave's own work — the
+recurring shape of this phase. `26eab7e` also restored root formatting and moved a
+statement of gate blindness to the file where the check reads it, rather than
+leaving it where a reader would not look.
+
+### Re-assessment against `26eab7e` (this entry)
+
+The forty-two matrix rows were re-evaluated field by field against this head,
+because three independent judges reported rows stating, in the present tense,
+defects the tree no longer had — `QA-001` said coverage was not measured,
+`QA-002` said nothing derived the client interface, `QA-003` said no workflow set
+`ROOTLCO_E2E_AUTH`, `SEC-004` said `auditClass` lived only in comments, `FE-019`
+said the edit panel neither re-read nor rendered field errors. All five were true
+at `9eff8bd` and false here. Thirty-one stale `file:line` citations were
+re-pinned; the scope assertion the Frontend rows cite had moved from
+`p1-27-security.test.ts:241-251` to `:270-276`, and the old range is now a
+comment-stripper case, which is a citation that resolves to the wrong assertion —
+the `G-11` shape.
+
+The verdicts moved 21 PASS / 21 PARTIAL to **35 PASS / 7 PARTIAL / 0 FAIL**. Each
+of the seven carries ONE binding reason stated so it can be acted on: `FE-006`
+(`readCustomer` executed by nothing), `SEC-002` (three of five conjuncts held by a
+deletable suite with no gate rule), `SEC-003` (privilege escalation cited from
+nowhere), `QA-004` (the concurrency conjunct unbuilt), `QA-005` (sealed last, by
+design), `DO-002` (alert routing absent) and `DOC-001` (the eighteen-path matrix
+undischarged). Twenty-three of the thirty-five passes carry an OUTSTANDING
+protected reproof.
 
 ---
 
@@ -301,13 +412,23 @@ Thirty-three items were adjudicated; forty-two are canonical. The nine that were
 never enumerated — `FE-005`, `FE-006`, `FE-011`, `FE-012`, `FE-014`, `FE-025`,
 `FE-027`, `QA-004`, `DO-001` — rested on an undisputed audit PASS, from an audit
 whose passes had been refuted eleven times in twenty. And two are conjunctions
-with a conceded half: `DO-002`'s alert routing is unattached by design and
-`QA-004`'s concurrency half is contradicted by `P1-27-INT-009`. The honest count
-is **40 delivered and proven, 2 partially delivered**; the derivation is in
+with a conceded half: `DO-002`'s alert routing is unattached and `QA-004`'s
+concurrency half is contradicted by `P1-27-INT-009`. The count written here at the
+time was **40 delivered and proven, 2 partially delivered**, derived in
 `final-task-adjudication.md`.
 
-The claim is left standing above with this retraction beneath it, because the
-useful part of this record is not the final number but the sequence of numbers
+**THAT NUMBER IS ALSO WITHDRAWN, and by the same mechanism.** It was a hand-count
+of thirty-three adjudicated items plus a remainder, and the first full assessment
+of all forty-two rows returned 21 PASS and 21 PARTIAL — in the same commit that
+this page still said `40 / 42`, with nothing comparing the two. A count restated
+in prose disagrees with its own source eventually; this one did so immediately.
+The authority is `task-matrix.json` → `totals`, regenerated by
+`validate:p1-27-matrix` and reconciled against its own rows by
+`tests/ci/p1-27-task-matrix.test.ts`. No number for this appears anywhere in this
+document from here on.
+
+Both claims are left standing above with their retractions beneath them, because
+the useful part of this record is not the final number but the sequence of numbers
 that turned out to be wrong.
 
 **And the commit that did all this went red in hosted CI**, which is worth
@@ -328,16 +449,34 @@ ran is indistinguishable from local green.
 
 ## Audit progression, preserved
 
-| stage                                | result                                                   |
-| ------------------------------------ | -------------------------------------------------------- |
-| Initial claim                        | 42 / 42                                                  |
-| Adversarial audit                    | 20 PASS / 22 FAIL, `PASS_REFUTED = 11`                   |
-| Corrected reading of that same audit | **9 PASS / 33 FAIL** — a refuted pass is a fail          |
-| After this branch's remediation      | **40 / 42 proven, 2 partial** — see the retraction above |
+| stage                                      | result                                                              |
+| ------------------------------------------ | ------------------------------------------------------------------- |
+| Initial claim                              | 42 / 42                                                             |
+| Adversarial audit                          | 20 PASS / 22 FAIL, `PASS_REFUTED = 11`                              |
+| Corrected reading of that same audit       | **9 PASS / 33 FAIL** — a refuted pass is a fail                     |
+| After this branch's remediation            | **40 / 42 proven, 2 partial** — WITHDRAWN; see the retraction above |
+| The 42-task matrix, first full assessment  | 21 PASS / 21 PARTIAL (`9eff8bd`)                                    |
+| Re-assessed against `26eab7e` (this entry) | see `task-matrix.json` → `totals`                                   |
 
-The first row and the last read the same. They are not the same claim: the first
-was asserted, the last is derived from thirty-three individually adjudicated
-items and re-derived by tests on every run. That difference is the whole phase.
+**The last row states no number of its own, and that is the point.** Every
+earlier row is a figure somebody typed, and three of the four turned out to be
+wrong — including the one directly above it, which read `40 / 42` while the
+matrix it claimed to summarise recorded 21 PASS and 21 PARTIAL, in the same
+commit, with nothing comparing them. `task-matrix.json` is generated by
+`scripts/ci/build-p1-27-task-matrix.mjs` from `canonical-plan.md` and
+`task-matrix-verdicts.json`, `validate:p1-27-matrix` regenerates it and refuses
+any byte of difference, and `tests/ci/p1-27-task-matrix.test.ts` requires
+`totals` to equal what its own rows support. A count restated here could disagree
+with it; a pointer cannot.
+
+Read alongside it: `totals.PASS` is the verdict on the FEATURE, and
+`protectedReproof.OUTSTANDING` is the count of rows whose evidence includes a job
+only a protected push starts. The phase cannot close while the second is
+non-zero, and neither number can substitute for the other.
+
+The first row and the last describe the same universe. They are not the same
+claim: the first was asserted, the last is derived and re-derived on every run.
+That difference is the whole phase.
 
 The mistakes are kept deliberately. A record that shows only the final number
 cannot be checked by the next reader, and this phase has now been closed once on
