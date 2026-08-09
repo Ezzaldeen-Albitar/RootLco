@@ -1,5 +1,23 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+
+/**
+ * `userEvent`, without the artificial inter-keystroke delay.
+ *
+ * These cases type multi-word strings into a large mounted screen and drive
+ * several selects. Measured in isolation the slowest sat at 1.7 s against
+ * Vitest's 5 s default; under the contention of the full web suite that tripled
+ * and this file failed intermittently — two runs in five — always with a
+ * TIMEOUT and never with an assertion. The behaviour under test was never in
+ * doubt, only the wall clock.
+ *
+ * `delay: null` removes only the wait BETWEEN keystrokes. Every event still
+ * fires, in the same order, through the same code path, so nothing asserted
+ * here is weakened. Raising the timeout instead would have hidden a real
+ * slowdown rather than removing it.
+ */
+const setupUser = () => userEvent.setup({ delay: null });
+
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import { renderLtr } from './render';
@@ -209,7 +227,7 @@ beforeEach(() => {
 
 describe('CRM consumer — a consent decision survives a failed write', () => {
   it('keeps Withdrawn selected, so a retry cannot record the opposite', async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     renderLtr(
       <CustomerProfileScreen
         locale="en"
@@ -274,7 +292,7 @@ describe('CRM consumer — a consent decision survives a failed write', () => {
      * behaviour for "RecordForm" in general would be wrong for half the phase.
      */
     recordConsentAction.mockResolvedValue({ status: 'success' } satisfies ActionState);
-    const user = userEvent.setup();
+    const user = setupUser();
     renderLtr(
       <CustomerProfileScreen
         locale="en"
@@ -303,6 +321,31 @@ describe('CRM consumer — a consent decision survives a failed write', () => {
 });
 
 describe('Vehicle consumer — the EV profile survives a failed write', () => {
+  /**
+   * The EV form's Save control, once the form has SETTLED.
+   *
+   * `RecordForm.tsx:330` swaps the button's label to `form.pending` — "Working…"
+   * — while the action is in flight. During that window the button's accessible
+   * name is not `vehicles.ev.record`, so `getByRole` matches no button at all;
+   * the form's `<h3>` carries the same catalogue string, which is why the
+   * failure reads "found a heading with that name" and looks like the control
+   * vanished.
+   *
+   * `waitFor(() => expect(action).toHaveBeenCalled())` resolves when the action
+   * is ENTERED, not when React has settled the transition, so a `getByRole`
+   * placed immediately after it raced the pending window. It passed on an idle
+   * machine and failed under the load of the full suite — caught five times in
+   * roughly thirty runs, always here, always as a missing button and never as an
+   * assertion about behaviour.
+   *
+   * `findByRole` retries until the label reverts, which is also precisely the
+   * point at which the form reset under test has happened — so this is the
+   * correct synchronisation point, not merely a slower one.
+   */
+  async function evSave(container: HTMLElement): Promise<HTMLElement> {
+    return within(container).findByRole('button', { name: en['vehicles.ev.record'] });
+  }
+
   function renderEv() {
     return renderLtr(
       <EvProfileSection
@@ -334,7 +377,7 @@ describe('Vehicle consumer — the EV profile survives a failed write', () => {
      * The write is create-or-REPLACE, so losing a field is not losing a keystroke:
      * an omitted field is CLEARED on the record.
      */
-    const user = userEvent.setup();
+    const user = setupUser();
     const view = renderEv();
 
     await user.selectOptions(field(view.container, en['vehicles.ev.kind']), 'phev');
@@ -347,9 +390,9 @@ describe('Vehicle consumer — the EV profile survives a failed write', () => {
 
     await waitFor(() => expect(setEvProfileAction).toHaveBeenCalled());
 
-    expect(
-      within(view.container).getByRole('button', { name: en['vehicles.ev.record'] })
-    ).toBeTruthy();
+    // Awaited, so the assertions below read the form AFTER the failed write has
+    // settled rather than during the pending window. See `evSave`.
+    expect(await evSave(view.container)).toBeTruthy();
     expect(textbox(view.container, en['vehicles.ev.port'])).toHaveValue('CHAdeMO');
     expect(
       field(view.container, en['vehicles.ev.kind']),
@@ -377,7 +420,7 @@ describe('Vehicle consumer — the EV profile survives a failed write', () => {
      * maps absence to `false` and the record is stored WITHOUT the high-voltage
      * warning, successfully.
      */
-    const user = userEvent.setup();
+    const user = setupUser();
     const view = renderLtr(
       <EvProfileSection
         locale="en"
@@ -413,6 +456,16 @@ describe('Vehicle consumer — the EV profile survives a failed write', () => {
       'the tick never reached the first attempt'
     ).toBe('on');
 
+    /*
+     * Settle FIRST, then read the checkbox.
+     *
+     * The reset this case guards against happens when the action settles, and
+     * `waitFor(action called)` above returns before that. Asserting the tick
+     * survived while the write is still in flight would pass on a form that
+     * un-ticks a moment later — the exact defect, observed too early.
+     */
+    await evSave(view.container);
+
     // The tick must still be there for the operator to see and to resend.
     expect(
       within(view.container).getByRole('checkbox', { name: en['vehicles.ev.highVoltage'] }),
@@ -421,9 +474,11 @@ describe('Vehicle consumer — the EV profile survives a failed write', () => {
 
     // And the retry must still carry it. This is the assertion that matters:
     // the visible state and what is SENT can disagree.
-    await user.click(
-      within(view.container).getByRole('button', { name: en['vehicles.ev.record'] })
-    );
+    //
+    // Awaited: the first write has to have settled before the button carries its
+    // own label again, and clicking it while it reads "Working…" is the race
+    // that made this file fail intermittently.
+    await user.click(await evSave(view.container));
     await waitFor(() => expect(setEvProfileAction).toHaveBeenCalledTimes(2));
     expect(
       (setEvProfileAction.mock.calls[1]?.[2] as FormData | undefined)?.get('highVoltageWarning'),
@@ -438,7 +493,7 @@ describe('Vehicle consumer — the EV profile survives a failed write', () => {
      * operator who removes it, a failed write. A reset re-asserts the flag, so
      * the retry silently restores a warning the operator deliberately cleared.
      */
-    const user = userEvent.setup();
+    const user = setupUser();
     const view = renderEv(); // seeded highVoltageWarning: true
 
     await user.click(
@@ -452,6 +507,10 @@ describe('Vehicle consumer — the EV profile survives a failed write', () => {
     expect(
       (setEvProfileAction.mock.calls[0]?.[2] as FormData | undefined)?.get('highVoltageWarning')
     ).toBeNull();
+
+    // Settle before reading, for the same reason as the case above: the restore
+    // this guards against happens when the action settles.
+    await evSave(view.container);
 
     expect(
       within(view.container).getByRole('checkbox', { name: en['vehicles.ev.highVoltage'] }),
@@ -473,7 +532,7 @@ describe('Vehicle consumer — the EV profile survives a failed write', () => {
      * delete that one prop.
      */
     setEvProfileAction.mockResolvedValue({ status: 'success' } satisfies ActionState);
-    const user = userEvent.setup();
+    const user = setupUser();
     const view = renderEv();
 
     const port = textbox(view.container, en['vehicles.ev.port']);
@@ -484,6 +543,10 @@ describe('Vehicle consumer — the EV profile survives a failed write', () => {
     );
 
     await waitFor(() => expect(setEvProfileAction).toHaveBeenCalledTimes(1));
+    // Settle first: `clearOnSuccess` would empty the form when the action
+    // settles, so reading before that would assert the value survived a clear
+    // that had not yet been attempted.
+    await evSave(view.container);
     // What was saved is what is shown. Not empty, and not the pre-edit value.
     expect(textbox(view.container, en['vehicles.ev.port'])).toHaveValue('CHAdeMO');
     expect(within(view.container).getByLabelText(en['vehicles.ev.capacity'])).toHaveValue(64.5);

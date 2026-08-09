@@ -1073,3 +1073,291 @@ describe('the field errors a real 422 carries reach the controls it names', () =
     expect(new Set(messages).size).toBe(messages.length);
   });
 });
+
+/**
+ * A real 409 reaching a rendered screen, and saying which 409 it was.
+ *
+ * ## The gap this closes
+ *
+ * `failureMessageKey` splits a conflict two ways — `ERR-CON-001` keeps "Someone
+ * else changed this", every other 409 gets "This change cannot be saved" — and
+ * that split was proved only in `api-client.test.ts`, where the assertion is on
+ * the KEY the function returns. Before this block, a search for `409` across
+ * `apps/web/tests/*.tsx` matched comment lines and nothing else: no test in the
+ * repository drove a 409 through a screen, so the last hop — a panel receiving
+ * the state and rendering the truthful SENTENCE — was asserted nowhere. A key
+ * nobody renders is not a fixed message, which is the same shape as the 422
+ * defect the block above exists for.
+ *
+ * So every assertion here is on the operator-visible sentence out of the
+ * catalogue, never on `state.messageKey`.
+ *
+ * ## Why an ACTIVE vehicle is the fixture for the frozen refusal
+ *
+ * The screen mirrors the server's freeze rules, so on a vehicle it KNOWS is
+ * merged it withdraws the edit panel and no request is possible. A real
+ * `ERR-RES-002` therefore arrives exactly when the mirror is stale: the page was
+ * rendered while the vehicle was active, someone merged or scrapped it, and the
+ * save meets a server that now refuses. That is the only way this response can
+ * reach this panel, and it is why the fixture reads `active`.
+ *
+ * ## The codes are the published ones
+ *
+ * `ERR-RES-002` and `ERR-CON-001` are the catalogue's own, and `client.ts:697`
+ * names the second as the single code that means what `state.conflict.title`
+ * says. Nothing here invents a code, and nothing here invents a per-code
+ * sentence: `mapWriteConflict` maps every unique-index violation onto one code
+ * without reading the constraint name, so the interface cannot know whether a
+ * VIN or a reference number collided and must not claim to.
+ */
+describe('a real 409 reaches the screen as the sentence that fits its cause', () => {
+  const COLOR = en['vehicles.create.color'];
+  const VIN = en['vehicles.create.vin'];
+  const REFERENCE = en['vehicles.column.reference'];
+
+  const BLOCKED = en['state.conflict.blocked.title'];
+  const RACE = en['state.conflict.title'];
+
+  /**
+   * The problem document the API really sends for a refused write.
+   *
+   * A full backend-shaped `application/problem+json`: `type`, `title`, `status`,
+   * `code`, `correlationId`. `readPayload` parses on the `json` substring in the
+   * content type, so a fixture served as `text/plain` would arrive as a null
+   * problem, `failure.problem?.code` would be undefined for every case, and the
+   * cases that expect the blocked sentence would pass while measuring nothing.
+   */
+  function conflictWith(code: string | null, title: string): void {
+    fetchImpl.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          type: `https://errors.example.test/${code ?? 'unknown'}`,
+          title,
+          status: 409,
+          ...(code === null ? {} : { code }),
+          correlationId: 'corr-409-fixture',
+        }),
+        { status: 409, headers: { 'content-type': 'application/problem+json' } }
+      )
+    );
+  }
+
+  beforeEach(() => {
+    updateVehicleAction.mockImplementation(actualProfileApi.updateVehicleAction);
+    changeVehicleStatusAction.mockImplementation(actualProfileApi.changeVehicleStatusAction);
+  });
+
+  /**
+   * Retype the colour and save the edit panel.
+   *
+   * One changed field is required: `updateVehicleAction` returns `idle` without
+   * issuing a request when nothing changed, and every case below would then be
+   * asserting against a form that never submitted.
+   */
+  async function save(locale: 'en' | 'ar' = 'en'): Promise<void> {
+    // `delay: null` removes userEvent's inter-keystroke delay. It changes no
+    // behaviour under test — every event still fires in order — and it keeps this
+    // block from pushing the whole web suite past the 5 s per-test default, which
+    // it was measured doing to two unrelated files.
+    const user = userEvent.setup({ delay: null });
+    const messages = locale === 'en' ? en : ar;
+    const field = screen.getByLabelText(messages['vehicles.create.color'], { exact: true });
+    await user.clear(field);
+    await user.type(field, 'Cerulean');
+    await user.click(screen.getByRole('button', { name: messages['form.submit'] }));
+  }
+
+  /** The edit panel's own alert, which is where `Outcome` puts a failed write. */
+  function alertText(): string {
+    const alerts = screen.queryAllByRole('alert');
+    return alerts.map((node) => node.textContent ?? '').join(' ');
+  }
+
+  it('says the record cannot take the change when a unique index rejected it', async () => {
+    /*
+     * `ERR-RES-002` from `mapWriteConflict` — a `23505` on one of the two
+     * tenant-scoped unique indexes. The operator must not be told someone else
+     * edited the record: they would reload, find nothing changed, retry, and
+     * fail again for the reason nobody gave.
+     */
+    conflictWith('ERR-RES-002', 'Resource conflict');
+    render();
+    await save();
+
+    await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
+    const [url, init] = fetchImpl.mock.calls[0] as [string, { method: string }];
+    expect(url).toBe(`http://api.test/api/v1/vehicles/${VEHICLE.id}`);
+    expect(init.method).toBe('PATCH');
+
+    await waitFor(() => expect(alertText()).toContain(BLOCKED));
+    expect(alertText()).not.toContain(RACE);
+  });
+
+  it('says the same for a vehicle the server has since frozen', async () => {
+    /*
+     * The other producer of `ERR-RES-002`: the lifecycle service refusing a
+     * write against a merged or read-only vehicle. Two different causes, one
+     * code, one honest sentence — the interface does not guess which of the two
+     * it was, because the response does not say.
+     */
+    conflictWith('ERR-RES-002', 'Vehicle is not editable');
+    render();
+    await save();
+
+    await waitFor(() => expect(alertText()).toContain(BLOCKED));
+    expect(alertText()).not.toContain(RACE);
+  });
+
+  it('says someone else changed it ONLY for the code that means that', async () => {
+    /*
+     * `ERR-CON-001`, "Record version conflict" — the genuine in-flight race the
+     * `If-Match` guard raises. This is the one 409 for which "Someone else
+     * changed this" is true, and the pairing with the two cases above is the
+     * whole point: collapse the split and either this case or those two must
+     * fail.
+     */
+    conflictWith('ERR-CON-001', 'Record version conflict');
+    render();
+    await save();
+
+    await waitFor(() => expect(alertText()).toContain(RACE));
+    expect(alertText()).not.toContain(BLOCKED);
+  });
+
+  it('falls back to the honest sentence for a 409 carrying no code at all', async () => {
+    /*
+     * A proxy that stripped the body, an older service, a gateway-authored
+     * error: `problem.code` is undefined. The fallback must be the sentence that
+     * claims LESS. Defaulting the other way would assert a concurrent edit that
+     * nothing in the response supports.
+     */
+    conflictWith(null, 'Conflict');
+    render();
+    await save();
+
+    await waitFor(() => expect(alertText()).toContain(BLOCKED));
+    expect(alertText()).not.toContain(RACE);
+  });
+
+  it('renders the blocked sentence in Arabic, not an English fallback', async () => {
+    conflictWith('ERR-RES-002', 'Resource conflict');
+    render({}, 'ar');
+    await save('ar');
+
+    await waitFor(() => expect(alertText()).toContain(ar['state.conflict.blocked.title']));
+    expect(alertText()).not.toContain(en['state.conflict.blocked.title']);
+    // The two catalogues must not be carrying the same string, or the assertion
+    // above would hold for a screen that never translated anything.
+    expect(ar['state.conflict.blocked.title']).not.toBe(en['state.conflict.blocked.title']);
+  });
+
+  it('renders the race sentence in Arabic too', async () => {
+    conflictWith('ERR-CON-001', 'Record version conflict');
+    render({}, 'ar');
+    await save('ar');
+
+    await waitFor(() => expect(alertText()).toContain(ar['state.conflict.title']));
+    expect(alertText()).not.toContain(ar['state.conflict.blocked.title']);
+  });
+
+  it('marks no control, because a 409 names no field', async () => {
+    /*
+     * The 422 path marks controls; this one must not. A conflict carries no
+     * `violations`, so a panel that flagged a field after any failed write would
+     * be accusing a value the server never mentioned.
+     */
+    conflictWith('ERR-RES-002', 'Resource conflict');
+    render();
+    await save();
+
+    await waitFor(() => expect(alertText()).toContain(BLOCKED));
+    for (const label of [COLOR, VIN, REFERENCE]) {
+      expect(
+        screen.getByLabelText(label, { exact: true }).getAttribute('aria-invalid'),
+        `${label} was marked by a response that names no field`
+      ).toBeNull();
+    }
+  });
+
+  it('puts none of the problem document on the screen', async () => {
+    /*
+     * `title` is English developer prose in an Arabic-first product, `type` is a
+     * URL, and `code` is a token. None of them may be rendered.
+     *
+     * ## The correlation ID shown is the CLIENT's, not the body's
+     *
+     * This case was first written asserting the screen shows the `correlationId`
+     * carried in the problem document, and it failed: what is rendered is the
+     * UUID `ApiClient` minted for the request and sent as `x-correlation-id`
+     * (`client.ts:401,424`), falling back to that same value when the response
+     * echoes no header (`client.ts:441`). The body field is never read.
+     *
+     * That is the correct behaviour and worth pinning rather than papering over.
+     * The id that finds the server-side log is the one the client actually sent;
+     * a body-supplied string is response-controlled data, and rendering it would
+     * put an attacker-chosen value on the screen under the label "Reference".
+     * So the assertion is now two-sided: the sent header is shown, and the body
+     * value is NOT — which is also the strictest form of "no raw payload".
+     */
+    conflictWith('ERR-RES-002', 'Resource conflict');
+    const { container } = render();
+    await save();
+
+    await waitFor(() => expect(alertText()).toContain(BLOCKED));
+
+    const [, init] = fetchImpl.mock.calls[0] as [string, { headers: Record<string, string> }];
+    const sent = init.headers['x-correlation-id'];
+    expect(typeof sent, 'the client sent no correlation header').toBe('string');
+
+    const text = container.textContent ?? '';
+    // Asserted PRESENT so this case cannot pass by the screen having rendered no
+    // failure at all.
+    expect(text).toContain(sent);
+    for (const leak of [
+      'corr-409-fixture',
+      'ERR-RES-002',
+      'Resource conflict',
+      'https://errors.example.test',
+      '{',
+    ]) {
+      expect(text, `the response leaked ${leak}`).not.toContain(leak);
+    }
+    // And never the key itself, which is the defect one layer up from this one.
+    expect(text).not.toContain('state.conflict');
+  });
+
+  it('leaves the panel unmarked when the same write succeeds', async () => {
+    // The anti-vacuity control: every case above asserts a sentence is PRESENT,
+    // so a panel that rendered both sentences always would satisfy half of them.
+    fetchImpl.mockResolvedValue(
+      new Response(JSON.stringify({ id: VEHICLE.id }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    );
+    const { container } = render();
+    await save();
+
+    await waitFor(() => expect(screen.getByText(en['vehicles.profile.saved'])).toBeTruthy());
+    const text = container.textContent ?? '';
+    expect(text).not.toContain(BLOCKED);
+    expect(text).not.toContain(RACE);
+  });
+
+  it('asserts on two sentences that are actually different', () => {
+    // If `state.conflict.title` and `state.conflict.blocked.title` ever became
+    // the same string, every `not.toContain` pairing above would still pass and
+    // the split would be dead. This is the guard against that.
+    const sentences = [
+      BLOCKED,
+      RACE,
+      ar['state.conflict.blocked.title'],
+      ar['state.conflict.title'],
+    ];
+    for (const message of sentences) {
+      expect(typeof message).toBe('string');
+      expect(message.length).toBeGreaterThan(0);
+    }
+    expect(new Set(sentences).size).toBe(sentences.length);
+  });
+});
