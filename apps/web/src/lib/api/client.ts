@@ -685,3 +685,44 @@ export const FAILURE_MESSAGE_KEY: Record<ApiFailureKind, string> = {
   cancelled: 'state.error.title',
   network: 'state.unavailable.title',
 };
+
+/**
+ * The one catalog code that means what `state.conflict.title` says.
+ *
+ * `ERR-CON-001` is "Record version conflict", and the services raise it for a
+ * genuine race: "the vehicle changed while this request was in flight",
+ * "the candidate was reviewed by someone else while this request was in flight",
+ * "one wins, the other is told its view was stale".
+ */
+export const CONCURRENT_CHANGE_CODE = 'ERR-CON-001';
+
+/**
+ * The message key for a failure, which for a conflict depends on its cause.
+ *
+ * `FAILURE_MESSAGE_KEY` maps a KIND, and every 409 is one kind. So every conflict
+ * rendered "Someone else changed this" — and the error catalog defines TEN codes
+ * at 409, of which that sentence describes one. The vehicle module alone raises
+ * `ERR-RES-002` twelve times: for a vehicle whose lifecycle state refuses the
+ * write, a vehicle that has been merged and is read only, a candidate already
+ * decided, and a unique index rejecting the row. An operator told that someone
+ * else edited the record goes looking for that person, reloads, finds nothing
+ * changed, tries again — and the save fails again, for the reason nobody gave.
+ *
+ * The backend distinguishes all ten in `problem.code`. This client could not read
+ * it, because it declared `errorCode`, a field the API does not emit. That is the
+ * same defect the `ProblemDetails` correction above fixes, and this is the second
+ * thing that correction buys.
+ *
+ * What this deliberately does NOT do is invent a message per code. Where the
+ * backend cannot distinguish a cause it must not be guessed at: a duplicate VIN
+ * and a duplicate display number both arrive as `ERR-RES-002` with no
+ * `violations`, because `mapWriteConflict` maps every unique violation to one
+ * code. So there are exactly two sentences — the true concurrency one, and one
+ * that states the record cannot take the change without claiming to know why.
+ */
+export function failureMessageKey(failure: ApiFailure): string {
+  if (failure.kind !== 'conflict') return FAILURE_MESSAGE_KEY[failure.kind];
+  return failure.problem?.code === CONCURRENT_CHANGE_CODE
+    ? 'state.conflict.title'
+    : 'state.conflict.blocked.title';
+}

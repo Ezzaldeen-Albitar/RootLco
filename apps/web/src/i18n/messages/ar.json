@@ -717,6 +717,8 @@
   "shell.collapseNavigation": "طيّ قائمة التنقّل",
   "shell.openNavigation": "فتح قائمة التنقّل",
   "shell.secondaryPanel": "لوحة مساندة",
+  "state.conflict.blocked.description": "السجلّ في حالة لا تسمح بهذا التغيير، أو أنّ سجلًّا آخر يستخدم إحدى هذه القيم. افتح السجلّ من جديد لعرض تفاصيله الحالية.",
+  "state.conflict.blocked.title": "لا يمكن حفظ هذا التغيير",
   "state.conflict.description": "تغيّر السجلّ أثناء تحريرك له. أعد التحميل لعرض النسخة الحالية قبل الحفظ.",
   "state.conflict.title": "عدّل شخص آخر هذا السجلّ",
   "state.correlationId": "المرجع:",

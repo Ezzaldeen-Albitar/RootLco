@@ -717,6 +717,8 @@
   "shell.collapseNavigation": "Collapse navigation",
   "shell.openNavigation": "Open navigation",
   "shell.secondaryPanel": "Supporting panel",
+  "state.conflict.blocked.description": "The record is in a state that does not allow this change, or another record already uses one of these values. Open the record again to see its current details.",
+  "state.conflict.blocked.title": "This change cannot be saved",
   "state.conflict.description": "The record changed while you were editing. Reload to see the current version before saving.",
   "state.conflict.title": "Someone else changed this",
   "state.correlationId": "Reference:",
