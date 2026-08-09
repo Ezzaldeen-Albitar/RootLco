@@ -1,0 +1,372 @@
+{
+  "what": "Every round-five finding mapped to the canonical task(s) it bears on, with a classification.",
+  "why": "A finding that maps to no task disappears. This phase lost nine canonical tasks by counting a table plus an unlisted remainder; the same arithmetic applied to findings would lose findings. `tests/ci/p1-27-finding-map.test.ts` requires the map to cover every id in `adversarial-round-five.md` exactly once, and every task id to exist in `task-matrix.json`.",
+  "buckets": {
+    "FOUNDATION": "Cross-cutting: bears on no single canonical task. Must carry an owningConcern, and cannot be used to make a task-specific finding disappear.",
+    "note": "A finding may name both real task ids and FOUNDATION only when it genuinely does both; the test refuses FOUNDATION as a lone escape hatch for anything classified REAL_P1_27_DEFECT."
+  },
+  "classifications": [
+    "REAL_P1_27_DEFECT",
+    "TEST_OR_GATE_DEFECT",
+    "DOCUMENTATION_DEFECT",
+    "EVIDENCE_DEFECT",
+    "CANONICAL_TASK_MODEL_DEFECT",
+    "AUDIT_FALSE_NEGATIVE",
+    "DUPLICATE_FINDING",
+    "OUT_OF_SCOPE_P1_28_PLUS",
+    "GLOBAL_FOUNDATION_FINDING"
+  ],
+  "findings": {
+    "F-01": {
+      "TASK_IDS": ["FE-018"],
+      "CLASSIFICATION": "REAL_P1_27_DEFECT",
+      "WHY": "Vehicle creation. The client-validation branch did not advance `attempt`, so the retry submitted empty catalogue ids and the vehicle was created without make, model or body type."
+    },
+    "F-02": {
+      "TASK_IDS": ["FE-025"],
+      "CLASSIFICATION": "REAL_P1_27_DEFECT",
+      "WHY": "Vehicle-customer relationships. The six authorisation-scope checkboxes lost their state to the post-action form reset, and the retry sent an empty scope."
+    },
+    "F-03": {
+      "TASK_IDS": ["FE-021", "FE-025"],
+      "CLASSIFICATION": "REAL_P1_27_DEFECT",
+      "WHY": "`CustomerSelector` is rendered into the ownership-transfer form and both relationship forms. Its party-type filter reverted visually while state kept the value, so the search stayed restricted while the control said it was not."
+    },
+    "F-04": {
+      "TASK_IDS": ["QA-001"],
+      "CLASSIFICATION": "TEST_OR_GATE_DEFECT",
+      "WHY": "Unit and component coverage. The form-reset inventory reported 0 uncovered over files it never opened, which is why F-01 to F-03 shipped."
+    },
+    "WTF-01": {
+      "TASK_IDS": ["DO-001"],
+      "CLASSIFICATION": "TEST_OR_GATE_DEFECT",
+      "WHY": "CI quality gate. The baseline stated a headroom guarantee that two 36-case files falsify."
+    },
+    "WTF-02": {
+      "TASK_IDS": ["DO-001"],
+      "CLASSIFICATION": "TEST_OR_GATE_DEFECT",
+      "WHY": "CI quality gate. The only code joining the baseline to the verdict had no coverage, so a one-token rename disarmed the floor silently."
+    },
+    "WTF-03": {
+      "TASK_IDS": ["DO-001"],
+      "CLASSIFICATION": "TEST_OR_GATE_DEFECT",
+      "WHY": "CI quality gate. Skipped tests counted toward the floor, so an entirely skipped tier satisfied it."
+    },
+    "WTF-04": {
+      "TASK_IDS": ["DO-001"],
+      "CLASSIFICATION": "TEST_OR_GATE_DEFECT",
+      "WHY": "CI quality gate. An unresolvable baseline path warned and exited 0."
+    },
+    "WTF-05": {
+      "TASK_IDS": ["DO-001"],
+      "CLASSIFICATION": "TEST_OR_GATE_DEFECT",
+      "WHY": "CI quality gate. The tier derivation read one of three workflows and reported full coverage of a subset."
+    },
+    "WTF-06": {
+      "TASK_IDS": ["DO-001", "QA-005"],
+      "CLASSIFICATION": "TEST_OR_GATE_DEFECT",
+      "WHY": "`files` reported describe blocks. It is a gate defect and an evidence defect, because the wrong number was copied into the baseline and into QA-005's records."
+    },
+    "WTF-07": {
+      "TASK_IDS": ["DO-001"],
+      "CLASSIFICATION": "TEST_OR_GATE_DEFECT",
+      "WHY": "CI quality gate. The headroom bounds did not implement the criterion their own message stated."
+    },
+    "WTF-08": {
+      "TASK_IDS": ["DO-001"],
+      "CLASSIFICATION": "TEST_OR_GATE_DEFECT",
+      "WHY": "CI quality gate. Lowering the floor and its provenance together passes every committed assertion."
+    },
+    "WTF-09": {
+      "TASK_IDS": ["DO-001"],
+      "CLASSIFICATION": "TEST_OR_GATE_DEFECT",
+      "WHY": "CI quality gate. The deleted-file property is asserted against a frozen measurement and decays as the suite grows."
+    },
+    "WTF-10": {
+      "TASK_IDS": ["DO-001"],
+      "CLASSIFICATION": "TEST_OR_GATE_DEFECT",
+      "WHY": "CI quality gate. The web honesty verdict is never rendered into the job summary a reviewer reads."
+    },
+    "WTF-11": {
+      "TASK_IDS": ["DO-001"],
+      "CLASSIFICATION": "TEST_OR_GATE_DEFECT",
+      "WHY": "CI quality gate. The clean-room job runs the web tier with no summariser, so the floor is absent there."
+    },
+    "QA005-01": {
+      "TASK_IDS": ["QA-005"],
+      "CLASSIFICATION": "EVIDENCE_DEFECT",
+      "WHY": "The documents-only justification was contradicted by the diff, and the only check asserted the sentence was present."
+    },
+    "QA005-02": {
+      "TASK_IDS": ["QA-005"],
+      "CLASSIFICATION": "EVIDENCE_DEFECT",
+      "WHY": "The recorded root-unit figures were stale by exactly the file the recording commit added."
+    },
+    "QA005-03": {
+      "TASK_IDS": ["QA-005"],
+      "CLASSIFICATION": "EVIDENCE_DEFECT",
+      "WHY": "The recorded head was checked for shape, not existence."
+    },
+    "QA005-04": {
+      "TASK_IDS": ["QA-005"],
+      "CLASSIFICATION": "EVIDENCE_DEFECT",
+      "WHY": "The superseded-head list was hand-maintained beside a table that already stated the set, and missed a third head."
+    },
+    "QA005-05": {
+      "TASK_IDS": ["QA-005"],
+      "CLASSIFICATION": "EVIDENCE_DEFECT",
+      "WHY": "The derived count was matched as a substring, so it caught understatement only."
+    },
+    "QA005-06": {
+      "TASK_IDS": ["QA-005"],
+      "CLASSIFICATION": "EVIDENCE_DEFECT",
+      "WHY": "The digest was recomputed with the function under test, so truncating it left every case green."
+    },
+    "QA005-07": {
+      "TASK_IDS": ["QA-005"],
+      "CLASSIFICATION": "EVIDENCE_DEFECT",
+      "WHY": "Only two extensions were digested, case-sensitively, and the docblock's claim about the rest was false."
+    },
+    "QA005-08": {
+      "TASK_IDS": ["QA-005"],
+      "CLASSIFICATION": "EVIDENCE_DEFECT",
+      "WHY": "Eight unreferenced evidence documents could be deleted and regenerated with every case green."
+    },
+    "QA005-09": {
+      "TASK_IDS": ["QA-005"],
+      "CLASSIFICATION": "EVIDENCE_DEFECT",
+      "WHY": "Most numbers on both evidence pages are recorded from named artefacts and checked by nothing."
+    },
+    "QA005-10": {
+      "TASK_IDS": ["QA-005", "DO-001"],
+      "CLASSIFICATION": "EVIDENCE_DEFECT",
+      "WHY": "The baseline's file count contradicted its own note, and no assertion read the field."
+    },
+    "QA005-11": {
+      "TASK_IDS": ["DO-001"],
+      "CLASSIFICATION": "TEST_OR_GATE_DEFECT",
+      "WHY": "CI quality gate. A tier outside the defined vocabulary silently means `not a gate`."
+    },
+    "QA005-12": {
+      "TASK_IDS": ["QA-005"],
+      "CLASSIFICATION": "EVIDENCE_DEFECT",
+      "WHY": "Directory symlinks were invisible to both walks, including the supposedly independent one."
+    },
+    "A42-01": {
+      "TASK_IDS": ["FOUNDATION"],
+      "CLASSIFICATION": "CANONICAL_TASK_MODEL_DEFECT",
+      "WHY": "The task universe itself. 33 adjudicated items were counted as 42 canonical tasks with nine listed nowhere. It bears on every task and on none in particular, which is exactly what the FOUNDATION bucket is for.",
+      "OWNING_CONCERN": "canonical task authority — docs/phase-1/phase-1-27/task-matrix.json"
+    },
+    "A42-02": {
+      "TASK_IDS": ["DO-002"],
+      "CLASSIFICATION": "REAL_P1_27_DEFECT",
+      "WHY": "Structured logging, monitoring AND alert routing. The third conjunct is conceded unattached by the phase's own record."
+    },
+    "A42-03": {
+      "TASK_IDS": ["DO-002", "DOC-001"],
+      "CLASSIFICATION": "DOCUMENTATION_DEFECT",
+      "WHY": "The adjudication gives DO-002 two contradictory statuses and uses a verdict class its own table does not define."
+    },
+    "A42-04": {
+      "TASK_IDS": ["DOC-001"],
+      "CLASSIFICATION": "DOCUMENTATION_DEFECT",
+      "WHY": "Traceability synchronisation. The finding written to close an arithmetic gap left one: ten claimed, thirteen named."
+    },
+    "A42-05": {
+      "TASK_IDS": ["DOC-001", "DO-002"],
+      "CLASSIFICATION": "DOCUMENTATION_DEFECT",
+      "WHY": "An identifier corrected at one occurrence and left at the other, and the survivor is inside DO-002's load-bearing sentence."
+    },
+    "A42-06": {
+      "TASK_IDS": ["DOC-001", "FE-021", "FE-022"],
+      "CLASSIFICATION": "DOCUMENTATION_DEFECT",
+      "WHY": "Two tasks carry different roots and different commits in the Summary than in their own sections."
+    },
+    "A42-07": {
+      "TASK_IDS": ["FE-003", "DOC-001"],
+      "CLASSIFICATION": "DOCUMENTATION_DEFECT",
+      "WHY": "The canonical plan assigns FE-003 two operations it does not use, and that stale line is the decision reference for two deliberately-absent classifications."
+    },
+    "A42-08": {
+      "TASK_IDS": ["DOC-001"],
+      "CLASSIFICATION": "DOCUMENTATION_DEFECT",
+      "WHY": "The per-task audit still states a superseded conclusion with no supersession note."
+    },
+    "A42-09": {
+      "TASK_IDS": ["DOC-001"],
+      "CLASSIFICATION": "DOCUMENTATION_DEFECT",
+      "WHY": "Four Summary rows say FIXED with no commit, against the table's own status vocabulary."
+    },
+    "A42-10": {
+      "TASK_IDS": ["FE-005", "DOC-001"],
+      "CLASSIFICATION": "DOCUMENTATION_DEFECT",
+      "WHY": "FE-005's evidence cell over-counts its own proof: four cases named, three exist, two of the names identical."
+    },
+    "A42-11": {
+      "TASK_IDS": ["FE-021", "FE-022", "FE-023", "DOC-001"],
+      "CLASSIFICATION": "DOCUMENTATION_DEFECT",
+      "WHY": "Three traceability rows list only the read half of each canonical operation pair, contradicting section 9 of the same document."
+    },
+    "A42-12": {
+      "TASK_IDS": ["QA-001", "DOC-001"],
+      "CLASSIFICATION": "TEST_OR_GATE_DEFECT",
+      "WHY": "The only automated check that all 42 exist was a substring existence check, which this phase itself rejected as the wrong proof."
+    },
+    "A42-13": {
+      "TASK_IDS": ["QA-004"],
+      "CLASSIFICATION": "REAL_P1_27_DEFECT",
+      "WHY": "Concurrency AND idempotency. The concurrency conjunct is contradicted by P1-27-INT-009."
+    },
+    "A42-14": {
+      "TASK_IDS": ["SEC-002", "DOC-001"],
+      "CLASSIFICATION": "DOCUMENTATION_DEFECT",
+      "WHY": "A five-part conjunction adjudicated on one part, on a commit-less row."
+    },
+    "A-01": {
+      "TASK_IDS": ["DOC-001", "QA-005"],
+      "CLASSIFICATION": "TEST_OR_GATE_DEFECT",
+      "WHY": "The closure-banner block became dead code once no task row was open."
+    },
+    "A-02": {
+      "TASK_IDS": ["DOC-001", "QA-005"],
+      "CLASSIFICATION": "TEST_OR_GATE_DEFECT",
+      "WHY": "The acceptance banner was banned nowhere and the required status string was satisfiable by a past-tense narrative."
+    },
+    "A-03": {
+      "TASK_IDS": ["DOC-001"],
+      "CLASSIFICATION": "TEST_OR_GATE_DEFECT",
+      "WHY": "The banned spelling was one no document uses while five unbanned spellings were already on the page."
+    },
+    "A-04": {
+      "TASK_IDS": ["DOC-001"],
+      "CLASSIFICATION": "TEST_OR_GATE_DEFECT",
+      "WHY": "This repository's own closure vocabulary was not banned."
+    },
+    "A-05": {
+      "TASK_IDS": ["QA-005"],
+      "CLASSIFICATION": "TEST_OR_GATE_DEFECT",
+      "WHY": "A describe title claims the evidence records point at this branch; its only case is an existence check."
+    },
+    "B-01": {
+      "TASK_IDS": ["DOC-001"],
+      "CLASSIFICATION": "TEST_OR_GATE_DEFECT",
+      "WHY": "A case that cannot fail: both regexes are start-anchored, so the conjunction is impossible."
+    },
+    "B-02": {
+      "TASK_IDS": ["DOC-001"],
+      "CLASSIFICATION": "TEST_OR_GATE_DEFECT",
+      "WHY": "A banned sentence is present and escapes only because a formatter wrapped it across a newline."
+    },
+    "B-03": {
+      "TASK_IDS": ["DOC-001"],
+      "CLASSIFICATION": "TEST_OR_GATE_DEFECT",
+      "WHY": "The open-total check fires on one exact phrasing and is dormant at zero."
+    },
+    "B-04": {
+      "TASK_IDS": ["DOC-001"],
+      "CLASSIFICATION": "TEST_OR_GATE_DEFECT",
+      "WHY": "Four cases are existence-only or assert nothing about this phase."
+    },
+    "B-05": {
+      "TASK_IDS": ["DOC-001"],
+      "CLASSIFICATION": "TEST_OR_GATE_DEFECT",
+      "WHY": "The citation check covers 136 of 239 quoted titles and drops whole cells."
+    },
+    "B-06": {
+      "TASK_IDS": ["DOC-001"],
+      "CLASSIFICATION": "TEST_OR_GATE_DEFECT",
+      "WHY": "The closed count matches the word FIXED anywhere in the cell, so a negation would count as closed."
+    },
+    "D-01": {
+      "TASK_IDS": ["DOC-002"],
+      "CLASSIFICATION": "TEST_OR_GATE_DEFECT",
+      "WHY": "Operator guidance. The guidance test opens one locale of two, so `quoted from the product` is proven for English only."
+    },
+    "D-02": {
+      "TASK_IDS": ["DOC-002"],
+      "CLASSIFICATION": "TEST_OR_GATE_DEFECT",
+      "WHY": "Developer guidance. The guide's feature roots are narrower than the gate's tree, so its `exhaustive` partition is not."
+    },
+    "E-01": {
+      "TASK_IDS": ["DOC-001"],
+      "CLASSIFICATION": "DOCUMENTATION_DEFECT",
+      "WHY": "The deliverable manifest stated a migration count and an absence claim that the tree contradicts."
+    },
+    "E-02": {
+      "TASK_IDS": ["DOC-001"],
+      "CLASSIFICATION": "DOCUMENTATION_DEFECT",
+      "WHY": "Section 6.1 prose reported web totals contradicting the heading four lines above it."
+    },
+    "E-03": {
+      "TASK_IDS": ["DOC-001"],
+      "CLASSIFICATION": "DOCUMENTATION_DEFECT",
+      "WHY": "A case count is unchecked while the file count beside it is pinned, so half the figure can drift silently."
+    },
+    "E-04": {
+      "TASK_IDS": ["DOC-001"],
+      "CLASSIFICATION": "DOCUMENTATION_DEFECT",
+      "WHY": "Two section headings state file counts the tables beneath them do not list."
+    },
+    "E-05": {
+      "TASK_IDS": ["DOC-001"],
+      "CLASSIFICATION": "DOCUMENTATION_DEFECT",
+      "WHY": "Two stale totals survive a fix that corrected the sentence directly above the first of them."
+    },
+    "E-06": {
+      "TASK_IDS": ["DOC-001"],
+      "CLASSIFICATION": "DOCUMENTATION_DEFECT",
+      "WHY": "Eight of fifteen documentation line counts are wrong, under a row asserting all are exact."
+    },
+    "E-07": {
+      "TASK_IDS": ["DOC-001"],
+      "CLASSIFICATION": "DOCUMENTATION_DEFECT",
+      "WHY": "The tracked phase-document count is half the real one."
+    },
+    "E-08": {
+      "TASK_IDS": ["DOC-001"],
+      "CLASSIFICATION": "DOCUMENTATION_DEFECT",
+      "WHY": "One directory is stated with two different counts in one document."
+    },
+    "E-09": {
+      "TASK_IDS": ["DOC-001"],
+      "CLASSIFICATION": "DOCUMENTATION_DEFECT",
+      "WHY": "A database test-file count is off by one against the tree."
+    },
+    "E-10": {
+      "TASK_IDS": ["DOC-001"],
+      "CLASSIFICATION": "DOCUMENTATION_DEFECT",
+      "WHY": "Superseded command snapshots are presented without a superseded marker."
+    },
+    "E-11": {
+      "TASK_IDS": ["DOC-001"],
+      "CLASSIFICATION": "DOCUMENTATION_DEFECT",
+      "WHY": "Three of four measured case counts in the row that exists to correct a stale register are themselves wrong."
+    },
+    "E-12": {
+      "TASK_IDS": ["DOC-001"],
+      "CLASSIFICATION": "DOCUMENTATION_DEFECT",
+      "WHY": "One gate is reported with two different measured outputs in one document."
+    },
+    "G-06": {
+      "TASK_IDS": ["SEC-004"],
+      "CLASSIFICATION": "TEST_OR_GATE_DEFECT",
+      "WHY": "Security audit-event coverage. The gate was widened to any console method and the cited test left at a five-name list, so a wider call passes the cited proof."
+    },
+    "G-07": {
+      "TASK_IDS": ["DOC-001"],
+      "CLASSIFICATION": "DOCUMENTATION_DEFECT",
+      "WHY": "Four case counts are stated twice in the traceability record and the statements disagree."
+    },
+    "G-08": {
+      "TASK_IDS": ["DOC-001"],
+      "CLASSIFICATION": "DOCUMENTATION_DEFECT",
+      "WHY": "One suite is cited with two different case counts across two documents."
+    },
+    "G-09": {
+      "TASK_IDS": ["DO-001", "QA-001"],
+      "CLASSIFICATION": "TEST_OR_GATE_DEFECT",
+      "WHY": "The test-honesty gate computed a comment-stripped source and matched its rules against the raw one, so it fired on prose and its line numbers were wrong after any docblock."
+    }
+  }
+}

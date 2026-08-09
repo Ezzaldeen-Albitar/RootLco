@@ -5,7 +5,7 @@
   "whatThisProves": "An evidence document cannot be edited without this file changing in the same diff. Digests are over file BYTES, so an encoding change counts as a change.",
   "whatThisDoesNotProve": "This is not a tamper-proof seal. Anyone able to edit a document is able to re-run the generator and commit both. It removes SILENT revision, not revision.",
   "selfExclusion": "This manifest is the only path excluded from its own digest set, because a file containing its own hash has no fixed point. tests/ci/p1-27-evidence-manifest.test.ts asserts the exclusion is exactly this one path.",
-  "fileCount": 32,
+  "fileCount": 33,
   "files": {
     "docs/phase-1/phase-1-27/adversarial-round-five.md": {
       "sha256": "99f5babc3614bef57987876f557792a3a0bef540af43bf37027a76e3c3bdc0fd",
@@ -40,7 +40,7 @@
       "bytes": 24145
     },
     "docs/phase-1/phase-1-27/deliverable-manifest.md": {
-      "sha256": "ac637f1e19c96f7839d528f3a17350a2d0827d6733ba1ed2617fcabc72423fbd",
+      "sha256": "3b75db32210cdecdeb6d5886b31695bf20a8a495e779f580c59ae44fe8e9ce30",
       "bytes": 118255
     },
     "docs/phase-1/phase-1-27/developer-guide.md": {
@@ -70,6 +70,10 @@
     "docs/phase-1/phase-1-27/finding-phase-disposition.md": {
       "sha256": "1636f04e7a7448e6f56f4702d7f06c9d5a413c442b4f66394e1a6dc3593b0aa2",
       "bytes": 125899
+    },
+    "docs/phase-1/phase-1-27/finding-task-map.json": {
+      "sha256": "e85c85bfc28b99c6569e31a8b0ad601693553cda9962fced7ee0708bcb693d2b",
+      "bytes": 16716
     },
     "docs/phase-1/phase-1-27/findings.md": {
       "sha256": "7f4bf9f24fc0577b5c5c60bdea2268a233337ec8396e836ec192030d01eeaab9",
