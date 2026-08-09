@@ -481,6 +481,26 @@
       "TASK_IDS": ["DO-001"],
       "CLASSIFICATION": "TEST_OR_GATE_DEFECT",
       "WHY": "The changed-file ownership step exits 0 with no pull-request context, so validate:phase-ownership never runs on a protected push; the compensating control is stated in the workflow and holds only while pull requests are the sole path to a protected ref."
+    },
+    "H-15": {
+      "TASK_IDS": ["QA-003", "DO-001", "DOC-002"],
+      "CLASSIFICATION": "DOCUMENTATION_DEFECT",
+      "WHY": "Two docblocks in apps/web/tests/p1-27-security.test.ts say the authenticated isolation spec runs in no CI job, and one concludes that QA-003 is therefore not closed. The authenticated-browser job in protected-develop-verification.yml runs it, so a reader is told a gap exists that was repaid. Same class as H-13, one wave later."
+    },
+    "H-16": {
+      "TASK_IDS": ["DO-001", "DOC-002"],
+      "CLASSIFICATION": "DOCUMENTATION_DEFECT",
+      "WHY": "apps/web/playwright.config.ts states that no workflow has ever set ROOTLCO_E2E_AUTH. One now does. The runtime warning the sentence introduces is still correct; the repository fact justifying it is not."
+    },
+    "H-17": {
+      "TASK_IDS": ["DOC-001", "QA-005"],
+      "CLASSIFICATION": "EVIDENCE_DEFECT",
+      "WHY": "checkCatalogue matched a quoted case title against raw source, so a title in a comment satisfied it, and it accepted the same title twice for one file. TC-P1-27-CRM-014 cited a title that names no case anywhere in the repository and TC-P1-27-CRM-010 cited one title as two. The catalogue is DOC-001's deliverable and the evidence guards are QA-005's."
+    },
+    "H-18": {
+      "TASK_IDS": ["QA-001", "DO-001"],
+      "CLASSIFICATION": "TEST_OR_GATE_DEFECT",
+      "WHY": "A load-dependent 5-second timeout flake in at least four web test files, measured on a tree with no change under apps/** at all. QA-001 owns the web tier, DO-001 owns what a hosted run reports; a flake that moves between files reads as a red gate nobody can reproduce."
     }
   }
 }

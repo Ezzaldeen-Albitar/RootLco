@@ -60,6 +60,21 @@ export const VERDICTS_ALLOWED = Object.freeze(['PASS', 'PARTIAL', 'FAIL']);
  * Every evidence field a task must account for. A field may be `N/A` only with a
  * rationale — never blank, because a blank reads as "nobody looked" and as
  * "nothing to look at" at the same time.
+ *
+ * ## Why `PROTECTED_REPROOF` is a column and not a verdict
+ *
+ * Two different things were being written into one word. A task whose feature is
+ * wrong is PARTIAL. A task whose feature is right, and proved at this candidate,
+ * but whose evidence includes a job that only a push to `develop` or `main`
+ * starts, is not a defective feature — it is a complete feature with an unpaid
+ * reproof. Both were being recorded as PARTIAL, which made the register unable
+ * to distinguish "this does not work" from "this has not been re-run yet", and
+ * the phase cannot close on either reading without knowing which it is.
+ *
+ * So the judgement splits. `FINAL_VERDICT` answers *is the canonical requirement
+ * satisfied at this head*. `PROTECTED_REPROOF` answers *does anything on this row
+ * still wait on a protected-push job*. A row may be `PASS` with an OUTSTANDING
+ * reproof; the phase still may not close until every OUTSTANDING one is taken.
  */
 export const EVIDENCE_FIELDS = Object.freeze([
   'IMPLEMENTATION_SURFACES',
@@ -81,6 +96,7 @@ export const EVIDENCE_FIELDS = Object.freeze([
   'PRODUCTION_REACHABILITY',
   'PRODUCTION_TEST_EVIDENCE',
   'NEGATIVE_OR_MUTATION_PROOF',
+  'PROTECTED_REPROOF',
   'ROUND5_FINDING_IDS',
   'DOCUMENTATION_EVIDENCE',
 ]);
@@ -148,6 +164,16 @@ export function buildMatrix(root = ROOT) {
       PASS: rows.filter((r) => r.FINAL_VERDICT === 'PASS').length,
       PARTIAL: rows.filter((r) => r.FINAL_VERDICT === 'PARTIAL').length,
       FAIL: rows.filter((r) => r.FINAL_VERDICT === 'FAIL').length,
+    },
+    /**
+     * The reproof debt, counted rather than described. A `PASS` row with an
+     * OUTSTANDING reproof is a complete feature and an unpaid re-run; summing
+     * them here means the phase cannot be read as closeable from `totals` alone.
+     */
+    protectedReproof: {
+      OUTSTANDING: rows.filter((r) => String(r.PROTECTED_REPROOF).startsWith('OUTSTANDING')).length,
+      NOT_REQUIRED: rows.filter((r) => String(r.PROTECTED_REPROOF).startsWith('NOT REQUIRED'))
+        .length,
     },
     tasks: rows,
   };
