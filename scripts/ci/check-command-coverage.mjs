@@ -342,6 +342,14 @@ export const REGISTER = Object.freeze([
     // `.github/ci-baselines/phase-ownership-profiles.json` and REFUSING a branch
     // that declares none. Under `ci-only` the invocation is enforced: delete
     // that step and this gate fails instead of narrating (`P1-27-DO-003`).
+    //
+    // The first version of that step then exited 0 whenever the pull-request
+    // inputs were absent, which is every protected-branch push — the gate was
+    // wired in and still ran nowhere authoritative. `--resolve-context` decides
+    // instead: a push or dispatch on an ordinary branch resolves the profile
+    // from the pushed ref, a push on `develop` or `main` is a DECLARED skip
+    // carrying `checked: false`, and a `pull_request` run whose caller omitted
+    // the refs is refused rather than skipped.
     why: 'per-phase changed-file ownership; the profile is a property of the branch, so hosted CI resolves it per pull request and the local aggregate cannot (P1-27-DO-003)',
   },
   {

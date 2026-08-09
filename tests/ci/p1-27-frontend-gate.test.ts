@@ -7,8 +7,10 @@ import {
   RULES,
   SCAN_ROOTS,
   SCOPE_NAMES,
+  UNCOLLECTED_PHASE_MODULES,
   assertNotSymlink,
   assertedScopes,
+  collects,
   evaluate,
   fires,
   literalMask,
@@ -484,5 +486,128 @@ describe('the scan roots are ALL THREE of this phase’s trees', () => {
         ).toBe(true);
       }
     }
+  });
+});
+
+describe('a rule firing is not the same fact as the gate opening the file', () => {
+  /**
+   * `evaluate()` applies every rule to every `{path, source}` pair it is handed
+   * and never asks where the path came from. That is correct — the walker
+   * decides what to hand it — but it means an assertion of the form
+   *
+   *     evaluate([{ path: 'anything.ts', source: 'console.log(x)' }])
+   *
+   * proves the RULE fires and proves NOTHING about whether CI would ever open
+   * that file. `collects()` is the second half of that proof, and these cases
+   * are the demonstration that the two halves are genuinely independent.
+   */
+  const TRIPS_A_RULE = 'const body = new FormData();';
+
+  it('flags a file no scan root contains — evaluate() is path-blind by design', () => {
+    const outside = 'apps/web/src/components/forms/RecordForm.tsx';
+    const { failures } = evaluate([{ path: outside, source: TRIPS_A_RULE }]);
+    expect(failures.filter((f: string) => f.startsWith('no-upload-path:'))).toHaveLength(1);
+    // …and the gate would never have read it.
+    expect(collects(outside), `${outside} is outside every SCAN_ROOT`).toBe(false);
+  });
+
+  it('reports the same two paths an assessor used as NOT COLLECTED', () => {
+    // The concrete pair from the re-assessment. Both are this phase's own code
+    // and no root contains either.
+    expect(collects('apps/web/src/components/forms/RecordForm.tsx')).toBe(false);
+    expect(collects('apps/web/src/lib/customers/directory.ts')).toBe(false);
+  });
+
+  it('says YES for a path under each scan root', () => {
+    for (const root of SCAN_ROOTS) {
+      const path = `${root.split(sep).join('/')}/somewhere/File.tsx`;
+      expect(collects(path), path).toBe(true);
+    }
+  });
+
+  it('mirrors the walker rather than approximating it', () => {
+    // Extension, skipped directory and separator form — the three things the
+    // real walk decides, asserted against the same answers.
+    expect(collects('apps/web/src/features/crm/notes.md')).toBe(false);
+    expect(collects('apps/web/src/features/crm/node_modules/pkg/index.ts')).toBe(false);
+    expect(collects('apps\\web\\src\\features\\crm\\api.ts')).toBe(true);
+    // A root itself is not a file, and nothing outside the trees is collected.
+    expect(collects('apps/web/src/features/crm')).toBe(false);
+    expect(collects('apps/web/src/features/administration/access/api.ts')).toBe(false);
+    expect(collects('')).toBe(false);
+  });
+
+  it('agrees with the real walk over every file the gate actually reads', () => {
+    // The strongest form: `collects()` must be TRUE for every file a real run
+    // collects. A predicate that disagreed with the walker would make every
+    // assertion built on it a different kind of fiction.
+    const walked = SCAN_ROOTS.flatMap((root: string) =>
+      listSources(join(REPO_ROOT, root)).map((p) => relative(REPO_ROOT, p).split(sep).join('/'))
+    );
+    expect(walked.length).toBeGreaterThan(60);
+    expect(walked.filter((p) => !collects(p))).toEqual([]);
+  });
+});
+
+describe('the phase modules that live outside every scan root', () => {
+  /**
+   * The D1 remediation moved shared code out of `features/` and the gate's roots
+   * did not follow it. Extending `SCAN_ROOTS` is not available to this branch:
+   * the root list is re-derived from `canonical-plan.md` §9 by the cases above,
+   * and `check-p1-27-doc-counts.mjs` publishes the file and tree counts into four
+   * documents. So the property a fourth root would have bought is asserted here
+   * instead, over exactly the files it would have covered.
+   *
+   * See `UNCOLLECTED_PHASE_MODULES` in the gate for the full reasoning, including
+   * why widening to `apps/web/src` is worse rather than better.
+   */
+  it('is a live, non-empty list of directories that exist and are not collected', () => {
+    expect(UNCOLLECTED_PHASE_MODULES.length).toBeGreaterThan(0);
+    for (const dir of UNCOLLECTED_PHASE_MODULES) {
+      expect(existsSync(join(REPO_ROOT, dir)), `${dir} no longer exists`).toBe(true);
+      // If one of these ever comes inside a root, the record is stale and must
+      // be shortened — a note describing a fixed problem is a lie in waiting.
+      expect(collects(`${dir}/Sample.tsx`), `${dir} is now inside a SCAN_ROOT`).toBe(false);
+    }
+  });
+
+  it('is reached from inside the scanned trees, so it is unambiguously this phase', () => {
+    const scanned = SCAN_ROOTS.flatMap((root: string) => listSources(join(REPO_ROOT, root)));
+    const imported = new Set<string>();
+    for (const file of scanned) {
+      const source = readFileSync(file, 'utf8');
+      for (const dir of UNCOLLECTED_PHASE_MODULES) {
+        // `apps/web/src/lib/customers` -> the `@/lib/customers` alias the tree uses.
+        const alias = `@/${dir.replace('apps/web/src/', '')}/`;
+        if (source.includes(`from '${alias}`)) imported.add(dir);
+      }
+    }
+    expect(
+      [...imported].sort(),
+      'a recorded module nothing imports is not this phase’s surface'
+    ).toEqual([...UNCOLLECTED_PHASE_MODULES].sort());
+  });
+
+  it('trips NO rule today — measured over the real files, not assumed', () => {
+    /*
+     * The teeth. The gate cannot reach these files, so this case reaches them:
+     * every rule, over every `.ts`/`.tsx` in the recorded directories, read from
+     * disk. Green today at 10 files. The day a merge caller, an upload path or a
+     * `console.log` lands in one of them, this goes red and the question of a
+     * fourth scan root arrives with evidence attached instead of as an opinion.
+     */
+    const files = UNCOLLECTED_PHASE_MODULES.flatMap((dir) => listSources(join(REPO_ROOT, dir)));
+    expect(files.length, 'the recorded directories hold no source at all').toBeGreaterThan(0);
+
+    const violations: string[] = [];
+    for (const file of files) {
+      const source = stripComments(readFileSync(file, 'utf8'));
+      for (const rule of RULES) {
+        if (fires(rule, source)) {
+          violations.push(`${rule.id}: ${relative(REPO_ROOT, file).split(sep).join('/')}`);
+        }
+      }
+    }
+    expect(violations).toEqual([]);
   });
 });

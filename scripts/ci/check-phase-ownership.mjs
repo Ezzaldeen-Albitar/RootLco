@@ -27,6 +27,7 @@
  * exactly the one worth looking at.
  */
 import { execFileSync } from 'node:child_process';
+import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
 /**
@@ -117,6 +118,199 @@ export const PROFILES = {
   },
 };
 
+/* ==========================================================================
+ * Part two: WHICH ownership question this CI run can answer.
+ *
+ * Everything above decides whether a diff honoured a profile. This decides
+ * whether the run has a diff and a profile to decide about — and what happens
+ * when it does not.
+ *
+ * It lives in this file rather than beside it because the two halves are one
+ * gate: a reader who finds the classification rules must also find the reason a
+ * run can legitimately check nothing, or the second will be reinvented as an
+ * `exit 0`. Which is exactly what happened — see `decideOwnershipRun()`.
+ * ========================================================================== */
+
+/** Where the branch → profile map lives. */
+export const PROFILE_MAP_PATH = '.github/ci-baselines/phase-ownership-profiles.json';
+
+/**
+ * Branches on which the ownership question does not apply.
+ *
+ * Not configurable, for the reason `check-promotion-source.mjs` gives about the
+ * same pair: `develop` and `main` are named in ADR-006 as permanent branches
+ * with fixed meanings, and a configurable list would let the skip be widened by
+ * editing a value rather than by amending the ADR.
+ */
+export const PROTECTED_BRANCHES = Object.freeze(['develop', 'main']);
+
+/** Events that carry a pull request, and therefore must carry its refs. */
+export const PULL_REQUEST_EVENTS = Object.freeze(['pull_request', 'pull_request_target']);
+
+/**
+ * The base a branch push is judged against.
+ *
+ * `static-quality` checks out at `fetch-depth: 0`, so `origin/develop` is
+ * present. If it ever is not, `check-phase-ownership.mjs` exits 2 naming the
+ * ref — a broken measurement, reported as one.
+ */
+export const DEFAULT_BASE = 'origin/develop';
+
+/**
+ * What may appear in a value the run block sources.
+ *
+ * A ref or profile name outside this set is not a real one, so refusing it costs
+ * nothing and removes the whole class of question about what the shell would do
+ * with it.
+ */
+const SAFE_VALUE = /^[A-Za-z0-9._/-]+$/;
+
+const refuse = (reason) => ({
+  action: 'refuse',
+  checked: false,
+  profile: null,
+  base: null,
+  reason,
+});
+
+/**
+ * Resolve a branch against the committed profile map.
+ *
+ * @param {string} branch
+ * @param {ReadonlyArray<{branchPrefix?: string, profile?: string}>} rules
+ * @param {string} how  how this branch was arrived at, for the message
+ */
+function fromBranch(branch, base, rules, how) {
+  if (!Array.isArray(rules) || rules.length === 0) {
+    return refuse(
+      `${PROFILE_MAP_PATH} declares no rules, so every branch would resolve to nothing. An empty ` +
+        'map is a broken map, not a permissive one.'
+    );
+  }
+  const rule = rules.find(
+    (r) =>
+      typeof r?.branchPrefix === 'string' &&
+      r.branchPrefix !== '' &&
+      branch.startsWith(r.branchPrefix)
+  );
+  if (!rule) {
+    return refuse(
+      `branch \`${branch}\` declares no changed-file ownership profile. Add a rule to ` +
+        `${PROFILE_MAP_PATH} saying which parts of the repository this branch is allowed to ` +
+        "change. Refusing to judge it against another phase's declaration, which is how every " +
+        'branch came to be measured against p1-26-frontend.'
+    );
+  }
+  if (typeof rule.profile !== 'string' || !SAFE_VALUE.test(rule.profile)) {
+    return refuse(
+      `the rule matching \`${branch}\` names profile \`${String(rule.profile)}\`, which is not a ` +
+        'usable profile name.'
+    );
+  }
+  if (!SAFE_VALUE.test(base)) {
+    return refuse(`base ref \`${base}\` is not a usable ref name, so nothing will be diffed.`);
+  }
+  return {
+    action: 'check',
+    checked: true,
+    profile: rule.profile,
+    base,
+    reason: `${how} -> ownership profile '${rule.profile}', judged against '${base}'`,
+  };
+}
+
+/**
+ * @param {{headBranch?: string, baseRef?: string, eventName?: string, refName?: string,
+ *          rules?: ReadonlyArray<{branchPrefix?: string, profile?: string}>}} context
+ * @returns {{action: 'check'|'declared-skip'|'refuse', checked: boolean,
+ *            profile: string|null, base: string|null, reason: string}}
+ */
+export function decideOwnershipRun(context = {}) {
+  const head = String(context.headBranch ?? '').trim();
+  const baseRef = String(context.baseRef ?? '').trim();
+  const event = String(context.eventName ?? '').trim();
+  const ref = String(context.refName ?? '').trim();
+  const rules = context.rules ?? [];
+
+  if (head !== '' && baseRef !== '') {
+    return fromBranch(head, `origin/${baseRef}`, rules, `pull-request head '${head}'`);
+  }
+
+  // Half a context is never a legitimate state: both inputs come from the same
+  // event, so one without the other means the caller wired one of them wrong.
+  // Treating it as "no pull request" is how a typo turns into a silent skip.
+  if (head !== '' || baseRef !== '') {
+    return refuse(
+      `the caller supplied head-branch='${head}' and base-ref='${baseRef}' — exactly one of the ` +
+        'two. Both come from the same event, so this is a wiring defect in the calling workflow.'
+    );
+  }
+
+  if (PULL_REQUEST_EVENTS.includes(event)) {
+    return refuse(
+      `this is a '${event}' run, so a pull-request context exists, but the caller passed neither ` +
+        'head-branch nor base-ref. The ownership gate would judge nothing and report success. ' +
+        'Pass `head-branch: ${{ github.event.pull_request.head.ref }}` and `base-ref: ' +
+        '${{ github.event.pull_request.base.ref }}` from the calling workflow.'
+    );
+  }
+
+  if (event === '') {
+    return refuse(
+      'no event name was supplied, so this run cannot establish its own context. A check that ' +
+        'cannot tell what it is running on must not report success.'
+    );
+  }
+
+  if (ref === '') {
+    return refuse(
+      `a '${event}' run supplied no ref name: there is no pull request to read a profile from and ` +
+        'no branch to resolve one from.'
+    );
+  }
+
+  if (PROTECTED_BRANCHES.includes(ref)) {
+    return {
+      action: 'declared-skip',
+      checked: false,
+      profile: null,
+      base: null,
+      reason:
+        `'${ref}' is a protected branch and this is a '${event}' run. Changed-file ownership is a ` +
+        'property of ONE phase branch against its base; a protected branch is the union of every ' +
+        'phase that has landed, so no profile could describe it and there is no base to diff ' +
+        'against. Every commit here passed this gate on the pull request that merged it. ' +
+        'DECLARED SKIP — nothing was checked, and this run is not evidence that it was.',
+    };
+  }
+
+  // A push or dispatch on an ordinary branch. There is no pull request, but the
+  // profile map is keyed on the branch, and the branch is right here.
+  return fromBranch(ref, DEFAULT_BASE, rules, `'${event}' on branch '${ref}'`);
+}
+
+/**
+ * A value the sourcing shell will read back exactly as written.
+ *
+ * POSIX single-quote escaping: close the quote, emit an escaped quote, reopen.
+ * Values are validated before they reach here; this is the second of the two
+ * independent defences.
+ */
+export function shellQuote(value) {
+  return `'${String(value).replace(/'/g, `'\\''`)}'`;
+}
+
+/** The `KEY='value'` block the run block sources. */
+export function envFileBody(verdict) {
+  return (
+    [
+      `OWNERSHIP_ACTION=${shellQuote(verdict.action)}`,
+      `OWNERSHIP_PROFILE=${shellQuote(verdict.profile ?? '')}`,
+      `OWNERSHIP_BASE=${shellQuote(verdict.base ?? '')}`,
+    ].join('\n') + '\n'
+  );
+}
+
 /**
  * @param {string} path
  * @returns {string} bucket name, or 'unclassified'
@@ -174,7 +368,81 @@ export function evaluate(changed, profileName) {
   return { failures, counts };
 }
 
+/**
+ * `--resolve-context`: decide what this run may ask, and say so.
+ *
+ * A separate entry point on the same file rather than a separate file, because
+ * the decision and the rules it selects belong to one gate. The workflow calls
+ * this first, then calls the gate proper only on the `check` verdict.
+ */
+function resolveContextMain() {
+  const arg = (name) => {
+    const i = process.argv.indexOf(`--${name}`);
+    return i === -1 ? undefined : process.argv[i + 1];
+  };
+
+  let rules;
+  try {
+    rules = JSON.parse(readFileSync(PROFILE_MAP_PATH, 'utf8')).rules ?? [];
+  } catch (error) {
+    console.error(`::error::could not read ${PROFILE_MAP_PATH}: ${String(error)}`);
+    process.exit(2);
+  }
+
+  const event = process.env.OWNERSHIP_EVENT_NAME ?? process.env.GITHUB_EVENT_NAME ?? '';
+  const ref = process.env.OWNERSHIP_REF_NAME ?? process.env.GITHUB_REF_NAME ?? '';
+  const verdict = decideOwnershipRun({
+    headBranch: process.env.HEAD_BRANCH,
+    baseRef: process.env.BASE_REF,
+    eventName: event,
+    refName: ref,
+    rules,
+  });
+
+  console.log(`changed-file ownership: ${verdict.action.toUpperCase()}`);
+  console.log(`  ${verdict.reason}`);
+
+  const envOut = arg('env-out');
+  if (envOut) writeFileSync(envOut, envFileBody(verdict), 'utf8');
+
+  // Written only when asked. A default path would drop an untracked file into
+  // the repository root every time somebody ran this by hand.
+  const jsonOut = arg('json');
+  if (jsonOut) {
+    const record = {
+      action: verdict.action,
+      checked: verdict.checked,
+      profile: verdict.profile,
+      base: verdict.base,
+      reason: verdict.reason,
+      event,
+      ref,
+    };
+    writeFileSync(jsonOut, `${JSON.stringify(record, null, 2)}\n`, 'utf8');
+  }
+
+  // The declared skip is RECORDED, not merely printed: a skip nobody can find
+  // afterwards is the silent success it replaced, one step removed.
+  if (process.env.GITHUB_STEP_SUMMARY) {
+    appendFileSync(
+      process.env.GITHUB_STEP_SUMMARY,
+      `### Changed-file ownership — ${verdict.action}\n\n${verdict.reason}\n\n`,
+      'utf8'
+    );
+  }
+
+  if (verdict.action === 'refuse') {
+    console.error(`::error::${verdict.reason}`);
+    process.exit(1);
+  }
+  if (verdict.action === 'declared-skip') console.log(`::notice::${verdict.reason}`);
+}
+
 function main() {
+  // Checked before anything reads `process.argv[2]` as a profile name, which is
+  // what a flag would otherwise be taken for.
+  if (process.argv.includes('--resolve-context')) return resolveContextMain();
+
   /*
    * Profile selection: argument, then environment, then the default.
    *
@@ -187,11 +455,18 @@ function main() {
    * is this phase's own recurring defect, in its own tooling.
    *
    * The env var lets one CI job select the profile per branch without a script
-   * per profile. What is still MISSING is that job: grep of `.github/` for
-   * `phase-ownership` returns nothing, so this gate runs only when a human runs
-   * it. Recorded as `P1-27-DO-003` rather than fixed here, because adding a
-   * repository-wide CI job at the end of a Frontend remediation would gate every
-   * other phase's pull requests on a rule nobody has agreed to yet.
+   * per profile. That job now exists — `_reusable-node-quality.yml`, task
+   * `static-quality`, step "Changed-file ownership" — and it always sets both
+   * variables: `--resolve-context` above resolves the profile from
+   * the pull-request head branch, or from the pushed ref when there is no pull
+   * request, and refuses the run rather than defaulting when it can resolve
+   * neither.
+   *
+   * The `p1-26-frontend` fallback below therefore governs only a HAND run with
+   * no argument and no environment. It is kept because removing it would make
+   * `npm run validate:phase-ownership` fail for the person debugging the gate,
+   * and it is stated here so nobody reads it as the CI behaviour: in CI nothing
+   * is defaulted, and an unmapped branch is refused.
    */
   const profileName = process.argv[2] ?? process.env.PHASE_OWNERSHIP_PROFILE ?? 'p1-26-frontend';
   const base = process.argv[3] ?? process.env.PHASE_OWNERSHIP_BASE ?? 'origin/develop';
