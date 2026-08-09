@@ -1,15 +1,21 @@
 /**
  * The typed backend client.
  *
- * The ONE place the web application talks to the API. No other module in
- * `apps/web/src` calls `fetch` — verified by search, not by a gate.
+ * The ONE place the web application talks to the API. Shared components never
+ * call `fetch`; `apps/web/scripts/check-api-boundary.mjs` fails the build if they
+ * do — its `direct-fetch` rule allows `fetch` only under `src/lib/api`. It runs in
+ * CI as `validate:web-boundary` (`.github/workflows/_reusable-node-quality.yml`,
+ * the `web-quality` task), by way of this workspace's own `validate:boundary`.
  *
- * **That sentence used to name a gate.** It read: "`scripts/check-api-boundary.mjs`
- * fails the build if they do." **There is no such file in this repository**, and
- * no workflow invokes anything by that name, so the rule was enforced by nothing
- * at all. It is corrected rather than deleted because the difference matters to
- * the next reader: the boundary is a convention this module holds by being the
- * only implementation, and a new `fetch` elsewhere would pass CI today.
+ * A remediation briefly replaced that sentence with a claim that no such gate
+ * existed, on the strength of a search that listed the repository-root `scripts/`
+ * and `scripts/ci/` and never looked in `apps/web/scripts/`. The gate was there
+ * the whole time, wired and green at 179 files inspected. The retraction is kept
+ * here rather than quietly reverted because the mistake is this phase's own
+ * subject matter: a confident docblock asserting a rule the repository does not
+ * match, written into the file whose contract was being corrected for exactly
+ * that fault. Root-only searches have now missed `apps/web` three times, after
+ * `format:check` and root `typecheck`.
  *
  * ## What it will not do
  *
@@ -639,6 +645,19 @@ export function violationKeysOf(failure: ApiFailure): ViolationKeys {
  * **This used to read `problem.errors`, a field the API has never sent**, so it
  * returned `{}` for every real 422 and no form in the application could show a
  * field-level error. See `ProblemDetails` above.
+ *
+ * **It is not the wired path.** `action-result.ts` calls `violationKeysOf`,
+ * because a whole-request violation carries no control name and would be
+ * silently dropped by a function whose return type is keyed by one. This is the
+ * narrow accessor for a caller that genuinely wants only the per-control half,
+ * and today it has no production caller — said here so the next reader does not
+ * infer from its test count that something depends on it.
+ *
+ * A different function is also exported as `fieldErrorsOf` elsewhere in the tree
+ * (`features/vehicles/write-support.ts` re-exports `fieldErrorsFrom`, which maps a
+ * `ZodError`, not an `ApiFailure`). Two unrelated functions under one name is a
+ * reading hazard, and it is recorded rather than fixed here because that file
+ * belongs to another change in flight.
  */
 export function fieldErrorsOf(failure: ApiFailure): Record<string, string> {
   return violationKeysOf(failure).fieldErrors;
