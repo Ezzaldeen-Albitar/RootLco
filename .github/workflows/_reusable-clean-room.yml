@@ -202,6 +202,28 @@ jobs:
           set -euo pipefail
           npm run verify:workspaces
 
+      # WTF-11. The aggregate above reaches the web component tier through
+      # `verify:web` -> `test:web`, which is a bare `vitest run`: no JSON
+      # reporter, no summariser, and therefore NO FLOOR. The clean room — the one
+      # job whose result the acceptance criteria rest on — ran the web tier with
+      # the anti-shrink guard switched off, while the parallel `web-quality` job
+      # ran the same tier with it on. Two runs of one suite, one guarded.
+      #
+      # Deliberately redundant with the aggregate, for the same reason the
+      # enumerated gate block below is: `test:web` is what a developer runs and
+      # `verify:web` must go on invoking it, so the floored form is added rather
+      # than substituted. The suite is seconds; the guard is the point.
+      #
+      # `apps/web/vitest-web.json` is gitignored, so the "working tree is clean"
+      # assertion at the end of this job still holds.
+      - name: The clean-room web tier carries the same floor as hosted CI
+        run: |
+          set -euo pipefail
+          npm run test:web-ci
+          node scripts/ci/summarise-vitest.mjs \
+            --input apps/web/vitest-web.json --label web \
+            --json clean-room-web-totals.json --markdown clean-room-web.md
+
       # DELIBERATELY enumerated, and deliberately redundant with the aggregate.
       #
       # Several closed phases pin this exact text as their DevOps evidence — for
@@ -289,7 +311,15 @@ jobs:
             if [ -f schema-hash-after.txt ]; then printf '| Schema hash after | `%s` |\n' "$(cat schema-hash-after.txt)"; fi
             printf '\n'
           } >> "${GITHUB_STEP_SUMMARY}"
-          if [ -f clean-room-rls.md ]; then cat clean-room-rls.md >> "${GITHUB_STEP_SUMMARY}"; fi
+          # Every markdown this job produces, rendered where a reviewer reads it.
+          # `tests/ci/job-summary-rendering.test.ts` holds this list against the
+          # `--markdown` arguments above.
+          for file in clean-room-rls.md clean-room-web.md; do
+            if [ -f "${file}" ]; then
+              cat "${file}" >> "${GITHUB_STEP_SUMMARY}"
+              printf '\n\n' >> "${GITHUB_STEP_SUMMARY}"
+            fi
+          done
 
       - name: Upload evidence
         if: always()
@@ -304,6 +334,8 @@ jobs:
             clean-room-seed.log
             clean-room-structural.json
             clean-room-rls.json
+            clean-room-web-totals.json
+            clean-room-web.md
             schema-hash-before.txt
             schema-hash-after.txt
             *.md

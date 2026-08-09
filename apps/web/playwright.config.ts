@@ -1,3 +1,5 @@
+import { readdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { defineConfig, devices } from '@playwright/test';
 import { E2E_BASE_URL, E2E_HOST, E2E_PORT, E2E_STORAGE_STATE } from './tests/e2e/origin';
 
@@ -34,6 +36,31 @@ const BASE_URL = E2E_BASE_URL;
  */
 const AUTHENTICATED = process.env.ROOTLCO_E2E_AUTH === '1';
 const AUTH_DIR = /authenticated[\\/]/;
+
+/**
+ * When the authenticated tier is off, SAY SO — here, in the run itself.
+ *
+ * The opt-in above is correct and the silence around it was not. No workflow has
+ * ever set `ROOTLCO_E2E_AUTH`, so `npm run test:web-e2e` has always reported a
+ * green browser tier while `isolation.spec.ts` — the repository's only
+ * end-to-end tenant-isolation proof — and `accessibility.spec.ts` — its only
+ * route-level accessibility proof — sat unexecuted. Playwright prints the number
+ * of tests it ran; nothing printed the number it did not.
+ *
+ * The declaration this reads is the same one the hosted job renders into its
+ * summary and `tests/ci/e2e-tier-coverage.test.ts` holds against the real spec
+ * files, so the three cannot drift apart.
+ */
+if (!AUTHENTICATED) {
+  const specs = readdirSync(join(__dirname, 'tests', 'e2e', 'authenticated'))
+    .filter((name) => name.endsWith('.spec.ts'))
+    .sort();
+  process.stderr.write(
+    `\nROOTLCO_E2E_AUTH is not set, so the AUTHENTICATED browser tier is not running.\n` +
+      `${specs.length} spec file(s) skipped: ${specs.join(', ')}\n` +
+      'What that leaves unproven is declared in .github/ci-baselines/unrun-test-tiers.json.\n\n'
+  );
+}
 
 /**
  * The captured session lives under the REPOSITORY-ROOT `.local/`.

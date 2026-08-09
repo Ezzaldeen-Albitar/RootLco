@@ -24,6 +24,8 @@
  *      never having been true.
  *   3. **No client-asserted scope.** Tenant, company and branch are resolved
  *      server-side from the session on every operation this platform publishes.
+ *      ASSERTING a scope and DISPLAYING one are different acts, and the rule
+ *      means only the first — see `assertedScopes()` below.
  *   4. **No invented total.** Every list operation returns
  *      `{ items, nextCursor, hasMore }` and no count. A `total` computed in the
  *      client is right on page one and wrong from page two, invisibly.
@@ -59,11 +61,189 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-/** The two feature trees this phase owns. */
+/**
+ * THREE trees, because the canonical plan names three.
+ *
+ * `canonical-plan.md` §9 states where Frontend work lives:
+ * `apps/web/src/features/crm/**`, `apps/web/src/features/vehicles/**` **and**
+ * `apps/web/src/app/[locale]/(dashboard)/**`. This constant listed two of them
+ * and the docblock above it said "the two feature trees this phase owns" — a
+ * declaration contradicting the plan, in the gate whose whole purpose is to
+ * enforce the plan.
+ *
+ * Measured at the head that carried the omission: 43 files scanned, 26
+ * unscanned — 38% of the canonical Frontend surface, including
+ * `crm/customers/[customerId]/page.tsx`, the file `SEC-001` and `SEC-003` are
+ * about. Six rules reported clean over a tree they had never opened.
+ *
+ * `ROOT_SOURCES` records which document each root comes from, so a root cannot
+ * be dropped without contradicting a citation. `tests/ci/p1-27-frontend-gate.test.ts`
+ * re-derives the list from that document and fails if any of the three is
+ * removed again.
+ */
 export const SCAN_ROOTS = [
   join('apps', 'web', 'src', 'features', 'crm'),
   join('apps', 'web', 'src', 'features', 'vehicles'),
+  join('apps', 'web', 'src', 'app', '[locale]', '(dashboard)'),
 ];
+
+/** Where the authority for `SCAN_ROOTS` is written down. */
+export const ROOT_AUTHORITY = 'docs/phase-1/phase-1-27/canonical-plan.md';
+
+/**
+ * The scope names this platform resolves server-side and the client must never
+ * assert. Exported so the rule and its tests read one list.
+ */
+export const SCOPE_NAMES = Object.freeze([
+  'tenantId',
+  'companyId',
+  'branchId',
+  'tenant_id',
+  'company_id',
+  'branch_id',
+]);
+
+const SCOPE_SOURCE = `\\b(?:${SCOPE_NAMES.join('|')})\\b`;
+/** Global, for the positional scan. Stateful — never share it with `.test()`. */
+const SCOPE_SCAN = new RegExp(SCOPE_SOURCE, 'g');
+/** Non-global, for the rule's `pattern` field. `.test()` on a `g` regex is stateful. */
+const SCOPE_PATTERN = new RegExp(SCOPE_SOURCE);
+
+/**
+ * Every index that sits inside a string or template literal, at any nesting.
+ *
+ * The interpolation of a template is CODE, but for this rule it counts as
+ * literal all the same: a scope value interpolated into a template is being
+ * built into a URL, a query string or a body, which is the act the rule forbids.
+ * So the mask covers the whole span from the opening quote to the closing one.
+ *
+ * Comments are stripped before this runs, so an apostrophe in prose cannot open
+ * a phantom string.
+ */
+export function literalMask(source) {
+  const inside = new Array(source.length).fill(false);
+  /** @type {{kind: 'literal'|'code', quote?: string, depth: number}[]} */
+  const stack = [];
+  let i = 0;
+  while (i < source.length) {
+    const top = stack[stack.length - 1];
+    const ch = source[i];
+    if (!top || top.kind === 'code') {
+      if (ch === "'" || ch === '"' || ch === '`') {
+        stack.push({ kind: 'literal', quote: ch, depth: 0 });
+        inside[i] = true;
+        i += 1;
+        continue;
+      }
+      if (top && ch === '{') {
+        top.depth += 1;
+        i += 1;
+        continue;
+      }
+      if (top && ch === '}') {
+        if (top.depth === 0) {
+          stack.pop();
+          inside[i] = true;
+          i += 1;
+          continue;
+        }
+        top.depth -= 1;
+        i += 1;
+        continue;
+      }
+      // Inside a template interpolation every character still belongs to the
+      // template as far as this rule is concerned.
+      if (top) inside[i] = true;
+      i += 1;
+      continue;
+    }
+    inside[i] = true;
+    if (ch === '\\') {
+      if (i + 1 < source.length) inside[i + 1] = true;
+      i += 2;
+      continue;
+    }
+    if (top.quote === '`' && ch === '$' && source[i + 1] === '{') {
+      inside[i + 1] = true;
+      stack.push({ kind: 'code', depth: 0 });
+      i += 2;
+      continue;
+    }
+    if (ch === top.quote) {
+      stack.pop();
+      i += 1;
+      continue;
+    }
+    i += 1;
+  }
+  return inside;
+}
+
+/**
+ * Scope names the source ASSERTS, as opposed to ones it merely DISPLAYS.
+ *
+ * ## Why the distinction has to exist
+ *
+ * Adding the dashboard tree made the previous form of this rule — any
+ * occurrence of a scope name, anywhere — fire on
+ * `apps/web/src/app/[locale]/(dashboard)/profile/page.tsx`:
+ *
+ *     value={session.tenantId}
+ *
+ * That is the profile screen showing the operator which tenant they are signed
+ * in to. The value came FROM the server, in the session the server resolved; it
+ * is read and rendered and goes nowhere near a request. Failing it would have
+ * meant deleting a legitimate screen element to satisfy a rule about something
+ * else — and the obvious alternative, an allow-list entry for that file, is how
+ * this gate lost a rule before (see `no-duplicate-scan-on-a-queue` below).
+ *
+ * ## The line the rule actually draws
+ *
+ * The rule means: **never place a scope into a request.** So a scope name may
+ * appear in exactly one position — as a property READ off an object, outside any
+ * string or template:
+ *
+ *     session.tenantId        // display: reading what the server resolved
+ *     account?.company_id     // display
+ *
+ * Every other position is an assertion, because every other position is a way of
+ * putting the value somewhere:
+ *
+ *     { tenantId: x }                    // a body or query property
+ *     query({ tenantId, cursor })        // a shorthand property
+ *     `/api/v1/x?tenant_id=${id}`        // a query string
+ *     params.set('branchId', id)         // a query parameter
+ *     `${tenantId}`                      // interpolated into a path
+ *
+ * The default is therefore ASSERTION and the exemption is narrow, which is the
+ * right way round for a gate: a construct nobody anticipated fails rather than
+ * passes.
+ *
+ * @returns {{name: string, index: number, why: string}[]}
+ */
+export function assertedScopes(source) {
+  const inside = literalMask(source);
+  const found = [];
+  SCOPE_SCAN.lastIndex = 0;
+  let match;
+  while ((match = SCOPE_SCAN.exec(source)) !== null) {
+    const index = match.index;
+    if (inside[index]) {
+      found.push({
+        name: match[0],
+        index,
+        why: 'built into a string, template, URL or query',
+      });
+      continue;
+    }
+    // A property read: the character before it, ignoring whitespace, is the
+    // member operator. `?.` ends in `.` too, so one test covers both.
+    const before = source.slice(0, index).replace(/\s+$/, '');
+    if (before.endsWith('.')) continue;
+    found.push({ name: match[0], index, why: 'placed into a value rather than read from one' });
+  }
+  return found;
+}
 
 export const RULES = [
   {
@@ -97,8 +277,20 @@ export const RULES = [
   },
   {
     id: 'no-client-asserted-scope',
-    pattern: /\b(?:tenantId|companyId|branchId|tenant_id|company_id|branch_id)\b/,
-    what: 'names a scope the client must never assert; scope is resolved server-side',
+    /*
+     * POSITIONAL, not a bare name match.
+     *
+     * The rule is "never assert a scope to the API", and the previous pattern
+     * read "never mention one". Those differ on exactly one construct that this
+     * phase actually ships — a profile screen displaying the tenant the server
+     * resolved — and the difference only became visible when the third canonical
+     * tree was added to `SCAN_ROOTS`. `assertedScopes()` carries the reasoning
+     * and the boundary; the pattern is kept beside it so a reader can see which
+     * names are in scope without following the function.
+     */
+    pattern: SCOPE_PATTERN,
+    detect: (source) => assertedScopes(source).length > 0,
+    what: 'asserts a scope to the API; scope is resolved server-side (displaying session scope is fine)',
     allow: [],
   },
   {
@@ -186,6 +378,43 @@ function allowed(relPath, allow) {
 }
 
 /**
+ * Does this rule fire on this source?
+ *
+ * A rule may carry a `detect` function instead of relying on its `pattern`.
+ * `no-client-asserted-scope` needs one because the question it asks is
+ * positional — see `assertedScopes()`.
+ */
+export function fires(rule, source) {
+  return rule.detect ? rule.detect(source) === true : rule.pattern.test(source);
+}
+
+/**
+ * A directory symlink is REFUSED, not followed and not silently skipped.
+ *
+ * `Dirent.isDirectory()` is FALSE for a symlink that points at a directory —
+ * `readdir` does not stat through the link — so `if (entry.isDirectory())` walks
+ * past it, and the extension test then rejects it as a file. The tree beyond it
+ * is never read and nothing says so. Five walkers in this phase shared that
+ * blind spot (`QA005-12`).
+ *
+ * Following it instead would be worse: a link can point outside the tree or at
+ * an ancestor, and a gate that scans an unbounded set is a gate that hangs.
+ *
+ * So the policy is to fail closed and name the path. A symlink inside a scanned
+ * tree is a deliberate act; whoever made it can decide what the gate should do
+ * about it, which is a conversation rather than a silent omission.
+ */
+export function assertNotSymlink(entry, path) {
+  if (typeof entry.isSymbolicLink === 'function' && entry.isSymbolicLink()) {
+    throw new Error(
+      `${path} is a symbolic link. This gate refuses to walk symlinks: a link is invisible to ` +
+        '`isDirectory()`, so following the tree past it would silently scan nothing. Remove the ' +
+        'link, or decide the policy deliberately.'
+    );
+  }
+}
+
+/**
  * @param {ReadonlyArray<{path: string, source: string}>} files
  * @returns {{failures: string[], counts: Record<string, number>}}
  */
@@ -203,7 +432,7 @@ export function evaluate(files) {
     for (const file of files) {
       if (allowed(file.path, rule.allow)) continue;
       inspected += 1;
-      if (rule.pattern.test(stripComments(file.source))) {
+      if (fires(rule, stripComments(file.source))) {
         failures.push(`${rule.id}: ${file.path} ${rule.what}`);
       }
     }
@@ -218,10 +447,16 @@ export function evaluate(files) {
 
 function walk(dir, out = []) {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const path = join(dir, entry.name);
     if (entry.isDirectory()) {
       if (SKIP_DIRS.has(entry.name)) continue;
-      walk(join(dir, entry.name), out);
-    } else if (EXTENSIONS.test(entry.name)) out.push(join(dir, entry.name));
+      walk(path, out);
+    } else {
+      // Checked on the non-directory branch, which is exactly where a directory
+      // symlink lands: `isDirectory()` is false for it.
+      assertNotSymlink(entry, path);
+      if (EXTENSIONS.test(entry.name)) out.push(path);
+    }
   }
   return out;
 }

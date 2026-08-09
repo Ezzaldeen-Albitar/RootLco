@@ -56,18 +56,42 @@ const WEB = '@rootlco/web';
  *
  *   required      — a quality gate. Must be reachable from the aggregate AND
  *                   invoked by hosted CI. This is the class that silently rotted.
+ *   ci-only       — a gate whose answer depends on the BRANCH, so the local
+ *                   repository-wide aggregate cannot run it. Must be invoked by
+ *                   hosted CI, and that half is enforced exactly as strictly as
+ *                   it is for `required`.
  *   informational — produces a report or a fix; failing it is not a verdict.
  *   interactive   — a developer convenience (watch mode, dev server, database
  *                   lifecycle). Running it in CI would hang or mutate state.
  *   environment   — needs a live database, Docker or credentials, so it runs in
  *                   its own workflow job rather than from the local aggregate.
  *
- * These four are the WHOLE vocabulary, and that is now enforced rather than
- * described. `evaluate()` skips anything that is not `required`, so an
- * unrecognised tier — a fifth word somebody invented, or `requird` — silently
+ * These five are the WHOLE vocabulary, and that is now enforced rather than
+ * described. `evaluate()` skips anything it does not recognise, so an
+ * unrecognised tier — a sixth word somebody invented, or `requird` — silently
  * means "not a gate". One entry was registered `optional` and nothing noticed.
+ *
+ * `ci-only` exists because of `validate:phase-ownership`. It is a real gate, its
+ * rules are tested, and it was invoked by NO workflow — and it was registered
+ * `informational` with a paragraph EXPLAINING that no job ran it. A comment
+ * saying a check is unreachable is not a finding, it is a defect with a note
+ * attached. It could not be `required`, because it takes a per-branch profile
+ * that a repository-wide aggregate cannot supply; the honest answer was a tier
+ * that enforces the half that applies, rather than a tier that enforces neither.
  */
-export const TIERS = Object.freeze(['required', 'informational', 'interactive', 'environment']);
+export const TIERS = Object.freeze([
+  'required',
+  'ci-only',
+  'informational',
+  'interactive',
+  'environment',
+]);
+
+/** Tiers whose commands a hosted workflow must invoke. */
+export const CI_ENFORCED = Object.freeze(['required', 'ci-only']);
+
+/** Tiers whose commands `verify:workspaces` must reach. */
+export const AGGREGATE_ENFORCED = Object.freeze(['required']);
 
 export const REGISTER = Object.freeze([
   // --- root: repository-level quality gates ---------------------------------
@@ -297,23 +321,28 @@ export const REGISTER = Object.freeze([
   {
     name: 'validate:phase-ownership',
     owner: ROOT,
-    tier: 'informational',
+    tier: 'ci-only',
     // Takes a profile and a base ref, so it cannot run from the repository-wide
     // aggregate: the profile is a property of the BRANCH, not of the repository.
+    // That is why it is `ci-only` rather than `required` — and `ci-only` rather
+    // than `informational`, which is what it was.
     //
-    // This note used to say "P1-26's CI job runs it with the p1-26-frontend
-    // profile". **No CI job runs it with any profile.** A grep of `.github/`
-    // for `phase-ownership` returns nothing, and it has never returned anything.
-    // It found seven API source files riding inside the P1-27 Frontend branch
-    // because somebody ran it by hand.
+    // The note that stood here said, in prose, that NO CI job invoked it: "a
+    // grep of `.github/` for `phase-ownership` returns nothing, and it has never
+    // returned anything." It found seven API source files riding inside the
+    // P1-27 Frontend branch only because somebody ran it by hand. A register
+    // entry that DOCUMENTS a gate as unreachable is not a record of a decision;
+    // it is this phase's defect class written down in the file whose job is to
+    // catch it — `evaluate()` skipped the entry precisely because the tier said
+    // to, so the sentence was the only thing standing between the repository and
+    // an unenforced rule.
     //
-    // The selection mechanism now exists — `PHASE_OWNERSHIP_PROFILE`, so one job
-    // can pick the profile per branch. The JOB does not, and adding a
-    // repository-wide one at the end of a Frontend remediation would gate every
-    // other phase's pull requests on a rule nobody has agreed to. Recorded as
-    // `P1-27-DO-003`. Its rule table IS proven, by tests/ci/phase-ownership.test.ts
-    // in the required unit tier — the rules are tested; the invocation is not.
-    why: 'per-phase changed-file ownership; parameterised, so it is invoked per branch — and today by a human, not by CI (P1-27-DO-003)',
+    // `_reusable-node-quality.yml`, task `static-quality`, now invokes it on
+    // every pull request, resolving the profile from
+    // `.github/ci-baselines/phase-ownership-profiles.json` and REFUSING a branch
+    // that declares none. Under `ci-only` the invocation is enforced: delete
+    // that step and this gate fails instead of narrating (`P1-27-DO-003`).
+    why: 'per-phase changed-file ownership; the profile is a property of the branch, so hosted CI resolves it per pull request and the local aggregate cannot (P1-27-DO-003)',
   },
   {
     name: 'validate:web-topology',
@@ -683,12 +712,16 @@ export function evaluate({ scripts, workflowInvocations, register = REGISTER }) 
     const local = locallyReachable.has(entryKey);
     const ci = ciReachable.has(entryKey);
     rows.push({ ...entry, key: entryKey, aggregate: local, hostedCi: ci });
-    if (entry.tier !== 'required') continue;
-    if (!local) {
+    if (!TIERS.includes(entry.tier)) continue;
+    if (AGGREGATE_ENFORCED.includes(entry.tier) && !local) {
       failures.push(`${entryKey} is required but not reachable from \`npm run ${AGGREGATE}\``);
     }
-    if (!ci) {
-      failures.push(`${entryKey} is required but no hosted workflow invokes it`);
+    if (CI_ENFORCED.includes(entry.tier) && !ci) {
+      failures.push(
+        `${entryKey} is tier \`${entry.tier}\` but no hosted workflow invokes it. A gate no job ` +
+          'runs is a gate that has never run — wire it into a workflow, or reclassify it and say ' +
+          'why in the same diff.'
+      );
     }
   }
 
@@ -712,15 +745,25 @@ function main() {
     console.log(JSON.stringify({ aggregate: AGGREGATE, failures, commands: rows }, null, 2));
   } else {
     const required = rows.filter((r) => r.tier === 'required');
+    // `ci-only` is counted SEPARATELY and out loud. Folding it into the
+    // `required` totals would hide the one class whose whole story is that
+    // nothing was watching it.
+    const ciOnly = rows.filter((r) => r.tier === 'ci-only');
     console.log(
-      `Command coverage: ${rows.length} registered command(s), ${required.length} required`
+      `Command coverage: ${rows.length} registered command(s), ${required.length} required, ` +
+        `${ciOnly.length} ci-only`
     );
     console.log(
-      `  reachable from ${AGGREGATE}: ${required.filter((r) => r.aggregate).length}/${required.length}`
+      `  reachable from ${AGGREGATE}: ${required.filter((r) => r.aggregate).length}/${required.length} required`
     );
     console.log(
-      `  invoked by hosted CI:        ${required.filter((r) => r.hostedCi).length}/${required.length}`
+      `  invoked by hosted CI:        ${
+        [...required, ...ciOnly].filter((r) => r.hostedCi).length
+      }/${required.length + ciOnly.length} required + ci-only`
     );
+    for (const row of ciOnly) {
+      console.log(`  ci-only: ${row.key} — invoked by a workflow: ${row.hostedCi ? 'yes' : 'NO'}`);
+    }
     for (const row of rows.filter((r) => r.tier !== 'required')) {
       if (row.aggregate) continue;
       // Informational only: a non-required command outside the aggregate is the

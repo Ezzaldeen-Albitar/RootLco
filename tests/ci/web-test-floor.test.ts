@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   verdict,
@@ -46,11 +46,51 @@ import {
  */
 
 const BASELINE = join(process.cwd(), '.github', 'ci-baselines', 'test-count-baseline.json');
+const WEB_TESTS = join(process.cwd(), 'apps', 'web', 'tests');
 
 interface Tier {
   readonly minTests: number;
   readonly measured: number;
+  readonly measuredFiles?: number;
   readonly note: string;
+  readonly whatTheHeadroomGuarantees?: string;
+}
+
+/**
+ * Test cases the web tier DECLARES on disk, per file.
+ *
+ * ## Why a static count, and what it is and is not
+ *
+ * `WTF-08`: every committed assertion about the web floor was satisfied by
+ * lowering `minTests` and `measured` together, because the whole chain — this
+ * file, `baseline-integrity.test.ts`, the baseline's own notes — compared the
+ * two numbers against each other and against prose. The anchor terminated in a
+ * hand-written figure. Nothing in the repository could say the floor was too
+ * low, because nothing in the repository knew how big the suite was.
+ *
+ * This does. It counts `it(` / `test(` declarations in the real test files, so
+ * the floor is finally compared against the thing it is a floor for.
+ *
+ * It is deliberately a LOWER BOUND: `it.each([...])` is one declaration and many
+ * cases, so the real collected count is always at least this. Every assertion
+ * below is written in the direction a lower bound can support.
+ */
+function webCasesPerFile(): { file: string; cases: number }[] {
+  const DECLARATION =
+    /(?:^|[\s;{(])(?:it|test)(?:\.(?:each|concurrent|sequential|skip|todo|fails|only))*\s*[(`]/g;
+  const out: { file: string; cases: number }[] = [];
+  const walk = (dir: string) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const path = join(dir, entry.name);
+      if (entry.isDirectory()) walk(path);
+      else if (/\.test\.tsx?$/.test(entry.name)) {
+        const source = readFileSync(path, 'utf8');
+        out.push({ file: path, cases: (source.match(DECLARATION) ?? []).length });
+      }
+    }
+  };
+  walk(WEB_TESTS);
+  return out;
 }
 
 function tier(label: string): Tier {
@@ -160,15 +200,109 @@ describe('the web floor counts tests that RAN, not tests that were collected', (
     expect(problems.some((p: string) => p.includes('failing test'))).toBe(true);
   });
 
-  it('refuses the shape the floor exists for — a whole test file deleted', () => {
-    // The largest web test file carries 41 cases. This is the property the
-    // baseline note claims, stated as a bound rather than as a slogan: any
-    // deletion of MORE than the headroom trips the floor.
+  it('refuses a net loss of more than the headroom — the bound the baseline states', () => {
+    // The bound itself, driven through `verdict()`. This is arithmetic about the
+    // two committed numbers and nothing else, which is why it is not sufficient
+    // on its own — see the tree-anchored cases below.
     const headroom = web.measured - web.minTests;
     expect(verdict(summaryOf({ passed: web.measured - headroom }), web.minTests)).toEqual([]);
     expect(
       verdict(summaryOf({ passed: web.measured - headroom - 1 }), web.minTests).length
     ).toBeGreaterThan(0);
+  });
+});
+
+describe('the floor is anchored to the TREE, not to another number in the same file', () => {
+  /**
+   * `WTF-08` and `WTF-09`, the two defects that made everything above
+   * insufficient.
+   *
+   * `WTF-08`: lowering `minTests` and `measured` together satisfied every
+   * committed assertion. `baseline-integrity.test.ts` requires
+   * `minTests <= measured` and a headroom ratio; this file reads `minTests` out
+   * of the baseline and compares it against itself. Set both to 12 and the whole
+   * chain stays green, because the chain terminates in a hand-written number and
+   * a paragraph of prose.
+   *
+   * `WTF-09`: the deleted-file property was asserted against a frozen
+   * `measured`, so it decayed. `measured` is refreshed upward whenever a hosted
+   * run re-measures the tier; if `minTests` is not raised with it the headroom
+   * grows silently, and the "a deleted file trips the floor" reasoning quietly
+   * stops holding while every case still passes.
+   *
+   * Both are fixed the same way: read the suite off disk.
+   */
+  const perFile = webCasesPerFile();
+  const declared = perFile.reduce((n, f) => n + f.cases, 0);
+  const largest = perFile.reduce((n, f) => Math.max(n, f.cases), 0);
+  const headroom = web.measured - web.minTests;
+
+  it('finds the web tier on disk, so nothing below passes over an empty tree', () => {
+    expect(perFile.length, 'no web test files were read').toBeGreaterThan(50);
+    expect(declared, 'no test declarations were counted').toBeGreaterThan(500);
+    expect(largest, 'no file carries a case').toBeGreaterThan(10);
+  });
+
+  it('WTF-08: the floor is at least the number of cases the tree declares', () => {
+    /*
+     * The anchor. `declared` is a LOWER bound on what any honest run collects —
+     * `it.each` is one declaration and many cases — so a floor beneath it is a
+     * floor beneath cases that physically exist in the repository right now.
+     *
+     * This is what lowering `minTests` now fails against: the number on the
+     * other side of the comparison is the suite itself.
+     */
+    expect(
+      web.minTests,
+      `apps/web/tests declares ${declared} test cases; a floor of ${web.minTests} sits below ` +
+        'cases that exist on disk. Raise `minTests` (and re-measure `measured`) in the commit ' +
+        'that added them — see `howToRaise` in the baseline.'
+    ).toBeGreaterThanOrEqual(declared);
+  });
+
+  it('WTF-09: the headroom never grows past the largest file in the tree', () => {
+    /*
+     * The decay this closes: `measured` moves up with each hosted re-measurement
+     * and `minTests` does not have to move with it. Nothing compared the gap
+     * against anything real, so the headroom could widen until a whole test file
+     * fitted inside it — at which point the floor detects no file deletion at
+     * all, while the baseline goes on describing a bound it no longer has.
+     *
+     * `largest` is recomputed from disk on every run, so this cannot go stale.
+     */
+    const biggest = perFile.reduce((a, b) => (b.cases > a.cases ? b : a));
+    expect(
+      headroom,
+      `the floor absorbs ${headroom} lost tests while the largest web test file ` +
+        `(${biggest.file}) declares only ${largest}. A whole file now fits inside the headroom, ` +
+        'so deleting it would not trip the floor. Raise `minTests`.'
+    ).toBeLessThanOrEqual(largest);
+  });
+
+  it('WTF-09: the stated guarantee is the arithmetic, not a remembered number', () => {
+    // The sentence and the numbers drifted apart once already — the note claimed
+    // a deleted-file guarantee the arithmetic did not support. Deriving the
+    // figure from `measured - minTests` means the prose cannot be edited alone.
+    expect(web.whatTheHeadroomGuarantees, 'the web tier states no guarantee').toBeTruthy();
+    expect(
+      web.whatTheHeadroomGuarantees,
+      `the guarantee must name ${headroom}, which is measured (${web.measured}) minus the floor (${web.minTests})`
+    ).toContain(`NET LOSS OF MORE THAN ${headroom} EXECUTED TESTS`);
+  });
+
+  it('WTF-09: the tier has not lost a file since the measurement was taken', () => {
+    /*
+     * `measuredFiles` is provenance — what the named hosted run observed. It is
+     * not re-derivable locally, so it is not asserted equal to the tree. What IS
+     * derivable is the direction: the suite must not have shrunk below the file
+     * count the floor was established against.
+     */
+    expect(web.measuredFiles, 'the web tier records no measured file count').toBeTypeOf('number');
+    expect(
+      perFile.length,
+      `the tier held ${web.measuredFiles} test files when the floor was set and holds ` +
+        `${perFile.length} now — a test file was deleted`
+    ).toBeGreaterThanOrEqual(web.measuredFiles as number);
   });
 });
 

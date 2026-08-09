@@ -151,6 +151,11 @@ jobs:
       task: static-quality
       ref: ${{ needs.change-detection.outputs.head-sha }}
       base-ref: ${{ github.event.pull_request.base.ref }}
+      # The changed-file ownership gate resolves this against
+      # `.github/ci-baselines/phase-ownership-profiles.json`. A branch that
+      # matches no rule is refused rather than judged against another phase's
+      # declaration (P1-27-DO-003).
+      head-branch: ${{ github.event.pull_request.head.ref }}
 
   web-quality:
     name: Web quality

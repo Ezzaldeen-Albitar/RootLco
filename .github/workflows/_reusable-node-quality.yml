@@ -45,6 +45,16 @@ on:
         required: false
         type: string
         default: ''
+      head-branch:
+        description: >-
+          Pull-request head branch name. `static-quality` resolves it against
+          `.github/ci-baselines/phase-ownership-profiles.json` to pick the
+          changed-file ownership profile. Empty outside a pull request, where
+          the question does not apply — ownership is decided before the merge,
+          not after it.
+        required: false
+        type: string
+        default: ''
       artifact-retention-days:
         required: false
         type: number
@@ -248,6 +258,57 @@ jobs:
           # UUIDs, no permission codes, no snake_case identifiers, no raw
           # translation keys — in either language.
           npm run validate:plain-language
+
+      # =======================================================================
+      # Changed-file ownership — P1-27-DO-003.
+      #
+      # `validate:phase-ownership` existed, was correct, and was invoked by NO CI
+      # job: a grep of `.github/` for `phase-ownership` returned nothing and
+      # never had. The register in `check-command-coverage.mjs` recorded that in
+      # a PROSE comment — a command documented as unreachable, which is the
+      # defect class this phase is made of. It found seven API source files
+      # riding inside the P1-27 Frontend branch only because a human ran it.
+      #
+      # The profile is a property of the BRANCH, so it is resolved from a
+      # committed map rather than defaulted. Defaulting is what made every
+      # branch — including Backend ones the profile cannot pass — get judged
+      # against `p1-26-frontend` for the whole of two phases.
+      #
+      # Pull-request time is the right time and the only time the inputs exist:
+      # ownership is decided before a merge, not after it. On a protected push
+      # the step says so rather than skipping in silence.
+      # =======================================================================
+      - name: Changed-file ownership
+        if: inputs.task == 'static-quality'
+        env:
+          HEAD_BRANCH: ${{ inputs.head-branch }}
+          BASE_REF: ${{ inputs.base-ref }}
+        run: |
+          set -euo pipefail
+          if [ -z "${HEAD_BRANCH}" ] || [ -z "${BASE_REF}" ]; then
+            echo "Changed-file ownership is a PULL-REQUEST question and this run has no pull-request context"
+            echo "  head-branch='${HEAD_BRANCH}' base-ref='${BASE_REF}'"
+            echo "  Every commit reaching a protected branch passed this gate on the pull request that merged it."
+            exit 0
+          fi
+          profile="$(node -e '
+            const fs = require("node:fs");
+            const doc = JSON.parse(fs.readFileSync(".github/ci-baselines/phase-ownership-profiles.json", "utf8"));
+            const branch = process.env.HEAD_BRANCH;
+            const rule = (doc.rules ?? []).find((r) => branch.startsWith(r.branchPrefix));
+            if (!rule) {
+              process.stderr.write(`::error::branch \x60${branch}\x60 declares no changed-file ownership profile. ` +
+                "Add a rule to .github/ci-baselines/phase-ownership-profiles.json saying which parts of the " +
+                "repository this branch is allowed to change. Refusing to judge it against another phase\x27s " +
+                "declaration, which is how every branch came to be measured against p1-26-frontend.\n");
+              process.exit(1);
+            }
+            process.stdout.write(rule.profile);
+          ')"
+          echo "branch '${HEAD_BRANCH}' -> ownership profile '${profile}'"
+          PHASE_OWNERSHIP_PROFILE="${profile}" \
+          PHASE_OWNERSHIP_BASE="origin/${BASE_REF}" \
+            npm run validate:phase-ownership
 
       - name: Route ↔ OpenAPI registry parity
         if: inputs.task == 'static-quality'
@@ -557,7 +618,42 @@ jobs:
           # Against a real production build. Five projects: two desktop widths,
           # a laptop width, a tablet width, and a reduced-motion context — an
           # RTL layout defect is invisible in an LTR run and vice versa.
+          #
+          # ANONYMOUS ONLY. `apps/web/playwright.config.ts` gates
+          # tests/e2e/authenticated/** behind ROOTLCO_E2E_AUTH=1, which nothing
+          # here sets — see the next step, which says so out loud.
           npm run test:web-e2e
+
+      - name: Say which browser specs did NOT run, and what that leaves unproven
+        if: inputs.task == 'web-quality' && !cancelled()
+        run: |
+          set -euo pipefail
+          # The step this exists for. `test:web-e2e` above reports green over the
+          # ANONYMOUS tier only, and for the whole of P1-27 nothing anywhere said
+          # that the repository's only tenant-isolation proof and its only
+          # route-level accessibility proof were not among the tests that ran.
+          #
+          # A green check that silently covers less than a reader assumes is the
+          # defect class this phase exists to remove, so the omission is now
+          # rendered as a warning annotation AND in the job summary, from a
+          # committed declaration that tests/ci/e2e-tier-coverage.test.ts holds
+          # against the actual spec files.
+          node -e '
+            const fs = require("node:fs");
+            const doc = JSON.parse(fs.readFileSync(".github/ci-baselines/unrun-test-tiers.json", "utf8"));
+            const rows = doc.unrun ?? [];
+            if (rows.length === 0) throw new Error("the unrun-tier declaration is empty; it is derived from real spec files and cannot be");
+            const out = ["### Browser specs NOT executed by this job", "",
+              "`npm run test:web-e2e` runs the ANONYMOUS tier. These specs exist, are counted nowhere as coverage, and did not run:", "",
+              "| Spec | What is unproven | Compensating control |", "| --- | --- | --- |"];
+            for (const row of rows) {
+              console.log(`::warning file=${row.path}::${row.id} did not run in CI. ${row.whatIsUnprovenWithoutIt}`);
+              out.push(`| \`${row.path}\` | ${row.whatIsUnprovenWithoutIt} | ${row.compensatingControl} |`);
+            }
+            out.push("", `_Declared in \`.github/ci-baselines/unrun-test-tiers.json\`. ${rows.length} spec(s)._`, "");
+            fs.writeFileSync("unrun-tiers.md", out.join("\n") + "\n");
+          '
+          cat unrun-tiers.md
 
       - name: The web build output carries no credential
         if: inputs.task == 'web-quality'
@@ -581,7 +677,18 @@ jobs:
           CACHE_HIT: ${{ steps.setup.outputs.cache-hit }}
         run: |
           set -euo pipefail
-          for file in workflow-security.md route-parity.md test-honesty.md env-contract.md tests-unit.md coverage.md build.md; do
+          # EVERY markdown this job can produce, and the list is gate-checked.
+          #
+          # `tests-web.md` was written at the "Summarise the web tier" step and
+          # rendered nowhere: the web tier's honesty verdict — executed count,
+          # skipped cases, floor result — existed as an artifact file and was
+          # invisible in the one place a reviewer looks (`WTF-10`). The two build
+          # scan summaries were missing for the same reason.
+          #
+          # `tests/ci/job-summary-rendering.test.ts` derives the required list
+          # from this file's own `--markdown` arguments, so a new summariser
+          # cannot be added without appearing here.
+          for file in workflow-security.md route-parity.md test-honesty.md env-contract.md tests-unit.md coverage.md build-output-scan.md build.md tests-web.md unrun-tiers.md web-build-scan.md; do
             if [ -f "${file}" ]; then
               cat "${file}" >> "${GITHUB_STEP_SUMMARY}"
               printf '\n\n' >> "${GITHUB_STEP_SUMMARY}"
@@ -615,6 +722,7 @@ jobs:
             apps/web/vitest-web.json
             apps/web/playwright-report.json
             test-totals-web.json
+            unrun-tiers.md
             web-build-scan.json
             web-build.log
             *.md

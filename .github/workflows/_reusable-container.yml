@@ -624,10 +624,17 @@ jobs:
         if: always()
         run: |
           set -euo pipefail
-          if [ -f container.md ]; then
-            cat container.md >> "${GITHUB_STEP_SUMMARY}"
-            printf '\n\n' >> "${GITHUB_STEP_SUMMARY}"
-          fi
+          # Every markdown this job writes. `reachability-brace-expansion.md` was
+          # produced by the reachability step and rendered nowhere — the same
+          # defect as `WTF-10` in the node-quality job: a verdict written to a
+          # file no reviewer opens. `tests/ci/job-summary-rendering.test.ts`
+          # holds this list against the `--markdown` arguments above.
+          for file in container.md reachability-brace-expansion.md; do
+            if [ -f "${file}" ]; then
+              cat "${file}" >> "${GITHUB_STEP_SUMMARY}"
+              printf '\n\n' >> "${GITHUB_STEP_SUMMARY}"
+            fi
+          done
           if [ -f image-metadata.json ]; then
             printf '```json\n' >> "${GITHUB_STEP_SUMMARY}"
             cat image-metadata.json >> "${GITHUB_STEP_SUMMARY}"
