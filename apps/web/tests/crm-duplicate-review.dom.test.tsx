@@ -1,4 +1,4 @@
-import { screen } from '@testing-library/react';
+import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
@@ -267,6 +267,41 @@ describe('this file is not vacuous', () => {
     await screen.findByText('Nadia Khoury');
     expect(container.textContent ?? '').not.toMatch(
       /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i
+    );
+  });
+
+  it('RE-READS the queue with the chosen status', async () => {
+    /*
+     * The twin of the vehicle queue's case, added at the same time and for the
+     * same reason: this screen had the identical dead filter, and nothing here
+     * touched the select at all.
+     *
+     * `useServerTable` keys its read on `TableRequest` plus `loadKey`, and
+     * excludes `load` from the effect deps. `status` is not a `TableRequest`
+     * field, so without `loadKey` the select rebuilt `load` and moved nothing
+     * the effect watches — "dismissed" and "merged" were unreachable options.
+     *
+     * The defect was reported against the VEHICLE queue only. It is tested in
+     * both, because fixing the reported one and leaving its twin is how the
+     * survivor becomes the next finding.
+     */
+    const user = userEvent.setup();
+    render();
+    await screen.findByText('Nadia Khoury');
+
+    expect(listDuplicates).toHaveBeenCalled();
+    expect(listDuplicates.mock.calls[0]?.[0]).toBe('open');
+
+    await user.selectOptions(
+      screen.getByLabelText(en['crm.customers.column.status']),
+      en['crm.duplicateStatus.dismissed']
+    );
+
+    await waitFor(() =>
+      expect(
+        listDuplicates.mock.calls.map((call) => call[0]),
+        'the status filter issued no read with the chosen status'
+      ).toContain('dismissed')
     );
   });
 });

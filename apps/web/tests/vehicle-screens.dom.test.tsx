@@ -320,6 +320,44 @@ describe('the vehicle duplicate queue', () => {
     );
   });
 
+  it('RE-READS the queue with the chosen status, not just closes the panel', async () => {
+    /*
+     * The case above passed while the filter did nothing at all.
+     *
+     * It asserted only that the decision panel closed — which is `setSelected(null)`
+     * in the same `onChange` handler and happens whether or not a read is issued.
+     * Meanwhile the status never reached the request: `useServerTable` keys its
+     * effect on `TableRequest` plus `loadKey` and deliberately excludes `load`
+     * from the dependency array, and `status` is not a `TableRequest` field, so
+     * rebuilding `load` moved nothing the effect watches. Two of the select's
+     * three options were unreachable — choosing "dismissed" or "merged"
+     * re-rendered the same open pairs.
+     *
+     * So this asserts the FIRST ARGUMENT the adapter is called with, which is
+     * the only thing that distinguishes a live filter from a decorative one.
+     */
+    const user = userEvent.setup();
+    render();
+    await screen.findByText('93%');
+
+    // The mount read. Asserted so "called with dismissed" cannot pass by the
+    // component simply never having read anything.
+    expect(listVehicleDuplicates).toHaveBeenCalled();
+    expect(listVehicleDuplicates.mock.calls[0]?.[0]).toBe('open');
+
+    await user.selectOptions(
+      screen.getByLabelText(en['crm.customers.column.status']),
+      en['vehicles.duplicateStatus.dismissed']
+    );
+
+    await waitFor(() =>
+      expect(
+        listVehicleDuplicates.mock.calls.map((call) => call[0]),
+        'the status filter issued no read with the chosen status'
+      ).toContain('dismissed')
+    );
+  });
+
   /**
    * Owner acceptance reversed this test's premise.
    *

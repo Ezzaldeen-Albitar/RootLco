@@ -53,7 +53,23 @@ export function DuplicateReviewScreen({ locale, messages }: Props) {
     (request: TableRequest, cursor: string | null) => listDuplicates(status, request, cursor),
     [status]
   );
-  const table = useServerTable<DuplicateCandidate>(load, { initial: INITIAL_REQUEST });
+  /*
+   * `loadKey: status` — see the long note in the vehicle twin,
+   * `features/vehicles/components/VehicleDuplicateReviewScreen.tsx`.
+   *
+   * The same defect stood in both queues and was found in only one of them. It
+   * is fixed in both, together, because a queue whose filter silently does
+   * nothing is the same defect whichever module it sits in — and because fixing
+   * the reported one alone is how the survivor becomes the next finding.
+   *
+   * Short form: `useServerTable` keys its read on `TableRequest` plus `loadKey`
+   * and excludes `load` from the effect deps, so state the request does not
+   * carry must be declared here or it reaches no request at all.
+   */
+  const table = useServerTable<DuplicateCandidate>(load, {
+    initial: INITIAL_REQUEST,
+    loadKey: status,
+  });
 
   const columns = useMemo<readonly Column<DuplicateCandidate>[]>(
     () => [

@@ -76,7 +76,33 @@ export function VehicleDuplicateReviewScreen({ locale, messages }: Props) {
       listVehicleDuplicates(status, request, cursor),
     [status]
   );
-  const table = useServerTable<VehicleDuplicateCandidate>(load, { initial: INITIAL_REQUEST });
+  /*
+   * `loadKey: status` is what makes the status filter a control rather than
+   * decoration, and its absence made it decoration.
+   *
+   * `useServerTable`'s read effect keys on
+   * `${ordering}#${loadKey}#${page}#${generation}` and deliberately EXCLUDES
+   * `load` from its dependencies (`use-server-table.ts:110-113`), because
+   * including it would re-run on every cursor write. `ordering` is derived from
+   * `TableRequest` alone (`use-cursor-pages.ts:42-51`), and `status` is not a
+   * `TableRequest` field — so changing it rebuilt `load` and moved nothing the
+   * effect watches. The select set the state, the state reached no request, and
+   * two of its three options were unreachable: picking "dismissed" or "merged"
+   * re-rendered the same open pairs.
+   *
+   * This is the failure the hook's own docblock names at `use-server-table.ts:70-83`
+   * (`P1-26-F-019`, "the operator changed the dates and watched the same rows sit
+   * there"), reappearing in the one place the mechanism built to prevent it was
+   * not used. Only `AuditLogScreen` and `CustomerSelector` passed a `loadKey`.
+   *
+   * The two search screens escape it differently — `key={JSON.stringify(...)}`
+   * remounts their results — which is why they are not affected and why this
+   * queue was the exception rather than the rule.
+   */
+  const table = useServerTable<VehicleDuplicateCandidate>(load, {
+    initial: INITIAL_REQUEST,
+    loadKey: status,
+  });
 
   const columns = useMemo<readonly Column<VehicleDuplicateCandidate>[]>(
     () => [
