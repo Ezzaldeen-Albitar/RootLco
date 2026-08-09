@@ -81,16 +81,28 @@ const ALSO = { 'label-content-name-mismatch': { enabled: true } };
  * rule are two separate necessary conditions and only one of them was missing
  * from the diagnosis.
  *
- * ## The profile and detail screens are scanned by NOTHING
+ * ## The profile and detail screens, which have no fixed path
  *
- * They need a real customer or vehicle id, and a scan pointed at a 404 reports
- * zero violations — which is why they are not listed here. They are also not
- * covered elsewhere: exactly three files in `apps/web` import `vitest-axe`
- * (`gallery-and-print`, `overlays`, `shell`) and none of them renders
- * `VehicleProfileScreen`, `CustomerProfileScreen`, `VehicleDuplicateReviewScreen`
- * or `DuplicateReviewScreen`. A previous version of this note claimed they were
- * "covered by component-level scans instead". They are not. It is an open gap,
- * recorded as one rather than papered over.
+ * `/crm/customers/{customerId}` and `/vehicles/{vehicleId}` cannot be listed
+ * here: they need a real id, and a scan pointed at a 404 reports zero
+ * violations. Two things changed since this note said they were "scanned by
+ * NOTHING", and both are stated because the earlier version of this comment
+ * claimed a coverage that did not exist:
+ *
+ * - `tests/profile-accessibility.dom.test.tsx` renders `CustomerProfileScreen`
+ *   and `VehicleProfileScreen` directly, section by section, in both
+ *   directions, and scans each with these same four tags. That tier cannot
+ *   report SC 2.5.3 — axe returns `label-content-name-mismatch` as
+ *   `incomplete` under jsdom, measured rather than assumed — so this file
+ *   remains the only place that rule can run.
+ * - The two cases at the foot of this file reach the real detail pages by
+ *   opening the first row of the list, so they scan the shipped page rather
+ *   than a component in isolation. They skip, loudly, when the workspace holds
+ *   no customer or vehicle: the no-fake-data policy means an empty tenant is a
+ *   legitimate state, and a scan of an empty list dressed up as a profile scan
+ *   would be worse than an honest skip.
+ *
+ * The three creation routes below need no data and are listed normally.
  */
 const ROUTES = [
   '/administration',
@@ -107,6 +119,12 @@ const ROUTES = [
   '/administration/system-settings',
   '/crm/customers',
   '/crm/customer-duplicates',
+  // The creation flow: a chooser and the two forms behind it. `new/[kind]` is
+  // one route with a segment rather than two pages, and both values are listed
+  // because the two forms render different fields.
+  '/crm/customers/new',
+  '/crm/customers/new/individual',
+  '/crm/customers/new/company',
   '/vehicles',
   '/vehicles/new',
   '/vehicles/duplicates',
@@ -255,6 +273,80 @@ test.describe('authenticated accessibility', () => {
     await page.keyboard.press('Escape');
     await expect(dialog).toBeHidden();
   });
+
+  /**
+   * Opens the first row of a list and returns the detail URL it landed on.
+   *
+   * `null` when the list is empty, which the caller must treat as a skip rather
+   * than as a pass: every assertion about a profile page would hold vacuously on
+   * the list page it never left.
+   */
+  async function openFirstRow(
+    page: import('@playwright/test').Page,
+    list: string,
+    detail: RegExp
+  ): Promise<string | null> {
+    await page.goto(list);
+    await expect(page.getByRole('main')).toBeVisible();
+
+    const rows = page.locator('tbody tr');
+    // Wait for the server-rendered page to settle before concluding it is empty
+    // — "no rows yet" and "no rows at all" look identical for a moment.
+    await page.waitForLoadState('networkidle');
+    if ((await rows.count()) === 0) return null;
+
+    await rows.first().click();
+    await page.waitForURL(detail, { timeout: 15_000 });
+    return page.url();
+  }
+
+  for (const surface of [
+    {
+      name: 'customer profile',
+      list: '/crm/customers',
+      detail: /\/crm\/customers\/[0-9a-f-]{36}/i,
+    },
+    { name: 'vehicle profile', list: '/vehicles', detail: /\/vehicles\/[0-9a-f-]{36}/i },
+  ]) {
+    test(`axe finds no critical or serious violation on the ${surface.name}`, async ({
+      page,
+    }, testInfo) => {
+      const lang = localeOf(testInfo.project.name);
+      await page.addInitScript({ path: AXE });
+
+      const url = await openFirstRow(page, `/${lang}${surface.list}`, surface.detail);
+      if (url === null) {
+        // Stated, not silent. The no-fake-data policy means this workspace may
+        // legitimately hold no records, and a scan of the list page reporting
+        // clean would read exactly like a scan of the profile.
+        test.skip(true, `${surface.list} holds no rows, so no detail page can be opened`);
+        return;
+      }
+
+      // The load-bearing check: a 404 renders `main` too, and axe over it would
+      // report nothing at all.
+      expect(url, 'the row did not open a detail page').toMatch(surface.detail);
+      await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+
+      const violations = await scan(page);
+      const blocking = violations.filter((v) => v.impact === 'critical' || v.impact === 'serious');
+      const lesser = violations.filter((v) => v.impact !== 'critical' && v.impact !== 'serious');
+      if (lesser.length > 0) {
+        testInfo.annotations.push({
+          type: 'a11y-non-blocking',
+          description: lesser.map((v) => `${v.impact}:${v.id}`).join(', '),
+        });
+      }
+
+      expect(
+        blocking,
+        `critical/serious accessibility violations on ${url}:\n` +
+          blocking
+            .map((v) => `  ${v.id} (${v.impact}) — ${v.help}\n    ${v.nodes.join('\n    ')}`)
+            .join('\n')
+      ).toEqual([]);
+    });
+  }
 
   test('the skip link is the first thing a keyboard reaches', async ({ page }) => {
     await page.goto('/en/administration/users');

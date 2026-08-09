@@ -112,7 +112,27 @@ export interface Preference {
   readonly preferredLocale: string | null;
   /** The column carries it; the PUT cannot set it (`P1-16-A-01`). */
   readonly quietHoursNote: string | null;
-  /** What a client puts in `If-Match` on the preferences PUT. */
+  /**
+   * The row's optimistic-lock counter, **published and not used** (`FE-009`).
+   *
+   * This said "What a client puts in `If-Match` on the preferences PUT", and
+   * nothing in the product does or could. `setPreferenceAction` calls
+   * `client.send` with no options and therefore no header
+   * (`action-support.ts:73`), and the route on the other side reads no
+   * `If-Match` and is not registered `versionGuarded`
+   * (`crm.preference-set`, `preferences/route.ts:63-76`) — so a header sent here
+   * would be ignored rather than honoured.
+   *
+   * A preferences PUT is therefore **last-write-wins**: two operators editing
+   * the same channel and purpose do not collide, and the second silently
+   * replaces the first. That is stated rather than fixed. Building a concurrency
+   * check on the client alone would be a guard the server does not enforce,
+   * which is worse than the honest absence — the fix belongs to whoever
+   * registers the operation `versionGuarded`.
+   *
+   * It is kept in the type because the read really does return it, and a screen
+   * may legitimately show it.
+   */
   readonly recordVersion: number;
   readonly createdAt: string;
 }
