@@ -143,6 +143,53 @@ describe('the status change is reachable', () => {
     expect(form.get('reason')).toBe('Moved abroad and closed the account');
   });
 
+  it('keeps the chosen status AND the block confirmation after a failed write', async () => {
+    /*
+     * `R-03` — `NEW-FE-01`'s third site, and the one where the reset was worse
+     * than a lost choice.
+     *
+     * A `prelude` renders inside `RecordForm`'s `<form action={…}>`, so it
+     * inherits the reset React performs once the action settles and gains none
+     * of the protection `RecordForm` gives the fields it owns. Both controls
+     * here were controlled props with no `key`, so the reset won.
+     *
+     * The failure mode is a DIVERGENCE, not a blank field. After a failure the
+     * screen showed "Select…" and an UN-TICKED confirmation, while `target` was
+     * still `blocked` and `confirmed` was still `true` in React state — so the
+     * `guard` would have allowed a resubmit that blocked a customer while
+     * showing the operator no confirmation at all.
+     *
+     * Both are asserted, because fixing only the select would leave the
+     * dangerous half in place.
+     */
+    setCustomerStatusAction.mockResolvedValue({
+      status: 'unavailable',
+      messageKey: 'state.unavailable.title',
+      correlationId: 'corr-status-1',
+      attempt: 1,
+    });
+    const user = userEvent.setup();
+    render('active');
+
+    await user.selectOptions(statusSelect(), 'blocked');
+    await user.click(screen.getByRole('checkbox'));
+    // Required, like the success case above — an unfilled form never reaches
+    // the action and the case would fail for the wrong reason.
+    await user.type(
+      screen.getByLabelText(en['crm.customers.restrictions.reason'], { exact: false }),
+      'Repeated non-payment after three reminders'
+    );
+    await user.click(screen.getByRole('button', { name: en['crm.customers.status.change'] }));
+
+    await waitFor(() => expect(setCustomerStatusAction).toHaveBeenCalledTimes(1));
+
+    expect(statusSelect(), 'the chosen status was discarded by the failure').toHaveValue('blocked');
+    expect(
+      screen.getByRole('checkbox'),
+      'the confirmation un-ticked while state still held it — the screen and the guard disagreed'
+    ).toBeChecked();
+  });
+
   it('refreshes the page so the header shows the new state', async () => {
     const user = userEvent.setup();
     render('active');

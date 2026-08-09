@@ -224,6 +224,7 @@ export function VehicleCreateScreen({
         </legend>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <CatalogueSelect
+            attempt={state.attempt ?? 0}
             messages={messages}
             id={`${formId}-make`}
             name="makeId"
@@ -234,6 +235,7 @@ export function VehicleCreateScreen({
             error={errorFor('makeId')}
           />
           <CatalogueSelect
+            attempt={state.attempt ?? 0}
             messages={messages}
             id={`${formId}-model`}
             name="modelId"
@@ -248,6 +250,7 @@ export function VehicleCreateScreen({
             loading={loadingChildren}
           />
           <CatalogueSelect
+            attempt={state.attempt ?? 0}
             messages={messages}
             id={`${formId}-trim`}
             name="trimId"
@@ -260,6 +263,7 @@ export function VehicleCreateScreen({
             loading={loadingChildren}
           />
           <CatalogueSelect
+            attempt={state.attempt ?? 0}
             messages={messages}
             id={`${formId}-body`}
             name="bodyTypeId"
@@ -270,6 +274,7 @@ export function VehicleCreateScreen({
             error={errorFor('bodyTypeId')}
           />
           <CatalogueSelect
+            attempt={state.attempt ?? 0}
             messages={messages}
             id={`${formId}-powertrain-type`}
             name="powertrainTypeId"
@@ -320,9 +325,10 @@ export function VehicleCreateScreen({
               {translate(messages, 'vehicles.column.powertrain')}
             </label>
             <select
+              key={`powertrainCategory-${state.attempt ?? 0}`}
               id={`${formId}-category`}
               name="powertrainCategory"
-              value={values.powertrainCategory ?? ''}
+              defaultValue={values.powertrainCategory ?? ''}
               onChange={(event) => set('powertrainCategory', event.target.value)}
               className="mt-1 w-full rounded-md border border-border bg-surface px-2 py-1.5 text-body text-text-primary"
             >
@@ -392,6 +398,7 @@ function CatalogueSelect({
   error,
   disabledReasonKey,
   loading,
+  attempt,
 }: {
   readonly messages: Messages;
   readonly id: string;
@@ -403,6 +410,16 @@ function CatalogueSelect({
   readonly error?: string | undefined;
   readonly disabledReasonKey?: string | undefined;
   readonly loading?: boolean | undefined;
+  /**
+   * The submit-attempt counter, used to remount the select after a failure.
+   *
+   * `NEW-FE-01`, second site. A controlled `value=` inside `<form action={…}>`
+   * does not survive the reset React performs once the action settles — the prop
+   * is unchanged between renders, so the reconciler writes nothing and the reset
+   * wins. That was measured on the customer form and recorded at
+   * `CustomerCreateScreen.tsx:197-207`; every select here had the same shape.
+   */
+  readonly attempt: number;
 }) {
   const options: readonly CatalogueOption[] = result?.status === 'ok' ? result.options : [];
   const failed = result !== null && result.status !== 'ok';
@@ -414,9 +431,10 @@ function CatalogueSelect({
         {translateDynamic(messages, labelKey)}
       </label>
       <select
+        key={`${name}-${attempt}`}
         id={id}
         name={name}
-        value={value}
+        defaultValue={value}
         disabled={disabled}
         onChange={(event) => onChange(name, event.target.value)}
         aria-invalid={error ? true : undefined}

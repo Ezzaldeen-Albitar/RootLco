@@ -53,10 +53,14 @@ const listPlates = vi.fn();
 const listOdometerReadings = vi.fn();
 const listRelationships = vi.fn();
 const listAttributeHistory = vi.fn();
+// Captured rather than inline, so a case can make the write FAIL. It was an
+// anonymous `vi.fn` returning `idle` for the whole of the phase, which is why no
+// case here had ever seen this panel after a failed submit.
+const changeVehicleStatusAction = vi.fn();
 
 vi.mock('@/features/vehicles/profile-api', () => ({
   updateVehicleAction: vi.fn(async () => ({ status: 'idle' })),
-  changeVehicleStatusAction: vi.fn(async () => ({ status: 'idle' })),
+  changeVehicleStatusAction: (...a: unknown[]) => changeVehicleStatusAction(...a),
   checkVinAvailability: vi.fn(async () => ({ status: 'unavailable' })),
 }));
 vi.mock('@/features/vehicles/history-api', () => ({
@@ -164,6 +168,8 @@ beforeEach(() => {
     fn.mockReset();
     fn.mockResolvedValue(page());
   }
+  changeVehicleStatusAction.mockReset();
+  changeVehicleStatusAction.mockResolvedValue({ status: 'idle' });
 });
 
 /** Every capability held. The lifecycle is then the ONLY variable. */
@@ -267,6 +273,50 @@ describe('a scrapped vehicle withdraws exactly the writes the server refuses', (
     render();
     expect(screen.getByRole('heading', { name: STATUS_HEADING })).toBeTruthy();
     expect(screen.queryByText(TERMINAL_NOTE)).toBeNull();
+  });
+
+  it('keeps the chosen move after a failed write, on both axes', async () => {
+    /*
+     * `R-04` — `NEW-FE-01`'s fourth site, and the only one that was fully
+     * UNCONTROLLED: both selects were `defaultValue=""` with no `onChange` and
+     * no `key`, so nothing anywhere held what the operator picked.
+     *
+     * React resets the form once the action settles, the choice reverts to
+     * "Leave unchanged", and a resubmit sends NOTHING — which
+     * `changeVehicleStatusAction` answers with `vehicles.profile.chooseAStatus`
+     * (`profile-api.ts:143`). The operator is told to choose a status
+     * immediately after choosing one, and the move they actually wanted is never
+     * retried.
+     *
+     * Both axes are asserted: they are separate controls with separate state,
+     * and fixing one would leave the other exactly as it was.
+     */
+    changeVehicleStatusAction.mockResolvedValue({
+      status: 'unavailable',
+      messageKey: 'state.unavailable.title',
+      correlationId: 'corr-veh-status',
+      attempt: 1,
+    });
+    const user = userEvent.setup();
+    render();
+
+    const lifecycle = screen.getByLabelText(en['crm.customers.column.status'], { exact: false });
+    const workshop = screen.getByLabelText(en['vehicles.column.workshop'], { exact: false });
+    await user.selectOptions(lifecycle, 'inactive');
+    await user.selectOptions(workshop, 'in_workshop');
+
+    await user.click(screen.getByRole('button', { name: en['vehicles.profile.applyStatus'] }));
+
+    await waitFor(() => expect(changeVehicleStatusAction).toHaveBeenCalledTimes(1));
+
+    expect(
+      screen.getByLabelText(en['crm.customers.column.status'], { exact: false }),
+      'the lifecycle move reverted to "Leave unchanged"; a retry would send nothing'
+    ).toHaveValue('inactive');
+    expect(
+      screen.getByLabelText(en['vehicles.column.workshop'], { exact: false }),
+      'the workshop move reverted to "Leave unchanged"'
+    ).toHaveValue('in_workshop');
   });
 
   it('says why to an operator who never had the status permission', () => {

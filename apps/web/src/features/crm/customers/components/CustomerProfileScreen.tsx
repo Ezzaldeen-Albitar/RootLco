@@ -358,10 +358,28 @@ function StatusChangeForm({
           <div className="flex flex-col gap-2">
             <label className="flex flex-col gap-1 text-caption text-text-secondary">
               {translate(messages, 'crm.customers.status.newStatus')}
+              {/*
+               * `key` + `defaultValue`, the same three-part shape `RecordForm`
+               * uses for its own fields — `NEW-FE-01`, third site.
+               *
+               * A `prelude` renders INSIDE `RecordForm`'s `<form action={…}>`, so
+               * it inherits the reset React performs once the action settles and
+               * gains none of the protection `RecordForm` gives the fields it
+               * owns. A controlled `value` unchanged between renders is not
+               * re-written by the reconciler, so the reset wins.
+               *
+               * Here that was worse than a lost choice. After a failure the
+               * screen showed "Select…" and an UN-TICKED confirmation while
+               * `target` was still `blocked` and `confirmed` still `true`, so the
+               * `guard` above would have passed a resubmit that showed the
+               * operator no confirmation at all — on the control that blocks a
+               * customer.
+               */}
               <select
+                key={`status-${state.attempt ?? 0}`}
                 name="lifecycleStatus"
                 required
-                value={target}
+                defaultValue={target}
                 onChange={(event) => {
                   setTarget(event.target.value);
                   // A changed target un-confirms: agreeing to block somebody and
@@ -382,8 +400,13 @@ function StatusChangeForm({
             {needsConfirmation ? (
               <label className="flex items-start gap-2 text-body text-text-primary">
                 <input
+                  // Same reason as the select above, and the direction that
+                  // makes it dangerous: the reset un-ticks the box while
+                  // `confirmed` stays true, so the guard sees a confirmation the
+                  // operator can no longer see.
+                  key={`confirm-${state.attempt ?? 0}`}
                   type="checkbox"
-                  checked={confirmed}
+                  defaultChecked={confirmed}
                   onChange={(event) => setConfirmed(event.target.checked)}
                   className="mt-1 size-4 accent-primary"
                 />

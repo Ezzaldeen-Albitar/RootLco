@@ -643,6 +643,17 @@ function StatusPanel({
     changeVehicleStatusAction.bind(null, vehicle.id),
     { status: 'idle' } as ActionState
   );
+  /*
+   * `NEW-FE-01`, fourth site. Both selects were plain `defaultValue=""` with no
+   * `onChange`, so nothing held what the operator picked: React resets the form
+   * once the action settles, the choice reverted to "leave unchanged", and a
+   * resubmit sent NOTHING — which `changeVehicleStatusAction` answers with
+   * `vehicles.profile.chooseAStatus` rather than retrying the move that failed.
+   *
+   * The operator sees "choose a status" after choosing a status.
+   */
+  const [lifecycle, setLifecycle] = useState('');
+  const [workshop, setWorkshop] = useState('');
 
   return (
     <form action={submit} className="rounded-lg border border-border bg-surface p-4">
@@ -656,9 +667,11 @@ function StatusPanel({
             {translate(messages, 'crm.customers.column.status')}
           </label>
           <select
+            key={`lifecycle-${state.attempt ?? 0}`}
             id={`${formId}-lifecycle`}
             name="lifecycleStatus"
-            defaultValue=""
+            defaultValue={lifecycle}
+            onChange={(event) => setLifecycle(event.target.value)}
             className="mt-1 w-full rounded-md border border-border bg-surface px-2 py-1.5 text-body text-text-primary"
           >
             <option value="">{translate(messages, 'vehicles.profile.leaveUnchanged')}</option>
@@ -691,9 +704,11 @@ function StatusPanel({
             {translate(messages, 'vehicles.column.workshop')}
           </label>
           <select
+            key={`workshop-${state.attempt ?? 0}`}
             id={`${formId}-workshop`}
             name="workshopStatus"
-            defaultValue=""
+            defaultValue={workshop}
+            onChange={(event) => setWorkshop(event.target.value)}
             className="mt-1 w-full rounded-md border border-border bg-surface px-2 py-1.5 text-body text-text-primary"
           >
             <option value="">{translate(messages, 'vehicles.profile.leaveUnchanged')}</option>

@@ -123,6 +123,60 @@ async function submit(locale: 'en' | 'ar' = 'en') {
   await user.click(screen.getByRole('button', { name: messages['vehicles.create.submit'] }));
 }
 
+describe('a failed creation keeps what the operator chose', () => {
+  it('keeps the catalogue selections and the powertrain category', async () => {
+    /*
+     * `R-02` — `NEW-FE-01`'s second site.
+     *
+     * All six selects on this form were controlled `value=` + `onChange` with no
+     * `key`, inside `<form action={submit}>`. That is verbatim the shape this
+     * branch's own comment records as measured NOT to work
+     * (`CustomerCreateScreen.tsx:197-207`: "Making it a controlled `value={…}`
+     * field … DID NOT FIX IT"), and the comment at :218 says the hole exists
+     * "wherever a `<select>` sits in a `<form action={…}>`". `NEW-FE-01` was then
+     * closed against `RecordForm` alone, and this screen owns its own form.
+     *
+     * A vehicle arriving at a workshop is described from its papers: Make,
+     * Model, Trim, Body type, Powertrain. Losing five dropdowns to a transient
+     * 503 while the typed VIN survives is a form that looks like it kept the
+     * operator's work and did not.
+     *
+     * The Make is asserted by its uuid VALUE — the fixture's label is a name and
+     * its value is a uuid precisely so the two cannot be confused.
+     */
+    createVehicleAction.mockResolvedValue({
+      status: 'unavailable',
+      messageKey: 'state.unavailable.title',
+      correlationId: 'corr-create-1',
+      attempt: 1,
+    });
+    const user = userEvent.setup();
+    render();
+
+    /*
+     * By submitted NAME, not by label. "Powertrain" is the visible label of two
+     * different controls here — the broad category and the specific type — and
+     * the name is what reaches the request anyway.
+     */
+    const field = (name: string) => {
+      const el = document.querySelector<HTMLSelectElement>(`select[name="${name}"]`);
+      expect(el, `${name} is not on the form`).not.toBeNull();
+      return el as HTMLSelectElement;
+    };
+    const make = () => field('makeId');
+    const category = () => field('powertrainCategory');
+
+    await user.selectOptions(make(), MAKE_UUID);
+    await user.selectOptions(category(), 'ev');
+    await submit();
+
+    await waitFor(() => expect(createVehicleAction).toHaveBeenCalledTimes(1));
+
+    expect(make(), 'the chosen Make was discarded by the failure').toHaveValue(MAKE_UUID);
+    expect(category(), 'the chosen powertrain category was discarded').toHaveValue('ev');
+  });
+});
+
 describe('the created vehicle is reachable from the screen that created it', () => {
   it('links to the new vehicle by its returned id', async () => {
     createVehicleAction.mockResolvedValue(successState());
