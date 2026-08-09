@@ -338,10 +338,28 @@ describe('P1-27-QA-005 — the recorded counts are reconciled against the reposi
   });
 
   it('states a web tier total that clears the committed floor', () => {
-    const total = /\|\s*Web tier\s*\|\s*\*\*(\d+)\*\* tests/.exec(cleanRoom)?.[1];
-    expect(total, `${CLEAN_ROOM} records no web tier total`).toBeDefined();
+    /*
+     * Read from `## Current tree`, NOT from the superseded table.
+     *
+     * This used to match the `Web tier` row, which lives inside the block headed
+     * "SUPERSEDED — this record awaits the final candidate", four lines under a
+     * sentence reading "which is why a superseded block must never be the thing
+     * a test reads". The document stated the rule and this check broke it, so
+     * the case was quietly comparing a live baseline against a record of head
+     * `356f1a1e` — and it only surfaced when the floor was honestly raised.
+     *
+     * The superseded figures stay as they are: they are a true account of that
+     * head. What had to move is which number the check consults.
+     */
+    const total = /current tree executes \*\*(\d+)\*\* tests/.exec(cleanRoom)?.[1];
+    expect(total, `${CLEAN_ROOM} records no CURRENT web tier total`).toBeDefined();
     expect(Number(total)).toBe(floor('web').measured);
     expect(Number(total)).toBeGreaterThanOrEqual(floor('web').minTests);
+
+    // And the superseded block must not be mistaken for it. If the two ever
+    // agree by coincidence the check above still reads the live one.
+    const superseded = /\|\s*Web tier\s*\|\s*\*\*(\d+)\*\* tests/.exec(cleanRoom)?.[1];
+    expect(superseded, 'the superseded record was removed rather than kept').toBeDefined();
   });
 
   it('states a root unit tier total that clears the committed floor', () => {

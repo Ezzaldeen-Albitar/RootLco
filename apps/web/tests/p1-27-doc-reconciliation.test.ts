@@ -1,6 +1,21 @@
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
+
+/*
+ * The gate's own roots, imported rather than restated, so this file cannot go on
+ * describing a tree list the gate has moved past.
+ *
+ * Loaded the same way `p1-27-security.test.ts` loads it — a dynamic import of
+ * the `.mjs` by URL with an explicit shape — because the gate ships no type
+ * declaration and a static import resolves to `any`, which `typecheck:web`
+ * refuses under `noImplicitAny`.
+ */
+const GATE = (await import(
+  pathToFileURL(join(process.cwd(), '..', '..', 'scripts', 'ci', 'check-p1-27-frontend.mjs')).href
+)) as { readonly SCAN_ROOTS: readonly string[] };
+const SCAN_ROOTS = GATE.SCAN_ROOTS;
 
 /**
  * The phase records are reconciled against the repository (`P1-27-DOC-001`,
@@ -991,11 +1006,27 @@ describe('the manifest states counts the repository can confirm', () => {
       `vehicles/\` (${vehicles} files)`
     );
 
-    // The gate's own number, from the gate's own source of truth: the two trees
-    // it walks. Quoting gate output the gate does not produce is `MAN-01`.
-    expect(manifest, `the ownership gate reports ${crm + vehicles} files`).toContain(
-      `**${crm + vehicles} files across 2 trees, 0 failures**`
+    /*
+     * The gate's own number, from the gate's own source of truth.
+     *
+     * This used to add up `crm + vehicles` and hard-code "across 2 trees",
+     * under a comment claiming it read the gate's source of truth. It did not:
+     * it read two directory names that happened to match, so the day the gate
+     * grew a third tree the check went on asserting the old total — the exact
+     * fault it exists to catch, in the check that catches it.
+     *
+     * `SCAN_ROOTS` is exported. Walking it means the tree count and the file
+     * count both follow the gate wherever it goes, and a fourth tree needs no
+     * edit here.
+     */
+    const gateFiles = SCAN_ROOTS.reduce(
+      (n: number, root: string) => n + countFiles(join(REPO_ROOT, root), /\.tsx?$/),
+      0
     );
+    expect(
+      manifest,
+      `the ownership gate reports ${gateFiles} files across ${SCAN_ROOTS.length} trees`
+    ).toContain(`**${gateFiles} files across ${SCAN_ROOTS.length} trees, 0 failures**`);
   });
 
   it('states a web tier total that matches the tier, in BOTH places it appears', () => {
@@ -1108,10 +1139,28 @@ describe('every test case the traceability document quotes actually exists', () 
     const previouslyRead = [
       ...doc.matchAll(/`[\w.-]+\.test\.tsx?`\s*—\s*((?:"(?:[^"\\]|\\.)*"(?:,\s*)?)+)/g),
     ].length;
+    /*
+     * SUPERSET, not strictly greater.
+     *
+     * This asserted `toBeGreaterThan`, which held only while the document still
+     * carried citations in the widened shape — a filename, a case count, then
+     * the dash. Those counts were stale figures, and removing them was the right
+     * fix for `G-07`. A strictly-greater assertion turns that into a failure, so
+     * the check would have been quietly telling the next author to keep stale
+     * numbers in the document in order to stay green. A test that punishes the
+     * correct change is worse than no test.
+     *
+     * The invariant that must ALWAYS hold is that the widened pattern reads
+     * every citation the original did. The strict improvement is proved
+     * separately and deterministically, on the exact cell shape that defeated
+     * the old pattern, in the `B-05` case below — which is where a proof of
+     * widening belongs, because it does not depend on the document's contents.
+     */
     expect(
       runs.length,
-      `the widened pattern reads ${runs.length} citations and the original read ${previouslyRead}`
-    ).toBeGreaterThan(previouslyRead);
+      `the widened pattern reads ${runs.length} citations and must not read fewer than the ` +
+        `original's ${previouslyRead}`
+    ).toBeGreaterThanOrEqual(previouslyRead);
 
     const missing = cited.filter((title) => !source.includes(title));
     expect(missing, 'the document quotes a test case title that exists in no test file').toEqual(

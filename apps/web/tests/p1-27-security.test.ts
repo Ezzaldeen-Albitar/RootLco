@@ -851,13 +851,27 @@ describe('P1-27-SEC-004 — audit-event coverage', () => {
   it('reads the console rule out of the gate that enforces it', () => {
     expect(GATE.RULES.length, 'the gate exposed no rules').toBeGreaterThan(4);
     expect(consoleRule, 'the gate has no rule called no-console-output').toBeDefined();
-    // The gate scans the two feature trees. Named here so that a rename or a
-    // third tree has to be acknowledged rather than silently reducing what the
-    // rule covers.
-    expect(GATE.SCAN_ROOTS.map((root) => root.split(sep).join('/')).sort()).toEqual([
-      'apps/web/src/features/crm',
-      'apps/web/src/features/vehicles',
-    ]);
+    /*
+     * The rule's reach may never shrink below the two feature trees.
+     *
+     * This asserted equality against a hand-listed pair, with a comment saying a
+     * third tree "has to be acknowledged rather than silently reducing what the
+     * rule covers". The intent was right and the assertion was the wrong shape
+     * for it: a third tree does not reduce coverage, it widens it, and equality
+     * turned the correct widening into a failure here while the gate itself was
+     * green. Written this way, a rename or a deletion still fails — which is the
+     * reduction the comment was actually about — and growth does not.
+     *
+     * The FULL root list is pinned to the canonical plan in the gate's own suite
+     * (`tests/ci/p1-27-frontend-gate.test.ts`, which re-derives it from
+     * `canonical-plan.md`). Restating that authority here would be a second copy
+     * to drift, which is the fault this phase keeps finding.
+     */
+    const roots = GATE.SCAN_ROOTS.map((root: string) => root.split(sep).join('/'));
+    expect(roots, 'the CRM tree left the console rule').toContain('apps/web/src/features/crm');
+    expect(roots, 'the vehicle tree left the console rule').toContain(
+      'apps/web/src/features/vehicles'
+    );
     // This test's own comment stripper must not be weaker than the gate's, or
     // the sweep below could pass on text the gate would have kept.
     const sample = "// console.table(x)\nconst keep = 'https://e.test/keep';\nconsole.dir(y);";

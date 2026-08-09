@@ -131,6 +131,21 @@ Every read and write in the application passes through `ApiClient.#request`
 
 ## 5. Gate blindness
 
+> **CORRECTION, added after this checkpoint was written — the blindness is closed
+> on this branch.** Everything below is the finding as it stood at head `ab87167`
+> and is kept for that reason. `SCAN_ROOTS` now lists all three canonical trees;
+> `scripts/ci/check-p1-27-frontend.mjs` reports
+> `69 file(s) across 3 tree(s), 0 failure(s)`, and `SCAN_ROOTS` sits at `:84-88`,
+> not `:63-66`. The trap named two paragraphs down was real and was handled the
+> way that paragraph prescribes rather than by an allow-list: the
+> `no-client-asserted-scope` rule was made **positional**, so `profile/page.tsx`
+> displaying a server-resolved `session.tenantId` passes while any assertion of a
+> scope still fails. `tests/ci/p1-27-frontend-gate.test.ts` re-derives the root
+> list from `canonical-plan.md` and fails if a root is dropped again. The second
+> half of this section — the authenticated browser tier gated behind an
+> environment variable hosted CI does not set — is **not** addressed here and
+> remains open.
+
 `scripts/ci/check-p1-27-frontend.mjs:63-66` scans two trees. The canonical plan
 (`canonical-plan.md:303-305`) names three. Measured: 43 files scanned, 26 unscanned — and the
 unscanned tree is where the customer profile route lives, including the single expression that

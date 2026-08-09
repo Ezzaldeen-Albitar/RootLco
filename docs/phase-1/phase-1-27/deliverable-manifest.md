@@ -35,7 +35,7 @@ one that cites nothing, because it looks like evidence.
 | #   | command                                                                                                                                                                                                                                                                           | what it established                                                                                                                         |
 | --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
 | 1   | recursive file enumeration of `apps/web/src/features/crm`, `apps/web/src/features/vehicles`, `apps/web/src/app`, `apps/web/tests`, `tests/ci`, `scripts/ci`, `scripts/dev/owner-acceptance`, `apps/web/scripts`, `docs/phase-1/phase-1-27`, `docs/product`, `supabase/migrations` | every path in §5, §6, §7, §9, §10 and the migration count                                                                                   |
-| 2   | `node scripts/ci/check-p1-27-frontend.mjs`                                                                                                                                                                                                                                        | `43 file(s) across 2 tree(s), 0 failure(s)`                                                                                                 |
+| 2   | `node scripts/ci/check-p1-27-frontend.mjs`                                                                                                                                                                                                                                        | `69 file(s) across 3 tree(s), 0 failure(s)`                                                                                                 |
 | 3   | `node scripts/ci/check-plain-language.mjs`                                                                                                                                                                                                                                        | `2 catalogue(s), 24 rule(s), 0 finding(s)`                                                                                                  |
 | 4   | `node scripts/check-tailwind-theme.mjs` (from `apps/web`)                                                                                                                                                                                                                         | `170 file(s) checked, 54 colour(s) registered, 0 unresolvable`                                                                              |
 | 5   | `node scripts/check-design-tokens.mjs` · `check-brand-isolation.mjs` · `check-api-boundary.mjs` (from `apps/web`)                                                                                                                                                                 | `195 / 0`, `197 / 0`, `170 / 0`                                                                                                             |
@@ -72,7 +72,7 @@ cannot, that is said instead of guessed.
 
 | #   | what it printed then                   | what it prints now                     | how the current value is held true                                  |
 | --- | -------------------------------------- | -------------------------------------- | ------------------------------------------------------------------- |
-| 2   | `43 file(s) across 2 tree(s)`          | unchanged at the time of writing       | derived — §3 and §5.1                                               |
+| 2   | `69 file(s) across 3 tree(s)`          | unchanged at the time of writing       | derived — §3 and §5.1                                               |
 | 4   | `170 file(s) checked`                  | `179 file(s) checked`                  | re-run; the colour count is unchanged at 54                         |
 | 5   | `195 / 0`, `197 / 0`, `170 / 0`        | `204 / 0`, `206 / 0`, `179 / 0`        | re-run; all three still report zero                                 |
 | 6   | `143 registered · 71 required · 71/71` | `148 registered · 74 required · 74/74` | derived — §7.1                                                      |
@@ -101,8 +101,8 @@ reports `243 published operation(s), 120 idempotent`, and command 13 still reads
 ### 1.3 What a reader should reconcile against
 
 The authority for §5 is command 2: `validate:p1-27-frontend` walks
-`apps/web/src/features/crm` and `apps/web/src/features/vehicles` and reports the
-file count it inspected. The authority for §6 is commands 8 to 12. The authority
+`apps/web/src/features/crm`, `apps/web/src/features/vehicles` and
+`apps/web/src/app/[locale]/(dashboard)` and reports the file count it inspected. The authority for §6 is commands 8 to 12. The authority
 for §4 is the reflog. A path that no command produced is not in this manifest.
 
 **Every documentation count in §3, §9 and §10 is a count of files TRACKED on the
@@ -147,16 +147,19 @@ otherwise. `validate:p1-27-doc-counts` recomputes each from the tree and fails
 the build if this table disagrees. The markers that bind them sit at the foot of
 this document, outside every table.
 
-That is not decoration either. The ownership gate is about to walk a third tree,
-and the first row of this table was hand-copied into four documents. A number
-hand-corrected today is stale on the commit that lands the change.
+That is not decoration either. The ownership gate has since walked a third tree
+— the prediction this paragraph was written to anticipate — and the first row of
+this table had been hand-copied into four documents. A number hand-corrected
+today is stale on the commit that lands the change; the derived markers followed
+the gate from 43 to 69 without a hand edit, and the prose that restated the same
+fact in words did not, which is the gap this revision closes.
 
 | category                                                               | artefacts                                                          | how counted                                                                |
 | ---------------------------------------------------------------------- | ------------------------------------------------------------------ | -------------------------------------------------------------------------- |
-| Feature source under the P1-27 ownership gate                          | **43**                                                             | derived from the gate's own scan roots                                     |
+| Source files under the P1-27 ownership gate                            | **69** (43 feature source + 26 route)                              | derived from the gate's own scan roots                                     |
 | Router pages (CRM and Vehicle)                                         | **8**                                                              | command 1                                                                  |
 | Shared-foundation source files changed by the phase or its remediation | **13** named in §5.5                                               | command 1, cross-read against the task register and the remediation record |
-| Web unit and component test files                                      | **66**                                                             | derived                                                                    |
+| Web unit and component test files                                      | **70**                                                             | derived                                                                    |
 | Playwright specification files                                         | **9** (2 anonymous, 7 authenticated)                               | commands 11 and 12 — **not re-measured**, §1.1.1                           |
 | Root CI-contract test files                                            | **36**                                                             | derived                                                                    |
 | CI gate scripts under `scripts/ci`                                     | **44** in the directory, **7** introduced or changed by this phase | derived; the seven are the `scripts/ci` rows of §7.1                       |
@@ -218,12 +221,16 @@ every advance of local `develop` in the sequence above was a fast-forward from
 
 ## 5. Source files
 
-### 5.1 The two trees the P1-27 ownership gate owns — 43 files
+### 5.1 The three trees the P1-27 ownership gate owns — 69 files
 
-`validate:p1-27-frontend` reports **43 files across 2 trees, 0 failures**. Those
-43 are §5.2 and §5.3 together, and both halves are derived from the trees the
-gate itself names, so the count follows the gate rather than a reader's memory of
-it. The gate refuses to pass a rule that inspected zero files, and it runs its
+`validate:p1-27-frontend` reports **69 files across 3 trees, 0 failures**. Of
+those, **43** are §5.2 and §5.3 together — the two feature trees — and both
+halves are derived from the trees the gate itself names, so the count follows the
+gate rather than a reader's memory of it. The remaining **26** are the third
+canonical tree, `apps/web/src/app/[locale]/(dashboard)`, which this manifest
+tables nowhere: §5.4 lists the eight CRM and Vehicle route pages only, and the
+other eighteen route files belong to earlier phases. They are counted here
+because the gate scans them, not because this phase wrote them. The gate refuses to pass a rule that inspected zero files, and it runs its
 own `selfTest()` on **every** invocation — a comment stripper that over-matched
 would turn all six rules into scans over empty strings and report clean, which is
 the one failure mode the per-rule anti-vacuity checks cannot see.
@@ -315,9 +322,10 @@ dashboard overview, the profile and the component gallery, nothing else exists.
 
 ### 5.5 Shared-foundation source changed by the phase or its remediation (13 files)
 
-These sit outside the two gate-owned trees and are named individually, because a
-manifest that listed only the gate-owned files would omit the fixes the Owner
-actually asked for.
+These sit outside all three gate-owned trees and are named individually, because
+a manifest that listed only the gate-owned files would omit the fixes the Owner
+actually asked for. They are also the reach the gate still does not have:
+`components/`, `lib/`, `config/`, `styles/` and `i18n/` are unscanned by it.
 
 | path                                                      | task                 | what changed                                                                                                                  |
 | --------------------------------------------------------- | -------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
@@ -352,19 +360,21 @@ operations disagreed — six PUT and three PATCH — and each answered
 are on P1-27's own call list: `crm.preference-set`, `veh.vehicle-update` and
 `veh.vehicle-status-change`.
 
-### 5.7 What no source file in §5.2 or §5.3 contains
+### 5.7 What no source file in any of the three gate-owned trees contains
 
 Six rules, each enforced by `check-p1-27-frontend.mjs` and each pinned by a
-planted violation:
+planted violation. This heading named §5.2 and §5.3 only; the gate now scans
+§5.4's tree as well — all **69** files, not the 43 of the two feature trees — so
+every rule below is refused across the route pages too.
 
-| rule                           | what it refuses                                                                        | why it exists                                                                                                                                                                                                                                                                                                                                                                                                        |
-| ------------------------------ | -------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `no-merge-caller`              | Any call to `crm.customer-merge` or `veh.vehicle-merge`                                | **`P1-OD-017` — duplicate and merge rules — is an OPEN Owner decision.** The affordance is _absent_, not disabled: a disabled control asserts that the capability exists and that this operator lacks permission, which is a different and false statement. Both review screens say so in a sentence. Wave 6 shipped a working merge form; it was removed, and the gate exists because a green suite did not stop it |
-| `no-duplicate-scan-on-a-queue` | Any call to `crm.duplicate-scan` or `veh.vehicle-duplicate-scan` from a review surface | Each reads like a query and is a privileged audited **write** that creates candidate rows and is throttled at 30/min. A queue that "refreshed" by scanning would write audit history every time an operator opened it                                                                                                                                                                                                |
-| `no-client-asserted-scope`     | `tenantId`, `companyId`, `branchId` and their snake_case forms                         | Scope is resolved server-side from the session on every operation these screens call                                                                                                                                                                                                                                                                                                                                 |
-| `no-invented-total`            | `total: rows.length` and its variants                                                  | Every list is `{ items, nextCursor, hasMore }` with **no total**. A count derived from a page is correct on page one and wrong from page two, invisibly                                                                                                                                                                                                                                                              |
-| `no-upload-path`               | `new FormData()`, `multipart/form-data`, `type="file"`                                 | **`P1-OD-025` — vehicle document and media file policy — is an OPEN Owner decision.** There is no vehicle media operation in the platform at all. `MEDIA_STATUS` is `'blocked-on-p1-od-025'`, not a feature flag: a flag implies something to switch on                                                                                                                                                              |
-| `no-console-output`            | `console.*` reaching a feature module                                                  | Observability goes through the shared authority                                                                                                                                                                                                                                                                                                                                                                      |
+| rule                           | what it refuses                                                                                    | why it exists                                                                                                                                                                                                                                                                                                                                                                                                        |
+| ------------------------------ | -------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `no-merge-caller`              | Any call to `crm.customer-merge` or `veh.vehicle-merge`                                            | **`P1-OD-017` — duplicate and merge rules — is an OPEN Owner decision.** The affordance is _absent_, not disabled: a disabled control asserts that the capability exists and that this operator lacks permission, which is a different and false statement. Both review screens say so in a sentence. Wave 6 shipped a working merge form; it was removed, and the gate exists because a green suite did not stop it |
+| `no-duplicate-scan-on-a-queue` | Any call to `crm.duplicate-scan` or `veh.vehicle-duplicate-scan` from a review surface             | Each reads like a query and is a privileged audited **write** that creates candidate rows and is throttled at 30/min. A queue that "refreshed" by scanning would write audit history every time an operator opened it                                                                                                                                                                                                |
+| `no-client-asserted-scope`     | `tenantId`, `companyId`, `branchId` and their snake_case forms, **asserted** rather than displayed | Scope is resolved server-side from the session on every operation these screens call. The rule is positional because adding §5.4's tree brought in `profile/page.tsx`, which renders the tenant the server resolved — a display, not an assertion                                                                                                                                                                    |
+| `no-invented-total`            | `total: rows.length` and its variants                                                              | Every list is `{ items, nextCursor, hasMore }` with **no total**. A count derived from a page is correct on page one and wrong from page two, invisibly                                                                                                                                                                                                                                                              |
+| `no-upload-path`               | `new FormData()`, `multipart/form-data`, `type="file"`                                             | **`P1-OD-025` — vehicle document and media file policy — is an OPEN Owner decision.** There is no vehicle media operation in the platform at all. `MEDIA_STATUS` is `'blocked-on-p1-od-025'`, not a feature flag: a flag implies something to switch on                                                                                                                                                              |
+| `no-console-output`            | Any `console.*` in a scanned tree — a feature module or a route page                               | Observability goes through the shared authority                                                                                                                                                                                                                                                                                                                                                                      |
 
 **Neither duplicate queue shows a candidate count.** The read publishes
 `{ items, nextCursor, hasMore }` and no total, so a count would be a fabricated
@@ -375,7 +385,7 @@ records.
 
 ## 6. Test files
 
-### 6.1 Web unit and component — `apps/web/tests` (66 files, 1231 cases, 0 failed)
+### 6.1 Web unit and component — `apps/web/tests` (70 files, 1467 cases, 0 failed)
 
 **The file half of that heading is derived. The case half is a measurement, and
 this section now says which is which** (`E-03`).
@@ -528,7 +538,7 @@ gate that keeps this document honest.
 
 | script                                          | npm command                                          | owning task                | what it refuses                                                                                                                                                                                                                                                                                                                                                      | measured output                                                                           |
 | ----------------------------------------------- | ---------------------------------------------------- | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| `scripts/ci/check-p1-27-frontend.mjs`           | `validate:p1-27-frontend`                            | `DO-001` (new)             | The six rules in §5.7, over the two feature trees. Comments are stripped first, a rule inspecting zero files fails, and `selfTest()` runs on every invocation                                                                                                                                                                                                        | `43 file(s) across 2 tree(s), 0 failure(s)`                                               |
+| `scripts/ci/check-p1-27-frontend.mjs`           | `validate:p1-27-frontend`                            | `DO-001` (new)             | The six rules in §5.7, over all three canonical trees — the two feature trees and the `(dashboard)` route tree. Comments are stripped first, a rule inspecting zero files fails, and `selfTest()` runs on every invocation                                                                                                                                           | `69 file(s) across 3 tree(s), 0 failure(s)`                                               |
 | `scripts/ci/check-plain-language.mjs`           | `validate:plain-language`                            | `OA-07` (new)              | 24 rules over every value in both message catalogues — JSON, UUID, enum, payload, null, boolean, object, schema, endpoint, API, design token, status code, token, cursor, idempotency, serialise, SQL, regex, tenant, permission code, operation id, snake_case identifier, camelCase identifier, raw translation key. **No exemptions**, and a two-way `selfTest()` | `2 catalogue(s), 24 rule(s), 0 finding(s)`                                                |
 | `apps/web/scripts/check-tailwind-theme.mjs`     | `validate:web-theme` (root) / `validate:theme` (web) | `OA-08` (new)              | A colour utility whose name resolves to no entry in `theme.extend.colors` and to no surviving Tailwind palette name                                                                                                                                                                                                                                                  | `170 file(s) checked, 54 colour(s) registered, 0 unresolvable`                            |
 | `scripts/ci/generate-idempotent-operations.mjs` | `validate:idempotent-operations`                     | `P1-27-INT-003` (new)      | Drift between the published contract and the generated table                                                                                                                                                                                                                                                                                                         | `243 published operation(s), 120 idempotent` — manifest matches                           |
@@ -898,8 +908,8 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
      an earlier revision put them in the label column and broke two other gates
      whose regexes read the label and the number as adjacent cells. -->
 
-<!-- derived: files apps/web/tests = 66 -->
-<!-- derived: files tests/ci = 36 -->
+<!-- derived: files apps/web/tests = 70 -->
+<!-- derived: files tests/ci = 38 -->
 <!-- derived: files scripts/ci = 44 -->
 <!-- derived: files apps/web/scripts = 4 -->
 <!-- derived: files supabase/migrations = 120 -->
@@ -909,10 +919,10 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
 <!-- derived: files tests/backend:all = 85 -->
 <!-- derived: files apps/web/src/features/crm = 20 -->
 <!-- derived: files apps/web/src/features/vehicles = 23 -->
-<!-- derived: files p1-27-frontend-gate = 43 -->
-<!-- derived: files p1-27-frontend-gate:trees = 2 -->
-<!-- derived: tracked docs/phase-1/phase-1-27 = 36 -->
-<!-- derived: tracked docs/phase-1/phase-1-27:md = 29 -->
+<!-- derived: files p1-27-frontend-gate = 69 -->
+<!-- derived: files p1-27-frontend-gate:trees = 3 -->
+<!-- derived: tracked docs/phase-1/phase-1-27 = 37 -->
+<!-- derived: tracked docs/phase-1/phase-1-27:md = 30 -->
 <!-- derived: tracked docs/product = 13 -->
 <!-- derived: commands registered = 148 -->
 <!-- derived: commands required = 74 -->
@@ -925,22 +935,22 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
 
 <!-- derived: lines docs/phase-1/phase-1-27/adversarial-round-five.md = 240 -->
 <!-- derived: lines docs/phase-1/phase-1-27/adversarial-round-four.md = 147 -->
-<!-- derived: lines docs/phase-1/phase-1-27/blocker-remediation-plan.md = 496 -->
+<!-- derived: lines docs/phase-1/phase-1-27/blocker-remediation-plan.md = 497 -->
 <!-- derived: lines docs/phase-1/phase-1-27/canonical-plan.md = 340 -->
 <!-- derived: lines docs/phase-1/phase-1-27/canonical-write-reachability.json = 66 -->
 <!-- derived: lines docs/phase-1/phase-1-27/ci-evidence.md = 126 -->
-<!-- derived: lines docs/phase-1/phase-1-27/clean-room-evidence.md = 197 -->
+<!-- derived: lines docs/phase-1/phase-1-27/clean-room-evidence.md = 210 -->
 <!-- derived: lines docs/phase-1/phase-1-27/contract-archaeology.md = 416 -->
-<!-- derived: lines docs/phase-1/phase-1-27/deliverable-manifest.md = 974 -->
-<!-- derived: lines docs/phase-1/phase-1-27/developer-guide.md = 160 -->
+<!-- derived: lines docs/phase-1/phase-1-27/deliverable-manifest.md = 984 -->
+<!-- derived: lines docs/phase-1/phase-1-27/developer-guide.md = 170 -->
 <!-- derived: lines docs/phase-1/phase-1-27/evidence/change-log.md = 293 -->
-<!-- derived: lines docs/phase-1/phase-1-27/evidence/evidence-manifest.json = 151 -->
+<!-- derived: lines docs/phase-1/phase-1-27/evidence/evidence-manifest.json = 155 -->
 <!-- derived: lines docs/phase-1/phase-1-27/evidence/task-traceability.md = 400 -->
 <!-- derived: lines docs/phase-1/phase-1-27/evidence/test-catalogue-traceability.json = 716 -->
 <!-- derived: lines docs/phase-1/phase-1-27/evidence/test-catalogue-traceability.md = 206 -->
 <!-- derived: lines docs/phase-1/phase-1-27/execution-checkpoint.md = 289 -->
 <!-- derived: lines docs/phase-1/phase-1-27/final-canonical-remediation.md = 448 -->
-<!-- derived: lines docs/phase-1/phase-1-27/final-task-adjudication.md = 947 -->
+<!-- derived: lines docs/phase-1/phase-1-27/final-task-adjudication.md = 956 -->
 <!-- derived: lines docs/phase-1/phase-1-27/finding-phase-disposition.md = 428 -->
 <!-- derived: lines docs/phase-1/phase-1-27/finding-task-map.json = 382 -->
 <!-- derived: lines docs/phase-1/phase-1-27/findings.md = 887 -->
@@ -955,7 +965,7 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
 <!-- derived: lines docs/phase-1/phase-1-27/preflight/final-readiness.json = 218 -->
 <!-- derived: lines docs/phase-1/phase-1-27/preflight/final-readiness.md = 169 -->
 <!-- derived: lines docs/phase-1/phase-1-27/reception-read-surface-plan.md = 592 -->
-<!-- derived: lines docs/phase-1/phase-1-27/risk-register.md = 570 -->
+<!-- derived: lines docs/phase-1/phase-1-27/risk-register.md = 583 -->
 <!-- derived: lines docs/phase-1/phase-1-27/task-matrix-verdicts.json = 727 -->
 <!-- derived: lines docs/phase-1/phase-1-27/task-matrix.json = 1396 -->
 <!-- derived: lines docs/phase-1/phase-1-27/task-register.md = 295 -->

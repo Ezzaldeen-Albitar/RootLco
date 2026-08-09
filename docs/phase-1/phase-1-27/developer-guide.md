@@ -25,7 +25,9 @@ constraint it was read out of, and the reason for every refusal. When these
 disagree with the code, the contract file is the thing to fix first — it is what
 the next phase will read.
 
-**The two trees do not agree, and the third row is not an oversight.** CRM
+**The two feature trees do not agree, and the third row of the table above is
+not an oversight.** (Two feature trees, three gate roots — the ownership gate
+also scans the route tree in the first row; see below.) CRM
 segregates its writes into `*actions.ts` and keeps `*api.ts` read-only; the
 vehicle tree has no `*actions.ts` at all and puts its six write actions in the
 `*api.ts` file that owns the same resource — `createVehicleAction` in `api.ts`,
@@ -43,29 +45,37 @@ minute.
 
 **Two checks, and the difference between them is the point** (`D-02`).
 `p1-27-guidance-reconciliation.test.ts` walks `features/crm/customers` and
-`features/vehicles`. The ownership gate owns `features/crm` and
-`features/vehicles` — one level up on the CRM side. So a `'use server'` file at
-`features/crm/*.ts` sat outside a partition this page calls exhaustive, and the
-claim was true only because `permissions.ts` is the sole file there and declares
-no server function. True by luck is not checked.
+`features/vehicles`. The ownership gate owns **three** roots — `features/crm`,
+`features/vehicles` and `app/[locale]/(dashboard)` — one level up on the CRM
+side, and one whole tree wider. So a `'use server'` file at `features/crm/*.ts`
+sat outside a partition this page calls exhaustive, and the claim was true only
+because `permissions.ts` is the sole file there and declares no server function.
+True by luck is not checked.
 
 `validate:p1-27-doc-counts` now runs the same partition over
-`check-p1-27-frontend.mjs`'s own `SCAN_ROOTS`, which it imports rather than
-restates. Add a tree to the gate and the wider check follows it in the same
-commit; add a `'use server'` file called anything else, anywhere in either tree,
-and it fails naming the file.
+`check-p1-27-frontend.mjs`'s own `SCAN_ROOTS`, which is **exported** for exactly
+this reason: a page describing the gate's reach imports the list rather than
+restating it, so no sentence here can drift from the gate. Adding the third tree
+proved the arrangement — the gate went from 43 files across two trees to
+`69 file(s) across 3 tree(s)`, and the wider check followed in the same commit,
+with no edit to this page's roots. Add a `'use server'` file called anything
+else, anywhere in any of the three trees, and it fails naming the file. All
+thirteen `'use server'` files are still in the two feature trees; the route tree
+contributes none.
 
 ## The rules that are enforced, not merely written down
 
 `npm run validate:p1-27-frontend` fails the build on:
 
 - a merge caller of any shape while `P1-OD-017` is open,
-- a duplicate-scan call from anywhere in either feature tree — there is no
+- a duplicate-scan call from anywhere in any of the three trees — there is no
   exemption; the creation-time warning arrives on the create RESPONSE,
-- a client-asserted `tenantId` / `companyId` / `branchId`,
+- a client-asserted `tenantId` / `companyId` / `branchId` — **asserted**, not
+  merely displayed: the profile screen renders the tenant the server resolved
+  and passes, because the rule is positional,
 - a total computed from `rows.length`,
 - any upload path while `P1-OD-025` is open,
-- any `console.*` in either feature tree.
+- any `console.*` in any of the three trees.
 
 A test can be deleted around a decision. A gate has to be argued with in a diff.
 Wave 6 shipped a working merge form past review, typecheck, lint and 669 green

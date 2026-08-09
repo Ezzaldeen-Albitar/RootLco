@@ -16,8 +16,8 @@
       "bytes": 12457
     },
     "docs/phase-1/phase-1-27/blocker-remediation-plan.md": {
-      "sha256": "e956a8803821fd308f7d3605be313bb1b5e44d3a3843eba063717dbcc87fe0fe",
-      "bytes": 74819
+      "sha256": "a63af94fcda3f9e62033aa162e3a34f2fcfa947f2d41e1dd6ab9aeb693ba5ae5",
+      "bytes": 77406
     },
     "docs/phase-1/phase-1-27/canonical-plan.md": {
       "sha256": "fc06c4c125ea951b50169181398ddaf0353f255abe739534560cd580ee32786f",
@@ -32,32 +32,32 @@
       "bytes": 7195
     },
     "docs/phase-1/phase-1-27/clean-room-evidence.md": {
-      "sha256": "6d02dbaa2f8ed65ae5f6b806d5619169f3f62fd1028d5ed94097560d71396a0b",
-      "bytes": 11623
+      "sha256": "9dab972d4b563b410bd61f2b39a84c0e223fac8f62ed24ddad0d778861a14031",
+      "bytes": 12522
     },
     "docs/phase-1/phase-1-27/continuation-checkpoint.md": {
-      "sha256": "d926cfdcc9d4ff2afe09972d632ba8354674617c5c28c58dfa3a93bbd4f4378b",
-      "bytes": 10328
+      "sha256": "91ff34bac6041c8adb2f2bd7a19efb2cc3dd6e1cbcbb4c42caef6338c02bb6d1",
+      "bytes": 11346
     },
     "docs/phase-1/phase-1-27/contract-archaeology.md": {
       "sha256": "5832747388575cc788af0304cc972882b4c33e135b6c92f60740695b99143661",
       "bytes": 24145
     },
     "docs/phase-1/phase-1-27/deliverable-manifest.md": {
-      "sha256": "1f222ba93351edba27d95df649181f8d2043605193a8b46ceb3b612bf1b25cae",
-      "bytes": 135318
+      "sha256": "5ada47c74396276a4c99820298720646db02be6e910e7e4aaf3f1963342d8cb1",
+      "bytes": 136426
     },
     "docs/phase-1/phase-1-27/developer-guide.md": {
-      "sha256": "f94e05222921eb2c5fb009549ad31ab33ea6068a602b074f6c27b8034cdb5a95",
-      "bytes": 8535
+      "sha256": "b472471fc058c7249df6788651873d05630891f4069f552c59b70e7fb1ef092b",
+      "bytes": 9286
     },
     "docs/phase-1/phase-1-27/evidence/change-log.md": {
       "sha256": "786adb382c74877c7082d5617d030bd0ae5d90e5ff1710ed0f06178e2909a5cf",
       "bytes": 22559
     },
     "docs/phase-1/phase-1-27/evidence/task-traceability.md": {
-      "sha256": "32d27885f854d3762ab61eed092aab03b11d76290cafe6e5b7f976f1b4289a2e",
-      "bytes": 102150
+      "sha256": "77211d65908bc2dbaf77464733ea1fa6a08808ac7926a4d7e976e83c045bde12",
+      "bytes": 102396
     },
     "docs/phase-1/phase-1-27/evidence/test-catalogue-traceability.json": {
       "sha256": "79f820daa61c8698e904ffa5d4764f8638aaebace24375636759a113c4dc024b",
@@ -76,8 +76,8 @@
       "bytes": 27435
     },
     "docs/phase-1/phase-1-27/final-task-adjudication.md": {
-      "sha256": "8671073cbdf6abab5158aca154fa7de8b3e460dc523f4dd0ce646269054417ed",
-      "bytes": 66109
+      "sha256": "d3799656b4756231dbd727c245d6daf6f782f3827cfe59dfa899703802eacf2e",
+      "bytes": 66751
     },
     "docs/phase-1/phase-1-27/finding-phase-disposition.md": {
       "sha256": "1636f04e7a7448e6f56f4702d7f06c9d5a413c442b4f66394e1a6dc3593b0aa2",
@@ -104,7 +104,7 @@
       "bytes": 14530
     },
     "docs/phase-1/phase-1-27/open-decisions.md": {
-      "sha256": "8fee8ff5b5e7e6dce8fb2b6606f334c583d0cb43068f2d1cf048e8084240a8fb",
+      "sha256": "b0fd514eb0eb47c1823909d2e1f6d2933d397e1ec555e2cc0774c0c3ac8677b4",
       "bytes": 77906
     },
     "docs/phase-1/phase-1-27/operator-guide.md": {
@@ -116,7 +116,7 @@
       "bytes": 5776
     },
     "docs/phase-1/phase-1-27/owner-acceptance-fail-remediation.md": {
-      "sha256": "452f3aab7bf19dc9ffd028f8dca635299cf962c718b257adc2a98f20b449c79f",
+      "sha256": "1749b3e04202cc578886ba42631a86909b9794cb2716fd655ee990dbfdc039b6",
       "bytes": 13296
     },
     "docs/phase-1/phase-1-27/p1-27-int-113-unregistered-rate-limit-policy.md": {
@@ -136,8 +136,8 @@
       "bytes": 60692
     },
     "docs/phase-1/phase-1-27/risk-register.md": {
-      "sha256": "3ce1fe89f06e264dc017dc605f484bf640381388470cd53b4332988180881f1b",
-      "bytes": 162728
+      "sha256": "b4dc5581dcda3cd4caa9ba4815eb1c9bdbec120a26a626cde46ac193d7a44ebe",
+      "bytes": 167968
     },
     "docs/phase-1/phase-1-27/task-matrix-verdicts.json": {
       "sha256": "37ecd64addf97f35ff1d8ec59f97d8dc1fe1fd5ebade613a06df95f5ba6b742c",

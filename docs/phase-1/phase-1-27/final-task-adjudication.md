@@ -555,9 +555,12 @@ none is claimed to be operational. What exists is the **adapter boundary**", and
 `observability.test.ts` asserts it by name: "is null until a deployment attaches
 one". The task register lists that assertion as `DO-002`'s own evidence.
 
-`DO-002`'s P1-27 obligation, per the register, is that nothing in either feature
-tree writes to the console — enforced by the `no-console-output` rule in
-`validate:p1-27-frontend`, currently green over 43 files.
+`DO-002`'s P1-27 obligation, per the register, is that nothing in the trees the
+ownership gate owns writes to the console — enforced by the `no-console-output`
+rule in `validate:p1-27-frontend`, currently green over **69** files across three
+trees. That read 43 across two until the gate was corrected to scan the third
+tree the canonical plan always named; the obligation did not change, its reach
+did.
 
 **Verdict.** `AUDIT_FALSE_NEGATIVE`. The refutation restates an intended,
 asserted, documented property as a defect. Attaching a monitoring provider is a
@@ -589,9 +592,15 @@ So the prohibited list is satisfied structurally rather than by redaction luck.
 No password, token, customer identifier, request body or query string can be
 logged by a P1-27 surface, because no P1-27 surface logs — and the
 `no-console-output` rule in `validate:p1-27-frontend` is what keeps it that way
-across both feature trees. **A VIN in particular is never written to a log**: it
-is `internal`-classified, it appears in no `report()` call, and there is no
-`report()` call in either feature tree to add one to.
+across all three trees the gate now scans. **A VIN in particular is never written
+to a log**: it is `internal`-classified, it appears in no `report()` call, and
+there is no `report()` call in either feature tree to add one to. One correction
+now that the gate's reach is wider: the third gate tree does hold a single
+`report()` call — `apps/web/src/app/[locale]/(dashboard)/error.tsx:49`, the
+render-error boundary — and it passes `level`, `event`, `correlationId` and
+`route` and nothing else. No identifier of any kind reaches it, so the conclusion
+is unchanged; the sentence above it is scoped to the feature trees because that
+is where it was measured.
 
 That is the second branch of the canonical requirement — instrumentation
 authority with intentionally no scattered frontend logging — and adding

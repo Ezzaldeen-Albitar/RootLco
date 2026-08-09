@@ -369,8 +369,36 @@ describe('the floor LOOKUP is covered, because it was the only unreachable step'
   });
 
   it('records where the number came from, in enough detail to re-derive it', () => {
-    expect(web.note).toContain('#214');
-    expect(web.note).toContain('31311573993');
+    /*
+     * The run id is matched as a SHAPE, not as a literal.
+     *
+     * This case used to assert `toContain('31311573993')`, which pinned the note
+     * to the one run that established the floor. That reads as strictness and is
+     * the opposite: the moment the tier is honestly re-measured on a different
+     * hosted run, the note must either keep naming a superseded run or the test
+     * has to be edited to let the truth through. A check that an honest update
+     * has to defeat is a check that teaches people to defeat checks — and this
+     * phase has spent five rounds on exactly that failure mode.
+     *
+     * What actually needs proving is that the number is TRACEABLE: the note
+     * names the pull request and at least one runnable GitHub Actions run id.
+     * A run id is 10-12 digits, which no other figure in this note resembles.
+     */
+    expect(web.note, 'the note names no pull request').toMatch(/#\d+/);
+    expect(web.note, 'the note names no GitHub Actions run id').toMatch(/\b\d{10,12}\b/);
     expect(web.measured).toBeGreaterThan(web.minTests);
+  });
+
+  it('says plainly when the recorded measurement is local rather than hosted', () => {
+    /*
+     * `measured` is provenance, and provenance that quietly changes meaning is
+     * worth less than none. A figure taken in a working checkout is not the same
+     * evidence as one taken by a named hosted run, so the entry has to say which
+     * it is rather than letting the reader assume the stricter one.
+     */
+    const provenance = (web as { measurementProvenance?: string }).measurementProvenance;
+    if (provenance === undefined) return;
+    expect(provenance, 'a local measurement must say so unambiguously').toMatch(/\bLOCAL\b/);
+    expect(provenance, 'a local measurement must name what replaces it').toMatch(/QA-005|hosted/i);
   });
 });
