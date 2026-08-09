@@ -28,7 +28,7 @@
       "id": "E2E-AUTH-03",
       "path": "apps/web/tests/e2e/authenticated/crm-and-vehicles.spec.ts",
       "whatItProves": "That the P1-27 CRM and Vehicle screens load and behave for a signed-in operator.",
-      "whatIsUnprovenWithoutIt": "The CRM and Vehicle screens are covered by the web component tier against mocked responses. No CI job drives them against a real API.",
+      "whatIsUnprovenWithoutIt": "The CRM and Vehicle screens are covered by the web component tier against stubbed responses. No CI job drives them against a real API.",
       "whyItCannotRunHosted": "Same three preconditions as E2E-AUTH-01.",
       "compensatingControl": "The web component tier, the write-reachability gate (every canonical mutation has a real production call site) and the Owner acceptance run.",
       "owner": "P1-27 DevOps",
