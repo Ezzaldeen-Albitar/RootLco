@@ -1,5 +1,7 @@
 # P1-27 — final task adjudication
 
+**CURRENT PHASE STATUS: OWNER ACCEPTANCE: FAIL.** The phase is not closed, `P1-G27` is not written, `main` is untouched, and P1-28 has not begun. Acceptance is the Product Owner's act against the running application; it is not derivable from any count in this repository and cannot be inferred from silence.
+
 Every task the independent audit returned as failing, adjudicated against the
 repository at branch `remediation/p1-27-final-canonical-blockers` head `915b861`.
 

@@ -8,8 +8,8 @@
   "fileCount": 30,
   "files": {
     "docs/phase-1/phase-1-27/adversarial-round-five.md": {
-      "sha256": "2047b35bca7ca250b455ff7d472cd20e2d8efc3112129f4c77d45aa31900bc31",
-      "bytes": 19718
+      "sha256": "daa07c290cc9b9bb8e4d79e0788fc7ff5e55f1dc635017372f17971d1303fae1",
+      "bytes": 20027
     },
     "docs/phase-1/phase-1-27/adversarial-round-four.md": {
       "sha256": "94ec35bfa05c2b112a2dbd780bf157338d20a2c73dc8bfff598f27ddbb0e94a7",
@@ -28,12 +28,12 @@
       "bytes": 3724
     },
     "docs/phase-1/phase-1-27/ci-evidence.md": {
-      "sha256": "203a9a8aa1f0fd248cd2a009cae67a30496aef27b74e5eff3eb68023cfb8d335",
-      "bytes": 6564
+      "sha256": "d9163b2689ff819ab446621e875dd92def2518485ea0836e40343dce36ebb92d",
+      "bytes": 6873
     },
     "docs/phase-1/phase-1-27/clean-room-evidence.md": {
-      "sha256": "7ab769b34c98afcc238c7cf2e0612ae1bba08caba4f6602cdf56a2d005812681",
-      "bytes": 10163
+      "sha256": "9315c09cd4aaaa579d00e1ee53167a23c92fed84887d5eea133f9fead34caf88",
+      "bytes": 10472
     },
     "docs/phase-1/phase-1-27/contract-archaeology.md": {
       "sha256": "5832747388575cc788af0304cc972882b4c33e135b6c92f60740695b99143661",
@@ -48,12 +48,12 @@
       "bytes": 7093
     },
     "docs/phase-1/phase-1-27/evidence/change-log.md": {
-      "sha256": "fd51ae8d206a7b365ee0e35057e69f3cc681159c3908aa48a78872e03aa312cc",
-      "bytes": 22250
+      "sha256": "786adb382c74877c7082d5617d030bd0ae5d90e5ff1710ed0f06178e2909a5cf",
+      "bytes": 22559
     },
     "docs/phase-1/phase-1-27/evidence/task-traceability.md": {
-      "sha256": "ef6466cca4766d9dcaade486bc919c3e465eb27b4b1db2015c1e0edd1b8a33c2",
-      "bytes": 101321
+      "sha256": "2884becaeb4e5415f43794df4aa14caa0a79b0bb45b3e53d3dff14f6730585b1",
+      "bytes": 101630
     },
     "docs/phase-1/phase-1-27/execution-checkpoint.md": {
       "sha256": "8b188bd16dec828cb3d7bc5349dca04aec460686f7cc1582493b347b0265c2db",
@@ -64,8 +64,8 @@
       "bytes": 27435
     },
     "docs/phase-1/phase-1-27/final-task-adjudication.md": {
-      "sha256": "a0f865af0fe078c844a9bd0d0c613a85d0f1cd54956346c8357bd05f234d0e70",
-      "bytes": 61239
+      "sha256": "499e2b035616587e74ca80d6eb8a956ea15e6641e39b3805c78e2d361e335ce6",
+      "bytes": 61548
     },
     "docs/phase-1/phase-1-27/finding-phase-disposition.md": {
       "sha256": "1636f04e7a7448e6f56f4702d7f06c9d5a413c442b4f66394e1a6dc3593b0aa2",

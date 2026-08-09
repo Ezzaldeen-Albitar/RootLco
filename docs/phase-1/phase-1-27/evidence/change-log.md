@@ -1,5 +1,7 @@
 # P1-27 — change log
 
+**CURRENT PHASE STATUS: OWNER ACCEPTANCE: FAIL.** The phase is not closed, `P1-G27` is not written, `main` is untouched, and P1-28 has not begun. Acceptance is the Product Owner's act against the running application; it is not derivable from any count in this repository and cannot be inferred from silence.
+
 The artefact `P1-27-DOC-002` names and P1-27 did not ship.
 
 `phase-1-19`, `phase-1-20` and `phase-1-21` each carry `evidence/change-log.md`,

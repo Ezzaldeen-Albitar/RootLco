@@ -1,5 +1,7 @@
 # Phase 1-27 — clean-room evidence
 
+**CURRENT PHASE STATUS: OWNER ACCEPTANCE: FAIL.** The phase is not closed, `P1-G27` is not written, `main` is untouched, and P1-28 has not begun. Acceptance is the Product Owner's act against the running application; it is not derivable from any count in this repository and cannot be inferred from silence.
+
 **Classification:** Confidential — Commercial Product and Pilot Planning
 
 A clean room answers one question: **does this exact tree verify from nothing?**

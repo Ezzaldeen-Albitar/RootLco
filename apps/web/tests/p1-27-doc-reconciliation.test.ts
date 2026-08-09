@@ -34,6 +34,17 @@ function read(...parts: string[]): string {
   return readFileSync(join(PHASE, ...parts), 'utf8');
 }
 
+/**
+ * The one canonical, greppable statement of where the phase stands.
+ *
+ * Every guarded document must carry this exact line. A document that merely
+ * MENTIONS `OWNER ACCEPTANCE: FAIL` somewhere in a narrative does not state a
+ * status — `evidence/task-traceability.md` mentioned it only in a past-tense
+ * sentence about a superseded event, which would have kept the guard green while
+ * the surrounding prose announced a Pass.
+ */
+const CURRENT_STATUS_LINE = 'CURRENT PHASE STATUS: OWNER ACCEPTANCE: FAIL';
+
 describe('DOC-001 — §9 agrees with the gate that owns the question', () => {
   const manifest = JSON.parse(
     readFileSync(join(PHASE, 'canonical-write-reachability.json'), 'utf8')
@@ -201,6 +212,147 @@ describe('DOC-002 — the change log the task names actually exists', () => {
 
   it('states the phase status in the log itself', () => {
     expect(read('evidence', 'change-log.md')).toContain('OWNER ACCEPTANCE: FAIL');
+  });
+});
+
+/**
+ * The Owner-acceptance guard.
+ *
+ * Separated from the task-count guard on purpose, because conflating them is
+ * what broke it. "Are the tasks resolved?" is derived from a table and changes
+ * as work lands. "Has the Owner accepted the phase?" is a human act, is not
+ * derivable from anything in this repository, and does not become true because
+ * a count reached its maximum.
+ *
+ * The previous version nested the Owner check inside `if (open + blocked > 0)`,
+ * so it evaporated on the commit that closed the last task — the exact moment a
+ * premature closure claim becomes both likely and dangerous. An adversarial
+ * review then found three further holes: `OWNER ACCEPTANCE: PASS` was banned
+ * nowhere; the banned spelling (`PASS=42`) is one no document in this phase
+ * uses, while five unbanned spellings of the identical claim were already on the
+ * page; and `P1-27 CLOSED GO` — *this repository's actual closure vocabulary,
+ * used by every earlier phase* — was not covered at all.
+ *
+ * So this describe is UNCONDITIONAL. Lifting it requires the Owner's verdict and
+ * a deliberate edit here, which is a reviewable diff rather than a silent
+ * arithmetic side effect.
+ */
+describe('no phase document may claim an acceptance the Owner has not given', () => {
+  const GUARDED = [
+    'final-task-adjudication.md',
+    'evidence/task-traceability.md',
+    'evidence/change-log.md',
+    'adversarial-round-five.md',
+    'clean-room-evidence.md',
+    'ci-evidence.md',
+  ];
+
+  /**
+   * Closure vocabulary, in the forms this repository actually writes.
+   *
+   * Whitespace-insensitive and case-insensitive: `PASS = 42` evades a substring
+   * ban on `PASS=42`, and the document's own fenced blocks are spaced.
+   */
+  const CLOSURE_CLAIMS: readonly { pattern: RegExp; what: string }[] = [
+    { pattern: /OWNER\s+ACCEPTANCE:\s*PASS/i, what: 'an Owner acceptance' },
+    { pattern: /PHASE\s+1-27\s+OFFICIALLY\s+CLOSED/i, what: 'official closure' },
+    { pattern: /P1-27\s+CANONICAL\s+SCOPE\s+VERIFIED/i, what: 'canonical scope verified' },
+    { pattern: /P1-27\s+CLOSED(\s+GO)?\b/i, what: "this repository's own closure banner" },
+    { pattern: /PHASE\s+1-27\s+CLOSED/i, what: 'phase closure' },
+    { pattern: /\bP1-G27\b.*\bGO\b/i, what: 'a gate-record Go' },
+    { pattern: /\b100\s*\/\s*100\s+VERIFIED/i, what: 'a verification banner' },
+  ];
+
+  /**
+   * A line states the RULE or the HISTORY rather than making the claim.
+   *
+   * Both are legitimate and both must stay: the rule sentence ("closes only when
+   * the Owner returns `OWNER ACCEPTANCE: PASS`") is what keeps the phase open,
+   * and the history is required to be preserved rather than deleted. A guard
+   * that cannot tell a claim from its own denial would force the record to erase
+   * itself to stay green — which happened twice already.
+   */
+  const RULE_OR_HISTORY =
+    /^\s*>|\bonly when\b|\bonly after\b|\buntil\b|\bawait|\bpending\b|\brequires\b|\breturns?\b|\bwould\b|\bmust not\b|\bmay not\b|\bcannot\b|\bnot\b.{0,40}\bclaim|\bpreviously\b|\bused to\b|\bwas written\b|\bsuperseded\b|\bretract|\bwithdraw|\bhistorical\b|\bbanned\b|\bforbidden\b|\bnever\b/i;
+
+  it('states the CURRENT status in an unambiguous, greppable line', () => {
+    /*
+     * Presence of the string is not enough, and that was a real hole: in
+     * `evidence/task-traceability.md` the only occurrence of
+     * `OWNER ACCEPTANCE: FAIL` was a past-tense narrative about a superseded
+     * event — "the Product Owner then tested the merged application by hand and
+     * returned `OWNER ACCEPTANCE: FAIL`". A reader could have changed the
+     * surrounding text to announce a Pass and the guard would have stayed green
+     * on that historical sentence.
+     *
+     * One exact canonical line, in every guarded document, is the fix.
+     */
+    for (const doc of GUARDED) {
+      const text = read(...doc.split('/'));
+      expect(
+        text,
+        `${doc} carries no canonical current-status line; a narrative mention of the string is not a status`
+      ).toContain(CURRENT_STATUS_LINE);
+    }
+  });
+
+  it('makes no closure claim anywhere, whatever the task count says', () => {
+    /*
+     * PARAGRAPH scope, not line scope.
+     *
+     * A line-scoped version failed on the rule sentence itself, because Prettier
+     * wraps prose: "P1-27 closes only when the Product Owner … explicitly returns
+     * `OWNER ACCEPTANCE: PASS`" puts the qualifier two lines above the phrase.
+     * Judging a wrapped sentence by one of its lines reads half a clause.
+     *
+     * The residual risk is stated rather than hidden: a paragraph containing both
+     * a rule and a fresh claim is exempted by the rule. Paragraphs here are short,
+     * and the alternative — sentence splitting over Markdown with inline code,
+     * tables and abbreviations — has more ways to be wrong than this has.
+     */
+    const violations: string[] = [];
+    for (const doc of GUARDED) {
+      const text = read(...doc.split('/'));
+      let line = 1;
+      for (const paragraph of text.split(/\n\s*\n/)) {
+        const start = line;
+        line += paragraph.split('\n').length + 1;
+        if (RULE_OR_HISTORY.test(paragraph)) continue;
+        for (const claim of CLOSURE_CLAIMS) {
+          const hit = claim.pattern.exec(paragraph);
+          if (hit) violations.push(`${doc}:~${start} asserts ${claim.what} — "${hit[0]}"`);
+        }
+      }
+    }
+    expect(
+      violations,
+      'a phase document claims an acceptance or closure the Owner has not given'
+    ).toEqual([]);
+  });
+
+  it('is not vacuous — it can see the strings it bans', () => {
+    /*
+     * Without this the case above passes over documents it failed to read, and
+     * over a `RULE_OR_HISTORY` pattern so wide that every line is exempt. Both
+     * were live risks: the exemption matches common words on purpose.
+     */
+    for (const doc of GUARDED) {
+      expect(read(...doc.split('/')).length, `${doc} is empty`).toBeGreaterThan(200);
+    }
+    const sample = 'The gate record reads P1-27 CLOSED GO and the phase is done.';
+    expect(RULE_OR_HISTORY.test(sample), 'the exemption swallows a plain claim').toBe(false);
+    expect(CLOSURE_CLAIMS.some((c) => c.pattern.test(sample))).toBe(true);
+
+    const ruled = 'The phase closes only when the Owner returns OWNER ACCEPTANCE: PASS.';
+    expect(RULE_OR_HISTORY.test(ruled), 'the rule sentence must stay permitted').toBe(true);
+  });
+
+  it('bans the spaced and cased spellings, not one literal', () => {
+    // `PASS=42` was the banned form; the documents write `RESOLVED / 42 = 42`,
+    // "42 of 42" and `PASS = 42`. A ban on a spelling nobody uses is decoration.
+    for (const text of ['OWNER ACCEPTANCE:   pass', 'Phase 1-27 Officially Closed']) {
+      expect(CLOSURE_CLAIMS.some((c) => c.pattern.test(text))).toBe(true);
+    }
   });
 });
 

@@ -68,7 +68,9 @@ export function summarise(report, label) {
   return {
     label,
     files,
+    suites,
     total,
+    executed: total - pending - todo,
     passed,
     failed,
     pending,
@@ -133,8 +135,17 @@ export function toMarkdown(summary, problems) {
   const lines = [`### Tests — ${summary.label}`, ''];
   lines.push('| Measure | Value |');
   lines.push('| --- | --- |');
-  lines.push(`| Files | ${summary.files} |`);
-  lines.push(`| Tests | ${summary.total} |`);
+  /*
+   * "Test files" and "Suites" are separate rows because they are separate
+   * things, and conflating them is how the web tier came to report 379 for a
+   * run over 65 files. "Executed" sits beside "Collected" for the same reason:
+   * a tier can collect 1216 and execute none of them, and only one of those two
+   * numbers is evidence.
+   */
+  lines.push(`| Test files | ${summary.files} |`);
+  lines.push(`| Suites (\`describe\` blocks) | ${summary.suites} |`);
+  lines.push(`| Tests collected | ${summary.total} |`);
+  lines.push(`| Tests executed | ${executed(summary)} |`);
   lines.push(`| Passed | ${summary.passed} |`);
   lines.push(`| Failed | ${summary.failed} |`);
   lines.push(`| Skipped / todo | ${summary.pending + summary.todo} |`);
