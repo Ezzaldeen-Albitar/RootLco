@@ -1,0 +1,129 @@
+{
+  "tier": "web",
+  "description": "Web-tier coverage baseline (P1-27-QA-001). Scope is the `coverage.include` allow-list in apps/web/vitest.config.ts — the P1-27 CRM and Vehicle features, the dashboard routes that mount them, and the shared library under src/lib. Measured by `npm run test:web -- --coverage`, which runs BOTH vitest projects (`logic` in node, `dom` in jsdom) into one v8 report, because they are two environments over one application. Merging this with the unit or backend tier would overstate all three: those measure apps/api.",
+  "policy": "docs/engineering/ci-automation/coverage-policy.md",
+  "establishedBy": "LOCAL measurement in the p1-27/core-api-boundary worktree at base 0650a506b5990a809a3f350370b16e25edb1e7fd, `npm run test --workspace @rootlco/web -- --coverage`, 1493 tests across 70 test files, 0 failed, 90 instrumented source files. This tier had NEVER been measured before: apps/web/vitest.config.ts declared two projects and no `coverage` block at all, the repository-root config's `include` list is entirely apps/api/src, and neither committed coverage baseline mentioned apps/web. So there is no hosted run to cite yet — the first hosted run of this tier is the one that replaces this field.",
+  "ciWiring": "NOT YET INVOKED BY ANY WORKFLOW. `.github/workflows/**` was outside the change that produced this file, so the measurement exists and the gate that reads it does not run. Recorded here rather than left implicit, because 'declared but never wired' is this phase's dominant defect class. What the integrator must add, in `_reusable-node-quality.yml` beside the existing unit-coverage job (:427 runs the suite, :472 runs the gate): (1) `npm run test --workspace @rootlco/web -- --coverage --coverage.reportsDirectory=apps/web/coverage/web --coverage.reporter=json-summary --coverage.reporter=json --coverage.reporter=html --coverage.reporter=text-summary`, then (2) `node scripts/ci/coverage-gate.mjs --summary apps/web/coverage/web/coverage-summary.json --baseline .github/ci-baselines/coverage-baseline.web.json --changed changed.txt --json coverage-gate-web.json --markdown coverage-web.md`, then (3) upload `apps/web/coverage/web/coverage-summary.json` and `coverage-gate-web.json` into the web-quality evidence artifact.",
+  "ciWiringTrap": "DO NOT write step (1) as `npm run test:web -- --coverage`. Measured on this tree: npm appends the argument to the delegating script WITHOUT the `--` separator, so the line that actually executes is `npm run test --workspace @rootlco/web --coverage`, the inner npm swallows `--coverage` as one of its own config flags, and the command that runs is a bare `vitest run`. The suite passes, the job exits 0, no coverage report is emitted and no coverage directory is created — a green coverage job that measured nothing. The workspace-direct spelling above carries the flag through and is what every figure in this document was measured with. `npm run test:web` is still the registered command the reachability gate sees, because `check-command-coverage.mjs` follows the `--workspace` edge.",
+  "runtimeNote": "Instrumentation slows the `dom` project materially. Across four coverage runs of the final tree, three reported 1505/1505 passing and one failed a single pre-existing case, `apps/web/tests/record-form-consumers.dom.test.tsx:425`, on a `getByRole` that timed out. The same case passes in every run without `--coverage`. It is a latent timing flake that v8 instrumentation makes more likely rather than a defect this measurement introduced, and it is written down here so the first red hosted run is diagnosed rather than re-discovered.",
+  "establishmentProvenance": "LOCAL, PENDING A HOSTED RE-MEASUREMENT. Recorded as local rather than dressed up as hosted. Node v24.16.0 on win32, @vitest/coverage-v8 3.2.7. A hosted ubuntu-latest run may differ by fractions of a point through v8 line attribution, which is what `tolerancePercentagePoints` is for; if it differs by more than that, the hosted number is the authority and this document is corrected in a commit that says so.",
+  "measuredAtEstablishment": {
+    "lines": 79.45,
+    "statements": 79.45,
+    "functions": 86.92,
+    "branches": 87.0
+  },
+  "measuredRawCounts": {
+    "lines": "8855/11145",
+    "statements": "8855/11145",
+    "functions": "392/451",
+    "branches": "1573/1808"
+  },
+  "measurementConventionNote": "The percentages above are coverage-gate.mjs's own `pct()` — covered/total to two decimals, rounded — because that is what the ratchet compares against. The v8 text summary TRUNCATES instead, so it prints functions as 86.91 where the gate computes 86.92 (392/451 = 86.9179…). Both numbers are correct about different conventions; the gate's is authoritative here because the gate is what enforces. This is the same discrepancy coverage-baseline.backend.json records for its own tier, and it is written down again rather than left for the next reader to rediscover as a defect.",
+  "tolerancePercentagePoints": 0.5,
+  "global": {
+    "lines": 78.45,
+    "statements": 78.45,
+    "functions": 85.42,
+    "branches": 85.5
+  },
+  "globalNote": "Every floor sits BELOW its own measurement, deliberately. A floor recorded AT the run that produced it is a transcript, not a guard: the very next commit moves it, and the gate can only ever report what already happened. Headroom is 1.00 pp on lines and statements (79.45 -> 78.45), 1.50 pp on functions (86.92 -> 85.42) and 1.50 pp on branches (87.00 -> 85.50). Functions and branches get more because they are coarse — 451 functions means one function is 0.22 pp, so a 1.00 pp band is four functions of churn — while 1.00 pp of lines is 111 lines of an 11,145-line denominator.",
+  "whatTheHeadroomGuarantees": "With the 0.5 pp tolerance on top, the gate trips on: a net loss of more than 167 covered LINES, more than 9 covered FUNCTIONS, or more than 36 covered BRANCHES, at a constant denominator. Those are the bounds the numbers actually enforce, stated as bounds rather than as a slogan about deleting a file.",
+  "denominatorTrapNote": "KNOWN TRAP, recorded because this project has already been bitten by it: a coverage percentage can FALL because v8 newly ENTERS code that was previously never loaded, so the module joins the denominator carrying its uncovered lines with it. `coverage.all` is true in apps/web/vitest.config.ts precisely so that cannot happen silently — every file matching the include list is already in the denominator whether a test imports it or not. If a metric still falls, cover the code. Never lower these numbers to make a run pass, and never raise them from a local measurement.",
+  "touchedFileMinimum": 60,
+  "touchedFileExemptPrefixes": ["apps/web/src/app/"],
+  "touchedFileNote": "The exemption is for the ROUTE tier only, and it is temporary rather than principled. `apps/web/src/app/[locale]/(dashboard)/**` is at 7.62% line coverage (162/2125 across 26 files) — async React Server Components that no test currently renders. A 60% touched-file floor over them would refuse every pull request that edits a page, for a gap this establishment run is RECORDING rather than fixing. It is NOT a claim that a route cannot be unit-tested; those files are deliberately still inside the measurement (see the exclusion comment in apps/web/vitest.config.ts), they simply carry their zeros in the global number instead of blocking unrelated work. Remove this prefix once the route tier is covered.",
+  "knownGaps": [
+    {
+      "id": "dashboard-routes-unrendered",
+      "path": "apps/web/src/app/[locale]/(dashboard)",
+      "measured": 7.62,
+      "files": 26,
+      "raw": "162/2125 lines",
+      "why": "Async React Server Components. Nothing in the unit tier renders them, so the permission branch, the notFound() guard and the failed-catalogue fallback in each page are exercised only by the browser tier — which is a different tier with a different failure mode. No critical-module floor is set here on purpose: a floor at 7% would ratify the gap by writing it into the enforcement layer.",
+      "closedBy": "rendering the page functions in the dom project, or moving their decision logic into a covered module"
+    },
+    {
+      "id": "zero-coverage-library-modules",
+      "paths": ["apps/web/src/lib/format.ts", "apps/web/src/lib/use-persisted-flag.ts"],
+      "measured": 0,
+      "raw": "0/31 and 0/40 lines",
+      "why": "Two library modules with no test at all. They are the honest weak spot of this tier and are recorded rather than excluded. Note the consequence: they are NOT under the touched-file exemption, so a pull request that edits either is refused by the 60% touched-file floor until it carries a test. That is the gate working, not a fault to pre-empt."
+    }
+  ],
+  "criticalModules": [
+    {
+      "id": "crm-customer-surface",
+      "pathPrefix": "apps/web/src/features/crm",
+      "metric": "lines",
+      "minimum": 92,
+      "why": "the customer create, profile, governance and duplicate-review screens and the server actions behind them; P1-27 shipped ten canonical writes with a route, a permission and no screen anybody could reach them from, and this is the code that closed that",
+      "minMatchedFiles": 20,
+      "measuredAtEstablishment": 97.71
+    },
+    {
+      "id": "vehicle-surface",
+      "pathPrefix": "apps/web/src/features/vehicles",
+      "metric": "lines",
+      "minimum": 91,
+      "why": "VIN entry, duplicate review, documents, history and relations — the surface where a silent wrong write was found by hand while every automated tier was green",
+      "minMatchedFiles": 23,
+      "measuredAtEstablishment": 96.75
+    },
+    {
+      "id": "api-client",
+      "pathPrefix": "apps/web/src/lib/api",
+      "metric": "lines",
+      "minimum": 92,
+      "why": "every request the browser makes, plus the idempotency table, the read-operation outcome classification and the session cookie; a defect here is wrong for all screens at once",
+      "minMatchedFiles": 6,
+      "measuredAtEstablishment": 97.3
+    },
+    {
+      "id": "client-permissions",
+      "pathPrefix": "apps/web/src/lib/permissions.ts",
+      "metric": "lines",
+      "minimum": 95,
+      "why": "decides which control a reader is shown; WRITE_PERMISSIONS once had zero consumers while ten write forms rendered for anybody",
+      "minMatchedFiles": 1,
+      "measuredAtEstablishment": 100
+    },
+    {
+      "id": "content-security-policy",
+      "pathPrefix": "apps/web/src/lib/security",
+      "metric": "lines",
+      "minimum": 95,
+      "why": "the one module that assembles the CSP; an unsafe-eval or a wildcard source here is the difference between stopping an injected script and not",
+      "minMatchedFiles": 1,
+      "measuredAtEstablishment": 100
+    },
+    {
+      "id": "form-results-and-field-errors",
+      "pathPrefix": "apps/web/src/lib/forms",
+      "metric": "lines",
+      "minimum": 90,
+      "why": "maps a 422 onto the field that caused it; when this is wrong an operator is told nothing is wrong and the record is not saved",
+      "minMatchedFiles": 2,
+      "measuredAtEstablishment": 97.01
+    },
+    {
+      "id": "duplicate-scoring",
+      "pathPrefix": "apps/web/src/lib/duplicates",
+      "metric": "lines",
+      "minimum": 90,
+      "why": "scores and explains a candidate match; an over-confident score merges two customers and P1-OD-017 keeps the merge caller shut precisely because of it",
+      "minMatchedFiles": 2,
+      "measuredAtEstablishment": 96.15
+    },
+    {
+      "id": "customer-directory",
+      "pathPrefix": "apps/web/src/lib/customers",
+      "metric": "lines",
+      "minimum": 90,
+      "why": "the shared directory contract every CRM read goes through; a keyset cursor defect here drops rows silently, which this repository has already shipped once",
+      "minMatchedFiles": 2,
+      "measuredAtEstablishment": 97.14
+    }
+  ],
+  "criticalModulesNote": "Every floor sits below its own recorded measurement, by 5-7 points for the large feature trees and by 5 points for the small single-file ones. `minMatchedFiles` pins how many instrumented files each prefix currently governs: a coverage `include` list narrows SILENTLY, so without this, removing files shrinks what the floor protects while the percentage stays reassuring. coverage-gate.mjs additionally refuses any rule whose prefix matches nothing, so a renamed directory turns the gate red instead of turning the rule off."
+}
