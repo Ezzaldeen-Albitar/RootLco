@@ -2,10 +2,40 @@
 
 **Classification:** Confidential — Commercial Product and Pilot Planning
 
-Hosted CI on PR #198. Recorded because a local green run and a hosted green run
-prove different things, and neither is a superset of the other.
+Hosted CI on PR #198, then on PR #214. Recorded because a local green run and a
+hosted green run prove different things, and neither is a superset of the other.
 
 ---
+
+## The exact-head run this phase closes on
+
+`P1-27-QA-005` asked for hosted-CI evidence at the head under audit, and found
+none. This is that record. It names the same `CODE_CANDIDATE_SHA` as
+`clean-room-evidence.md`, and `tests/ci/p1-27-evidence-manifest.test.ts` fails if
+the two documents ever disagree about which tree they describe.
+
+| property             | value                                                                                |
+| -------------------- | ------------------------------------------------------------------------------------ |
+| Pull request         | #214 → `develop`                                                                     |
+| `CODE_CANDIDATE_SHA` | `356f1a1e937e819b9db94f40a2d6f04f98f9ae39`                                           |
+| Workflow run         | `31312531302`                                                                        |
+| Required checks      | **20 completed · 0 failed · 0 pending**                                              |
+| `ci-gate`            | **Go** — 13 governed jobs, every one `accepted: yes`                                 |
+| CodeQL open alerts   | **0**, repository-wide, not merely on this ref                                       |
+| Dependency policy    | pass — 0 production advisories, 0 development, 0 prohibited packages                 |
+| Secret scan          | pass                                                                                 |
+| Container image      | `sha256:a8d1c7af634328f14b03cbfe3b1eea2debfc8001a0974f9276545c47d88e50d4`, 197.2 MiB |
+
+The per-tier totals, the coverage figures and the RLS matrix are recorded once,
+in `clean-room-evidence.md`, so the two records cannot drift into disagreeing
+about a number.
+
+**The web tier's floor was established from this run**, not from a local one.
+Until `356f1a1e` the tier had no `minTests` entry, and every hosted run printed
+`no minimum test count is recorded for tier \`web\`, so a shrinking suite would
+not be detected`as an annotation that nothing was required to read. The floor is
+now 1180 against a measured 1216 — see`.github/ci-baselines/test-count-baseline.json`
+for why the headroom is 36 rather than 0 or 66.
 
 ## What hosted CI adds that local verification cannot
 

@@ -134,6 +134,27 @@ export const REGISTER = Object.freeze([
     why: 'every canonical P1-27 mutation is reachable, deliberately absent, or decision-neutral',
   },
   {
+    name: 'validate:p1-27-evidence',
+    owner: ROOT,
+    tier: 'required',
+    // P1-27-QA-005. The phase shipped twenty-five evidence documents and no
+    // digest over any of them, so a count could be corrected or a verdict
+    // softened without the repository being able to tell. This is the `--check`
+    // half of `evidence:p1-27`: it fails when a document has moved and the
+    // manifest has not, and it names the documents that moved rather than just
+    // reporting that the manifest is stale.
+    why: 'every P1-27 evidence document is digested, and the digests match the bytes',
+  },
+  {
+    name: 'evidence:p1-27',
+    owner: ROOT,
+    tier: 'optional',
+    // The writer. Deliberately NOT required: a CI job that ran this would repair
+    // the drift the required check exists to report, and a gate that fixes its
+    // own failure is not a gate.
+    why: 'regenerates the P1-27 evidence digest manifest',
+  },
+  {
     name: 'validate:web-theme',
     owner: ROOT,
     tier: 'required',
