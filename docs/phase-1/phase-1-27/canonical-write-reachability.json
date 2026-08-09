@@ -54,12 +54,12 @@
     },
     "crm.duplicate-scan": {
       "classification": "DELIBERATELY_ABSENT",
-      "decisionRef": "canonical-plan.md:268",
-      "reason": "A privileged audited write that emits an audit record per invocation. The canonical plan states the creation-time duplicate warning uses crm.duplicate-list and does NOT run a scan; a control on a review queue would write audit history on every click."
+      "decisionRef": "canonical-plan.md §7.1",
+      "reason": "A privileged audited write that emits an audit record per invocation. The creation-time duplicate warning calls no operation of its own: possibleDuplicates arrives on the creation response. A scan is a privileged audited write, and a control on a review queue would write audit history on every click. The plan section cited here records the operation assignment this reference used to point at, which the code contradicted."
     },
     "veh.vehicle-duplicate-scan": {
       "classification": "DELIBERATELY_ABSENT",
-      "decisionRef": "canonical-plan.md:268",
+      "decisionRef": "canonical-plan.md §7.1",
       "reason": "The vehicle counterpart of crm.duplicate-scan, absent for the same reason. vehicle-screens.dom.test.tsx asserts no rescan control exists on the queue."
     }
   }

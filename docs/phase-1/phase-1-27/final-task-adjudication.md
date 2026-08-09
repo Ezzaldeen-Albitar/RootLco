@@ -91,6 +91,20 @@ All 33 are adjudicated below.
 | `DOC-002` | `TEST_OR_GATE_DEFECT`  | FIXED (both halves) | itself    |
 | `FE-001`  | `DUPLICATE_FINDING`    | FIXED `600f70e`     | `FE-002`  |
 
+### Four things this Summary table says that it should not — `DOC-001`
+
+Recorded here rather than fixed by overwriting a cell, because three of the four
+are **disagreements between this table and this document's own sections**, and
+picking whichever value is nearer to hand is the failure this phase keeps
+repeating.
+
+| id       | the defect                                                                                                                                                                                                                                                                         | disposition                                                                                                                                                                                                                                                                                                                                               |
+| -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `A42-03` | `DO-002` carries **four** dispositions on this page: `no change needed` in the Summary, closed by `51b0899` in `ADJ-01`, **PARTIAL** in the retraction, and `REAL_P1_27_DEFECT` in its own section. `no change needed` is also not one of the three statuses this document defines | **PARTIAL is the one that stands**, and the retraction below says why: alert routing is not delivered, and "one half proven is not a task delivered" was applied to `DOC-002` and not to `DO-002` on this same page. The Summary row is kept, marked wrong by its own arithmetic block, because deleting it would remove the evidence of the disagreement |
+| `A42-06` | `FE-021` and `FE-022` carry root `FE-024` and commit `0272e1d` here, and root `FE-019`/`8daf8e9` and root `SEC-001`/`915b861` in their own sections                                                                                                                                | **Unresolved, and stated as unresolved.** Which commit closed which is a question for the change history, not for a document; nothing in this repository decides it. Both readings are on the page and neither is deleted                                                                                                                                 |
+| `A42-09` | Four rows say `FIXED` with no commit — `FE-029` (PR #212), `SEC-002` (`evidence`), `DOC-001` (`records`), `DOC-002` (`both halves`) — against this document's own vocabulary, "`FIXED` — remediated on this branch, **with the commit named**"                                     | The four are real closures whose evidence is not a single commit on this branch: a merged Backend pull request, and three documentation changes. **The vocabulary is the thing that was too narrow**, and saying so is more honest than inventing four SHAs                                                                                               |
+| `A42-14` | `SEC-002` is a **five-part** conjunction — sensitive-data, export, document, media and file-access controls — adjudicated on one part, the browser half of the URL scope split, on a commit-less row                                                                               | The verdict `AUDIT_FALSE_NEGATIVE` is correct **about the claim the auditor made**, and the row does not establish the other four parts. The same reasoning the retraction applies to `DO-002` and `QA-004` applies here: a conjunction adjudicated on one conjunct is not a task proved                                                                  |
+
 ```
 ADJUDICATED       = 33
 FIXED             = 31
@@ -294,9 +308,14 @@ names one. Meanwhile the arithmetic block at the head of this document said
 anonymous.** Both numbers were true of different moments and neither said which
 moment it belonged to, which is how a record stops being a record.
 
-The ten unnamed ones are named here. Each was closed with its own commit and its
-own discriminating mutation, in the wave that ran between the round-three
-reconciliation and the candidate freeze:
+**Thirteen** unnamed ones are named here — not ten, which is what this sentence
+said until `A42-04` counted the rows beneath it. Thirteen plus `QA-005`, named
+two paragraphs down, is the fourteen the paragraph above reconciles to. The table
+also carries `NEW-FE-01`, which is **not** one of the fourteen: it is a defect
+found while fixing them, listed beside the commit that closed both. Each of the
+thirteen was closed with its own commit and its own discriminating mutation, in
+the wave that ran between the round-three reconciliation and the candidate
+freeze:
 
 | id                                     | closed by                                                         |
 | -------------------------------------- | ----------------------------------------------------------------- |
@@ -556,7 +575,7 @@ verdict, the three parts resolve as:
   never the raw one (`observability.test.ts`, "receives the REDACTED event").
   Redaction runs before both the adapter and the console, so an attached
   provider cannot be handed something the console would not have printed.
-- **Alert routing** — deliberately unattached. `setLogAdapter` has no caller and
+- **Alert routing** — deliberately unattached. `setMonitoringAdapter` has no caller and
   that is the documented design, not an oversight.
 
 What was NOT previously cited, and is the part worth stating: **the phase logs

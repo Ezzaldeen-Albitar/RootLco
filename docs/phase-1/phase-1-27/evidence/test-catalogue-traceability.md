@@ -1,0 +1,206 @@
+# Phase 1-27 — canonical test-catalogue traceability
+
+**CURRENT PHASE STATUS: OWNER ACCEPTANCE: FAIL.** The phase is not closed, `P1-G27` is not written, `main` is untouched, and P1-28 has not begun. Acceptance is the Product Owner's act against the running application; it is not derivable from any count in this repository and cannot be inferred from silence.
+
+**Classification:** Confidential — Commercial Product and Pilot Planning ·
+**Task:** `P1-27-DOC-001` — contract, catalogue and traceability synchronization
+
+---
+
+## 1. The defect this record closes
+
+`canonical-plan.md` §5 allocates **29** test-catalogue identifiers, one per
+Frontend task — `TC-P1-27-CRM-001` … `-015`, `TC-P1-27-VEH-001` … `-011`,
+`TC-P1-27-XD-001` … `-003`. `task-matrix.json` carries them again as
+`CANONICAL_TEST_ID`, and `task-register.md` names two of them.
+
+**Not one of the twenty-nine appeared in a single executable file.** A search for
+`TC-P1-27` across `apps/web/tests`, `tests`, `scripts`, `apps/web/src` and
+`apps/api` returned nothing. The plan's own §6 says each id "**will** expand into
+the required path matrix" — a future tense that was never discharged.
+
+So these are not invented identifiers to be deleted. They are real canonical
+requirements with no binding to anything executable, which is the worst of the
+two states: a reader who greps for one finds nothing and cannot tell whether the
+test was deleted or never written.
+
+### 1.1 Why this is data and not twenty-nine new test files
+
+Creating `TC-P1-27-CRM-001.test.ts` twenty-nine times would make the search
+succeed and prove nothing. Worse, it would make the ids look discharged while the
+path matrix behind them stayed unbuilt.
+
+The repository already has the binding convention it needs — a
+`* Test-reference: TC-XXX-###` docblock, present in 19 files under `tests/db`
+(for example `tests/db/crm-profiles.test.ts:10`) and in **0** files under
+`apps/web/tests`, enforced by no script. This record does not add those
+docblocks: the web test files belong to the Frontend change that owns them, and a
+documentation change may not edit them. §5 states exactly how the convention is
+applied later, and what will then check it.
+
+What this record does is bind each id to the executable tests **that already
+prove it**, as machine-readable data a gate reads.
+
+---
+
+## 2. What the gate checks
+
+`test-catalogue-traceability.json` sits beside this document and is checked on
+every run of `npm run validate:p1-27-doc-counts`
+(`scripts/ci/check-p1-27-doc-counts.mjs`, `checkCatalogue`). It fails when:
+
+| the record does this                                            | the gate says                                                      |
+| --------------------------------------------------------------- | ------------------------------------------------------------------ |
+| omits an id `canonical-plan.md` declares                        | `<id> is declared in the plan and has no record`                   |
+| records an id the plan does not declare                         | `<id> is recorded and the plan declares no such id`                |
+| cites a test file that does not exist                           | `<id> cites <file>, which does not exist`                          |
+| quotes a case title that is in no case **of the file it names** | `<id> quotes "<title>", which is in no case of <file>`             |
+| names no proof and states no gap                                | `<id> names no proof and states no gap — an unstated gap is a lie` |
+| omits a path the plan's own path-matrix sentence requires       | `the plan requires the "<path>" path; it has no row`               |
+| marks a path `PARTIAL` or `ABSENT` without a reason             | `"<path>" is <status> and states no reason`                        |
+| sets `matrixDischarged` to anything but `false`                 | refused — nothing in this repository establishes it                |
+
+**The per-FILE check is the part that bites.** The existing web reconciliation
+concatenates every test file and asks whether a quoted title appears _anywhere_,
+so a title attributed to the wrong file passed it. Building this record found one:
+`FE-013` credited `crm-governance-writes.test.ts` with "requires a segment code of
+at least two characters" and "treats the display name as optional". Both live in
+`governance-write-validation.test.ts`, and the second is a fragment of the longer
+title "accepts a two-character code and treats the display name as optional".
+Recorded as `G-11` in `adversarial-round-five.md` and corrected in
+`task-traceability.md`.
+
+---
+
+## 3. The twenty-nine, and what proves each
+
+Derived from `evidence/task-traceability.md` §3, which names a test file and the
+case within it for every Frontend task. **29 declared · 29 resolve to at least one
+executable case · 0 with no proof at all.** 16 distinct test files carry them, and
+109 quoted case titles are checked against the file that is said to hold them.
+
+| id                 | task     | proven by                                                                     |
+| ------------------ | -------- | ----------------------------------------------------------------------------- |
+| `TC-P1-27-CRM-001` | `FE-001` | `crm-customer-search.test.ts`, `crm-customer-search.dom.test.tsx`             |
+| `TC-P1-27-CRM-002` | `FE-002` | `crm-customer-search.test.ts`, `crm-customer-search.dom.test.tsx`             |
+| `TC-P1-27-CRM-003` | `FE-003` | `crm-customer-create.dom.test.tsx`                                            |
+| `TC-P1-27-CRM-004` | `FE-004` | `crm-customer-create.dom.test.tsx`                                            |
+| `TC-P1-27-CRM-005` | `FE-005` | `crm-customer-create.dom.test.tsx`                                            |
+| `TC-P1-27-CRM-006` | `FE-006` | `crm-customer-profile.dom.test.tsx`                                           |
+| `TC-P1-27-CRM-007` | `FE-007` | `crm-customer-profile.dom.test.tsx`                                           |
+| `TC-P1-27-CRM-008` | `FE-008` | `crm-customer-profile.dom.test.tsx`                                           |
+| `TC-P1-27-CRM-009` | `FE-009` | `crm-governance-writes.test.ts`, `crm-customer-components.dom.test.tsx`       |
+| `TC-P1-27-CRM-010` | `FE-010` | `crm-governance-writes.test.ts`, `crm-customer-components.dom.test.tsx`       |
+| `TC-P1-27-CRM-011` | `FE-011` | `crm-profile-api.test.ts`, `crm-customer-components.dom.test.tsx`             |
+| `TC-P1-27-CRM-012` | `FE-012` | `crm-governance-writes.test.ts`, `crm-customer-components.dom.test.tsx`       |
+| `TC-P1-27-CRM-013` | `FE-013` | `governance-write-validation.test.ts`, `crm-customer-components.dom.test.tsx` |
+| `TC-P1-27-CRM-014` | `FE-014` | `crm-governance-writes.test.ts`, `crm-customer-components.dom.test.tsx`       |
+| `TC-P1-27-CRM-015` | `FE-015` | `crm-duplicate-review.test.ts`, `crm-customer-components.dom.test.tsx`        |
+| `TC-P1-27-XD-001`  | `FE-016` | `crm-duplicate-review.test.ts`                                                |
+| `TC-P1-27-VEH-001` | `FE-017` | `vehicle-api.test.ts`, `vehicle-screens.dom.test.tsx`                         |
+| `TC-P1-27-VEH-002` | `FE-018` | `vehicle-contract.test.ts`, `vehicle-api.test.ts`                             |
+| `TC-P1-27-VEH-003` | `FE-019` | `vehicle-profile.test.ts`                                                     |
+| `TC-P1-27-VEH-004` | `FE-020` | `vehicle-profile.test.ts`, `vehicle-contract.test.ts`                         |
+| `TC-P1-27-VEH-005` | `FE-021` | `vehicle-history.test.ts`                                                     |
+| `TC-P1-27-VEH-006` | `FE-022` | `vehicle-history.test.ts`                                                     |
+| `TC-P1-27-VEH-007` | `FE-023` | `vehicle-history.test.ts`                                                     |
+| `TC-P1-27-VEH-008` | `FE-024` | `vehicle-relations.test.ts`                                                   |
+| `TC-P1-27-XD-002`  | `FE-025` | `vehicle-relations.test.ts`                                                   |
+| `TC-P1-27-VEH-009` | `FE-026` | `vehicle-duplicates.test.ts`                                                  |
+| `TC-P1-27-VEH-010` | `FE-027` | `vehicle-duplicates.test.ts`                                                  |
+| `TC-P1-27-XD-003`  | `FE-028` | `vehicle-duplicates.test.ts`, `vehicle-screens.dom.test.tsx`                  |
+| `TC-P1-27-VEH-011` | `FE-029` | `vehicle-duplicates.test.ts`, `vehicle-screens.dom.test.tsx`                  |
+
+The exact case titles are in the JSON, one array per id, and each is checked
+against the file named beside it. This table lists files only, so that it cannot
+become a second copy of a hundred and nine strings that drift.
+
+**One grouping deserves its own sentence.** `FE-026` (documents) and `FE-027`
+(media) are proven by `vehicle-duplicates.test.ts` rather than by a file named
+after them. That is where the assertions live, it is not a mistake, and it is
+stated here because a reader who assumes a file-per-feature convention would
+conclude the record is wrong.
+
+---
+
+## 4. The path matrix is NOT discharged
+
+This is the honest half, and it is the half that matters.
+
+`canonical-plan.md` §6 does not say an id needs _a_ test. It says each id "will
+expand into the required path matrix" and then names eighteen paths. Binding an id
+to one or two cases makes the id resolve; it does not build that matrix, and no
+document in this phase has ever said which of the eighteen exist.
+
+Measured across the whole CRM and Vehicle surface — not per id, because per-id
+would be a hundred and thirty-two hand-maintained cells and this phase has learned
+what those become:
+
+| path                | status    | note                                                                                 |
+| ------------------- | --------- | ------------------------------------------------------------------------------------ |
+| normal              | `PROVEN`  |                                                                                      |
+| alternative         | `PROVEN`  | individual against company creation                                                  |
+| validation          | `PROVEN`  | bounds read out of the CHECK constraint, not guessed                                 |
+| authentication      | `PROVEN`  |                                                                                      |
+| permission denial   | `PROVEN`  |                                                                                      |
+| scope denial        | `PARTIAL` | the client is proven never to assert scope; a server scope denial is an ordinary 403 |
+| empty               | `PROVEN`  | and specifically that an empty result does not claim the tenant has no records       |
+| error               | `PROVEN`  |                                                                                      |
+| retry               | `PROVEN`  | including where Retry is deliberately not offered                                    |
+| conflict            | `PROVEN`  |                                                                                      |
+| duplicate           | `PROVEN`  |                                                                                      |
+| stale version       | `ABSENT`  | `P1-27-INT-009` — no vehicle write consumes `recordVersion` or the ETag              |
+| concurrent update   | `ABSENT`  | the same finding; last-writer-wins from a client position                            |
+| idempotent replay   | `PARTIAL` | the key is sent; no case replays a request and counts the effects                    |
+| backend unavailable | `PROVEN`  |                                                                                      |
+| timeout             | `PARTIAL` | proven in the shared client, on no screen                                            |
+| cancellation        | `PARTIAL` | the same shape                                                                       |
+| recovery            | `ABSENT`  | no case takes a screen from a rendered failure through Retry to a rendered success   |
+
+**11 `PROVEN` · 4 `PARTIAL` · 3 `ABSENT`.** Each `PARTIAL` and each `ABSENT`
+carries its reason in the JSON, and the gate refuses one that does not.
+
+`matrixDischarged` is `false` and the gate refuses any other value, because
+nothing in this repository establishes that eighteen paths exist for
+twenty-nine ids. Building them is Frontend work with its own tasks; it is not
+something a documentation change may assert.
+
+---
+
+## 5. How the docblock convention will be applied
+
+The repository's binding convention is a docblock line:
+
+```
+ * Test-reference: TC-P1-27-CRM-001
+```
+
+Nineteen files under `tests/db` carry it. No file under `apps/web/tests` does,
+and no script enforces it anywhere — which is why the convention could not have
+caught this.
+
+It is not applied here for one reason: `apps/web/tests` belongs to the Frontend
+change that owns those files, and a documentation change that edited nineteen test
+files to add comments would be doing Frontend work under a documentation task.
+
+When it is applied, it is applied in this order, so that the enforcement lands
+with the annotation rather than after it:
+
+1. Each file in the `provenBy` list of an id gains
+   `* Test-reference: <id>` in its module docblock. The mapping is already in the
+   JSON, so this is mechanical rather than a second judgement.
+2. `checkCatalogue` gains one more rule: every `provenBy.file` must carry a
+   `Test-reference:` line naming the id that cites it, in both directions.
+3. The rule is added in the same commit as the annotations. A convention added
+   before its check is a convention that decays; this phase has that pattern
+   recorded four times.
+
+Until step 3 lands, the binding is the JSON, and the JSON is checked. That is a
+weaker claim than a docblock in every file and it is stated as the weaker one.
+
+---
+
+**None of this is acceptance.** Making twenty-nine identifiers resolve to real
+tests makes the record honest; it says nothing about whether the product works.
+P1-27 closes only when the Product Owner manually tests the running application
+and returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.

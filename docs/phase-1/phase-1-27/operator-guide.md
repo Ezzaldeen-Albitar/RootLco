@@ -181,3 +181,25 @@ browser would be right on the first page and quietly wrong afterwards.
 **No screen decides what you may see.** Every permission is enforced by the
 server. Hiding a button is a courtesy so you do not press something that will
 fail — it is never the thing that stops an action.
+
+<!-- `DOC-002`, the guidance half. An operator cannot check this page against
+     the product, so the page is checked against the product instead.
+
+     Three claims are proved by `validate:p1-27-doc-counts`:
+
+       - the search budget, read out of the API's own rate-limit policy AND out
+         of the binding on customer search, because either half alone is
+         satisfiable while the sentence is false;
+       - the failure vocabulary, derived from the `ReadFailureStatus` union and
+         resolved in BOTH message catalogues. The web suite reads `en.json` only
+         (`D-01`), so "quoted from the product" was proved for one locale of
+         two, on a page whose readers are half Arabic;
+       - the three capabilities this page promises are absent, each backed by a
+         rule in the ownership gate. Drop the rule and the promise stops being
+         enforced, so the promise must not survive it.
+
+     An unknown claim name below is a build failure, not a silent pass. -->
+
+<!-- checked: operator-guide/search-budget -->
+<!-- checked: operator-guide/failure-states -->
+<!-- checked: operator-guide/absent-capabilities -->
