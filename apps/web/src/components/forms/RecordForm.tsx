@@ -234,13 +234,34 @@ export function RecordForm({
                 </select>
               ) : field.kind === 'checkbox' ? (
                 <input
+                  /*
+                   * Same three-part shape as the select above, and for the same
+                   * reason — this branch was left as a controlled `checked=` when
+                   * `NEW-FE-01` was fixed, so that fix covered one of the two
+                   * field kinds that need it.
+                   *
+                   * React's `updateInput` resyncs a text input's DOM default on
+                   * every render, but assigns `defaultChecked` only when `checked`
+                   * is nullish. A controlled checkbox's default is therefore
+                   * frozen at its MOUNT value, so the `form.reset()` React
+                   * performs after an action settles returns the box to how it
+                   * started while the text beside it survives — the same
+                   * asymmetry, one field kind further on.
+                   *
+                   * It matters most on `veh.vehicle-ev-profile-set`, a REPLACE:
+                   * the operator ticks the high-voltage hazard flag, the write
+                   * fails on transport, the box silently un-ticks, and pressing
+                   * Save again — having changed nothing they can see — sends no
+                   * `highVoltageWarning` at all, which the adapter maps to false.
+                   */
+                  key={`${field.name}-${state.attempt ?? 0}`}
                   id={id}
                   name={field.name}
                   type="checkbox"
                   // A checkbox is ABSENT from FormData when unchecked. The action
                   // reads presence, not a string — `"false"` would fail a strict
                   // boolean field as a 422.
-                  checked={values[field.name] === 'on'}
+                  defaultChecked={values[field.name] === 'on'}
                   onChange={(event) => set(field.name, event.target.checked ? 'on' : '')}
                   aria-describedby={describedBy}
                   className="mt-2 size-4 accent-primary"

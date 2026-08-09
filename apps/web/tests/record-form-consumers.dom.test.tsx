@@ -304,6 +304,106 @@ describe('Vehicle consumer — the EV profile survives a failed write', () => {
     expect(setEvProfileAction).toHaveBeenCalledTimes(1);
   });
 
+  it('keeps the HIGH-VOLTAGE flag ticked after a failed write', async () => {
+    /*
+     * The field this file walked straight past on its first version.
+     *
+     * `NEW-FE-01` was fixed for `<select>` and the checkbox branch of the same
+     * component was left as a controlled `checked=`. React resyncs a text
+     * input's DOM default on every render but assigns `defaultChecked` only when
+     * `checked` is nullish, so a controlled checkbox's default is frozen at its
+     * mount value: `form.reset()` returns it to how it started while every
+     * neighbour survives. The form LOOKS intact, which is why nobody saw it.
+     *
+     * `veh.vehicle-ev-profile-set` is a REPLACE. The operator ticks the hazard
+     * flag on a vehicle that did not carry one, the write fails on transport,
+     * the box silently un-ticks, and pressing Save again — having changed
+     * nothing they can see — sends no `highVoltageWarning` at all. The adapter
+     * maps absence to `false` and the record is stored WITHOUT the high-voltage
+     * warning, successfully.
+     */
+    const user = userEvent.setup();
+    const view = renderLtr(
+      <EvProfileSection
+        locale="en"
+        messages={en}
+        state={{
+          status: 'ok',
+          profile: {
+            evKind: 'bev',
+            usableCapacityKwh: '64.50',
+            chargePortType: 'CCS2',
+            // Deliberately NOT set, so ticking it is a real change and the
+            // reset target and the operator's intent are opposite.
+            highVoltageWarning: false,
+          },
+        }}
+        powertrainCategory="ev"
+        canEdit
+        vehicleId="v-1"
+      />
+    );
+
+    const hazard = within(view.container).getByRole('checkbox', {
+      name: en['vehicles.ev.highVoltage'],
+    });
+    await user.click(hazard);
+    await user.click(
+      within(view.container).getByRole('button', { name: en['vehicles.ev.record'] })
+    );
+
+    await waitFor(() => expect(setEvProfileAction).toHaveBeenCalledTimes(1));
+    expect(
+      (setEvProfileAction.mock.calls[0]?.[2] as FormData | undefined)?.get('highVoltageWarning'),
+      'the tick never reached the first attempt'
+    ).toBe('on');
+
+    // The tick must still be there for the operator to see and to resend.
+    expect(
+      within(view.container).getByRole('checkbox', { name: en['vehicles.ev.highVoltage'] }),
+      'the high-voltage flag silently un-ticked after a transport failure'
+    ).toBeChecked();
+
+    // And the retry must still carry it. This is the assertion that matters:
+    // the visible state and what is SENT can disagree.
+    await user.click(
+      within(view.container).getByRole('button', { name: en['vehicles.ev.record'] })
+    );
+    await waitFor(() => expect(setEvProfileAction).toHaveBeenCalledTimes(2));
+    expect(
+      (setEvProfileAction.mock.calls[1]?.[2] as FormData | undefined)?.get('highVoltageWarning'),
+      'the retry stored the safety flag as false'
+    ).toBe('on');
+  });
+
+  it('keeps an UNTICKED hazard flag unticked, the inverse direction', async () => {
+    /*
+     * The opposite direction, which is equally broken by the same mechanism and
+     * would not be caught by the case above: a profile that HAS the flag, an
+     * operator who removes it, a failed write. A reset re-asserts the flag, so
+     * the retry silently restores a warning the operator deliberately cleared.
+     */
+    const user = userEvent.setup();
+    const view = renderEv(); // seeded highVoltageWarning: true
+
+    await user.click(
+      within(view.container).getByRole('checkbox', { name: en['vehicles.ev.highVoltage'] })
+    );
+    await user.click(
+      within(view.container).getByRole('button', { name: en['vehicles.ev.record'] })
+    );
+
+    await waitFor(() => expect(setEvProfileAction).toHaveBeenCalledTimes(1));
+    expect(
+      (setEvProfileAction.mock.calls[0]?.[2] as FormData | undefined)?.get('highVoltageWarning')
+    ).toBeNull();
+
+    expect(
+      within(view.container).getByRole('checkbox', { name: en['vehicles.ev.highVoltage'] }),
+      'the cleared hazard flag was silently restored'
+    ).not.toBeChecked();
+  });
+
   it('must NOT clear on success, or the next save would wipe the profile', async () => {
     /*
      * The opposite control to the CRM one, and the reason a single generic
