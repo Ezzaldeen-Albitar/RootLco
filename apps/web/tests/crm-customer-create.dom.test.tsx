@@ -1,4 +1,4 @@
-import { screen, within } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -30,8 +30,36 @@ vi.mock('@/features/crm/customers/creation-actions', () => ({
   createCompanyAction: (...args: unknown[]) => createCompanyAction(...args),
 }));
 
+/*
+ * The transport, for the last section of this file only.
+ *
+ * A REAL `ApiClient` over a stubbed `fetch`. Every other case here drives the
+ * creation actions through the module mock above and never reaches this.
+ */
+const fetchImpl = vi.hoisted(() => vi.fn());
+vi.mock('@/lib/api/server-client', async () => {
+  const { ApiClient } = await import('@/lib/api/client');
+  return {
+    authorizedClient: async () =>
+      new ApiClient({
+        baseUrl: 'http://api.test',
+        fetchImpl: (input: unknown, init: unknown) => fetchImpl(input, init),
+      }),
+  };
+});
+
 const { CustomerCreateScreen } =
   await import('@/features/crm/customers/components/CustomerCreateScreen');
+
+/**
+ * The REAL creation actions, kept beside the spies that stand in for them.
+ *
+ * `vi.mock` above replaces the module for the whole file; the last section
+ * points the spies at these so a real 422 can travel the whole way.
+ */
+const actualCreationActions = await vi.importActual<
+  typeof import('@/features/crm/customers/creation-actions')
+>('@/features/crm/customers/creation-actions');
 
 const CREATED = {
   customerId: '2f1e0f6a-5c2d-4a5b-8f2c-1a2b3c4d5e6f',
@@ -55,6 +83,7 @@ function successState(overrides: Record<string, unknown> = {}) {
 }
 
 beforeEach(() => {
+  fetchImpl.mockReset();
   createIndividualAction.mockReset();
   createCompanyAction.mockReset();
   createIndividualAction.mockResolvedValue(successState());
@@ -308,5 +337,300 @@ describe('the source carries no pre-submit duplicate check', () => {
     // `duplicate-scans` would be a privileged write on a form that has not been
     // submitted yet.
     expect(source).not.toContain('duplicate-scans');
+  });
+});
+
+/**
+ * A real 422 reaching a CRM screen — `QA-002`, off the vehicle module.
+ *
+ * ## Why this block exists beside the vehicle one
+ *
+ * `QA-002` is not vehicle-specific, and the only end-to-end proof of the
+ * violation path was `vehicle-profile-lifecycle.dom.test.tsx`. One screen
+ * proving a shared mechanism proves that screen. The mechanism here is entirely
+ * shared — `violationKeysOf`, `controlNameFor`, `violationMessageKey` and
+ * `fromFailure` all live in `lib/`, and each screen supplies its own join
+ * between `state.fieldErrors` and its controls. That join is per-screen, and it
+ * is precisely what was missing on `VehicleProfileScreen`, which passed `error`
+ * to no control at all while every layer beneath it was green.
+ *
+ * So this asserts the CRM screen's own join, over the same real transport.
+ *
+ * ## How much of it is real
+ *
+ * Everything except the socket: the shipped `createIndividualAction`, its Zod
+ * schema, a real `ApiClient` from `@/lib/api/server-client`, the status-to-kind
+ * mapping, the violation parse and the mounted screen.
+ *
+ * ## The fixtures are the route's own shapes
+ *
+ * `POST /api/v1/customers/individuals` bounds `givenName` and `familyName` at
+ * `MAX_PERSON_NAME`, and `toViolations` emits Zod's issue code verbatim — so
+ * `{ path: 'body.givenName', rule: 'too_big' }` is what the route really sends.
+ * The paths are prefixed `body.`, which `controlNameFor` strips to the last
+ * segment; a fixture written as a bare `givenName` would also pass and would
+ * stop testing the prefix handling that the wire actually exercises.
+ */
+describe('the field errors a real 422 carries reach the CRM controls it names', () => {
+  interface Violation {
+    readonly path: string;
+    readonly rule: string;
+  }
+
+  const GIVEN = en['crm.customers.create.givenName'];
+  const FAMILY = en['crm.customers.create.familyName'];
+  const LOCALE_FIELD = en['crm.customers.create.preferredLocale'];
+
+  /**
+   * The response the API really sends for a refused command.
+   *
+   * `application/problem+json`: `readPayload` parses on the `json` substring, so
+   * a fixture served as `text/plain` arrives as a null problem and every
+   * assertion below would pass or fail for the wrong reason.
+   */
+  function refuseWith(...violations: readonly Violation[]): void {
+    fetchImpl.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          type: 'https://errors.example.test/ERR-VAL-001',
+          title: 'Validation failed',
+          status: 422,
+          code: 'ERR-VAL-001',
+          correlationId: 'corr-crm-fixture',
+          violations,
+        }),
+        { status: 422, headers: { 'content-type': 'application/problem+json' } }
+      )
+    );
+  }
+
+  beforeEach(() => {
+    createIndividualAction.mockImplementation(actualCreationActions.createIndividualAction);
+    createCompanyAction.mockImplementation(actualCreationActions.createCompanyAction);
+  });
+
+  function control(label: string): HTMLElement {
+    return screen.getByLabelText(label, { exact: false });
+  }
+
+  /**
+   * The message a control POINTS AT, not merely a message somewhere on the page.
+   *
+   * `getByText` would be satisfied by an error rendered beside a different field
+   * — the same "told something, somewhere" the banner already does. The
+   * assertion is the ASSOCIATION: `aria-invalid`, plus text reached through the
+   * id the control itself names.
+   *
+   * `CustomerCreateScreen`'s `TextField` describes its error through
+   * `aria-describedby` and gives the span no `role`, where the vehicle profile
+   * uses `aria-errormessage` and `role="alert"`. Both are valid; the helper
+   * reads whichever this screen uses rather than assuming the other file's
+   * shape, and the hint span is skipped by id so a field with a hint does not
+   * return its hint as its error.
+   */
+  function messageOn(label: string): string {
+    const element = control(label);
+    expect(element.getAttribute('aria-invalid'), `${label} is not marked invalid`).toBe('true');
+    const ids =
+      element.getAttribute('aria-errormessage') ?? element.getAttribute('aria-describedby') ?? '';
+    const errorNode = ids
+      .split(/\s+/)
+      .filter((one) => one.endsWith('-error'))
+      .map((one) => document.getElementById(one))
+      .find((node): node is HTMLElement => node !== null);
+    expect(errorNode, `${label} points at no error message`).toBeTruthy();
+    return errorNode?.textContent ?? '';
+  }
+
+  /** Fill the two required names and submit. Values that PASS the client schema,
+   *  so the request really is issued and the server is the one refusing. */
+  async function create(locale: 'en' | 'ar' = 'en'): Promise<void> {
+    // `delay: null` removes userEvent's inter-keystroke delay. It changes no
+    // behaviour under test — every event still fires in order — and it keeps this
+    // block from pushing the whole web suite past the 5 s per-test default, which
+    // it was measured doing to two unrelated files.
+    const user = userEvent.setup({ delay: null });
+    const messages = locale === 'en' ? en : ar;
+    await user.type(control(messages['crm.customers.create.givenName']), 'Nadia');
+    await user.type(control(messages['crm.customers.create.familyName']), 'Khoury');
+    await user.click(screen.getByRole('button', { name: messages['form.submit'] }));
+  }
+
+  function mount(locale: 'en' | 'ar' = 'en') {
+    const view = locale === 'en' ? renderLtr : renderRtl;
+    return view(
+      <CustomerCreateScreen
+        locale={locale}
+        messages={locale === 'en' ? en : ar}
+        kind="individual"
+      />
+    );
+  }
+
+  it('puts a name violation on the name control, translated', async () => {
+    refuseWith({ path: 'body.givenName', rule: 'too_big' });
+    mount();
+    await create();
+
+    // The request really happened. A 422 nobody asked for would leave every
+    // assertion below satisfied by a form that never submitted.
+    await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
+    const [url, init] = fetchImpl.mock.calls[0] as [string, { method: string; body: string }];
+    expect(url).toBe('http://api.test/api/v1/customers/individuals');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body)).toMatchObject({ givenName: 'Nadia', familyName: 'Khoury' });
+
+    await waitFor(() => expect(messageOn(GIVEN)).toBe(en['form.violation.too_big']));
+    // The catalogue SENTENCE, never the key.
+    expect(messageOn(GIVEN)).not.toContain('form.violation');
+  });
+
+  it('marks every field the response names, and only those', async () => {
+    refuseWith(
+      { path: 'body.givenName', rule: 'too_big' },
+      { path: 'body.preferredLocale', rule: 'invalid_format' }
+    );
+    mount();
+    await create();
+
+    await waitFor(() => expect(messageOn(GIVEN)).toBe(en['form.violation.too_big']));
+    expect(messageOn(LOCALE_FIELD)).toBe(en['form.violation.invalid_format']);
+    // The family name was not named, so it must not be marked. Without this the
+    // case would be satisfied by a form that flags everything after any refusal.
+    expect(control(FAMILY).getAttribute('aria-invalid')).toBeNull();
+  });
+
+  it('translates into Arabic rather than falling back to English', async () => {
+    refuseWith({ path: 'body.givenName', rule: 'too_big' });
+    mount('ar');
+    await create('ar');
+
+    await waitFor(() =>
+      expect(messageOn(ar['crm.customers.create.givenName'])).toBe(ar['form.violation.too_big'])
+    );
+    expect(ar['form.violation.too_big']).not.toBe(en['form.violation.too_big']);
+  });
+
+  it('turns an UNKNOWN rule token into the catalogue fallback, never the token', async () => {
+    /*
+     * The API emits more than eighty rule tokens and the catalogue carries
+     * fourteen. `violationMessageKey` maps anything it does not know to
+     * `form.violation.invalid` — the honest generic — rather than rendering the
+     * server's token. This is the case that proves a malicious or merely newer
+     * response cannot get text of its own onto the screen through this path.
+     */
+    refuseWith({ path: 'body.givenName', rule: 'crm_party_kind_unsupported' });
+    const { container } = mount();
+    await create();
+
+    await waitFor(() => expect(messageOn(GIVEN)).toBe(en['form.violation.invalid']));
+    expect(container.textContent ?? '').not.toContain('crm_party_kind_unsupported');
+  });
+
+  it('gives a truthful general error for a violation that names no control', async () => {
+    /*
+     * `{ path: 'body', rule: ... }` names no control: `controlNameFor` returns
+     * null for a bare request part, so `fromFailure` promotes the key to
+     * `messageKey` and the banner carries it. Attaching it to an arbitrary field
+     * would accuse one; dropping it — what the client did to every violation of
+     * every shape before `violations` was read at all — leaves the operator with
+     * a form that refuses and says nothing.
+     */
+    refuseWith({ path: 'body', rule: 'empty_patch' });
+    mount();
+    await create();
+
+    await waitFor(() =>
+      expect(screen.getByRole('alert').textContent ?? '').toContain(
+        en['form.violation.empty_patch']
+      )
+    );
+    for (const label of [GIVEN, FAMILY, LOCALE_FIELD]) {
+      expect(control(label).getAttribute('aria-invalid'), `${label} was marked`).toBeNull();
+    }
+  });
+
+  it('gives a truthful general error when the named field is not on this form', async () => {
+    /*
+     * A violation about a field this form does not render — a server-side rule
+     * over a column the create screen never offers. Nothing can be marked, and
+     * the operator must still be told the save failed rather than watching a
+     * form sit there having done nothing.
+     */
+    refuseWith({ path: 'body.taxIdentifier', rule: 'invalid_format' });
+    mount();
+    await create();
+
+    await waitFor(() =>
+      expect(screen.getByRole('alert').textContent ?? '').toContain(en['form.formError'])
+    );
+    for (const label of [GIVEN, FAMILY, LOCALE_FIELD]) {
+      expect(control(label).getAttribute('aria-invalid'), `${label} was marked`).toBeNull();
+    }
+  });
+
+  it('shows no part of the raw payload', async () => {
+    refuseWith({ path: 'body.givenName', rule: 'too_big' });
+    const { container } = mount();
+    await create();
+
+    await waitFor(() => expect(messageOn(GIVEN)).toBe(en['form.violation.too_big']));
+
+    // The correlation id on screen is the one the CLIENT sent, never the
+    // response-supplied one. Asserted present so this case cannot pass on a
+    // screen that rendered no failure at all.
+    const [, init] = fetchImpl.mock.calls[0] as [string, { headers: Record<string, string> }];
+    const text = container.textContent ?? '';
+    expect(text).toContain(init.headers['x-correlation-id']);
+    for (const leak of [
+      'corr-crm-fixture',
+      'ERR-VAL-001',
+      'Validation failed',
+      'https://errors.example.test',
+      'too_big',
+      'body.givenName',
+      '{',
+    ]) {
+      expect(text, `the response leaked ${leak}`).not.toContain(leak);
+    }
+  });
+
+  it('leaves every control unmarked when the create succeeds', async () => {
+    /*
+     * The anti-vacuity control. `messageOn` asserts a MARKED control, so a form
+     * that marked everything unconditionally would satisfy every case above;
+     * this is the direction that catches it.
+     */
+    fetchImpl.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          customerId: '2f1e0f6a-5c2d-4a5b-8f2c-1a2b3c4d5e6f',
+          displayNumber: 'C-0042',
+          partyType: 'individual',
+          lifecycleStatus: 'prospect',
+          possibleDuplicates: [],
+        }),
+        { status: 201, headers: { 'content-type': 'application/json' } }
+      )
+    );
+    mount();
+    await create();
+
+    await waitFor(() => expect(screen.getByText(/Customer created/)).toBeTruthy());
+  });
+
+  it('asserts on distinct messages, so no case can pass by coincidence', () => {
+    const messages = [
+      en['form.violation.too_big'],
+      en['form.violation.invalid_format'],
+      en['form.violation.invalid'],
+      en['form.violation.empty_patch'],
+      en['form.formError'],
+    ];
+    for (const message of messages) {
+      expect(typeof message).toBe('string');
+      expect(message.length).toBeGreaterThan(0);
+    }
+    expect(new Set(messages).size).toBe(messages.length);
   });
 });

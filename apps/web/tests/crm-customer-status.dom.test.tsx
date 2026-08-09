@@ -1,5 +1,23 @@
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+
+/**
+ * `userEvent`, without the artificial inter-keystroke delay.
+ *
+ * These cases type multi-word strings into a large mounted screen and drive
+ * several selects. Measured in isolation the slowest sat at 1.7 s against
+ * Vitest's 5 s default; under the contention of the full web suite that tripled
+ * and this file failed intermittently — two runs in five — always with a
+ * TIMEOUT and never with an assertion. The behaviour under test was never in
+ * doubt, only the wall clock.
+ *
+ * `delay: null` removes only the wait BETWEEN keystrokes. Every event still
+ * fires, in the same order, through the same code path, so nothing asserted
+ * here is weakened. Raising the timeout instead would have hidden a real
+ * slowdown rather than removing it.
+ */
+const setupUser = () => userEvent.setup({ delay: null });
+
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
@@ -128,7 +146,7 @@ describe('the status change is reachable', () => {
   });
 
   it('sends the chosen state and the reason', async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     render('active');
     await user.selectOptions(statusSelect(), 'inactive');
     await user.type(
@@ -168,7 +186,7 @@ describe('the status change is reachable', () => {
       correlationId: 'corr-status-1',
       attempt: 1,
     });
-    const user = userEvent.setup();
+    const user = setupUser();
     render('active');
 
     await user.selectOptions(statusSelect(), 'blocked');
@@ -183,6 +201,21 @@ describe('the status change is reachable', () => {
 
     await waitFor(() => expect(setCustomerStatusAction).toHaveBeenCalledTimes(1));
 
+    /*
+     * Settle before reading the form.
+     *
+     * `waitFor(action called)` returns when the action is ENTERED. The reset
+     * this case exists to catch happens when it SETTLES, so both assertions
+     * below were being made in the pending window — early enough to pass on a
+     * form that reverts a moment later, and, because `RecordForm.tsx:330` swaps
+     * the submit label to "Working…" for that same window, early enough to make
+     * a sibling lookup fail intermittently under load.
+     *
+     * `findByRole` on the submit control is the settle point: the button only
+     * carries its own name again once the transition has finished.
+     */
+    await screen.findByRole('button', { name: en['crm.customers.status.change'] });
+
     expect(statusSelect(), 'the chosen status was discarded by the failure').toHaveValue('blocked');
     expect(
       screen.getByRole('checkbox'),
@@ -191,7 +224,7 @@ describe('the status change is reachable', () => {
   });
 
   it('refreshes the page so the header shows the new state', async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     render('active');
     await user.selectOptions(statusSelect(), 'inactive');
     await user.type(
@@ -245,7 +278,7 @@ describe('only the moves the state machine allows are offered', () => {
 
 describe('blocking asks twice', () => {
   it('refuses to send a block until it is confirmed', async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     render('active');
     await user.selectOptions(statusSelect(), 'blocked');
     await user.type(
@@ -261,7 +294,7 @@ describe('blocking asks twice', () => {
   });
 
   it('sends the block once confirmed', async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     render('active');
     await user.selectOptions(statusSelect(), 'blocked');
     await user.click(screen.getByLabelText(en['crm.customers.status.confirmBlock']));
@@ -275,7 +308,7 @@ describe('blocking asks twice', () => {
   });
 
   it('asks for no confirmation on an ordinary move', async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     render('active');
     await user.selectOptions(statusSelect(), 'inactive');
     // Confirming every transition would train an operator to click through the
@@ -288,7 +321,7 @@ describe('blocking asks twice', () => {
   });
 
   it('drops the confirmation when the target changes', async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     render('active');
     await user.selectOptions(statusSelect(), 'blocked');
     await user.click(screen.getByLabelText(en['crm.customers.status.confirmBlock']));
