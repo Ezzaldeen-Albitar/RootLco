@@ -1249,9 +1249,14 @@ function AlertsSection({
         id: 'severity',
         headerKey: 'crm.customers.alerts.severity',
         // Ranked by meaning, never by label. `severity` is `text` with a CHECK,
-        // so an alphabetical sort ranks `info` above `warning`. The backend
-        // orders by explicit rank; this only decides how loud each row looks,
-        // using the same ranking so the two cannot disagree.
+        // so an alphabetical sort ranks `info` above `warning`.
+        //
+        // This decides how LOUD a row looks, not where it sits. The rows arrive
+        // `effective_from DESC` and the Backend states that `severity` is
+        // deliberately not its sort key — an earlier version of this comment
+        // said the opposite ("the backend orders by explicit rank"), which is
+        // the claim `contract-archaeology.md:99-101` inverted and three files
+        // copied. See `profile-contract.ts` for the full correction.
         cell: (row) => (
           <span
             className={

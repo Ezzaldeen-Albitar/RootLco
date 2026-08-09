@@ -61,37 +61,37 @@ Documentation 2 — **42 tasks**.
 > defect, and repeating the register's claim here without checking was the same
 > error one level up.
 
-| #   | Requirement                                                            | Status                                           |
-| --- | ---------------------------------------------------------------------- | ------------------------------------------------ |
-| 1   | Customer search                                                        | Blocked (P1-27) — cursor row loss                |
-| 2   | Customer search results                                                | Blocked (P1-27) — cursor row loss                |
-| 3   | Duplicate warning on create                                            | Delivered                                        |
-| 4   | Add Individual Customer — prominent action                             | Delivered                                        |
-| 5   | Add Company Customer — prominent action                                | Delivered                                        |
-| 6   | Structured customer profile                                            | Delivered                                        |
-| 7   | Contacts                                                               | Delivered                                        |
-| 8   | Addresses                                                              | Delivered                                        |
-| 9   | Preferences                                                            | Delivered                                        |
-| 10  | Consents                                                               | Delivered                                        |
-| 11  | Notes                                                                  | Delivered                                        |
-| 12  | Alerts                                                                 | Delivered                                        |
-| 13  | Tags                                                                   | Delivered                                        |
-| 14  | Restrictions                                                           | Delivered                                        |
-| 15  | Customer timeline / history                                            | Blocked (P1-27) — actor UUID shown               |
-| 16  | Customer duplicate review                                              | Delivered                                        |
-| 17  | Vehicle search                                                         | Delivered                                        |
-| 18  | Vehicle creation                                                       | Delivered                                        |
-| 19  | Vehicle profile                                                        | Delivered                                        |
-| 20  | VIN validation within the approved contract                            | Delivered                                        |
-| 21  | Ownership                                                              | Blocked (P1-27) — write not called               |
-| 22  | Current plate and plate history                                        | Blocked (P1-27) — write not called               |
-| 23  | Odometer history                                                       | Blocked (P1-27) — write not called               |
-| 24  | EV / hybrid information                                                | Blocked (P1-27) — write not called               |
-| 25  | Customer relationships on the Vehicle                                  | Blocked (P1-27) — write not called; partner UUID |
-| 26  | Vehicle documents                                                      | Delivered                                        |
-| 27  | Vehicle media foundation — decision-neutral, `P1-OD-025` authoritative | Delivered                                        |
-| 28  | Vehicle duplicate review                                               | Delivered                                        |
-| 29  | Vehicle history / timeline                                             | Blocked (P1-27) — actor UUID shown               |
+| #   | Requirement                                                            | Status                                      |
+| --- | ---------------------------------------------------------------------- | ------------------------------------------- |
+| 1   | Customer search                                                        | Delivered (D4 cursor precision, PR #197)    |
+| 2   | Customer search results                                                | Delivered (D4 cursor precision, PR #197)    |
+| 3   | Duplicate warning on create                                            | Delivered                                   |
+| 4   | Add Individual Customer — prominent action                             | Delivered                                   |
+| 5   | Add Company Customer — prominent action                                | Delivered                                   |
+| 6   | Structured customer profile                                            | Delivered                                   |
+| 7   | Contacts                                                               | Delivered                                   |
+| 8   | Addresses                                                              | Delivered                                   |
+| 9   | Preferences                                                            | Delivered                                   |
+| 10  | Consents                                                               | Delivered                                   |
+| 11  | Notes                                                                  | Delivered                                   |
+| 12  | Alerts                                                                 | Delivered                                   |
+| 13  | Tags                                                                   | Delivered                                   |
+| 14  | Restrictions                                                           | Delivered                                   |
+| 15  | Customer timeline / history                                            | Delivered, with a stated gap (see note)     |
+| 16  | Customer duplicate review                                              | Delivered                                   |
+| 17  | Vehicle search                                                         | Delivered                                   |
+| 18  | Vehicle creation                                                       | Delivered                                   |
+| 19  | Vehicle profile                                                        | Delivered                                   |
+| 20  | VIN validation within the approved contract                            | Delivered                                   |
+| 21  | Ownership                                                              | Delivered (D1 reachability, 23/27)          |
+| 22  | Current plate and plate history                                        | Delivered (D1 reachability, 23/27)          |
+| 23  | Odometer history                                                       | Delivered (D1 reachability, 23/27)          |
+| 24  | EV / hybrid information                                                | Delivered (D1 reachability, 23/27)          |
+| 25  | Customer relationships on the Vehicle                                  | Delivered (D1 + D2 partner naming, PR #213) |
+| 26  | Vehicle documents                                                      | Delivered                                   |
+| 27  | Vehicle media foundation — decision-neutral, `P1-OD-025` authoritative | Delivered                                   |
+| 28  | Vehicle duplicate review                                               | Delivered                                   |
+| 29  | Vehicle history / timeline                                             | Delivered (D3 actor naming, PR #212)        |
 
 Every row above is re-verified by the final P1-27 audit before the gate is
 written; the Status column is not the evidence, the audit is.
@@ -101,22 +101,22 @@ written; the Status column is not the evidence, the audit is.
 These were raised against P1-27 but are P1-26/P1-27 **shared foundations**. They
 are re-verified at every P1-27 acceptance.
 
-| Requirement                                                                                            | Status                                           |
-| ------------------------------------------------------------------------------------------------------ | ------------------------------------------------ |
-| Password show/hide eye **inside** the password field; no separate button below it                      | Delivered                                        |
-| Sidebar scrolls internally; its scrollbar is subtle, not permanently intrusive                         | Delivered                                        |
-| Sidebar parent groups (e.g. Administration) carry a visible chevron                                    | Delivered                                        |
-| Sidebar groups expand and collapse smoothly; active-child behaviour correct                            | Delivered                                        |
-| Duplicate queues use human-readable names, not entity names                                            | Delivered                                        |
-| Duplicate reasons explained in ordinary business language                                              | Delivered                                        |
-| No JSON, no raw `matchBasis`, no raw enum, no UUID as a normal label                                   | Blocked (P1-27) — three surfaces show a raw UUID |
-| No `string` / `boolean` / `payload` / `object` / `enum` / `null` or database vocabulary in ordinary UX | Delivered                                        |
-| Arabic and English available; RTL and LTR correct                                                      | Delivered                                        |
-| Language can be changed while authenticated                                                            | Delivered                                        |
-| Global notifications visible regardless of scroll position                                             | Delivered                                        |
-| Main document blank overscroll absent                                                                  | Delivered                                        |
-| Tables bounded and server-driven                                                                       | Delivered                                        |
-| Customer and Vehicle screens use normal workshop language                                              | Delivered                                        |
+| Requirement                                                                                            | Status                               |
+| ------------------------------------------------------------------------------------------------------ | ------------------------------------ |
+| Password show/hide eye **inside** the password field; no separate button below it                      | Delivered                            |
+| Sidebar scrolls internally; its scrollbar is subtle, not permanently intrusive                         | Delivered                            |
+| Sidebar parent groups (e.g. Administration) carry a visible chevron                                    | Delivered                            |
+| Sidebar groups expand and collapse smoothly; active-child behaviour correct                            | Delivered                            |
+| Duplicate queues use human-readable names, not entity names                                            | Delivered                            |
+| Duplicate reasons explained in ordinary business language                                              | Delivered                            |
+| No JSON, no raw `matchBasis`, no raw enum, no UUID as a normal label                                   | Delivered — see the D2/D3 note below |
+| No `string` / `boolean` / `payload` / `object` / `enum` / `null` or database vocabulary in ordinary UX | Delivered                            |
+| Arabic and English available; RTL and LTR correct                                                      | Delivered                            |
+| Language can be changed while authenticated                                                            | Delivered                            |
+| Global notifications visible regardless of scroll position                                             | Delivered                            |
+| Main document blank overscroll absent                                                                  | Delivered                            |
+| Tables bounded and server-driven                                                                       | Delivered                            |
+| Customer and Vehicle screens use normal workshop language                                              | Delivered                            |
 
 ### The customer–vehicle relationship, at the P1-27 boundary
 

@@ -97,8 +97,22 @@ hides them silently. The response carries `includesRestricted` so a screen can
 caveat itself instead of stating a count it cannot support.
 
 **Alert `severity` is `text` with a CHECK, not an enum.** Sorting it
-alphabetically ranks `info` above `warning`. The Backend orders by an explicit
-rank; the screen must not re-sort by label.
+alphabetically ranks `info` above `warning`.
+
+**Corrected — this paragraph had the seam backwards.** It read "The Backend
+orders by an explicit rank; the screen must not re-sort by label", and two
+frontend files copied that sentence. The Backend states the opposite, in words
+and in SQL: `crm/data/customer-read-repository.ts` — "`severity` is deliberately
+NOT the sort key … It is returned on every row and ranked by the screen" — and
+alerts are ordered `effective_from DESC, id DESC`, because `(severity_rank, id)`
+is not the keyset column and ranking in SQL would make the cursor drop rows.
+`phase-1-16/read-contract-remediation.md:64-75` records that decision.
+
+So RANKING BELONGS TO THE SCREEN. This build spends it on emphasis and on the
+severity select's option order, not on row position — the same treatment
+`isPrimary` gets on contacts and addresses, which are also presented rather than
+reordered. That is a legitimate build; the defect was a record asserting a
+server behaviour the server disclaims.
 
 ### Nullability that matters
 

@@ -196,9 +196,25 @@ export interface Restriction {
  *
  * `crm.customer_alerts.severity` is `text` with a CHECK — `info`, `warning`,
  * `critical` — not an enum. Sorted alphabetically that is critical, info,
- * warning, which ranks **`info` above `warning`**. The Backend already orders by
- * an explicit rank; this exists so a screen that highlights or groups by
- * severity uses the same meaning rather than re-deriving one from the label.
+ * warning, which ranks **`info` above `warning`**.
+ *
+ * **The Backend does NOT order by severity, and says so.**
+ * `crm/data/customer-read-repository.ts` reads: "`severity` is deliberately NOT
+ * the sort key … It is returned on every row and ranked by the screen." Alerts
+ * come back `effective_from DESC, id DESC` — the only ordering a keyset cursor
+ * can keep total, since `(severity_rank, id)` is not the cursor column and
+ * ranking in SQL would make the cursor skip rows.
+ *
+ * This docblock previously said the opposite — "The Backend already orders by an
+ * explicit rank" — as did three other places, all descending from one inverted
+ * sentence in `contract-archaeology.md`. Having told itself the server had
+ * handled it, the screen used this rank for EMPHASIS and for the severity
+ * select's option order, and never for row position. That is a defensible
+ * build; what was not defensible was the record claiming a server behaviour
+ * that the server explicitly disclaims.
+ *
+ * So: ranking is the screen's, and this build spends it on how loud a row looks,
+ * not on where the row sits.
  *
  * An unknown value sorts last rather than first: a severity this build has not
  * heard of must not outrank a `critical` it understands.

@@ -22,8 +22,22 @@ import { isNonStandardLength, validateVinFormat, type VinVerdict } from '../prof
  * There is no VIN-check operation. The only honest way to ask is
  * `veh.vehicle-search`, which matches `vin` against the generated
  * `vin_normalized` for equality — the same normalised column whose unique index
- * produces `409 ERR-RES-002` on write. So this is a preview of the answer the
- * write will give, not a second rule that could disagree with it.
+ * produces `409 ERR-RES-002` on write.
+ *
+ * **The two predicates are close but NOT identical, and the earlier claim that
+ * this "is a preview of the answer the write will give, not a second rule that
+ * could disagree with it" was too strong.** `uq_vehicles_active_vin` is
+ * PARTIAL — `WHERE vin_normalized IS NOT NULL AND deleted_at IS NULL AND
+ * lifecycle_status <> 'merged'` — while the search filters on tenant and
+ * `deleted_at` only, and deliberately returns merged vehicles. A VIN held solely
+ * by a merged vehicle therefore previews as `duplicate` while the write would
+ * in fact succeed.
+ *
+ * The divergence is ONE-DIRECTIONAL, which is why the control is still worth
+ * having: the search set is a strict SUPERSET of the index set, so `available`
+ * can never be wrong in the dangerous direction. The failure mode is a spurious
+ * warning on a VIN freed by a merge, not a false reassurance about one already
+ * taken. The verdict is advisory either way — the server decides on write.
  *
  * ## It runs on EXPLICIT request, never on a keystroke
  *
