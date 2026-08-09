@@ -24,6 +24,33 @@ const textbox = (container: HTMLElement, name: string) =>
   within(container).getByRole('textbox', { name });
 
 /**
+ * The consents form's submit control, resolved by ROLE inside the form rather
+ * than by its accessible NAME.
+ *
+ * `RecordForm` renders its heading and its submit label from the same message
+ * key, and the button's label flips to the pending text while a transition is in
+ * flight — so `findByRole('button', { name: … })` can miss a button that is
+ * present, which is exactly what the captured failure showed: the error's own
+ * accessible-roles dump listed an `<h3>` carrying the name it said it could not
+ * find.
+ *
+ * Waiting for the HEADING is the deterministic signal that the form has mounted;
+ * the submit control is then the only button inside that form. This does not
+ * depend on knowing why the label differs, which is the point — a query that is
+ * correct either way beats a longer timeout on a query that is not.
+ */
+async function consentForm(): Promise<{ form: HTMLElement; submit: HTMLElement }> {
+  const heading = await screen.findByRole(
+    'heading',
+    { name: en['crm.customers.consents.record'] },
+    WAIT
+  );
+  const form = heading.closest('form');
+  expect(form, 'the consents heading is not inside a form').not.toBeNull();
+  return { form: form as HTMLElement, submit: within(form as HTMLElement).getByRole('button') };
+}
+
+/**
  * `NEW-FE-01` proved through REAL consumers, not the component alone.
  *
  * ## Why this file exists although `record-form.dom.test.tsx` already passes
@@ -62,26 +89,31 @@ const textbox = (container: HTMLElement, name: string) =>
  */
 
 /*
- * ## An intermittent failure in this file that is NOT explained
+ * ## The intermittent in this file, and the mechanism — measured, not guessed
  *
- * The first consent case has failed three times in full-suite runs while passing
- * every time in isolation. What is established:
+ * The first consent case failed four times in full-suite runs while passing in
+ * isolation. Two theories were wrong before the message was captured, and both
+ * are recorded because each cost a cycle.
  *
- *   - it is real and it recurs — three occurrences, always this file;
- *   - a single consent case measures ~1.6 s under full-suite load, because it
- *     drives four `selectOptions` and a `type` that dispatches one event per
- *     character, against `waitFor`'s DEFAULT timeout of 1 s;
- *   - raising that timeout to 10 s did NOT eliminate it. It recurred once after
- *     the change, then passed six consecutive runs.
+ * **What it actually is.** The captured failure is
+ * `Unable to find an accessible element with the role "button" and name
+ * "Record a consent decision"` — and the accessible-roles dump printed WITH that
+ * error shows an `<h3>` carrying exactly that name. `RecordForm` renders its
+ * title and its submit label from the same key, so the form HAD rendered by the
+ * time the error was composed. The query simply gave up first.
  *
- * So the timeout was a real hazard and is worth removing on its own merits, but
- * **it is not the proven cause** and this comment previously said it was. The
- * failure message has never been captured: every attempt to reproduce it under
- * observation has passed.
+ * `findByRole` carries its OWN default timeout of 1 s, separate from `waitFor`'s.
+ * The consents section renders its form only after an async read resolves, and
+ * under full-suite load that read exceeds a second.
  *
- * Recorded rather than closed. It is NOT called a flake — a flake is a name for
- * not having looked. If it recurs, capture the assertion text before changing
- * anything, and do not let a plausible mechanism stand in for a measured one.
+ * **The wrong turns.** First it was called unexplained, correctly, because
+ * nothing had been captured. Then the timeout hypothesis was applied to the
+ * `waitFor` calls — the right kind of cause attached to the wrong calls — and it
+ * recurred, which is what proved that fix incomplete rather than wrong. Both
+ * timeouts are given room now; a default timeout is a bet on machine load, and
+ * `findBy*` hides one where a reader looks for `waitFor`.
+ *
+ * What is under test is the form's behaviour, never how fast the machine is.
  */
 const WAIT = { timeout: 10_000 };
 
@@ -191,9 +223,7 @@ describe('CRM consumer — a consent decision survives a failed write', () => {
     await user.click(screen.getByRole('button', { name: /Consents/ }));
     await waitFor(() => expect(listConsents).toHaveBeenCalled(), WAIT);
 
-    const form = await screen.findByRole('button', {
-      name: en['crm.customers.consents.record'],
-    });
+    const { submit: form } = await consentForm();
 
     /*
      * `withdrawn` is deliberately the SECOND option. Asserting `granted` would
@@ -218,7 +248,7 @@ describe('CRM consumer — a consent decision survives a failed write', () => {
     await waitFor(() => expect(recordConsentAction).toHaveBeenCalled(), WAIT);
 
     // 4 — the form is still there rather than replaced by an error page.
-    expect(screen.getByRole('button', { name: en['crm.customers.consents.record'] })).toBeTruthy();
+    expect((await consentForm()).submit, 'the form was replaced by an error page').toBeTruthy();
     // 5 — typed text survives.
     expect(textbox(body, en['crm.customers.consents.source'])).toHaveValue('Telephone call, 09:40');
     // 6 — and so does every chosen option. This is the assertion that was absent.
@@ -254,9 +284,7 @@ describe('CRM consumer — a consent decision survives a failed write', () => {
       />
     );
     await user.click(screen.getByRole('button', { name: /Consents/ }));
-    const submit = await screen.findByRole('button', {
-      name: en['crm.customers.consents.record'],
-    });
+    const { submit } = await consentForm();
 
     const body = document.body;
     await user.selectOptions(field(body, en['crm.customers.column.status']), 'withdrawn');

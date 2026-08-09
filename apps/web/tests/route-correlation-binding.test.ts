@@ -218,9 +218,7 @@ describe('the scoped surface stays the surface', () => {
     const recoverable = phasePages.filter((p) =>
       /<(ErrorState|BackendUnavailableState)\b/.test(readFileSync(p, 'utf8'))
     );
-    const named = recoverable
-      .map((p) => p.replace(/\\/g, '/').split('/src/app/')[1])
-      .sort();
+    const named = recoverable.map((p) => p.replace(/\\/g, '/').split('/src/app/')[1]).sort();
 
     expect(named, 'a P1-27 route renders a recoverable failure this file never invokes').toEqual([
       '[locale]/(dashboard)/crm/customers/[customerId]/page.tsx',
