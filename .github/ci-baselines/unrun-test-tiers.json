@@ -1,68 +1,82 @@
 {
-  "description": "Test files that exist in this repository and are NOT executed by any hosted CI job. Every entry is a hole in the automated evidence, stated so that a reader of a green run knows what the green does not cover.",
-  "whyThisFileExists": "apps/web/playwright.config.ts gates tests/e2e/authenticated/** behind ROOTLCO_E2E_AUTH === '1', and no workflow sets it: .github/workflows/_reusable-node-quality.yml runs only `npm run test:web-e2e`, the anonymous tier. So the repository's ONLY tenant-isolation proof and its ONLY route-level accessibility proof had never once executed in CI, while `test:web-e2e` reported green and the phase records counted browser coverage. Nothing said so anywhere. This file, the LOUD job-summary step that reads it, and tests/ci/e2e-tier-coverage.test.ts are the replacement for that silence.",
-  "policy": "An entry here is a debt, not a dispensation. It must name what is unproven in plain words, why a hosted runner cannot prove it, what compensates today, and a date by which the arrangement is revisited. tests/ci/e2e-tier-coverage.test.ts fails when a spec is neither executed nor declared, when a declared spec IS executed (a declaration must not be able to hide a runnable tier), when a field is missing, and when reviewBy has passed.",
-  "howToClose": "Stand up Supabase and the API inside a hosted job, bootstrap an acceptance account, then run `npm run test:web-e2e-authenticated` with ROOTLCO_E2E_AUTH=1 and delete the entry. Removing the entry without wiring the tier fails the gate, because the spec would then be neither executed nor declared.",
+  "description": "Test files that exist in this repository and are NOT executed by the pull-request gate. Every entry is a hole in what a green pull request means, stated so that a reader of that green knows what it does not cover, and stated alongside the job that DOES execute the file so a debt is not confused with an absence.",
+  "whyThisFileExists": "apps/web/playwright.config.ts gates tests/e2e/authenticated/** behind ROOTLCO_E2E_AUTH === '1'. For the whole of P1-27 no workflow set it, so the repository's ONLY end-to-end tenant-isolation proof and its ONLY route-level accessibility proof had never once executed anywhere but on the Owner's machine, while `test:web-e2e` reported a green browser tier and the phase records counted browser coverage. Nothing said so anywhere. This file, the LOUD job-summary step in .github/workflows/_reusable-node-quality.yml that reads it, and tests/ci/e2e-tier-coverage.test.ts are what replaced that silence.",
+  "whatChangedAndWhatDidNot": "The tier is now WIRED and RUN: the `authenticated-browser` job in .github/workflows/protected-develop-verification.yml starts the Supabase stack with the vendored CLI, bootstraps the real operator and the second tenant through scripts/dev/owner-acceptance/create-owner-account.mjs, starts the production API build as a database login that holds neither SUPERUSER nor BYPASSRLS, and runs `npm run test:web-e2e-authenticated` with ROOTLCO_E2E_AUTH=1 — then FAILS unless every authenticated spec file contributed at least one executed test. The earlier claim recorded here, that a hosted runner cannot be given a live Supabase, a live API and a real account, was false: a hosted runner has Docker and the Supabase CLI is a devDependency of this repository. What did NOT change is the pull request: that job runs on pushes to develop and main, so a green pull request still does not include it.",
+  "notYetObservedOnARunner": "As of this commit the `authenticated-browser` job has never executed on a hosted runner even once. It is wired, its shell is syntax-checked, its collection is proved locally (`npx playwright test --project=authenticated-en --project=authenticated-ar --project=authenticated-tablet --list` reports 229 tests in 7 files with ROOTLCO_E2E_AUTH=1), and nothing beyond that is claimed. The first protected push is the evidence, and until one exists these entries stand as written rather than as repaid.",
+  "policy": "An entry here is a debt, not a dispensation. It must name what the pull-request gate does not prove, why that job does not run it, which job does, what remains unrepaid, what compensates today, and a date by which the arrangement is revisited. tests/ci/e2e-tier-coverage.test.ts fails when a spec is neither executed by the pull-request gate nor declared here, when a declared spec IS executed by the pull-request gate (a declaration must not be able to hide a runnable tier), when a field is missing, when the named executing job does not exist in the workflow it names, and when reviewBy has passed.",
+  "howToClose": "Two steps, in order. First, observe the `authenticated-browser` job green on a protected push and record the run. Second, put it under a gate: add it to DECLARED_JOBS in scripts/ci/evaluate-ci-gate.mjs and to the `needs` of both `protected-gate` and `ci-gate`, which requires the job to exist in pr-ci.yml as well and therefore requires the job counts in docs/engineering/ci-automation/pull-request-body.md to be updated in the same commit. Only when a gate governs the result may these entries be deleted. Removing an entry without doing that fails tests/ci/e2e-tier-coverage.test.ts, because the spec would then be neither gate-covered nor declared.",
   "unrun": [
     {
       "id": "E2E-AUTH-01",
       "path": "apps/web/tests/e2e/authenticated/isolation.spec.ts",
-      "whatItProves": "That a signed-in operator of one tenant cannot see another tenant's records through the browser.",
-      "whatIsUnprovenWithoutIt": "Tenant isolation is proved at the database layer by the RLS matrix and at the API layer by the backend suite. It is NOT proved end to end through a real session in a real browser, which is the only layer a customer experiences.",
-      "whyItCannotRunHosted": "It needs a live Supabase GoTrue, a live API on port 3000 and a real account with a real password. The hosted clean room runs a bare postgres:17-alpine service container and sets NEXT_PUBLIC_SUPABASE_ANON_KEY to a placeholder; there is no authentication server to sign in to.",
+      "whatItProves": "That a signed-in operator of one tenant cannot see another tenant's records through the browser, and that a Tenant A bearer token is refused Tenant B records by the running API.",
+      "whatIsUnprovenWithoutIt": "Tenant isolation is proved at the database layer by the RLS matrix and at the API layer by the backend suite. It is NOT proved end to end through a real session in a real browser by any job a pull request runs, which is the only layer a customer experiences.",
+      "whyThePullRequestGateDoesNotRunIt": "It needs a live Supabase GoTrue, a live API on port 3000 and a real account with a real password. Standing those up costs roughly forty minutes of runner time, and the hosted clean room cannot host them: it binds a bare postgres:17-alpine on 54322, which is the exact port scripts/dev/owner-acceptance/context.mjs pins the acceptance database to.",
+      "executedBy": ".github/workflows/protected-develop-verification.yml job `authenticated-browser`, on every push to develop and main.",
+      "remainingDebt": "That job is not in `protected-gate`'s `needs`, so protected-gate can be green while this check is red. DECLARED_JOBS in scripts/ci/evaluate-ci-gate.mjs is shared with pr-ci.yml, so governing it there requires the same job on the pull-request gate and an update to the job counts in docs/engineering/ci-automation/pull-request-body.md.",
       "compensatingControl": "tests/db RLS matrix (critical level, run in both the clean room and database-security) and the backend authorization suite. The Owner acceptance run executes this spec by hand on a machine that has the full local stack.",
       "owner": "P1-27 DevOps",
-      "reviewBy": "2027-02-28"
+      "reviewBy": "2026-11-30"
     },
     {
       "id": "E2E-AUTH-02",
       "path": "apps/web/tests/e2e/authenticated/accessibility.spec.ts",
       "whatItProves": "Route-level accessibility of the signed-in application, against real rendered pages rather than components in isolation.",
-      "whatIsUnprovenWithoutIt": "Component-level accessibility is covered by the web unit tier. Whole-page accessibility of authenticated routes — landmark structure, heading order, focus order across a real navigation — is proved by nothing that runs in CI.",
-      "whyItCannotRunHosted": "Same three preconditions as E2E-AUTH-01: every authenticated route redirects to the login screen without a captured session.",
+      "whatIsUnprovenWithoutIt": "Component-level accessibility is covered by the web unit tier. Whole-page accessibility of authenticated routes — landmark structure, heading order, focus order across a real navigation — is proved by nothing a pull request runs.",
+      "whyThePullRequestGateDoesNotRunIt": "The same three preconditions as E2E-AUTH-01: every authenticated route redirects to the login screen without a captured session, and capturing one needs the whole stack.",
+      "executedBy": ".github/workflows/protected-develop-verification.yml job `authenticated-browser`, on every push to develop and main.",
+      "remainingDebt": "Same as E2E-AUTH-01: the job is outside protected-gate's needs.",
       "compensatingControl": "The anonymous browser tier covers the login, activation and gallery routes across five viewport and direction projects. The Owner acceptance run executes this spec by hand.",
       "owner": "P1-27 DevOps",
-      "reviewBy": "2027-02-28"
+      "reviewBy": "2026-11-30"
     },
     {
       "id": "E2E-AUTH-03",
       "path": "apps/web/tests/e2e/authenticated/crm-and-vehicles.spec.ts",
-      "whatItProves": "That the P1-27 CRM and Vehicle screens load and behave for a signed-in operator.",
-      "whatIsUnprovenWithoutIt": "The CRM and Vehicle screens are covered by the web component tier against stubbed responses. No CI job drives them against a real API.",
-      "whyItCannotRunHosted": "Same three preconditions as E2E-AUTH-01.",
+      "whatItProves": "That the P1-27 CRM and Vehicle screens load and behave for a signed-in operator against a real API.",
+      "whatIsUnprovenWithoutIt": "The CRM and Vehicle screens are covered by the web component tier against stubbed responses. No job a pull request runs drives them against a real API.",
+      "whyThePullRequestGateDoesNotRunIt": "The same three preconditions as E2E-AUTH-01.",
+      "executedBy": ".github/workflows/protected-develop-verification.yml job `authenticated-browser`, on every push to develop and main.",
+      "remainingDebt": "Same as E2E-AUTH-01: the job is outside protected-gate's needs.",
       "compensatingControl": "The web component tier, the write-reachability gate (every canonical mutation has a real production call site) and the Owner acceptance run.",
       "owner": "P1-27 DevOps",
-      "reviewBy": "2027-02-28"
+      "reviewBy": "2026-11-30"
     },
     {
       "id": "E2E-AUTH-04",
       "path": "apps/web/tests/e2e/authenticated/administration.spec.ts",
       "whatItProves": "The administration screens for a signed-in operator, including at tablet width.",
-      "whatIsUnprovenWithoutIt": "Administration screens are covered by the web component tier only.",
-      "whyItCannotRunHosted": "Same three preconditions as E2E-AUTH-01.",
+      "whatIsUnprovenWithoutIt": "Administration screens are covered by the web component tier only in any job a pull request runs, which is against stubbed responses rather than a real session.",
+      "whyThePullRequestGateDoesNotRunIt": "The same three preconditions as E2E-AUTH-01.",
+      "executedBy": ".github/workflows/protected-develop-verification.yml job `authenticated-browser`, on every push to develop and main.",
+      "remainingDebt": "Same as E2E-AUTH-01: the job is outside protected-gate's needs.",
       "compensatingControl": "The web component tier and the Owner acceptance run.",
       "owner": "P1-27 DevOps",
-      "reviewBy": "2027-02-28"
+      "reviewBy": "2026-11-30"
     },
     {
       "id": "E2E-AUTH-05",
       "path": "apps/web/tests/e2e/authenticated/shared-ux.spec.ts",
       "whatItProves": "The shared shell behaviour — scroll restoration, notifications, language switching — for a signed-in operator.",
-      "whatIsUnprovenWithoutIt": "The anonymous half of this behaviour IS covered, by tests/e2e/shared-ux-anonymous.spec.ts, which does run in CI. The signed-in half is not.",
-      "whyItCannotRunHosted": "Same three preconditions as E2E-AUTH-01.",
+      "whatIsUnprovenWithoutIt": "The anonymous half of this behaviour IS covered on a pull request, by tests/e2e/shared-ux-anonymous.spec.ts. The signed-in half is not covered by any job a pull request runs.",
+      "whyThePullRequestGateDoesNotRunIt": "The same three preconditions as E2E-AUTH-01.",
+      "executedBy": ".github/workflows/protected-develop-verification.yml job `authenticated-browser`, on every push to develop and main.",
+      "remainingDebt": "Same as E2E-AUTH-01: the job is outside protected-gate's needs.",
       "compensatingControl": "tests/e2e/shared-ux-anonymous.spec.ts covers the same shell on anonymous routes in every hosted run.",
       "owner": "P1-27 DevOps",
-      "reviewBy": "2027-02-28"
+      "reviewBy": "2026-11-30"
     },
     {
       "id": "E2E-AUTH-06",
       "path": "apps/web/tests/e2e/authenticated/drawer-and-restore.spec.ts",
       "whatItProves": "The tablet drawer and scroll restoration on authenticated routes.",
-      "whatIsUnprovenWithoutIt": "Drawer behaviour is covered by the web component tier; its behaviour inside a real authenticated navigation is not.",
-      "whyItCannotRunHosted": "Same three preconditions as E2E-AUTH-01.",
+      "whatIsUnprovenWithoutIt": "Drawer behaviour is covered by the web component tier on a pull request; its behaviour inside a real authenticated navigation is not covered there at all.",
+      "whyThePullRequestGateDoesNotRunIt": "The same three preconditions as E2E-AUTH-01.",
+      "executedBy": ".github/workflows/protected-develop-verification.yml job `authenticated-browser`, on every push to develop and main.",
+      "remainingDebt": "Same as E2E-AUTH-01: the job is outside protected-gate's needs.",
       "compensatingControl": "The web component tier and the anonymous tablet project.",
       "owner": "P1-27 DevOps",
-      "reviewBy": "2027-02-28"
+      "reviewBy": "2026-11-30"
     }
   ]
 }

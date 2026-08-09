@@ -597,10 +597,19 @@ export const REGISTER = Object.freeze([
     name: 'test:e2e:authenticated',
     owner: WEB,
     tier: 'interactive',
-    // Not `required`: it needs a live API, a live Supabase and a real local
-    // account, none of which a hosted runner is given. Requiring it in CI would
-    // mean requiring CI to hold a database and a credential it does not have.
-    why: 'the three authenticated projects; reached through test:web-e2e-authenticated',
+    // A hosted runner CAN be given all three — Docker is present, the Supabase
+    // CLI is a devDependency, and the acceptance bootstrap creates the account
+    // — and one now is: the `authenticated-browser` job in
+    // `protected-develop-verification.yml` runs exactly this command. The
+    // sentence that used to sit here, that none of it is available to a runner,
+    // was simply wrong and was the whole reason the tier stayed unrun.
+    //
+    // Still not `required`, because `required` means BOTH reachable from
+    // `verify:workspaces` AND invoked by CI, and the local aggregate must not
+    // drag a forty-minute Docker stack into what a developer runs before a
+    // commit. Not `ci-only` either: that tier is for gates whose answer depends
+    // on the branch, and this one is a suite, not a gate.
+    why: 'the three authenticated projects; reached through test:web-e2e-authenticated, run by the authenticated-browser job',
   },
   {
     name: 'test:ci',

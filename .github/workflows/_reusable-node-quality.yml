@@ -647,19 +647,26 @@ jobs:
           # rendered as a warning annotation AND in the job summary, from a
           # committed declaration that tests/ci/e2e-tier-coverage.test.ts holds
           # against the actual spec files.
+          #
+          # The tier is no longer unrun everywhere: the `authenticated-browser`
+          # job in protected-develop-verification.yml executes it on every push
+          # to develop and main. It is still unrun HERE, which is what a reader
+          # of a green pull request needs told — so each row now names the job
+          # that does run it rather than implying nothing does.
           node -e '
             const fs = require("node:fs");
             const doc = JSON.parse(fs.readFileSync(".github/ci-baselines/unrun-test-tiers.json", "utf8"));
             const rows = doc.unrun ?? [];
             if (rows.length === 0) throw new Error("the unrun-tier declaration is empty; it is derived from real spec files and cannot be");
             const out = ["### Browser specs NOT executed by this job", "",
-              "`npm run test:web-e2e` runs the ANONYMOUS tier. These specs exist, are counted nowhere as coverage, and did not run:", "",
-              "| Spec | What is unproven | Compensating control |", "| --- | --- | --- |"];
+              "`npm run test:web-e2e` runs the ANONYMOUS tier. These specs did not run here, and a green pull request does not cover them:", "",
+              "| Spec | What a pull request leaves unproven | Executed instead by | Compensating control |", "| --- | --- | --- | --- |"];
             for (const row of rows) {
-              console.log(`::warning file=${row.path}::${row.id} did not run in CI. ${row.whatIsUnprovenWithoutIt}`);
-              out.push(`| \`${row.path}\` | ${row.whatIsUnprovenWithoutIt} | ${row.compensatingControl} |`);
+              console.log(`::warning file=${row.path}::${row.id} did not run in this job. ${row.whatIsUnprovenWithoutIt} Executed by: ${row.executedBy}`);
+              out.push(`| \`${row.path}\` | ${row.whatIsUnprovenWithoutIt} | ${row.executedBy} | ${row.compensatingControl} |`);
             }
-            out.push("", `_Declared in \`.github/ci-baselines/unrun-test-tiers.json\`. ${rows.length} spec(s)._`, "");
+            out.push("", `_Declared in \`.github/ci-baselines/unrun-test-tiers.json\`. ${rows.length} spec(s)._`,
+              `_${doc.notYetObservedOnARunner}_`, "");
             fs.writeFileSync("unrun-tiers.md", out.join("\n") + "\n");
           '
           cat unrun-tiers.md
