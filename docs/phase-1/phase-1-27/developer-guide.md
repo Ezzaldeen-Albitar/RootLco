@@ -13,8 +13,9 @@ way.
 | what                                 | where                                                  |
 | ------------------------------------ | ------------------------------------------------------ |
 | Route segments                       | `apps/web/src/app/[locale]/(dashboard)/{crm,vehicles}` |
-| Contracts (types, enums, validators) | `features/{crm/customers,vehicles}/*-contract.ts`      |
-| Adapters (`'use server'`)            | `features/{crm/customers,vehicles}/*-api.ts`           |
+| Contracts (types, enums, validators) | `features/{crm/customers,vehicles}/*contract.ts`       |
+| Adapters (`'use server'`)            | `features/{crm/customers,vehicles}/*api.ts`            |
+| CRM write actions (`'use server'`)   | `features/crm/customers/*actions.ts`                   |
 | Screens (`'use client'`)             | `features/{crm/customers,vehicles}/components/`        |
 | Shared table                         | `components/data-table/`                               |
 | Shared read helpers                  | `lib/api/read-operation.ts`                            |
@@ -23,6 +24,22 @@ A contract file carries the operation table, the permission, the database
 constraint it was read out of, and the reason for every refusal. When these
 disagree with the code, the contract file is the thing to fix first — it is what
 the next phase will read.
+
+**The two trees do not agree, and the third row is not an oversight.** CRM
+segregates its writes into `*actions.ts` and keeps `*api.ts` read-only; the
+vehicle tree has no `*actions.ts` at all and puts its six write actions in the
+`*api.ts` file that owns the same resource — `createVehicleAction` in `api.ts`,
+`updateVehicleAction` in `profile-api.ts`, `transferOwnershipAction` and
+`recordOdometerAction` in `history-api.ts`, `setEvProfileAction` and
+`retirePartyAction` in `relations-api.ts`. Look for a vehicle write in an
+`actions` file and you will conclude it was never built.
+
+Those patterns are **checked**, as a partition: every file in either tree that
+opens with `'use server'` must match one of them, and
+`p1-27-guidance-reconciliation.test.ts` fails naming any that does not. The row
+read `*-api.ts` until that check was written, which silently missed five of the
+thirteen; the first correction then over-claimed a vehicle `*actions.ts` that has
+never existed, and the check caught that too, within a minute.
 
 ## The rules that are enforced, not merely written down
 

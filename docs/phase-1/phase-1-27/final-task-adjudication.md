@@ -53,41 +53,41 @@ All 33 are adjudicated below.
 
 ## Summary
 
-| task      | verdict                | status            | root      |
-| --------- | ---------------------- | ----------------- | --------- |
-| `FE-002`  | `REAL_P1_27_DEFECT`    | FIXED `600f70e`   | itself    |
-| `FE-003`  | `AUDIT_FALSE_NEGATIVE` | FIXED `52a230a`   | itself    |
-| `FE-004`  | `REAL_P1_27_DEFECT`    | FIXED `b6ce9ae`   | itself    |
-| `FE-007`  | `DUPLICATE_FINDING`    | FIXED `915b861`   | `SEC-001` |
-| `FE-008`  | `DUPLICATE_FINDING`    | FIXED `915b861`   | `SEC-001` |
-| `FE-009`  | `DUPLICATE_FINDING`    | FIXED `915b861`   | `SEC-001` |
-| `FE-010`  | `DUPLICATE_FINDING`    | FIXED `915b861`   | `SEC-001` |
-| `FE-013`  | `REAL_P1_27_DEFECT`    | FIXED `c415432`   | itself    |
-| `FE-015`  | `REAL_P1_27_DEFECT`    | FIXED `fc5e155`   | itself    |
-| `FE-016`  | `REAL_P1_27_DEFECT`    | FIXED `72f2fcb`   | itself    |
-| `FE-017`  | `TEST_OR_GATE_DEFECT`  | FIXED `52a230a`   | itself    |
-| `FE-018`  | `REAL_P1_27_DEFECT`    | FIXED `fc5e155`   | itself    |
-| `FE-019`  | `REAL_P1_27_DEFECT`    | FIXED `8daf8e9`   | itself    |
-| `FE-020`  | `REAL_P1_27_DEFECT`    | FIXED `bb4ebfd`   | itself    |
-| `FE-021`  | `DUPLICATE_FINDING`    | FIXED `0272e1d`   | `FE-024`  |
-| `FE-022`  | `DUPLICATE_FINDING`    | FIXED `0272e1d`   | `FE-024`  |
-| `FE-023`  | `DUPLICATE_FINDING`    | FIXED `915b861`   | `SEC-001` |
-| `FE-024`  | `REAL_P1_27_DEFECT`    | FIXED `0272e1d`   | itself    |
-| `FE-026`  | `REAL_P1_27_DEFECT`    | FIXED `72f2fcb`   | itself    |
-| `FE-028`  | `REAL_P1_27_DEFECT`    | FIXED `0272e1d`   | itself    |
-| `FE-029`  | `REAL_P1_27_DEFECT`    | FIXED (PR #212)   | itself    |
-| `SEC-001` | `REAL_P1_27_DEFECT`    | FIXED `915b861`   | itself    |
-| `SEC-002` | `AUDIT_FALSE_NEGATIVE` | FIXED `evidence`  | itself    |
-| `SEC-003` | `DUPLICATE_FINDING`    | FIXED `915b861`   | `SEC-001` |
-| `SEC-004` | `TEST_OR_GATE_DEFECT`  | FIXED `600f70e`   | itself    |
-| `QA-001`  | `REAL_P1_27_DEFECT`    | FIXED `0272e1d`   | itself    |
-| `QA-002`  | `REAL_P1_27_DEFECT`    | FIXED `0272e1d`   | itself    |
-| `QA-003`  | `TEST_OR_GATE_DEFECT`  | FIXED `0c19f51`   | itself    |
-| `QA-005`  | `TEST_OR_GATE_DEFECT`  | OPEN (final head) | itself    |
-| `DO-002`  | `AUDIT_FALSE_NEGATIVE` | no change needed  | itself    |
-| `DOC-001` | `TEST_OR_GATE_DEFECT`  | FIXED (records)   | itself    |
-| `DOC-002` | `REAL_P1_27_DEFECT`    | FIXED (records)   | itself    |
-| `FE-001`  | `DUPLICATE_FINDING`    | FIXED `600f70e`   | `FE-002`  |
+| task      | verdict                | status              | root      |
+| --------- | ---------------------- | ------------------- | --------- |
+| `FE-002`  | `REAL_P1_27_DEFECT`    | FIXED `600f70e`     | itself    |
+| `FE-003`  | `AUDIT_FALSE_NEGATIVE` | FIXED `52a230a`     | itself    |
+| `FE-004`  | `REAL_P1_27_DEFECT`    | FIXED `b6ce9ae`     | itself    |
+| `FE-007`  | `DUPLICATE_FINDING`    | FIXED `915b861`     | `SEC-001` |
+| `FE-008`  | `DUPLICATE_FINDING`    | FIXED `915b861`     | `SEC-001` |
+| `FE-009`  | `DUPLICATE_FINDING`    | FIXED `915b861`     | `SEC-001` |
+| `FE-010`  | `DUPLICATE_FINDING`    | FIXED `915b861`     | `SEC-001` |
+| `FE-013`  | `REAL_P1_27_DEFECT`    | FIXED `c415432`     | itself    |
+| `FE-015`  | `REAL_P1_27_DEFECT`    | FIXED `fc5e155`     | itself    |
+| `FE-016`  | `REAL_P1_27_DEFECT`    | FIXED `72f2fcb`     | itself    |
+| `FE-017`  | `TEST_OR_GATE_DEFECT`  | FIXED `52a230a`     | itself    |
+| `FE-018`  | `REAL_P1_27_DEFECT`    | FIXED `fc5e155`     | itself    |
+| `FE-019`  | `REAL_P1_27_DEFECT`    | FIXED `8daf8e9`     | itself    |
+| `FE-020`  | `REAL_P1_27_DEFECT`    | FIXED `bb4ebfd`     | itself    |
+| `FE-021`  | `DUPLICATE_FINDING`    | FIXED `0272e1d`     | `FE-024`  |
+| `FE-022`  | `DUPLICATE_FINDING`    | FIXED `0272e1d`     | `FE-024`  |
+| `FE-023`  | `DUPLICATE_FINDING`    | FIXED `915b861`     | `SEC-001` |
+| `FE-024`  | `REAL_P1_27_DEFECT`    | FIXED `0272e1d`     | itself    |
+| `FE-026`  | `REAL_P1_27_DEFECT`    | FIXED `72f2fcb`     | itself    |
+| `FE-028`  | `REAL_P1_27_DEFECT`    | FIXED `0272e1d`     | itself    |
+| `FE-029`  | `REAL_P1_27_DEFECT`    | FIXED (PR #212)     | itself    |
+| `SEC-001` | `REAL_P1_27_DEFECT`    | FIXED `915b861`     | itself    |
+| `SEC-002` | `AUDIT_FALSE_NEGATIVE` | FIXED `evidence`    | itself    |
+| `SEC-003` | `DUPLICATE_FINDING`    | FIXED `915b861`     | `SEC-001` |
+| `SEC-004` | `TEST_OR_GATE_DEFECT`  | FIXED `600f70e`     | itself    |
+| `QA-001`  | `REAL_P1_27_DEFECT`    | FIXED `0272e1d`     | itself    |
+| `QA-002`  | `REAL_P1_27_DEFECT`    | FIXED `0272e1d`     | itself    |
+| `QA-003`  | `TEST_OR_GATE_DEFECT`  | FIXED `0c19f51`     | itself    |
+| `QA-005`  | `TEST_OR_GATE_DEFECT`  | OPEN (final head)   | itself    |
+| `DO-002`  | `AUDIT_FALSE_NEGATIVE` | no change needed    | itself    |
+| `DOC-001` | `TEST_OR_GATE_DEFECT`  | FIXED (records)     | itself    |
+| `DOC-002` | `TEST_OR_GATE_DEFECT`  | FIXED (both halves) | itself    |
+| `FE-001`  | `DUPLICATE_FINDING`    | FIXED `600f70e`     | `FE-002`  |
 
 ```
 ADJUDICATED       = 33
@@ -104,6 +104,17 @@ The previous revision of this block read `FIXED = 30`, `BLOCKED = 1`,
 `RESOLVED = 40`, `UNRESOLVED = 2`. `FE-029` moved from BLOCKED to FIXED when
 PR #212 merged. `QA-005` is the single remaining item and can only be measured
 at the final head.
+
+**This block said `RESOLVED = 41` before that was true, and the 42-task
+recalculation is what caught it.** `DOC-002`'s row read `FIXED (records)` on the
+strength of the change log, but the canonical title is a conjunction and the
+guidance half still had no automated proof of any kind — a fact
+`task-register.md` and `evidence/task-traceability.md` had both recorded in
+plain words while this table counted the task as resolved. The recalculation
+returned `PASS=40 / FAIL=2`, not the `41 / 1` the wave was aiming for. The
+guidance half is now proven (see `DOC-002` below) and the arithmetic above is
+true; it is left visible that it was briefly not, because the recalculation
+existing only to confirm a number it was handed would have been worth nothing.
 
 **Superseded — the external block is gone.** Both Backend pull requests were
 created and merged through protected `develop`:
@@ -656,6 +667,37 @@ exists, while `phase-1-19`, `phase-1-20` and `phase-1-21` each ship
 `evidence/change-log.md` and two inventory scripts bind the identically-titled
 task to that path. No document records a decision to drop it, and the task
 register claims automated proof that does not exist.
+
+**Reopened by the 42-task recalculation, and closed a second time.** The
+change-log half was fixed above and stayed fixed. The recalculation read the
+canonical title as the conjunction it is — "operator / developer guidance **and**
+change-log update" — and found the guidance half still carrying **no automated
+proof of any kind**, exactly as `task-register.md` and
+`evidence/task-traceability.md` had both honestly recorded. One half proven is
+not a task delivered, and the count was `PASS=40 / FAIL=2` rather than the
+`41 / 1` the wave was aiming for.
+
+Classification for the second cycle: `TEST_OR_GATE_DEFECT` — both guides shipped
+in `2688635` and neither is wrong about the product in any way this found; what
+was missing was any mechanism to keep them right. `apps/web/tests/p1-27-guidance-reconciliation.test.ts`
+supplies it in ten cases, each pinning a guide sentence to the executable thing
+it describes rather than checking that a file exists. Three mutations, each
+failing for its own reason and none breaking unrelated compilation first:
+
+| mutation                                                 | failure                                                                                |
+| -------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `apps/api` `expensive-read` limit `30` → `60`            | `expected '# Phase 1-27 — operator guide…' to contain 'sixty searches…'`               |
+| `'ok'` added to the `TableStatus` union                  | `adding 'ok' would make the guide's paragraph false`                                   |
+| a vehicle adapter named outside both documented patterns | `a use-server file the guide does not account for: [features/vehicles/fetch-stuff.ts]` |
+
+The first is the one worth noting: it crosses the workspace boundary, so a
+**Backend** change to a rate-limit policy fails a **Frontend** documentation
+check by name. The operator guide tells a person how many searches they get in a
+minute, and that sentence is now unable to go quietly stale.
+
+Writing the check found two defects in the guide, the second introduced by the
+fix for the first — recorded in `evidence/task-traceability.md` §7 and
+`task-register.md`. Both are the class the check exists to catch.
 
 ---
 
