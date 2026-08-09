@@ -220,6 +220,38 @@ output, never from the narrative written about it.
 | `FE-003`           | Two docblocks described an upstream duplicate pre-check — "the create action is offered only after a search returned nothing". True when written; falsified by the Owner-acceptance remediation, which renders `CustomerCreateActions` unconditionally in the page header (`crm/customers/page.tsx:72-79`). The post-hoc warning is the WHOLE duplicate story, not half of it. Corrected in both files with the originals quoted.                                                                                                                                                                                                                                                                                                                                                                |
 | `DOC-001`          | Four desyncs, each measured: the gate reports **43** files where four documents said 40; command coverage reports **143 / 71 / 71-71** where they said 142 / 70 / 70-70 (it moved when the Backend merges landed); two cited test titles do not exist, one asserting the OPPOSITE of current behaviour; and `task-register.md` claimed a proof for `DOC-002` that `evidence/task-traceability.md` correctly recorded as absent.                                                                                                                                                                                                                                                                                                                                                                  |
 
+### Where the other ten went — `ADJ-01`
+
+The paragraph above reconciles the audit's arrays to **fourteen** unique
+unresolved ids, dispositions four of them in the table, and then says the
+remainder "are adjudicated individually and recorded as they land" — and never
+names one. Meanwhile the arithmetic block at the head of this document said
+`UNRESOLVED / 42 = 1`.
+
+**The document asserted 1 and 14 for the same universe, and the 14 were
+anonymous.** Both numbers were true of different moments and neither said which
+moment it belonged to, which is how a record stops being a record.
+
+The ten unnamed ones are named here. Each was closed with its own commit and its
+own discriminating mutation, in the wave that ran between the round-three
+reconciliation and the candidate freeze:
+
+| id                                     | closed by                                                         |
+| -------------------------------------- | ----------------------------------------------------------------- |
+| `FE-028` (+ its unreported CRM twin)   | `2e1c787` — dead status filter in BOTH duplicate queues           |
+| `FE-017`                               | `765e75f` — four-state Make column                                |
+| `SEC-004`                              | `765e75f` — `correlationId` on the CRM unavailable state          |
+| `FE-023`                               | `01c3475` — odometer edge against the domain rule                 |
+| `FE-019`                               | `c823437` — lifecycle transition graph                            |
+| `FE-012`, `FE-015`, `FE-020`, `DO-002` | `51b0899` — four claims the code contradicted                     |
+| `SEC-002`, `QA-001`, `NEW-FE-01`       | `5969c69` — two sweeps widened, and the defect that found         |
+| `SEC-003`                              | `831749b` — the wire between a session and a screen's write props |
+| `DOC-002`                              | `8eb9da2` — the guidance half of a conjunction                    |
+
+`QA-005` is the fourteenth and remains open by design, measurable only at the
+final head. The arithmetic block is therefore true NOW and was written before it
+was; that block carries its own note saying so.
+
 ---
 
 ## Fixed on this branch
@@ -554,12 +586,26 @@ credentials). `FE-029` cannot pass until that merges.
 ## Reproduced against the repository at head `915b861` — SUPERSEDED
 
 **This section is a snapshot, not a status.** Every entry below was reproduced by
-direct inspection at head `915b861` and each has since been fixed; the Summary
-table above is the live status and the commits are named there. The section is
-kept because a record that shows only the final state cannot be checked — the
-reproduction is the evidence that the fix was a fix and not a re-description.
+direct inspection at head `915b861`; the Summary table above is the live status
+and the commits are named there. The section is kept because a record that shows
+only the final state cannot be checked — the reproduction is the evidence that
+the fix was a fix and not a re-description.
 
 `FE-003` in particular reads here as open and is `FIXED 52a230a` above.
+
+**Two entries below were never "fixed", and this preamble used to say they all
+were** (`ADJ-03`). It read "each has since been fixed", which is a stronger claim
+than the section can support and points a reader at the wrong conclusion about
+the one thing still open:
+
+- `DO-002` is `no change needed`. It is adjudicated `AUDIT_FALSE_NEGATIVE`
+  precisely because there is nothing to fix — the unattached monitoring adapter
+  is the documented design.
+- `QA-005` is `OPEN (final head)` and is deliberately still open. A reader taking
+  the old sentence at its word concluded that the only open item in the phase had
+  been closed.
+
+Every OTHER entry below has since been fixed and its commit is named above.
 
 ### `FE-003` — `REAL_P1_27_DEFECT`
 
@@ -637,10 +683,18 @@ scope.
 
 ### `DO-002` — `REAL_P1_27_DEFECT`
 
-`setLogAdapter` is defined at `lib/observability/client-log.ts:144` and called
-from nowhere — zero references in `src` and zero in `tests`. The single
+`setMonitoringAdapter` is defined at `lib/observability/client-log.ts:143` and
+called from nowhere — zero references in `src` and zero in `tests`. The single
 production call site of `report()` is the dashboard error boundary, so every
 client error it captures is redacted, formatted, and delivered to a null adapter.
+
+**This entry named `setLogAdapter` until `ADJ-02`, and no such identifier has
+ever existed** — inside a section whose preamble says every entry below it was
+reproduced by direct inspection at head `915b861`. The observation is correct and
+the function is real; the name was written from memory of what such a function
+would be called, which is the same failure as citing a test title that does not
+exist. Corrected rather than deleted, because a record that quietly fixes its own
+citations teaches nothing about how they got there.
 
 ### `QA-001` — `REAL_P1_27_DEFECT` — partially closed
 
