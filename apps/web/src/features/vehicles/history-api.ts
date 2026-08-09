@@ -221,7 +221,36 @@ const odometerSchema = z
     // required rather than silently record a zero reading.
     value: z.number({ message: 'field.required' }).min(0).max(MAX_ODOMETER_VALUE),
     unit: z.enum(ODOMETER_UNITS),
-    observedAt: z.string().trim().min(16, 'vehicles.odometer.error.observedAt').max(40),
+    /*
+     * Bounded by the DOMAIN rule, not the route's.
+     *
+     * The route's Zod accepts any 16–40 character string
+     * (`odometer-readings/route.ts:39`) and this edge mirrored that — but the rule
+     * that actually decides is `vehicle-odometer.ts:46`, a strict ISO-8601
+     * pattern, checked in the domain. Mirroring the looser of the two let a
+     * near-miss an operator will plausibly type — `2026-03-01 09:30`, a space
+     * instead of `T`, exactly 16 characters — pass validation here, spend one of
+     * 30 requests per minute, and come back refused.
+     *
+     * And come back unmarked: the client parses `errors` while the platform
+     * publishes `violations` (`P1-27-INT-028`, foundation-owned), so a server
+     * field error currently reaches no field on any form. Until that is fixed, a
+     * refusal the edge can make locally is a refusal the operator can actually
+     * see, against the field that is wrong.
+     *
+     * The pattern is copied from the domain, deliberately. Copying a regex is not
+     * a Backend change, and the format it enforces is already stated to the
+     * operator in the hint beside this field.
+     */
+    observedAt: z
+      .string()
+      .trim()
+      .min(16, 'vehicles.odometer.error.observedAt')
+      .max(40)
+      .regex(
+        /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})?$/,
+        'vehicles.odometer.error.observedAt'
+      ),
     captureMethod: z.enum(ODOMETER_CAPTURE_METHODS).optional(),
   })
   .strict();

@@ -544,6 +544,51 @@ describe('P1-27-QA-003 — tenant, company and branch isolation', () => {
     }
   });
 
+  it('refuses a plausible odometer timestamp locally rather than spending a request on it', async () => {
+    /*
+     * `P1-27-FE-023`. The edge validated `observedAt` by LENGTH only — 16 to 40
+     * characters — mirroring the route's Zod (`odometer-readings/route.ts:39`)
+     * rather than the rule that actually decides, which is the strict ISO-8601
+     * pattern in the domain (`vehicle-odometer.ts:46`).
+     *
+     * `2026-03-01 09:30` is exactly 16 characters, is what an operator will
+     * plausibly type, and is refused by the server. Before this, it passed the
+     * edge, spent one of thirty requests per minute, and came back rejected —
+     * and came back marking NO field, because the client parses `errors` while
+     * the platform publishes `violations` (`P1-27-INT-028`, foundation-owned).
+     *
+     * So the operator saw a generic failure on a form that looked correct. The
+     * value of catching it locally is precisely that local field errors work.
+     *
+     * `toHaveBeenCalledTimes(0)` is the load-bearing half: a version that
+     * rejected the value AFTER issuing the request would satisfy an
+     * error-message assertion and still burn the rate-limit slot.
+     */
+    send.mockReset();
+    send.mockResolvedValue({ ok: true, data: {}, correlationId: 'c' });
+
+    const rejected = await vehHistory.recordOdometerAction(
+      'v1',
+      { status: 'idle' } as never,
+      formOf({ value: '123456', unit: 'km', observedAt: '2026-03-01 09:30' })
+    );
+
+    expect(send, 'the edge sent a request it could have refused itself').toHaveBeenCalledTimes(0);
+    expect(JSON.stringify(rejected)).toContain('observedAt');
+
+    // The control: the same shape with a real ISO-8601 timestamp DOES go out.
+    // Without this the case above would pass against an edge that rejected
+    // everything.
+    send.mockReset();
+    send.mockResolvedValue({ ok: true, data: {}, correlationId: 'c' });
+    await vehHistory.recordOdometerAction(
+      'v1',
+      { status: 'idle' } as never,
+      formOf({ value: '123456', unit: 'km', observedAt: '2026-03-01T09:30:00Z' })
+    );
+    expect(send, 'a valid timestamp was refused too').toHaveBeenCalledTimes(1);
+  });
+
   it('the write sweep is a stated sample, and the static gate covers the rest', () => {
     /*
      * The number of write adapters the sweep above DRIVES, against the number
