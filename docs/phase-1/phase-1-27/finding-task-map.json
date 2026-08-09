@@ -377,6 +377,110 @@
       "TASK_IDS": ["DOC-001"],
       "CLASSIFICATION": "DOCUMENTATION_DEFECT",
       "WHY": "The task-traceability record credited two case titles to a file that holds neither, and the existing citation check concatenates every test file so it could not see the direction that was wrong."
+    },
+    "H-01": {
+      "TASK_IDS": [
+        "FE-003",
+        "FE-004",
+        "FE-005",
+        "FE-006",
+        "FE-007",
+        "FE-008",
+        "FE-009",
+        "FE-010",
+        "FE-011",
+        "FE-012",
+        "FE-013",
+        "FE-014",
+        "FE-015",
+        "FE-019",
+        "FE-021",
+        "FE-022",
+        "FE-023",
+        "FE-024",
+        "FE-025",
+        "FE-029",
+        "QA-001"
+      ],
+      "CLASSIFICATION": "TEST_OR_GATE_DEFECT",
+      "WHY": "Accessibility coverage. Every task listed here recorded \"NO axe coverage\" in its ACCESSIBILITY_EVIDENCE cell — the creation routes were unlisted in the browser spec and the two profile screens were rendered by no file importing vitest-axe. QA-001 owns the component tier that now scans them."
+    },
+    "H-02": {
+      "TASK_IDS": [
+        "FE-004",
+        "FE-005",
+        "FE-006",
+        "FE-007",
+        "FE-008",
+        "FE-010",
+        "FE-011",
+        "FE-012",
+        "FE-013",
+        "FE-014",
+        "QA-004"
+      ],
+      "CLASSIFICATION": "REAL_P1_27_DEFECT",
+      "WHY": "Every CRM write rendered the concurrency sentence for every 409, so a lifecycle or uniqueness refusal told the operator somebody else had edited the record. QA-004 owns the conflict-copy contract that fixed it."
+    },
+    "H-03": {
+      "TASK_IDS": ["FE-009", "DOC-002"],
+      "CLASSIFICATION": "DOCUMENTATION_DEFECT",
+      "WHY": "The preferences contract documented an If-Match guard that neither the client nor the route implements, so a reader would have built a stale-version path against a header nothing honours. DOC-002 owns guidance accuracy."
+    },
+    "H-04": {
+      "TASK_IDS": ["FE-016", "SEC-003"],
+      "CLASSIFICATION": "DOCUMENTATION_DEFECT",
+      "WHY": "The customer-duplicates route docblock justifies not checking crm.customer.merge by a control inside the screen; while P1-OD-017 is open no merge control exists, so the justification names something absent. SEC-003 owns the deliberate absence."
+    },
+    "H-05": {
+      "TASK_IDS": ["FE-004", "FE-005", "QA-001"],
+      "CLASSIFICATION": "TEST_OR_GATE_DEFECT",
+      "WHY": "Both customer-creation write adapters were mocked everywhere and executed nowhere, and the one path assertion about them read module source text rather than the request. QA-001 owns unit and component coverage."
+    },
+    "H-06": {
+      "TASK_IDS": ["FE-006", "QA-001"],
+      "CLASSIFICATION": "TEST_OR_GATE_DEFECT",
+      "WHY": "readCustomer is a vi.fn() in all six files that name it, so the read that decides whether the customer profile renders at all has no execution-level proof of its path, its retry setting or its failure mapping."
+    },
+    "H-07": {
+      "TASK_IDS": ["FE-019"],
+      "CLASSIFICATION": "REAL_P1_27_DEFECT",
+      "WHY": "The vehicle details edit panel did not re-read after a successful save, so the header kept pre-edit values and the next edit was computed against stale originals — an operator saw Saved beside values that had not moved."
+    },
+    "H-08": {
+      "TASK_IDS": ["FE-019", "QA-002"],
+      "CLASSIFICATION": "REAL_P1_27_DEFECT",
+      "WHY": "VehicleProfileScreen renders no state.fieldErrors, so the 422 correction stops one layer short of the operator: a rejected field on the details panel shows only the generic sentence while five sibling vehicle screens render theirs."
+    },
+    "H-09": {
+      "TASK_IDS": ["FE-019", "FE-020", "QA-004"],
+      "CLASSIFICATION": "REAL_P1_27_DEFECT",
+      "WHY": "Both vehicle PATCHes rendered the concurrency sentence for a value collision and for a merged or frozen vehicle, accusing an absent third party for four distinct server refusals."
+    },
+    "H-10": {
+      "TASK_IDS": ["FE-022", "QA-001"],
+      "CLASSIFICATION": "TEST_OR_GATE_DEFECT",
+      "WHY": "The plate-assignment write schema had no test at all: the country-code length rule, the uppercase transform and the effective-date length were exercised nowhere in the suite."
+    },
+    "H-11": {
+      "TASK_IDS": ["FE-019", "DOC-001"],
+      "CLASSIFICATION": "DOCUMENTATION_DEFECT",
+      "WHY": "An id that names nothing. H-11 occurs only inside FE-019 ROUND5_FINDING_IDS and no document says what it is, so it can be neither closed nor refuted. DOC-001 owns traceability, and an unresolvable id is a traceability failure."
+    },
+    "H-12": {
+      "TASK_IDS": ["FE-009", "DOC-002"],
+      "CLASSIFICATION": "DOCUMENTATION_DEFECT",
+      "WHY": "The retraction that closed H-03 corrected one of two copies of the same If-Match claim; profile-contract.ts line 60 still states it, and no CRM customer write sends the header."
+    },
+    "H-13": {
+      "TASK_IDS": ["FE-019", "QA-002", "DOC-002"],
+      "CLASSIFICATION": "DOCUMENTATION_DEFECT",
+      "WHY": "Two load-bearing comments state that the client reads errors while the client now reads violations, so a reader diagnosing an invisible refusal acts on a premise the code no longer has. QA-002 owns the contract that changed."
+    },
+    "H-14": {
+      "TASK_IDS": ["DO-001"],
+      "CLASSIFICATION": "TEST_OR_GATE_DEFECT",
+      "WHY": "The changed-file ownership step exits 0 with no pull-request context, so validate:phase-ownership never runs on a protected push; the compensating control is stated in the workflow and holds only while pull requests are the sole path to a protected ref."
     }
   }
 }

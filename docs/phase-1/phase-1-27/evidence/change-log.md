@@ -196,6 +196,52 @@ And one about measurement: the accessibility rule for WCAG 2.5.3 carries axe's
 necessary and not sufficient; the rule is now enabled by name, with a planted
 violation proving it fires.
 
+### Round five — the panel refuted this wave's own fixes
+
+`adversarial-round-five.md` is the register and its totals derive from its own
+rows; this is the summary, not a second copy of them. Five reviewers were each
+told to refute one claim rather than confirm it, and the claim they damaged most
+was the headline — "6 forms, 7 selects, 1 checkbox, 0 radios, **0 uncovered**".
+The inventory reported zero uncovered because it never opened the files holding
+the defects. Three real product defects were sitting in them, one of them a
+SILENT WRONG WRITE: `VehicleCreateScreen`'s client-validation branch did not
+advance `attempt`, so a mistyped year, corrected and resubmitted, created a
+vehicle with no make, no model and no body type — and reported success.
+
+The web test floor was broken four independent ways at once (`WTF-01` …
+`WTF-07`), of which the one worth remembering is that `numTotalTests` counts
+SKIPPED tests: `it.skip` across the tier left the count, the failure count and
+the success flag exactly where the floor wanted them, with nothing executed.
+
+### `DOC-001`, `DOC-002` and the thirteen unassessed rows
+
+Three waves, and the last of them is why this section exists at all.
+
+- **The catalogue.** Twenty-nine `TC-P1-27-*` ids were declared in three
+  documents and appeared in no executable file. They are bound to the tests that
+  already prove them, as data a gate reads per FILE — which immediately found a
+  title credited to the wrong file (`G-11`).
+- **The guides.** Each guide sentence is now pinned to the executable thing it
+  describes, in both catalogues (`D-01`) and over the ownership gate's wider scan
+  roots (`D-02`). Writing the check found two defects in the guide it was written
+  to prove, and the second was introduced by the fix for the first.
+- **The matrix.** Thirteen of the forty-two rows — every Security, QA, DevOps and
+  Documentation task — carried the literal string `NOT YET ASSESSED` in
+  twenty-six of their twenty-eight fields, so no non-Frontend task could reach
+  PASS on the matrix's own rule however good the implementation was. All thirteen
+  are populated. **None was raised to PASS**: the honest verdict for each is
+  PARTIAL, and each names what remains in terms someone can act on. Four are
+  worth reading — `SEC-004` (the audit-event half has no executable assertion at
+  all; `auditClass` exists in `apps/web` only inside comments), `QA-001` (there is
+  no coverage measurement for `apps/web` whatsoever), `QA-002` (nothing derives
+  the client's problem-document interface from the API's, so it can rot in
+  silence a second time) and `DO-002` (the documented way to switch monitoring on
+  cannot work, because `connect-src` takes no parameter for the sink).
+- **The findings that were in no register.** `H-01` … `H-11` existed only inside
+  `task-matrix.json` cells. They are registered, re-verified against this head
+  rather than copied, and three more were added for defects `continuation-checkpoint.md`
+  §8.4 states in prose and no register carried.
+
 ---
 
 ## The through-line
@@ -221,8 +267,13 @@ which is the defect the task reports.
 Three things changed, and only one of them is a document.
 
 **A digest over the evidence.** `evidence/evidence-manifest.json` carries SHA-256
-over the _bytes_ of all 29 `.md`/`.json` files in the phase directory, walked
-rather than listed. `validate:p1-27-evidence` fails when a document moves and the
+over the _bytes_ of every `.md` and `.json` file in the phase directory, walked
+rather than listed — <!-- derived: manifest fileCount = 36 --> **36** of them at
+this head. That number was written here as "29" and stayed there while the phase
+directory grew by seven documents: a sentence about a walk, holding a figure
+nothing read. It is derived now, so the next document that joins the tree fails
+this gate instead of ageing the paragraph.
+`validate:p1-27-evidence` fails when a document moves and the
 manifest does not, and names the file that moved. It says in its own text what it
 is not: anyone who can edit a document can re-run the generator, so this removes
 _silent_ revision, not revision. It caught one within a minute of being written —

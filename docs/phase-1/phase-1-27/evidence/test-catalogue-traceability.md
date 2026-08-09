@@ -76,50 +76,109 @@ Recorded as `G-11` in `adversarial-round-five.md` and corrected in
 
 Derived from `evidence/task-traceability.md` §3, which names a test file and the
 case within it for every Frontend task. **29 declared · 29 resolve to at least one
-executable case · 0 with no proof at all.** 16 distinct test files carry them, and
-109 quoted case titles are checked against the file that is said to hold them.
+executable case · 0 with no proof at all.**
 
-| id                 | task     | proven by                                                                     |
-| ------------------ | -------- | ----------------------------------------------------------------------------- |
-| `TC-P1-27-CRM-001` | `FE-001` | `crm-customer-search.test.ts`, `crm-customer-search.dom.test.tsx`             |
-| `TC-P1-27-CRM-002` | `FE-002` | `crm-customer-search.test.ts`, `crm-customer-search.dom.test.tsx`             |
-| `TC-P1-27-CRM-003` | `FE-003` | `crm-customer-create.dom.test.tsx`                                            |
-| `TC-P1-27-CRM-004` | `FE-004` | `crm-customer-create.dom.test.tsx`                                            |
-| `TC-P1-27-CRM-005` | `FE-005` | `crm-customer-create.dom.test.tsx`                                            |
-| `TC-P1-27-CRM-006` | `FE-006` | `crm-customer-profile.dom.test.tsx`                                           |
-| `TC-P1-27-CRM-007` | `FE-007` | `crm-customer-profile.dom.test.tsx`                                           |
-| `TC-P1-27-CRM-008` | `FE-008` | `crm-customer-profile.dom.test.tsx`                                           |
-| `TC-P1-27-CRM-009` | `FE-009` | `crm-governance-writes.test.ts`, `crm-customer-components.dom.test.tsx`       |
-| `TC-P1-27-CRM-010` | `FE-010` | `crm-governance-writes.test.ts`, `crm-customer-components.dom.test.tsx`       |
-| `TC-P1-27-CRM-011` | `FE-011` | `crm-profile-api.test.ts`, `crm-customer-components.dom.test.tsx`             |
-| `TC-P1-27-CRM-012` | `FE-012` | `crm-governance-writes.test.ts`, `crm-customer-components.dom.test.tsx`       |
-| `TC-P1-27-CRM-013` | `FE-013` | `governance-write-validation.test.ts`, `crm-customer-components.dom.test.tsx` |
-| `TC-P1-27-CRM-014` | `FE-014` | `crm-governance-writes.test.ts`, `crm-customer-components.dom.test.tsx`       |
-| `TC-P1-27-CRM-015` | `FE-015` | `crm-duplicate-review.test.ts`, `crm-customer-components.dom.test.tsx`        |
-| `TC-P1-27-XD-001`  | `FE-016` | `crm-duplicate-review.test.ts`                                                |
-| `TC-P1-27-VEH-001` | `FE-017` | `vehicle-api.test.ts`, `vehicle-screens.dom.test.tsx`                         |
-| `TC-P1-27-VEH-002` | `FE-018` | `vehicle-contract.test.ts`, `vehicle-api.test.ts`                             |
-| `TC-P1-27-VEH-003` | `FE-019` | `vehicle-profile.test.ts`                                                     |
-| `TC-P1-27-VEH-004` | `FE-020` | `vehicle-profile.test.ts`, `vehicle-contract.test.ts`                         |
-| `TC-P1-27-VEH-005` | `FE-021` | `vehicle-history.test.ts`                                                     |
-| `TC-P1-27-VEH-006` | `FE-022` | `vehicle-history.test.ts`                                                     |
-| `TC-P1-27-VEH-007` | `FE-023` | `vehicle-history.test.ts`                                                     |
-| `TC-P1-27-VEH-008` | `FE-024` | `vehicle-relations.test.ts`                                                   |
-| `TC-P1-27-XD-002`  | `FE-025` | `vehicle-relations.test.ts`                                                   |
-| `TC-P1-27-VEH-009` | `FE-026` | `vehicle-duplicates.test.ts`                                                  |
-| `TC-P1-27-VEH-010` | `FE-027` | `vehicle-duplicates.test.ts`                                                  |
-| `TC-P1-27-XD-003`  | `FE-028` | `vehicle-duplicates.test.ts`, `vehicle-screens.dom.test.tsx`                  |
-| `TC-P1-27-VEH-011` | `FE-029` | `vehicle-duplicates.test.ts`, `vehicle-screens.dom.test.tsx`                  |
+<!-- derived: catalogue ids = 29 -->
+<!-- derived: catalogue files = 20 -->
+<!-- derived: catalogue titles = 138 -->
+
+**20** distinct test files carry them, and **138** quoted case titles are checked
+against the file that is said to hold them. Those two figures were prose — "16
+distinct test files" and "109 quoted case titles" — until the rebinding below
+moved both and nothing said so. They are read out of the JSON now.
+
+<!-- derived: rows catalogue-table = 29 -->
+
+| id                 | task     | proven by                                                                                                                |
+| ------------------ | -------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `TC-P1-27-CRM-001` | `FE-001` | `crm-customer-search.test.ts`, `crm-customer-search.dom.test.tsx`                                                        |
+| `TC-P1-27-CRM-002` | `FE-002` | `crm-customer-search.test.ts`, `crm-customer-search.dom.test.tsx`                                                        |
+| `TC-P1-27-CRM-003` | `FE-003` | `crm-customer-create.dom.test.tsx`                                                                                       |
+| `TC-P1-27-CRM-004` | `FE-004` | `crm-customer-create.dom.test.tsx`, `write-adapters-driven.test.ts`                                                      |
+| `TC-P1-27-CRM-005` | `FE-005` | `crm-customer-create.dom.test.tsx`, `write-adapters-driven.test.ts`                                                      |
+| `TC-P1-27-CRM-006` | `FE-006` | `crm-customer-profile.dom.test.tsx`, `profile-accessibility.dom.test.tsx`, `p1-27-permission-route-binding.dom.test.tsx` |
+| `TC-P1-27-CRM-007` | `FE-007` | `crm-customer-profile.dom.test.tsx`                                                                                      |
+| `TC-P1-27-CRM-008` | `FE-008` | `crm-customer-profile.dom.test.tsx`                                                                                      |
+| `TC-P1-27-CRM-009` | `FE-009` | `crm-governance-writes.test.ts`, `crm-customer-components.dom.test.tsx`                                                  |
+| `TC-P1-27-CRM-010` | `FE-010` | `crm-governance-writes.test.ts`, `crm-customer-components.dom.test.tsx`                                                  |
+| `TC-P1-27-CRM-011` | `FE-011` | `crm-profile-api.test.ts`, `crm-customer-components.dom.test.tsx`                                                        |
+| `TC-P1-27-CRM-012` | `FE-012` | `crm-governance-writes.test.ts`, `crm-customer-components.dom.test.tsx`                                                  |
+| `TC-P1-27-CRM-013` | `FE-013` | `governance-write-validation.test.ts`, `crm-customer-components.dom.test.tsx`                                            |
+| `TC-P1-27-CRM-014` | `FE-014` | `crm-governance-writes.test.ts`, `crm-customer-components.dom.test.tsx`                                                  |
+| `TC-P1-27-CRM-015` | `FE-015` | `crm-duplicate-review.test.ts`, `crm-customer-components.dom.test.tsx`                                                   |
+| `TC-P1-27-XD-001`  | `FE-016` | `crm-duplicate-review.test.ts`                                                                                           |
+| `TC-P1-27-VEH-001` | `FE-017` | `vehicle-api.test.ts`, `vehicle-screens.dom.test.tsx`                                                                    |
+| `TC-P1-27-VEH-002` | `FE-018` | `vehicle-contract.test.ts`, `vehicle-api.test.ts`                                                                        |
+| `TC-P1-27-VEH-003` | `FE-019` | `vehicle-profile.test.ts`, `p1-27-permission-route-binding.dom.test.tsx`                                                 |
+| `TC-P1-27-VEH-004` | `FE-020` | `vehicle-profile.test.ts`, `vehicle-contract.test.ts`                                                                    |
+| `TC-P1-27-VEH-005` | `FE-021` | `vehicle-history.test.ts`                                                                                                |
+| `TC-P1-27-VEH-006` | `FE-022` | `vehicle-history.test.ts`, `vehicle-plate-section.dom.test.tsx`, `write-adapters-driven.test.ts`                         |
+| `TC-P1-27-VEH-007` | `FE-023` | `vehicle-history.test.ts`                                                                                                |
+| `TC-P1-27-VEH-008` | `FE-024` | `vehicle-relations.test.ts`                                                                                              |
+| `TC-P1-27-XD-002`  | `FE-025` | `vehicle-relations.test.ts`, `write-adapters-driven.test.ts`                                                             |
+| `TC-P1-27-VEH-009` | `FE-026` | `vehicle-duplicates.test.ts`                                                                                             |
+| `TC-P1-27-VEH-010` | `FE-027` | `vehicle-duplicates.test.ts`                                                                                             |
+| `TC-P1-27-XD-003`  | `FE-028` | `vehicle-duplicates.test.ts`, `vehicle-screens.dom.test.tsx`                                                             |
+| `TC-P1-27-VEH-011` | `FE-029` | `vehicle-duplicates.test.ts`, `vehicle-screens.dom.test.tsx`                                                             |
 
 The exact case titles are in the JSON, one array per id, and each is checked
 against the file named beside it. This table lists files only, so that it cannot
-become a second copy of a hundred and nine strings that drift.
+become a second copy of a hundred and thirty-eight strings that drift.
 
 **One grouping deserves its own sentence.** `FE-026` (documents) and `FE-027`
 (media) are proven by `vehicle-duplicates.test.ts` rather than by a file named
 after them. That is where the assertions live, it is not a mistake, and it is
 stated here because a reader who assumes a file-per-feature convention would
 conclude the record is wrong.
+
+### 3.1 Six ids pointed away from the work that closed their gap
+
+The first version of this record bound each id to the tests that existed when it
+was written. Three waves then landed, and six of the bindings stayed where they
+were — resolving, checked, and pointing at the older suite rather than at the one
+that closed the gap the id is about.
+
+| id                 | pointed only at                     | now also cites                                                                      | why it matters                                                                                                   |
+| ------------------ | ----------------------------------- | ----------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `TC-P1-27-CRM-004` | `crm-customer-create.dom.test.tsx`  | `write-adapters-driven.test.ts`                                                     | That file MOCKS `createIndividualAction`. The adapter it names was executed by nothing until `c283354` (`H-05`). |
+| `TC-P1-27-CRM-005` | `crm-customer-create.dom.test.tsx`  | `write-adapters-driven.test.ts`                                                     | The same, for `createCompanyAction`.                                                                             |
+| `TC-P1-27-CRM-006` | `crm-customer-profile.dom.test.tsx` | `profile-accessibility.dom.test.tsx`, `p1-27-permission-route-binding.dom.test.tsx` | The profile's accessibility scan and its route-level write binding both arrived after the id was bound.          |
+| `TC-P1-27-VEH-003` | `vehicle-profile.test.ts`           | `p1-27-permission-route-binding.dom.test.tsx`                                       | Its permission citation compared two constants; the route binding renders the real page. See §3.2.               |
+| `TC-P1-27-VEH-006` | `vehicle-history.test.ts`           | `vehicle-plate-section.dom.test.tsx`, `write-adapters-driven.test.ts`               | The plate write schema had no test at all (`H-10`); both files now exercise it.                                  |
+| `TC-P1-27-XD-002`  | `vehicle-relations.test.ts`         | `write-adapters-driven.test.ts`                                                     | The relationship writes were mocked; they are executed now. Its permission citation is the second one in §3.2.   |
+
+Nothing was removed. A binding that resolves is evidence even when a better one
+exists, and deleting evidence to improve a record is the defect one level up.
+
+### 3.2 "Resolves" is not "proved" — two citations that only resolve
+
+An independent reader spot-checked five of the twenty-nine and found **two whose
+only cited case asserts that two CONSTANTS differ**:
+
+- `TC-P1-27-VEH-003` → `vehicle-profile.test.ts`, "gates editing and status
+  changes on different permissions" — which asserts
+  `VEHICLE_PERMISSIONS.vehicleManage !== VEHICLE_PERMISSIONS.statusManage`.
+- `TC-P1-27-XD-002` → `vehicle-relations.test.ts`, "separates relationship
+  management from vehicle management" — the same shape.
+
+Both are real, executable and green. Neither reaches a screen, so both would pass
+unchanged against a profile that rendered every panel to a session holding
+neither code. **So the "29 resolve" headline in §3 must not be read as "29
+proved", and this section exists so it cannot be.**
+
+<!-- derived: catalogue weak = 2 -->
+
+Two entries are recorded in the JSON's `weakCitations` block. It is held to the
+same standard as the rows: `checkCatalogue` requires each entry to name a
+recorded id, a file that exists, a case title present in that file, a stated
+weakness, and a strengthening proof whose titles resolve too — otherwise the
+block would be the one place in this record where a citation is unchecked.
+
+**How far the check goes, stated as the smaller claim.** Two were found because
+five were sampled. The other twenty-four are not asserted to be strong; no
+mechanical test can tell a case that proves a behaviour from a case that merely
+runs, and this record does not pretend to have one. What it has is a gate that
+refuses an unstated weakness, and a sample of five with two failures in it.
 
 ---
 

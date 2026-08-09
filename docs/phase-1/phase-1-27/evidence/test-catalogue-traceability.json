@@ -73,6 +73,15 @@
             "announces a field error against its field",
             "shows the correlation reference and keeps the form usable"
           ]
+        },
+        {
+          "file": "apps/web/tests/write-adapters-driven.test.ts",
+          "cases": [
+            "sends the operation the contract publishes, with the trimmed names",
+            "refuses a name past the route ceiling",
+            "accepts a name at exactly the ceiling",
+            "hands the created customer back to the form"
+          ]
         }
       ]
     },
@@ -87,6 +96,15 @@
             "marks the trading name optional, because the contract does",
             "renders the company form right to left"
           ]
+        },
+        {
+          "file": "apps/web/tests/write-adapters-driven.test.ts",
+          "cases": [
+            "sends the company operation, not the individual one",
+            "omits a blank trade name and sends a trimmed one",
+            "refuses a blank legal name and a name past the company ceiling",
+            "defaults the lifecycle status to prospect when the form omits it"
+          ]
         }
       ]
     },
@@ -100,6 +118,21 @@
             "shows the name and the customer reference",
             "never shows the uuid where a reference belongs",
             "keeps the header and the other sections reachable"
+          ]
+        },
+        {
+          "file": "apps/web/tests/profile-accessibility.dom.test.tsx",
+          "cases": [
+            "scans the profile in Arabic, right to left",
+            "scans the read-only profile, which renders a different screen"
+          ]
+        },
+        {
+          "file": "apps/web/tests/p1-27-permission-route-binding.dom.test.tsx",
+          "cases": [
+            "enumerates all nine surfaces and finds five distinct capabilities behind them",
+            "offers nothing at all to a session holding only the read code",
+            "renders no profile at all without the read code"
           ]
         }
       ]
@@ -334,6 +367,14 @@
             "sends an explicit null to CLEAR a field",
             "does NOT send an If-Match header argument"
           ]
+        },
+        {
+          "file": "apps/web/tests/p1-27-permission-route-binding.dom.test.tsx",
+          "cases": [
+            "found six distinct codes to pair against",
+            "renders no vehicle at all without the read code",
+            "gates the documents list on a MANAGE code from another module, both ways"
+          ]
         }
       ]
     },
@@ -381,6 +422,24 @@
             "builds each path from a fixed segment with the id encoded",
             "publishes no total on any of the three"
           ]
+        },
+        {
+          "file": "apps/web/tests/vehicle-plate-section.dom.test.tsx",
+          "cases": [
+            "asks the plate operation for this vehicle and prints every row it answers",
+            "sends the country code uppercased and the plate exactly as typed",
+            "refuses a one-letter country against that field, without spending a request",
+            "re-reads the list after a successful assignment"
+          ]
+        },
+        {
+          "file": "apps/web/tests/write-adapters-driven.test.ts",
+          "cases": [
+            "uppercases the country code and posts the raw plate as typed",
+            "refuses a country code of one character and of four",
+            "accepts a three-character country code",
+            "refuses an effective date that is not exactly ten characters"
+          ]
         }
       ]
     },
@@ -420,6 +479,16 @@
             "reports not-applicable for every role but authorized_person",
             "flags an authorized person with no scope as unexpected, not as ordinary",
             "refuses an action outside the six"
+          ]
+        },
+        {
+          "file": "apps/web/tests/write-adapters-driven.test.ts",
+          "cases": [
+            "addresses the CUSTOMER, with the vehicle in the body",
+            "refuses the one role that may carry an authorization scope",
+            "accepts every linkable role",
+            "posts the scope to the vehicle authorized-parties collection",
+            "refuses an empty scope, which the constraint forbids"
           ]
         }
       ]
@@ -712,5 +781,40 @@
       "reason": "No case takes a CRM or vehicle screen from a rendered failure through Retry to a rendered success. Every failure state is asserted, and the transition out of it is not.",
       "provenBy": []
     }
-  ]
+  ],
+  "weakCitations": {
+    "what": "Citations that resolve to an executable case which does not prove the behaviour the id names.",
+    "why": "Five of the twenty-nine were spot-checked by an independent reader and two of them resolved to an assertion that two CONSTANTS differ. That is a real case and it is not a proof: it would pass against a screen that ignored both constants. \"29 resolve\" is therefore not \"29 proved\", and this block exists so the headline cannot be read as the stronger claim. Each entry keeps the weak citation rather than deleting it — deleting evidence to improve a record is the defect one level up — and names the case that now carries the obligation.",
+    "checkedBy": "scripts/ci/check-p1-27-doc-counts.mjs (checkCatalogue): every entry must name a recorded id, a file that exists, a case title present in that file, a stated weakness, and a strengthening proof whose titles resolve too.",
+    "entries": [
+      {
+        "id": "TC-P1-27-VEH-003",
+        "file": "apps/web/tests/vehicle-profile.test.ts",
+        "case": "gates editing and status changes on different permissions",
+        "weakness": "Asserts that VEHICLE_PERMISSIONS.vehicleManage and VEHICLE_PERMISSIONS.statusManage hold different strings. Nothing in it reaches the vehicle profile, so it passes unchanged against a screen that renders both panels to a session holding neither code.",
+        "strengthenedBy": {
+          "file": "apps/web/tests/p1-27-permission-route-binding.dom.test.tsx",
+          "cases": [
+            "found six distinct codes to pair against",
+            "renders no vehicle at all without the read code"
+          ],
+          "how": "Invokes the real vehicle profile route with a synthesised session and RENDERS what it returns, asserting each of the eight write surfaces in both directions — offered to its own code, withheld from a session holding all five others."
+        }
+      },
+      {
+        "id": "TC-P1-27-XD-002",
+        "file": "apps/web/tests/vehicle-relations.test.ts",
+        "case": "separates relationship management from vehicle management",
+        "weakness": "The same shape: relationshipManage is asserted to be the literal veh.vehicle.relationship.manage and not to equal vehicleManage. It is a statement about two constants and says nothing about what any screen does with them.",
+        "strengthenedBy": {
+          "file": "apps/web/tests/write-adapters-driven.test.ts",
+          "cases": [
+            "posts the scope to the vehicle authorized-parties collection",
+            "refuses the one role that may carry an authorization scope"
+          ],
+          "how": "Executes the real relationship write adapters with only the transport mocked and asserts the request that came out, so the schema, the body assembly and the refusals are exercised rather than the constant."
+        }
+      }
+    ]
+  }
 }

@@ -466,7 +466,52 @@ export function deriveCounts(root = ROOT) {
     'hosted-ci': required.filter((r) => r.hostedCi).length,
   };
 
-  return { counts, cases, lines, tracked, commands };
+  /**
+   * The catalogue record's own shape, so its prose cannot restate it wrongly.
+   *
+   * `test-catalogue-traceability.md` §3 stated "16 distinct test files" and "109
+   * quoted case titles" as prose beside a table it deliberately does not repeat.
+   * Both were correct when written and both are properties of the JSON beside
+   * them, so a rebinding changes them and nothing said so. They are derived now.
+   */
+  const catalogue = {};
+  {
+    const path = native(root, CATALOGUE_PATH);
+    if (existsSync(path)) {
+      const record = JSON.parse(readFileSync(path, 'utf8'));
+      const files = new Set();
+      let titles = 0;
+      for (const entry of Object.values(record.cases ?? {})) {
+        for (const proof of entry.provenBy ?? []) {
+          files.add(proof.file);
+          titles += (proof.cases ?? []).length;
+        }
+      }
+      catalogue.ids = Object.keys(record.cases ?? {}).length;
+      catalogue.files = files.size;
+      catalogue.titles = titles;
+      catalogue.weak = (record.weakCitations?.entries ?? []).length;
+    }
+  }
+
+  /**
+   * The evidence manifest's own file count.
+   *
+   * `evidence/change-log.md` said the digest covers "all 29 `.md`/`.json` files
+   * in the phase directory" against a manifest holding 36 — a sentence its own
+   * successors falsified while nothing read either number. Deriving it means the
+   * next document that grows the phase tree fails here instead of ageing.
+   */
+  const manifest = {};
+  {
+    const path = native(root, `${PHASE_DIR}/evidence/evidence-manifest.json`);
+    if (existsSync(path)) {
+      const record = JSON.parse(readFileSync(path, 'utf8'));
+      if (typeof record.fileCount === 'number') manifest.fileCount = record.fileCount;
+    }
+  }
+
+  return { counts, cases, lines, tracked, commands, catalogue, manifest };
 }
 
 /* ------------------------------------------------------------------ *
@@ -683,6 +728,8 @@ const TABLE_KINDS = {
   lines: 'lines',
   tracked: 'tracked',
   commands: 'commands',
+  catalogue: 'catalogue',
+  manifest: 'manifest',
 };
 
 /**
@@ -930,6 +977,56 @@ export function checkCatalogue(root = ROOT) {
         'no record in this repository establishes that'
     );
   }
+
+  /*
+   * `weakCitations` — the block that stops "29 resolve" being read as "29
+   * proved".
+   *
+   * A spot check of five ids found two whose only cited case asserted that two
+   * CONSTANTS differ. Both resolve, both are executable, and neither reaches the
+   * screen the id names. Recording that is only worth anything if the record
+   * itself is held to the same standard the rows are: the weak case must still
+   * exist in the file it names, the weakness must be stated, and the case that
+   * now carries the obligation must resolve too. Otherwise the block becomes the
+   * one place in this record where a citation is unchecked.
+   */
+  const weak = catalogue.weakCitations;
+  if (weak !== undefined) {
+    const entries = weak.entries ?? [];
+    if (entries.length === 0) {
+      problems.push('weakCitations is present and lists no entry — remove it or fill it');
+    }
+    for (const [index, entry] of entries.entries()) {
+      const where = `weakCitations[${index}]`;
+      if (!recorded.includes(entry.id)) {
+        problems.push(`${where} names ${entry.id}, which this record does not carry`);
+      }
+      if (!String(entry.weakness ?? '').trim()) {
+        problems.push(`${where} (${entry.id}) states no weakness — an unstated one is decoration`);
+      }
+      const cited = [
+        { file: entry.file, cases: entry.case ? [entry.case] : [] },
+        { file: entry.strengthenedBy?.file, cases: entry.strengthenedBy?.cases ?? [] },
+      ];
+      if (!entry.strengthenedBy?.file) {
+        problems.push(`${where} (${entry.id}) names no case that carries the obligation instead`);
+      }
+      for (const proof of cited) {
+        if (!proof.file) continue;
+        const text = readTest(proof.file);
+        if (text === null) {
+          problems.push(`${where} cites ${proof.file}, which does not exist`);
+          continue;
+        }
+        for (const title of proof.cases) {
+          if (!text.includes(title)) {
+            problems.push(`${where} quotes "${title}", which is in no case of ${proof.file}`);
+          }
+        }
+      }
+    }
+  }
+
   return problems;
 }
 
