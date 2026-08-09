@@ -19,7 +19,49 @@ name: Protected branch verification
 on:
   push:
     branches: [develop, main]
+  # THE PRE-MERGE PATH, and it is not an afterthought.
+  #
+  # `push` alone would mean the `authenticated-browser` job below could only
+  # produce evidence AFTER a merge — so a phase would have to merge work in
+  # order to learn whether the work was good, which is the ordering backwards.
+  # A manual dispatch closes that: it runs the same jobs, from the same file, on
+  # any branch of THIS repository, before anything is merged.
+  #
+  # `candidate-sha` is what makes such a run quotable. A dispatch names a REF,
+  # and a ref is a moving target: between reading a pull request's head and the
+  # run starting, a push can change what the name points at, and the evidence
+  # would then describe a commit nobody reviewed. Naming the commit as well lets
+  # the run refuse to be evidence for the wrong one — see the first step of
+  # `authenticated-browser`, which is where the comparison is made.
+  #
+  # READ THE PER-JOB CHECK, NOT THE RUN CONCLUSION, ON A DISPATCH.
+  #
+  # A dispatch starts every job in this file, and two of them cannot mean the
+  # same thing under `workflow_dispatch` as they do under `push`:
+  #
+  #   - `database-migration-replay` fails by design, because a dispatch has no
+  #     base reference to diff against and migration immutability therefore
+  #     cannot be checked. It refuses to report success for a check it could
+  #     not run, which is correct — but it makes the RUN red for a reason that
+  #     says nothing about the commit.
+  #   - `database-security` and the Supabase-backed jobs pull images, so a
+  #     Docker Hub rate limit surfaces here as a failure of the candidate when
+  #     it is a failure of the registry.
+  #
+  # So evidence from a pre-merge dispatch is the check-run named after the JOB
+  # on the commit — `authenticated-browser` — never the run-level conclusion.
+  # Both were observed together on run 31337158296 and would mislead anybody
+  # who quoted the latter.
   workflow_dispatch:
+    inputs:
+      candidate-sha:
+        description: >-
+          The full 40-character commit this run must test. REQUIRED when
+          dispatching a branch other than develop or main, because that is the
+          pre-merge case whose result gets quoted. The run fails unless the
+          commit it checked out is exactly this one.
+        required: false
+        type: string
 
 concurrency:
   group: protected-${{ github.workflow }}-${{ github.ref }}
@@ -166,8 +208,50 @@ jobs:
   # A GREEN RUN THAT RAN NOTHING IS THE FAILURE MODE THIS PHASE EXISTS TO CATCH,
   # so the last step derives what executed from the Playwright report and fails
   # unless every authenticated spec file contributed at least one executed test.
+  #
+  # HOW THIS RUNS BEFORE A MERGE, AND WHY BY DISPATCH RATHER THAN ON THE PR
+  #
+  # Being reachable only by `push` would have forced the phase to merge in order
+  # to find out whether what it was merging worked. It never was: the
+  # `workflow_dispatch` trigger at the top of this file runs these same jobs, on
+  # any branch of this repository, before anything lands. `candidate-sha` pins
+  # the commit, and the first step below refuses the run when the pin does not
+  # match. That combination — dispatch plus pin — is the pre-merge mechanism.
+  #
+  # Two alternatives were considered and rejected on evidence, not taste:
+  #
+  #   - a `pull_request` trigger. `actions/checkout` on `pull_request` defaults
+  #     to the MERGE ref, so the run would test a commit that exists in no
+  #     branch and that nobody reviewed — a trap this repository has already
+  #     been caught by. It would also expose a privileged forty-minute stack to
+  #     fork pull requests unless guarded, and put that cost on every PR.
+  #     `workflow_dispatch` has no merge ref to be fooled by, and a fork cannot
+  #     reach it at all: dispatching requires write access to THIS repository
+  #     and a ref inside it, so the fork exposure is structural rather than a
+  #     condition somebody has to remember to write.
+  #   - extracting the job into a `_reusable-*.yml` called from both places.
+  #     That adds a workflow FILE, and `tests/ci/documented-counts.test.ts`
+  #     holds the workflow count against `docs/engineering/ci-automation/
+  #     pull-request-body.md` (line 62), a document outside this branch's
+  #     ownership. It would also put the tier in two workflow files, which
+  #     `tests/ci/e2e-tier-coverage.test.ts` forbids on purpose so that a stray
+  #     copy-paste cannot land a Docker stack on the merge gate. Indirection
+  #     for no new capability: dispatch already reaches this job.
+  #
+  # The `push` path above is UNCHANGED and remains the post-merge protected
+  # reproof — the run a gate record quotes.
   # ===========================================================================
   authenticated-browser:
+    # NOT GOVERNED BY protected-gate. This job is absent from that gate's
+    # `needs`, so the gate can report Go while this check is red — read this
+    # check on its own. Repaying it is described in
+    # `.github/ci-baselines/unrun-test-tiers.json` under `howToClose`.
+    #
+    # Stated INSIDE the job block, below the key, because that is the only
+    # place a reader of the job is guaranteed to see it and the only place a
+    # check that extracts the job body can read it. The same sentence above the
+    # key is not in the body, and a sentence elsewhere in the file is at the
+    # mercy of where the extraction happens to start.
     name: authenticated-browser
     # NOT GOVERNED BY protected-gate: this job is absent from that gate's `needs`,
     # so the gate can report Go while this check is red. Repayment is described in
@@ -193,6 +277,52 @@ jobs:
       NEXT_PUBLIC_API_BASE_URL: http://localhost:3000
 
     steps:
+      # ---------------------------------------------------------------------
+      # THE RUN TESTS THE COMMIT IT WAS ASKED FOR, OR IT DOES NOT RUN.
+      #
+      # FIRST, before the stack costs forty minutes, and before anything is
+      # checked out — a result attributed to the wrong commit is worse than no
+      # result, because it will be quoted.
+      #
+      # Two separate rules:
+      #   - a dispatch of any ref OTHER than develop or main is the pre-merge
+      #     case, so `candidate-sha` is mandatory there. Without it the run
+      #     would say only "the tip of that branch, whenever it started", which
+      #     is not a commit anybody can check.
+      #   - whenever the input is given, it must equal the commit this run
+      #     actually resolved. `github.sha` on a dispatch IS the tip the ref
+      #     pointed at when the run was created, so a push that lands in the
+      #     gap makes these two differ — which is exactly the case to fail on.
+      #
+      # Values arrive through `env`, never interpolated into the script body:
+      # an expression pasted into a shell is a command-injection shape, and it
+      # is the shape WFS-006 exists to keep out of this repository.
+      - name: The run is pinned to the commit it was asked for
+        env:
+          REQUESTED_SHA: ${{ inputs.candidate-sha }}
+          RESOLVED_SHA: ${{ github.sha }}
+          DISPATCHED_REF: ${{ github.ref }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          protected=false
+          if [ "${DISPATCHED_REF}" = "refs/heads/develop" ] || [ "${DISPATCHED_REF}" = "refs/heads/main" ]; then
+            protected=true
+          fi
+          if [ -z "${REQUESTED_SHA}" ]; then
+            if [ "${EVENT_NAME}" = "workflow_dispatch" ] && [ "${protected}" = "false" ]; then
+              echo "::error::This is a pre-merge dispatch of ${DISPATCHED_REF}, so candidate-sha is required. Re-dispatch naming the exact commit the result should be attributed to; a branch name alone is not a commit."
+              exit 1
+            fi
+            printf 'No candidate-sha given; this is the protected %s path at %s\n' "${EVENT_NAME}" "${RESOLVED_SHA}"
+            exit 0
+          fi
+          if [ "${REQUESTED_SHA}" != "${RESOLVED_SHA}" ]; then
+            echo "::error::Asked to test ${REQUESTED_SHA} but this run resolved to ${RESOLVED_SHA}. The ref moved between the request and the run, so this result belongs to a different commit and must not be quoted for the requested one."
+            exit 1
+          fi
+          printf 'Pinned: this run tests exactly %s\n' "${RESOLVED_SHA}"
+
       # A local `uses: ./…` action is resolved from the workspace, which is
       # empty when a job starts — so the composite action below cannot be
       # found without this. Sparse and shallow on purpose: it exists only to
@@ -266,6 +396,54 @@ jobs:
         # Its own step: a download is not a verification, and folding it into
         # the run would make a network failure look like a test failure.
         run: npm run test:e2e:install --workspace @rootlco/web
+
+      # -----------------------------------------------------------------------
+      # REALIGN THE PROVIDER SIGNING FIRST, THEN WAIT FOR IT TO COME BACK.
+      #
+      # This step exists because of a defect it does NOT own, found by the first
+      # hosted execution of this job (run 31337158296, commit 155a5f5):
+      #
+      #   `alignLocalJwtSigning` recreates the GoTrue container to strip
+      #   GOTRUE_JWT_KEYS — `scripts/dev/owner-acceptance/align-local-jwt.mjs`
+      #   lines 119-126, `docker rm -f` then `docker run -d`. `docker run -d`
+      #   returns when the container is CREATED, not when GoTrue is listening.
+      #   `create-owner-account.mjs:607` then calls `assertHs256`, which POSTs
+      #   to the token endpoint exactly once with no retry
+      #   (align-local-jwt.mjs:140). Kong answers 502 until the new container
+      #   is up, so the bootstrap fails.
+      #
+      #   In that run the recreate returned at 21:38:21.029 and the token probe
+      #   failed at 21:38:21.039 — ten milliseconds later. Nothing boots in ten
+      #   milliseconds; this is a readiness race, NOT the algorithm refusal the
+      #   error text blames it on.
+      #
+      # The durable repair is a wait inside that module, which lives outside
+      # this branch ownership. What IS in scope here is ordering: do the
+      # realignment as its own step, wait for the provider, and only then run
+      # the bootstrap. `alignLocalJwtSigning` is idempotent — a second call
+      # finds no GOTRUE_JWT_KEYS and returns "already signing with the shared
+      # secret" (align-local-jwt.mjs:84) — so the call inside the bootstrap
+      # becomes a no-op and its single-shot probe meets a provider that is up.
+      - name: Align the provider signing, and wait for it to answer again
+        run: |
+          set -euo pipefail
+          node --input-type=module -e '
+            import { alignLocalJwtSigning } from "./scripts/dev/owner-acceptance/align-local-jwt.mjs";
+            const result = alignLocalJwtSigning({ project: "RootLco", log: (m) => console.log(m) });
+            console.log("alignment: changed=" + result.changed + " — " + result.reason);
+          '
+          # The same probe the earlier step uses, for the same reason: a
+          # provider that is not listening must surface as one named missing
+          # service rather than as a bootstrap that blames its own credentials.
+          for attempt in $(seq 1 60); do
+            if curl -fsS "${NEXT_PUBLIC_SUPABASE_URL}/auth/v1/health" > /dev/null; then
+              printf 'identity provider answering again after %s attempt(s)\n' "${attempt}"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::The identity provider never came back after the signing realignment. The bootstrap would have failed on a 502 from the token endpoint."
+          exit 1
 
       - name: Bootstrap the operator, the workspace and the isolation counterpart
         run: |
@@ -383,8 +561,18 @@ jobs:
 
       - name: Job summary
         if: always()
+        env:
+          RESOLVED_SHA: ${{ github.sha }}
+          EVENT_NAME: ${{ github.event_name }}
+          DISPATCHED_REF: ${{ github.ref }}
         run: |
           set -euo pipefail
+          # The commit is part of the evidence, not context around it. A table of
+          # executed tests that does not say what it ran against cannot be quoted
+          # for anything — and this job now runs both before a merge (dispatch)
+          # and after one (push), so which of the two produced a result is no
+          # longer inferable from the fact that a result exists.
+          printf 'Commit `%s` — %s on `%s`\n\n' "${RESOLVED_SHA}" "${EVENT_NAME}" "${DISPATCHED_REF}" >> "${GITHUB_STEP_SUMMARY}"
           if [ -f authenticated-browser.md ]; then
             cat authenticated-browser.md >> "${GITHUB_STEP_SUMMARY}"
           fi

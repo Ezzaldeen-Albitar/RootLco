@@ -29,11 +29,24 @@ import { join } from 'node:path';
  * `authenticated-browser` — and the cases below are inverted accordingly: the
  * wiring itself is now the thing that must not disappear.
  *
+ * ## It also runs BEFORE a merge, which was the second thing believed impossible
+ *
+ * The tier was read as post-merge-only — "runs on push to develop and main" —
+ * and that was taken to mean a candidate could not be evidenced until it had
+ * been merged, which is the ordering backwards. It was never true. The workflow
+ * carries `workflow_dispatch`, so the tier can be run against any branch of
+ * this repository before anything lands; what it lacked was a way to say WHICH
+ * COMMIT, since a dispatch names a ref and a ref moves. `candidate-sha` and the
+ * comparison in the job's first step supply that, and the cases below hold both
+ * in place, along with the protected-push trigger they must never replace.
+ *
  * ## What is still owed, and is therefore still asserted
  *
- * The job runs on protected pushes, NOT on the pull-request gate, and it is not
- * in `protected-gate`'s `needs` — so a gate can be green while it is red. That
- * is a real remaining hole, so the declaration stays and every field of it is
+ * The job is not on the pull-request gate and not in `protected-gate`'s `needs`
+ * — so a gate can be green while it is red. Its first hosted execution (run
+ * 31337158296) also FAILED, before the tier collected a single test, on a
+ * readiness race in the acceptance bootstrap rather than on anything in this
+ * wiring. So the hole is real, the declaration stays, and every field of it is
  * held here. When the job is finally governed by the gate, the case at the end
  * of this file requires the declaration to be deleted in the same commit: a
  * debt must not outlive its repayment.
@@ -64,7 +77,7 @@ interface Unrun {
 
 const declaration = JSON.parse(readFileSync(DECLARATION, 'utf8')) as {
   unrun: Unrun[];
-  notYetObservedOnARunner?: string;
+  hostedObservation?: string;
   howToClose?: string;
 };
 
@@ -224,6 +237,58 @@ describe('the tier is wired, and the wiring is what must not disappear', () => {
     }
   });
 
+  it('is reachable BEFORE a merge, and pinned to a commit when it is', () => {
+    /*
+     * The ordering finding. A tier that only ran on a protected push could
+     * produce evidence only AFTER the merge, so a phase would have had to
+     * merge work in order to learn whether the work was sound. The dispatch
+     * trigger is what makes the evidence obtainable first, and the three
+     * assertions below are the three halves of it that can each be deleted
+     * independently:
+     *
+     *   - the trigger exists at all;
+     *   - it accepts the commit as an input, because a dispatch names a REF
+     *     and a ref moves;
+     *   - the job compares that input against what it actually resolved, so a
+     *     ref that moved in the gap fails instead of being quoted for the
+     *     wrong commit.
+     */
+    const trigger = runner.slice(0, runner.indexOf('concurrency:'));
+    expect(trigger, 'the pre-merge dispatch trigger is gone').toContain('workflow_dispatch:');
+    expect(trigger, 'the dispatch no longer takes the candidate commit').toContain(
+      'candidate-sha:'
+    );
+
+    const body = jobBody(runner, RUNNER_JOB) as string;
+    expect(body, 'the job no longer reads the requested commit').toContain('inputs.candidate-sha');
+    expect(body, 'the job no longer reads the commit it actually resolved').toContain('github.sha');
+    /*
+     * ONE LINE, not the whole body. The first version of this assertion used
+     * `.*` under the `s` flag, so the two names and the `!=` were allowed to
+     * come from three different steps — and they did: the env block declares
+     * REQUESTED_SHA, the report-reading step contains `!==` inside
+     * `r.status !== "skipped"`, and the summary step mentions RESOLVED_SHA.
+     * Deleting the comparison entirely left that assertion passing. It was
+     * caught by mutating the comparison out and watching nothing fail, which
+     * is the only way this class of vacuity ever shows up.
+     */
+    expect(
+      code(body),
+      'the job no longer compares the requested commit against the resolved one on a single line, so a moved ref would be reported as the commit that was asked for'
+    ).toMatch(/REQUESTED_SHA[^\n]*!=[^\n]*RESOLVED_SHA|RESOLVED_SHA[^\n]*!=[^\n]*REQUESTED_SHA/);
+  });
+
+  it('keeps the protected-push path as the post-merge reproof', () => {
+    // The pre-merge run is additional evidence, never a replacement. A gate
+    // record quotes the protected run, so losing this trigger while gaining
+    // the dispatch would trade one hole for another.
+    const trigger = runner.slice(0, runner.indexOf('concurrency:'));
+    expect(trigger, 'the protected push trigger is gone').toMatch(/push:/);
+    expect(trigger, 'the protected branches are no longer named').toMatch(
+      /branches:\s*\[develop,\s*main\]/
+    );
+  });
+
   it('the explanation survives in prose even though it is no longer a finding', () => {
     // The comment that says WHY the variable exists and what it gates is the
     // record of the decision. It must remain readable in the workflows.
@@ -326,14 +391,23 @@ describe('a declaration states a debt, not a dispensation', () => {
     expect(jobBody(runner, RUNNER_JOB), 'the named job does not exist').toBeTruthy();
   });
 
-  it('says out loud that the job has not yet been observed on a runner', () => {
-    // Wiring a job is not the same as having watched it pass, and claiming the
-    // second on the strength of the first is how this phase got here.
-    expect(
-      declaration.notYetObservedOnARunner,
-      'the declaration no longer states the observation status of the job it points at'
-    ).toBeTruthy();
-    expect(String(declaration.notYetObservedOnARunner).length).toBeGreaterThan(80);
+  it('states the observation status, and cites a run rather than asserting one', () => {
+    /*
+     * Wiring a job is not the same as having watched it run, and claiming the
+     * second on the strength of the first is how this phase got here.
+     *
+     * The field used to be called `notYetObservedOnARunner`, and once the job
+     * HAD been observed that name was itself a false statement — the same
+     * defect class as a docblock describing behaviour the code no longer has.
+     * It is `hostedObservation` now, and it must carry a checkable citation:
+     * a run id and a full commit, so a reader can open the run instead of
+     * taking the sentence on trust.
+     */
+    const observation = String(declaration.hostedObservation ?? '');
+    expect(observation, 'the declaration no longer states the observation status').toBeTruthy();
+    expect(observation.length).toBeGreaterThan(80);
+    expect(observation, 'the observation cites no run id').toMatch(/\b\d{9,}\b/);
+    expect(observation, 'the observation cites no full commit sha').toMatch(/\b[0-9a-f]{40}\b/);
   });
 
   it('records how the remaining debt is repaid, naming what has to change', () => {
@@ -392,12 +466,27 @@ describe('the debt must not outlive its repayment', () => {
     }
   });
 
-  it('states the gate blindness rather than leaving a reader to discover it', () => {
+  it('states the gate blindness INSIDE the job, where a reader of the job sees it', () => {
     if (governed) return;
+    /*
+     * This used to accept the sentence anywhere in `body` OR in everything
+     * preceding the first mention of the job name across every joined
+     * workflow. That prefix was not a place — it moved. Its end was the first
+     * occurrence of the string "authenticated-browser" in a concatenation of
+     * all workflow files in directory order, so merely MENTIONING the job name
+     * earlier in a comment shortened the prefix and failed the check, while
+     * the statement it was checking for had not moved at all. This repository
+     * has already lost a hosted run to exactly that (the local and hosted
+     * concatenations differed), and it caught a second one here.
+     *
+     * The requirement was always that the reader of the job sees it, so the
+     * assertion is now the job body alone: one location, no ordering, and
+     * stricter than what it replaces.
+     */
     const body = jobBody(runner, RUNNER_JOB) as string;
     expect(
-      body + workflowSource.slice(0, workflowSource.indexOf(RUNNER_JOB)),
-      'nothing in the workflow says that protected-gate does not govern this job'
+      body,
+      'the job block itself does not say that protected-gate does not govern it'
     ).toContain('protected-gate');
   });
 });
