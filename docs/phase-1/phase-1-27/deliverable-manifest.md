@@ -119,7 +119,7 @@ exists, never as an argument that it works.
 | Feature source under the P1-27 ownership gate                          | **43**                                                             | command 2                                                                  |
 | Router pages (CRM and Vehicle)                                         | **8**                                                              | command 1                                                                  |
 | Shared-foundation source files changed by the phase or its remediation | **13** named in §5.5                                               | command 1, cross-read against the task register and the remediation record |
-| Web unit and component test files                                      | **39**                                                             | commands 1 and 8                                                           |
+| Web unit and component test files                                      | **65**                                                             | commands 1 and 8                                                           |
 | Playwright specification files                                         | **9** (2 anonymous, 7 authenticated)                               | commands 11 and 12                                                         |
 | Root CI-contract test files                                            | **31**                                                             | commands 1 and 10                                                          |
 | CI gate scripts under `scripts/ci`                                     | **41** in the directory, **5** introduced or changed by this phase | command 1; the five are the `scripts/ci` rows of §7.1                      |
@@ -313,7 +313,7 @@ records.
 
 ## 6. Test files
 
-### 6.1 Web unit and component — `apps/web/tests` (64 files, 1208 cases, 0 failed)
+### 6.1 Web unit and component — `apps/web/tests` (65 files, 1216 cases, 0 failed)
 
 **The per-file table below is SUPERSEDED and is kept as a snapshot, not a
 status** (`MAN-04`). It records 39 files and 803 cases — the tier as it stood

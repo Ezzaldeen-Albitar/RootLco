@@ -521,12 +521,20 @@ describe('the manifest states counts the repository can confirm', () => {
     );
   });
 
-  it('states a web tier total that matches the tier', () => {
-    // Not the per-file table, which is explicitly a superseded snapshot — the
-    // HEADING, which is the live claim a reader takes away.
+  it('states a web tier total that matches the tier, in BOTH places it appears', () => {
+    /*
+     * Not the per-file table, which is explicitly a superseded snapshot — the
+     * live claims. The count appears TWICE: as the §6.1 heading and as a §3
+     * summary row, and the first correction updated only the heading. Two
+     * statements of one fact drift independently unless both are read.
+     */
     const files = countFiles(join(process.cwd(), 'tests'), /\.test\.tsx?$/);
-    expect(read('deliverable-manifest.md'), `the web tier has ${files} files`).toContain(
+    const manifest = read('deliverable-manifest.md');
+    expect(manifest, `§6.1 must say the web tier has ${files} files`).toContain(
       `\`apps/web/tests\` (${files} files,`
+    );
+    expect(manifest, `§3 must say the web tier has ${files} files`).toMatch(
+      new RegExp(`Web unit and component test files\\s*\\|\\s*\\*\\*${files}\\*\\*`)
     );
   });
 });
