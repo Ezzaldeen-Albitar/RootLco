@@ -764,6 +764,112 @@ describe('P1-27-QA-004 — concurrency and idempotency', () => {
   });
 });
 
+/**
+ * `P1-27-SEC-004` — the audit half, asserted against the calls the app MAKES.
+ *
+ * ## Why this lives beside the adapters rather than beside the contract
+ *
+ * `operation-contract.test.ts` asserts that the published table classifies every
+ * P1-27 write `privileged` and every P1-27 read `none`. That is a fact about the
+ * contract, and it would hold in full while this application called an operation
+ * the contract does not publish at all — in which case the client's fail-safe
+ * sends an idempotency key, the request works, and nothing anywhere knows which
+ * audit class the operation it just invoked declares.
+ *
+ * So the set here is not written down. It is whatever the shipped adapters
+ * actually ask the client for, captured from the mock: `WRITE_DRIVES` is every
+ * write adapter both feature trees export, and `LIST_ADAPTERS` is every
+ * paginated read, each already proven exhaustive by `QA-001`. Every path they
+ * produce must resolve to a published operation, and that operation must carry
+ * the class the contract publishes for it.
+ *
+ * Before the generator carried `x-audit-class`, none of this could be written:
+ * `PublishedOperation` had no audit field, so the only place the word
+ * `auditClass` appeared in this workspace was inside docblocks.
+ */
+describe('P1-27-SEC-004 — every operation this app calls declares an audit class', () => {
+  it('classifies every write the shipped write adapters actually issue', async () => {
+    const seen: string[] = [];
+    for (const write of WRITE_DRIVES) {
+      send.mockReset();
+      send.mockResolvedValue({ ok: true, data: {}, correlationId: 'c' });
+      await write.call();
+      // The positive control, same as the scope sweep above: an adapter that
+      // issued no request would otherwise satisfy every expectation below by
+      // never producing a path to check.
+      expect(send, `${write.name} issued no request`).toHaveBeenCalledTimes(1);
+
+      const method = String(send.mock.calls[0]?.[0] ?? '');
+      const path = String(send.mock.calls[0]?.[1] ?? '');
+      const operation = resolveOperation(method, path);
+      expect(
+        operation,
+        `${write.name} calls ${method} ${path}, which the contract does not publish`
+      ).not.toBeNull();
+      // A write with no audit event is a mutation nobody can attribute after the
+      // fact. `''` would mean the document published no class at all.
+      expect(operation?.auditClass, `${write.name} → ${operation?.operationId}`).toBe('privileged');
+      seen.push(`${write.name} ${operation?.operationId}`);
+    }
+    // Non-vacuity for the loop itself. `WRITE_DRIVES` is imported, so a version
+    // of it that had become empty would make the whole case pass silently.
+    expect(seen.length, 'no write adapters were driven').toBeGreaterThanOrEqual(20);
+  });
+
+  it('classifies every read the shipped list adapters actually issue as none', async () => {
+    const seen: string[] = [];
+    for (const adapter of LIST_ADAPTERS) {
+      get.mockReset();
+      get.mockResolvedValue({
+        ok: true,
+        data: { items: [], nextCursor: null, hasMore: false },
+        correlationId: 'corr-1',
+      });
+      await adapter.call();
+      expect(get, `${adapter.name} issued no request`).toHaveBeenCalledTimes(1);
+
+      const path = String(get.mock.calls[0]?.[0] ?? '');
+      const operation = resolveOperation('GET', path);
+      expect(
+        operation,
+        `${adapter.name} calls GET ${path}, which the contract does not publish`
+      ).not.toBeNull();
+      /*
+       * `none` is the assertion, not merely "some class". A read that started
+       * writing a `privileged` audit event would mean every page view of a
+       * customer profile produced a permanent attributed record — a change in
+       * what the product retains about its operators, arriving silently through
+       * a backend registration nobody in this tier reviewed.
+       */
+      expect(operation?.auditClass, `${adapter.name} → ${operation?.operationId}`).toBe('none');
+      seen.push(`${adapter.name} ${operation?.operationId}`);
+    }
+    expect(seen.length, 'no list adapters were driven').toBeGreaterThanOrEqual(18);
+  });
+
+  it('resolves nothing for a path the contract does not publish — the guard is real', () => {
+    /*
+     * The control for the `not.toBeNull()` guard in both loops above.
+     *
+     * That guard is the half that catches "the app calls something the contract
+     * never published", where there is no audit class to check because there is
+     * no operation. A resolver that answered with SOME row for every path would
+     * make it unfailable, and the loops would then be asserting the class of
+     * whatever happened to sort first.
+     *
+     * Deliberately not a restatement of the class rule: asserting that `''` is
+     * not `'privileged'` would be a tautology dressed as a control, and the
+     * evidence that the class rule can fail is the recorded mutation, not a test
+     * that arranges its own failure.
+     */
+    expect(resolveOperation('POST', '/api/v1/vehicles/v1/invented-sub-resource')).toBeNull();
+    expect(resolveOperation('GET', '/api/v1/not/a/real/operation')).toBeNull();
+    // And the positive half, so the two lines above cannot pass by the resolver
+    // having stopped resolving anything at all.
+    expect(resolveOperation('POST', '/api/v1/vehicles')?.operationId).toBe('veh.vehicle-create');
+  });
+});
+
 describe('P1-27-QA-005 — the evidence is real and it is complete', () => {
   it('names every wave in the durable record', async () => {
     const fs = await import('node:fs');

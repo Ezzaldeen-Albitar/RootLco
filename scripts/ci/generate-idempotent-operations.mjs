@@ -31,6 +31,29 @@
  * never re-derives a rule the backend owns. It consumes the published contract,
  * which is the one integration surface it is allowed.
  *
+ * ## The audit class travels the same road (`P1-27-SEC-004`)
+ *
+ * `SEC-004` is "security audit-event coverage". Its console half was strong and
+ * its correlation half found a real defect, but its AUDIT-EVENT half had no
+ * executable assertion anywhere: `auditClass` occurred in `apps/web` only inside
+ * docblocks, because the emitted table carried `template`, `method`,
+ * `operationId` and `idempotent` and no audit class — so nothing in the Web tier
+ * *could* derive one. Thirteen docblocks asserting "this write is
+ * `auditClass: privileged`" were prose, and prose is what stops the next reader
+ * checking.
+ *
+ * The fact was already published. `operation-registry.ts` normalises
+ * `auditClass` onto every `RegisteredOperation`, and `openapi/document.ts:228`
+ * emits it as `x-audit-class` — on all 243 operations, with six distinct values
+ * matching `AuditClass` at `operation-registry.ts:42` exactly. So this reads it
+ * out by the SAME path that already carries `idempotent`, rather than adding a
+ * second hand-written table that could disagree with the first.
+ *
+ * An operation missing the extension emits `''` rather than a guessed default.
+ * A guess would be indistinguishable from `none`, and "this write declares no
+ * audit class at all" is precisely the condition the Web assertions exist to
+ * fail on. Absence must stay visible.
+ *
  * Usage:
  *   node scripts/ci/generate-idempotent-operations.mjs           # write
  *   node scripts/ci/generate-idempotent-operations.mjs --check   # compare
@@ -53,14 +76,29 @@ const TARGET = join(
 
 const API_PREFIX = '/api/v1';
 const IDEMPOTENCY_PARAMETER = '#/components/parameters/IdempotencyKey';
+/**
+ * The extension `openapi/document.ts:228` writes from `operation.auditClass`.
+ *
+ * Spelled as it appears in the document. The NAME `auditClass` occurs zero times
+ * in `docs/api/openapi.v1.json` — reading for that name is how a previous
+ * attempt concluded the fact was unpublished when it is published on every
+ * operation.
+ */
+const AUDIT_CLASS_EXTENSION = 'x-audit-class';
 const METHODS = ['get', 'put', 'post', 'patch', 'delete', 'head', 'options', 'trace'];
 
 /**
- * Every operation the contract publishes, with whether it demands a key.
+ * Every operation the contract publishes, with whether it demands a key and the
+ * audit class it declares.
  *
  * The `$ref` is the signal, not a heuristic on the parameter's name: the
  * document is generated from the registry, and `operationObject()` pushes that
  * exact ref when — and only when — `operation.idempotent` is true.
+ *
+ * The audit class is read the same way — straight off the published extension,
+ * with no inference from the method, the path or the operation id. A missing or
+ * non-string extension yields `''`, which is a value no operation legitimately
+ * carries, so the Web assertions can fail on it by name.
  */
 export function readContract(documentText) {
   const document = JSON.parse(documentText);
@@ -70,6 +108,7 @@ export function readContract(documentText) {
     for (const [method, operation] of Object.entries(item ?? {})) {
       if (!METHODS.includes(method)) continue;
       const parameters = Array.isArray(operation.parameters) ? operation.parameters : [];
+      const auditClass = operation[AUDIT_CLASS_EXTENSION];
       operations.push({
         // Stored WITHOUT the `/api/v1` prefix, because that is how the Web
         // client is called — it holds the prefix in its base URL.
@@ -77,6 +116,7 @@ export function readContract(documentText) {
         method: method.toUpperCase(),
         operationId: operation.operationId ?? '',
         idempotent: parameters.some((parameter) => parameter?.$ref === IDEMPOTENCY_PARAMETER),
+        auditClass: typeof auditClass === 'string' ? auditClass : '',
       });
     }
   }
@@ -103,6 +143,18 @@ export function render(operations) {
     .map(([method, count]) => `${method} ${count}`)
     .join(', ');
 
+  // Computed from the operations, never asserted as a literal, so the sentence
+  // in the emitted header cannot drift away from the emitted rows.
+  const byAuditClass = new Map();
+  for (const operation of operations) {
+    const key = operation.auditClass === '' ? '(absent)' : operation.auditClass;
+    byAuditClass.set(key, (byAuditClass.get(key) ?? 0) + 1);
+  }
+  const auditBreakdown = [...byAuditClass]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([auditClass, count]) => `${auditClass} ${count}`)
+    .join(', ');
+
   const lines = [
     '/**',
     ' * GENERATED — do not edit by hand.',
@@ -121,6 +173,21 @@ export function render(operations) {
     ' * The client used to infer the answer from the HTTP method, which was wrong for',
     ' * every non-POST member of that set. This table is the contract instead of a',
     ' * guess, and the gate is what keeps it true.',
+    ' *',
+    ' * ## The audit class (`P1-27-SEC-004`)',
+    ' *',
+    ' * `auditClass` is the published `x-audit-class` extension, which',
+    ' * `openapi/document.ts:228` writes from the operation registration. Before it',
+    ' * was carried here, `auditClass` existed in `apps/web` only inside docblocks —',
+    ' * thirteen of them stating which class a write declares, none of them checkable',
+    ' * — because the Web tier held no data from which one could be derived.',
+    ' *',
+    ` * Currently ${auditBreakdown}.`,
+    ' *',
+    ' * `(absent)` above would mean an operation the document publishes with NO audit',
+    ' * class. It is emitted as the empty string rather than defaulted to `none`,',
+    ' * because a defaulted value is indistinguishable from a declared one and the',
+    ' * whole point of the Web assertions is to fail on the undeclared case.',
     ' */',
     '',
     '/** One published operation, keyed by the template the client calls. */',
@@ -131,6 +198,13 @@ export function render(operations) {
     '  readonly operationId: string;',
     '  /** True when the backend will refuse the request without a key. */',
     '  readonly idempotent: boolean;',
+    '  /**',
+    "   * The published `x-audit-class`: `'none'` when the operation writes no audit",
+    '   * event, otherwise the class of event it writes. Empty string when the',
+    '   * document publishes the operation without the extension at all — which is',
+    '   * a defect, not a default.',
+    '   */',
+    '  readonly auditClass: string;',
     '}',
     '',
     `/** Every operation the contract publishes. ${operations.length} of them. */`,
@@ -143,7 +217,7 @@ export function render(operations) {
         operation.method
       )}, operationId: ${JSON.stringify(operation.operationId)}, idempotent: ${
         operation.idempotent
-      } },`
+      }, auditClass: ${JSON.stringify(operation.auditClass)} },`
     );
   }
 
@@ -172,9 +246,21 @@ const rendered = await renderFormatted(operations);
 const check = process.argv.includes('--check');
 
 const idempotentCount = operations.filter((operation) => operation.idempotent).length;
+// Reported, never enforced here. An operation published without an audit class
+// is a BACKEND defect, and this generator's job is to carry the document
+// faithfully — including its gaps — so the Web assertions can name them. Failing
+// the build here instead would hide the gap behind a generator error.
+const unclassified = operations.filter((operation) => operation.auditClass === '');
 console.log(
-  `Idempotency manifest: ${operations.length} published operation(s), ${idempotentCount} idempotent`
+  `Idempotency manifest: ${operations.length} published operation(s), ${idempotentCount} idempotent, ` +
+    `${operations.length - unclassified.length} with a published audit class`
 );
+if (unclassified.length > 0) {
+  console.warn(
+    `WARNING: ${unclassified.length} operation(s) publish no x-audit-class: ` +
+      unclassified.map((operation) => `${operation.method} ${operation.template}`).join(', ')
+  );
+}
 
 if (check) {
   let current = '';
