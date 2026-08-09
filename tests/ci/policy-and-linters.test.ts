@@ -516,6 +516,51 @@ describe('x', () => {
     expect(rules(lintTestFile('tests/x.test.ts', documented))).not.toContain('TH-002');
   });
 
+  it('TH-001 and TH-002 read code, not prose ABOUT code', () => {
+    /*
+     * The gate went red on two docblocks that merely EXPLAIN the hazard:
+     *
+     *   summarise-vitest.mjs:  "`it.skip` applied to an entire tier leaves…"
+     *   web-test-floor.test.ts: "`numTotalTests` counts skipped tests…"
+     *
+     * `stripComments` existed and was documented as preventing exactly this; the
+     * rule loop iterated the RAW lines anyway. Declared and not wired.
+     *
+     * Annotating the prose with a suppression would have satisfied the gate and
+     * hidden the defect, so the gate was fixed instead. Seventh instance of a
+     * scanner reading prose as code in this phase.
+     */
+    const prose = OK.replace(
+      'describe(',
+      '/**\n * A tier where every case is `it.skip` still reports `success: true`,\n * and `describe.only` would hide the rest.\n */\ndescribe('
+    );
+    expect(rules(lintTestFile('tests/x.test.ts', prose))).not.toContain('TH-002');
+    expect(rules(lintTestFile('tests/x.test.ts', prose))).not.toContain('TH-001');
+
+    const lineComment = OK.replace('  it(', '  // never write it.skip here\n  it(');
+    expect(rules(lintTestFile('tests/x.test.ts', lineComment))).not.toContain('TH-002');
+
+    // And the discrimination is real, not blanket suppression: the same token in
+    // CODE, on the line right after the prose, is still caught.
+    const both = prose.replace('  it(', `  it${SKIP}(`);
+    expect(rules(lintTestFile('tests/x.test.ts', both))).toContain('TH-002');
+  });
+
+  it('reports the line a finding is really on, after a multi-line docblock', () => {
+    /*
+     * The old `stripComments` deleted block comments outright, collapsing the
+     * lines they spanned, so every line number after a docblock was wrong — the
+     * same defect found in the form-reset scanner, where a control at 370 was
+     * reported at 322. Blanking preserves newlines.
+     */
+    const withDocblock = `/**\n * one\n * two\n * three\n */\n${OK.replace('  it(', `  it${SKIP}(`)}`;
+    const finding = lintTestFile('tests/x.test.ts', withDocblock).find((f) => f.rule === 'TH-002');
+    expect(finding, 'TH-002 did not fire at all').toBeDefined();
+    const realLine =
+      withDocblock.split('\n').findIndex((l) => l.includes(`it${SKIP}(`.slice(0, 8))) + 1;
+    expect(finding?.line, 'the reported line is not where the skip is').toBe(realLine);
+  });
+
   it('TH-003 catches a test file with no test', () => {
     expect(rules(lintTestFile('tests/x.test.ts', 'const a = 1;\n'))).toContain('TH-003');
   });
