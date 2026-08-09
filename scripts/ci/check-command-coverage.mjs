@@ -163,6 +163,15 @@ export const REGISTER = Object.freeze([
     why: 'the 42-task matrix still matches the canonical plan and the recorded verdicts',
   },
   {
+    name: 'validate:p1-27-doc-counts',
+    owner: ROOT,
+    tier: 'required',
+    // Round five found thirteen stale counts in the phase records and they are
+    // one defect: a number written by hand that nothing recomputes. This makes
+    // the tree the authority and refuses any document that disagrees with it.
+    why: 'every count a P1-27 document states about the repository is derivable',
+  },
+  {
     name: 'matrix:p1-27',
     owner: ROOT,
     tier: 'informational',

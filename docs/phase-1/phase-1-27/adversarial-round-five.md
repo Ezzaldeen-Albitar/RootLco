@@ -116,8 +116,8 @@ and refuses range shorthand in the id column.
 | `E-05`     | DOCUMENTATION | MEDIUM   | OPEN    | Two stale "40"s survive the fix that corrected the sentence directly above the first of them.                                                                                                                                                                       |
 | `E-06`     | DOCUMENTATION | MEDIUM   | OPEN    | Section 9.1 line counts: eight of fifteen are wrong, under a row asserting "26 of 26 exact".                                                                                                                                                                        |
 | `E-07`     | DOCUMENTATION | MEDIUM   | OPEN    | "15 tracked" phase documents against a tracked-file listing that returns 30.                                                                                                                                                                                        |
-| `E-08`     | DOCUMENTATION | MEDIUM   | OPEN    | `tests/ci` stated as 31 files in two places and 33 in a third, in one document.                                                                                                                                                                                     |
-| `E-09`     | DOCUMENTATION | LOW      | OPEN    | `tests/db` stated as 138 test files against a measured 139.                                                                                                                                                                                                         |
+| `E-08`     | DOCUMENTATION | MEDIUM   | FIXED   | `tests/ci` stated as 31 files in two places and 33 in a third, in one document.                                                                                                                                                                                     |
+| `E-09`     | DOCUMENTATION | LOW      | FIXED   | `tests/db` stated as 138 test files against a measured 139.                                                                                                                                                                                                         |
 | `E-10`     | DOCUMENTATION | LOW      | OPEN    | Superseded command snapshots are presented in section 1.1 without a superseded marker.                                                                                                                                                                              |
 | `E-11`     | DOCUMENTATION | LOW      | OPEN    | Three of four "measured case counts" in the row that exists to correct a stale register are themselves wrong.                                                                                                                                                       |
 | `E-12`     | DOCUMENTATION | LOW      | OPEN    | The command-coverage gate is reported with two different measured outputs in one document.                                                                                                                                                                          |
@@ -129,9 +129,9 @@ and refuses range shorthand in the id column.
 <!-- prettier-ignore-start -->
 ```text
 ROUND5_TOTAL   = 70
-ROUND5_FIXED   = 20
+ROUND5_FIXED   = 22
 ROUND5_PARTIAL =  2
-ROUND5_OPEN    = 48
+ROUND5_OPEN    = 46
 ROUND5_REFUTED =  0
 ```
 <!-- prettier-ignore-end -->
