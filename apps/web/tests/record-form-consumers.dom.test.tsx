@@ -61,6 +61,20 @@ const textbox = (container: HTMLElement, name: string) =>
  * behind their back and spent a second write attempt.
  */
 
+/*
+ * The consent cases drive four `selectOptions` and a `type` before they can
+ * assert, and `userEvent.type` dispatches one event per character. Measured at
+ * ~1.6 s for a single case under full-suite load, against `waitFor`'s DEFAULT
+ * timeout of 1 s — so the wait for the action expired before the interactions
+ * finished, and the file failed intermittently while passing in isolation.
+ *
+ * That is a latent flake with a mechanism, not bad luck, and it is the same
+ * shape as the subprocess-test trap already recorded for this repository: a
+ * default timeout is a bet on machine load. The wait is given room; what is
+ * under test is the form's behaviour, never how fast the machine is.
+ */
+const WAIT = { timeout: 10_000 };
+
 const listConsents = vi.fn();
 const recordConsentAction = vi.fn();
 const setEvProfileAction = vi.fn();
@@ -165,7 +179,7 @@ describe('CRM consumer — a consent decision survives a failed write', () => {
       />
     );
     await user.click(screen.getByRole('button', { name: /Consents/ }));
-    await waitFor(() => expect(listConsents).toHaveBeenCalled());
+    await waitFor(() => expect(listConsents).toHaveBeenCalled(), WAIT);
 
     const form = await screen.findByRole('button', {
       name: en['crm.customers.consents.record'],
@@ -191,7 +205,7 @@ describe('CRM consumer — a consent decision survives a failed write', () => {
     await user.type(textbox(body, en['crm.customers.consents.source']), 'Telephone call, 09:40');
     await user.click(form);
 
-    await waitFor(() => expect(recordConsentAction).toHaveBeenCalled());
+    await waitFor(() => expect(recordConsentAction).toHaveBeenCalled(), WAIT);
 
     // 4 — the form is still there rather than replaced by an error page.
     expect(screen.getByRole('button', { name: en['crm.customers.consents.record'] })).toBeTruthy();
@@ -242,8 +256,11 @@ describe('CRM consumer — a consent decision survives a failed write', () => {
     await user.type(textbox(body, en['crm.customers.consents.source']), 'Telephone call, 09:40');
     await user.click(submit);
 
-    await waitFor(() => expect(recordConsentAction).toHaveBeenCalledTimes(1));
-    await waitFor(() => expect(textbox(body, en['crm.customers.consents.source'])).toHaveValue(''));
+    await waitFor(() => expect(recordConsentAction).toHaveBeenCalledTimes(1), WAIT);
+    await waitFor(
+      () => expect(textbox(body, en['crm.customers.consents.source'])).toHaveValue(''),
+      WAIT
+    );
   });
 });
 

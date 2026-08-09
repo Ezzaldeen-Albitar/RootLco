@@ -639,10 +639,7 @@ function StatusPanel({
   readonly vehicle: VehicleDetail;
 }) {
   const formId = useId();
-  const [state, submit, pending] = useActionState(
-    changeVehicleStatusAction.bind(null, vehicle.id),
-    { status: 'idle' } as ActionState
-  );
+  const router = useRouter();
   /*
    * `NEW-FE-01`, fourth site. Both selects were plain `defaultValue=""` with no
    * `onChange`, so nothing held what the operator picked: React resets the form
@@ -651,9 +648,37 @@ function StatusPanel({
    * `vehicles.profile.chooseAStatus` rather than retrying the move that failed.
    *
    * The operator sees "choose a status" after choosing a status.
+   *
+   * Declared before the action, which closes over both setters.
    */
   const [lifecycle, setLifecycle] = useState('');
   const [workshop, setWorkshop] = useState('');
+
+  const [state, submit, pending] = useActionState(
+    async (previous: ActionState, form: FormData) => {
+      const result = await changeVehicleStatusAction(vehicle.id, previous, form);
+      if (result.status === 'success') {
+        /*
+         * `F4`. `FE-019` made both menus a function of the server-read `vehicle`
+         * prop and then never re-read it: after the first successful save the
+         * options were still computed from PRE-CHANGE state, so the panel went
+         * back to offering moves whose only outcome is the unreadable 422 the fix
+         * existed to remove — an `active` vehicle just moved to `inactive` was
+         * still offered `inactive`.
+         *
+         * The status lives in the page's own server-side read, so there is no
+         * client fetch to re-run; a router refresh is the only thing that can
+         * bring the new pair back. The same shape the customer status control
+         * already uses.
+         */
+        setLifecycle('');
+        setWorkshop('');
+        router.refresh();
+      }
+      return result;
+    },
+    { status: 'idle' } as ActionState
+  );
 
   return (
     <form action={submit} className="rounded-lg border border-border bg-surface p-4">
@@ -691,7 +716,10 @@ function StatusPanel({
               `Outcome` showed only "The form could not be saved." An operator
               choosing a plausible-looking option learned nothing.
             */}
-            {allowedLifecycleTargets(vehicle).map((status) => (
+            {/* Judged against what the WORKSHOP select currently holds, because
+                both axes submit in one request and the server's rule is stated
+                over the resulting pair (`F1`, `F2`). */}
+            {allowedLifecycleTargets(vehicle, workshop).map((status) => (
               <option key={status} value={status}>
                 {translateDynamic(messages, `vehicles.lifecycle.${status}`)}
               </option>
@@ -712,8 +740,9 @@ function StatusPanel({
             className="mt-1 w-full rounded-md border border-border bg-surface px-2 py-1.5 text-body text-text-primary"
           >
             <option value="">{translate(messages, 'vehicles.profile.leaveUnchanged')}</option>
-            {/* Same rule on the workshop axis (`vehicle-lifecycle.ts:68-74`). */}
-            {allowedWorkshopTargets(vehicle).map((status) => (
+            {/* Same rule on the workshop axis (`vehicle-lifecycle.ts:68-74`),
+                and judged against the pending LIFECYCLE for the same reason. */}
+            {allowedWorkshopTargets(vehicle, lifecycle).map((status) => (
               <option key={status} value={status}>
                 {translateDynamic(messages, `vehicles.workshop.${status}`)}
               </option>

@@ -189,23 +189,64 @@ export const VEHICLE_WORKSHOP_TRANSITIONS: Readonly<Record<string, readonly Work
   });
 
 /**
- * The lifecycle moves offered for this vehicle.
+ * The lifecycle statuses the platform treats as terminal.
  *
- * `scrapped` is withheld while the vehicle is operationally in a workshop,
- * because `vehicle-lifecycle.ts:275-281` refuses that pair outright —
- * "a scrapped vehicle cannot be in a workshop; set workshop to none first".
- * Offering it there would be an option whose only outcome is a 422 the operator
- * cannot read.
+ * `merged` is never a TARGET — the graph above omits it from every row, because
+ * merging is reached through `veh.vehicle-merge` — but it is a terminal STATE,
+ * and the cross-axis rule is stated over states.
  */
-export function allowedLifecycleTargets(vehicle: VehicleDetail): readonly VehicleLifecycleStatus[] {
-  const targets = VEHICLE_LIFECYCLE_TRANSITIONS[vehicle.lifecycleStatus] ?? [];
-  if (vehicle.workshopStatus === 'none') return targets;
-  return targets.filter((target) => target !== 'scrapped');
+const TERMINAL_LIFECYCLE: ReadonlySet<string> = new Set(['merged', 'scrapped']);
+
+/**
+ * The cross-axis rule, stated once, over the pair the request would RESULT in.
+ *
+ * `vehicle-lifecycle.ts` refuses
+ * `TERMINAL_LIFECYCLE.has(resultingLifecycle) && resultingWorkshop !== 'none'` —
+ * "a scrapped vehicle cannot be in a workshop; set workshop to none first".
+ *
+ * Both selects submit in ONE request, so neither axis can be judged from the
+ * vehicle's current state alone. The first version of this rule judged the
+ * lifecycle menu against the vehicle's CURRENT workshop status and left the
+ * workshop menu unjudged entirely, which was wrong in both directions at once:
+ *
+ *   - it WITHHELD a working control — an operator returning a car from the
+ *     workshop and scrapping it in the same submission (workshop → `none`,
+ *     lifecycle → `scrapped`) is a move the server accepts, and `scrapped` was
+ *     not on the menu to make it with;
+ *   - it OFFERED the one combination that actually trips the rule — from
+ *     (active, none) the lifecycle menu offered `scrapped` and the workshop menu
+ *     offered `in_workshop`, and submitting both is refused.
+ *
+ * So the direction the fix claimed to have closed was the direction it opened.
+ */
+function pairRefused(resultingLifecycle: string, resultingWorkshop: string): boolean {
+  return TERMINAL_LIFECYCLE.has(resultingLifecycle) && resultingWorkshop !== 'none';
 }
 
-/** The workshop moves offered for this vehicle. */
-export function allowedWorkshopTargets(vehicle: VehicleDetail): readonly WorkshopStatus[] {
-  return VEHICLE_WORKSHOP_TRANSITIONS[vehicle.workshopStatus] ?? [];
+/**
+ * The lifecycle moves offered, given whatever the workshop select currently
+ * holds. An empty `pendingWorkshop` means "leave unchanged".
+ */
+export function allowedLifecycleTargets(
+  vehicle: VehicleDetail,
+  pendingWorkshop = ''
+): readonly VehicleLifecycleStatus[] {
+  const targets = VEHICLE_LIFECYCLE_TRANSITIONS[vehicle.lifecycleStatus] ?? [];
+  const resultingWorkshop = pendingWorkshop === '' ? vehicle.workshopStatus : pendingWorkshop;
+  return targets.filter((target) => !pairRefused(target, resultingWorkshop));
+}
+
+/**
+ * The workshop moves offered, given whatever the lifecycle select currently
+ * holds. An empty `pendingLifecycle` means "leave unchanged".
+ */
+export function allowedWorkshopTargets(
+  vehicle: VehicleDetail,
+  pendingLifecycle = ''
+): readonly WorkshopStatus[] {
+  const targets = VEHICLE_WORKSHOP_TRANSITIONS[vehicle.workshopStatus] ?? [];
+  const resultingLifecycle = pendingLifecycle === '' ? vehicle.lifecycleStatus : pendingLifecycle;
+  return targets.filter((target) => !pairRefused(resultingLifecycle, target));
 }
 
 /**

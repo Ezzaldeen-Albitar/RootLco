@@ -82,7 +82,10 @@ vi.mock('@/features/vehicles/duplicates-api', () => ({
   listAttributeHistory: (...a: unknown[]) => listAttributeHistory(...a),
 }));
 vi.mock('@/features/crm/customers/api', () => ({ searchCustomers: vi.fn() }));
-vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }) }));
+// `refresh` captured, not anonymous — `F4` is about whether the screen re-reads
+// the vehicle after a successful status change, and an anonymous mock cannot say.
+const refresh = vi.fn();
+vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn(), refresh }) }));
 
 const { VehicleProfileScreen } =
   await import('@/features/vehicles/components/VehicleProfileScreen');
@@ -170,6 +173,7 @@ beforeEach(() => {
   }
   changeVehicleStatusAction.mockReset();
   changeVehicleStatusAction.mockResolvedValue({ status: 'idle' });
+  refresh.mockReset();
 });
 
 /** Every capability held. The lifecycle is then the ONLY variable. */
@@ -513,6 +517,99 @@ describe('the status selects offer only moves the server will accept', () => {
     expect(lifecycleOptions({ lifecycleStatus: 'active', workshopStatus: 'in_workshop' })).toEqual([
       'inactive',
     ]);
+  });
+
+  it('RESTORES scrapping once the workshop select is set to none in the same request', async () => {
+    /*
+     * `F1`. The rule above was applied against the vehicle's CURRENT workshop
+     * status; the server applies it to the RESULTING pair
+     * (`TERMINAL_LIFECYCLE.has(resultingLifecycle) && resultingWorkshop !== 'none'`).
+     *
+     * Both selects submit in ONE request, so an operator returning a car from
+     * the workshop and scrapping it in the same submission — workshop → `none`,
+     * lifecycle → `scrapped` — is making a move the server accepts. `scrapped`
+     * was not on the menu to make it with, so the fix removed a working control
+     * while claiming to encode the rule honestly.
+     */
+    const user = userEvent.setup();
+    const view = render({ lifecycleStatus: 'active', workshopStatus: 'in_workshop' });
+    const lifecycle = within(view.container).getByLabelText(en['crm.customers.column.status']);
+
+    const values = () =>
+      [...lifecycle.querySelectorAll('option')]
+        .map((option) => option.getAttribute('value') ?? '')
+        .filter(Boolean);
+
+    expect(values(), 'scrapping is refused while the car is in the workshop').toEqual(['inactive']);
+
+    await user.selectOptions(
+      within(view.container).getByLabelText(en['vehicles.column.workshop']),
+      'none'
+    );
+
+    expect(
+      values().sort(),
+      'the operator cannot scrap a car they are returning from the workshop in one move'
+    ).toEqual(['inactive', 'scrapped']);
+  });
+
+  it('withdraws in_workshop once scrapping is chosen, the direction left to the 422', async () => {
+    /*
+     * `F2`. `allowedWorkshopTargets` applied NO cross-axis rule, so the one
+     * combination that actually trips the server was still on the menu: from
+     * (active, none) the lifecycle select offered `scrapped` and the workshop
+     * select offered `in_workshop`, and submitting both is refused.
+     *
+     * The direction the fix claimed to have closed was the direction it opened.
+     */
+    const user = userEvent.setup();
+    const view = render({ lifecycleStatus: 'active', workshopStatus: 'none' });
+    const workshop = within(view.container).getByLabelText(en['vehicles.column.workshop']);
+
+    const values = () =>
+      [...workshop.querySelectorAll('option')]
+        .map((option) => option.getAttribute('value') ?? '')
+        .filter(Boolean);
+
+    expect(values()).toEqual(['in_workshop']);
+
+    await user.selectOptions(
+      within(view.container).getByLabelText(en['crm.customers.column.status']),
+      'scrapped'
+    );
+
+    expect(
+      values(),
+      'a scrapped vehicle was still offered a workshop, which is the pair the server refuses'
+    ).toEqual([]);
+  });
+
+  it('re-reads the vehicle after a successful change, so the menu is not stale', async () => {
+    /*
+     * `F4`. `FE-019` made both menus a function of the server-read `vehicle`
+     * prop and then never re-read it. After the first successful save the
+     * options were still computed from PRE-CHANGE state, so the panel went back
+     * to offering moves whose only outcome is the unreadable 422 the fix existed
+     * to remove.
+     *
+     * The status lives in the page's own server-side read, so a router refresh
+     * is the only thing that can bring the new pair back — which makes the
+     * refresh itself the assertion.
+     */
+    changeVehicleStatusAction.mockResolvedValue({ status: 'success' });
+    const user = userEvent.setup();
+    render();
+
+    await user.selectOptions(
+      screen.getByLabelText(en['crm.customers.column.status'], { exact: false }),
+      'inactive'
+    );
+    await user.click(screen.getByRole('button', { name: en['vehicles.profile.applyStatus'] }));
+
+    await waitFor(() => expect(changeVehicleStatusAction).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(refresh, 'the menu stays computed from pre-change state').toHaveBeenCalled()
+    );
   });
 
   it('offers exactly the graph row on the workshop axis', () => {
