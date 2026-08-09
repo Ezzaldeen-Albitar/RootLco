@@ -83,7 +83,7 @@ All 33 are adjudicated below.
 | `QA-001`  | `REAL_P1_27_DEFECT`    | FIXED `0272e1d`     | itself    |
 | `QA-002`  | `REAL_P1_27_DEFECT`    | FIXED `0272e1d`     | itself    |
 | `QA-003`  | `TEST_OR_GATE_DEFECT`  | FIXED `0c19f51`     | itself    |
-| `QA-005`  | `TEST_OR_GATE_DEFECT`  | OPEN (final head)   | itself    |
+| `QA-005`  | `TEST_OR_GATE_DEFECT`  | FIXED `ed7b942`     | itself    |
 | `DO-002`  | `AUDIT_FALSE_NEGATIVE` | no change needed    | itself    |
 | `DOC-001` | `TEST_OR_GATE_DEFECT`  | FIXED (records)     | itself    |
 | `DOC-002` | `TEST_OR_GATE_DEFECT`  | FIXED (both halves) | itself    |
@@ -91,19 +91,30 @@ All 33 are adjudicated below.
 
 ```
 ADJUDICATED       = 33
-FIXED             = 31
+FIXED             = 32
 NO_CHANGE_NEEDED  =  1     DO-002
 BLOCKED           =  0     (was 1: FE-029, unblocked by PR #212)
-OPEN              =  1     QA-005
+OPEN              =  0     (was 1: QA-005, closed at ed7b942)
 
-RESOLVED   / 42   = 41
-UNRESOLVED / 42   =  1
+RESOLVED   / 42   = 42
+UNRESOLVED / 42   =  0
 ```
 
-The previous revision of this block read `FIXED = 30`, `BLOCKED = 1`,
-`RESOLVED = 40`, `UNRESOLVED = 2`. `FE-029` moved from BLOCKED to FIXED when
-PR #212 merged. `QA-005` is the single remaining item and can only be measured
-at the final head.
+**`RESOLVED = 42` is a statement about TASKS and about nothing else.** It is not
+closure, it is not acceptance, and it does not license a gate record. P1-27
+closes only when the Product Owner tests the running application by hand and
+returns an explicit verdict; silence, absence and a green pipeline are none of
+them. `apps/web/tests/p1-27-doc-reconciliation.test.ts` requires every evidence
+record to carry the current Owner status **unconditionally** — that requirement
+used to be nested inside "while tasks remain open", which would have switched the
+guard off at the exact moment the last task closed.
+
+The previous revision of this block read `FIXED = 31`, `OPEN = 1`,
+`RESOLVED = 41`. `QA-005` was deliberately last: it records the clean-room and
+hosted-CI measurement, and any head that is not the final one produces a document
+that is stale on arrival — which is the defect `QA-005` reports in the first
+place. The revision before that read `FIXED = 30`, `BLOCKED = 1`,
+`RESOLVED = 40`; `FE-029` moved from BLOCKED to FIXED when PR #212 merged.
 
 **This block said `RESOLVED = 41` before that was true, and the 42-task
 recalculation is what caught it.** `DOC-002`'s row read `FIXED (records)` on the
@@ -130,15 +141,14 @@ ancestor of `76e37f0`, not a different change.
 
 `FE-029` is therefore **closed**, not blocked; see its section below.
 
-`QA-005` remains open by design and for the original reason: it needs clean-room
-and hosted-CI evidence recorded at the FINAL head, and there is no final head
-until the Frontend PR merges. Re-recording before then produces a document that
-is stale on arrival, which is the defect `QA-005` reports in the first place. It
-is the last thing done, deliberately.
-
-The durable half of `QA-005` is done: `apps/web/tests/p1-27-doc-reconciliation.test.ts`
-reconciles the records against the repository, so the next drift is a build
-failure rather than a silent lie. What remains is the measurement itself.
+`QA-005` was held open by design and for the original reason: it needs clean-room
+and hosted-CI evidence recorded at the FINAL head, and re-recording before then
+produces a document that is stale on arrival — the defect `QA-005` reports in the
+first place. It was the last thing done, deliberately, and it is now **closed at
+`ed7b942`**: both clean rooms run at `CODE_CANDIDATE_SHA`, and
+`tests/ci/p1-27-evidence-manifest.test.ts` reconciles the recorded head and
+counts against the repository over a SHA-256 digest of every evidence document.
+See its section below.
 
 ---
 
@@ -248,9 +258,9 @@ reconciliation and the candidate freeze:
 | `SEC-003`                              | `831749b` — the wire between a session and a screen's write props |
 | `DOC-002`                              | `8eb9da2` — the guidance half of a conjunction                    |
 
-`QA-005` is the fourteenth and remains open by design, measurable only at the
-final head. The arithmetic block is therefore true NOW and was written before it
-was; that block carries its own note saying so.
+`QA-005` is the fourteenth, `ed7b942`. It was held to last by design because it
+is measurable only at the final head. The arithmetic block is therefore true NOW
+and was written before it was; that block carries its own note saying so.
 
 ---
 
@@ -601,9 +611,11 @@ the one thing still open:
 - `DO-002` is `no change needed`. It is adjudicated `AUDIT_FALSE_NEGATIVE`
   precisely because there is nothing to fix — the unattached monitoring adapter
   is the documented design.
-- `QA-005` is `OPEN (final head)` and is deliberately still open. A reader taking
-  the old sentence at its word concluded that the only open item in the phase had
-  been closed.
+- `QA-005` was `OPEN (final head)` and deliberately so; it closed at `ed7b942`,
+  after the sentence quoted above was written. A reader taking that old sentence
+  at its word concluded that the only open item in the phase had been closed —
+  which happened to become true later, and was not true when it was written. A
+  claim that a later event vindicates was still unfounded when made.
 
 Every OTHER entry below has since been fixed and its commit is named above.
 
@@ -731,13 +743,47 @@ real traffic — is structurally vacuous. The server-side scope control it is me
 to prove is real and enforced (`read-operation.ts` throws on a scope key, and
 that IS asserted); the traffic assertion is the defective part.
 
-### `QA-005` — `TEST_OR_GATE_DEFECT`
+### `QA-005` — `TEST_OR_GATE_DEFECT` — closed at `ed7b942`
 
-`clean-room-evidence.md` pins a SHA and test counts that the tree has long since
-passed. This is stale evidence rather than a product defect, and it cannot be
-closed until the branch reaches its final head — re-recording it now would only
-make it stale again. Deferred to the end of the branch deliberately, not
-overlooked.
+`clean-room-evidence.md` pinned a SHA and test counts that the tree had long
+since passed. Stale evidence rather than a product defect, and it could not be
+closed until the branch reached its final head — re-recording it earlier would
+only have made it stale again. Deferred deliberately, not overlooked.
+
+The audit named four gaps. Three were mechanism and one was a measurement:
+
+**The measurement.** A local clean room and the hosted `hosted-clean-room` job
+were both run at `CODE_CANDIDATE_SHA`, and the exact-head hosted run completed
+20 of 20 required checks with 0 failed, 0 pending, `ci-gate` **Go**, 0 open
+CodeQL alerts repository-wide and a clean dependency policy. Recorded in
+`clean-room-evidence.md` and `ci-evidence.md`.
+
+**The counts.** _"No test reconciles the recorded SHA or counts against the
+repository."_ This was the real finding. A recorded count is a claim about the
+repository and nothing was comparing the claim to the repository — "763 tests
+across 38 files" simply stayed on the page while the suite grew past it.
+`tests/ci/p1-27-evidence-manifest.test.ts` now derives the web test-file count
+from the tree and requires the document to agree with it, requires both evidence
+documents to name the same full 40-character head, and refuses a superseded head
+presented as current. The superseded rows are kept under their own heading rather
+than overwritten, because deleting them erases the only proof the drift happened.
+
+**The thirteen non-FE ids** are derived from `canonical-plan.md` and each must
+carry a traceability row and a register row. The obvious fourth assertion — that
+all thirteen appear in _this_ document — is deliberately absent: `QA-004` was
+never disputed, and requiring a verdict on it would force a row about a finding
+nobody raised. The disputed set is instead derived from the audit's own headings
+and intersected with the thirteen.
+
+**The digest manifest.** `evidence/evidence-manifest.json` — SHA-256 over the
+bytes of all 29 `.md`/`.json` files in the phase directory, walked rather than
+listed. It states its own limit in a field the test asserts: not a tamper-proof
+seal, since anyone who can edit a document can re-run the generator. What it
+removes is _silent_ revision. It caught one immediately and unprompted — Prettier
+reformatting `ci-evidence.md` after generation — and named that single file.
+
+Four mutations, each byte-verified before the run and restored to the exact
+pre-image blob afterwards.
 
 ### `DOC-001` — `TEST_OR_GATE_DEFECT` — partially closed
 
@@ -808,14 +854,23 @@ That is `DOC-001`'s own defect — a record drifting from the thing it records �
 occurring inside the document that adjudicates `DOC-001`. It is corrected here
 and the original is quoted above so the drift is visible rather than erased.
 
-**The Summary table is the live status.** As of this head: thirty-two of
-thirty-three are closed, and `QA-005` alone remains open — deliberately, because
-it can only be measured at the final head.
+**The Summary table is the live status.** As of this head all thirty-three are
+closed: thirty-two `FIXED`, one `no change needed`. `QA-005` was the last, held
+back deliberately because it can only be measured at the final head.
 
-P1-27 is not claimed at 42/42 by this document. It replaces a disputed pair of
-numbers with a list of named, reproduced, individually adjudicated items — which
-is the thing that can actually be worked through. The re-audit of all 42 canonical
-tasks against the integrated tree is a separate exercise and reports separately.
+This document replaces a disputed pair of numbers with a list of named,
+reproduced, individually adjudicated items — which is the thing that can actually
+be worked through. The re-audit of all 42 canonical tasks against the integrated
+tree is a separate exercise and reports separately; it now returns 42 of 42.
+
+**A resolved task list is not a delivered phase, and this is the sentence to
+read twice.** Every number on this page was produced by the same repository that
+produced the code, and this phase has already recorded three separate occasions
+when every automated tier was green over a defect a person found in a minute:
+ten `idempotent: true` operations no call site ever sent the header for, six
+shipped operations answering 500 to every request, and fifty-one Tailwind
+utilities that emitted no CSS at all. A green pipeline is evidence that the
+things we thought to check are true.
 
 **P1-27 remains `OWNER ACCEPTANCE: FAIL`.** No gate record is written, `main` is
 untouched, and the phase is not closed.

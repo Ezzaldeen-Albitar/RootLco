@@ -210,6 +210,56 @@ asserted the declaration rather than the wiring.
 
 ---
 
+## Sealing the record — `QA-005`, the last task closed
+
+Held to the end on purpose: it records the clean-room and hosted-CI measurement,
+and any head that is not the final one produces a document stale on arrival —
+which is the defect the task reports.
+
+Three things changed, and only one of them is a document.
+
+**A digest over the evidence.** `evidence/evidence-manifest.json` carries SHA-256
+over the _bytes_ of all 29 `.md`/`.json` files in the phase directory, walked
+rather than listed. `validate:p1-27-evidence` fails when a document moves and the
+manifest does not, and names the file that moved. It says in its own text what it
+is not: anyone who can edit a document can re-run the generator, so this removes
+_silent_ revision, not revision. It caught one within a minute of being written —
+Prettier reformatting `ci-evidence.md` after generation.
+
+**A count that is derived rather than typed.** The audit's finding was that
+`clean-room-evidence.md` "pins e14984e and 763/38 while the tree is 47 commits
+and 5 test files further on". Nothing was comparing the claim to the repository.
+Now the web test-file count is read off the tree and the document must agree with
+it. Beside it sits an assertion that looks unrelated and is not: no `*.test.tsx`
+may exist that is not `*.dom.test.tsx`, because the `logic` project includes
+`tests/**/*.test.ts` and `dom` includes `tests/**/*.dom.test.{ts,tsx}` — a plain
+`*.test.tsx` matches neither, runs nowhere, and is still counted.
+
+**A guard that used to switch itself off.** The requirement that every evidence
+record state the current Owner status was nested inside "while tasks remain
+open". The commit closing the last task would have taken that count to zero and
+silently disabled it — a guard that disarms on success, in a file written to
+catch exactly that. It is now unconditional.
+
+The task count is **42 of 42**. That is a statement about tasks. It is not
+closure, not acceptance, and not a gate record.
+
+**And the commit that did all this went red in hosted CI**, which is worth
+recording rather than quietly fixing. Adding one file took `scripts/ci` from 41
+to 42. That count is asserted in **two** places in two different workspaces —
+`tests/ci/documented-counts.test.ts` in the root tier and
+`apps/web/tests/p1-27-doc-reconciliation.test.ts` in the web tier — against two
+different documents. The root tier was run before committing and passed; the web
+tier was not, and `deliverable-manifest.md` still said 41.
+
+The root aggregate does not cover `apps/web`. That is the same shape as the two
+already recorded here — root `format:check` cannot see `apps/web` because the
+root `.prettierignore` contains `apps/`, and root `typecheck` does not cover it
+either — and it is now the third instance. Local green over a tier that never
+ran is indistinguishable from local green.
+
+---
+
 ## Audit progression, preserved
 
 | stage                                | result                                          |
@@ -217,7 +267,11 @@ asserted the declaration rather than the wiring.
 | Initial claim                        | 42 / 42                                         |
 | Adversarial audit                    | 20 PASS / 22 FAIL, `PASS_REFUTED = 11`          |
 | Corrected reading of that same audit | **9 PASS / 33 FAIL** — a refuted pass is a fail |
-| After this branch's remediation      | see `final-task-adjudication.md`                |
+| After this branch's remediation      | 42 / 42, derived — `final-task-adjudication.md` |
+
+The first row and the last read the same. They are not the same claim: the first
+was asserted, the last is derived from thirty-three individually adjudicated
+items and re-derived by tests on every run. That difference is the whole phase.
 
 The mistakes are kept deliberately. A record that shows only the final number
 cannot be checked by the next reader, and this phase has now been closed once on

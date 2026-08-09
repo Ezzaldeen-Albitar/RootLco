@@ -253,24 +253,60 @@ describe('QA-005 — the evidence records point at this branch', () => {
       'evidence/change-log.md',
     ];
 
-    if (open + blocked > 0) {
-      for (const doc of DOCS) {
-        const text = read(...doc.split('/'));
+    for (const doc of DOCS) {
+      const text = read(...doc.split('/'));
+
+      /*
+       * The task-count banners are forbidden only while rows contradict them.
+       * `PASS=42` is a lie with an OPEN row on the page and a fact without one,
+       * so the rule has to read the rows rather than ban the string outright.
+       */
+      if (open + blocked > 0) {
         for (const phrase of CLOSURE_BANNERS) {
           expect(
             text,
             `${doc} asserts "${phrase}" while ${open} open and ${blocked} blocked task(s) remain`
           ).not.toContain(phrase);
         }
-        // And the positive half: while anything is unresolved, each record must
-        // SAY the phase is not accepted. Silence would let a reader assume.
-        expect(text, `${doc} does not state the current Owner status`).toContain(
-          'OWNER ACCEPTANCE: FAIL'
+      }
+
+      /*
+       * The Owner status is required UNCONDITIONALLY, and that is the point of
+       * this edit.
+       *
+       * It used to sit inside the `open + blocked > 0` branch, which made the
+       * whole guard evaporate at exactly the moment it mattered: the commit that
+       * closes the last task takes the count to zero, and from then on these
+       * records could have stopped saying the phase was unaccepted without a
+       * single test noticing. A guard that switches itself off on success is the
+       * defect class this phase has spent four rounds removing — this one was in
+       * a file written to catch it.
+       *
+       * Forty-two tasks passing is a statement about tasks. Acceptance is the
+       * Owner's, is not derivable from any count, and cannot be inferred from
+       * silence.
+       */
+      expect(text, `${doc} does not state the current Owner status`).toContain(
+        'OWNER ACCEPTANCE: FAIL'
+      );
+
+      // Phase-closure banners are never permissible ahead of an Owner Pass, no
+      // matter what the task rows say.
+      for (const phrase of ['PHASE 1-27 OFFICIALLY CLOSED', 'P1-27 CANONICAL SCOPE VERIFIED']) {
+        expect(text, `${doc} declares the phase closed without an Owner Pass`).not.toContain(
+          phrase
         );
       }
     }
-    // The count itself must be derivable, or the guard above is unreachable.
-    expect(open + blocked, 'no task rows were found in the adjudication').toBeGreaterThan(0);
+
+    /*
+     * Vacuity check. This counts TASK ROWS, not unresolved ones — the earlier
+     * version asserted `open + blocked > 0`, which conflated "the table is
+     * readable" with "something is still open" and would have gone red on the
+     * commit that closed the final task.
+     */
+    const rows = (adjudication.match(/^\|\s*`[A-Z]+-\d{3}`\s*\|/gm) ?? []).length;
+    expect(rows, 'no task rows were found in the adjudication').toBeGreaterThanOrEqual(30);
   });
 
   it('preserves the audit progression rather than erasing it', () => {

@@ -371,6 +371,33 @@ These are recorded rather than fixed. Fixing twenty-one findings inside this
 remediation would repeat the mistake that produced them: a large change reported
 green because the checks that would contradict it were not the ones run.
 
+### 7A.1 Superseded — the same audit, re-derived after remediation
+
+The block above is the state of the tree when the audit ran and is kept exactly
+as written. It has since been worked through. Every one of the thirty-three
+adjudicated items is closed, and the 42-task derivation now returns:
+
+```
+TASKS_AUDITED = 42
+PASS          = 42
+FAIL          =  0
+```
+
+Two things must be read with it, or the number means less than it looks.
+
+**A refuted pass is a fail.** `PASS_REFUTED = 11` above meant the audit's own
+`PASS = 20` was really nine — the correction is preserved in
+`evidence/change-log.md` under "Audit progression". The count is only worth
+anything because each of the thirty-three was named, reproduced, individually
+adjudicated and mutation-proved; the itemised list is `final-task-adjudication.md`,
+which is canonical for status.
+
+**Forty-two tasks is not a delivered phase.** `P1-27` remains
+`OWNER ACCEPTANCE: FAIL` and closes only on an explicit Owner verdict against the
+running application. This phase has already recorded three occasions where every
+automated tier was green over a defect a person found by hand, so the pipeline's
+agreement is necessary and has never been sufficient.
+
 ### The D2 Backend half was riding inside this Frontend branch
 
 Found by running the full gate set, not by review. `npm run validate:phase-ownership`
