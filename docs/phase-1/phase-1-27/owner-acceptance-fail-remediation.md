@@ -163,7 +163,7 @@ review was re-run against the merged tree.
 | `validate:plain-language`                | 24 rules, 0 findings                             |
 | `validate:web-theme`                     | 170 files, 54 colours, 0 unresolvable            |
 | `validate:web-tokens`                    | 195 files, 0 raw values                          |
-| `validate:p1-27-frontend`                | 40 files, 0 failures                             |
+| `validate:p1-27-frontend`                | **43** files, 0 failures                         |
 | `validate:command-coverage`              | 71 / 71 required commands reachable and invoked  |
 
 ## Governance
@@ -180,3 +180,14 @@ review was re-run against the merged tree.
 
 **P1-27 closes only when the Product Owner manually tests the application again
 and returns `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
+
+<!-- The gate-owned file count in this document is DERIVED. It read 40 while the
+     gate reported 43 (`E-05`), in three places, after the fix that corrected the
+     sentence directly above the first of them. `validate:p1-27-doc-counts`
+     recomputes it from the gate's own scan roots, so the day a third tree is
+     added this document follows it. The markers live here, outside every table:
+     an earlier revision put them in a label column and broke two other gates
+     whose regexes read the label and the number as adjacent cells. -->
+
+<!-- derived: files p1-27-frontend-gate = 43 -->
+<!-- derived: files p1-27-frontend-gate:trees = 2 -->

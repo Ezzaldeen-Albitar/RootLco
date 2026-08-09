@@ -13,6 +13,25 @@ PASS_REFUTED   = 11
 
 **P1-27 is not at 42/42.** `FE-019` is fixed in `8daf8e9`; the rest stand.
 
+> **SUPERSEDED — read `final-task-adjudication.md` first (`A42-08`).**
+>
+> "The rest stand" was true when this file was written and has not been true for
+> a long time. Thirty-two of the entries below have since been adjudicated and
+> closed, each with its own commit and its own discriminating mutation.
+>
+> This audit's own headline is also weaker than it looks in the other direction:
+> `PASS_REFUTED = 11` means eleven of the twenty PASS verdicts did not survive
+> the recheck run against them, so the real result was **9 true pass / 33 true
+> fail** rather than 20 / 22. Both corrections are in
+> `final-task-adjudication.md`, which is the record of adjudication; this file is
+> the record of the audit, and it is kept unedited below that line for the same
+> reason a superseded measurement is kept: an audit rewritten to agree with its
+> own follow-up stops being evidence of what was found.
+>
+> The conclusion in bold is the one thing here that later work confirmed. P1-27
+> is still not at 42 of 42, for reasons this audit did not know: `DO-002` and
+> `QA-004` are conjunctions delivered in part.
+
 ## Failing tasks
 
 ### P1-27-FE-002

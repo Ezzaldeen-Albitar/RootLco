@@ -367,6 +367,16 @@
       "TASK_IDS": ["DO-001", "QA-001"],
       "CLASSIFICATION": "TEST_OR_GATE_DEFECT",
       "WHY": "The test-honesty gate computed a comment-stripped source and matched its rules against the raw one, so it fired on prose and its line numbers were wrong after any docblock."
+    },
+    "G-10": {
+      "TASK_IDS": ["DOC-001"],
+      "CLASSIFICATION": "TEST_OR_GATE_DEFECT",
+      "WHY": "The gate that makes DOC-001's counts derivable was wrong about two of them: its comment stripper read `apps/**` inside a string literal as an opening block comment and blanked an `it(` call site, and it certified a static count for a file whose cases are generated in a `for` loop. Both were found by comparing its answer for every test file against what the runner executed."
+    },
+    "G-11": {
+      "TASK_IDS": ["DOC-001"],
+      "CLASSIFICATION": "DOCUMENTATION_DEFECT",
+      "WHY": "The task-traceability record credited two case titles to a file that holds neither, and the existing citation check concatenates every test file so it could not see the direction that was wrong."
     }
   }
 }

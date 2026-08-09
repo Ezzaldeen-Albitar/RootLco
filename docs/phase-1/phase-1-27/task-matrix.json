@@ -89,8 +89,7 @@
       "CANONICAL_REQUIREMENT": "CRM duplicate warning",
       "CANONICAL_SOURCE": "docs/phase-1/phase-1-27/canonical-plan.md — the Frontend task table",
       "CANONICAL_BACKEND_OPERATIONS": [
-        "crm.duplicate-list",
-        "crm.duplicate-scan"
+        "none of its own — see §7.1"
       ],
       "CANONICAL_TEST_ID": "TC-P1-27-CRM-003",
       "IMPLEMENTATION_SURFACES": "`CustomerCreateScreen.tsx:267-353`, duplicate block `:299-335`; shape `creation-contract.ts:69-89`.",

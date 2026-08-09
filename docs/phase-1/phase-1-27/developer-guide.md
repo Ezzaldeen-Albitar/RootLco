@@ -34,12 +34,26 @@ vehicle tree has no `*actions.ts` at all and puts its six write actions in the
 `retirePartyAction` in `relations-api.ts`. Look for a vehicle write in an
 `actions` file and you will conclude it was never built.
 
-Those patterns are **checked**, as a partition: every file in either tree that
-opens with `'use server'` must match one of them, and
-`p1-27-guidance-reconciliation.test.ts` fails naming any that does not. The row
-read `*-api.ts` until that check was written, which silently missed five of the
-thirteen; the first correction then over-claimed a vehicle `*actions.ts` that has
-never existed, and the check caught that too, within a minute.
+Those patterns are **checked**, as a partition: every file that opens with
+`'use server'` must match one of them, and a check fails naming any that does
+not. The row read `*-api.ts` until the first check was written, which silently
+missed five of the thirteen; the first correction then over-claimed a vehicle
+`*actions.ts` that has never existed, and the check caught that too, within a
+minute.
+
+**Two checks, and the difference between them is the point** (`D-02`).
+`p1-27-guidance-reconciliation.test.ts` walks `features/crm/customers` and
+`features/vehicles`. The ownership gate owns `features/crm` and
+`features/vehicles` — one level up on the CRM side. So a `'use server'` file at
+`features/crm/*.ts` sat outside a partition this page calls exhaustive, and the
+claim was true only because `permissions.ts` is the sole file there and declares
+no server function. True by luck is not checked.
+
+`validate:p1-27-doc-counts` now runs the same partition over
+`check-p1-27-frontend.mjs`'s own `SCAN_ROOTS`, which it imports rather than
+restates. Add a tree to the gate and the wider check follows it in the same
+commit; add a `'use server'` file called anything else, anywhere in either tree,
+and it fails naming the file.
 
 ## The rules that are enforced, not merely written down
 
@@ -131,3 +145,16 @@ waves with only the first kind, and the missing half is what eventually found a
 defect affecting every table in the product.
 
 Mocks are test fixtures. **Mocks are not production-integration evidence.**
+
+<!-- `DOC-002`, the guidance half. Two sentences on this page are load-bearing
+     for someone deciding what they can get away with, and both are proved
+     against the code rather than asserted here.
+
+     `p1-27-guidance-reconciliation.test.ts` proves the rest under
+     `verify:web`. These two are proved by `validate:p1-27-doc-counts` instead,
+     because each needs something outside the web workspace: the ownership
+     gate's real scan roots, and its rule list. An unknown claim name below is a
+     build failure, not a silent pass. -->
+
+<!-- checked: developer-guide/enforced-rules -->
+<!-- checked: developer-guide/use-server-partition -->
