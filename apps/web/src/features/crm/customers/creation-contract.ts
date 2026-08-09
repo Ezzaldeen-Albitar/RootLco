@@ -36,14 +36,24 @@
  * docblock is explicit that this is advisory and that "the customer *was*
  * created".
  *
- * So the warning this phase can honestly deliver has two halves, and both are
- * real:
+ * So the warning this phase delivers has ONE half, not two, and that is a
+ * change from how this contract was originally written.
  *
- *  1. **Before** — the search screen is the duplicate check. The create action
- *     is offered only after a search returned nothing, so an operator reaches
- *     the form having already looked.
- *  2. **After** — the creation result names the customers that share the name,
- *     with links, and says plainly that the record was created anyway.
+ *  - **After** — the creation result names the customers that share the name,
+ *    with links, and says plainly that the record was created anyway.
+ *
+ * The list previously opened with a "**Before**" item: "the search screen is the
+ * duplicate check. The create action is offered only after a search returned
+ * nothing, so an operator reaches the form having already looked." That held
+ * until the Owner-acceptance remediation, which closed the defect "Customer
+ * Search has no clear Add Customer action" by rendering `CustomerCreateActions`
+ * in the page header unconditionally
+ * (`app/[locale]/(dashboard)/crm/customers/page.tsx:72-79`). An operator can now
+ * reach the form without having searched, so the upstream half is gone and the
+ * post-hoc warning is the whole of it.
+ *
+ * That was the right trade — a create action nobody could find was the worse
+ * defect — but the contract must describe the flow that exists.
  *
  * What must NOT happen is a form that appears to check for duplicates before
  * submitting and silently does not.

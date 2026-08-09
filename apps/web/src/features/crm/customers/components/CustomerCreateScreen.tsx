@@ -33,9 +33,21 @@ import {
  * alternative — a form that looks like it checks and does not — is worse than no
  * check at all, because it is a promise.
  *
- * The other half of the duplicate story is upstream: the create action is
- * offered from the search screen only after a search returned nothing, so an
- * operator arrives here having already looked.
+ * **There is no upstream half any more, and this paragraph used to claim there
+ * was.** It read: "the create action is offered from the search screen only
+ * after a search returned nothing, so an operator arrives here having already
+ * looked." That was true when written and was falsified by the Owner-acceptance
+ * remediation, which closed the defect "Customer Search has no clear Add
+ * Customer action" by putting `CustomerCreateActions` in the page header
+ * unconditionally (`app/[locale]/(dashboard)/crm/customers/page.tsx:72-79`).
+ * The empty-result placement in `CustomerSearchScreen` is now the second site,
+ * not the only one.
+ *
+ * So an operator can reach this form without having searched at all, and the
+ * warning below is the ONLY duplicate signal in the flow. That is a deliberate
+ * trade the remediation made — an unreachable create action was the worse
+ * defect — but it is post-hoc by construction and the record should say so
+ * rather than describe a pre-check that no longer happens.
  *
  * ## `lifecycleStatus` offers two values, not five
  *
@@ -166,10 +178,55 @@ export function CustomerCreateScreen({ locale, messages, kind }: Props) {
         >
           {translate(messages, 'crm.customers.create.lifecycleStatus')}
         </label>
+        {/*
+          Three parts, and none of them is optional. Written out because the
+          obvious one-line fix looks complete, is not, and passes review.
+
+          This carried `defaultValue="prospect"` with no `onChange`, eight lines
+          beneath a docblock asserting that every field here is controlled
+          precisely so a transport failure cannot discard what the operator
+          chose. An adversarial recheck of this task's own PASS found it.
+
+          Failure mode: pick "Active", submit, hit a timeout or a 503, and the
+          three NAMES survive while the status silently reverts to "Prospect" —
+          the one field whose reversion leaves no visible trace, because unlike a
+          name it does not read as something you typed. Correct the name,
+          resubmit, and the customer is created a prospect. Changing it
+          afterwards needs the separate governance status screen.
+
+          Making it a controlled `value={…}` field, which is what the docblock
+          above describes and what `RecordForm` does, DID NOT FIX IT. Measured
+          with a temporary probe rendering the state next to the field:
+
+              after select   state=active   dom=active
+              after submit   state=active   dom=prospect
+
+          React resets the form DOM once the Server Action settles. On the render
+          that follows, the `value` prop is `active` before and after, so the
+          reconciler sees no change and never writes the DOM back: the reset wins
+          and the element silently disagrees with the state that drives it.
+
+          So:
+            - `onChange` records the choice in `values`, which is what the rest
+              of this form already relies on;
+            - `key` on the attempt counter remounts the element after each
+              submission, because only a mount re-reads the initial value;
+            - `defaultValue` — NOT `value` — seeds that mount from state, and is
+              also what `form.reset()` restores to, so the reset now lands on the
+              operator's choice instead of overriding it.
+
+          The same hole exists wherever a `<select>` sits in a `<form action={…}>`.
+          `components/forms/RecordForm.tsx` is not visibly affected only because
+          its default is the empty placeholder, which is also where the reset
+          lands — the two coincide, so nothing shows. Raised as `NEW-FE-01`
+          rather than changed blind here.
+        */}
         <select
+          key={`lifecycle-${state.attempt ?? 0}`}
           id="crm-create-lifecycle"
           name="lifecycleStatus"
-          defaultValue="prospect"
+          defaultValue={values['lifecycleStatus'] ?? 'prospect'}
+          onChange={(event) => set('lifecycleStatus')(event.target.value)}
           className="rounded-md border border-border bg-surface px-3 py-2 text-body"
         >
           {/* Two options, because creation accepts two. */}

@@ -164,7 +164,7 @@ review was re-run against the merged tree.
 | `validate:web-theme`                     | 170 files, 54 colours, 0 unresolvable            |
 | `validate:web-tokens`                    | 195 files, 0 raw values                          |
 | `validate:p1-27-frontend`                | 40 files, 0 failures                             |
-| `validate:command-coverage`              | 70 / 70 required commands reachable and invoked  |
+| `validate:command-coverage`              | 71 / 71 required commands reachable and invoked  |
 
 ## Governance
 

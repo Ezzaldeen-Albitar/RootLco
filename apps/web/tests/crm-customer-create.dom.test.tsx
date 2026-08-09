@@ -235,6 +235,47 @@ describe('failure', () => {
     // operator retype a customer's name.
     expect(screen.getByLabelText(/Given name/)).toHaveValue('Nadia');
   });
+
+  it('keeps the CHOSEN initial status after a failed submit, not just the typed names', async () => {
+    /*
+     * The case above asserted only a TextField, and that gap is why this defect
+     * survived a PASS verdict: the status select carried `defaultValue="prospect"`
+     * with no `value` and no `onChange`, eight lines beneath a docblock claiming
+     * every field here is controlled so that a transport failure cannot discard
+     * the operator's input.
+     *
+     * "Active" is deliberately the value chosen, because it is not the default.
+     * Asserting the select still reads "Prospect" would pass against the broken
+     * code and against the fix alike, and would prove nothing.
+     *
+     * The consequence this guards is quiet rather than loud: the names visibly
+     * survive, so the form LOOKS intact, while the one field that does not read
+     * as typed text has reverted. The operator resubmits and creates a prospect
+     * they did not ask for, fixable only through a different screen.
+     */
+    createIndividualAction.mockResolvedValue({
+      status: 'unavailable',
+      messageKey: 'state.unavailable.title',
+      correlationId: 'fixed-correlation-id',
+      attempt: 1,
+    });
+    const user = userEvent.setup();
+    renderLtr(<CustomerCreateScreen locale="en" messages={en} kind="individual" />);
+
+    await user.type(screen.getByLabelText(/Given name/), 'Nadia');
+    await user.type(screen.getByLabelText(/Family name/), 'Khoury');
+    const status = screen.getByLabelText(en['crm.customers.create.lifecycleStatus']);
+    await user.selectOptions(status, 'active');
+    expect(status).toHaveValue('active');
+
+    await user.click(screen.getByRole('button', { name: en['form.submit'] }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('fixed-correlation-id');
+
+    expect(screen.getByLabelText(en['crm.customers.create.lifecycleStatus'])).toHaveValue('active');
+    // Asserted together, so a future change cannot "fix" the select by making
+    // the whole form uncontrolled again.
+    expect(screen.getByLabelText(/Given name/)).toHaveValue('Nadia');
+  });
 });
 
 describe('Arabic', () => {
