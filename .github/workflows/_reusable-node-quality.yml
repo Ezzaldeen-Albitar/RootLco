@@ -444,8 +444,13 @@ jobs:
             fs.appendFileSync(process.env.GITHUB_OUTPUT, `total=${s.total}\n`);
           '
 
+      # Two tasks now carry a touched-file coverage floor — the unit tier and the
+      # web tier — so the list they both read has to be produced for both. A
+      # `--changed` pointing at a file that was never written makes the gate skip
+      # the touched-file rule silently, which is the shape of every hole this
+      # phase has been closing.
       - name: Changed files, for the touched-file coverage floor
-        if: inputs.task == 'unit-coverage' && !cancelled()
+        if: (inputs.task == 'unit-coverage' || inputs.task == 'web-quality') && !cancelled()
         env:
           BASE_REF: ${{ inputs.base-ref }}
         run: |
@@ -592,7 +597,24 @@ jobs:
           # An explicit script, not flags forwarded through two npm layers —
           # that is where they were being dropped, leaving vitest on its default
           # reporter and the summariser with no report to read.
+          #
+          # The same lesson governs coverage. `npm run test:web -- --coverage`
+          # LOSES the `--` at the second npm layer and runs a plain `vitest run`,
+          # producing exit 0, no report and a job that measured nothing while
+          # calling itself a coverage run. So the flags live inside the workspace
+          # script and the suite is executed once for both purposes.
           npm run test:web-ci
+
+      - name: Web coverage ratchet
+        id: web-coverage
+        if: inputs.task == 'web-quality' && !cancelled()
+        run: |
+          set -euo pipefail
+          node scripts/ci/coverage-gate.mjs \
+            --summary apps/web/coverage/web/coverage-summary.json \
+            --baseline .github/ci-baselines/coverage-baseline.web.json \
+            --changed changed-files.txt \
+            --json coverage-gate-web.json --markdown coverage-web.md
 
       - name: Summarise the web tier
         id: web-tests
@@ -704,7 +726,7 @@ jobs:
           # `tests/ci/job-summary-rendering.test.ts` derives the required list
           # from this file's own `--markdown` arguments, so a new summariser
           # cannot be added without appearing here.
-          for file in workflow-security.md route-parity.md test-honesty.md env-contract.md tests-unit.md coverage.md build-output-scan.md build.md tests-web.md unrun-tiers.md web-build-scan.md; do
+          for file in workflow-security.md route-parity.md test-honesty.md env-contract.md tests-unit.md coverage.md build-output-scan.md build.md tests-web.md coverage-web.md unrun-tiers.md web-build-scan.md; do
             if [ -f "${file}" ]; then
               cat "${file}" >> "${GITHUB_STEP_SUMMARY}"
               printf '\n\n' >> "${GITHUB_STEP_SUMMARY}"

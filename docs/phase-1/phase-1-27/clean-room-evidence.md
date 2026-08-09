@@ -97,7 +97,7 @@ sit in the tree looking like coverage while running nowhere.
 
 Derived on every run by `tests/ci/p1-27-evidence-manifest.test.ts` rather than
 recorded by hand. The live web suite holds **70 web test files**, every one of
-them matched by a `vitest` project, and the current tree executes **1493** tests.
+them matched by a `vitest` project, and the current tree executes **1533** tests.
 
 That executed figure is the one a test reads. It used to read the `Web tier` row
 of the superseded table above — the block whose own preamble says a superseded
@@ -107,7 +107,7 @@ comparing a live baseline against a record of head `356f1a1e`. The superseded
 figures are left exactly as they were, because they are a true account of that
 head; what moved is which number the check consults.
 
-**The 1493 is local.** It is measured in the integration checkout, not by a named
+**The 1533 is local.** It is measured in the integration checkout, not by a named
 hosted run, and it is provisional for the same reason everything on this page is:
 `P1-27-QA-005` takes the binding measurement against the final candidate, and
 that measurement replaces this section and the baseline's `measured` together.

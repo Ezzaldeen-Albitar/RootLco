@@ -18,7 +18,7 @@
     "style:fix": "stylelint \"src/**/*.scss\" --fix",
     "style:lint": "stylelint \"src/**/*.scss\"",
     "test": "vitest run",
-    "test:ci": "vitest run --reporter=default --reporter=json --outputFile.json=vitest-web.json",
+    "test:ci": "vitest run --reporter=default --reporter=json --outputFile.json=vitest-web.json --coverage --coverage.reportsDirectory=coverage/web --coverage.reporter=json-summary --coverage.reporter=json --coverage.reporter=html --coverage.reporter=text-summary",
     "test:e2e": "playwright test",
     "test:e2e:authenticated": "playwright test --project=authenticated-en --project=authenticated-ar --project=authenticated-tablet",
     "test:e2e:install": "playwright install --with-deps chromium",

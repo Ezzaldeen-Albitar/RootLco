@@ -2,8 +2,8 @@
   "tier": "web",
   "description": "Web-tier coverage baseline (P1-27-QA-001). Scope is the `coverage.include` allow-list in apps/web/vitest.config.ts — the P1-27 CRM and Vehicle features, the dashboard routes that mount them, and the shared library under src/lib. Measured by `npm run test:web -- --coverage`, which runs BOTH vitest projects (`logic` in node, `dom` in jsdom) into one v8 report, because they are two environments over one application. Merging this with the unit or backend tier would overstate all three: those measure apps/api.",
   "policy": "docs/engineering/ci-automation/coverage-policy.md",
-  "establishedBy": "LOCAL measurement in the p1-27/core-api-boundary worktree at base 0650a506b5990a809a3f350370b16e25edb1e7fd, `npm run test --workspace @rootlco/web -- --coverage`, 1493 tests across 70 test files, 0 failed, 90 instrumented source files. This tier had NEVER been measured before: apps/web/vitest.config.ts declared two projects and no `coverage` block at all, the repository-root config's `include` list is entirely apps/api/src, and neither committed coverage baseline mentioned apps/web. So there is no hosted run to cite yet — the first hosted run of this tier is the one that replaces this field.",
-  "ciWiring": "NOT YET INVOKED BY ANY WORKFLOW. `.github/workflows/**` was outside the change that produced this file, so the measurement exists and the gate that reads it does not run. Recorded here rather than left implicit, because 'declared but never wired' is this phase's dominant defect class. What the integrator must add, in `_reusable-node-quality.yml` beside the existing unit-coverage job (:427 runs the suite, :472 runs the gate): (1) `npm run test --workspace @rootlco/web -- --coverage --coverage.reportsDirectory=apps/web/coverage/web --coverage.reporter=json-summary --coverage.reporter=json --coverage.reporter=html --coverage.reporter=text-summary`, then (2) `node scripts/ci/coverage-gate.mjs --summary apps/web/coverage/web/coverage-summary.json --baseline .github/ci-baselines/coverage-baseline.web.json --changed changed.txt --json coverage-gate-web.json --markdown coverage-web.md`, then (3) upload `apps/web/coverage/web/coverage-summary.json` and `coverage-gate-web.json` into the web-quality evidence artifact.",
+  "establishedBy": "LOCAL measurement in the p1-27/core-api-boundary worktree at base 0650a506b5990a809a3f350370b16e25edb1e7fd, `npm run test --workspace @rootlco/web -- --coverage`, 1533 tests across 70 test files, 0 failed, 90 instrumented source files. This tier had NEVER been measured before: apps/web/vitest.config.ts declared two projects and no `coverage` block at all, the repository-root config's `include` list is entirely apps/api/src, and neither committed coverage baseline mentioned apps/web. So there is no hosted run to cite yet — the first hosted run of this tier is the one that replaces this field.",
+  "ciWiring": "WIRED. The apps/web `test:ci` script carries the coverage flags, so the suite is executed once for both purposes, and `_reusable-node-quality.yml` runs `coverage-gate.mjs` against this baseline in the web-quality task. The flags live inside the workspace script deliberately: `npm run test:web -- --coverage` loses the separator at the second npm layer and runs a plain `vitest run`, which exits 0, writes no report, and produces a coverage job that measured nothing while calling itself a coverage run.",
   "ciWiringTrap": "DO NOT write step (1) as `npm run test:web -- --coverage`. Measured on this tree: npm appends the argument to the delegating script WITHOUT the `--` separator, so the line that actually executes is `npm run test --workspace @rootlco/web --coverage`, the inner npm swallows `--coverage` as one of its own config flags, and the command that runs is a bare `vitest run`. The suite passes, the job exits 0, no coverage report is emitted and no coverage directory is created — a green coverage job that measured nothing. The workspace-direct spelling above carries the flag through and is what every figure in this document was measured with. `npm run test:web` is still the registered command the reachability gate sees, because `check-command-coverage.mjs` follows the `--workspace` edge.",
   "runtimeNote": "Instrumentation slows the `dom` project materially. Across four coverage runs of the final tree, three reported 1505/1505 passing and one failed a single pre-existing case, `apps/web/tests/record-form-consumers.dom.test.tsx:425`, on a `getByRole` that timed out. The same case passes in every run without `--coverage`. It is a latent timing flake that v8 instrumentation makes more likely rather than a defect this measurement introduced, and it is written down here so the first red hosted run is diagnosed rather than re-discovered.",
   "establishmentProvenance": "LOCAL, PENDING A HOSTED RE-MEASUREMENT. Recorded as local rather than dressed up as hosted. Node v24.16.0 on win32, @vitest/coverage-v8 3.2.7. A hosted ubuntu-latest run may differ by fractions of a point through v8 line attribution, which is what `tolerancePercentagePoints` is for; if it differs by more than that, the hosted number is the authority and this document is corrected in a commit that says so.",
@@ -11,7 +11,7 @@
     "lines": 79.45,
     "statements": 79.45,
     "functions": 86.92,
-    "branches": 87.0
+    "branches": 87
   },
   "measuredRawCounts": {
     "lines": "8855/11145",
@@ -31,7 +31,9 @@
   "whatTheHeadroomGuarantees": "With the 0.5 pp tolerance on top, the gate trips on: a net loss of more than 167 covered LINES, more than 9 covered FUNCTIONS, or more than 36 covered BRANCHES, at a constant denominator. Those are the bounds the numbers actually enforce, stated as bounds rather than as a slogan about deleting a file.",
   "denominatorTrapNote": "KNOWN TRAP, recorded because this project has already been bitten by it: a coverage percentage can FALL because v8 newly ENTERS code that was previously never loaded, so the module joins the denominator carrying its uncovered lines with it. `coverage.all` is true in apps/web/vitest.config.ts precisely so that cannot happen silently — every file matching the include list is already in the denominator whether a test imports it or not. If a metric still falls, cover the code. Never lower these numbers to make a run pass, and never raise them from a local measurement.",
   "touchedFileMinimum": 60,
-  "touchedFileExemptPrefixes": ["apps/web/src/app/"],
+  "touchedFileExemptPrefixes": [
+    "apps/web/src/app/"
+  ],
   "touchedFileNote": "The exemption is for the ROUTE tier only, and it is temporary rather than principled. `apps/web/src/app/[locale]/(dashboard)/**` is at 7.62% line coverage (162/2125 across 26 files) — async React Server Components that no test currently renders. A 60% touched-file floor over them would refuse every pull request that edits a page, for a gap this establishment run is RECORDING rather than fixing. It is NOT a claim that a route cannot be unit-tested; those files are deliberately still inside the measurement (see the exclusion comment in apps/web/vitest.config.ts), they simply carry their zeros in the global number instead of blocking unrelated work. Remove this prefix once the route tier is covered.",
   "knownGaps": [
     {
@@ -45,7 +47,10 @@
     },
     {
       "id": "zero-coverage-library-modules",
-      "paths": ["apps/web/src/lib/format.ts", "apps/web/src/lib/use-persisted-flag.ts"],
+      "paths": [
+        "apps/web/src/lib/format.ts",
+        "apps/web/src/lib/use-persisted-flag.ts"
+      ],
       "measured": 0,
       "raw": "0/31 and 0/40 lines",
       "why": "Two library modules with no test at all. They are the honest weak spot of this tier and are recorded rather than excluded. Note the consequence: they are NOT under the touched-file exemption, so a pull request that edits either is refused by the 60% touched-file floor until it carries a test. That is the gate working, not a fault to pre-empt."
