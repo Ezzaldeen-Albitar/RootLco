@@ -183,6 +183,32 @@ found the seven riding API files because a human ran it).
   occurs nowhere in `apps/api`, and the pending P1-14 branch touches `iam/` and
   `vehicle/` only. `FE-029` is disclosed as blocked; the CRM half was not.
 
+  _Superseded in part._ `actorName` IS now published, by `veh.vehicle-history`,
+  since PR #212 (`76e37f0`) merged. The CRM half's statement still holds and is
+  narrower than it reads here: `actorName` occurs nowhere under
+  `apps/api/src/modules/crm/`, so the customer timeline's named branch remains
+  unreachable and "Recorded by" still reads the safe sentence.
+
+### Round three — against the INTEGRATED tree, after both Backend merges
+
+`PASS_REFUTED = 14`, from 46 agents: eight auditing all 42 canonical tasks
+against the tree that carries `1045c15` and `61d8ded`, then one refuter per
+surviving PASS. Four are closed below; the remainder are adjudicated
+individually and recorded as they land.
+
+The count itself needed reconciling before any of it could be worked, and that
+is worth recording as its own small lesson. A summary written in prose gave "10
+refutations + 3 FAILs"; the audit's own arrays hold 14 refuted and 4 failed, of
+which `FE-003`, `FE-004`, `FE-005` and `DOC-001` were already closed — leaving
+**11 + 3 = 14** unique unresolved ids, all disjoint. Reconcile from the machine
+output, never from the narrative written about it.
+
+| task               | what the refutation established                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `FE-004`, `FE-005` | The initial-status select was `defaultValue="prospect"` with no `onChange`, EIGHT LINES under a docblock asserting every field here is controlled so a transport failure cannot discard the operator's choice. Pick "Active", hit a 503: the three names survive, so the form looks intact, and the status has silently reverted. **The obvious fix does not work** — a controlled `value` left the defect in place (`after submit state=active dom=prospect`), because React resets the form DOM and an unchanged prop is never written back. Fixed with `onChange` + `key` on the attempt + `defaultValue` from state, so the reset lands on the operator's choice. Mutation-proved both directions. Raised `NEW-FE-01` for the same hole wherever a `<select>` sits in a `<form action={…}>`. |
+| `FE-003`           | Two docblocks described an upstream duplicate pre-check — "the create action is offered only after a search returned nothing". True when written; falsified by the Owner-acceptance remediation, which renders `CustomerCreateActions` unconditionally in the page header (`crm/customers/page.tsx:72-79`). The post-hoc warning is the WHOLE duplicate story, not half of it. Corrected in both files with the originals quoted.                                                                                                                                                                                                                                                                                                                                                                |
+| `DOC-001`          | Four desyncs, each measured: the gate reports **43** files where four documents said 40; command coverage reports **143 / 71 / 71-71** where they said 142 / 70 / 70-70 (it moved when the Backend merges landed); two cited test titles do not exist, one asserting the OPPOSITE of current behaviour; and `task-register.md` claimed a proof for `DOC-002` that `evidence/task-traceability.md` correctly recorded as absent.                                                                                                                                                                                                                                                                                                                                                                  |
+
 ---
 
 ## Fixed on this branch
