@@ -31,10 +31,13 @@
  * deliberate — it stops the endpoint being an existence oracle — so the screen
  * must say "not found" and must NOT speculate about which of the four it was.
  *
- * **`recordVersion` is published, and it is the point.** The detail read returns
- * it and the handler emits it as an `ETag`. Before `P1-27-INT-001` no operation
- * published it, so every write was a last-writer-wins race with no way for a
- * client to detect the conflict.
+ * **`recordVersion` is published, and nothing consumes it.** The detail read
+ * returns it and the handler emits it as an `ETag`; before `P1-27-INT-001` no
+ * operation published it at all. Publishing is half of optimistic concurrency
+ * and the half that was missing — but it is only half, and this paragraph used
+ * to stop at "and it is the point", which reads as though the race were closed.
+ * It is not: no route under `/customers/` is `versionGuarded`, so every customer
+ * write is still last-write-wins. See `CustomerDetail.recordVersion` below.
  *
  * **A shorter note list is not a complete one.** `sel_notes_tenant` hides
  * `restricted` and `secret` notes from a caller without `iam.sensitive.view`,
@@ -57,7 +60,25 @@ export interface CustomerDetail {
   readonly partyType: PartyType;
   readonly lifecycleStatus: string;
   readonly commercialStatus: string;
-  /** The optimistic-concurrency token. Sent as `If-Match` on a later write. */
+  /**
+   * The record's optimistic-lock counter, **published and not used**.
+   *
+   * This said "Sent as `If-Match` on a later write". Nothing sends it, and
+   * nothing could: there is no `ifMatch` anywhere in the customer feature, and
+   * not one route under `/customers/` is registered `versionGuarded` or reads
+   * an `If-Match` header — so a header sent from here would be parsed and
+   * discarded rather than honoured. The sibling claim on
+   * `Preference.recordVersion` below was retracted for exactly this reason and
+   * this one was missed.
+   *
+   * Every customer write is therefore **last-write-wins**, and the read
+   * publishing a version does not change that. The value is real — the detail
+   * read returns it and the handler emits it as an `ETag` — so it is kept in
+   * the type and a screen may legitimately show it as a record fact. Closing
+   * the race is a Backend change: the guard has to be enforced by whoever
+   * registers the operation, and a client-side check the server does not apply
+   * would be worse than the honest absence.
+   */
   readonly recordVersion: number;
   readonly createdAt: string;
   readonly updatedAt: string | null;

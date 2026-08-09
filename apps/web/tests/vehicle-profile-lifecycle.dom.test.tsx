@@ -46,6 +46,16 @@ import type { VehicleDetail } from '@/features/vehicles/profile-contract';
  * its final odometer reading can still be recorded (`vehicle-odometer-service.ts`
  * has no lifecycle guard). Widening the freeze to cover those would have removed
  * two working controls — a defect of the same kind, pointing the other way.
+ *
+ * ## The last section runs the adapters for real
+ *
+ * `the field errors a real 422 carries` at the foot of this file does NOT use
+ * the module mock below. It points the two captured spies at the actual
+ * implementations and mocks only `@/lib/api/server-client`, so a real
+ * `ApiClient` meets a real problem document over a stubbed `fetch`. That is
+ * deliberate and it is the only way the case can mean anything: what was broken
+ * was the JOIN between a parse that produces catalogue keys and a screen that
+ * rendered none of them, and every tier on either side of that join was green.
  */
 
 const listOwnerships = vi.fn();
@@ -86,6 +96,25 @@ vi.mock('@/features/vehicles/duplicates-api', () => ({
   listAttributeHistory: (...a: unknown[]) => listAttributeHistory(...a),
 }));
 vi.mock('@/features/crm/customers/api', () => ({ searchCustomers: vi.fn() }));
+
+/*
+ * The transport, for the last section only.
+ *
+ * A REAL `ApiClient` over a stubbed `fetch`, so the status → kind mapping, the
+ * violation parse and `fromFailure` all run as shipped. Every other case in this
+ * file drives the adapters through the module mock above and never reaches this.
+ */
+const fetchImpl = vi.hoisted(() => vi.fn());
+vi.mock('@/lib/api/server-client', async () => {
+  const { ApiClient } = await import('@/lib/api/client');
+  return {
+    authorizedClient: async () =>
+      new ApiClient({
+        baseUrl: 'http://api.test',
+        fetchImpl: (input: unknown, init: unknown) => fetchImpl(input, init),
+      }),
+  };
+});
 // `refresh` captured, not anonymous — `F4` is about whether the screen re-reads
 // the vehicle after a successful status change, and an anonymous mock cannot say.
 const refresh = vi.fn();
@@ -93,6 +122,19 @@ vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn(), refresh }
 
 const { VehicleProfileScreen } =
   await import('@/features/vehicles/components/VehicleProfileScreen');
+
+/**
+ * The REAL adapters, kept beside the spies that stand in for them.
+ *
+ * `vi.mock` above replaces the module for the whole file, and the two writers
+ * are the ones the last section needs to run for real. Rather than a second
+ * test file — which would put the same screen's cases in two places — the spies
+ * are pointed at these implementations there and at `mockResolvedValue`
+ * everywhere else.
+ */
+const actualProfileApi = await vi.importActual<typeof import('@/features/vehicles/profile-api')>(
+  '@/features/vehicles/profile-api'
+);
 
 /*
  * Labels resolved from the catalogue ONCE and asserted non-empty at the foot of
@@ -180,6 +222,7 @@ beforeEach(() => {
   updateVehicleAction.mockReset();
   updateVehicleAction.mockResolvedValue({ status: 'idle' });
   refresh.mockReset();
+  fetchImpl.mockReset();
 });
 
 /** Every capability held. The lifecycle is then the ONLY variable. */
@@ -539,9 +582,17 @@ describe('the status selects offer only moves the server will accept', () => {
    * (`vehicle-lifecycle.ts:227-233`).
    *
    * The refusal was unreadable, which is what made it matter: the platform
-   * publishes field detail as `violations`, the client reads `errors`
-   * (`P1-27-INT-028`), so `Outcome` showed only "The form could not be saved."
-   * The operator picked something that looked legitimate and was told nothing.
+   * publishes field detail as `violations` and the client read `errors`, a
+   * field the API has never sent (`P1-27-INT-028`), so `Outcome` showed only
+   * "The form could not be saved." The operator picked something that looked
+   * legitimate and was told nothing.
+   *
+   * Present tense is wrong now and this said "reads". The ProblemDetails
+   * correction made the client read `violations`, and
+   * `vehicle-profile-field-errors.dom.test.tsx` drives a real 422 through to
+   * the control it names. The option sets below are still the primary fix — an
+   * option whose only answer is a 422 should not be offered — and are what this
+   * block asserts.
    *
    * These assert the OPTION SETS, because that is where the defect lived. The
    * panel-level gating is covered above and is a different question.
@@ -708,5 +759,309 @@ describe('the status selects offer only moves the server will accept', () => {
     for (const status of ['draft', 'active', 'inactive'] as const) {
       expect(lifecycleOptions({ lifecycleStatus: status })).not.toContain('merged');
     }
+  });
+});
+
+/**
+ * A real 422, from the wire to the control it names (`P1-27-INT-028`).
+ *
+ * ## The gap this closes
+ *
+ * The field-error path was fixed in three places and never joined up. The client
+ * learned to read `violations` instead of `problem.errors` — a field the API has
+ * never sent — and `fromFailure` learned to put the resulting catalogue keys in
+ * `state.fieldErrors`. Both are covered by tests that stop at the boundary:
+ * `api-client.test.ts` asserts the parse, `write-adapters-driven.test.ts`
+ * asserts the request and says in its own header that failure mapping is
+ * deliberately absent. **Nothing anywhere fed a real 422 with violations into a
+ * rendered P1-27 screen**, and `VehicleProfileScreen` — which passed `error` to
+ * no control and so could not render a field error at all — was green
+ * throughout.
+ *
+ * A parse that produces a key nobody renders is not a fixed error path.
+ *
+ * ## How much of it is real
+ *
+ * Everything except the socket. The two adapters run as shipped, and
+ * `@/lib/api/server-client` hands them a real `ApiClient` whose `fetchImpl`
+ * answers with a real `Response` carrying a real problem document. So the
+ * status-to-kind mapping, the violation parse, `controlNameFor`,
+ * `violationMessageKey`, `fromFailure`, the adapter's own Zod schema and the
+ * component all execute.
+ *
+ * ## The fixtures are the API's own shapes, read off it
+ *
+ * `{ path: 'body.color', rule: 'too_big' }` is what
+ * `vehicles/[vehicleId]/route.ts` emits: its `Body` bounds `color` with
+ * `.max(MAX_COLOR)` and `toViolations` uses Zod's issue code verbatim.
+ * `{ path: 'body.lifecycleStatus', rule: 'invalid_transition' }` is
+ * `vehicle-lifecycle.ts:227-233`, raised as `ERR-VAL-001` by
+ * `vehicle-lifecycle-service.ts:218-224`.
+ *
+ * The field is spelled `color`, not `colour`. That is what the column, the
+ * schema and the wire all use; a fixture spelled the English way maps to a
+ * control that does not exist and would pass for the wrong reason.
+ *
+ * The colour bound is mirrored client-side, so in practice `too_big` on `color`
+ * is caught before a request exists. That does not make the case artificial — it
+ * makes it the one that matters. A client mirror is a convenience and the server
+ * is the authority, so the interesting 422 is always the one the client did not
+ * predict, and the transport has to work for a rule the client has never heard
+ * of. `invalid_transition` below is exactly that: not catalogued, so it lands as
+ * the honest generic key rather than as a raw token.
+ */
+describe('the field errors a real 422 carries reach the controls it names', () => {
+  interface Violation {
+    readonly path: string;
+    readonly rule: string;
+  }
+
+  /**
+   * The response the API really sends for a refused command.
+   *
+   * `application/problem+json`, because `readPayload` parses on the `json`
+   * substring — a fixture served as `text/plain` arrives as a null problem and
+   * every assertion below would then pass or fail for the wrong reason.
+   */
+  function refuseWith(...violations: readonly Violation[]): void {
+    fetchImpl.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          type: 'https://errors.example.test/ERR-VAL-001',
+          title: 'Validation failed',
+          status: 422,
+          code: 'ERR-VAL-001',
+          violations,
+        }),
+        { status: 422, headers: { 'content-type': 'application/problem+json' } }
+      )
+    );
+  }
+
+  const COLOR = en['vehicles.create.color'];
+  const VIN = en['vehicles.create.vin'];
+  const REFERENCE = en['vehicles.column.reference'];
+  const LIFECYCLE = en['crm.customers.column.status'];
+
+  /*
+   * The two writers, unmocked. Set here rather than at the top of the file so
+   * every case above keeps the module mock it was written against.
+   */
+  beforeEach(() => {
+    updateVehicleAction.mockImplementation(actualProfileApi.updateVehicleAction);
+    changeVehicleStatusAction.mockImplementation(actualProfileApi.changeVehicleStatusAction);
+  });
+
+  /** The control, by its visible label. `exact`, because `Overview` renders the
+   *  same catalogue strings as `dt` text beside the form. */
+  function control(label: string): HTMLElement {
+    return screen.getByLabelText(label, { exact: true });
+  }
+
+  /**
+   * The message a control POINTS AT, not merely a message somewhere on the page.
+   *
+   * `getByText` would be satisfied by an error rendered at the foot of the form
+   * or beside a different field — the same "the operator is told something,
+   * somewhere" the banner already did. The assertion is the ASSOCIATION:
+   * `aria-invalid`, plus text reached through the id the control itself names.
+   */
+  function messageOn(label: string): string {
+    const element = control(label);
+    expect(element.getAttribute('aria-invalid'), `${label} is not marked invalid`).toBe('true');
+    const ids =
+      element.getAttribute('aria-errormessage') ?? element.getAttribute('aria-describedby') ?? '';
+    const described = ids
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((one) => document.getElementById(one))
+      .filter((node): node is HTMLElement => node !== null);
+    const alert = described.find((node) => node.getAttribute('role') === 'alert');
+    expect(alert, `${label} points at no alert`).toBeTruthy();
+    return alert?.textContent ?? '';
+  }
+
+  /** Retype the named controls and save the edit panel. */
+  async function edit(entries: readonly (readonly [string, string])[]): Promise<void> {
+    const user = userEvent.setup();
+    for (const [label, value] of entries) {
+      await user.clear(control(label));
+      await user.type(control(label), value);
+    }
+    await user.click(screen.getByRole('button', { name: en['form.submit'] }));
+  }
+
+  it('puts a colour violation on the colour control, translated', async () => {
+    refuseWith({ path: 'body.color', rule: 'too_big' });
+    render();
+    await edit([[COLOR, 'Cerulean']]);
+
+    // The request really happened. A 422 that was never asked for would leave
+    // every assertion satisfied by a form that simply never submitted.
+    await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
+    const [url, init] = fetchImpl.mock.calls[0] as [string, { method: string }];
+    expect(url).toBe(`http://api.test/api/v1/vehicles/${VEHICLE.id}`);
+    expect(init.method).toBe('PATCH');
+
+    await waitFor(() => expect(messageOn(COLOR)).toBe(en['form.violation.too_big']));
+    // The catalogue SENTENCE, never the key — a renderer printing
+    // `form.violation.too_big` at an operator is the defect one layer up.
+    expect(messageOn(COLOR)).not.toContain('form.violation');
+  });
+
+  it('puts a VIN violation on the VIN control, which took no error prop at all', async () => {
+    /*
+     * `VinField` has accepted an `error` prop since `FE-020` and
+     * `VehicleCreateScreen.tsx:231` passes one. This screen mounted the same
+     * component without it, so the server's verdict on a VIN — the field most
+     * likely to be refused, its uniqueness being enforced by an index the client
+     * can only preview — had nowhere to land.
+     */
+    refuseWith({ path: 'body.vin', rule: 'invalid_format' });
+    render();
+    await edit([[VIN, 'JH4KA7561PC008269']]);
+
+    await waitFor(() => expect(messageOn(VIN)).toBe(en['form.violation.invalid_format']));
+  });
+
+  it('marks every field the response names, and only those', async () => {
+    refuseWith(
+      { path: 'body.color', rule: 'too_big' },
+      { path: 'body.displayNumber', rule: 'required' }
+    );
+    render();
+    await edit([
+      [COLOR, 'Cerulean'],
+      [REFERENCE, 'V-0002'],
+    ]);
+
+    await waitFor(() => expect(messageOn(COLOR)).toBe(en['form.violation.too_big']));
+    expect(messageOn(REFERENCE)).toBe(en['form.violation.required']);
+    // The VIN was not named, so it must not be marked. Without this the case
+    // would be satisfied by a panel that flags everything after any refusal.
+    expect(control(VIN).getAttribute('aria-invalid')).toBeNull();
+    // The banner is still rendered: field messages are in addition to it.
+    expect(screen.getByText(en['form.formError'])).toBeTruthy();
+  });
+
+  it('translates into Arabic rather than falling back to English', async () => {
+    // The whole point of carrying KEYS across the boundary instead of server
+    // prose: the API answers in one language, the operator's catalogue decides
+    // what is read.
+    refuseWith({ path: 'body.color', rule: 'too_big' });
+    render({}, 'ar');
+    const user = userEvent.setup();
+    const field = screen.getByLabelText(ar['vehicles.create.color'], { exact: true });
+    await user.clear(field);
+    await user.type(field, 'Cerulean');
+    await user.click(screen.getByRole('button', { name: ar['form.submit'] }));
+
+    await waitFor(() =>
+      expect(messageOn(ar['vehicles.create.color'])).toBe(ar['form.violation.too_big'])
+    );
+    expect(ar['form.violation.too_big']).not.toBe(en['form.violation.too_big']);
+  });
+
+  it('leaves every control unmarked when the write succeeds', async () => {
+    /*
+     * The anti-vacuity control. `messageOn` asserts a MARKED control, so a panel
+     * that marked all four unconditionally would satisfy every case above; this
+     * is the direction that catches it.
+     */
+    fetchImpl.mockResolvedValue(
+      new Response(JSON.stringify({ id: VEHICLE.id }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    );
+    render();
+    await edit([[COLOR, 'Cerulean']]);
+
+    await waitFor(() => expect(screen.getByText(en['vehicles.profile.saved'])).toBeTruthy());
+    for (const label of [COLOR, VIN, REFERENCE]) {
+      expect(control(label).getAttribute('aria-invalid'), `${label} was marked`).toBeNull();
+    }
+  });
+
+  it('keeps a whole-request violation in the banner and marks no field', async () => {
+    /*
+     * `{ path: 'body' }` names no control, and `controlNameFor` returns null for
+     * it so `fromFailure` promotes it to `messageKey`. Rendering it beside an
+     * arbitrary field would accuse one; dropping it — what the old code did to
+     * every violation of every shape — leaves the operator with a form that
+     * refuses and says nothing.
+     */
+    refuseWith({ path: 'body', rule: 'empty_patch' });
+    render();
+    await edit([[COLOR, 'Cerulean']]);
+
+    await waitFor(() => expect(screen.getByText(en['form.violation.empty_patch'])).toBeTruthy());
+    for (const label of [COLOR, VIN, REFERENCE]) {
+      expect(control(label).getAttribute('aria-invalid'), `${label} was marked`).toBeNull();
+    }
+  });
+
+  it('puts a server transition refusal on the select that offered the move', async () => {
+    /*
+     * The refusal the option-set fix above exists to prevent, arriving anyway —
+     * because the menu is built from a client-side MIRROR of
+     * `LIFECYCLE_TRANSITIONS` and the server is the authority. When the two
+     * disagree the operator must be told which control was refused, not handed
+     * "The form could not be saved."
+     *
+     * The expected message is the generic key, and that is asserted rather than
+     * papered over: `invalid_transition` is not in the catalogue, the API emits
+     * more than eighty rule tokens, and a catalogue claiming to carry them all
+     * would put a raw token in front of a receptionist within a week.
+     */
+    refuseWith({ path: 'body.lifecycleStatus', rule: 'invalid_transition' });
+    render();
+    const user = userEvent.setup();
+    await user.selectOptions(control(LIFECYCLE), 'inactive');
+    await user.click(screen.getByRole('button', { name: en['vehicles.profile.applyStatus'] }));
+
+    await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
+    expect((fetchImpl.mock.calls[0] as [string, unknown])[0]).toBe(
+      `http://api.test/api/v1/vehicles/${VEHICLE.id}/status`
+    );
+    await waitFor(() => expect(messageOn(LIFECYCLE)).toBe(en['form.violation.invalid']));
+  });
+
+  it('shows the status panel own refusal, which reached nobody before', async () => {
+    /*
+     * Not a server 422 at all: submitting with neither axis chosen returns
+     * `invalid({ lifecycleStatus: 'vehicles.profile.chooseAStatus' })` from
+     * `profile-api.ts`, before any request exists. With nothing on this screen
+     * rendering `fieldErrors`, that sentence was constructed on every such
+     * submit and displayed to nobody — the operator read "The form could not be
+     * saved." and was left to guess.
+     */
+    render();
+    await userEvent
+      .setup()
+      .click(screen.getByRole('button', { name: en['vehicles.profile.applyStatus'] }));
+
+    await waitFor(() => expect(messageOn(LIFECYCLE)).toBe(en['vehicles.profile.chooseAStatus']));
+    expect(
+      fetchImpl,
+      'a request was issued for a submission with no change'
+    ).not.toHaveBeenCalled();
+  });
+
+  it('asserts on distinct messages, so no case can pass by coincidence', () => {
+    const messages = [
+      en['form.violation.too_big'],
+      en['form.violation.required'],
+      en['form.violation.invalid_format'],
+      en['form.violation.invalid'],
+      en['form.violation.empty_patch'],
+      en['vehicles.profile.chooseAStatus'],
+      en['form.formError'],
+    ];
+    for (const message of messages) {
+      expect(typeof message).toBe('string');
+      expect(message.length).toBeGreaterThan(0);
+    }
+    expect(new Set(messages).size).toBe(messages.length);
   });
 });

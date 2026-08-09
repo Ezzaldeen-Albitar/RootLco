@@ -287,6 +287,37 @@ export const DRIVE_IDS = {
 } as const;
 
 /**
+ * The declaration forms an exported write adapter can take.
+ *
+ * ## The blind spot these close
+ *
+ * There was ONE pattern here — `^export async function (\w+Action)` — and it is
+ * the narrowest of the three forms TypeScript offers for the same export. An
+ * adapter written `export const fooAction = async (…) => …` was invisible to the
+ * walk, so the completeness comparison in `write-adapters-driven.test.ts` and
+ * `p1-27-qa.test.ts` would have gone on reporting the SAME twenty-three and the
+ * same "every adapter is driven" while the twenty-fourth was executed by
+ * nothing. A check that cannot see the thing it certifies is not a check, and
+ * this one certifies the coverage claim for every write in the phase.
+ *
+ * Nothing in either tree uses the const form TODAY — the widening discovers no
+ * new adapter and the count stays twenty-three. That is the point: the hole is
+ * closed before it is fallen into, rather than after.
+ *
+ * `export function` without `async` is here for the same reason. An adapter that
+ * returns a promise without being declared `async` is an ordinary thing to write
+ * and would have been just as invisible.
+ */
+const ADAPTER_DECLARATIONS: readonly RegExp[] = [
+  /^export\s+(?:async\s+)?function\s+(\w+Action)\b/gm,
+  // `export const fooAction: Handler = async (…) => …` — the annotation is
+  // optional and is skipped up to the `=`, which cannot appear inside a type
+  // annotation at this position without parentheses that would not be an
+  // adapter declaration anyway.
+  /^export\s+const\s+(\w+Action)\s*(?::[^=\n]+)?=/gm,
+];
+
+/**
  * Source with comments removed.
  *
  * A docblock naming an action it does not export would otherwise be discovered
@@ -299,17 +330,48 @@ function stripComments(source: string): string {
 }
 
 /**
- * Every `*Action` the two feature trees export, read from the filesystem.
+ * Every write-adapter name one module's source declares as an export.
  *
- * Derived rather than listed, because a list is exactly what let nine adapters
- * ship with no execution behind them while the coverage claim read green.
+ * Exported so a test can put a declaration form in front of the scanner
+ * directly. The alternative — asserting only against the real tree — can never
+ * fail for a form the tree does not happen to contain yet, which is exactly how
+ * the `const` blind spot survived.
  */
-export function exportedWriteAdapters(): readonly string[] {
+export function writeAdapterNamesIn(source: string): readonly string[] {
   const found = new Set<string>();
-  const roots = [
+  const stripped = stripComments(source);
+  for (const pattern of ADAPTER_DECLARATIONS) {
+    // A fresh regex per call: a `g` literal carries `lastIndex` across calls,
+    // and a shared one would skip matches on every second source it read.
+    for (const m of stripped.matchAll(new RegExp(pattern.source, pattern.flags))) {
+      if (m[1]) found.add(m[1]);
+    }
+  }
+  return [...found];
+}
+
+/** The two trees whose exported writes must every one be driven. */
+function featureRoots(): readonly string[] {
+  return [
     join(process.cwd(), 'src', 'features', 'crm'),
     join(process.cwd(), 'src', 'features', 'vehicles'),
   ];
+}
+
+/**
+ * Every source file the walk reads.
+ *
+ * `.tsx` as well as `.ts`, and that is the second half of the same blind spot:
+ * the walk filtered on `.ts` alone, so an adapter co-located with the screen
+ * that calls it — a `'use server'` block in a `.tsx`, which this codebase does
+ * not forbid — was skipped before any pattern was applied. Exported so a test
+ * can assert the file set actually contains `.tsx` files rather than trusting
+ * that an extension appears in a filter.
+ */
+export function writeAdapterSourceFiles(
+  roots: readonly string[] = featureRoots()
+): readonly string[] {
+  const files: string[] = [];
   const walk = (dir: string) => {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
       const full = join(dir, entry.name);
@@ -317,14 +379,26 @@ export function exportedWriteAdapters(): readonly string[] {
         walk(full);
         continue;
       }
-      if (!entry.name.endsWith('.ts')) continue;
-      for (const m of stripComments(readFileSync(full, 'utf8')).matchAll(
-        /^export async function (\w+Action)/gm
-      )) {
-        if (m[1]) found.add(m[1]);
-      }
+      if (!entry.name.endsWith('.ts') && !entry.name.endsWith('.tsx')) continue;
+      files.push(full);
     }
   };
   for (const root of roots) walk(root);
+  return files.sort();
+}
+
+/**
+ * Every `*Action` the two feature trees export, read from the filesystem.
+ *
+ * Derived rather than listed, because a list is exactly what let nine adapters
+ * ship with no execution behind them while the coverage claim read green.
+ */
+export function exportedWriteAdapters(
+  roots: readonly string[] = featureRoots()
+): readonly string[] {
+  const found = new Set<string>();
+  for (const file of writeAdapterSourceFiles(roots)) {
+    for (const name of writeAdapterNamesIn(readFileSync(file, 'utf8'))) found.add(name);
+  }
   return [...found].sort();
 }

@@ -160,9 +160,13 @@ export function isTerminal(vehicle: VehicleDetail): boolean {
  * Before this, the select offered every status except `merged` regardless of
  * where the vehicle was, so `draft → inactive` and `scrapped → active` were
  * both on the menu and both 422. The refusal was invisible: the platform
- * publishes field detail as `violations` and the client reads `errors`
- * (`P1-27-INT-028`), so `Outcome` rendered only "The form could not be saved."
- * An operator picking a legitimate-looking option was told nothing about why.
+ * publishes field detail as `violations` and the client read `errors`, a field
+ * the API has never sent (`P1-27-INT-028`), so `Outcome` rendered only "The
+ * form could not be saved." An operator picking a legitimate-looking option was
+ * told nothing about why. Past tense: the client reads `violations` now and the
+ * status panel renders the key on the select that named it. This graph is still
+ * the primary fix — a menu that cannot offer an impossible move needs no error
+ * message for one.
  *
  * `merged` is absent from every row rather than filtered afterwards — it is
  * reached through `veh.vehicle-merge`, never through the status operation, so
