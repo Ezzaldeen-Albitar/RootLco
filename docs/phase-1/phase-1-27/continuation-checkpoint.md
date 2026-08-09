@@ -189,3 +189,83 @@ where one suite proves several cases — not to create twenty-nine empty files.
 
 Nothing in this document may be read as a task verdict. The matrix is the only place a verdict
 is recorded, and a task is `PARTIAL` until its own evidence is populated.
+
+---
+
+## 8. Second checkpoint — the wave landed, and the matrix did not move
+
+Head `1281b9363c9613a3ab71a615b527c1160f7fa2d6`. Five branches integrated:
+`p1-27/core-api-boundary`, `p1-27/security-wiring`, `p1-27/ci-gates`,
+`p1-27/doc-traceability`, `p1-27/frontend-coverage`.
+
+### 8.1 A figure in this branch's own record was wrong
+
+An earlier commit message on this branch states "Root project 38 files / 790 cases".
+That is the `tests/ci` **subset**, produced by
+`npx vitest run --config vitest.config.ts tests/ci` and then described as the whole
+project. The root project is **88 files / 1896 cases**. The web project is
+**70 files / 1467 cases**. Both pass.
+
+The mistake is recorded rather than quietly overwritten because it is this phase's
+subject: a measured number, correctly obtained, then labelled as something larger
+than what was measured. It was caught by a read-only assessor re-running the
+command, which is the only reason it is not still in the record as fact.
+
+### 8.2 The re-assessment did not move a single task to PASS
+
+Three read-only assessors re-judged the 21 PARTIAL tasks against the landed work:
+**19 PARTIAL, 1 FAIL, 0 PASS.**
+
+The reason is structural and was already known: **13 of the 42 rows — every
+Security, QA, DevOps and Documentation row — carry the literal string
+`NOT YET ASSESSED` in 26 of their 28 fields.** `validate:p1-27-matrix` reports the
+matrix "in sync" and accepts them. Only the 29 Frontend rows are populated, and
+`task-matrix-verdicts.json` holds 29 keys, all `FE-*`.
+
+So no non-Frontend task can reach PASS on the rule the matrix itself states — a
+task is PASS when its requirements are populated and evidenced — regardless of how
+good the code is. Building those 13 rows is the outstanding item, and it was
+outstanding before this wave began.
+
+### 8.3 What the wave genuinely achieved, judged by people trying to refute it
+
+- The route permission-binding suite invokes the real route modules, never stubs
+  `permittedWrites`, and asserts nine customer and eight vehicle write surfaces in
+  both directions. An assessor looked for a way to make it pass vacuously and
+  found none.
+- `write-adapters-driven.test.ts` drives all 23 write adapters for real, with
+  completeness asserted as a two-directional set comparison against a filesystem
+  walk. It replaces a source-text scan with execution.
+- The problem-document correction, the conflict-copy-by-code change and the
+  monitoring boundary's redaction discipline all carry real negative controls.
+
+### 8.4 Defects this wave introduced or left, found by the re-assessment
+
+- **The monitoring sink cannot be reached.** `csp.ts` builds `connect-src` as
+  `'self' <apiOrigin>` and takes no parameter for another origin, while two
+  docblocks instruct a deployment to add the sink origin "in `src/proxy.ts`",
+  where no such value can be set. `sendBeacon` is governed by `connect-src`, so the
+  documented way to switch DO-002 on does not work. Nothing gates the contradiction.
+- **The 422 fix stops one layer short.** `fromFailure` populates
+  `state.fieldErrors`; `VehicleProfileScreen` renders none of them, while five
+  sibling vehicle screens do. FE-019's obligation is unmet at the last hop, not at
+  the contract.
+- **`H-01`…`H-11` are in no register.** Eleven findings raised by the 42-task
+  assessment exist only inside `task-matrix.json` cells;
+  `adversarial-round-five.md`, the table that is supposed to be derivable and
+  total, does not carry them.
+- **The catalogue bindings point away from the new work.** Several `TC-P1-27-*`
+  ids still resolve only to the older suite rather than the one that closed the gap.
+- Two docblocks of the dominant class survive: `profile-contract.ts:60` repeats the
+  retracted `If-Match` claim, and `vehicle-profile-lifecycle.dom.test.tsx:542` says
+  "the client reads `errors`", which this wave made false.
+- The ownership step exits 0 when there is no pull-request context, so it never
+  runs on a protected push.
+
+### 8.5 Standing instruction for whoever continues
+
+Do not raise a verdict to PASS to reach a number. The 42-row matrix is the
+authority and it is honest today: it says 21 PASS and 21 PARTIAL, and the 21
+PARTIAL are partial for reasons now written down per task. The next wave's first
+job is to POPULATE the thirteen unassessed rows, because until then a PASS on any
+of them would be a statement nobody has checked.
