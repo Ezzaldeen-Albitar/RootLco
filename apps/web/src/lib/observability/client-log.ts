@@ -266,12 +266,31 @@ export function deliveringAdapter(url: string, send: BeaconSender): MonitoringAd
  * installs nothing and `currentAdapter()` stays `null` — that is the default,
  * and `tests/observability.test.ts` asserts it rather than assuming it.
  *
+ * Configured at BUILD time. Next inlines `NEXT_PUBLIC_*` during `next build`,
+ * and this URL is inlined into the client bundle with everything else, so a
+ * variable set on an already-built deployment installs nothing; it must be set
+ * for the build.
+ *
+ * ## The CSP, which no longer has to be done by hand
+ *
+ * `sendBeacon` is governed by `connect-src`, so a sink the policy does not name
+ * is a sink the browser refuses. That directive is assembled in exactly one
+ * place, `src/lib/security/csp.ts`, and `src/proxy.ts` feeds it this same
+ * variable — so configuring the sink admits its origin, and there is nothing
+ * further to edit.
+ *
+ * This paragraph used to send the reader to the proxy file to widen the policy
+ * by hand. That was not possible: no directive is written there, and the builder
+ * took no parameter for a second origin, so the documented way to switch this on
+ * could not work at all. Corrected under `P1-27-DO-002` by making it work, and
+ * bound to the code by `tests/security.test.ts` so the two cannot drift apart
+ * again.
+ *
  * ## What a deployment still owns
  *
- * Two things this module cannot do for it, stated rather than implied:
- * the sink origin must be allowed by `connect-src` in `src/proxy.ts`, or the
- * browser will block the beacon; and the sink must be an endpoint the
- * deployment actually operates. Nothing here asserts that one exists.
+ * One thing this module cannot do for it, stated rather than implied: the sink
+ * must be an endpoint the deployment actually operates. Nothing here asserts
+ * that one exists.
  *
  * Returns whether an adapter was installed, so a caller — and a test — can tell
  * "configured and installed" from "not configured".

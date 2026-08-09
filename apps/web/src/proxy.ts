@@ -16,6 +16,18 @@ import { NONCE_HEADER, contentSecurityPolicy } from '@/lib/security/csp';
  * Next 16 renamed this convention from `middleware` to `proxy` — the file
  * lives at `src/proxy.ts` and must export a function named `proxy`. The
  * installed Next errors outright if a `middleware` file coexists with this one.
+ *
+ * This file READS the origins the policy admits and `src/lib/security/csp.ts`
+ * ASSEMBLES the header from them. Nothing here edits a directive, which is why
+ * an instruction to "add an origin to connect-src in src/proxy.ts" was never
+ * actionable — the directive is not written here (`P1-27-DO-002`).
+ *
+ * Both values below are `NEXT_PUBLIC_*`, and Next inlines those at BUILD time.
+ * The browser half of the diagnostics switch — the beacon URL in
+ * `lib/observability/client-log.ts` — is inlined into the client bundle, so the
+ * variable has to be set before `next build` whatever the server can read
+ * afterwards. Setting it on an already-built deployment changes neither the
+ * beacon nor this header.
  */
 export function proxy(request: NextRequest) {
   const nonce = crypto.randomUUID().replaceAll('-', '');
@@ -25,6 +37,12 @@ export function proxy(request: NextRequest) {
     dev: process.env.NODE_ENV !== 'production',
     ...(process.env.NEXT_PUBLIC_API_BASE_URL
       ? { apiOrigin: process.env.NEXT_PUBLIC_API_BASE_URL }
+      : {}),
+    // The SAME variable the monitoring adapter beacons to, so a deployment
+    // cannot configure a sink the policy then refuses. Only its origin is used,
+    // and an unset or non-http value leaves the header untouched.
+    ...(process.env.NEXT_PUBLIC_CLIENT_MONITORING_URL
+      ? { monitoringUrl: process.env.NEXT_PUBLIC_CLIENT_MONITORING_URL }
       : {}),
   });
 
