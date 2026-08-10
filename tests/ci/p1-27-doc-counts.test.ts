@@ -606,6 +606,28 @@ describe('P1-27-QA-005 — the two evidence pages agree with each other and the 
     ).toBe(baseline.migrationCount);
   });
 
+  it('states a CodeQL figure that both pages share and the committed ceiling permits', () => {
+    /*
+     * "**0**, repository-wide" appears on both pages and was read by neither.
+     * The measurement itself belongs to a hosted analysis and cannot be
+     * re-derived here — but `codeql-baseline.json` carries the RATCHET the gate
+     * enforces, so a record claiming more open findings than the ceiling allows
+     * is a record contradicting the gate beside it, and the two pages claiming
+     * different numbers is the drift `QA-005` exists to catch.
+     */
+    const ceiling = (
+      JSON.parse(readRepo('.github/ci-baselines/codeql-baseline.json')) as {
+        maximumOpenFindings?: number;
+      }
+    ).maximumOpenFindings;
+    expect(ceiling, 'the CodeQL baseline records no ceiling').toBeTypeOf('number');
+    const pattern = /\|\s*CodeQL open alerts\s*\|\s*\*\*(\d+)\*\*/;
+    const inClean = figure(CLEAN_ROOM, pattern, 'the clean-room CodeQL row');
+    const inCi = figure(CI_EVIDENCE, pattern, 'the CI CodeQL row');
+    expect(inCi, 'the two records disagree about the open CodeQL findings').toBe(inClean);
+    expect(inClean, `the committed ceiling is ${ceiling}`).toBeLessThanOrEqual(ceiling as number);
+  });
+
   it('names the same head and the same hosted run in both records', () => {
     /*
      * Two records that disagree about which tree they describe is the state this
