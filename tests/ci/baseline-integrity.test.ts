@@ -15,6 +15,18 @@ import { evaluate as evaluateCoverage } from '../../scripts/ci/coverage-gate.mjs
 const read = (name: string) =>
   JSON.parse(readFileSync(join(__dirname, '../../.github/ci-baselines', name), 'utf8'));
 
+/**
+ * A figure inside a prose field, matched as a figure rather than as a substring.
+ *
+ * `QA005-05`: `toContain('214')` is satisfied by `2140` and by `1214`, so a note
+ * that had drifted to a longer number went on passing. Refusing a digit or a
+ * decimal point on either side is what makes the comparison two-sided.
+ */
+const exactly = (value: string | number): RegExp =>
+  new RegExp(
+    String.raw`(?<![\d.])${String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\d.])`
+  );
+
 describe('committed baselines', () => {
   it('the unit coverage baseline records real numbers and a sane tolerance', () => {
     const baseline = read('coverage-baseline.unit.json');
@@ -146,9 +158,9 @@ describe('committed baselines', () => {
     // with structuralTotals.functions — the gap between them is extension-owned
     // code and is constant — so pinning both is what makes the larger figure
     // derivable instead of guessed.
-    expect(baseline.functionCountDiscrepancyNote).toContain('214');
-    expect(baseline.functionCountDiscrepancyNote).toContain(
-      String(baseline.structuralTotals.functions)
+    expect(baseline.functionCountDiscrepancyNote).toMatch(exactly(214));
+    expect(baseline.functionCountDiscrepancyNote).toMatch(
+      exactly(baseline.structuralTotals.functions)
     );
   });
 
