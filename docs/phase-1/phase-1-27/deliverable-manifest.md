@@ -939,7 +939,7 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
 <!-- derived: commands required = 74 -->
 <!-- derived: commands reachable = 74 -->
 <!-- derived: commands hosted-ci = 74 -->
-<!-- derived: cases vehicle-screens.dom.test.tsx = 36 -->
+<!-- derived: cases vehicle-screens.dom.test.tsx = 37 -->
 <!-- derived: cases tailwind-theme-gate.test.ts = 8 -->
 <!-- derived: cases navigation.test.ts = 22 -->
 <!-- LINE-COUNT MARKERS. Regenerated, never typed. -->

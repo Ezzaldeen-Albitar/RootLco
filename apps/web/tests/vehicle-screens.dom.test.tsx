@@ -361,7 +361,9 @@ describe('vehicle search asks nothing until it is asked', () => {
     // render that never called the adapter again.
     await waitFor(() => expect(searchVehicles.mock.calls.length).toBeGreaterThan(readsBeforeRetry));
     // And the operator sees the result rather than the failure.
-    expect(await screen.findByText(HIT.displayNumber)).toBeInTheDocument();
+    // The literal, as the sibling cases use: `displayNumber` is `string | null` on
+    // the contract, and a matcher cannot take null.
+    expect(await screen.findByText('V-0001')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: en['state.retry'] })).not.toBeInTheDocument();
   });
 });
