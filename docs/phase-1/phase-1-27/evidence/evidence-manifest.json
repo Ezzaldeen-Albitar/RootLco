@@ -8,8 +8,8 @@
   "fileCount": 36,
   "files": {
     "docs/phase-1/phase-1-27/adversarial-round-five.md": {
-      "sha256": "dca3d583e552c02fe4ce0214fbac0a2faca2898f11458a3a253656a9ee6b37d9",
-      "bytes": 325365
+      "sha256": "621d14017388cf0310e91fe23a16ff5264f34196d97eea252f2b10cafe063527",
+      "bytes": 325546
     },
     "docs/phase-1/phase-1-27/adversarial-round-four.md": {
       "sha256": "94ec35bfa05c2b112a2dbd780bf157338d20a2c73dc8bfff598f27ddbb0e94a7",
@@ -140,11 +140,11 @@
       "bytes": 169884
     },
     "docs/phase-1/phase-1-27/task-matrix-verdicts.json": {
-      "sha256": "28ab708654d71cb668a1ca7189a161bd99846fd5892dc1ad9c065b5f2260ba33",
+      "sha256": "9a9a1ab27f4e5e167258c8831b440c3de810a33c3ec9b812f695b5d55cbd887e",
       "bytes": 245331
     },
     "docs/phase-1/phase-1-27/task-matrix.json": {
-      "sha256": "3f281e8a63104c700590d6442b36a5269d58313d5ca184164dc3feceb281c558",
+      "sha256": "4ae0c7ef94c8e14f92da2de14b169106d00da44855b101af982ec6d08c36f017",
       "bytes": 262561
     },
     "docs/phase-1/phase-1-27/task-register.md": {
