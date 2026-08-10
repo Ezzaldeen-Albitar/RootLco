@@ -32,12 +32,22 @@ import { join } from 'node:path';
  *
  * ## What is NOT claimed
  *
- * That the tier has been observed to pass. It has not — its only hosted
- * execution failed on a readiness race in the acceptance bootstrap before it
- * collected a single test. Governing a check that has never gone green is the
- * correct order of operations, and `hostedObservation` in the declaration says
- * so in the same words. Nothing here reads "the job is governed" as "the job
- * works".
+ * NOT that the tier is unproven — an earlier version of this docblock said its
+ * "only hosted execution failed on a readiness race before it collected a single
+ * test", and that was true when written and false by the time it was read. There
+ * have been three hosted executions and the third PASSED: run `31347643485`, job
+ * `93332452247`, 225 passed and 0 failed across all six spec files.
+ *
+ * What is NOT claimed is that it has passed AT THE CLOSING CANDIDATE. Every
+ * observed run predates the merge of the remediation branches, so none of them
+ * is evidence about the commit this phase closes on; QA-005 is the measurement
+ * that seals that, and `hostedObservation` in the declaration records all three
+ * runs so a reader can check rather than trust this sentence.
+ *
+ * Governing the check before it had ever gone green was the correct order of
+ * operations, and governing it now is correct for a different reason: the gate
+ * refuses a merge whose candidate the tier has not been run against. Nothing
+ * here reads "the job is governed" as "the job works".
  *
  * ## The fork boundary, which arrived with the governance
  *
