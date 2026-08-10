@@ -516,6 +516,11 @@
       "TASK_IDS": ["DOC-001", "DOC-002"],
       "CLASSIFICATION": "DOCUMENTATION_DEFECT",
       "WHY": "Sixteen of the thirty-six phase line counts in deliverable-manifest.md disagreed with the tree, in the document that indexes every other one, one cell away from a derived row count that was checked. Closed by a new linecolumn derived kind in check-p1-27-doc-counts.mjs and by correcting all sixteen."
+    },
+    "H-22": {
+      "TASK_IDS": ["QA-002"],
+      "CLASSIFICATION": "TEST_OR_GATE_DEFECT",
+      "WHY": "REAL_RULES in apps/web/tests/api-client.test.ts is declared to be fourteen rule tokens that appear in apps/api/src, and nothing reads apps/api/src to check it. The provenance claim lives only in the suite docblock at :467-470; the assertion that exists (:669-676) checks the tokens against en.json and ar.json, the two files a fixture author edits in the same commit, so a token the catalogue carries but the API never emits passes every case. QA-002 owns the client-contract derivation this fixture is the negative proof for."
     }
   }
 }
