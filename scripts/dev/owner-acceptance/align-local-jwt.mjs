@@ -170,7 +170,15 @@ function isNotReadyYet(status) {
 export async function assertHs256(apiUrl, anonKey, { email, password }) {
   const deadline = Date.now() + READINESS_TIMEOUT_MS;
   let response;
-  let lastDetail = 'the token endpoint was never reached';
+  /*
+   * Declared without a value on purpose.
+   *
+   * Every path through the loop below assigns it before the deadline check can
+   * read it, so an initialiser here would be dead — and `js/useless-assignment-
+   * to-local` says so, at very-high precision. It caught the first version of
+   * this function, whose placeholder string could never reach a caller.
+   */
+  let lastDetail;
 
   for (;;) {
     try {
