@@ -1284,11 +1284,20 @@ describe('P1-27-SEC-003 — privilege escalation, proved as escalation', () => {
     );
 
     /*
-     * The gap that remains, stated rather than papered over: no CI job executes
-     * a two-tenant proof. `apps/web/tests/e2e/authenticated/isolation.spec.ts` is
-     * the suite that would, it is gated behind `ROOTLCO_E2E_AUTH=1`, and the
-     * QA-003 section at the foot of this file pins that debt in executable form.
-     * SEC-003's cross-tenant conjunct is therefore NARROWED here, not closed.
+     * The gap that remains, stated rather than papered over — and stated at its
+     * true width, which is narrower than the width this comment used to claim:
+     * no job the PULL-REQUEST gate runs executes a two-tenant proof.
+     * `apps/web/tests/e2e/authenticated/isolation.spec.ts` is the suite that
+     * does, it is gated behind `ROOTLCO_E2E_AUTH=1`, and the only workflow that
+     * sets that variable is the `authenticated-browser` job of
+     * `.github/workflows/protected-develop-verification.yml` — whose triggers
+     * are `push` to `develop` and `main` and `workflow_dispatch`, and which has
+     * no `pull_request` trigger at all. So the two-tenant proof does execute in
+     * CI, and has passed on a hosted runner; it just does not execute on the way
+     * to a merge unless somebody dispatches it. The QA-003 section at the foot
+     * of this file states that narrower gap in full, with the workflow line
+     * numbers, and pins it in executable form. SEC-003's cross-tenant conjunct
+     * is therefore NARROWED here, not closed.
      */
   });
 });
@@ -1554,8 +1563,47 @@ describe('P1-27-SEC-004 — audit-event coverage', () => {
  * refused before it is selected. The only proof that the refusal WORKS is a
  * proof against a real database with two real tenants, and in this repository
  * that is `tests/e2e/authenticated/isolation.spec.ts` — which is gated behind
- * `ROOTLCO_E2E_AUTH=1` and runs in no CI job. That gap is real and is not
- * papered over here.
+ * `ROOTLCO_E2E_AUTH=1` and runs in no pull-request job. That gap is real and is
+ * not papered over here. Neither is it wider than that sentence: read on before
+ * concluding the spec is unrun, because it is not.
+ *
+ * ### Where that spec DOES run, precisely
+ *
+ * `.github/workflows/protected-develop-verification.yml` holds a job named
+ * `authenticated-browser` (`:244-604`). It stands up Supabase with the vendored
+ * CLI, bootstraps the real operator account and a second tenant, starts the
+ * production API build, sets `ROOTLCO_E2E_AUTH: '1'` at `:494` and runs
+ * `npm run test:web-e2e-authenticated` at `:500`. The step beginning at `:502`
+ * then derives what actually executed from the Playwright report and fails the
+ * run at `:553` when the tier collected nothing and at `:557` when any single
+ * authenticated spec contributed nothing — so this cannot degrade into a green
+ * job that ran zero tests. It has PASSED on a GitHub-hosted runner: run
+ * `31347643485`, 225 tests, 0 failed, against candidate `78c4587`, as recorded
+ * in `docs/phase-1/phase-1-27/adversarial-round-five.md` at this head.
+ *
+ * ### Why "pull-request job" and not "CI job"
+ *
+ * That workflow is triggered by `push` to `develop` and `main` and by
+ * `workflow_dispatch` (which takes a `candidate-sha` so a pre-merge run can be
+ * pinned to the commit it claims to test). It has no `pull_request` trigger.
+ * The pull-request gate is `pr-ci.yml`, and it reaches the browser tier only
+ * through `_reusable-node-quality.yml`, which runs `npm run test:web-e2e` with
+ * `ROOTLCO_E2E_AUTH` unset — whereupon `apps/web/playwright.config.ts` leaves
+ * the three authenticated projects out and gives the five anonymous projects
+ * `testIgnore` for that directory. No other workflow sets the variable — the
+ * only other setter anywhere is `scripts/dev/owner-acceptance/full-cycle.mjs`
+ * (`:274`), which is the Owner acceptance run on a local machine and not CI at
+ * all. So what a green pull request does not include is this proof; what
+ * produces it is a dispatch, or the protected push after the merge, or an Owner
+ * acceptance cycle.
+ *
+ * Whether `protected-gate` REQUIRES that job is a further and separate question
+ * from whether the job runs, and it is the kind of fact that moves:
+ * `.github/ci-baselines/unrun-test-tiers.json` is the authority on it, not this
+ * docblock. This paragraph exists at all because the sentence it replaced —
+ * "runs in no CI job" — was true when it was written and false by the time it
+ * was read, and a comment restating CI configuration is exactly the thing that
+ * rots without failing anything.
  *
  * The obvious substitute — stub the transport so it answers as a different
  * tenant would, and assert the read layer refuses the row — was attempted and
@@ -1806,8 +1854,20 @@ describe('P1-27-QA-003 — what the client tier can prove about isolation', () =
      * would, and detecting that is beyond what any client-tier test can do.
      *
      * `apps/web/tests/e2e/authenticated/isolation.spec.ts` is where the real
-     * claim lives, and it is gated behind `ROOTLCO_E2E_AUTH=1` and runs in no CI
-     * job. QA-003 is therefore NOT closed by this file.
+     * claim lives, and it is gated behind `ROOTLCO_E2E_AUTH=1` and runs in no
+     * pull-request job — not in no job at all. It runs in the
+     * `authenticated-browser` job of
+     * `.github/workflows/protected-develop-verification.yml`, which sets that
+     * variable at `:494`, runs the tier at `:500`, fails a run that collected
+     * nothing at `:553`, and has passed on a hosted runner (run `31347643485`,
+     * 225 tests, 0 failed, candidate `78c4587`). That workflow runs on `push` to
+     * `develop` and `main` and on `workflow_dispatch`, never on `pull_request`;
+     * see the section docblock above for the full derivation.
+     *
+     * QA-003 is therefore NOT closed by this file. That conclusion never rested
+     * on where the e2e spec runs — it rests on what a unit-tier file can prove,
+     * and a unit tier cannot prove a server-side refusal against two real
+     * tenants no matter which jobs execute which suites.
      */
     backendAnswering(200, PAGE_FROM_ANOTHER_TENANT);
     const page = await searchCustomerDirectory(TABLE_REQUEST, null, { name: 'Nadia' });
@@ -1821,7 +1881,10 @@ describe('P1-27-QA-003 — what the client tier can prove about isolation', () =
      * company or branch field, this fails — and whoever fixes it is told the
      * thing worth knowing: a client-side isolation comparison has become
      * possible for the first time, and QA-003 could then be narrowed at this
-     * tier rather than deferred to a suite nothing runs.
+     * tier rather than deferred to a suite that no pull request runs. ("A suite
+     * nothing runs" is what this line used to say, and it was the same stale
+     * premise corrected in the section docblock above: the suite does run, in
+     * the `authenticated-browser` job on protected pushes and by dispatch.)
      */
     const contract = readFileSync(
       join(process.cwd(), 'src', 'lib', 'customers', 'directory-contract.ts'),
