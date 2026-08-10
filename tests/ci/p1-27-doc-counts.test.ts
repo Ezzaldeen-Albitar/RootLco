@@ -680,9 +680,19 @@ describe('P1-27-QA-005 — the two evidence pages agree with each other and the 
      * abbreviation — which must be a prefix of the full sha the baseline names
      * and a commit this repository holds.
      */
+    /*
+     * Matched against WHITESPACE-COLLAPSED text, not the raw file. The first
+     * version of this check anchored on a literal space before "against
+     * candidate" and a `\s*\n?` after it. Prettier wraps that paragraph in
+     * between the two, so the sentence was on the page, correct, and invisible —
+     * the check reported "the CI record cites no authenticated run" about a
+     * record that cited it. That is `B-02` exactly, in a case written after
+     * `B-02` was fixed, so the collapse is applied here rather than the regex
+     * being taught this one wrap.
+     */
     const cited =
-      /run `(\d+)`, (\d+) tests, (\d+) failed, against candidate\s*\n?`([0-9a-f]{7,40})`/.exec(
-        CI_EVIDENCE
+      /run `(\d+)`, (\d+) tests, (\d+) failed, against candidate `([0-9a-f]{7,40})`/.exec(
+        CI_EVIDENCE.replace(/\s+/g, ' ')
       );
     expect(cited, 'the CI record cites no authenticated run').not.toBeNull();
     const found = cited as RegExpExecArray;

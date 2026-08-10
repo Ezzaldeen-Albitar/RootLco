@@ -28,8 +28,8 @@
       "bytes": 3902
     },
     "docs/phase-1/phase-1-27/ci-evidence.md": {
-      "sha256": "ae7c55dd1e03786cc80b0a8b8c2f87bd57b782d7424e6a505cdf3ea33f2b8df8",
-      "bytes": 9479
+      "sha256": "ce477c351fb607154d0c5764fcb1e001c87adaf68f1aa7274bb73d06d6e2b98f",
+      "bytes": 9969
     },
     "docs/phase-1/phase-1-27/clean-room-evidence.md": {
       "sha256": "8d00078456d039016bb1250241ac94437ba1d740df18e486c1139b7eaf1dab55",
@@ -44,7 +44,7 @@
       "bytes": 24145
     },
     "docs/phase-1/phase-1-27/deliverable-manifest.md": {
-      "sha256": "53634b3d228013959e2cda751ee1d08c4cd27099f18c906b215c18e58ea13066",
+      "sha256": "93665c0bf159e33fb17259ced7f5803e807d028a050c92ad7297baf618de3119",
       "bytes": 141348
     },
     "docs/phase-1/phase-1-27/developer-guide.md": {
@@ -56,7 +56,7 @@
       "bytes": 58124
     },
     "docs/phase-1/phase-1-27/evidence/task-traceability.md": {
-      "sha256": "871d268b5131b7a0ba9eb28b0cb8dfd10c10832b2d94a7e1b5f67a46a99df39d",
+      "sha256": "78bcc25ce3ddfa03ad0ecb99ee8e1485218c4dee86f7431c0b68d301c1a80f8b",
       "bytes": 113040
     },
     "docs/phase-1/phase-1-27/evidence/test-catalogue-traceability.json": {

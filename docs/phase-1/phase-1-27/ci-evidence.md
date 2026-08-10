@@ -87,15 +87,22 @@ ineligibility rather than accepted as a pass. `ROOTLCO_E2E_AUTH=1` still gates t
 tier and the five anonymous Playwright projects still carry `testIgnore` for that
 directory, so any run that has not stood the stack up covers none of it.
 
-**One claim that stood here is now DISPUTED inside this repository, and this
-document will not settle it by preference.** It recorded that the tier had
-**passed on a GitHub-hosted runner** — run `31347643485`, 225 tests, 0 failed,
-against candidate `78c4587`. `.github/ci-baselines/unrun-test-tiers.json`
-`hostedObservation` states instead that run `31337158296` is the only hosted
-execution of this tier in the repository's history and that it FAILED in the
-acceptance bootstrap. Both cannot be true; a GitHub run record is not in this
-tree; the disagreement is finding `H-24` in `adversarial-round-five.md`. Either
-way, no run has been observed against the closing candidate.
+**This tier has passed on a GitHub-hosted runner** — run `31347643485`, 225 tests, 0 failed, against candidate `78c4587`.
+The disagreement recorded here as `H-24` is settled, and settled against the
+baseline rather than against this page: `.github/ci-baselines/unrun-test-tiers.json`
+`hostedObservation` had said run `31337158296` was the only hosted execution of
+this tier in the repository's history and that merges stayed blocked until a
+readiness race was repaired. The race was repaired and the tier then ran green.
+It was decidable after all — from the GitHub run records, which are not in this
+tree, which is why the dispute survived a full wave here. All three executions
+are now recorded individually in that baseline, each with its run id and job id,
+and the job conclusion is read on the commit rather than the run conclusion —
+every one of these runs carries a run-level `failure` because other jobs at those
+commits were red.
+
+What is still not claimed: **no run has been observed against the closing
+candidate.** Every execution above predates the merge of the remediation
+branches, so none of them is evidence about the commit this phase closes on.
 
 Neither tier is a superset. A change that passes one and is never run through the
 other has been half-measured.
