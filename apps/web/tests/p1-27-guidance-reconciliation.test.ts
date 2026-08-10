@@ -235,6 +235,12 @@ describe('the developer guide describes the repository that exists', () => {
       'no-client-asserted-scope': 'a client-asserted',
       'no-invented-total': 'a total computed from `rows.length`',
       'no-upload-path': 'any upload path',
+      // Added when `SEC-002`'s export and media conjuncts moved out of
+      // `p1-27-security.test.ts` and into the gate. Of that task's five
+      // conjuncts only `file-access` had a rule, and that rule covered three of
+      // the seven constructs the security suite refuses on the same surface.
+      'no-export-surface': 'any export surface',
+      'no-invented-media-limit': 'any invented media limit',
       'no-console-output': 'any `console.*`',
     };
 

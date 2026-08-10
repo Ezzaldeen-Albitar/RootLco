@@ -521,7 +521,7 @@ The gate carries the same two anti-vacuity properties as its P1-26 predecessor
 (a rule inspecting zero files fails; comments are stripped so the explanation of
 a rule is not accused of breaking it) plus a third that the earlier one lacks: a
 `selfTest()` that runs on **every invocation** and is folded into the failure
-list. A comment stripper that over-matched would turn all six rules into scans
+list. A comment stripper that over-matched would turn all eight rules into scans
 over empty strings and report clean — the one failure mode the per-rule
 anti-vacuity checks cannot see, because from their side the files are still
 there.

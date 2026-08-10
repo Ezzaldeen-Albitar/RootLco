@@ -30,10 +30,26 @@
  *      `{ items, nextCursor, hasMore }` and no count. A `total` computed in the
  *      client is right on page one and wrong from page two, invisibly.
  *   5. **No upload path.** There is no vehicle media operation at all;
- *      `P1-OD-025` must decide types, limits and storage first.
+ *      `P1-OD-025` must decide types, limits and storage first. Seven distinct
+ *      constructs, not three — see `FILE_ACCESS_CONSTRUCTS`.
  *   6. **No console output.** A `console.log` in a Server Action prints server
  *      state into a log nobody is reading; in a client component it prints it
  *      into the browser.
+ *   7. **No export surface.** The canonical plan's task table names the operation
+ *      behind every one of the 29 Frontend tasks and not one of them is an
+ *      export. `shared.export-authorize` and `shared.export-catalogue` ARE
+ *      published by the platform, so this is restraint rather than a gap — and
+ *      restraint that only a test asserts is restraint until somebody deletes the
+ *      test. The rule fires on an export caller in either of its two forms: the
+ *      operation itself, and the browser-side substitute (a blob, an object URL,
+ *      a `download` attribute, a CSV or PDF assembly, a `Content-Disposition`).
+ *   8. **No invented media limit.** `P1-OD-025` is OPEN and §14's disposition is
+ *      "keep upload acceptance blocked, do not invent limits". Rule 5 enforces
+ *      the first half. This is the second, and it is the half a well-meaning
+ *      implementation breaks: a "sensible default" of 10 MB and JPEG/PNG
+ *      pre-empts the Owner's decision while looking like diligence. The rule
+ *      fires on a hard-coded byte size, an accepted-MIME list, an extension
+ *      allow-list or an `accept=` attribute.
  *
  * ## Three properties this gate is built around
  *
@@ -45,7 +61,7 @@
  * hit exactly this on its first run.
  *
  * **The stripper is proven, not assumed.** A stripper that removed too much
- * would make every rule pass on an empty string, and all six would report clean
+ * would make every rule pass on an empty string, and all eight would report clean
  * while measuring nothing. `selfTest()` runs on every invocation: the forbidden
  * names in a comment must vanish, and the same names in a string literal and a
  * URL must survive.
@@ -57,7 +73,7 @@
  * Usage: node scripts/ci/check-p1-27-frontend.mjs [--json]
  * Exit: 0 clean · 1 a violation · 2 the check could not run.
  */
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -91,19 +107,38 @@ export const SCAN_ROOTS = [
 export const ROOT_AUTHORITY = 'docs/phase-1/phase-1-27/canonical-plan.md';
 
 /**
- * Phase modules that live OUTSIDE every scan root, listed rather than scanned.
+ * Phase modules that live OUTSIDE every scan root — DERIVED, not listed.
  *
  * ## The fact
  *
  * The D1 remediation moved shared code out of `features/` — `RecordForm` to
  * `@/components/forms`, the customer directory to `@/lib/customers`, the match
  * explanations and scores to `@/components/duplicates` and `@/lib/duplicates`,
- * the party widgets to `@/components/party`. The files left behind in
- * `features/crm/customers/` are re-export shims that say so in their own
- * docblocks. Ten `.ts`/`.tsx` files, imported directly by the scanned trees, are
- * therefore unambiguously this phase's surface and are collected by no root.
+ * the party widgets to `@/components/party`. Those files, imported directly by
+ * the scanned trees, are unambiguously this phase's surface and are collected by
+ * no root.
  *
- * ## Why they are not simply added to `SCAN_ROOTS`
+ * ## Why the list used to be wrong, and why a list could not notice
+ *
+ * This constant WAS five directories, written by hand. Measured against the
+ * imports the three scanned trees actually make, five was **5 of 14**. A
+ * hand-written list can only fail when one of ITS entries goes missing; it can
+ * never fail because something was never added, which is the failure that
+ * happened. The largest omission was `components/data-table` — imported by 38
+ * import statements across the scanned trees and holding `DataTable.tsx`, the
+ * component that renders every customer and vehicle row an operator sees. It was
+ * in neither this list nor the security suite's `MOVED_OUT`, which was a second
+ * hand-written list of five, and the two did not even agree with each other.
+ *
+ * So the direction is now the other way round. `importedModuleDirectories()`
+ * DERIVES the set from the source of the scanned trees, and
+ * `MODULE_DISPOSITION` must carry a decision for every directory it returns and
+ * for nothing else — asserted as an equality in both directions, by
+ * `evaluateModuleDispositions()` on every real run of this gate. A new import
+ * fails here and has to be decided, rather than being absent by construction and
+ * invisible forever.
+ *
+ * ## Why these are not simply added to `SCAN_ROOTS`
  *
  * Because `SCAN_ROOTS` is not a free variable. It is bound in two directions by
  * documents this branch does not own:
@@ -118,35 +153,198 @@ export const ROOT_AUTHORITY = 'docs/phase-1/phase-1-27/canonical-plan.md';
  *     `p1-27-frontend-gate:trees` (3) as derived markers, and four documents
  *     carry them.
  *
- * And a wider widening is worse, not better: measured across the 110 `.ts`/
- * `.tsx` files under `apps/web/src` that no root collects, a rule fires in 16 of
- * them — `features/administration`, `features/authentication`, `lib/api`,
- * `components/gallery`, `lib/observability`. Those are other phases' surfaces
- * and several of those lines are correct (`lib/observability/client-log.ts` IS
- * the logger the console rule tells people to use). Widening to `apps/web/src`
- * turns sixteen correct lines red, which is how the last extension nearly went
- * wrong before `assertedScopes()` was written to tell an asserted scope from a
+ * And a wider widening is worse, not better: measured across the `.ts`/`.tsx`
+ * files under `apps/web/src` that no root collects, a rule fires in
+ * `features/administration`, `features/authentication`, `lib/api`,
+ * `components/gallery` and `lib/observability`. Those are other phases'
+ * surfaces and several of those lines are correct. Widening to `apps/web/src`
+ * turns correct lines red, which is how the last extension nearly went wrong
+ * before `assertedScopes()` was written to tell an asserted scope from a
  * displayed one.
  *
  * ## What is done instead
  *
- * `tests/ci/p1-27-frontend-gate.test.ts` runs every rule over these directories
- * as they stand and asserts nothing fires — measured, not assumed: **0 of 10
- * files**, today. So the coverage a fourth root would have bought is asserted,
- * over exactly the files it would have covered, without contradicting a document
- * this branch cannot amend. The day a violation lands there, the case goes red
- * and the extension becomes a conversation with evidence attached.
+ * `tests/ci/p1-27-frontend-gate.test.ts` runs every rule over the `in-surface`
+ * directories as they stand and asserts nothing fires — measured, not assumed.
+ * So the coverage a fourth root would have bought is asserted, over exactly the
+ * files it would have covered, without contradicting a document this branch
+ * cannot amend. The day a violation lands there, the case goes red and the
+ * extension becomes a conversation with evidence attached.
  *
  * This is a NARROWING of the residual exposure `risk-register.md:214` already
  * records, not a closure of it.
  */
-export const UNCOLLECTED_PHASE_MODULES = Object.freeze([
-  'apps/web/src/components/forms',
-  'apps/web/src/components/party',
-  'apps/web/src/components/duplicates',
-  'apps/web/src/lib/customers',
-  'apps/web/src/lib/duplicates',
-]);
+
+/** The alias prefix the scanned trees import shared modules through. */
+const MODULE_ALIAS = /['"`](@\/(?:components|lib)\/[^'"`]+)['"`]/g;
+
+/** Where an aliased module resolves on disk. `@/x/y` → `apps/web/src/x/y`. */
+export const MODULE_BASE = 'apps/web/src';
+
+/**
+ * Every `@/components/*` or `@/lib/*` module directory the given sources IMPORT.
+ *
+ * Read from the comment-STRIPPED source, so a docblock naming `@/lib/anything`
+ * is not mistaken for an import of it. That matters here more than anywhere: the
+ * docblocks in these trees name modules precisely when explaining why they are
+ * NOT used.
+ *
+ * `@/lib/page-metadata` is a FILE, not a directory, and it is treated
+ * identically — the first two segments are the module, and whether that resolves
+ * to a directory or to a `.ts` is a fact about the filesystem rather than about
+ * the import. `moduleSourceRoot()` is what settles it.
+ *
+ * @param {ReadonlyArray<{path: string, source: string}>} files
+ * @returns {string[]} repository-relative, sorted, deduplicated
+ */
+export function importedModuleDirectories(files) {
+  const found = new Set();
+  for (const file of files) {
+    for (const match of stripComments(file.source).matchAll(MODULE_ALIAS)) {
+      const segments = String(match[1] ?? '').split('/');
+      // `@/components/data-table/DataTable` → `components/data-table`. Not
+      // named `module`: `@next/next/no-assign-module-variable` refuses that
+      // identifier repository-wide, and `npm run lint` covers `scripts/`.
+      const directory = segments.slice(1, 3).join('/');
+      if (segments.length > 2 && directory) found.add(`${MODULE_BASE}/${directory}`);
+    }
+  }
+  return [...found].sort();
+}
+
+/**
+ * What was DECIDED about every module the scanned trees import.
+ *
+ * Nine of these were newly visible when the derivation replaced the hand-written
+ * five, and each is a decision recorded here rather than an omission. The two
+ * that are held OUT are held out for a measured reason, not a stated one:
+ *
+ *   - `lib/api` is the platform transport. `idempotent-operations.ts` is the
+ *     GENERATED operation catalogue: it contains `/exports`,
+ *     `download-authorizations` and the merge and duplicate-scan operation ids
+ *     as DATA — the very operations rules 1, 2 and 7 prove this phase never
+ *     calls. A gate that read the catalogue would accuse it of being the list it
+ *     is. `read-operation.ts` names `tenantId` because it is the guard that
+ *     REFUSES one, and `session-cookie.ts` because a server-side session
+ *     legitimately holds the resolved scope.
+ *   - `lib/observability` holds `client-log.ts`, which IS the structured logger
+ *     the console rule tells people to use instead of `console.*`. Folding it in
+ *     would turn the remedy red.
+ *
+ * Neither exclusion is taken on trust. `tests/ci/p1-27-frontend-gate.test.ts`
+ * runs every rule over both directories and pins the exact files that match, so
+ * a genuine violation landing in one of them goes red instead of hiding behind
+ * the word "excluded".
+ *
+ * @type {Readonly<Record<string, 'in-surface' | 'platform-transport'>>}
+ */
+export const MODULE_DISPOSITION = Object.freeze({
+  /** The P1-25 brand marks the dashboard shell renders. Clean, and scanned. */
+  'apps/web/src/components/brand': 'in-surface',
+  /** Renders every customer and vehicle row. Was in NO list, by either name. */
+  'apps/web/src/components/data-table': 'in-surface',
+  'apps/web/src/components/duplicates': 'in-surface',
+  'apps/web/src/components/forms': 'in-surface',
+  'apps/web/src/components/party': 'in-surface',
+  /** `Icon`, rendered inside P1-27 controls. */
+  'apps/web/src/components/primitives': 'in-surface',
+  /** `PageHeader`, and the locale switcher that carries table state across it. */
+  'apps/web/src/components/shell': 'in-surface',
+  /** `States` — every denial, error and empty state these screens render. */
+  'apps/web/src/components/states': 'in-surface',
+  /** The platform transport. Excluded, with the exclusion measured. */
+  'apps/web/src/lib/api': 'platform-transport',
+  'apps/web/src/lib/customers': 'in-surface',
+  'apps/web/src/lib/duplicates': 'in-surface',
+  /** `action-result` and `field-errors` — what a refused write becomes. */
+  'apps/web/src/lib/forms': 'in-surface',
+  /** The structured logger the console rule points at. Excluded, measured. */
+  'apps/web/src/lib/observability': 'platform-transport',
+  'apps/web/src/lib/page-metadata': 'in-surface',
+});
+
+/**
+ * The modules this phase owns and no `SCAN_ROOT` collects, derived from the
+ * decisions above. The name is kept because four documents and the security
+ * suite refer to it; what changed is that it is no longer written by hand.
+ */
+export const UNCOLLECTED_PHASE_MODULES = Object.freeze(
+  Object.entries(MODULE_DISPOSITION)
+    .filter(([, disposition]) => disposition === 'in-surface')
+    .map(([directory]) => directory)
+    .sort()
+);
+
+/**
+ * Where a recorded module resolves on disk — a DIRECTORY or a single FILE.
+ *
+ * `@/lib/page-metadata` is `src/lib/page-metadata.ts`. A consumer that assumed a
+ * directory would throw `ENOENT` on it, and dropping it from the record to avoid
+ * that would be exactly the omission the derivation exists to stop.
+ *
+ * @param {string} directory repository-relative, e.g. `apps/web/src/lib/forms`
+ * @param {string} [root] repository root
+ * @returns {string|null} an absolute path, or null when nothing resolves
+ */
+export function moduleSourceRoot(directory, root = process.cwd()) {
+  const base = join(root, ...String(directory).split('/'));
+  for (const candidate of [base, `${base}.ts`, `${base}.tsx`]) {
+    if (existsSync(candidate)) return candidate;
+  }
+  return null;
+}
+
+/**
+ * Both directions of the derivation, as gate failures rather than as a test.
+ *
+ * An import with no recorded disposition fails as an addition; a disposition
+ * naming a module nothing imports any more fails as a stale one. Run from
+ * `main()` over the real scanned files — never from `evaluate()`, which is handed
+ * synthetic fixtures that import nothing and would fail the anti-vacuity guard
+ * below on every one of them.
+ *
+ * @param {ReadonlyArray<{path: string, source: string}>} files
+ * @returns {{failures: string[], directories: string[]}}
+ */
+export function evaluateModuleDispositions(files) {
+  const directories = importedModuleDirectories(files);
+  const failures = [];
+
+  if (directories.length === 0) {
+    failures.push(
+      'module-disposition: no `@/components/*` or `@/lib/*` import was discovered across the ' +
+        'scanned trees — the derivation is broken and the equality below would compare two ' +
+        'empty sets'
+    );
+    return { failures, directories };
+  }
+
+  const decided = Object.keys(MODULE_DISPOSITION).sort();
+  for (const directory of directories) {
+    if (!Object.hasOwn(MODULE_DISPOSITION, directory)) {
+      failures.push(
+        `module-disposition: ${directory} is imported by a scanned tree and has no entry in ` +
+          'MODULE_DISPOSITION — decide it as `in-surface` or `platform-transport`'
+      );
+    }
+  }
+  for (const directory of decided) {
+    if (!directories.includes(directory)) {
+      failures.push(
+        `module-disposition: ${directory} is recorded in MODULE_DISPOSITION and no scanned tree ` +
+          'imports it — the record is stale'
+      );
+      continue;
+    }
+    if (moduleSourceRoot(directory) === null) {
+      failures.push(
+        `module-disposition: ${directory} resolves to nothing on disk — the record names a ` +
+          'module that is not there'
+      );
+    }
+  }
+  return { failures, directories };
+}
 
 /**
  * The scope names this platform resolves server-side and the client must never
@@ -303,6 +501,216 @@ export function assertedScopes(source) {
   return found;
 }
 
+/**
+ * A rule whose pattern is assembled from NAMED constructs, each with a sample.
+ *
+ * ## Why the shape exists
+ *
+ * `no-upload-path` was `/new FormData\(\)|multipart\/form-data|type="file"/` —
+ * three constructs — while `apps/web/tests/p1-27-security.test.ts` forbade seven
+ * on the same surface. `FileReader`, a `.files` list, an `onDrop` target and a
+ * `DataTransfer` were refused by a test file and by nothing in CI, and a test
+ * can be deleted in the same commit as the code it guards. The gap was invisible
+ * because the rule was one opaque regex: there was nothing to count.
+ *
+ * So each construct is named and carries the smallest source that constitutes
+ * it. `tests/ci/p1-27-frontend-gate.test.ts` plants every sample through the
+ * gate's own `evaluate()` and asserts the rule reports it — so a construct
+ * cannot be added to the table without being proved to fire, and one that stops
+ * firing fails by name rather than by silence.
+ *
+ * The samples are also the reason `/./` is not a rule: each table carries
+ * `innocent` sources that must NOT fire, and the two sets are asserted disjoint.
+ *
+ * The key is `construct` and NOT `id`, which matters outside this file:
+ * `apps/web/tests/p1-27-guidance-reconciliation.test.ts` finds this gate's rule
+ * ids by scraping `id: '…',` lines out of the source, and asserts every one of
+ * them has a sentence in the developer guide. A construct spelled `id` would be
+ * read as a nineteenth rule and fail a guide that is not wrong.
+ *
+ * @param {ReadonlyArray<{construct: string, pattern: RegExp}>} constructs
+ * @returns {RegExp} one pattern matching any of them
+ */
+export function anyOf(constructs) {
+  return new RegExp(constructs.map((construct) => construct.pattern.source).join('|'));
+}
+
+/**
+ * The seven file-access constructs, mirroring what the security suite forbids.
+ *
+ * The suite's `FILE_ACCESS` regex spells the file input twice (`type="file"` and
+ * `type={'file'}`); both are one construct here, generalised to cover the
+ * backtick and double-quoted brace forms the suite's literal spelling misses.
+ *
+ * `new FormData\(` deliberately drops the `\)` the old rule required:
+ * `new FormData(existingForm)` is the same upload path and the old pattern let it
+ * through.
+ */
+export const FILE_ACCESS_CONSTRUCTS = Object.freeze([
+  {
+    construct: 'form-data',
+    pattern: /new FormData\(/,
+    // The second sample is the one the old `new FormData\(\)` pattern let
+    // through: the same upload path, constructed from an existing form.
+    samples: ['const body = new FormData();', 'const body = new FormData(element);'],
+  },
+  {
+    construct: 'multipart-encoding',
+    pattern: /multipart\/form-data/,
+    samples: ["headers.set('content-type', 'multipart/form-data');"],
+  },
+  {
+    construct: 'file-input',
+    pattern: /type=["']file["']|type=\{\s*["'`]file["'`]\s*\}/,
+    samples: [
+      '<input type="file" name="photo" />',
+      '<input type={\'file\'} name="photo" />',
+      '<input type={"file"} name="photo" />',
+    ],
+  },
+  {
+    construct: 'file-reader',
+    pattern: /\bFileReader\b/,
+    samples: ['const reader = new FileReader();'],
+  },
+  { construct: 'file-list', pattern: /\.files\b/, samples: ['const chosen = input.files;'] },
+  {
+    construct: 'drop-target',
+    pattern: /onDrop=|onDragOver=/,
+    samples: ['<div onDrop={receive} />', '<div onDragOver={hold} />'],
+  },
+  {
+    construct: 'data-transfer',
+    pattern: /\bDataTransfer\b/,
+    samples: ['const moved = event.dataTransfer as DataTransfer;'],
+  },
+]);
+
+/** File-access-adjacent source that is NOT an upload path. */
+export const FILE_ACCESS_INNOCENT = Object.freeze([
+  'const fileName = customer.displayName;',
+  '<input type="text" name="plate" />',
+  'const profiles = record.profiles;',
+  '<Menu onDropdownOpen={open} />',
+  "const label = t('vehicles.documents.heading');",
+]);
+
+/**
+ * The export constructs, in both of the two forms an export can take.
+ *
+ * The platform DOES publish `shared.export-authorize` and
+ * `shared.export-catalogue`, which is what makes this rule restraint rather than
+ * a sweep for something that does not exist. The second form matters just as
+ * much: the way to export without an export operation is to assemble the bytes
+ * in the browser from rows that were read one page at a time.
+ */
+export const EXPORT_CONSTRUCTS = Object.freeze([
+  {
+    construct: 'export-operation',
+    pattern: /export-authorize|export-catalogue/,
+    samples: ["const op = 'shared.export-authorize';", "const op = 'shared.export-catalogue';"],
+  },
+  {
+    /*
+     * An export CALLER by name or by path.
+     *
+     * `\bexport[A-Z]` cannot collide with the `export` keyword: every form of it
+     * — `export const`, `export type`, `export default`, `export *`, `export {` —
+     * continues in lower case or in punctuation, so only an identifier such as
+     * `exportCustomers` matches. That matters in a tree where most lines begin
+     * with the word.
+     */
+    construct: 'export-caller',
+    pattern: /\bexport[A-Z]\w*|-export|\/export/,
+    samples: [
+      "await client.send('POST', '/api/v1/exports', {});",
+      'const rows = await exportCustomers(criteria);',
+      "const op = 'crm.customer-export';",
+    ],
+  },
+  {
+    construct: 'download-authorization',
+    pattern: /attachment-download|download-authorizations/,
+    samples: ["const op = 'shared.attachment-download-authorize';"],
+  },
+  {
+    construct: 'download-construction',
+    pattern: /\bdownload=|\bdownloadAll|createObjectURL|\bsaveAs\s*\(/,
+    samples: ['<a download={name} href={href} />', 'const href = URL.createObjectURL(bytes);'],
+  },
+  { construct: 'client-blob', pattern: /new Blob\(/, samples: ['const bytes = new Blob([rows]);'] },
+  {
+    construct: 'tabular-assembly',
+    pattern: /text\/csv|application\/pdf|application\/vnd\.ms-excel/,
+    samples: ["const mime = 'text/csv';", "const mime = 'application/pdf';"],
+  },
+  {
+    construct: 'content-disposition',
+    pattern: /[Cc]ontent-[Dd]isposition/,
+    samples: ["headers.set('Content-Disposition', 'attachment');"],
+  },
+]);
+
+/**
+ * Export-adjacent source that is NOT an export surface.
+ *
+ * The first entry is the one that matters: this rule lives in a tree where every
+ * other line begins with the word `export`.
+ */
+export const EXPORT_INNOCENT = Object.freeze([
+  'export const listVehicleDocuments = async () => rows;',
+  'export default async function Page() { return null; }',
+  'export type { VehicleDocuments } from "./documents-contract";',
+  'const isDownloadable = record.canDownload;',
+  "const accepted = 'application/json';",
+  "const path = '/api/v1/vehicles/v1/documents';",
+]);
+
+/**
+ * The invented-limit constructs — the second half of the `P1-OD-025` disposition.
+ *
+ * §14 says "keep upload acceptance blocked, do not invent limits". Rule 5
+ * enforces the first clause; nothing enforced the second, and the second is the
+ * one that gets broken by diligence rather than by carelessness. There is no
+ * decision to derive a number or a type list from, so any of them here is an
+ * invention presented to an operator as policy.
+ */
+export const INVENTED_MEDIA_LIMIT_CONSTRUCTS = Object.freeze([
+  {
+    construct: 'byte-size-limit',
+    pattern: /MAX_(?:FILE|UPLOAD|IMAGE|MEDIA|ATTACHMENT)_|max(?:File|Upload|Image|Media)Size/,
+    samples: ['const MAX_FILE_SIZE_BYTES = limit;', 'const maxFileSize = limit;'],
+  },
+  {
+    construct: 'byte-arithmetic',
+    pattern: /\b\d+\s*\*\s*1024\b/,
+    samples: ['const limit = 5 * 1024 * 1024;'],
+  },
+  {
+    construct: 'accepted-mime-list',
+    pattern:
+      /ACCEPTED_(?:FILE|MIME|IMAGE|TYPE)|accepted(?:Mime|File|Image)Types|allowedMimeTypes|image\/(?:jpe?g|png|heic|webp)|video\/(?:mp4|quicktime)/,
+    samples: ["const types = ['image/jpeg', 'image/png'];", 'const ACCEPTED_MIME = types;'],
+  },
+  {
+    construct: 'extension-allow-list',
+    pattern:
+      /ALLOWED_EXTENSIONS|allowedExtensions|acceptedExtensions|['"`]\.(?:jpe?g|png|heic|mp4|webp)['"`]/i,
+    samples: ["const allowed = ['.jpg', '.png'];", 'const allowedExtensions = list;'],
+  },
+  { construct: 'accept-attribute', pattern: /accept=/, samples: ['<MediaField accept={types} />'] },
+]);
+
+/** Limit-adjacent source that invents no media policy. */
+export const INVENTED_MEDIA_LIMIT_INNOCENT = Object.freeze([
+  'const pageSize = 25;',
+  'const ACCEPTED_STATUSES = ["active", "retired"];',
+  '<Dialog onAccept={confirm} />',
+  "const media = t('vehicles.media.blocked');",
+  'const columns = rows.length * 2;',
+  'export const MEDIA_STATUS = "blocked-on-p1-od-025";',
+]);
+
 export const RULES = [
   {
     id: 'no-merge-caller',
@@ -359,8 +767,66 @@ export const RULES = [
   },
   {
     id: 'no-upload-path',
-    pattern: /new FormData\(\)|multipart\/form-data|type="file"/,
+    /*
+     * SEVEN constructs, not three.
+     *
+     * This read `/new FormData\(\)|multipart\/form-data|type="file"/` while
+     * `apps/web/tests/p1-27-security.test.ts` refused seven on the same surface.
+     * `FileReader`, an `input.files` list, an `onDrop` target and a
+     * `DataTransfer` — every drag-and-drop upload is built out of the last three
+     * and none of them needs a `<input type="file">` — were forbidden by a test
+     * file and by nothing in CI. A test can be deleted in the same commit as the
+     * code it guards; a gate cannot.
+     *
+     * `new FormData(form)` is also newly covered: the old pattern required the
+     * empty parentheses, so the constructor's one-argument form passed.
+     */
+    pattern: anyOf(FILE_ACCESS_CONSTRUCTS),
     what: 'builds an upload path; there is no vehicle media operation and P1-OD-025 is open',
+    allow: [],
+  },
+  {
+    id: 'no-export-surface',
+    /*
+     * The absence made structural.
+     *
+     * `canonical-plan.md` §6 names the operation behind each of the 29 Frontend
+     * tasks and not one of them is an export — `tests/ci/p1-27-frontend-gate
+     * .test.ts` re-reads that table and asserts it, so this rule's authority is
+     * derived from the plan rather than restated here.
+     *
+     * The platform DOES publish `shared.export-authorize` and
+     * `shared.export-catalogue`, so the absence is a decision and not a gap; and
+     * it was proved only by `p1-27-security.test.ts`, which is one file away from
+     * being deleted. `SEC-002`'s export conjunct now fails in CI as well.
+     *
+     * Both forms of export are covered, because the second does not need the
+     * operation: bulk extraction assembled in the browser out of pages that were
+     * read one at a time is the same disclosure by a different route.
+     */
+    pattern: anyOf(EXPORT_CONSTRUCTS),
+    what: 'builds an export or download path; P1-27 publishes no export surface',
+    allow: [],
+  },
+  {
+    id: 'no-invented-media-limit',
+    /*
+     * The other half of the `P1-OD-025` disposition.
+     *
+     * §14 says "Implement the safe UI foundation. Keep upload acceptance blocked.
+     * Do not invent limits." `no-upload-path` enforces the second sentence.
+     * Nothing enforced the third, and the third is the one broken by diligence
+     * rather than by carelessness: a "sensible default" of 10 MB and JPEG/PNG
+     * looks like care and is a policy the Owner has not decided, presented to an
+     * operator as though it had been.
+     *
+     * A constant is enough to fail this. There is no decision to derive a number
+     * or a type list from, so a limit "waiting to be wired up" is already the
+     * invention — and `p1-27-security.test.ts` says so too, over the copy as well
+     * as the code.
+     */
+    pattern: anyOf(INVENTED_MEDIA_LIMIT_CONSTRUCTS),
+    what: 'invents a media size, type or extension policy while P1-OD-025 is open',
     allow: [],
   },
   {
@@ -582,13 +1048,25 @@ function main() {
     source: readFileSync(path, 'utf8'),
   }));
 
-  const { failures, counts } = evaluate(files);
+  const { failures: ruleFailures, counts } = evaluate(files);
+
+  /*
+   * The derivation runs HERE and not inside `evaluate()`, because `evaluate()` is
+   * handed synthetic one-line fixtures by the test suite. Those import nothing,
+   * so folding this in would make every planted-violation case fail on an
+   * unrelated complaint about a broken derivation.
+   */
+  const { failures: moduleFailures, directories } = evaluateModuleDispositions(files);
+  const failures = [...ruleFailures, ...moduleFailures];
+  counts.modules = directories.length;
+  counts['modules:in-surface'] = UNCOLLECTED_PHASE_MODULES.length;
 
   if (process.argv.includes('--json')) {
     console.log(JSON.stringify({ counts, failures }, null, 2));
   } else {
     console.log(
       `P1-27 frontend gate: ${counts.files} file(s) across ${SCAN_ROOTS.length} tree(s), ` +
+        `${RULES.length} rule(s), ${directories.length} imported module(s), ` +
         `${failures.length} failure(s).`
     );
   }
