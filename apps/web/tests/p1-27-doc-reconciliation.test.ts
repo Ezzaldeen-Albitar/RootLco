@@ -491,11 +491,22 @@ describe('no phase document may claim an acceptance the Owner has not given', ()
 });
 
 describe('QA-005 — the evidence records point at this branch', () => {
-  it('records a clean-room result that says something about this branch (B-04)', () => {
+  it('records a clean-room result that says something about this branch (A-05)', () => {
     /*
-     * `B-04`. `existsSync` is satisfied by an empty file, and the task it stands
-     * for — `QA-005` — is about whether the recorded evidence describes the tree
-     * under review. A path is not a record.
+     * `A-05`, NOT `B-04`, which is what this block used to say.
+     *
+     * `A-05` is the finding against THIS describe — "the evidence records point
+     * at this branch" was a title whose only case was an existence check — and
+     * this case is its remedy. `B-04` is the separate finding that four cases in
+     * this file are existence-only; its four are the three in `DOC-002` above
+     * and this one, so the two findings overlap here and the label was taken
+     * from the wrong one. A remedy filed under a finding it does not close is
+     * how a register comes to show an open row with no work against it and a
+     * closed row with work it never received.
+     *
+     * `existsSync` is satisfied by an empty file, and the task this describe
+     * stands for — `QA-005` — is about whether the recorded evidence describes
+     * the tree under review. A path is not a record.
      *
      * The strong form of this property lives in
      * `tests/ci/p1-27-evidence-manifest.test.ts`, which drives the two honest
@@ -729,6 +740,26 @@ describe('the adjudication summary is DERIVED from its own rows', () => {
       .map((m) => (m[1] ?? '').trim());
   }
 
+  /**
+   * `B-01`. A status cell contradicts itself when it carries a fix marker AND an
+   * unresolved marker — `FIXED 600f70e / OPEN`, the shape a half-applied edit
+   * leaves behind. The markers are looked for ANYWHERE in the cell, which is the
+   * only way the conjunction can ever be true.
+   *
+   * ONE definition, shared by the sweep over the live document and by the driver
+   * that proves the sweep can fire. This is the whole point of hoisting it.
+   *
+   * The first fix for `B-01` left the driver holding its own copy of the
+   * predicate, so reverting the production line back to the anchored tautology
+   * `/^FIXED/ && /^(OPEN|BLOCKED)/` broke nothing: the sweep went back to
+   * examining nothing and the driver went on passing against a private duplicate.
+   * An anti-regression case that does not read the thing it guards is decoration.
+   * `B-06` never had this problem because it shares one `isClosed`; this is the
+   * same arrangement.
+   */
+  const contradicts = (status: string) =>
+    /\bFIXED\b/i.test(status) && /\b(OPEN|BLOCKED)\b/i.test(status);
+
   it('finds the task rows at all, so every case below can fail', () => {
     const rows = summaryRows();
     expect(rows.length, 'no `TASK-000 | verdict | status` rows matched').toBeGreaterThanOrEqual(30);
@@ -828,22 +859,22 @@ describe('the adjudication summary is DERIVED from its own rows', () => {
      * It has never examined anything.
      *
      * The property is real and worth keeping: a half-applied edit leaves a cell
-     * reading `FIXED 600f70e / OPEN`, which is how a status table drifts. So the
-     * markers are looked for ANYWHERE in the cell, which is the only way the
-     * conjunction can ever be true.
+     * reading `FIXED 600f70e / OPEN`, which is how a status table drifts. The
+     * predicate is `contradicts` above — shared with the driver beneath, so the
+     * two cannot be fixed apart.
      */
-    const contradictory = summaryRows().filter(
-      (status) => /\bFIXED\b/i.test(status) && /\b(OPEN|BLOCKED)\b/i.test(status)
-    );
+    const contradictory = summaryRows().filter(contradicts);
     expect(contradictory, 'a status cell records a task as both fixed and unresolved').toEqual([]);
   });
 
   it('B-01: the contradiction check can actually fire', () => {
-    // The case above passed for its whole life over a condition no string
-    // satisfies. This drives the same predicate with an input that must trip it,
-    // so "no contradictory rows" means "none found" rather than "none findable".
-    const contradicts = (status: string) =>
-      /\bFIXED\b/i.test(status) && /\b(OPEN|BLOCKED)\b/i.test(status);
+    /*
+     * The case above passed for its whole life over a condition no string
+     * satisfies. This drives THE PRODUCTION PREDICATE — the same `contradicts`
+     * const the sweep filters on, not a copy of it — with inputs that must trip
+     * it, so "no contradictory rows" means "none found" rather than "none
+     * findable", and reverting the sweep to the anchored form fails HERE.
+     */
     expect(contradicts('FIXED 600f70e / OPEN'), 'a half-applied edit').toBe(true);
     expect(contradicts('BLOCKED — FIXED on a branch that cannot be merged')).toBe(true);
     expect(contradicts('FIXED `600f70e`'), 'an ordinary fixed row').toBe(false);
@@ -1077,6 +1108,40 @@ describe('every test case the traceability document quotes actually exists', () 
       .join('\n');
   }
 
+  /**
+   * `B-05`. The ONE definition of how a Proof cell opens a citation, shared by
+   * the sweep over the live document and by the fixture case that proves the
+   * widening reads the shape it was added for.
+   *
+   * The Proof column writes a file, OPTIONALLY its case count, then the em dash:
+   *
+   *     `crm-customer-search.test.ts` (40) — "sends only the six parameters…"
+   *
+   * The original pattern required `\s*—` immediately after the closing backtick,
+   * so every cell carrying a count was skipped and the sweep reported full
+   * coverage of a subset — silence that reads as a clean result.
+   *
+   * Nothing else is permitted between the file and the dash: allowing arbitrary
+   * prose there would start matching quotations that are not citations at all.
+   *
+   * Hoisted because the first fix left the fixture case holding private copies
+   * called `OLD`/`NEW`, so deleting `(?:\([^)]*\)\s*)?` from the production
+   * pattern below broke nothing — see the fixture case for the measurement that
+   * makes that the only proof there is.
+   */
+  const CITATION_OPENING = String.raw`\`[\w.-]+\.test\.tsx?\`\s*(?:\([^)]*\)\s*)?—\s*`;
+  /** The narrow form the widening replaced, kept only to prove the superset. */
+  const NARROW_OPENING = String.raw`\`[\w.-]+\.test\.tsx?\`\s*—\s*`;
+  /** One or more comma-separated double-quoted titles, inner escapes allowed. */
+  const QUOTED_RUN = String.raw`((?:"(?:[^"\\]|\\.)*"(?:,\s*)?)+)`;
+
+  const citationRuns = (text: string, opening: string = CITATION_OPENING) => [
+    ...text.matchAll(new RegExp(opening + QUOTED_RUN, 'g')),
+  ];
+  const citationOpenings = (text: string, opening: string = CITATION_OPENING) => [
+    ...text.matchAll(new RegExp(opening + '"', 'g')),
+  ];
+
   it('resolves every quoted case title to a real test', () => {
     const source = allTestSource();
     expect(source.length, 'no test source was read').toBeGreaterThan(10_000);
@@ -1097,25 +1162,12 @@ describe('every test case the traceability document quotes actually exists', () 
      * own findings, which is the failure mode a sweep must not have.
      */
     /*
-     * `B-05`. The em dash does NOT follow the filename directly.
-     *
-     * The Proof column writes a file, often its case count, then the dash:
-     *
-     *     `crm-customer-search.test.ts` (40) — "sends only the six parameters…"
-     *
-     * The pattern required `\s*—` immediately after the closing backtick, so
-     * every cell carrying a count was skipped — 34 of 82 file-naming cells, and
-     * only 136 of 239 quoted titles were ever checked. The sweep reported full
-     * coverage of 57% of the citations, which is the failure mode a sweep must
-     * not have: silence that reads as a clean result.
-     *
-     * The parenthesised count is now optional and skipped over. Nothing else is
-     * permitted between the file and the dash: allowing arbitrary prose there
-     * would start matching quotations that are not citations at all.
+     * `B-05`. The pattern is `CITATION_OPENING` + `QUOTED_RUN` above — the same
+     * definition the fixture case at the bottom of this describe drives. It is
+     * NOT restated here, which is the difference between an anti-regression case
+     * and a decoration: narrowing the shared constant fails both.
      */
-    const CITATION =
-      /`[\w.-]+\.test\.tsx?`\s*(?:\([^)]*\)\s*)?—\s*((?:"(?:[^"\\]|\\.)*"(?:,\s*)?)+)/g;
-    const runs = [...doc.matchAll(CITATION)];
+    const runs = citationRuns(doc);
     const cited = runs
       .flatMap((run) => [...(run[1] ?? '').matchAll(/"((?:[^"\\]|\\.)*)"/g)])
       .map((m) => (m[1] ?? '').replace(/\\"/g, '"'))
@@ -1127,20 +1179,17 @@ describe('every test case the traceability document quotes actually exists', () 
      * subset is what this case reported for its whole life. Every cell that
      * names a test file AND quotes a title must have been read.
      */
-    const openings = [...doc.matchAll(/`[\w.-]+\.test\.tsx?`\s*(?:\([^)]*\)\s*)?—\s*"/g)].length;
+    const openings = citationOpenings(doc).length;
     expect(
       runs.length,
       `${openings} citations open with a file, a dash and a quote; the pattern parsed only ` +
         `${runs.length} of them, so the rest were never checked`
     ).toBe(openings);
 
-    // And the widening is material, not cosmetic: the previous pattern read
-    // markedly fewer of the same citations.
-    const previouslyRead = [
-      ...doc.matchAll(/`[\w.-]+\.test\.tsx?`\s*—\s*((?:"(?:[^"\\]|\\.)*"(?:,\s*)?)+)/g),
-    ].length;
+    // The widened pattern must read every citation the narrow one did.
+    const previouslyRead = citationRuns(doc, NARROW_OPENING).length;
     /*
-     * SUPERSET, not strictly greater.
+     * SUPERSET, not strictly greater — and at this head the two are EQUAL.
      *
      * This asserted `toBeGreaterThan`, which held only while the document still
      * carried citations in the widened shape — a filename, a case count, then
@@ -1150,11 +1199,16 @@ describe('every test case the traceability document quotes actually exists', () 
      * numbers in the document in order to stay green. A test that punishes the
      * correct change is worse than no test.
      *
-     * The invariant that must ALWAYS hold is that the widened pattern reads
-     * every citation the original did. The strict improvement is proved
-     * separately and deterministically, on the exact cell shape that defeated
-     * the old pattern, in the `B-05` case below — which is where a proof of
-     * widening belongs, because it does not depend on the document's contents.
+     * MEASURED at `2467db5` on `evidence/task-traceability.md`: 68 widened
+     * openings, 68 narrow openings, 68 parsed runs either way, and ZERO cells
+     * carrying a parenthesised count between the file and the dash — repository
+     * wide, not merely in this document. So this comparison is `68 >= 68` and
+     * cannot distinguish the widened pattern from the narrow one. It is kept as
+     * the invariant it states, and NOT as evidence of the widening.
+     *
+     * The widening is therefore proved only by the fixture case below, which is
+     * where a proof of widening belongs anyway, because it must not depend on
+     * the document's contents.
      */
     expect(
       runs.length,
@@ -1169,16 +1223,74 @@ describe('every test case the traceability document quotes actually exists', () 
   });
 
   it('B-05: reads a cell whose case count sits between the file and the dash', () => {
-    // Driven on the exact shape that was skipped, so the widening is proved
-    // rather than assumed — and the old pattern is shown to miss it.
-    const cell = '`crm-customer-search.test.ts` (40) — "sends only the six parameters"';
-    const OLD = /`[\w.-]+\.test\.tsx?`\s*—\s*"/;
-    const NEW = /`[\w.-]+\.test\.tsx?`\s*(?:\([^)]*\)\s*)?—\s*"/;
-    expect(OLD.test(cell), 'the original pattern skipped this cell').toBe(false);
-    expect(NEW.test(cell), 'the widened pattern must read it').toBe(true);
+    /*
+     * THE ONLY THING THAT HOLDS THE WIDENING UP, and it says so.
+     *
+     * The live document no longer contains the shape this widening was added
+     * for. Measured at `2467db5`: the count-between-file-and-dash cell occurs
+     * ZERO times in `evidence/task-traceability.md`, zero times anywhere else
+     * under `docs/phase-1/phase-1-27/`, and zero times in `docs/` at all —
+     * `G-07` removed the stale case counts that produced it. So the sweep above
+     * reads 68 citations with the widened pattern and 68 with the narrow one,
+     * and no assertion driven by the document can tell them apart.
+     *
+     * The finding's original figures — 34 of 82 file-naming cells skipped, 136
+     * of 239 quoted titles ever checked — were true of the document as it stood
+     * when `B-05` was raised. They are NOT true of this head, and leaving them
+     * stated as present tense is exactly the "a number that was once measured,
+     * carried as a measurement" defect this phase keeps finding. They are dated
+     * here instead of repeated.
+     *
+     * The widening is kept rather than reverted because the shape is the natural
+     * spelling of a Proof cell and returns the moment anyone writes a case count
+     * back into one — but a guard for a shape the corpus does not currently
+     * contain is dead unless something drives it. This case is that something,
+     * and it drives `CITATION_OPENING` ITSELF, not a copy: delete
+     * `(?:\([^)]*\)\s*)?` from the shared constant and this case fails, which is
+     * the whole property. Its previous form held private `OLD`/`NEW` regexes and
+     * passed regardless of what the production pattern said.
+     */
+    const counted = '`crm-customer-search.test.ts` (40) — "sends only the six parameters"';
+    expect(
+      citationOpenings(counted, NARROW_OPENING).length,
+      'the original pattern skipped it'
+    ).toBe(0);
+    expect(citationOpenings(counted).length, 'the production pattern must read it').toBe(1);
+    expect(
+      citationRuns(counted)[0]?.[1],
+      'the widened pattern must capture the quoted run, not just the opening'
+    ).toBe('"sends only the six parameters"');
+
     // And the plain form still matches, so the widening did not trade one blind
     // spot for another.
-    expect(NEW.test('`crm-customer-search.test.ts` — "publishes no total"')).toBe(true);
+    const plain = '`crm-customer-search.test.ts` — "publishes no total"';
+    expect(citationOpenings(plain).length, 'the uncounted form must still read').toBe(1);
+
+    // The bound: arbitrary prose between the file and the dash is still NOT a
+    // citation, so the widening did not turn the sweep loose on ordinary text.
+    const prose = '`crm-customer-search.test.ts` is discussed at length — "not a citation"';
+    expect(citationOpenings(prose).length, 'prose between the file and the dash').toBe(0);
+  });
+
+  it('B-05: records that the live corpus no longer contains the widened shape', () => {
+    /*
+     * The measurement above, asserted rather than written down, so it stops
+     * being true loudly rather than silently. If a case count comes back into a
+     * Proof cell this fails and the fixture case stops being the only proof —
+     * at which point the `previouslyRead` comparison in the sweep becomes strict
+     * again on its own and this case should be deleted, not weakened.
+     */
+    const doc = read(join('evidence', 'task-traceability.md'));
+    const counted = [...doc.matchAll(/`[\w.-]+\.test\.tsx?`\s*\([^)]*\)\s*—/g)].length;
+    expect(
+      counted,
+      'a Proof cell carries a case count again; the widening is now load-bearing on the ' +
+        'document and this case has served its purpose'
+    ).toBe(0);
+    expect(
+      citationRuns(doc).length,
+      'with no counted cells present the widened and narrow patterns must agree exactly'
+    ).toBe(citationRuns(doc, NARROW_OPENING).length);
   });
 });
 
