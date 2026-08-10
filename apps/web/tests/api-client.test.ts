@@ -465,9 +465,9 @@ describe('what a user may be told', () => {
  * ## What these tests do differently
  *
  * Every fixture below is the shape `problemFor` builds. The rule tokens are
- * tokens that appear in `apps/api/src`, and the paths are path forms that appear
- * there — `toViolations` joins the request part to the Zod issue path, so
- * `body.preferredLocale` and a bare `body` are both real.
+ * tokens that appear in `apps/api/src` — DERIVED from that tree at the end of
+ * this file, not claimed here — and the paths are path forms that appear there:
+ * `toViolations` joins the request part to the Zod path, so a bare `body` is real.
  */
 
 const REAL_RULES = [
@@ -1462,5 +1462,155 @@ describe('P1-27-QA-004 — idempotency is derived from the adapters, not listed'
 
     expect(stub).toHaveBeenCalled();
     expect((seen[0] as Headers).get('idempotency-key')).toBeNull();
+  });
+});
+
+/**
+ * `P1-27-QA-002` — the provenance of `REAL_RULES`, derived rather than asserted.
+ *
+ * ## What was unguarded
+ *
+ * `REAL_RULES` at `:473-488` is the table of rule tokens this client translates
+ * to a SPECIFIC message rather than to the fallback. Its whole value rests on
+ * those tokens being ones the API really emits. That was stated in the docblock
+ * above the table and checked nowhere: the only executing assertion resolved
+ * each token against `en.json` and `ar.json`, which are the two files whoever
+ * adds a token edits in the same commit. A token the catalogue carried and the
+ * API never sent satisfied every case in this file.
+ *
+ * The gap ran in the harmless-looking direction — the table was TRUE when it was
+ * written — which is why it survived. Nothing made it stay true.
+ *
+ * ## Why this sits at the END of the file
+ *
+ * `task-matrix.json` cites eight line ranges of this file. Inserting these cases
+ * beside the table they are about renumbers six of them, and a citation that
+ * slides onto a neighbouring `expect(` still passes the citation gate while
+ * silently describing the wrong assertion. Appending costs a scroll and shifts
+ * nothing.
+ */
+
+const API_SRC_DIR = join(REPO_ROOT, 'apps', 'api', 'src');
+
+/**
+ * The rule token in a violation the API writes as a literal, e.g.
+ * `{ path: 'body.amount', rule: 'unknown_currency' }`.
+ *
+ * The token is captured WHOLE and compared by set membership. Both looser
+ * readings are wrong here, and each is wrong in its own way:
+ *
+ * - A substring search over the tree is worthless. `custom` occurs on 1084 lines
+ *   of `apps/api/src` and is emitted as a rule on 15 of them; `required` occurs
+ *   on 311 and is emitted on 7. A fixture token would be "found" by the English
+ *   prose of a docblock.
+ * - A prefix match is barely better. `duplicate` is a strict prefix of the real
+ *   `duplicate_code` and `duplicate_signature` and is itself never emitted, so
+ *   anchoring the END of the token is what makes the negative cases below mean
+ *   anything.
+ */
+const RULE_LITERAL = /\brule:\s*'([A-Za-z_][A-Za-z0-9_]*)'/g;
+
+/**
+ * The extraction, over one source text.
+ *
+ * Kept separate from the file walk so it can be run against a fixture. A
+ * derivation that can only be pointed at the real tree is one whose own failure
+ * modes go untested, and this one has exactly the failure mode that made the
+ * check it replaces worthless.
+ *
+ * Comments are stripped first. Three API docblocks contain `rule:` followed by a
+ * quoted identifier — one of them is prose about `dia.diagnostic_reviews` — and
+ * they describe database triggers, not violations. This repository has read
+ * prose as code repeatedly, so the fixture case states it rather than trusting
+ * that it cannot happen.
+ */
+function ruleTokensIn(source: string): Set<string> {
+  const tokens = new Set<string>();
+  for (const match of withoutComments(source).matchAll(RULE_LITERAL)) {
+    if (match[1] !== undefined) tokens.add(match[1]);
+  }
+  return tokens;
+}
+
+/**
+ * Every rule token `apps/api/src` emits as a literal.
+ *
+ * This is the set of tokens the API writes DOWN. It is NOT the complete set it
+ * can emit: `toViolations` in `apps/api/src/server/http/validation.ts:16-22`
+ * passes `issue.code` straight through, so every Zod code reaches the wire
+ * without appearing as a literal anywhere. That makes membership here a
+ * SUFFICIENT witness — it proves the API emits the token — and deliberately not
+ * a complete one. Nothing below asks it to prove a token is unreachable; the
+ * negative cases assert only that a token is not written as a literal, which is
+ * all this can honestly show.
+ */
+function emittedRuleTokens(): Set<string> {
+  const tokens = new Set<string>();
+  for (const file of sourceFilesUnder(API_SRC_DIR)) {
+    for (const token of ruleTokensIn(readFileSync(file, 'utf8'))) tokens.add(token);
+  }
+  return tokens;
+}
+
+describe('P1-27-QA-002 — every rule token this client translates is one the API emits', () => {
+  const emitted = emittedRuleTokens();
+
+  it('read the API tree, and found a token vocabulary of the expected size', () => {
+    // Anti-vacuity. An empty or near-empty set would make every membership case
+    // below pass while asserting nothing — the same shape as a derivation that
+    // reports no drift because it could not find what it was looking for.
+    expect(emitted.size).toBeGreaterThanOrEqual(50);
+  });
+
+  it.each(REAL_RULES)('%s is emitted by apps/api, not merely translated by us', (rule) => {
+    expect(
+      emitted.has(rule),
+      `${rule} is in REAL_RULES and has a message in en.json and ar.json, but nothing in ` +
+        `apps/api/src emits it. Either the API stopped sending it, or it was never real.`
+    ).toBe(true);
+  });
+
+  it.each([
+    // Absent from the tree entirely. The baseline: the check can say no at all.
+    ['nonexistent_rule_token', 'appears nowhere in the API'],
+    // Emitted by nothing, but present in 68 files of `apps/api/src` as prose and
+    // inside identifiers such as `tg_customer_approvals_immutable`. A substring
+    // search — the obvious way to write this check — reports it as emitted.
+    ['immutable', 'occurs throughout the API source but never as a rule'],
+    // A strict prefix of the emitted `duplicate_code` and `duplicate_signature`.
+    ['duplicate', 'is only a prefix of two real tokens'],
+  ])('rejects %s, which %s', (token) => {
+    expect(emitted.has(token)).toBe(false);
+  });
+
+  it('proves those negatives are about the RULE SHAPE and not about absence', () => {
+    // Without this, the two cases above are indistinguishable from "the word is
+    // not in the tree" — which a broken derivation would also satisfy.
+    const tree = sourceFilesUnder(API_SRC_DIR)
+      .map((file) => readFileSync(file, 'utf8'))
+      .join('\n');
+    expect(tree).toContain('immutable');
+    expect(tree).toContain('duplicate');
+    expect(tree).not.toContain('nonexistent_rule_token');
+  });
+
+  it('does not read a rule token out of a comment', () => {
+    const FIXTURE = [
+      "/** This layer's rule: `dia.diagnostic_reviews`, never rule: 'from_a_docblock'. */",
+      "// A line comment claiming rule: 'from_a_line_comment'.",
+      "const violation = { path: 'body.amount', rule: 'unknown_currency' };",
+    ].join('\n');
+
+    expect([...ruleTokensIn(FIXTURE)]).toEqual(['unknown_currency']);
+  });
+
+  it('reads a token that is written as a literal, however it is arranged', () => {
+    // Anti-vacuity for the fixture above: it must be capable of finding things,
+    // or "found only unknown_currency" proves nothing about comment stripping.
+    expect([...ruleTokensIn("{ path: 'body', rule: 'empty_patch' }")]).toEqual(['empty_patch']);
+    expect([...ruleTokensIn("{\n  rule:\n    'not_owned',\n}")]).toEqual(['not_owned']);
+    // A non-literal is skipped rather than mis-read: the CRM services forward
+    // `rule: error.rule` from the domain, and there is no token to take there.
+    expect([...ruleTokensIn('{ path: error.path, rule: error.rule }')]).toEqual([]);
   });
 });
