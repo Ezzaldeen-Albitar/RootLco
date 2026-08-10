@@ -28,6 +28,17 @@
  *     production caller. It installs a delivering adapter when — and only when —
  *     the deployment has configured a sink; with no sink configured the adapter
  *     stays `null`, which is the documented and tested default.
+ *  3. **Routing.** A destination is only half of it: the other half is deciding
+ *     WHICH events go there. `routesToSink` is that rule, driven by
+ *     `NEXT_PUBLIC_CLIENT_MONITORING_LEVEL` — a severity threshold validated
+ *     against the same ordered vocabulary the logger uses, defaulting closed to
+ *     `error` when a deployment configures a sink and says nothing else. This is
+ *     the third word of the task name, and it did not exist until now.
+ *
+ * What none of the three does is claim a monitoring service exists. No vendor is
+ * named, no destination is operated, and nobody is paged — `P1-27-OD-006` in
+ * `docs/phase-1/phase-1-27/open-decisions.md` records that boundary and is bound
+ * to a check in `tests/observability.test.ts` so it cannot quietly age.
  *
  * ## What may be reported
  *
@@ -51,9 +62,14 @@
  * enforce the route half.
  */
 
-import { env } from '../env';
+import { env, LOG_LEVELS, type LogLevel } from '../env';
 
-export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
+/**
+ * Re-exported so every existing importer is unchanged. The vocabulary and its
+ * ORDER are declared in `lib/env.ts`, which is the module the environment schema
+ * validates against and which this file imports — the reverse would be a cycle.
+ */
+export type { LogLevel };
 
 export interface ClientLogEvent {
   readonly level: LogLevel;
@@ -217,6 +233,40 @@ export function currentAdapter(): MonitoringAdapter | null {
 export type BeaconSender = (url: string, body: string) => boolean;
 
 /**
+ * The severity at or above which an event leaves the browser when a deployment
+ * has configured a sink and has not said what to route to it.
+ *
+ * `'error'` — the narrowest of the four, deliberately. See
+ * `NEXT_PUBLIC_CLIENT_MONITORING_LEVEL` in `lib/env.ts` for why the default of a
+ * routing rule has to be the least that leaves rather than the most.
+ */
+export const DEFAULT_ROUTING_LEVEL: LogLevel = 'error';
+
+/**
+ * A level's position in the ordered vocabulary.
+ *
+ * DERIVED from `LOG_LEVELS` rather than written out as a second table, so the
+ * ordering the threshold compares against is the ordering the environment schema
+ * accepts, and there is no pair of lists to fall out of step.
+ */
+export function levelRank(level: LogLevel): number {
+  return LOG_LEVELS.indexOf(level);
+}
+
+/**
+ * **The routing rule.** Whether an event of `level` leaves for a sink configured
+ * at `threshold`.
+ *
+ * At or above, never merely above: a threshold of `warn` routes warnings, which
+ * is what "alert me on warnings" means to the person setting it. Written as one
+ * exported predicate rather than inline in the adapter so it can be asserted
+ * directly and so a second delivery path could not implement a second rule.
+ */
+export function routesToSink(level: LogLevel, threshold: LogLevel): boolean {
+  return levelRank(level) >= levelRank(threshold);
+}
+
+/**
  * The adapter a configured sink gets.
  *
  * It delivers the event the boundary has ALREADY redacted — `report` redacts
@@ -224,9 +274,27 @@ export type BeaconSender = (url: string, body: string) => boolean;
  * by accident. It sends the same four fields the console line carries and
  * nothing else, and it never throws: a monitoring sink that is down must not
  * turn a handled failure into an unhandled one.
+ *
+ * ## Where the threshold is applied, and why here
+ *
+ * This is the ONE place an event leaves the device, so it is the only place a
+ * rule about what leaves can be complete. Applying it in `report` instead would
+ * filter the console line too — and the console is not egress. An operator or a
+ * developer reading the browser console must keep seeing every event whatever a
+ * remote sink is configured to receive, because that console is the only
+ * diagnostic a deployment with no sink has at all.
+ *
+ * A deployment that installs its own adapter through `setMonitoringAdapter`
+ * therefore owns its own routing. That is the honest division: this module can
+ * only govern the transport it wrote.
  */
-export function deliveringAdapter(url: string, send: BeaconSender): MonitoringAdapter {
+export function deliveringAdapter(
+  url: string,
+  send: BeaconSender,
+  threshold: LogLevel = DEFAULT_ROUTING_LEVEL
+): MonitoringAdapter {
   return (event) => {
+    if (!routesToSink(event.level, threshold)) return;
     try {
       send(
         url,
@@ -271,6 +339,22 @@ export function deliveringAdapter(url: string, send: BeaconSender): MonitoringAd
  * variable set on an already-built deployment installs nothing; it must be set
  * for the build.
  *
+ * ## The routing half — WHICH events leave (`P1-27-DO-002`)
+ *
+ * A destination alone is not routing. The second variable,
+ * `NEXT_PUBLIC_CLIENT_MONITORING_LEVEL`, is the severity threshold, validated by
+ * the same schema against the same `LOG_LEVELS` vocabulary the logger uses, and
+ * **optional with a fail-closed default of `error`**: unconfigured, only the
+ * events `lib/api/client.ts` classifies as *the system failed* leave the
+ * browser, and a cancellation or a 403 does not. A deployment that wants
+ * refusals or everything says so, deliberately, and rebuilds.
+ *
+ * What this is NOT, stated so nobody reads it as more: there is no pager, no
+ * on-call rotation, no notification channel and no recipient. Routing at this
+ * tier decides which events leave and at what level. Who is woken is a property
+ * of a destination this repository does not operate — recorded as
+ * `P1-27-OD-006` in `docs/phase-1/phase-1-27/open-decisions.md`.
+ *
  * ## The CSP, which no longer has to be done by hand
  *
  * `sendBeacon` is governed by `connect-src`, so a sink the policy does not name
@@ -297,10 +381,11 @@ export function deliveringAdapter(url: string, send: BeaconSender): MonitoringAd
  */
 export function installConfiguredMonitoringAdapter(
   url: string | undefined = env.NEXT_PUBLIC_CLIENT_MONITORING_URL,
-  send: BeaconSender | null = defaultBeacon()
+  send: BeaconSender | null = defaultBeacon(),
+  threshold: LogLevel = env.NEXT_PUBLIC_CLIENT_MONITORING_LEVEL ?? DEFAULT_ROUTING_LEVEL
 ): boolean {
   if (!url || !send) return false;
-  setMonitoringAdapter(deliveringAdapter(url, send));
+  setMonitoringAdapter(deliveringAdapter(url, send, threshold));
   return true;
 }
 

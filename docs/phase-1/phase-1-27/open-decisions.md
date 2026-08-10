@@ -63,15 +63,16 @@ repository.
 
 ### 0.2 The entries
 
-| id             | subject                                              | type                                           | status                                           |
-| -------------- | ---------------------------------------------------- | ---------------------------------------------- | ------------------------------------------------ |
-| `P1-OD-017`    | Duplicate and merge rules, customers and vehicles    | Business decision — external                   | **OPEN**                                         |
-| `P1-OD-025`    | Vehicle document and media file policy               | Business decision — external                   | **OPEN**                                         |
-| `P1-27-OD-001` | Vehicle reference-data source                        | Commercial decision reserved to the Owner      | **Proposed — not recorded, no number allocated** |
-| `P1-27-OD-002` | The customer-creation section model (Owner defect 6) | Scope decision with a Backend prerequisite     | **Open — partly addressed**                      |
-| `P1-27-OD-003` | A candidate count on either duplicate queue          | Engineering decision, ratification requested   | **Open — implemented decision-neutrally**        |
-| `P1-27-OD-004` | Vehicle document creation                            | Capability gap with a scope decision behind it | **Open — no create operation exists**            |
-| `P1-27-OD-005` | Concurrency semantics for CRM and Vehicle writes     | Engineering decision, ratification requested   | **Decided — last-writer-wins, stated and gated** |
+| id             | subject                                              | type                                           | status                                               |
+| -------------- | ---------------------------------------------------- | ---------------------------------------------- | ---------------------------------------------------- |
+| `P1-OD-017`    | Duplicate and merge rules, customers and vehicles    | Business decision — external                   | **OPEN**                                             |
+| `P1-OD-025`    | Vehicle document and media file policy               | Business decision — external                   | **OPEN**                                             |
+| `P1-27-OD-001` | Vehicle reference-data source                        | Commercial decision reserved to the Owner      | **Proposed — not recorded, no number allocated**     |
+| `P1-27-OD-002` | The customer-creation section model (Owner defect 6) | Scope decision with a Backend prerequisite     | **Open — partly addressed**                          |
+| `P1-27-OD-003` | A candidate count on either duplicate queue          | Engineering decision, ratification requested   | **Open — implemented decision-neutrally**            |
+| `P1-27-OD-004` | Vehicle document creation                            | Capability gap with a scope decision behind it | **Open — no create operation exists**                |
+| `P1-27-OD-005` | Concurrency semantics for CRM and Vehicle writes     | Engineering decision, ratification requested   | **Decided — last-writer-wins, stated and gated**     |
+| `P1-27-OD-006` | Alert routing — what it means at the web tier        | Engineering decision, ratification requested   | **Decided — routing built, paging absent and gated** |
 
 ### 0.3 What every entry states
 
@@ -929,6 +930,100 @@ closes this entry, or before it if that is sooner.
 | Ratified — last-writer-wins is acceptable for the pilot | Nothing changes in P1-27. The review date stands, so the decision is re-examined rather than forgotten                                                     |
 | Optimistic concurrency is required                      | The table above is the specification. It is Backend work on a separate protected branch; the Frontend change afterwards is a hidden field and one argument |
 | No answer                                               | The current behaviour stands and keeps saying what it is. Nothing is implied that is not there                                                             |
+
+---
+
+## `P1-27-OD-006` — alert routing, and the line between routing and paging
+
+**Type:** engineering decision, ratification requested · **Status:** **Decided —
+the routing rule is built and tested; no destination is operated and nobody is
+paged**
+
+**Owner:** Frontend, **P1-27** for the routing rule (delivered); the absent half
+— an operated collector and a recipient — belongs to whoever provisions an
+environment beyond Local, which **ADR-012** records as not existing.
+· **Review by:** 2026-11-30
+
+### The decision
+
+`P1-27-DO-002` is "structured logging, monitoring and **alert routing**". The
+first two words were delivered and proven in earlier waves. This entry records
+what was done about the third, in two halves, because only one of them was
+buildable here and saying so is the point of this document.
+
+| half                                                     | disposition                                                                                                                                                                                                  |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Which events leave the browser, and at what severity** | **BUILT.** `NEXT_PUBLIC_CLIENT_MONITORING_LEVEL` — a severity threshold, validated by `apps/web/src/lib/env.ts`, applied by `routesToSink` in `apps/web/src/lib/observability/client-log.ts`                 |
+| **Who is woken, through what channel, on what rotation** | **NOT DELIVERED**, and not deliverable here. There is no pager, no recipient, no notification channel and no operated collector. `ADR-012` records that no environment beyond Local exists to operate one in |
+
+### Why the first half was built rather than deferred
+
+The `P1-20-A-06` precedent ("No alert routing") deferred routing for one stated
+reason: "there is no provisioned destination to route them to, so a routing rule
+written now could not be tested and would be an unverifiable claim." That reason
+is **specific, and it no longer holds at this tier.** A destination mechanism
+already exists in `apps/web` and is exercised by tests: a validated env-declared
+sink URL, a `connect-src` derived from it in `src/lib/security/csp.ts`, a
+`navigator.sendBeacon` transport injectable as a `BeaconSender`, and a production
+installer that runs at module load. A threshold over that transport is decidable
+from the repository's own architecture and is observable end to end — an event
+either reaches the beacon or it does not.
+
+Deferring it would have been the unverifiable claim in the other direction: a
+sink that is configured receives **everything** the boundary sees, including a
+`debug` line every time an operator presses Cancel. A destination with no rule
+about what reaches it is a firehose, not routing.
+
+### The rule, and where each part of it lives
+
+| property                         | where, and what it is                                                                                                                                                                                                        |
+| -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| The vocabulary and its **order** | `LOG_LEVELS = ['debug', 'info', 'warn', 'error']` in `lib/env.ts` — one tuple, because the environment schema and the threshold comparison must not be two lists                                                             |
+| The comparison                   | `routesToSink(level, threshold)` — **at or above**, never merely above: "alert me on warnings" must include warnings                                                                                                         |
+| The rank                         | `levelRank` is `LOG_LEVELS.indexOf(level)`. Derived, so there is no second table to fall out of step with the enum                                                                                                           |
+| Where it is applied              | Inside `deliveringAdapter`, the one place an event leaves the device. **Not** in `report`: the console is not egress, and a deployment's remote threshold must not remove the only local diagnostic                          |
+| Unset                            | `'error'` — the **narrowest** of the four. Every event that leaves is data leaving an operator's browser, so the default is the least of it, and it is exactly the set `lib/api/client.ts` classifies as _the system failed_ |
+| Invalid                          | The deployment does not boot. `z.enum(LOG_LEVELS)` refuses it and `read()` throws naming the field and never the value                                                                                                       |
+| Threshold set, no sink           | Routes nothing. The URL is what installs an adapter at all, so the pair fails closed together                                                                                                                                |
+| Build time, not deploy time      | `NEXT_PUBLIC_*` is inlined by `next build`. Setting it on a running deployment changes nothing until the next build — the same sentence as the sink URL, for the same reason                                                 |
+
+### What is still absent, stated plainly
+
+Nothing in this repository pages anybody. No recipient, rotation, escalation
+policy, notification channel or on-call schedule exists, none is named in any
+file, and no vendor is mentioned in either module — asserted, not merely
+promised, by the case _"never claims a monitoring or notification service
+exists"_. The threshold decides what **leaves**; what happens after it arrives is
+a property of a collector this repository does not operate.
+
+This is the `P1-20-A-06` shape applied to what is genuinely still missing, rather
+than to the whole task: the buildable half was built, and the half that could
+only have been an unverifiable claim is written down with an owner and a date.
+
+### The gate that stops this entry ageing
+
+Bound to executable checks in `apps/web/tests/observability.test.ts`, describe
+_"alert routing — the threshold decides what leaves the browser"_:
+
+| the check                                                                                                                            | what it would catch                                                                               |
+| ------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------- |
+| The 4×4 level matrix, derived from `LOG_LEVELS`                                                                                      | The comparison becoming exclusive, or the tuple being reordered                                   |
+| A 500 delivers, a 403 and a cancellation do not, with no threshold configured                                                        | The default silently widening — the firehose returning                                            |
+| The dropped 403 still reaches the console                                                                                            | The filter being moved into `report`, taking the only local diagnostic with it                    |
+| At `warn` a refusal delivers; at `debug` a cancellation delivers                                                                     | The threshold being read but not applied                                                          |
+| An invalid level fails at boot, naming the field and never the value                                                                 | A typo falling back to a default, routing too much or nothing at all with nothing to say so       |
+| Widening the threshold does not weaken the redaction                                                                                 | A `debug`-level event carrying what an `error`-level one may not                                  |
+| The source declares `z.enum(LOG_LEVELS)`, reads `env.…_LEVEL ?? DEFAULT_ROUTING_LEVEL`, and documents the variable in `.env.example` | The variable being retyped as a second list, or the installer quietly ceasing to read it          |
+| This document carries `P1-27-OD-006`, `P1-20-A-06`, an owner and this review date                                                    | This entry being deleted, renamed or left without a review date while the code still relies on it |
+| Neither module names a monitoring vendor                                                                                             | A capability being asserted in prose that the code does not have                                  |
+
+### What changes when the Owner answers
+
+| answer                                                   | consequence                                                                                                                                                             |
+| -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Ratified — routing without paging is right for the pilot | Nothing changes. The review date stands, so the second half is re-examined rather than forgotten                                                                        |
+| A collector and an on-call destination are provisioned   | The threshold is already the switch: set the two variables for the build. What is then needed is the destination's own routing policy, which is not a `apps/web` change |
+| No answer                                                | The rule stands at its closed default: faults leave if a sink is configured, and nothing at all leaves if one is not                                                    |
 
 ---
 

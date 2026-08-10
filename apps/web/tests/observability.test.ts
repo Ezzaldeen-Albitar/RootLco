@@ -1,16 +1,23 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiClient, API_FAILURE_EVENT } from '@/lib/api/client';
+import { LOG_LEVELS, type LogLevel } from '@/lib/env';
 import {
+  DEFAULT_ROUTING_LEVEL,
   FORBIDDEN_KEYS,
   currentAdapter,
   deliveringAdapter,
   installConfiguredMonitoringAdapter,
+  levelRank,
   looksLikeCredential,
   redact,
   report,
+  routesToSink,
   safeRoute,
   setMonitoringAdapter,
   templateRoute,
+  type BeaconSender,
   type ClientLogEvent,
 } from '@/lib/observability/client-log';
 
@@ -424,6 +431,337 @@ describe('API failures reach the monitoring boundary', () => {
         throw new Error('sink unreachable');
       });
       expect(() => adapter({ level: 'error', event: 'web.test' })).not.toThrow();
+    });
+  });
+});
+
+/**
+ * `P1-27-DO-002` — **alert routing**: which events leave, and at what level.
+ *
+ * ## What was missing, precisely
+ *
+ * `DO-002` is "structured logging, monitoring and **alert routing**". The first
+ * two were delivered and proven — `installConfiguredMonitoringAdapter` is a real
+ * production caller, both `ApiClient` failure paths report, the CSP admits a
+ * configured sink and the event carries no PII. The third was not: a destination
+ * was configurable and **everything** the boundary saw was sent to it. A
+ * destination with no rule about what reaches it is a firehose, not routing, and
+ * this phase's own records conceded that nothing in `apps/web` defined a
+ * severity threshold.
+ *
+ * ## What routing means at this tier, and what it does not
+ *
+ * It decides WHICH events leave the browser and at what severity. It does not
+ * operate a pager, a rotation or a recipient — no such destination exists, and
+ * `P1-27-OD-006` records that boundary rather than letting a reader infer more
+ * from the word "alert" than is here.
+ *
+ * ## How these cases are written
+ *
+ * The behavioural ones drive a real `ApiClient` request through a stubbed
+ * `fetch` and observe what arrives at the BEACON — not at the adapter. The
+ * distinction is the whole point again: an assertion that the adapter was called
+ * proves the boundary works, which was never in doubt; what is in doubt is
+ * whether an event below the threshold is stopped before it leaves the device.
+ * So the sink here is the `BeaconSender`, and the payload asserted is the
+ * serialised body that would have gone over the wire.
+ */
+
+const ROUTING_SINK = 'https://sink.example.test/events';
+const WEB_ROOT = join(__dirname, '..');
+
+function readWebFile(...segments: string[]): string {
+  return readFileSync(join(WEB_ROOT, ...segments), 'utf8');
+}
+
+describe('alert routing — the threshold decides what leaves the browser', () => {
+  const delivered: ClientLogEvent[] = [];
+
+  const beacon: BeaconSender = (_url, body) => {
+    delivered.push(JSON.parse(body) as ClientLogEvent);
+    return true;
+  };
+
+  beforeEach(() => {
+    delivered.length = 0;
+    setMonitoringAdapter(null);
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    vi.spyOn(console, 'info').mockImplementation(() => undefined);
+  });
+
+  afterEach(() => {
+    setMonitoringAdapter(null);
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  });
+
+  /** Installs the production adapter over a capturing beacon. */
+  function installSink(threshold?: LogLevel): void {
+    const installed =
+      threshold === undefined
+        ? installConfiguredMonitoringAdapter(ROUTING_SINK, beacon)
+        : installConfiguredMonitoringAdapter(ROUTING_SINK, beacon, threshold);
+    expect(installed, 'the sink was not installed').toBe(true);
+  }
+
+  describe('the rule itself', () => {
+    it('orders the four severities, and the order IS the comparison', () => {
+      // Written out once, here, because everything below depends on it and a
+      // reordered tuple silently reverses every threshold in the deployment.
+      expect([...LOG_LEVELS]).toEqual(['debug', 'info', 'warn', 'error']);
+      expect(LOG_LEVELS.map(levelRank)).toEqual([0, 1, 2, 3]);
+    });
+
+    it('routes at or above the threshold, never merely above', () => {
+      // Derived from the vocabulary rather than written out, so a fifth level
+      // would be covered the day it is declared.
+      for (const [index, level] of LOG_LEVELS.entries()) {
+        for (const [floor, threshold] of LOG_LEVELS.entries()) {
+          expect(routesToSink(level, threshold), `${level} at ${threshold}`).toBe(index >= floor);
+        }
+      }
+      // The boundary case spelled out: "alert me on warnings" must include
+      // warnings. An exclusive comparison would silently drop the exact level
+      // the operator asked for.
+      expect(routesToSink('warn', 'warn')).toBe(true);
+    });
+
+    it('defaults CLOSED — to the narrowest level, not the widest', () => {
+      expect(DEFAULT_ROUTING_LEVEL).toBe('error');
+      expect(levelRank(DEFAULT_ROUTING_LEVEL)).toBe(LOG_LEVELS.length - 1);
+      // Every event that leaves is data leaving an operator's browser. A default
+      // of `debug` would have made "configure a sink" mean "send everything",
+      // which is the decision a deployment is least likely to have made on
+      // purpose.
+      for (const level of LOG_LEVELS) {
+        expect(routesToSink(level, DEFAULT_ROUTING_LEVEL), level).toBe(level === 'error');
+      }
+    });
+  });
+
+  describe('with no threshold configured, only faults leave', () => {
+    it('delivers a 500 — the system failed', async () => {
+      installSink();
+      const fetchImpl = vi.fn(async () => respond(500, { code: 'ERR-INT-001', status: 500 }));
+      await clientWith(fetchImpl as never).get('/api/v1/crm/customers', { retries: 0 });
+
+      expect(delivered).toHaveLength(1);
+      expect(delivered[0]?.level).toBe('error');
+      expect(delivered[0]?.event).toBe(API_FAILURE_EVENT);
+    });
+
+    it('does NOT deliver a 403 — a refusal is the backend doing its job', async () => {
+      installSink();
+      const fetchImpl = vi.fn(async () => respond(403, { code: 'ERR-IAM-001', status: 403 }));
+      await clientWith(fetchImpl as never).get('/api/v1/iam/roles', { retries: 0 });
+
+      // It was reported. It was not routed. Those are two different things, and
+      // conflating them is what made the sink a firehose.
+      expect(delivered).toHaveLength(0);
+    });
+
+    it('does NOT deliver a cancellation — a user pressed Cancel', async () => {
+      installSink();
+      const controller = new AbortController();
+      const fetchImpl = vi.fn(async (_url: string, init: RequestInit) => {
+        controller.abort();
+        throw Object.assign(new DOMException('aborted', 'AbortError'), { signal: init.signal });
+      });
+      await clientWith(fetchImpl as never).get('/api/v1/crm/customers', {
+        signal: controller.signal,
+        retries: 0,
+      });
+
+      expect(delivered).toHaveLength(0);
+    });
+
+    it('still writes the dropped event to the console, because that is not egress', async () => {
+      installSink();
+      const warn = console.warn as unknown as ReturnType<typeof vi.fn>;
+      const fetchImpl = vi.fn(async () => respond(403, { code: 'ERR-IAM-001', status: 403 }));
+      await clientWith(fetchImpl as never).get('/api/v1/iam/roles', { retries: 0 });
+
+      // The console is the only diagnostic a deployment with no sink has at all,
+      // and a remote threshold must not take it away. If the filter had been put
+      // in `report` instead of in the delivering adapter, this line would be
+      // gone.
+      expect(delivered).toHaveLength(0);
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(String(warn.mock.calls[0]?.[0])).toContain(API_FAILURE_EVENT);
+    });
+  });
+
+  describe('a deployment widens or narrows it deliberately', () => {
+    it('at `warn`, refusals leave and a cancellation still does not', async () => {
+      installSink('warn');
+      const forbidden = vi.fn(async () => respond(403, { code: 'ERR-IAM-001', status: 403 }));
+      await clientWith(forbidden as never).get('/api/v1/iam/roles', { retries: 0 });
+      expect(delivered.map((event) => event.level)).toEqual(['warn']);
+
+      const controller = new AbortController();
+      const cancelled = vi.fn(async (_url: string, init: RequestInit) => {
+        controller.abort();
+        throw Object.assign(new DOMException('aborted', 'AbortError'), { signal: init.signal });
+      });
+      await clientWith(cancelled as never).get('/api/v1/crm/customers', {
+        signal: controller.signal,
+        retries: 0,
+      });
+      expect(delivered.map((event) => event.level)).toEqual(['warn']);
+    });
+
+    it('at `debug`, everything leaves — including the cancellation', async () => {
+      installSink('debug');
+      const controller = new AbortController();
+      const fetchImpl = vi.fn(async (_url: string, init: RequestInit) => {
+        controller.abort();
+        throw Object.assign(new DOMException('aborted', 'AbortError'), { signal: init.signal });
+      });
+      await clientWith(fetchImpl as never).get('/api/v1/crm/customers', {
+        signal: controller.signal,
+        retries: 0,
+      });
+
+      expect(delivered).toHaveLength(1);
+      expect(delivered[0]?.level).toBe('debug');
+      expect(delivered[0]?.context?.['kind']).toBe('cancelled');
+    });
+
+    it('routes nothing at any threshold when no destination is configured', () => {
+      // The threshold is half of a pair. Set alone it is inert, because the URL
+      // is what installs an adapter at all — the sink fails closed and takes the
+      // rule with it.
+      setMonitoringAdapter(null);
+      expect(installConfiguredMonitoringAdapter(undefined, beacon, 'debug')).toBe(false);
+      expect(currentAdapter()).toBeNull();
+      expect(delivered).toHaveLength(0);
+    });
+
+    it('widening the threshold does not weaken the redaction', async () => {
+      installSink('debug');
+      const secretToken = ['a'.repeat(24), 'b'.repeat(28), 'c'.repeat(30)].join('.');
+      const fetchImpl = vi.fn(async () => respond(422, { code: 'ERR-VAL-001', status: 422 }));
+      await clientWith(fetchImpl as never, {
+        defaultHeaders: { authorization: `Bearer ${secretToken}` },
+      }).send('PATCH', '/api/v1/crm/customers/3f2a1b4c-5d6e-4f70-8a9b-0c1d2e3f4a5b?plate=ABC1234', {
+        email: 'ali@example.test',
+      });
+
+      expect(delivered).toHaveLength(1);
+      const wire = JSON.stringify(delivered[0]);
+      expect(wire).not.toContain(secretToken);
+      expect(wire).not.toContain('ali@example.test');
+      expect(wire).not.toContain('ABC1234');
+      expect(wire).toContain('/api/v1/crm/customers/:id');
+    });
+  });
+
+  /**
+   * The environment half. `deliveringAdapter` can be handed any level by a
+   * caller; what a DEPLOYMENT can hand it is whatever `lib/env.ts` accepts, and
+   * that is the surface a misconfiguration arrives through.
+   */
+  describe('the deployment configures it through a validated variable', () => {
+    async function loadEnv(value: string | undefined) {
+      vi.resetModules();
+      vi.stubEnv('NEXT_PUBLIC_CLIENT_MONITORING_LEVEL', value);
+      return (await import('@/lib/env')) as {
+        env: { NEXT_PUBLIC_CLIENT_MONITORING_LEVEL?: string };
+      };
+    }
+
+    /** The boot error, or `null` if the module loaded. Never a thrown assertion. */
+    async function bootFailure(value: string): Promise<string | null> {
+      return loadEnv(value).then(
+        () => null,
+        (error: unknown) => String(error)
+      );
+    }
+
+    it('accepts each of the four levels', async () => {
+      for (const level of LOG_LEVELS) {
+        const loaded = await loadEnv(level);
+        expect(loaded.env.NEXT_PUBLIC_CLIENT_MONITORING_LEVEL, level).toBe(level);
+      }
+    });
+
+    it('refuses anything else at BOOT, naming the field and never the value', async () => {
+      // Fails closed the second way. A threshold that fell back to a default on
+      // a typo would route too much or nothing at all, and nothing would say so.
+      for (const invalid of ['critical', 'ERROR', 'fatal', 'true']) {
+        const failure = await bootFailure(invalid);
+        expect(failure, `${invalid} was accepted`).toContain('NEXT_PUBLIC_CLIENT_MONITORING_LEVEL');
+        // Never the value: an invalid env var is frequently a misconfigured
+        // secret, and echoing it into a boot log is how it gets recorded.
+        expect(failure, invalid).not.toContain(invalid);
+      }
+    });
+
+    it('is absent when unset, which is what makes the code default it to `error`', async () => {
+      const loaded = await loadEnv(undefined);
+      expect(loaded.env.NEXT_PUBLIC_CLIENT_MONITORING_LEVEL).toBeUndefined();
+    });
+  });
+
+  /**
+   * The gate that stops this ageing.
+   *
+   * A behavioural case proves the threshold works today. It cannot prove that
+   * the variable is still declared against the logger's own vocabulary, that the
+   * production installer still reads it, or that the limitation `P1-27-OD-006`
+   * records is still written down with an owner. Each of those has drifted from
+   * the code in this phase before, so each is asserted against the source.
+   */
+  describe('the routing rule is bound to the code and to the register', () => {
+    const LEVEL_VAR = 'NEXT_PUBLIC_CLIENT_MONITORING_LEVEL';
+    const envSource = readWebFile('src', 'lib', 'env.ts');
+    const logSource = readWebFile('src', 'lib', 'observability', 'client-log.ts');
+    const decisions = readWebFile('..', '..', 'docs', 'phase-1', 'phase-1-27', 'open-decisions.md');
+
+    it('validates the variable against the SAME tuple the logger orders by', () => {
+      // `z.enum(LOG_LEVELS)`, not a re-typed list of four strings. A second copy
+      // is a list no check compares with the first.
+      expect(envSource).toContain(`${LEVEL_VAR}: z.enum(LOG_LEVELS)`);
+      expect(envSource).toContain("export const LOG_LEVELS = ['debug', 'info', 'warn', 'error']");
+      expect(logSource).toContain("import { env, LOG_LEVELS, type LogLevel } from '../env'");
+    });
+
+    it('reads that variable in the production installer, defaulting closed', () => {
+      expect(logSource).toContain(`env.${LEVEL_VAR} ?? DEFAULT_ROUTING_LEVEL`);
+      expect(logSource).toContain("export const DEFAULT_ROUTING_LEVEL: LogLevel = 'error'");
+      // Derived, so there is no second rank table to fall out of step.
+      expect(logSource).toContain('return LOG_LEVELS.indexOf(level)');
+    });
+
+    it('documents the variable where a deployment would look for it', () => {
+      const example = readWebFile('.env.example');
+      expect(example).toContain(LEVEL_VAR);
+      expect(example).toMatch(/debug \| info \| warn \| error/);
+    });
+
+    it('carries `P1-27-OD-006` with an owner, a review date and the paging boundary', () => {
+      // The limitation that survives the routing rule: no destination is
+      // operated and nobody is paged. Recorded, owned, dated — the
+      // `P1-20-A-06` precedent, applied to what is genuinely still absent.
+      expect(decisions).toContain('`P1-27-OD-006`');
+      expect(decisions).toMatch(/P1-20-A-06/);
+      expect(decisions).toMatch(/\*\*Owner:\*\*/);
+      expect(decisions).toMatch(/Review by:\*\*\s*20\d\d-\d\d-\d\d/);
+      expect(decisions).toMatch(/no pager|not paging|nobody is paged/i);
+    });
+
+    it('never claims a monitoring or notification service exists', () => {
+      // The failure this phase has shipped repeatedly is prose asserting a
+      // capability the code does not have. No vendor may be named here.
+      for (const [name, source] of [
+        ['env.ts', envSource],
+        ['client-log.ts', logSource],
+      ] as const) {
+        expect(source, name).not.toMatch(
+          /sentry|datadog|new relic|pagerduty|opsgenie|slack|splunk/i
+        );
+      }
     });
   });
 });
