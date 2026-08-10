@@ -713,7 +713,7 @@
     {
       "path": "stale version",
       "status": "ABSENT",
-      "reason": "DECIDED, not merely open. `P1-27-OD-005` (`open-decisions.md:795-978`, recorded by `c060b93`) ships last-writer-wins on every CRM and Vehicle write: no route under `customers/`, `customer-duplicates/`, `vehicles/` or `vehicle-duplicates/` declares `versionGuarded: true`, and none reads `expectedVersion`, so an `If-Match` sent from here would be parsed and discarded. There is no stale-version path to exercise, and the plan's §4 forbids creating one from this branch. The decision names the Backend remediation that would create it, and six executable checks in `api-client.test.ts:1242-1337` fail the day it lands — which is what stops this row ageing into a lie. The status stays `ABSENT` because a path that cannot be exercised is not a path that has been proved; what changed is that the absence is now ratified rather than unacknowledged. The case cited records the absence.",
+      "reason": "DECIDED, not merely open. `P1-27-OD-005` (`open-decisions.md:795-978`, recorded by `c060b93`) ships last-writer-wins on every CRM and Vehicle write: no route under `customers/`, `customer-duplicates/`, `vehicles/` or `vehicle-duplicates/` declares `versionGuarded: true`, and none reads `expectedVersion`, so an `If-Match` sent from here would be parsed and discarded. There is no stale-version path to exercise, and the plan's §4 forbids creating one from this branch. The decision names the Backend remediation that would create it, and six executable checks in `api-client.test.ts:1242-1337` fail the day it lands — which is what stops this row ageing into a lie. The status stays `ABSENT` because a path that cannot be exercised is not a path that has been proved; what changed is that the absence is now a recorded engineering decision rather than unacknowledged. The case cited records the absence.",
       "provenBy": [
         {
           "file": "apps/web/tests/vehicle-profile.test.ts",
@@ -724,7 +724,7 @@
     {
       "path": "concurrent update",
       "status": "ABSENT",
-      "reason": "The same ratified decision, `P1-27-OD-005`. Concurrent edits are last-writer-wins from a client position — the `ERR-CON-001` the services do raise guards a version the service itself read inside its own transaction (`vehicle-write-service.ts:115` to `:132`), so it catches a writer landing inside the server's SELECT-to-UPDATE window and cannot catch a lost update across an operator's read-edit-submit cycle. `A42-13` records the finding and it still holds; `P1-27-OD-005` disposes of it. `ABSENT` for the same reason as the row above.",
+      "reason": "The same recorded engineering decision, `P1-27-OD-005`. Concurrent edits are last-writer-wins from a client position — the `ERR-CON-001` the services do raise guards a version the service itself read inside its own transaction (`vehicle-write-service.ts:115` to `:132`), so it catches a writer landing inside the server's SELECT-to-UPDATE window and cannot catch a lost update across an operator's read-edit-submit cycle. `A42-13` records the finding and it still holds; `P1-27-OD-005` disposes of it. `ABSENT` for the same reason as the row above.",
       "provenBy": [
         {
           "file": "apps/web/tests/vehicle-profile.test.ts",

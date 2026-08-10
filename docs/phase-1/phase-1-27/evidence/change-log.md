@@ -316,8 +316,21 @@ variable, and then fails unless every authenticated spec contributed an executed
 test.
 
 What did NOT change, and is recorded rather than glossed: the job runs on pushes
-to `develop` and `main` only, so a green pull request still does not include it,
-and **it has never executed on a hosted runner even once**. That is why the task
+to `develop` and `main` only, so a green pull request still does not include it.
+
+**This entry also said, in the present tense, that the tier "has never executed on
+a hosted runner even once". That was true when it was written and is false at this
+head, and it is corrected rather than deleted because it is `H-15`.** The
+`authenticated-browser` job has since PASSED on a GitHub-hosted runner — run
+`31347643485`, **225 tests, 0 failed**, against candidate `78c4587` — by
+`workflow_dispatch` before the merge rather than on a protected push. The same
+spent premise sits in three docblocks in `apps/web/tests/p1-27-security.test.ts`,
+which another branch of this wave owns; the document half of that finding is closed
+here, in this file, in `ci-evidence.md` and in `risk-register.md` §6.4. What is
+still unpaid is narrower and stated so the pass is not read as closure: the run was
+not against this head and not on a protected push, `authenticated-browser` is
+absent from `protected-gate`'s `needs`, and no job the pull-request gate runs
+executes the tier at all. That is why the task
 matrix now carries a `PROTECTED_REPROOF` column separate from `FINAL_VERDICT` — a
 feature that is complete and a re-run that is unpaid are different states, and
 recording both as `PARTIAL` made the register unable to tell them apart.
@@ -394,8 +407,11 @@ and no other, 1 failed against 1605 passed. The eighteen-path matrix is therefor
 `false`. Six paths remain unproved and each is named in the row rather than
 summarised.
 
-**The matrix is 40 PASS / 2 PARTIAL / 0 FAIL.** The two are `DOC-001` and
-`QA-005`, which is sealed last by design.
+**That wave took the matrix to 40 PASS / 2 PARTIAL / 0 FAIL**, the two being
+`DOC-001` and `QA-005`. It is written as the outcome of a wave rather than as a
+statement about this head, because as a statement about this head it is false:
+`P1-27-OD-007` settled `DOC-001` two commits later. The figures for this head are
+below and they are derived, not typed.
 
 **One count was left stale by the commit that created it.** `78c4587` added a case
 to `vehicle-screens.dom.test.tsx` and three documents still claimed 36; the
@@ -440,10 +456,11 @@ consequences across a replay of any CRM or Vehicle operation; and `grep
 idempotencyKey apps/web/src/` resolves to `lib/api/client.ts` alone, so no
 shipped adapter can re-present a key.
 
-**The matrix is 13 PROVEN / 3 PARTIAL / 2 ABSENT**, `matrixDischarged` stays
-`false`, and `DOC-001` stays `PARTIAL` — its binding reason is `canonical-plan.md`
-§6, which requires each of the twenty-nine ids to expand into the matrix, and
-every figure here is measured across the surface instead.
+**That wave took the path matrix to 13 PROVEN / 3 PARTIAL / 2 ABSENT**,
+`matrixDischarged` stayed `false`, and it left `DOC-001` `PARTIAL` — its binding
+reason being `canonical-plan.md` §6, which requires each of the twenty-nine ids to
+expand into the matrix, while every figure here is measured across the surface
+instead. That reading is what the next entry decides.
 
 **One reported number did not reproduce, and it is recorded rather than
 smoothed.** The "`send` issues the request twice" mutation was reported as 4
@@ -462,6 +479,102 @@ re-pinned to `544-613`, the queue block its sentence actually claims. That is th
 citation-drift defect `tests/ci/p1-27-matrix-citations.test.ts` was written for,
 found by hand because the check verifies a range holds an assertion and cannot
 verify it holds the RIGHT one.
+
+### Closure wave five — `P1-27-OD-007`, and what `DOC-001` is judged on (`527320b`, `9f78c9c`; merged `748a238`, `711a90e`)
+
+`DOC-001` had been `PARTIAL` for one reason across three waves: the eighteen-path
+matrix in `canonical-plan.md` §6 was undischarged. That wave asked, for the first
+time, whether §6 is `DOC-001`'s criterion at all — and the per-id reading did not
+survive three of four checks. The ids in §6 are the TEST ids of the twenty-nine
+Frontend tasks; §5.3, where `DOC-001` is declared, assigns it no test id; the
+plan's per-task obligations are in §10 and are a different, shorter, qualified
+list. The sibling precedent had not been consulted and decides it: `P1-19`,
+`P1-20` and `P1-24` all discharged this task on generated registers matching the
+tree, and where a sibling owned a path-coverage obligation it filed it under QA.
+
+**The fourth check FAILED and is kept rather than dropped**, which is the part
+that makes this a decision and not a rationalisation: `P1-27-OD-005` already reads
+the same sentence as asking for "a per-task test path matrix", so §6 may well be
+an acceptance criterion — for the twenty-nine Frontend test ids, not for this row.
+
+So `DOC-001` moves to `PASS` on a recorded, gated reading, and **not** on a claim
+that the paths are discharged: `matrixDischarged` stays `false`, the per-path
+statuses stay exactly as measured, and the outstanding paths stay open against the
+tasks that own them. Adopting the synchronization reading exposes the row to every
+open documentation finding, which the per-id reading never had to face; two were
+re-read on the spot, and `A42-11` — a false statement inside a `DOC-001`
+deliverable — was fixed rather than noted.
+
+### Closure wave six — the round-five dispositions (`2c81e08`, `079dc56`; merged `b4141fc`, `2467db5`)
+
+Six documentation findings re-established against the merged tree rather than
+carried forward. `A42-06` closed by reading the change history, which decides an
+attribution the previous disposition said "nothing in this repository decides".
+`E-03` closed **by deleting the number rather than relabelling it** — twenty of
+the web test files build their cases at runtime, so no tier-wide total is
+derivable, and a reader wanting the executed total is sent to the runner's own
+report. `H-11` is the first non-zero `REFUTED` this register has carried: an id
+that names no defect is not open debt, and carrying it as `OPEN` had overstated
+the phase's debt by one at every re-derivation.
+
+`H-04`, `H-15` and `H-20` were **handed over with the exact edit written out**
+rather than described, because `apps/web` belongs to other branches of this wave.
+
+The same wave found that three of its own fixes were not load-bearing. `B-01`'s
+driver defined its own copy of the predicate it was meant to guard, so reverting
+the production predicate to the anchored tautology broke nothing; `B-05`'s
+widening is inert on the live corpus and now says so, with a case asserting the
+zero; `A-05`'s remedy case had labelled itself with a different finding's id.
+**All three rows stay `OPEN` anyway**, and the classification section of the
+register now says why in a form a gate can read: they are `SEALED`, and a sealed
+finding is judged against the closing candidate.
+
+### Closure wave seven — the citation gate read a quarter of what it claimed (`eaa5ec1`, `7813d2e`, `b9896a3`)
+
+`H-19`. The gate written to stop a matrix cell citing a range that asserts nothing
+was reading **135 of 653** citations and could not see the other 518, because its
+pattern required at least one directory separator. Widened, its corpus went from
+161 to 673 — and **83 of the newly visible citations failed**. All 83 were
+repaired, and none of the gate was weakened to make them pass.
+
+Seventy were bare filenames identifying more than one tracked file and therefore
+none; each was qualified with the least leading path that singles one out, and the
+target was recovered by reading the cell and the file rather than by picking a
+candidate. Thirteen ranges held no `expect(` at all and were repointed onto the
+case that proves the sentence beside them.
+
+**Two of those thirteen were not the off-by-one the brief expected, and one became
+a finding.** Widening `SEC-004`'s range by a single line reaches an `expect(` and
+turns the gate green over a range about a different rule — proved by mutation,
+which is why it moved further instead. And `QA-002.NEGATIVE_OR_MUTATION_PROOF` is
+a conjunction whose provenance half is asserted by nothing: the claim that
+`REAL_RULES` holds tokens `apps/api/src` emits lives in a docblock, while the
+assertion that exists checks them against the two message catalogues a fixture
+author edits in the same commit. Registered as `H-22` rather than pointed at the
+nearest assertion, which is the repair that would have hidden it.
+
+### Where the record stands at this head
+
+Every figure in this section is **derived**, and a document that restates one
+wrongly fails `validate:p1-27-doc-counts`. That is not decoration: the two
+sentences above that had to be superseded — "the matrix is 40 PASS / 2 PARTIAL"
+and "`DOC-001` stays `PARTIAL`" — were both typed, both true when typed, and both
+falsified two commits later by a wave this file had not yet recorded.
+
+| what                                       | at this head                                                                                                                                                                                                                                                                                                     |
+| ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| The 42-task matrix                         | <!-- derived: matrix PASS = 41 --> **41** PASS · <!-- derived: matrix PARTIAL = 1 --> **1** PARTIAL · <!-- derived: matrix FAIL = 0 --> **0** FAIL. The one is `QA-005`, sealed last by design.                                                                                                                  |
+| Protected reproof                          | <!-- derived: matrix OUTSTANDING = 23 --> **23** rows OUTSTANDING. The phase cannot close while this is non-zero, and it is not the same question as the column beside it.                                                                                                                                       |
+| Round five, actionable                     | <!-- derived: round5 ACTIONABLE_OPEN = 4 --> **4** open, <!-- derived: round5 ACTIONABLE_PARTIAL = 0 --> **0** partial. All four are docblock or test-file edits in `apps/web`, each with its exact replacement text recorded on its row.                                                                        |
+| Round five, sealed until `QA-005` executes | <!-- derived: round5 SEALED_OPEN = 17 --> **17** open, and they may be. They measure the record of the closing candidate, which does not exist yet.                                                                                                                                                              |
+| Round five, dispositioned                  | <!-- derived: round5 DISPOSITIONED_PARTIAL = 1 --> **1** — `A42-13`, true and decided by `P1-27-OD-005`. It is not counted as a blocker and it is not marked fixed.                                                                                                                                              |
+| The eighteen-path matrix                   | <!-- derived: catalogue pathProven = 13 --> **13** PROVEN · <!-- derived: catalogue pathPartial = 3 --> **3** PARTIAL · <!-- derived: catalogue pathAbsent = 2 --> **2** ABSENT, `matrixDischarged` still `false`. `P1-27-OD-007` decided that this is not what `DOC-001` is judged on; it did not discharge it. |
+
+**The phase status is unchanged by any of it: `OWNER ACCEPTANCE: FAIL`.** None of
+these numbers is an acceptance, and the row that matters most —
+<!-- derived: round5 CLOSURE_BLOCKERS = 4 --> **4** actionable blockers — is the
+
+one no automated tier reported.
 
 ---
 

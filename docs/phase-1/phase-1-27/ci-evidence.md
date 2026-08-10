@@ -57,13 +57,27 @@ checkout; hosted CI fetches only what is committed.
 **CodeQL over the whole analysis**, whose findings are not visible any other way
 — see below.
 
-## What local verification adds that hosted CI cannot
+## What local verification adds that hosted CI does not run on every change
 
-The **authenticated end-to-end tier**. It needs a running Supabase, a running
-API and a real account with a real password, none of which a hosted runner is
-given. `ROOTLCO_E2E_AUTH=1` gates it, and the five anonymous Playwright projects
-carry `testIgnore` for that directory so CI does not go red on a capability that
-only exists on the Owner's machine.
+**This section used to be headed "…that hosted CI cannot", and said of the
+authenticated end-to-end tier that it needs a running Supabase, a running API and
+a real account with a real password, "none of which a hosted runner is given".
+That was false and is corrected rather than deleted — it is the `H-15` premise, in
+the evidence document.** A hosted runner has Docker and the Supabase CLI is a
+devDependency of this repository. The `authenticated-browser` job in
+`.github/workflows/protected-develop-verification.yml` starts the stack,
+bootstraps the real operator and a second tenant, sets `ROOTLCO_E2E_AUTH`, runs
+the tier, and fails on a run that collected nothing — and it has **passed on a
+GitHub-hosted runner**: run `31347643485`, 225 tests, 0 failed, against candidate
+`78c4587`.
+
+What is true, and is the reason this section still exists: **no job the
+pull-request gate runs executes the tier.** `ROOTLCO_E2E_AUTH=1` gates it, the
+five anonymous Playwright projects carry `testIgnore` for that directory, and the
+authenticated job runs only on pushes to `develop` and `main` or by an explicit
+`workflow_dispatch`. So a green pull request still does not include it, and the
+one hosted pass was dispatched against a candidate rather than collected on a
+protected push.
 
 Neither tier is a superset. A change that passes one and is never run through the
 other has been half-measured.

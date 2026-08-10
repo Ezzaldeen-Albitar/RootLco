@@ -87,6 +87,9 @@ const native = (root, p) => join(root, p.split(posix.sep).join(sep));
 
 export const PHASE_DIR = 'docs/phase-1/phase-1-27';
 export const PRODUCT_DIR = 'docs/product';
+export const MATRIX_PATH = `${PHASE_DIR}/task-matrix.json`;
+export const REGISTER_PATH = `${PHASE_DIR}/adversarial-round-five.md`;
+export const DECISIONS_PATH = `${PHASE_DIR}/open-decisions.md`;
 
 /* ------------------------------------------------------------------ *
  * Scanning
@@ -491,6 +494,18 @@ export function deriveCounts(root = ROOT) {
       catalogue.files = files.size;
       catalogue.titles = titles;
       catalogue.weak = (record.weakCitations?.entries ?? []).length;
+      /*
+       * The eighteen-path matrix's own shape. Three waves in a row restated it as
+       * prose — "11/4/3", then "12/4/2", then "13/3/2" — and each restatement was
+       * true for exactly as long as it took the next wave to move a row.
+       */
+      for (const [status, name] of [
+        ['PROVEN', 'pathProven'],
+        ['PARTIAL', 'pathPartial'],
+        ['ABSENT', 'pathAbsent'],
+      ]) {
+        catalogue[name] = (record.pathMatrix ?? []).filter((row) => row.status === status).length;
+      }
     }
   }
 
@@ -511,7 +526,40 @@ export function deriveCounts(root = ROOT) {
     }
   }
 
-  return { counts, cases, lines, tracked, commands, catalogue, manifest };
+  /**
+   * The task matrix's own totals, so a document cannot restate them and age.
+   *
+   * `evidence/change-log.md` closed two consecutive waves on the sentence "The
+   * matrix is 40 PASS / 2 PARTIAL / 0 FAIL", written in the present tense. Two
+   * commits later `P1-27-OD-007` moved `DOC-001` to `PASS` and the sentence was
+   * false, in the file whose whole job is to be current. The terminal table of
+   * that document had already learned this and points at `task-matrix.json`
+   * rather than repeating a figure; the wave entries above it had not.
+   */
+  const matrix = {};
+  {
+    const path = native(root, MATRIX_PATH);
+    if (existsSync(path)) {
+      const record = JSON.parse(readFileSync(path, 'utf8'));
+      for (const [key, value] of Object.entries(record.totals ?? {})) matrix[key] = value;
+      for (const [key, value] of Object.entries(record.protectedReproof ?? {})) {
+        matrix[key] = value;
+      }
+      if (typeof record.taskCount === 'number') matrix.taskCount = record.taskCount;
+    }
+  }
+
+  return {
+    counts,
+    cases,
+    lines,
+    tracked,
+    commands,
+    catalogue,
+    manifest,
+    matrix,
+    round5: deriveRoundFive(root).counts,
+  };
 }
 
 /* ------------------------------------------------------------------ *
@@ -721,7 +769,8 @@ export const GUIDE_CLAIMS = {
 
 /** Any `derived:` marker at all — so a malformed one is caught, not skipped. */
 const ANY_DERIVED = /<!--\s*derived:([\s\S]*?)-->/g;
-const WELL_FORMED = /^\s*([a-z]+)\s+(\S+)\s*=\s*(\d+)\s*$/;
+/* A digit is legal inside a kind — `round5` is one. An unknown kind still fails. */
+const WELL_FORMED = /^\s*([a-z][a-z0-9]*)\s+(\S+)\s*=\s*(\d+)\s*$/;
 const ANY_CHECKED = /<!--\s*checked:([\s\S]*?)-->/g;
 
 const TABLE_KINDS = {
@@ -732,6 +781,8 @@ const TABLE_KINDS = {
   commands: 'commands',
   catalogue: 'catalogue',
   manifest: 'manifest',
+  matrix: 'matrix',
+  round5: 'round5',
 };
 
 /**
@@ -1175,6 +1226,363 @@ function paths(plan) {
 }
 
 /* ------------------------------------------------------------------ *
+ * The round-five register — actionable, sealed and dispositioned
+ * ------------------------------------------------------------------ */
+
+/**
+ * The closure condition this phase carried was a logical impossibility.
+ *
+ * It read, in effect, "no finding may be open when the phase closes" — while the
+ * register itself says that ten `QA005-*` rows, `A-05` and six `B-*` rows are
+ * **attacks on the evidence-page guards, which `QA-005` seals last and against
+ * the closing candidate**. Re-judging those now would measure a head the phase
+ * does not close on, so they cannot be closed before `QA-005` runs; and `QA-005`
+ * cannot run until the closing candidate exists. A condition that can never be
+ * satisfied is not a gate, it is a sentence.
+ *
+ * The distinction the register already draws in prose is made executable here.
+ * Every unresolved row carries an explicit class, and the class decides which
+ * question it answers:
+ *
+ *   `ACTIONABLE`     — closable now, on some branch of this wave. These are the
+ *                      findings the phase is actually blocked on.
+ *   `SEALED`         — closable only against the closing candidate, because the
+ *                      thing it measures is the record of that candidate. It may
+ *                      remain `OPEN`, and it may NOT be marked `FIXED` before
+ *                      `QA-005` executes — see `checkRoundFive` below.
+ *   `DISPOSITIONED`  — true, and disposed of by a recorded decision that names an
+ *                      owner and a review date. `A42-13` is the case that forced
+ *                      this class to exist: `QA-004`'s concurrency conjunct is
+ *                      genuinely contradicted by `P1-27-INT-009`, the finding
+ *                      HOLDS, and `P1-27-OD-005` decides it as last-writer-wins
+ *                      with six executable checks that fail the day a Backend
+ *                      phase closes the gap. The register's status vocabulary has
+ *                      no verdict for "true, and disposed of by decision", and
+ *                      inventing one to move a total is the arithmetic this phase
+ *                      keeps punishing. So the STATUS stays `PARTIAL` and the
+ *                      CLASS records the disposition — two orthogonal facts,
+ *                      neither pretending to be the other.
+ *
+ * The class is not derived from the id. `QA005-10` is an `EVIDENCE`-area row
+ * beginning `QA005-` and it is `FIXED`: it was a stale field in an evidence
+ * record, closable without a candidate. A prefix rule and an area rule are both
+ * refuted by that one row, which is why the classification is enumerated.
+ */
+const CLASSES = ['ACTIONABLE', 'SEALED', 'DISPOSITIONED'];
+const REGISTER_STATUSES = ['FIXED', 'OPEN', 'PARTIAL', 'REFUTED'];
+
+/** `| \`id\` | area | severity | status | finding |` — the register's one row shape. */
+const REGISTER_ROW = /^\|\s*`([^`]+)`\s*\|([^|]*)\|([^|]*)\|([^|]*)\|(.*)\|\s*$/gm;
+
+/** `| \`id\` | CLASS | why |` — three columns, so it cannot match a register row. */
+const CLASS_ROW = /^\|\s*`([^`]+)`\s*\|\s*([A-Z]+)\s*\|([^|]*)\|\s*$/gm;
+
+/** `ROUND5_NAME = N` in the declared block. */
+function declaredNumber(source, name) {
+  const found = new RegExp(`ROUND5_${name}\\s*=\\s*(\\d+)`).exec(source);
+  return found ? Number(found[1]) : null;
+}
+
+export function readRegisterRows(source) {
+  REGISTER_ROW.lastIndex = 0;
+  return [...source.matchAll(REGISTER_ROW)]
+    .map((m) => ({
+      id: (m[1] ?? '').trim(),
+      area: (m[2] ?? '').trim(),
+      severity: (m[3] ?? '').trim(),
+      status: (m[4] ?? '').trim(),
+    }))
+    .filter((row) => REGISTER_STATUSES.includes(row.status));
+}
+
+export function readClassRows(source) {
+  CLASS_ROW.lastIndex = 0;
+  return [...source.matchAll(CLASS_ROW)]
+    .map((m) => ({
+      id: (m[1] ?? '').trim(),
+      klass: (m[2] ?? '').trim(),
+      why: (m[3] ?? '').trim(),
+    }))
+    .filter((row) => CLASSES.includes(row.klass));
+}
+
+/**
+ * Has `QA-005` executed? Read from the matrix, not from a sentence.
+ *
+ * `QA-005` is the task that records the clean-room and hosted-CI measurement of
+ * the closing candidate. Its matrix verdict is the only fact in the repository
+ * that says whether that measurement has been taken, so it is what the sealed
+ * rule turns on — and it is regenerated by `validate:p1-27-matrix` from
+ * `task-matrix-verdicts.json`, so it cannot be asserted here.
+ */
+function qa005Executed(root) {
+  const path = native(root, MATRIX_PATH);
+  if (!existsSync(path)) return null;
+  const record = JSON.parse(readFileSync(path, 'utf8'));
+  const task = (record.tasks ?? []).find((t) => t.TASK_ID === 'QA-005');
+  if (!task) return null;
+  return task.FINAL_VERDICT === 'PASS';
+}
+
+/** Every `P1-27-OD-###` entry whose own status begins "Decided". */
+function decidedEntries(root) {
+  const path = native(root, DECISIONS_PATH);
+  if (!existsSync(path)) return new Set();
+  const source = readFileSync(path, 'utf8');
+  const decided = new Set();
+  for (const m of source.matchAll(/^## `(P1-27-OD-\d+)`[\s\S]*?\*\*Status:\*\*\s*\*\*([^*]+)/gm)) {
+    if (/^\s*Decided/.test(m[2])) decided.add(m[1]);
+  }
+  return decided;
+}
+
+/** The counts, classified. `null` values mean the register could not be read. */
+export function deriveRoundFive(root = ROOT) {
+  const path = native(root, REGISTER_PATH);
+  if (!existsSync(path)) return { counts: {}, rows: [], classified: new Map(), source: '' };
+  const source = readFileSync(path, 'utf8');
+  const rows = readRegisterRows(source);
+  const classified = new Map();
+  for (const row of readClassRows(source)) classified.set(row.id, row);
+
+  const status = (name) => rows.filter((r) => r.status === name).length;
+  const inClass = (name, statusName) =>
+    rows.filter((r) => r.status === statusName && classified.get(r.id)?.klass === name).length;
+
+  const counts = {
+    TOTAL: rows.length,
+    FIXED: status('FIXED'),
+    OPEN: status('OPEN'),
+    PARTIAL: status('PARTIAL'),
+    REFUTED: status('REFUTED'),
+    ACTIONABLE_OPEN: inClass('ACTIONABLE', 'OPEN'),
+    ACTIONABLE_PARTIAL: inClass('ACTIONABLE', 'PARTIAL'),
+    SEALED_OPEN: inClass('SEALED', 'OPEN'),
+    SEALED_PARTIAL: inClass('SEALED', 'PARTIAL'),
+    DISPOSITIONED_OPEN: inClass('DISPOSITIONED', 'OPEN'),
+    DISPOSITIONED_PARTIAL: inClass('DISPOSITIONED', 'PARTIAL'),
+  };
+  const executed = qa005Executed(root);
+  counts.CLOSURE_BLOCKERS = executed
+    ? counts.OPEN + counts.PARTIAL
+    : counts.ACTIONABLE_OPEN + counts.ACTIONABLE_PARTIAL;
+
+  return { counts, rows, classified, source, executed };
+}
+
+/** The state word the register must declare, derived from the same rows. */
+function closureState(counts, executed) {
+  if (executed) return counts.CLOSURE_BLOCKERS === 0 ? 'CLEAR' : 'BLOCKED';
+  return counts.CLOSURE_BLOCKERS === 0 ? 'SEALED-ONLY' : 'BLOCKED';
+}
+
+/**
+ * The rules that make the distinction a gate rather than a paragraph.
+ *
+ * BEFORE `QA-005` executes: `ACTIONABLE_OPEN` and `ACTIONABLE_PARTIAL` must
+ * reach 0 for the phase to be eligible to close, sealed findings may remain
+ * `OPEN`, and a sealed finding may NOT be marked `FIXED` — closing it would be a
+ * measurement of a head the phase does not close on, which is the defect
+ * `QA-005` exists to report.
+ *
+ * AFTER `QA-005` executes: everything must be 0, sealed included. That half is a
+ * hard failure here rather than a state, because at that point there is nothing
+ * left for a later pass to inherit.
+ */
+export function checkRoundFive(root = ROOT) {
+  const problems = [];
+  const { counts, rows, classified, source, executed } = deriveRoundFive(root);
+
+  if (rows.length === 0) return [`${REGISTER_PATH}: no register row matched the canonical shape`];
+  if (rows.length < 50) {
+    problems.push(
+      `${REGISTER_PATH}: only ${rows.length} rows parsed — the register holds far more, ` +
+        'so every count below would be taken over a fragment'
+    );
+  }
+  if (executed === null) {
+    return [
+      ...problems,
+      `${MATRIX_PATH}: QA-005 has no row, so whether the sealed set may close is underivable`,
+    ];
+  }
+
+  const byId = new Map(rows.map((row) => [row.id, row]));
+  const pending = rows.filter((row) => row.status === 'OPEN' || row.status === 'PARTIAL');
+
+  /*
+   * ANTI-VACUITY. Every count below is a filter over `classified`, and an empty
+   * classification table satisfies "0 actionable open" perfectly — the shape this
+   * repository has now recorded in five scanners.
+   */
+  if (classified.size === 0) {
+    problems.push(
+      `${REGISTER_PATH}: no finding carries a class — ` +
+        'the classification table must give every OPEN and PARTIAL row one of ' +
+        `${CLASSES.join(', ')}`
+    );
+  }
+
+  for (const row of pending) {
+    if (!classified.has(row.id)) {
+      problems.push(
+        `${REGISTER_PATH}: \`${row.id}\` is ${row.status} and carries no class — ` +
+          'an unclassified finding cannot be counted as actionable or as sealed'
+      );
+    }
+  }
+
+  const decided = decidedEntries(root);
+  for (const [id, entry] of classified) {
+    const row = byId.get(id);
+    if (!row) {
+      problems.push(`${REGISTER_PATH}: \`${id}\` is classified and is no register row`);
+      continue;
+    }
+    if (row.status === 'REFUTED') {
+      problems.push(
+        `${REGISTER_PATH}: \`${id}\` is REFUTED and classified ${entry.klass} — ` +
+          'a finding that does not hold is not pending'
+      );
+      continue;
+    }
+    if (row.status === 'FIXED' && entry.klass === 'SEALED' && !executed) {
+      problems.push(
+        `${REGISTER_PATH}: \`${id}\` is SEALED and marked FIXED while QA-005 has not executed — ` +
+          'a sealed finding is judged against the closing candidate, and no such measurement exists'
+      );
+      continue;
+    }
+    if (row.status === 'FIXED' && entry.klass !== 'SEALED') {
+      problems.push(
+        `${REGISTER_PATH}: \`${id}\` is FIXED and classified ${entry.klass} — ` +
+          'only a sealed finding keeps a class once it closes'
+      );
+      continue;
+    }
+    if (entry.klass === 'DISPOSITIONED') {
+      const named = [...entry.why.matchAll(/(P1-27-OD-\d+)/g)].map((m) => m[1]);
+      if (named.length === 0) {
+        problems.push(
+          `${REGISTER_PATH}: \`${id}\` is DISPOSITIONED and names no \`P1-27-OD-###\` — ` +
+            'a disposition with no decision behind it is a status invented to move a total'
+        );
+        continue;
+      }
+      for (const od of named) {
+        if (!decided.has(od)) {
+          problems.push(
+            `${REGISTER_PATH}: \`${id}\` is DISPOSITIONED by \`${od}\`, ` +
+              `which ${DECISIONS_PATH} does not record with a **Decided** status`
+          );
+        }
+      }
+    }
+  }
+
+  if (executed && counts.CLOSURE_BLOCKERS !== 0) {
+    problems.push(
+      `${REGISTER_PATH}: QA-005 has executed and ${counts.CLOSURE_BLOCKERS} finding(s) remain ` +
+        'OPEN or PARTIAL — after the closing measurement the sealed set is no longer sealed'
+    );
+  }
+
+  const DECLARED = [
+    'TOTAL',
+    'FIXED',
+    'OPEN',
+    'PARTIAL',
+    'REFUTED',
+    'ACTIONABLE_OPEN',
+    'ACTIONABLE_PARTIAL',
+    'SEALED_OPEN',
+    'DISPOSITIONED_PARTIAL',
+    'CLOSURE_BLOCKERS',
+  ];
+  for (const name of DECLARED) {
+    const stated = declaredNumber(source, name);
+    if (stated === null) {
+      problems.push(`${REGISTER_PATH}: the register declares no ROUND5_${name}`);
+      continue;
+    }
+    if (stated !== counts[name]) {
+      problems.push(
+        `${REGISTER_PATH}: states ROUND5_${name} = ${stated}; the rows hold ${counts[name]}`
+      );
+    }
+  }
+
+  const state = closureState(counts, executed);
+  const statedState = /ROUND5_CLOSURE_STATE\s*=\s*([A-Z-]+)/.exec(source);
+  if (!statedState) {
+    problems.push(`${REGISTER_PATH}: the register declares no ROUND5_CLOSURE_STATE`);
+  } else if (statedState[1] !== state) {
+    problems.push(
+      `${REGISTER_PATH}: states ROUND5_CLOSURE_STATE = ${statedState[1]}; ` +
+        `the rows and the QA-005 verdict hold ${state}`
+    );
+  }
+
+  return problems;
+}
+
+/* ------------------------------------------------------------------ *
+ * Ratification — a decision may not claim an act the Owner has not made
+ * ------------------------------------------------------------------ */
+
+/**
+ * No phase document may call a decision "ratified" while its own entry asks for
+ * ratification.
+ *
+ * Four cells across three documents described `P1-27-OD-005` and `P1-27-OD-006`
+ * as "a ratified decision" and "a ratified disposition". Both entries state
+ * their own type as **"engineering decision, ratification requested"**, and
+ * `open-decisions.md` opens by saying these are calls "the Owner should ratify".
+ * No ratification is recorded anywhere in this repository, and the phase stands
+ * at `OWNER ACCEPTANCE: FAIL` — so four documents asserted an Owner act that did
+ * not happen, in a phase that has already been closed once on unverified claims.
+ *
+ * The ban is derived, not fixed: an entry whose status records a ratification
+ * leaves the unratified set and the word becomes legal for it. Negated forms are
+ * allowed, because "not ratified" is the true sentence.
+ */
+export function checkRatificationClaims(root = ROOT) {
+  const problems = [];
+  const path = native(root, DECISIONS_PATH);
+  if (!existsSync(path)) return [`${DECISIONS_PATH} does not exist`];
+  const decisions = readFileSync(path, 'utf8');
+
+  const unratified = new Set();
+  for (const m of decisions.matchAll(
+    /^## `(P1-27-OD-\d+)`[\s\S]*?\*\*Status:\*\*\s*\*\*([^*]+)/gm
+  )) {
+    if (!/ratified/i.test(m[2])) unratified.add(m[1]);
+  }
+  if (unratified.size === 0) {
+    return [`${DECISIONS_PATH}: no \`P1-27-OD-###\` entry parsed — this ban would inspect nothing`];
+  }
+
+  const NEGATED = /(?:not|never|no|un)\s*$/i;
+  for (const file of walk(native(root, PHASE_DIR), (p) => /\.(md|json)$/.test(p))) {
+    const relative = file
+      .slice(root.length + 1)
+      .split(sep)
+      .join(posix.sep);
+    const source = readFileSync(file, 'utf8');
+    for (const m of source.matchAll(/\bratified\b/g)) {
+      const before = source.slice(Math.max(0, m.index - 24), m.index);
+      if (NEGATED.test(before)) continue;
+      const context = source.slice(Math.max(0, m.index - 90), m.index + 90).replace(/\s+/g, ' ');
+      problems.push(
+        `${relative}: calls a decision "ratified" while ` +
+          `${[...unratified].join(', ')} record ratification as requested and not granted — "…${context}…"`
+      );
+    }
+  }
+  return problems;
+}
+
+/* ------------------------------------------------------------------ *
  * Entry point
  * ------------------------------------------------------------------ */
 
@@ -1193,6 +1601,8 @@ export function evaluate(root = ROOT) {
     problems.push(...checkDocument(relative, source, derived, root));
   }
   problems.push(...checkCatalogue(root).map((p) => `${CATALOGUE_PATH}: ${p}`));
+  problems.push(...checkRoundFive(root));
+  problems.push(...checkRatificationClaims(root));
   return { ok: problems.length === 0, problems, claims, documents: docs.length, derived };
 }
 
