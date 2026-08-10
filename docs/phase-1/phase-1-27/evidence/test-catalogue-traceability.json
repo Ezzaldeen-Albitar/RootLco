@@ -799,9 +799,13 @@
     },
     {
       "path": "recovery",
-      "status": "ABSENT",
-      "reason": "No case takes a CRM or vehicle screen from a rendered failure through Retry to a rendered success. Every failure state is asserted, and the transition out of it is not. SPECIFIED HERE so it does not have to be re-derived, because it is the one ABSENT row that is closable without a Backend change: the control exists and is wired — `DataTable.tsx:137-142` and `CustomerSelector.tsx:123-130` each render a button bound to an `onRetry` callback — and four cases assert that the button IS offered on a transient failure and IS NOT offered on an expired session (`vehicle-screens.dom.test.tsx:302,326`, `customer-selector.dom.test.tsx:200,209`). None of them clicks it. The missing case renders a screen whose first read answers `unavailable`, activates the Retry control, and asserts that the second read renders rows — with the failure state gone, not merely the rows present. It belongs to whoever owns `apps/web`: this branch owns `docs/**` and two `scripts/ci` files, and the web test-file count is asserted by a gate, so the case must be added to an existing suite rather than to a new file.",
-      "provenBy": []
+      "status": "PROVEN",
+      "provenBy": [
+        {
+          "file": "apps/web/tests/vehicle-screens.dom.test.tsx",
+          "cases": ["RECOVERS when Retry is pressed: it re-reads, and the rows arrive"]
+        }
+      ]
     }
   ],
   "weakCitations": {

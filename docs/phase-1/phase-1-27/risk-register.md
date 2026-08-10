@@ -579,5 +579,5 @@ and returns `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
 <!-- derived: files tests/backend:all = 85 -->
 <!-- derived: files tests/db = 139 -->
 <!-- derived: files tests/db:all = 143 -->
-<!-- derived: cases vehicle-screens.dom.test.tsx = 36 -->
+<!-- derived: cases vehicle-screens.dom.test.tsx = 37 -->
 <!-- derived: cases tailwind-theme-gate.test.ts = 8 -->
