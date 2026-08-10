@@ -110,23 +110,23 @@ export default defineConfig({
         resolve: { alias },
         test: {
           name: 'logic',
-    /*
-     * H-18. The default five-second case budget is not a budget for a case that
-     * loads a module graph.
-     *
-     * Several cases here dynamically import a feature module, and the first one
-     * to do so pays for the whole transform chain. Alone that is under a second;
-     * under full-suite load with workers competing it crossed five seconds
-     * intermittently, and a different case timed out on each run. A flake that
-     * moves is worse than one that does not, because it teaches a reader to
-     * re-run rather than to look.
-     *
-     * Raised deliberately rather than globally disabled, and stated rather than
-     * left to be discovered: a case that genuinely hangs still fails, thirty
-     * seconds later. The precedent is tests/ci/canonical-documents.test.ts.
-     */
-    testTimeout: 30_000,
-    hookTimeout: 30_000,
+          /*
+           * H-18. The default five-second case budget is not a budget for a case that
+           * loads a module graph.
+           *
+           * Several cases here dynamically import a feature module, and the first one
+           * to do so pays for the whole transform chain. Alone that is under a second;
+           * under full-suite load with workers competing it crossed five seconds
+           * intermittently, and a different case timed out on each run. A flake that
+           * moves is worse than one that does not, because it teaches a reader to
+           * re-run rather than to look.
+           *
+           * Raised deliberately rather than globally disabled, and stated rather than
+           * left to be discovered: a case that genuinely hangs still fails, thirty
+           * seconds later. The precedent is tests/ci/canonical-documents.test.ts.
+           */
+          testTimeout: 30_000,
+          hookTimeout: 30_000,
           environment: 'node',
           include: ['tests/**/*.test.ts'],
           exclude: ['tests/**/*.dom.test.ts', 'tests/**/*.dom.test.tsx'],
@@ -137,8 +137,8 @@ export default defineConfig({
         resolve: { alias },
         test: {
           name: 'dom',
-    testTimeout: 30_000,
-    hookTimeout: 30_000,
+          testTimeout: 30_000,
+          hookTimeout: 30_000,
           environment: 'jsdom',
           include: ['tests/**/*.dom.test.tsx', 'tests/**/*.dom.test.ts'],
           setupFiles: ['./tests/setup.dom.ts'],
