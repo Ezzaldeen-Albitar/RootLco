@@ -741,14 +741,50 @@ describe('alert routing — the threshold decides what leaves the browser', () =
     });
 
     it('carries `P1-27-OD-006` with an owner, a review date and the paging boundary', () => {
-      // The limitation that survives the routing rule: no destination is
-      // operated and nobody is paged. Recorded, owned, dated — the
-      // `P1-20-A-06` precedent, applied to what is genuinely still absent.
-      expect(decisions).toContain('`P1-27-OD-006`');
-      expect(decisions).toMatch(/P1-20-A-06/);
-      expect(decisions).toMatch(/\*\*Owner:\*\*/);
-      expect(decisions).toMatch(/Review by:\*\*\s*20\d\d-\d\d-\d\d/);
-      expect(decisions).toMatch(/no pager|not paging|nobody is paged/i);
+      /*
+       * Scoped to the ENTRY, not to the file.
+       *
+       * The first version of this asserted `**Owner:**` and `Review by:` against
+       * the whole document. `P1-27-OD-005` carries both, so deleting OD-006's own
+       * owner and review date left all forty-four cases green — an adversarial
+       * pass proved it by doing exactly that. The record's own gate table
+       * meanwhile claimed the check caught "this entry being deleted, renamed or
+       * left without a review date", which it did not.
+       *
+       * The section is sliced from its own heading to the next one, so every
+       * assertion below is about OD-006 and a sibling entry cannot supply a
+       * substring on its behalf.
+       */
+      /*
+       * Anchor on the entry's own HEADING, not on the first mention.
+       *
+       * The first occurrence of the id is its row in the index table at the top
+       * of the document, and slicing back from there lands on "## 0. How to read
+       * this document" — a slice that swallows every other entry and proves
+       * nothing. Each decision is a level-two heading of the form
+       * ``## `P1-27-OD-00N` — …``, so that is what is matched.
+       */
+      const heading = decisions.indexOf('## `P1-27-OD-006`');
+      expect(heading, 'open-decisions.md carries no `P1-27-OD-006` heading').toBeGreaterThan(-1);
+      const next = decisions.indexOf('\n## ', heading + 1);
+      const entry = decisions.slice(heading, next === -1 ? undefined : next);
+
+      // Anti-vacuity: a slice that captured the whole document would make the
+      // scoping pointless, and one that captured nothing would pass every
+      // `toMatch` below for the wrong reason.
+      expect(entry.length, 'the OD-006 slice is empty').toBeGreaterThan(200);
+      expect(entry.length, 'the OD-006 slice swallowed the whole document').toBeLessThan(
+        decisions.length
+      );
+      expect(entry, 'the OD-006 slice does not contain OD-006').toContain('`P1-27-OD-006`');
+      expect(entry, 'the OD-006 slice leaked into OD-005').not.toContain('`P1-27-OD-005`');
+
+      expect(entry, 'OD-006 does not cite the P1-20-A-06 precedent').toMatch(/P1-20-A-06/);
+      expect(entry, 'OD-006 names no owner').toMatch(/\*\*Owner:\*\*\s*\S/);
+      expect(entry, 'OD-006 carries no review date').toMatch(/Review by:\*\*\s*20\d\d-\d\d-\d\d/);
+      expect(entry, 'OD-006 does not state the paging boundary').toMatch(
+        /no pager|not paging|nobody is paged/i
+      );
     });
 
     it('never claims a monitoring or notification service exists', () => {

@@ -119,11 +119,32 @@ export function derivePaths(lock, packageName, maxDepth = 12) {
 }
 
 /** Does any application source file import the package, directly? */
-export function findDirectImports(packageName, roots = [API_SRC_ROOT, SCRIPTS_ROOT]) {
-  const hits = [];
-  const pattern = new RegExp(
-    `(?:from\\s+['"]|require\\(\\s*['"]|import\\(\\s*['"])${packageName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:/|['"])`
-  );
+/**
+ * The source corpus, read once per process and reused.
+ *
+ * `findDirectImports` walks `apps/api/src` and `scripts/` and reads every file
+ * in them. That is a few hundred milliseconds on its own, and it was being paid
+ * again on EVERY call — `buildProof` calls it once, and a suite that builds
+ * several proofs pays it several times over.
+ *
+ * Under `vitest` with workers in parallel that pushed the file past the default
+ * five-second case timeout intermittently, while every case passed in isolation
+ * in under a second. It reproduced on a tree with no changes at all, so it is
+ * load, not a regression — and a timeout that only fails sometimes is worse than
+ * one that always does, because it teaches a reader to re-run rather than look.
+ *
+ * Keyed on the root list so a caller passing different roots is not served
+ * another caller's corpus. Contents cannot change within a run: nothing here
+ * writes to those trees.
+ */
+const CORPUS_CACHE = new Map();
+
+function sourceCorpus(roots) {
+  const key = roots.join('\u0000');
+  const cached = CORPUS_CACHE.get(key);
+  if (cached) return cached;
+
+  const files = [];
   const walk = (dir) => {
     if (!existsSync(dir)) return;
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -134,12 +155,21 @@ export function findDirectImports(packageName, roots = [API_SRC_ROOT, SCRIPTS_RO
         continue;
       }
       if (!/\.(ts|tsx|mts|cts|js|mjs|cjs)$/.test(entry.name)) continue;
-      const source = readFileSync(full, 'utf8');
-      if (pattern.test(source)) hits.push(full.replace(/\\/g, '/'));
+      files.push({ path: full.replace(/\\/g, '/'), source: readFileSync(full, 'utf8') });
     }
   };
   for (const root of roots) walk(root);
-  return hits;
+  CORPUS_CACHE.set(key, files);
+  return files;
+}
+
+export function findDirectImports(packageName, roots = [API_SRC_ROOT, SCRIPTS_ROOT]) {
+  const pattern = new RegExp(
+    `(?:from\\s+['"]|require\\(\\s*['"]|import\\(\\s*['"])${packageName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:/|['"])`
+  );
+  return sourceCorpus(roots)
+    .filter((file) => pattern.test(file.source))
+    .map((file) => file.path);
 }
 
 /**

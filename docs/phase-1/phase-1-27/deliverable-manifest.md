@@ -637,8 +637,8 @@ under-report itself by seven files.
 | `ci-evidence.md`                                  | 126   | Hosted CI on PR #198                                                               |
 | `clean-room-evidence.md`                          | 210   | The clean-room build at `e14984e`                                                  |
 | `contract-archaeology.md`                         | 416   | What the Backend actually publishes, read before anything was built                |
-| `deliverable-manifest.md`                         | 986   | This file                                                                          |
-| `developer-guide.md`                              | 170   | `DOC-002` — the developer half                                                     |
+| `deliverable-manifest.md`                         | 995   | This file                                                                          |
+| `developer-guide.md`                              | 184   | `DOC-002` — the developer half                                                     |
 | `evidence/change-log.md`                          | 483   | `DOC-002` — the change-log half; its rows are scraped by a test                    |
 | `evidence/evidence-manifest.json`                 | 155   | `QA-005` — a SHA-256 digest of every document in this directory                    |
 | `evidence/task-traceability.md`                   | 432   | Every task, the operations it calls, the files it produced, the named proof        |
@@ -653,7 +653,7 @@ under-report itself by seven files.
 | `findings/p1-27-int-006-cursor-precision.md`      | 166   | The cursor-precision finding in full                                               |
 | `independent-task-audit.md`                       | 137   | The 42-task independent audit, superseded by the adjudication                      |
 | `installed-chrome-review.md`                      | 215   | The measured review in the Owner's own Chrome, first and second passes             |
-| `open-decisions.md`                               | 978   | `P1-OD-017`, `P1-OD-025` and the phase's own open questions                        |
+| `open-decisions.md`                               | 1073  | `P1-OD-017`, `P1-OD-025` and the phase's own open questions                        |
 | `operator-guide.md`                               | 205   | `DOC-002` — the operator half                                                      |
 | `owner-acceptance-checklist.md`                   | 128   | What the Owner is asked to test                                                    |
 | `owner-acceptance-fail-remediation.md`            | 193   | The `OWNER ACCEPTANCE: FAIL` result and the disposition of all eleven defects      |
@@ -932,8 +932,8 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
 <!-- derived: files apps/web/src/features/vehicles = 23 -->
 <!-- derived: files p1-27-frontend-gate = 69 -->
 <!-- derived: files p1-27-frontend-gate:trees = 3 -->
-<!-- derived: tracked docs/phase-1/phase-1-27 = 41 -->
-<!-- derived: tracked docs/phase-1/phase-1-27:md = 32 -->
+<!-- derived: tracked docs/phase-1/phase-1-27 = 37 -->
+<!-- derived: tracked docs/phase-1/phase-1-27:md = 30 -->
 <!-- derived: tracked docs/product = 13 -->
 <!-- derived: commands registered = 148 -->
 <!-- derived: commands required = 74 -->
