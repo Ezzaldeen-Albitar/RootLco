@@ -656,7 +656,7 @@ under-report itself by seven files.
 
 | path                                              | lines | what it is                                                                         |
 | ------------------------------------------------- | ----- | ---------------------------------------------------------------------------------- |
-| `adversarial-round-five.md`                       | 461   | The live finding register; its totals are derived from its own rows                |
+| `adversarial-round-five.md`                       | 507   | The live finding register; its totals are derived from its own rows                |
 | `adversarial-round-four.md`                       | 147   | The previous round, superseded by round five                                       |
 | `blocker-remediation-plan.md`                     | 497   | What blocked the phase, and how each blocker was cleared                           |
 | `canonical-plan.md`                               | 340   | What P1-27 is scoped to build, and the disposition of `P1-OD-017` and `P1-OD-025`  |
@@ -675,7 +675,7 @@ under-report itself by seven files.
 | `final-canonical-remediation.md`                  | 448   | The canonical remediation wave                                                     |
 | `final-task-adjudication.md`                      | 956   | The 33 adjudicated audit items, and the retraction of `42 / 42`                    |
 | `finding-phase-disposition.md`                    | 428   | Which phase owns each finding                                                      |
-| `finding-task-map.json`                           | 521   | Findings to tasks, machine-readable                                                |
+| `finding-task-map.json`                           | 526   | Findings to tasks, machine-readable                                                |
 | `findings.md`                                     | 887   | The live `P1-27-INT-###` register                                                  |
 | `findings/p1-27-int-006-cursor-precision.md`      | 166   | The cursor-precision finding in full                                               |
 | `independent-task-audit.md`                       | 137   | The 42-task independent audit, superseded by the adjudication                      |
@@ -971,7 +971,7 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
 <!-- derived: cases navigation.test.ts = 22 -->
 <!-- LINE-COUNT MARKERS. Regenerated, never typed. -->
 
-<!-- derived: lines docs/phase-1/phase-1-27/adversarial-round-five.md = 461 -->
+<!-- derived: lines docs/phase-1/phase-1-27/adversarial-round-five.md = 507 -->
 <!-- derived: lines docs/phase-1/phase-1-27/adversarial-round-four.md = 147 -->
 <!-- derived: lines docs/phase-1/phase-1-27/blocker-remediation-plan.md = 497 -->
 <!-- derived: lines docs/phase-1/phase-1-27/canonical-plan.md = 340 -->
@@ -990,7 +990,7 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
 <!-- derived: lines docs/phase-1/phase-1-27/final-canonical-remediation.md = 448 -->
 <!-- derived: lines docs/phase-1/phase-1-27/final-task-adjudication.md = 956 -->
 <!-- derived: lines docs/phase-1/phase-1-27/finding-phase-disposition.md = 428 -->
-<!-- derived: lines docs/phase-1/phase-1-27/finding-task-map.json = 521 -->
+<!-- derived: lines docs/phase-1/phase-1-27/finding-task-map.json = 526 -->
 <!-- derived: lines docs/phase-1/phase-1-27/findings.md = 887 -->
 <!-- derived: lines docs/phase-1/phase-1-27/findings/p1-27-int-006-cursor-precision.md = 166 -->
 <!-- derived: lines docs/phase-1/phase-1-27/independent-task-audit.md = 137 -->
