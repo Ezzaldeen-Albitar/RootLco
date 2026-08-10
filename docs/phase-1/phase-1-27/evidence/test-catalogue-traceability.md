@@ -230,13 +230,13 @@ what those become:
 | retry               | `PROVEN`  | including where Retry is deliberately not offered                                    |
 | conflict            | `PROVEN`  |                                                                                      |
 | duplicate           | `PROVEN`  |                                                                                      |
-| stale version       | `ABSENT`  | `P1-27-INT-009` — no vehicle write consumes `recordVersion` or the ETag              |
-| concurrent update   | `ABSENT`  | the same finding; last-writer-wins from a client position                            |
-| idempotent replay   | `PARTIAL` | the key is sent; no case replays a request and counts the effects                    |
+| stale version       | `ABSENT`  | decided as last-writer-wins by `P1-27-OD-005`; no route here is `versionGuarded`     |
+| concurrent update   | `ABSENT`  | the same decision; `A42-13` still holds and `P1-27-OD-005` disposes of it            |
+| idempotent replay   | `PARTIAL` | the key is proven on the wire; no P1-27 request is replayed and counted as a delta   |
 | backend unavailable | `PROVEN`  |                                                                                      |
 | timeout             | `PARTIAL` | proven in the shared client, on no screen                                            |
 | cancellation        | `PARTIAL` | the same shape                                                                       |
-| recovery            | `ABSENT`  | no case takes a screen from a rendered failure through Retry to a rendered success   |
+| recovery            | `ABSENT`  | the Retry control is wired and asserted present; no case clicks it — see the JSON    |
 
 **11 `PROVEN` · 4 `PARTIAL` · 3 `ABSENT`.** Each `PARTIAL` and each `ABSENT`
 carries its reason in the JSON, and the gate refuses one that does not.
@@ -245,6 +245,18 @@ carries its reason in the JSON, and the gate refuses one that does not.
 nothing in this repository establishes that eighteen paths exist for
 twenty-nine ids. Building them is Frontend work with its own tasks; it is not
 something a documentation change may assert.
+
+Re-derived at `0c40499`, after the four closure-wave branches merged. **The
+shape is unchanged — 11 / 4 / 3 — and two reasons are not.** `stale version` and
+`concurrent update` were recorded against an OPEN finding; they are now recorded
+against a RATIFIED decision, `P1-27-OD-005`, which names the Backend remediation
+that would create the path and binds itself to six executable checks that fail
+the day it lands. An absence that is decided is still an absence, and the status
+does not move for it. `idempotent replay` gains the on-the-wire proof and the two
+Backend suites that bound what is left of it. `recovery` is unchanged and is now
+SPECIFIED: it is the only `ABSENT` row closable without a Backend change, it
+needs one case in an existing `apps/web` suite, and that tree does not belong to
+this branch — so it is written down for its owner rather than left as a verdict.
 
 ---
 

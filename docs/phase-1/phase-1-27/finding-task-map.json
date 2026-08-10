@@ -501,6 +501,21 @@
       "TASK_IDS": ["QA-001", "DO-001"],
       "CLASSIFICATION": "TEST_OR_GATE_DEFECT",
       "WHY": "A load-dependent 5-second timeout flake in at least four web test files, measured on a tree with no change under apps/** at all. QA-001 owns the web tier, DO-001 owns what a hosted run reports; a flake that moves between files reads as a red gate nobody can reproduce."
+    },
+    "H-19": {
+      "TASK_IDS": ["DOC-001", "QA-005"],
+      "CLASSIFICATION": "EVIDENCE_DEFECT",
+      "WHY": "tests/ci/p1-27-matrix-citations.test.ts checks 135 of the 653 file:line citations in task-matrix.json and cannot see the other 518, because its pattern requires a directory separator and the matrix is written mostly without one. Fourteen of the invisible citations land on a test range holding no expect(, including one that points at a fixture table and one that points at a docblock. DOC-001 owns catalogue and traceability synchronization; QA-005 owns the evidence guards."
+    },
+    "H-20": {
+      "TASK_IDS": ["DO-001", "DOC-002"],
+      "CLASSIFICATION": "DOCUMENTATION_DEFECT",
+      "WHY": "The docblock that closed H-16 in apps/web/playwright.config.ts cites four line numbers in protected-develop-verification.yml and all four are wrong. Every claim it makes is true and every pointer it gives a reader to check it with is not. DO-001 owns the workflow it cites; DOC-002 owns the developer-facing prose."
+    },
+    "H-21": {
+      "TASK_IDS": ["DOC-001", "DOC-002"],
+      "CLASSIFICATION": "DOCUMENTATION_DEFECT",
+      "WHY": "Sixteen of the thirty-six phase line counts in deliverable-manifest.md disagreed with the tree, in the document that indexes every other one, one cell away from a derived row count that was checked. Closed by a new linecolumn derived kind in check-p1-27-doc-counts.mjs and by correcting all sixteen."
     }
   }
 }

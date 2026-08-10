@@ -713,7 +713,7 @@
     {
       "path": "stale version",
       "status": "ABSENT",
-      "reason": "P1-27-INT-009. `recordVersion` is published and an ETag emitted, and no vehicle write consumes either, so there is no stale-version path to exercise. The case cited records the absence rather than proving the path.",
+      "reason": "DECIDED, not merely open. `P1-27-OD-005` (`open-decisions.md:795-978`, recorded by `c060b93`) ships last-writer-wins on every CRM and Vehicle write: no route under `customers/`, `customer-duplicates/`, `vehicles/` or `vehicle-duplicates/` declares `versionGuarded: true`, and none reads `expectedVersion`, so an `If-Match` sent from here would be parsed and discarded. There is no stale-version path to exercise, and the plan's §4 forbids creating one from this branch. The decision names the Backend remediation that would create it, and six executable checks in `api-client.test.ts:1242-1337` fail the day it lands — which is what stops this row ageing into a lie. The status stays `ABSENT` because a path that cannot be exercised is not a path that has been proved; what changed is that the absence is now ratified rather than unacknowledged. The case cited records the absence.",
       "provenBy": [
         {
           "file": "apps/web/tests/vehicle-profile.test.ts",
@@ -724,7 +724,7 @@
     {
       "path": "concurrent update",
       "status": "ABSENT",
-      "reason": "The same open finding. Concurrent edits are last-writer-wins from a client position, which is what `QA-004` was reclassified PARTIAL for in `adversarial-round-five.md` (`A42-13`).",
+      "reason": "The same ratified decision, `P1-27-OD-005`. Concurrent edits are last-writer-wins from a client position — the `ERR-CON-001` the services do raise guards a version the service itself read inside its own transaction (`vehicle-write-service.ts:115` to `:132`), so it catches a writer landing inside the server's SELECT-to-UPDATE window and cannot catch a lost update across an operator's read-edit-submit cycle. `A42-13` records the finding and it still holds; `P1-27-OD-005` disposes of it. `ABSENT` for the same reason as the row above.",
       "provenBy": [
         {
           "file": "apps/web/tests/vehicle-profile.test.ts",
@@ -735,11 +735,25 @@
     {
       "path": "idempotent replay",
       "status": "PARTIAL",
-      "reason": "That a key is sent on every write and on no read is proven. That REPLAYING a request produces one effect is a server property, and no P1-27 case issues the same request twice and counts the effects.",
+      "reason": "Stronger than it was, and still not the whole path. That a key is sent on every write and on no read is proven, and since `c060b93` it is proven over a set DERIVED from the adapters (23 writes, against 11 written by hand) and read off the wire from a request a shipped adapter produced, rather than from a pure function. What is still absent is the replay itself: no case issues the same P1-27 request twice and counts the server-side effects as a delta. That is a server property, and the two places it IS proved do not reach a P1-27 operation — `tests/backend/idempotency.test.ts` proves the MECHANISM with effects counted but over a generic command, and `tests/backend/p1-14-idempotency-replay.test.ts` proves it per-operation for IAM and for no CRM or Vehicle operation. Both are cited so the gap is bounded rather than open-ended.",
       "provenBy": [
         {
           "file": "apps/web/tests/p1-27-security.test.ts",
           "cases": ["sends an idempotency key on every write and on no read"]
+        },
+        {
+          "file": "apps/web/tests/api-client.test.ts",
+          "cases": [
+            "puts an idempotency-key on the wire for a request a real adapter produced",
+            "puts no idempotency-key on a read a real adapter produced"
+          ]
+        },
+        {
+          "file": "tests/backend/idempotency.test.ts",
+          "cases": [
+            "returns the stored response without executing the command again",
+            "commits exactly one execution and stores exactly one row"
+          ]
         },
         {
           "file": "apps/web/tests/operation-contract.test.ts",
@@ -786,7 +800,7 @@
     {
       "path": "recovery",
       "status": "ABSENT",
-      "reason": "No case takes a CRM or vehicle screen from a rendered failure through Retry to a rendered success. Every failure state is asserted, and the transition out of it is not.",
+      "reason": "No case takes a CRM or vehicle screen from a rendered failure through Retry to a rendered success. Every failure state is asserted, and the transition out of it is not. SPECIFIED HERE so it does not have to be re-derived, because it is the one ABSENT row that is closable without a Backend change: the control exists and is wired — `DataTable.tsx:137-142` and `CustomerSelector.tsx:123-130` each render a button bound to an `onRetry` callback — and four cases assert that the button IS offered on a transient failure and IS NOT offered on an expired session (`vehicle-screens.dom.test.tsx:302,326`, `customer-selector.dom.test.tsx:200,209`). None of them clicks it. The missing case renders a screen whose first read answers `unavailable`, activates the Retry control, and asserts that the second read renders rows — with the failure state gone, not merely the rows present. It belongs to whoever owns `apps/web`: this branch owns `docs/**` and two `scripts/ci` files, and the web test-file count is asserted by a gate, so the case must be added to an existing suite rather than to a new file.",
       "provenBy": []
     }
   ],

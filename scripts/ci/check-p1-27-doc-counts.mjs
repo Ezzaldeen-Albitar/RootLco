@@ -756,6 +756,76 @@ function tableRowsAfter(source, from) {
 }
 
 /**
+ * Where the `lines` column of a named manifest table resolves its paths.
+ *
+ * Two tables in `deliverable-manifest.md` list a document and the number of
+ * lines it holds, one row per file. Both are named by the `rows` marker already
+ * sitting above them, so `linecolumn` reuses the name rather than inventing a
+ * second vocabulary for the same two tables.
+ */
+const LINE_COLUMN_ROOTS = {
+  'phase-documentation': `${PHASE_DIR}/`,
+  'product-documentation': 'docs/product/',
+};
+
+/**
+ * Every stale cell in the `lines` column of the table following `from`.
+ *
+ * ## Why this kind exists
+ *
+ * `rows phase-documentation = 36` pinned the NUMBER OF ROWS in that table and
+ * nothing about their contents, so a column of thirty-six line counts sat one
+ * cell away from a checked number, checked by nothing. Measured when this was
+ * written: **16 of the 36 phase rows disagreed with the tree**, several by more
+ * than a hundred lines (`open-decisions.md` stated 837 against 978,
+ * `evidence/change-log.md` 344 against 483), while the product table's 13 rows
+ * were all exact. That is `E-06` returning — "eight of fifteen documentation
+ * line counts wrong" — in the one document that indexes every other one.
+ *
+ * A number beside a checked number, itself unchecked, is worse than an absent
+ * one: the checked neighbour lends it credibility it has not earned.
+ *
+ * ## Where the number comes from
+ *
+ * `derived.lines` — the SAME table the `lines` kind reads, built once for every
+ * `.md` and `.json` under both documentation trees. Re-reading the forty-nine
+ * files here would have been the obvious spelling and it was the wrong one twice
+ * over: it would add a second, independently-computed answer to a question this
+ * gate already answers (so the two could disagree), and it measurably cost ~200 ms
+ * on a ~950 ms gate whose enclosing case has a 5-second timeout that `H-18`
+ * records as already flaking under load.
+ */
+function staleLineCells(source, from, base, lines, seen = { rows: 0 }) {
+  /*
+   * Blank lines and further markers are skipped, and `rows` deliberately is NOT
+   * given the same latitude. `rows` counts the table immediately below it and
+   * must keep doing so; this marker has to sit ABOVE that one, because putting
+   * anything between `rows` and its table breaks it. So the two markers stack,
+   * `linecolumn` first, and only this one walks past a comment to find the table.
+   */
+  const ahead = source.slice(from).split('\n');
+  let i = 0;
+  while (i < ahead.length && (ahead[i].trim() === '' || ahead[i].trim().startsWith('<!--'))) i += 1;
+  const rest = ahead.slice(i).join('\n');
+  const stale = [];
+  const end = rest.search(/\n[^|\n]/);
+  const table = end === -1 ? rest : rest.slice(0, end);
+  for (const row of table.matchAll(/^\|\s*`([^`]+)`[^|]*\|\s*(\d+)\s*\|/gm)) {
+    seen.rows += 1;
+    const relative = `${base}${row[1]}`;
+    const actual = lines[relative];
+    if (actual === undefined) {
+      stale.push(`${relative} is listed and this gate cannot derive its line count`);
+      continue;
+    }
+    if (actual !== Number(row[2])) {
+      stale.push(`${relative} states ${row[2]} lines; the tree holds ${actual}`);
+    }
+  }
+  return stale;
+}
+
+/**
  * A document may state a count for a named thing only if it matches the tree.
  *
  * The claim syntax is deliberate and narrow: `<!-- derived: KIND NAME = N -->`.
@@ -793,11 +863,44 @@ export function checkDocument(relative, source, derived, root = ROOT) {
       continue;
     }
 
+    if (kind === 'linecolumn') {
+      const base = LINE_COLUMN_ROOTS[name];
+      if (base === undefined) {
+        problems.push(
+          `${relative}: \`linecolumn ${name}\` names no table — ` +
+            `this gate knows ${Object.keys(LINE_COLUMN_ROOTS).join(', ')}.`
+        );
+        continue;
+      }
+      /*
+       * ANTI-VACUITY. `= 0` is the passing value, so a rule that found no table
+       * at all would agree with it perfectly — the shape this repository has now
+       * recorded in four scanners. A marker that inspected nothing fails.
+       */
+      const seen = { rows: 0 };
+      const stale = staleLineCells(source, m.index + m[0].length, base, derived.lines, seen);
+      if (seen.rows === 0) {
+        problems.push(
+          `${relative}: \`linecolumn ${name}\` inspected no row — ` +
+            'the marker must sit above a table whose first column is a backticked path ' +
+            'and whose second is a line count.'
+        );
+        continue;
+      }
+      if (stale.length !== Number(stated)) {
+        problems.push(
+          `${relative}: states linecolumn ${name} = ${stated}; ` +
+            `${stale.length} cell(s) disagree with the tree — ${stale.join('; ')}`
+        );
+      }
+      continue;
+    }
+
     const tableName = TABLE_KINDS[kind];
     if (!tableName) {
       problems.push(
         `${relative}: unknown derived kind \`${kind}\` — ` +
-          `this gate derives ${[...Object.keys(TABLE_KINDS), 'rows'].join(', ')}.`
+          `this gate derives ${[...Object.keys(TABLE_KINDS), 'rows', 'linecolumn'].join(', ')}.`
       );
       continue;
     }
