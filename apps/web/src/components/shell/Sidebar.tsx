@@ -5,7 +5,7 @@ import { useCallback, useId, useState } from 'react';
 import { BrandMark } from '@/components/brand';
 import { Icon } from '@/components/primitives/Icon';
 import type { NavigationGroup, NavigationItem } from '@/config/navigation';
-import { containsActive, hrefFor, isActive } from '@/config/navigation';
+import { containsActive, currentPageKey, hrefFor, isActive } from '@/config/navigation';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate } from '@/i18n/get-messages';
@@ -132,6 +132,17 @@ export function Sidebar({
     setOverrides((previous) => ({ ...previous, [key]: next }));
   }, []);
 
+  /*
+   * WHICH item is the page — decided once, for the whole sidebar.
+   *
+   * One key, not a per-item predicate, and that is the point: `aria-current`
+   * names the current page and there is one of those. Computed here because the
+   * answer depends on the whole visible model and on whether the rail is
+   * showing, neither of which a single entry can see. See `currentPageKey` for
+   * the two-current-pages defect this replaced.
+   */
+  const currentKey = currentPageKey(pathname, locale, groups, collapsed);
+
   const content = (
     <>
       <div className="flex h-16 shrink-0 items-center gap-3 border-b border-sidebar-border px-4 text-sidebar-text">
@@ -183,6 +194,7 @@ export function Sidebar({
                   <SidebarEntry
                     key={item.key}
                     item={item}
+                    currentKey={currentKey}
                     locale={locale}
                     messages={messages}
                     pathname={pathname}
@@ -231,6 +243,7 @@ const IDLE_ROW = 'text-sidebar-text-muted hover:bg-sidebar-surface hover:text-si
 
 function SidebarEntry({
   item,
+  currentKey,
   locale,
   messages,
   pathname,
@@ -240,6 +253,8 @@ function SidebarEntry({
   onNavigate,
 }: {
   readonly item: NavigationItem;
+  /** The one item that is the page, from `currentPageKey`. `null` if none is. */
+  readonly currentKey: string | null;
   readonly locale: Locale;
   readonly messages: Messages;
   readonly pathname: string;
@@ -249,12 +264,20 @@ function SidebarEntry({
   readonly onNavigate?: (() => void) | undefined;
 }) {
   const panelId = useId();
+  // TWO questions, and conflating them shipped two current pages on one screen.
+  // `active` is "the operator is somewhere in this module" and drives the
+  // treatment; `current` is "this item IS the page" and drives `aria-current`.
   const active = isActive(pathname, locale, item);
+  const current = item.key === currentKey;
   const label = translate(messages, item.labelKey as keyof Messages);
   const planned = item.status === 'planned';
   const hasChildren = (item.children?.length ?? 0) > 0;
 
   // The rail has no room for a submenu, so a parent is a plain link there.
+  // `navigationLinks` in `config/navigation.ts` states this same rule, because
+  // knowing which entries are links is what decides where `aria-current` goes.
+  // The two are kept honest by a test rather than by one shared expression —
+  // `hostile-mutations.mjs` `M-OA-04` anchors on the next line verbatim.
   const isDisclosure = hasChildren && !collapsed;
   const withinGroup = containsActive(pathname, locale, item);
   const expanded = overrides[item.key] ?? withinGroup;
@@ -336,6 +359,7 @@ function SidebarEntry({
                 <SidebarEntry
                   key={child.key}
                   item={child}
+                  currentKey={currentKey}
                   locale={locale}
                   messages={messages}
                   pathname={pathname}
@@ -390,7 +414,10 @@ function SidebarEntry({
       <Link
         href={hrefFor(locale, item)}
         {...(onNavigate ? { onClick: onNavigate } : {})}
-        aria-current={active ? 'page' : undefined}
+        // `current`, not `active`. A module whose route is a path PREFIX of the
+        // page — Vehicles above the vehicle duplicate queue — keeps the active
+        // treatment below and must not also claim to be the page.
+        aria-current={current ? 'page' : undefined}
         {...(collapsed ? { 'aria-label': label, title: label } : {})}
         className={[
           ROW_BASE,

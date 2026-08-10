@@ -1,7 +1,11 @@
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { readFileSync, readdirSync } from 'node:fs';
+import { join, relative, sep } from 'node:path';
+import type { ReactElement } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { axe } from 'vitest-axe';
+import { PageBody, PageHeader } from '@/components/shell/PageHeader';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
 import { renderLtr, renderRtl } from './render';
@@ -57,6 +61,7 @@ const listPlates = vi.fn();
 const listOdometerReadings = vi.fn();
 const listRelationships = vi.fn();
 const listAttributeHistory = vi.fn();
+const listVehicleDuplicates = vi.fn();
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
@@ -96,6 +101,11 @@ vi.mock('@/features/vehicles/relations-api', () => ({
 }));
 vi.mock('@/features/vehicles/duplicates-api', () => ({
   listAttributeHistory: (...a: unknown[]) => listAttributeHistory(...a),
+  // Added for the heading-outline cases below, which mount the two duplicate
+  // QUEUES as well as the two profiles. `VehicleProfileScreen` imports only
+  // `listAttributeHistory` from here, so nothing above is affected.
+  listVehicleDuplicates: (...a: unknown[]) => listVehicleDuplicates(...a),
+  reviewVehicleDuplicateAction: vi.fn(async () => ({ status: 'idle' })),
 }));
 vi.mock('@/features/vehicles/profile-api', () => ({
   updateVehicleAction: vi.fn(async () => ({ status: 'idle' })),
@@ -108,6 +118,10 @@ const { CustomerProfileScreen } =
   await import('@/features/crm/customers/components/CustomerProfileScreen');
 const { VehicleProfileScreen } =
   await import('@/features/vehicles/components/VehicleProfileScreen');
+const { DuplicateReviewScreen } =
+  await import('@/features/crm/customers/components/DuplicateReviewScreen');
+const { VehicleDuplicateReviewScreen } =
+  await import('@/features/vehicles/components/VehicleDuplicateReviewScreen');
 const { WRITE_PERMISSIONS, permittedWrites } =
   await import('@/features/crm/customers/governance-contract');
 
@@ -144,6 +158,7 @@ beforeEach(() => {
     listOdometerReadings,
     listRelationships,
     listAttributeHistory,
+    listVehicleDuplicates,
   ]) {
     fn.mockReset();
     fn.mockResolvedValue(EMPTY_PAGE);
@@ -306,7 +321,9 @@ describe('the customer profile has no critical or serious violation', () => {
     const { container } = renderRtl(
       <CustomerProfileScreen locale="ar" messages={ar} customer={CUSTOMER} writes={ALL_WRITES} />
     );
-    await waitFor(() => expect(container.querySelector('h1')).not.toBeNull());
+    // The customer's name, not an `h1`: this screen's heading is an `h2` now,
+    // because the ROUTE renders the page's `h1` above it. See the outline cases.
+    await waitFor(() => expect(container.textContent ?? '').toContain(CUSTOMER.displayName));
     const found = await blockingViolations(container);
     expect(found, describeViolations(found)).toEqual([]);
   });
@@ -317,7 +334,7 @@ describe('the customer profile has no critical or serious violation', () => {
     const { container } = renderLtr(
       <CustomerProfileScreen locale="en" messages={en} customer={CUSTOMER} />
     );
-    await waitFor(() => expect(container.querySelector('h1')).not.toBeNull());
+    await waitFor(() => expect(container.textContent ?? '').toContain(CUSTOMER.displayName));
     const found = await blockingViolations(container);
     expect(found, describeViolations(found)).toEqual([]);
   });
@@ -375,6 +392,221 @@ describe('the vehicle profile has no critical or serious violation', () => {
   });
 });
 
+/**
+ * One `<h1>` per page — the outline a screen-reader user navigates by.
+ *
+ * ## The defect
+ *
+ * `PageHeader` states the rule in its own docblock — the page title is the h1,
+ * there is exactly one per page, and a document with two has no outline — and
+ * renders it. Four screens then rendered an `<h1>` of their own inside
+ * `PageBody`, under a route that had already rendered `PageHeader`. Driven by
+ * hand against a production build, `/en/crm/customer-duplicates` and
+ * `/en/vehicles/duplicates` each returned `h1 count: 2` — the SAME STRING twice,
+ * because the route passes `PageHeader` the very `titleKey` the screen was also
+ * printing.
+ *
+ * Two different repairs, because the two cases are not the same defect:
+ *
+ *   - the duplicate QUEUES lost their heading outright. It was the page title
+ *     said a second time, so nothing is lost and one visible duplication goes;
+ *   - the customer PROFILE kept its heading, demoted to `h2`. It carries the
+ *     customer's display name, which the header does not, so dropping it would
+ *     have deleted information rather than a repetition.
+ *
+ * `VehicleProfileScreen` is here as a CONTROL, not as a defect.
+ * `vehicles/[vehicleId]/page.tsx` builds a `PageHeader` for its denial, 404 and
+ * error branches and renders NONE on the success path (`:106-134`), so the
+ * screen's own `<h1>` is the page's only one. Composed here the way the route
+ * composes it, so if a header is ever added above it this case turns red
+ * instead of the outline quietly gaining a second h1.
+ *
+ * `PrintDocument` and `AuthCard` are untouched: neither surface renders
+ * `PageHeader`, so each of them IS its page's h1. `/en/login` was confirmed by
+ * hand to have exactly one.
+ */
+describe('a screen mounted in the dashboard shell contributes no second h1', () => {
+  interface Composition {
+    readonly name: string;
+    /** The `titleKey` the ROUTE passes to `PageHeader`; `null` when it renders none. */
+    readonly titleKey: string | null;
+    readonly crumbs: readonly { readonly labelKey: string }[];
+    readonly screen: () => ReactElement;
+    /** Text that proves the screen really rendered, so the count is not over nothing. */
+    readonly proof: string;
+  }
+
+  const PAGES: readonly Composition[] = [
+    {
+      name: 'the customer duplicate queue',
+      // `crm/customer-duplicates/page.tsx:59-65`.
+      titleKey: 'crm.duplicates.title',
+      crumbs: [{ labelKey: 'nav.customers' }, { labelKey: 'crm.duplicates.title' }],
+      screen: () => <DuplicateReviewScreen locale="en" messages={en} />,
+      proof: en['crm.duplicates.intro'],
+    },
+    {
+      name: 'the vehicle duplicate queue',
+      // `vehicles/duplicates/page.tsx:33-40`.
+      titleKey: 'vehicles.duplicates.title',
+      crumbs: [{ labelKey: 'nav.vehicles' }, { labelKey: 'vehicles.duplicates.title' }],
+      screen: () => <VehicleDuplicateReviewScreen locale="en" messages={en} />,
+      proof: en['vehicles.duplicates.intro'],
+    },
+    {
+      name: 'the customer profile',
+      // `crm/customers/[customerId]/page.tsx:107-115`.
+      titleKey: 'crm.customers.profile.title',
+      crumbs: [{ labelKey: 'nav.customers' }, { labelKey: 'crm.customers.profile.title' }],
+      screen: () => (
+        <CustomerProfileScreen locale="en" messages={en} customer={CUSTOMER} writes={ALL_WRITES} />
+      ),
+      proof: CUSTOMER.displayName,
+    },
+    {
+      name: 'the vehicle profile, whose route renders no PageHeader on success',
+      titleKey: null,
+      crumbs: [],
+      screen: () => (
+        <VehicleProfileScreen
+          locale="en"
+          messages={en}
+          vehicle={VEHICLE}
+          canEdit
+          canChangeStatus
+          canManageRelationships
+          canLinkCustomer
+          canRecordOdometer
+          evProfile={{ status: 'none' }}
+          canListDocuments
+          documents={{ status: 'ok', documentIds: [] }}
+        />
+      ),
+      proof: VEHICLE.displayNumber as string,
+    },
+  ];
+
+  function compose(page: Composition) {
+    return renderLtr(
+      <>
+        {page.titleKey === null ? null : (
+          <PageHeader locale="en" messages={en} titleKey={page.titleKey} crumbs={page.crumbs} />
+        )}
+        <PageBody>{page.screen()}</PageBody>
+      </>
+    );
+  }
+
+  const headingsOf = (container: HTMLElement, level: number): string[] =>
+    Array.from(container.querySelectorAll(`h${level}`)).map((node) => node.textContent ?? '');
+
+  it('composes every P1-27 screen that a dashboard route mounts', () => {
+    // Anti-vacuity. A loop over an empty corpus is a green tick over nothing.
+    expect(PAGES.length).toBe(4);
+    expect(PAGES.filter((page) => page.titleKey !== null).length).toBe(3);
+  });
+
+  it.each(PAGES.map((page) => [page.name, page] as const))(
+    'renders exactly one h1 on %s',
+    async (_name, page) => {
+      const { container } = compose(page);
+      // Settle first. Counting headings on a half-rendered screen would pass
+      // against a render that produced nothing at all.
+      await waitFor(() => expect(container.textContent ?? '').toContain(page.proof));
+
+      const h1s = headingsOf(container, 1);
+      expect(h1s, `h1 count ${h1s.length}: ${JSON.stringify(h1s)}`).toHaveLength(1);
+    }
+  );
+
+  it('keeps the customer name on screen, as an h2 under the page title', async () => {
+    // The demotion must not be a deletion. Both strings are still there, and
+    // the outline nests: "Customer profile" then the customer.
+    const page = PAGES.find((entry) => entry.name === 'the customer profile');
+    expect(page, 'the customer profile composition disappeared from this table').toBeDefined();
+    const { container } = compose(page as Composition);
+    await waitFor(() => expect(container.textContent ?? '').toContain(CUSTOMER.displayName));
+
+    expect(headingsOf(container, 1)).toEqual([en['crm.customers.profile.title']]);
+    expect(headingsOf(container, 2)).toContain(CUSTOMER.displayName);
+  });
+
+  it('counts a SECOND h1 when one is really there', async () => {
+    /*
+     * The control, and the reason the four cases above mean anything.
+     *
+     * `querySelectorAll('h1')` over a container that rendered nothing returns an
+     * empty list, and `toHaveLength(1)` would then be the only thing standing
+     * between this file and a vacuous pass. So the counter is shown failing: the
+     * exact shape of the shipped defect — a screen printing the page title again
+     * inside `PageBody` — is composed on purpose and must count two.
+     */
+    const { container } = renderLtr(
+      <>
+        <PageHeader locale="en" messages={en} titleKey="crm.duplicates.title" />
+        <PageBody>
+          <h1>{en['crm.duplicates.title']}</h1>
+        </PageBody>
+      </>
+    );
+    const h1s = headingsOf(container, 1);
+    expect(h1s).toHaveLength(2);
+    expect(h1s[0]).toBe(h1s[1]);
+  });
+
+  it('lets no OTHER component grow an h1 without this file being told', () => {
+    /*
+     * The four compositions above are a list somebody has to remember to extend.
+     * This is the check that notices when they do not: every `<h1>` in the
+     * component tree, found by reading the source, matched against the four that
+     * are accounted for.
+     *
+     * Comments are stripped first. This repository has watched a scanner read
+     * prose as code six times, and two of these very files DISCUSS `<h1>` in a
+     * docblock — an unstripped scan would report `AuthCard` twice and would keep
+     * reporting the duplicate queues after their headings were gone.
+     */
+    const roots = [
+      join(__dirname, '..', 'src', 'components'),
+      join(__dirname, '..', 'src', 'features'),
+    ];
+
+    const files: string[] = [];
+    const walk = (dir: string) => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const full = join(dir, entry.name);
+        if (entry.isDirectory()) walk(full);
+        else if (entry.name.endsWith('.tsx')) files.push(full);
+      }
+    };
+    for (const root of roots) walk(root);
+    expect(files.length, 'no component sources were read').toBeGreaterThan(30);
+
+    const withoutComments = (source: string): string =>
+      source
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .split('\n')
+        .filter((line) => !line.trimStart().startsWith('//'))
+        .join('\n');
+
+    const declaring = files
+      .filter((file) => /<h1[\s>]/.test(withoutComments(readFileSync(file, 'utf8'))))
+      .map((file) => relative(join(__dirname, '..'), file).split(sep).join('/'))
+      .sort();
+
+    expect(declaring).toEqual([
+      // Print output. Its own document, no `PageHeader` above it.
+      'src/components/print/PrintDocument.tsx',
+      // THE page title. One per page, by construction.
+      'src/components/shell/PageHeader.tsx',
+      // The signed-out surfaces, which render no shell at all.
+      'src/features/authentication/components/AuthCard.tsx',
+      // The one dashboard screen whose route renders no `PageHeader` on success.
+      'src/features/vehicles/components/VehicleProfileScreen.tsx',
+    ]);
+  });
+});
+
 describe('this file is not vacuous', () => {
   it('scans a container that really holds the screen', async () => {
     /*
@@ -385,7 +617,7 @@ describe('this file is not vacuous', () => {
     const { container } = renderLtr(
       <CustomerProfileScreen locale="en" messages={en} customer={CUSTOMER} writes={ALL_WRITES} />
     );
-    await waitFor(() => expect(container.querySelector('h1')).not.toBeNull());
+    await waitFor(() => expect(container.querySelector('h2')).not.toBeNull());
     expect(container.querySelectorAll('button').length).toBeGreaterThan(5);
     expect(container.textContent).toContain(CUSTOMER.displayName);
   });

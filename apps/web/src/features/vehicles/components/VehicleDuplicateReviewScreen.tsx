@@ -219,14 +219,17 @@ export function VehicleDuplicateReviewScreen({ locale, messages }: Props) {
 
   return (
     <div className="flex min-h-0 flex-col gap-4">
-      <header>
-        <h1 className="text-page-title font-semibold text-text-primary">
-          {translate(messages, 'vehicles.duplicates.title')}
-        </h1>
-        <p className="mt-1 text-body text-text-secondary">
-          {translate(messages, 'vehicles.duplicates.intro')}
-        </p>
-      </header>
+      {/*
+        No heading here — same reason as the CRM twin.
+
+        `vehicles/duplicates/page.tsx` renders `PageHeader` with this exact
+        `vehicles.duplicates.title`, and that is the page's one `<h1>`. This
+        screen repeated it, so the queue shipped `h1 count: 2` with the title
+        printed twice. Reproduced by hand on `/en/vehicles/duplicates`.
+      */}
+      <p className="text-body text-text-secondary">
+        {translate(messages, 'vehicles.duplicates.intro')}
+      </p>
 
       <div className="flex flex-wrap items-end gap-3">
         <label className="flex flex-col gap-1">
