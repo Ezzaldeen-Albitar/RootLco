@@ -32,6 +32,23 @@ const listVehicleDuplicates = vi.fn();
 const reviewVehicleDuplicateAction = vi.fn();
 const listAttributeHistory = vi.fn();
 
+/**
+ * The session-bound client factory, mocked so the REAL adapter can be driven.
+ *
+ * Every case above this line mocks `searchVehicles` itself and never reaches
+ * here. The transport cases at the foot of the file do the opposite: they hand
+ * the mock the actual adapter and supply a real `ApiClient` over a transport
+ * they control, which is the only way a screen can be made to meet a timeout.
+ *
+ * `authorizedClient` is the one seam that allows it — it is the sole owner of
+ * client construction (`server-client.ts`), so replacing it replaces the
+ * transport for the whole adapter without the adapter knowing.
+ */
+const authorizedClient = vi.fn<() => Promise<unknown>>();
+vi.mock('@/lib/api/server-client', () => ({
+  authorizedClient: () => authorizedClient(),
+}));
+
 vi.mock('@/features/vehicles/api', () => ({
   searchVehicles: (...args: unknown[]) => searchVehicles(...args),
 }));
@@ -49,6 +66,18 @@ const { VehicleDuplicateReviewScreen } =
   await import('@/features/vehicles/components/VehicleDuplicateReviewScreen');
 const { VehicleAttributeHistorySection } =
   await import('@/features/vehicles/components/VehicleAttributeHistorySection');
+
+/**
+ * The adapter this file mocks everywhere else, imported for real.
+ *
+ * `vi.importActual` bypasses the mock for THIS module only; its own imports
+ * still resolve through the registry, so `@/lib/api/server-client` above is
+ * still the mocked one. That is exactly the arrangement the transport cases
+ * need: production adapter, production client, a transport under test control.
+ */
+const realVehicleApi =
+  await vi.importActual<typeof import('@/features/vehicles/api')>('@/features/vehicles/api');
+const { ApiClient } = await import('@/lib/api/client');
 
 /**
  * A healthy make catalogue.
@@ -140,6 +169,7 @@ beforeEach(() => {
   listVehicleDuplicates.mockReset();
   reviewVehicleDuplicateAction.mockReset();
   listAttributeHistory.mockReset();
+  authorizedClient.mockReset();
   push.mockReset();
   searchVehicles.mockResolvedValue(page([HIT]));
   listVehicleDuplicates.mockResolvedValue(page([CANDIDATE]));
@@ -365,6 +395,149 @@ describe('vehicle search asks nothing until it is asked', () => {
     // the contract, and a matcher cannot take null.
     expect(await screen.findByText('V-0001')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: en['state.retry'] })).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * The `timeout` and `cancellation` paths of the canonical 18-path matrix
+ * (`canonical-plan.md` §6), driven through the PRODUCTION adapter into a
+ * rendered screen.
+ *
+ * ## Why the matrix carried both as `PARTIAL`
+ *
+ * "Proved in the shared client, on no screen." `tests/api-client.test.ts` proves
+ * `ApiClient` classifies its own deadline as `timeout` and an abort it did not
+ * cause as `cancelled`; nothing anywhere proved either classification survives
+ * the two translations between the catch block and an operator's eyes —
+ * `STATUS_BY_KIND` on the way out of the adapter, then `TableStatus` on the way
+ * into `DataTable`. Both of those have already lost a distinction the client
+ * computed: `P1-27-QA-002` found every non-denied failure collapsing to `error`,
+ * so a rate-limited operator was told the system had broken. A classification
+ * proved only at the client is proved one layer below the layer that has the
+ * history of dropping it.
+ *
+ * ## Why these cases mock nothing between the screen and the transport
+ *
+ * Every other case in this file replaces `searchVehicles` with a resolved
+ * `ServerPage`, which means the mapping under test is supplied by the test.
+ * These two hand the mock the REAL adapter and replace only `fetch`, so the
+ * chain that runs is the shipped one: `VehicleSearchScreen` → `useServerTable` →
+ * `searchVehicles` → `ApiClient.#request` → the catch block → `STATUS_BY_KIND` →
+ * `DataTable` → the English catalogue. Nothing in it is a fixture except the
+ * transport, and the transport is where a timeout comes from in production too.
+ *
+ * ## What cancellation means on THIS screen, said exactly
+ *
+ * No P1-27 screen offers a Cancel control and no P1-27 adapter accepts an
+ * `AbortSignal` — `searchVehicles` takes `(criteria, request, cursor)` and
+ * nothing else. So the cancellation an operator can actually cause here is the
+ * one the client's own comment names second: navigating away, which tears down
+ * the in-flight request and rejects it with an `AbortError` the client did not
+ * raise. That is what the second case drives. It is NOT a proof that a Cancel
+ * button behaves, because there is no such button to prove.
+ */
+describe('a transport outcome an operator can actually meet, end to end', () => {
+  /**
+   * Short enough that the deadline is what ends the test, rather than the test
+   * runner's own patience. The production default is 15 seconds.
+   */
+  const TIMEOUT_MS = 10;
+
+  /** A transport that never answers, and rejects only when it is aborted. */
+  function silent(): typeof fetch {
+    return vi.fn((_input: unknown, init?: { signal?: AbortSignal | null }) => {
+      return new Promise<Response>((_resolve, reject) => {
+        const signal = init?.signal;
+        if (!signal) return;
+        // Spec behaviour: an aborted fetch rejects with the signal's REASON,
+        // which here is the `TimeoutError` the client itself constructed. A stub
+        // that invented a plain `AbortError` would be testing an easier case
+        // than the one the client is written against.
+        signal.addEventListener('abort', () => reject(signal.reason as Error), { once: true });
+      });
+    }) as unknown as typeof fetch;
+  }
+
+  /**
+   * A transport aborted from OUTSIDE the client — the browser tearing the
+   * request down on navigation. Nothing the client did caused it, which is the
+   * whole point: `timedOutHere` is false and the reason is an ordinary
+   * `AbortError`.
+   */
+  function abortedElsewhere(): typeof fetch {
+    return vi.fn(() =>
+      Promise.reject(new DOMException('The user aborted a request.', 'AbortError'))
+    ) as unknown as typeof fetch;
+  }
+
+  function renderSearchOver(fetchImpl: typeof fetch) {
+    searchVehicles.mockImplementation(realVehicleApi.searchVehicles);
+    authorizedClient.mockResolvedValue(
+      new ApiClient({
+        baseUrl: 'https://api.invalid',
+        fetchImpl,
+        timeoutMs: TIMEOUT_MS,
+        // Fixed so the reference the operator is shown can be asserted to be
+        // the one this request carried, rather than merely "some text".
+        newCorrelationId: () => 'corr-transport',
+      })
+    );
+    return renderLtr(
+      <VehicleSearchScreen locale="en" messages={en} canCreate={false} makes={CATALOGUE_OK} />
+    );
+  }
+
+  async function search() {
+    const user = userEvent.setup();
+    await user.type(screen.getByLabelText(en['vehicles.search.plate']), '12-3456{Enter}');
+  }
+
+  it('shows a TIMEOUT as "service unavailable", with the reference to quote', async () => {
+    const wire = silent();
+    renderSearchOver(wire);
+    await search();
+
+    // The copy the operator reads, from the catalogue, not a key.
+    expect(await screen.findByText(en['state.unavailable.title'])).toBeInTheDocument();
+    // And the reference that ties their phone call to the API's own log. It can
+    // only be here if a real client failure produced this state.
+    expect(screen.getByText('corr-transport')).toBeInTheDocument();
+    // Not "something broke" — a timeout is retryable and says so.
+    expect(screen.queryByText(en['state.error.title'])).not.toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: en['state.retry'] })).toBeInTheDocument();
+
+    // The request was genuinely issued and genuinely abandoned by the deadline.
+    // Without this the assertions above would also pass against a screen that
+    // never called the transport at all. ONE attempt: search is `expensive-read`
+    // and the adapter sends `retries: 0`, so a timeout must not become two.
+    expect(wire).toHaveBeenCalledTimes(1);
+  });
+
+  it('does NOT report a CANCELLED request as a backend outage', async () => {
+    const wire = abortedElsewhere();
+    renderSearchOver(wire);
+    await search();
+
+    // The decisive assertion, and the one the client's catch block exists for:
+    // an abort the client did not cause must not put a service-unavailable state
+    // on screen. Nothing failed. Telling an operator the backend is down because
+    // they navigated away is a false incident, and it is the one they report.
+    await waitFor(() =>
+      expect(screen.queryByText(en['vehicles.search.idleTitle'])).not.toBeInTheDocument()
+    );
+    expect(screen.queryByText(en['state.unavailable.title'])).not.toBeInTheDocument();
+    // What it IS: `STATUS_BY_KIND` maps `cancelled` to `error`, so the screen
+    // settles rather than spinning for ever on a request that will never answer.
+    expect(screen.getByText(en['state.error.title'])).toBeInTheDocument();
+    expect(wire).toHaveBeenCalledTimes(1);
+  });
+
+  it('tells the two apart, which is the only thing that makes either case mean anything', () => {
+    // Both cases render a real failure state, so each on its own could be
+    // satisfied by a client that classified every abort identically. The two
+    // sentences differ, and this asserts the catalogue keeps them different —
+    // if these two strings were ever made equal, neither case above could fail.
+    expect(en['state.unavailable.title']).not.toBe(en['state.error.title']);
   });
 });
 
