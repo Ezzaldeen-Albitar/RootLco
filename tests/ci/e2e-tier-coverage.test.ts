@@ -3,7 +3,7 @@ import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 
 /**
- * THE AUTHENTICATED BROWSER TIER, AND EXACTLY HOW FAR ITS REPAYMENT GOES.
+ * THE AUTHENTICATED BROWSER TIER, AND THE STATE ITS REPAYMENT HAS REACHED.
  *
  * ## The finding this file was written for
  *
@@ -15,41 +15,40 @@ import { join } from 'node:path';
  * never executed on a hosted runner, while the browser check reported green and
  * the phase records counted browser coverage.
  *
- * ## What changed, and why the first version of this file was wrong about it
+ * ## Two repairs, and this file has now seen both
  *
- * This file used to assert that NO workflow sets the variable, and explained
- * that the tier "needs three things a hosted runner is not given". That
- * explanation was false. A hosted runner has Docker; the Supabase CLI is a
- * devDependency of this repository; `scripts/dev/owner-acceptance/context.mjs`
- * guards on an opt-in value, a loopback database and a loopback identity
- * provider, all three of which a runner can satisfy. The tier was unrun because
- * nobody had wired it, not because it could not be wired.
+ * FIRST the tier was WIRED — a hosted job stood the stack up and ran it. This
+ * file was inverted then: the wiring became the thing that must not disappear.
  *
- * It is wired now — `.github/workflows/protected-develop-verification.yml`, job
- * `authenticated-browser` — and the cases below are inverted accordingly: the
- * wiring itself is now the thing that must not disappear.
+ * SECOND, and this is the change these cases are written against, the tier
+ * became GOVERNED. The wiring was not enough and this file said so in prose: the
+ * job was in no gate's `needs`, so `protected-gate` could report **Go** while
+ * this check was red, and `pr-ci.yml` did not run the tier at all. The job body
+ * now lives in `_reusable-authenticated-browser.yml`, both workflows call it,
+ * and `authenticated-browser` is in the `needs` of both `ci-gate` and
+ * `protected-gate`. The debt entries in
+ * `.github/ci-baselines/unrun-test-tiers.json` are therefore gone, which is what
+ * the last describe in this file has always required of the day this happened.
  *
- * ## It also runs BEFORE a merge, which was the second thing believed impossible
+ * ## What is NOT claimed
  *
- * The tier was read as post-merge-only — "runs on push to develop and main" —
- * and that was taken to mean a candidate could not be evidenced until it had
- * been merged, which is the ordering backwards. It was never true. The workflow
- * carries `workflow_dispatch`, so the tier can be run against any branch of
- * this repository before anything lands; what it lacked was a way to say WHICH
- * COMMIT, since a dispatch names a ref and a ref moves. `candidate-sha` and the
- * comparison in the job's first step supply that, and the cases below hold both
- * in place, along with the protected-push trigger they must never replace.
+ * That the tier has been observed to pass. It has not — its only hosted
+ * execution failed on a readiness race in the acceptance bootstrap before it
+ * collected a single test. Governing a check that has never gone green is the
+ * correct order of operations, and `hostedObservation` in the declaration says
+ * so in the same words. Nothing here reads "the job is governed" as "the job
+ * works".
  *
- * ## What is still owed, and is therefore still asserted
+ * ## The fork boundary, which arrived with the governance
  *
- * The job is not on the pull-request gate and not in `protected-gate`'s `needs`
- * — so a gate can be green while it is red. Its first hosted execution (run
- * 31337158296) also FAILED, before the tier collected a single test, on a
- * readiness race in the acceptance bootstrap rather than on anything in this
- * wiring. So the hole is real, the declaration stays, and every field of it is
- * held here. When the job is finally governed by the gate, the case at the end
- * of this file requires the declaration to be deleted in the same commit: a
- * debt must not outlive its repayment.
+ * The tier stands a full Supabase stack, a production API and a real operator
+ * account up on the runner. A fork pull request must not receive that, so
+ * `pr-ci.yml` gates the job on the head being a branch of this repository — and
+ * the gate is TOLD, so an ineligible skip is recorded as
+ * `NOT_ELIGIBLE_FOR_SECURITY_REASON` rather than inferred from a missing result.
+ * Both halves are asserted below, because either alone is a hole: the condition
+ * without the statement is a silent pass, and the statement without the
+ * condition is a fork running privileged code.
  */
 
 const ROOT = process.cwd();
@@ -58,9 +57,15 @@ const DECLARATION = join(ROOT, '.github', 'ci-baselines', 'unrun-test-tiers.json
 const WORKFLOWS = join(ROOT, '.github', 'workflows');
 const CONFIG = join(ROOT, 'apps', 'web', 'playwright.config.ts');
 
-/** The one workflow allowed to run the tier, and the job inside it. */
-const RUNNER_WORKFLOW = 'protected-develop-verification.yml';
+/** The one workflow that holds the tier's body, and the job inside it. */
+const RUNNER_WORKFLOW = '_reusable-authenticated-browser.yml';
 const RUNNER_JOB = 'authenticated-browser';
+
+/** The workflows allowed to CALL it, and the gate job each one must hang it off. */
+const CALLERS: readonly { workflow: string; gate: string }[] = [
+  { workflow: 'pr-ci.yml', gate: 'ci-gate' },
+  { workflow: 'protected-develop-verification.yml', gate: 'protected-gate' },
+];
 
 interface Unrun {
   readonly id: string;
@@ -75,8 +80,17 @@ interface Unrun {
   readonly reviewBy: string;
 }
 
+interface Governed {
+  readonly since: string;
+  readonly executedBy: string;
+  readonly governedBy: string;
+  readonly forkPolicy: string;
+  readonly specs: readonly string[];
+}
+
 const declaration = JSON.parse(readFileSync(DECLARATION, 'utf8')) as {
   unrun: Unrun[];
+  governed?: Governed;
   hostedObservation?: string;
   howToClose?: string;
 };
@@ -134,6 +148,18 @@ function jobBody(source: string, job: string): string | null {
   const end = rest.findIndex((line) => /^ {2}[a-z][a-z0-9-]*:\s*$/.test(line));
   return (end === -1 ? rest : rest.slice(0, end)).join('\n');
 }
+
+/** True when `gate`'s `needs:` list in `source` contains `job`. */
+function gateNeeds(source: string, gate: string, job: string): boolean {
+  const body = jobBody(source, gate);
+  if (body === null) return false;
+  return new RegExp(`^\\s*-\\s+${job}\\s*$`, 'm').test(code(body));
+}
+
+/** The single fact every case below branches on: is the job under a gate? */
+const governed = CALLERS.every(({ workflow, gate }) =>
+  gateNeeds(workflowSources.get(workflow) ?? '', gate, RUNNER_JOB)
+);
 
 describe('the facts, established from the files that decide them', () => {
   it('finds spec files on both sides of the gate', () => {
@@ -217,12 +243,11 @@ describe('the tier is wired, and the wiring is what must not disappear', () => {
     );
   });
 
-  it('NO OTHER workflow runs the tier, and the pull-request gate in particular does not', () => {
+  it('NO OTHER workflow runs the tier — the callers delegate, they do not copy', () => {
     /*
-     * The inversion, in its new direction. `pr-ci.yml` and every reusable
-     * workflow it calls must stay clear of the tier: a forty-minute Docker stack
-     * on the merge gate is a different decision from this one and must be taken
-     * deliberately, not inherited by a stray copy-paste.
+     * The inversion, in its third direction. The body exists ONCE. A second copy
+     * of forty lines of Docker orchestration is how two copies drift apart, and
+     * the two callers must reach the tier by `uses:` rather than by paste.
      */
     for (const [name, source] of workflowSources) {
       if (name === RUNNER_WORKFLOW) continue;
@@ -237,40 +262,58 @@ describe('the tier is wired, and the wiring is what must not disappear', () => {
     }
   });
 
+  it('every caller reaches it by `uses:`, and both callers exist', () => {
+    for (const { workflow } of CALLERS) {
+      const source = workflowSources.get(workflow);
+      expect(source, `${workflow} is missing`).toBeTruthy();
+      const body = jobBody(source as string, RUNNER_JOB);
+      expect(body, `${workflow} declares no ${RUNNER_JOB} job`).toBeTruthy();
+      expect(code(body as string), `${workflow} does not call ${RUNNER_WORKFLOW}`).toContain(
+        `uses: ./.github/workflows/${RUNNER_WORKFLOW}`
+      );
+    }
+  });
+
   it('is reachable BEFORE a merge, and pinned to a commit when it is', () => {
     /*
      * The ordering finding. A tier that only ran on a protected push could
      * produce evidence only AFTER the merge, so a phase would have had to
-     * merge work in order to learn whether the work was sound. The dispatch
-     * trigger is what makes the evidence obtainable first, and the three
-     * assertions below are the three halves of it that can each be deleted
-     * independently:
+     * merge work in order to learn whether the work was sound.
      *
-     *   - the trigger exists at all;
-     *   - it accepts the commit as an input, because a dispatch names a REF
-     *     and a ref moves;
-     *   - the job compares that input against what it actually resolved, so a
-     *     ref that moved in the gap fails instead of being quoted for the
-     *     wrong commit.
+     * There are two pre-merge paths now — the pull-request gate itself, and a
+     * dispatch of any branch — and each is asserted where it lives. The
+     * comparison that makes a dispatch quotable lives in the reusable workflow,
+     * because that is where the commit is finally known.
      */
-    const trigger = runner.slice(0, runner.indexOf('concurrency:'));
+    const protectedWorkflow = workflowSources.get('protected-develop-verification.yml') as string;
+    const trigger = protectedWorkflow.slice(0, protectedWorkflow.indexOf('concurrency:'));
     expect(trigger, 'the pre-merge dispatch trigger is gone').toContain('workflow_dispatch:');
     expect(trigger, 'the dispatch no longer takes the candidate commit').toContain(
       'candidate-sha:'
     );
 
-    const body = jobBody(runner, RUNNER_JOB) as string;
-    expect(body, 'the job no longer reads the requested commit').toContain('inputs.candidate-sha');
-    expect(body, 'the job no longer reads the commit it actually resolved').toContain('github.sha');
+    const caller = jobBody(protectedWorkflow, RUNNER_JOB) as string;
+    expect(caller, 'the caller no longer forwards the requested commit').toContain(
+      'inputs.candidate-sha'
+    );
+
+    const body = jobBody(workflowSources.get(RUNNER_WORKFLOW) as string, RUNNER_JOB) as string;
+    expect(body, 'the job no longer reads the requested commit').toContain('inputs.expected-sha');
     /*
-     * ONE LINE, not the whole body. The first version of this assertion used
+     * The comparison is against the commit the CHECKOUT resolved, not against
+     * `github.sha`. That is not cosmetic: on a `pull_request` event `github.sha`
+     * is the MERGE ref — a commit in no branch — so the previous form was sound
+     * for a dispatch and would have been false for every pull request, which is
+     * exactly the event the job was about to be added to.
+     */
+    expect(body, 'the job no longer reads the commit it actually checked out').toContain(
+      'steps.setup.outputs.sha'
+    );
+    /*
+     * ONE LINE, not the whole body. An earlier version of this assertion used
      * `.*` under the `s` flag, so the two names and the `!=` were allowed to
-     * come from three different steps — and they did: the env block declares
-     * REQUESTED_SHA, the report-reading step contains `!==` inside
-     * `r.status !== "skipped"`, and the summary step mentions RESOLVED_SHA.
-     * Deleting the comparison entirely left that assertion passing. It was
-     * caught by mutating the comparison out and watching nothing fail, which
-     * is the only way this class of vacuity ever shows up.
+     * come from three different steps — and they did. Deleting the comparison
+     * entirely left that assertion passing.
      */
     expect(
       code(body),
@@ -282,7 +325,8 @@ describe('the tier is wired, and the wiring is what must not disappear', () => {
     // The pre-merge run is additional evidence, never a replacement. A gate
     // record quotes the protected run, so losing this trigger while gaining
     // the dispatch would trade one hole for another.
-    const trigger = runner.slice(0, runner.indexOf('concurrency:'));
+    const protectedWorkflow = workflowSources.get('protected-develop-verification.yml') as string;
+    const trigger = protectedWorkflow.slice(0, protectedWorkflow.indexOf('concurrency:'));
     expect(trigger, 'the protected push trigger is gone').toMatch(/push:/);
     expect(trigger, 'the protected branches are no longer named').toMatch(
       /branches:\s*\[develop,\s*main\]/
@@ -299,10 +343,125 @@ describe('the tier is wired, and the wiring is what must not disappear', () => {
   });
 });
 
+describe('a gate WAITS for the result — the whole point of the second repair', () => {
+  it('both gates list the job in `needs`', () => {
+    for (const { workflow, gate } of CALLERS) {
+      expect(
+        gateNeeds(workflowSources.get(workflow) ?? '', gate, RUNNER_JOB),
+        `${gate} in ${workflow} does not depend on ${RUNNER_JOB}, so it can report Go while the ` +
+          "repository's only end-to-end tenant-isolation proof is red"
+      ).toBe(true);
+    }
+    expect(governed, 'the derived governance flag disagrees with the assertions above').toBe(true);
+  });
+
+  it('the gate evaluator declares it, and declares it unconditionally required', async () => {
+    const { DECLARED_JOBS } = (await import('../../scripts/ci/evaluate-ci-gate.mjs')) as {
+      DECLARED_JOBS: Array<{ id: string; alwaysRequired: boolean; securityEligibility?: string }>;
+    };
+    const row = DECLARED_JOBS.find((j) => j.id === RUNNER_JOB);
+    expect(row, `${RUNNER_JOB} is not in DECLARED_JOBS, so the gate is blind to it`).toBeDefined();
+    expect(row?.alwaysRequired, `${RUNNER_JOB} must never be skippable on a technicality`).toBe(
+      true
+    );
+    expect(
+      row?.securityEligibility,
+      `${RUNNER_JOB} must declare the one condition under which it may be absent`
+    ).toBeTruthy();
+  });
+});
+
+describe('a fork gets no privileged execution, and the gate is TOLD rather than left to guess', () => {
+  const pr = workflowSources.get('pr-ci.yml') as string;
+
+  it('the pull-request job runs only for a same-repository head', () => {
+    const body = code(jobBody(pr, RUNNER_JOB) as string);
+    expect(
+      body,
+      'the authenticated-browser job on the pull-request gate carries no trust condition, so a ' +
+        'fork pull request would stand a privileged Supabase stack and a real account up'
+    ).toContain('github.event.pull_request.head.repo.full_name == github.repository');
+  });
+
+  it('the gate is given the SAME condition, so it cannot disagree with the workflow', () => {
+    const gate = code(jobBody(pr, 'ci-gate') as string);
+    expect(gate, 'ci-gate is not told whether this run was eligible').toContain(
+      '--trusted-context'
+    );
+    expect(
+      gate,
+      'ci-gate derives eligibility from something other than the condition that decides the job'
+    ).toContain('github.event.pull_request.head.repo.full_name == github.repository');
+  });
+
+  it('the protected gate states the eligibility positively rather than omitting it', () => {
+    /*
+     * An omitted statement fails a skip closed, which is correct — but on a
+     * protected push there is no untrusted path at all, so leaving it unstated
+     * would mean the gate could only ever fail on a skip and never explain why.
+     * The workflow says `true` because that is a fact about the event.
+     */
+    const protectedWorkflow = workflowSources.get('protected-develop-verification.yml') as string;
+    const gate = code(jobBody(protectedWorkflow, 'protected-gate') as string);
+    expect(gate, 'protected-gate makes no eligibility statement').toMatch(
+      /--trusted-context\s+true/
+    );
+  });
+
+  it('there is nothing for a fork to be given — the tier reads no repository secret', () => {
+    /*
+     * The `if:` is the boundary that matters, but it is not the only thing worth
+     * asserting: a job that consumed a repository secret would make the boundary
+     * load-bearing in a way a single expression should never be. This tier is
+     * self-contained — every credential it uses is issued by the Supabase stack
+     * it starts and dies with the runner — so the fork refusal is about denying
+     * privileged EXECUTION, not about protecting a value.
+     *
+     * `secrets: inherit` on either caller would be the regression, and it would
+     * be invisible: the job would keep working and a fork would keep skipping.
+     */
+    const runner = workflowSources.get(RUNNER_WORKFLOW) as string;
+    expect(
+      code(runner),
+      `${RUNNER_WORKFLOW} now reads a repository secret; this tier must stay self-contained`
+    ).not.toMatch(/secrets\./);
+    expect(code(runner), `${RUNNER_WORKFLOW} now declares a secrets input`).not.toMatch(
+      /^\s{4,}secrets:\s*$/m
+    );
+    for (const { workflow } of CALLERS) {
+      const body = code(jobBody(workflowSources.get(workflow) as string, RUNNER_JOB) as string);
+      expect(body, `${workflow} passes secrets into the tier`).not.toMatch(/secrets:/);
+    }
+  });
+
+  it('the three states are named where the decision is made', async () => {
+    const { STATE } = (await import('../../scripts/ci/evaluate-ci-gate.mjs')) as {
+      STATE: Record<string, string>;
+    };
+    expect(Object.values(STATE)).toContain('REQUIRED_AND_PASSED');
+    expect(Object.values(STATE)).toContain('REQUIRED_AND_FAILED');
+    expect(Object.values(STATE)).toContain('NOT_ELIGIBLE_FOR_SECURITY_REASON');
+  });
+});
+
 describe('every spec is either covered by a gate or declared — never neither', () => {
   const declared = new Set(declaration.unrun.map((row) => row.path));
 
-  it('declares every authenticated spec while no gate governs the job that runs them', () => {
+  it('covers every authenticated spec, by a gate if governed and by a declaration if not', () => {
+    if (governed) {
+      const listed = new Set(declaration.governed?.specs ?? []);
+      const missing = authSpecs.filter((path) => !listed.has(path));
+      expect(
+        missing,
+        'these browser specs are executed by no named governed spec list and declared nowhere:\n  ' +
+          `${missing.join('\n  ')}`
+      ).toEqual([]);
+      const ghosts = (declaration.governed?.specs ?? []).filter(
+        (path) => !authSpecs.includes(path)
+      );
+      expect(ghosts, 'the governed list names a spec that does not exist').toEqual([]);
+      return;
+    }
     const missing = authSpecs.filter((path) => !declared.has(path));
     expect(
       missing,
@@ -378,8 +537,10 @@ describe('a declaration states a debt, not a dispensation', () => {
     /*
      * The field that turns this file from a debt register into a pointer at
      * evidence. If it named a job nobody wired, the declaration would read as a
-     * repayment while nothing had been repaid — which is the exact failure the
-     * previous version of this file committed in prose.
+     * repayment while nothing had been repaid.
+     *
+     * It applies to whichever block is populated: the debt entries while there
+     * are any, and the `governed` block once there are not.
      */
     for (const row of declaration.unrun) {
       expect(row.executedBy, `${row.id} must name the workflow that runs it`).toContain(
@@ -387,21 +548,31 @@ describe('a declaration states a debt, not a dispensation', () => {
       );
       expect(row.executedBy, `${row.id} must name the job that runs it`).toContain(RUNNER_JOB);
     }
+    if (governed) {
+      const g = declaration.governed;
+      expect(g, 'the job is governed and the declaration records nothing about it').toBeDefined();
+      expect(g?.executedBy, 'the governed block names no workflow').toContain(RUNNER_WORKFLOW);
+      expect(g?.executedBy, 'the governed block names no job').toContain(RUNNER_JOB);
+      for (const { gate } of CALLERS) {
+        expect(g?.governedBy, `the governed block does not name ${gate}`).toContain(gate);
+      }
+      expect(
+        g?.forkPolicy,
+        'the governed block does not state what a fork pull request receives'
+      ).toMatch(/fork/i);
+    }
     const runner = workflowSources.get(RUNNER_WORKFLOW) as string;
     expect(jobBody(runner, RUNNER_JOB), 'the named job does not exist').toBeTruthy();
   });
 
   it('states the observation status, and cites a run rather than asserting one', () => {
     /*
-     * Wiring a job is not the same as having watched it run, and claiming the
-     * second on the strength of the first is how this phase got here.
+     * Wiring a job is not the same as having watched it run, and GOVERNING one
+     * is not either. Claiming an observation on the strength of a `needs:` line
+     * is the same defect the previous version of this file committed in prose.
      *
-     * The field used to be called `notYetObservedOnARunner`, and once the job
-     * HAD been observed that name was itself a false statement — the same
-     * defect class as a docblock describing behaviour the code no longer has.
-     * It is `hostedObservation` now, and it must carry a checkable citation:
-     * a run id and a full commit, so a reader can open the run instead of
-     * taking the sentence on trust.
+     * The field must carry a checkable citation: a run id and a full commit, so
+     * a reader can open the run instead of taking the sentence on trust.
      */
     const observation = String(declaration.hostedObservation ?? '');
     expect(observation, 'the declaration no longer states the observation status').toBeTruthy();
@@ -410,7 +581,7 @@ describe('a declaration states a debt, not a dispensation', () => {
     expect(observation, 'the observation cites no full commit sha').toMatch(/\b[0-9a-f]{40}\b/);
   });
 
-  it('records how the remaining debt is repaid, naming what has to change', () => {
+  it('records how the debt was, or is to be, repaid — naming what has to change', () => {
     expect(String(declaration.howToClose)).toContain('evaluate-ci-gate.mjs');
     expect(String(declaration.howToClose)).toContain('pull-request-body.md');
     for (const row of declaration.unrun) {
@@ -442,21 +613,17 @@ describe('a declaration states a debt, not a dispensation', () => {
 });
 
 describe('the debt must not outlive its repayment', () => {
-  const runner = workflowSources.get(RUNNER_WORKFLOW) as string;
-  const gate = jobBody(runner, 'protected-gate') ?? '';
-  const governed = new RegExp(`^\\s*-\\s+${RUNNER_JOB}\\s*$`, 'm').test(gate);
-
   it('the declaration is deleted in the same commit that puts the job under a gate', () => {
     /*
      * The forward direction, so this file cannot become a permanent excuse. On
-     * the day `authenticated-browser` joins `protected-gate`'s `needs`, a gate
-     * governs the result and there is nothing left to declare — this case fails
-     * until the entries go.
+     * the day `authenticated-browser` joined both gates' `needs`, a gate governs
+     * the result and there is nothing left to declare — this case fails until
+     * the entries go, and fails again if anybody puts one back.
      */
     if (governed) {
       expect(
         declaration.unrun.filter((row) => row.path.includes('/authenticated/')).map((r) => r.path),
-        `${RUNNER_JOB} is now in protected-gate needs, so the unrun declaration must be deleted`
+        `${RUNNER_JOB} is in both gates' needs, so the unrun declaration must be deleted`
       ).toEqual([]);
     } else {
       expect(
@@ -466,52 +633,53 @@ describe('the debt must not outlive its repayment', () => {
     }
   });
 
-  it('states the gate blindness INSIDE the job, where a reader of the job sees it', () => {
+  it('states the gate blindness INSIDE the job, while there is any to state', () => {
     if (governed) return;
     /*
      * This used to accept the sentence anywhere in `body` OR in everything
-     * preceding the first mention of the job name across every joined
-     * workflow. That prefix was not a place — it moved. Its end was the first
-     * occurrence of the string "authenticated-browser" in a concatenation of
-     * all workflow files in directory order, so merely MENTIONING the job name
-     * earlier in a comment shortened the prefix and failed the check, while
-     * the statement it was checking for had not moved at all. This repository
-     * has already lost a hosted run to exactly that (the local and hosted
-     * concatenations differed), and it caught a second one here.
-     *
-     * The requirement was always that the reader of the job sees it, so the
-     * assertion is now the job body alone: one location, no ordering, and
-     * stricter than what it replaces.
+     * preceding the first mention of the job name across every joined workflow.
+     * That prefix was not a place — it moved. The requirement was always that
+     * the reader of the job sees it, so the assertion is the job body alone.
      */
+    const runner = workflowSources.get(RUNNER_WORKFLOW) as string;
     const body = jobBody(runner, RUNNER_JOB) as string;
-    expect(
-      body,
-      'the job block itself does not say that protected-gate does not govern it'
-    ).toContain('protected-gate');
+    expect(body, 'the job block itself does not say that no gate governs it').toContain(
+      'protected-gate'
+    );
   });
 });
 
 describe('the gap is LOUD, not merely recorded', () => {
   /*
    * A committed JSON file nobody reads is exactly the failure being fixed. The
-   * surfaces that carry it are asserted here.
+   * surfaces that carry it are asserted here. The tier is governed now, so what
+   * the web job renders is the repayment rather than the debt — but it must
+   * still RENDER, because "the anonymous tier is not the whole browser tier" is
+   * a fact a reader of a green web job still needs.
    */
   const nodeQuality = readFileSync(join(WORKFLOWS, '_reusable-node-quality.yml'), 'utf8');
 
-  it('the hosted web job reads the declaration and annotates every entry', () => {
+  it('the hosted web job reads the declaration', () => {
     expect(nodeQuality, 'the hosted job does not read the declaration').toContain(
       '.github/ci-baselines/unrun-test-tiers.json'
     );
-    expect(nodeQuality, 'the entries produce no warning annotation').toContain('::warning file=');
   });
 
-  it('the web job names the job that DOES run the tier, so the gap is not read as an absence', () => {
-    expect(nodeQuality, 'the summary no longer points at the executing job').toContain(
-      'row.executedBy'
+  it('it can still annotate a re-declared entry', () => {
+    // The warning path must survive the repayment. If a tier is ever declared
+    // unrun again, the annotation is how a reviewer learns without opening JSON.
+    expect(nodeQuality, 'the entries would produce no warning annotation').toContain(
+      '::warning file='
     );
   });
 
-  it('the hosted web job renders it into the summary a reviewer reads', () => {
+  it('it names the job that DOES run the tier, so the gap is not read as an absence', () => {
+    expect(nodeQuality, 'the summary no longer points at the executing job').toMatch(
+      /row\.executedBy|governed\.executedBy/
+    );
+  });
+
+  it('it renders the file it writes into the summary a reviewer reads', () => {
     expect(nodeQuality).toContain('unrun-tiers.md');
     const summaryLoop = nodeQuality
       .split('\n')
@@ -520,6 +688,25 @@ describe('the gap is LOUD, not merely recorded', () => {
     expect(summaryLoop, 'the unrun-tier table is written and never shown').toContain(
       'unrun-tiers.md'
     );
+  });
+
+  it('reads the observation field that actually exists', () => {
+    /*
+     * It interpolated `doc.notYetObservedOnARunner` after that field had been
+     * renamed to `hostedObservation`, so the job summary rendered the literal
+     * word `undefined` where the observation status belongs — a stale reference
+     * that no gate could see because a summary is prose.
+     */
+    expect(nodeQuality, 'the summary reads a field the declaration does not have').not.toContain(
+      'notYetObservedOnARunner'
+    );
+    expect(nodeQuality, 'the summary no longer renders the observation status').toContain(
+      'doc.hostedObservation'
+    );
+    expect(
+      declaration.hostedObservation,
+      'the declaration does not carry the field the summary reads'
+    ).toBeTruthy();
   });
 
   it('the Playwright config says it at the point of the run', () => {
@@ -531,10 +718,14 @@ describe('the gap is LOUD, not merely recorded', () => {
   });
 
   it('names the two specs the finding is about, so they cannot be quietly dropped', () => {
-    const declared = declaration.unrun.map((r) => r.path);
-    expect(declared).toContain('apps/web/tests/e2e/authenticated/isolation.spec.ts');
-    expect(declared).toContain('apps/web/tests/e2e/authenticated/accessibility.spec.ts');
-    const isolation = declaration.unrun.find((r) => r.path.endsWith('isolation.spec.ts'));
-    expect(isolation?.whatIsUnprovenWithoutIt).toMatch(/tenant isolation/i);
+    const named = governed
+      ? (declaration.governed?.specs ?? [])
+      : declaration.unrun.map((r) => r.path);
+    expect(named).toContain('apps/web/tests/e2e/authenticated/isolation.spec.ts');
+    expect(named).toContain('apps/web/tests/e2e/authenticated/accessibility.spec.ts');
+    if (!governed) {
+      const isolation = declaration.unrun.find((r) => r.path.endsWith('isolation.spec.ts'));
+      expect(isolation?.whatIsUnprovenWithoutIt).toMatch(/tenant isolation/i);
+    }
   });
 });

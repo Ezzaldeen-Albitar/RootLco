@@ -670,25 +670,50 @@ jobs:
           # committed declaration that tests/ci/e2e-tier-coverage.test.ts holds
           # against the actual spec files.
           #
-          # The tier is no longer unrun everywhere: the `authenticated-browser`
-          # job in protected-develop-verification.yml executes it on every push
-          # to develop and main. It is still unrun HERE, which is what a reader
-          # of a green pull request needs told — so each row now names the job
-          # that does run it rather than implying nothing does.
+          # The tier is no longer unrun anywhere: the `authenticated-browser` job
+          # is now a real dependency of BOTH gates, so `unrun` is empty and this
+          # step renders the repayment instead of the debt.
+          #
+          # An empty declaration used to THROW here, on the reasoning that the
+          # list is derived from real spec files and cannot be empty. That was
+          # true only while the tier was ungoverned: it made "the debt was paid"
+          # indistinguishable from "somebody deleted the file", and it would have
+          # failed every web job on the commit that closed the gap. The two states
+          # are now distinguished and both are printed.
+          #
+          # The last line used to interpolate the declaration's OLD observation
+          # field name. That field was renamed to `hostedObservation` and this
+          # line was not, so the summary rendered the literal word `undefined`
+          # where the observation status belongs — a stale reference no gate
+          # could see, because a job summary is prose.
           node -e '
             const fs = require("node:fs");
             const doc = JSON.parse(fs.readFileSync(".github/ci-baselines/unrun-test-tiers.json", "utf8"));
             const rows = doc.unrun ?? [];
-            if (rows.length === 0) throw new Error("the unrun-tier declaration is empty; it is derived from real spec files and cannot be");
-            const out = ["### Browser specs NOT executed by this job", "",
-              "`npm run test:web-e2e` runs the ANONYMOUS tier. These specs did not run here, and a green pull request does not cover them:", "",
-              "| Spec | What a pull request leaves unproven | Executed instead by | Compensating control |", "| --- | --- | --- | --- |"];
-            for (const row of rows) {
-              console.log(`::warning file=${row.path}::${row.id} did not run in this job. ${row.whatIsUnprovenWithoutIt} Executed by: ${row.executedBy}`);
-              out.push(`| \`${row.path}\` | ${row.whatIsUnprovenWithoutIt} | ${row.executedBy} | ${row.compensatingControl} |`);
+            const governed = doc.governed ?? null;
+            if (rows.length === 0 && !governed) {
+              throw new Error("the unrun-tier declaration is empty and records no governing job either; one of the two must be true");
             }
-            out.push("", `_Declared in \`.github/ci-baselines/unrun-test-tiers.json\`. ${rows.length} spec(s)._`,
-              `_${doc.notYetObservedOnARunner}_`, "");
+            const out = [];
+            if (rows.length > 0) {
+              out.push("### Browser specs NOT executed by this job", "",
+                "`npm run test:web-e2e` runs the ANONYMOUS tier. These specs did not run here, and a green pull request does not cover them:", "",
+                "| Spec | What a pull request leaves unproven | Executed instead by | Compensating control |", "| --- | --- | --- | --- |");
+              for (const row of rows) {
+                console.log(`::warning file=${row.path}::${row.id} did not run in this job. ${row.whatIsUnprovenWithoutIt} Executed by: ${row.executedBy}`);
+                out.push(`| \`${row.path}\` | ${row.whatIsUnprovenWithoutIt} | ${row.executedBy} | ${row.compensatingControl} |`);
+              }
+              out.push("", `_Declared in \`.github/ci-baselines/unrun-test-tiers.json\`. ${rows.length} spec(s)._`);
+            } else {
+              out.push("### Browser specs not executed by THIS job — and the gate that does execute them", "",
+                "`npm run test:web-e2e` runs the ANONYMOUS tier only. The authenticated tier is not run here, and it is no longer a hole: a gate-governed job runs it and both gates wait for the result.", "",
+                "| Spec | Executed and governed by |", "| --- | --- |");
+              for (const spec of governed.specs ?? []) {
+                out.push(`| \`${spec}\` | ${governed.executedBy} |`);
+              }
+              out.push("", `_Governed by: ${governed.governedBy}_`, "", `_Fork policy: ${governed.forkPolicy}_`);
+            }
+            out.push("", `_${doc.hostedObservation}_`, "");
             fs.writeFileSync("unrun-tiers.md", out.join("\n") + "\n");
           '
           cat unrun-tiers.md
