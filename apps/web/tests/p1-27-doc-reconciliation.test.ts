@@ -1182,6 +1182,186 @@ describe('every test case the traceability document quotes actually exists', () 
   });
 });
 
+describe('`P1-27-OD-007` — what `DOC-001` is judged on', () => {
+  /*
+   * `DOC-001` moved to PASS on a READING of the canonical wording: §6's
+   * eighteen-path matrix is an obligation on the twenty-nine Frontend TEST ids,
+   * not on the documentation task, whose canonical name is "Contract, catalogue
+   * and traceability SYNCHRONIZATION".
+   *
+   * A reading recorded only in prose is one edit away from being a decision
+   * nobody made, and the specific hazard here is the opposite of the usual one:
+   * not that the decision disappears, but that it is read as having discharged
+   * the path matrix. It did not. These cases hold both halves — the decision is
+   * on file WITH the argument against it, and the path record is unchanged.
+   */
+  const decisions = read('open-decisions.md');
+
+  /*
+   * Scoped to the ENTRY, not to the file.
+   *
+   * `observability.test.ts` records why: a file-scoped assertion of `**Owner:**`
+   * and `Review by:` stayed green when OD-006's own owner line was deleted,
+   * because OD-005 supplied both substrings. The slice runs from this entry's own
+   * level-two heading to the next one — anchored on the HEADING and not on the
+   * first mention, since the first mention is the row in §0.2's index table and
+   * slicing back from there swallows every other entry.
+   */
+  function entry(): string {
+    const heading = decisions.indexOf('## `P1-27-OD-007`');
+    expect(heading, 'open-decisions.md carries no `P1-27-OD-007` heading').toBeGreaterThan(-1);
+    const next = decisions.indexOf('\n## ', heading + 1);
+    const slice = decisions.slice(heading, next === -1 ? undefined : next);
+
+    // Anti-vacuity, in both directions: a slice that captured nothing would
+    // satisfy every `not.toContain` below, and one that captured the document
+    // would make the scoping pointless.
+    expect(slice.length, 'the OD-007 slice is empty').toBeGreaterThan(200);
+    expect(slice.length, 'the OD-007 slice swallowed the whole document').toBeLessThan(
+      decisions.length
+    );
+    expect(slice, 'the OD-007 slice does not contain OD-007').toContain('`P1-27-OD-007`');
+    expect(slice, 'the OD-007 slice leaked into OD-006').not.toContain(
+      '## `P1-27-OD-006` — alert routing'
+    );
+    return slice;
+  }
+
+  it('is on file with an owner and a review date, scoped to its own entry', () => {
+    const od = entry();
+    expect(od, 'OD-007 names no owner').toMatch(/\*\*Owner:\*\*\s*\S/);
+    expect(od, 'OD-007 carries no review date').toMatch(/Review by:\*\*\s*20\d\d-\d\d-\d\d/);
+    expect(od, 'OD-007 is not listed in the §0.2 index').not.toBe(decisions);
+    expect(decisions, 'the §0.2 index carries no OD-007 row').toMatch(/\|\s*`P1-27-OD-007`\s*\|/);
+  });
+
+  it('states BOTH readings and keeps the check that failed', () => {
+    /*
+     * The decay this guards against is an entry that keeps its conclusion and
+     * loses the argument against it. One of the four supporting checks FAILED —
+     * "§6 is not written as an acceptance criterion at all" is refuted by OD-005
+     * above, which reads the same sentence as asking for a per-task test path
+     * matrix — and the entry narrows the reading rather than rescuing it.
+     */
+    const od = entry();
+    expect(od, 'OD-007 does not state the per-id reading').toMatch(/per-id|per id/i);
+    expect(od, 'OD-007 does not state the synchronization reading').toMatch(/synchroniz/i);
+    expect(od, 'OD-007 drops the 522 figure the per-id reading implies').toContain('522');
+    expect(od, 'OD-007 no longer records that one of its own checks failed').toMatch(/\*\*FAILED/);
+    expect(od, 'OD-007 no longer cites the OD-005 counter-reading').toContain('`P1-27-OD-005`');
+  });
+
+  it('does not discharge the path matrix, and says so', () => {
+    const od = entry();
+    expect(od, 'OD-007 does not restate that the matrix stays undischarged').toContain(
+      'matrixDischarged'
+    );
+    expect(od, 'OD-007 does not carry the measured figures').toMatch(
+      /13\s*`?PROVEN|\*\*13\s*`PROVEN`/
+    );
+
+    /*
+     * The claim the entry must never make — asserted on the MACHINE value, not
+     * on an English sentence.
+     *
+     * The first spelling of this was `not.toMatch(/matrix is discharged/i)`, and
+     * it failed on the very prose it was written to protect: this entry and the
+     * DOC-001 row both DENY the claim ("It does not mean the matrix is
+     * discharged"), and a regex over a negated sentence reads the denial as the
+     * assertion. A guard that cannot tell "X" from "this does not mean X" would
+     * have forced the record to stop saying the true thing in order to stay
+     * green. So the prohibition is on the value, and the obligation is stated
+     * positively: the entry must say the flag stays false.
+     */
+    expect(od, 'OD-007 asserts matrixDischarged true').not.toMatch(/matrixDischarged\W{0,12}true/i);
+    expect(od, 'OD-007 does not state that the flag stays false').toMatch(
+      /matrixDischarged`? is \*\*`?false|matrixDischarged`? stays `?false/i
+    );
+  });
+
+  it('the path record it points at is still exactly as measured', () => {
+    /*
+     * The decision must not have MOVED anything. This reads the catalogue record
+     * itself rather than the entry's description of it, so prose and record
+     * cannot drift apart.
+     */
+    const catalogue = JSON.parse(read('evidence', 'test-catalogue-traceability.json')) as {
+      readonly matrixDischarged: boolean;
+      readonly pathMatrix: readonly { readonly path: string; readonly status: string }[];
+    };
+
+    expect(catalogue.matrixDischarged, 'matrixDischarged was flipped').toBe(false);
+    expect(catalogue.pathMatrix.length, 'the path matrix is no longer eighteen rows').toBe(18);
+
+    const by = (s: string) => catalogue.pathMatrix.filter((r) => r.status === s).map((r) => r.path);
+    expect(by('PROVEN').length, 'the PROVEN count moved').toBe(13);
+    expect(by('PARTIAL').sort(), 'the PARTIAL rows moved').toEqual(
+      ['cancellation', 'idempotent replay', 'scope denial'].sort()
+    );
+    expect(by('ABSENT').sort(), 'the ABSENT rows moved').toEqual(
+      ['concurrent update', 'stale version'].sort()
+    );
+  });
+
+  it("`DOC-001`'s matrix row cites the decision and carries the true figures", () => {
+    /*
+     * A PASS that did not name its reason would read, to any later auditor, as a
+     * discharged matrix. The row must carry both the citation and the numbers
+     * that contradict that reading.
+     */
+    const matrix = JSON.parse(read('task-matrix.json')) as {
+      readonly tasks: readonly {
+        readonly TASK_ID: string;
+        readonly FINAL_VERDICT: string;
+        readonly VERDICT_RATIONALE: string;
+      }[];
+    };
+    const row = matrix.tasks.find((t) => t.TASK_ID === 'DOC-001');
+    expect(row, 'the matrix carries no DOC-001 row').toBeDefined();
+    const cell = row!.VERDICT_RATIONALE;
+
+    expect(row!.FINAL_VERDICT, 'DOC-001 is not PASS — OD-007 must be revisited').toBe('PASS');
+    expect(cell, 'the DOC-001 row does not cite P1-27-OD-007').toContain('`P1-27-OD-007`');
+    expect(cell, 'the DOC-001 row does not carry the measured path figures').toMatch(
+      /13\s*`?PROVEN/
+    );
+    expect(cell, 'the DOC-001 row does not restate matrixDischarged').toContain('matrixDischarged');
+    // Same reason as above: the prohibition is on the machine value, because
+    // this cell's plainest sentence is a DENIAL that the matrix is discharged.
+    expect(cell, 'the DOC-001 row asserts matrixDischarged true').not.toMatch(
+      /matrixDischarged\W{0,12}true/i
+    );
+    expect(cell, 'the DOC-001 row does not state that the flag stays false').toMatch(
+      /matrixDischarged`? stays `?false/i
+    );
+  });
+
+  it('the premise holds: §5.3 assigns `DOC-001` no test id', () => {
+    /*
+     * The load-bearing check. §6's obligation attaches to TEST ids — "each id
+     * above is one per task" — and §5.3, which is where `DOC-001` is declared,
+     * has no test-id column at all. If that ever changes, the reading must be
+     * re-argued rather than inherited.
+     */
+    const plan = read('canonical-plan.md');
+    const start = plan.indexOf('### 5.3');
+    expect(start, 'canonical-plan.md has no §5.3').toBeGreaterThan(-1);
+    const end = plan.indexOf('\n## 6.', start);
+    expect(end, 'canonical-plan.md has no §6 after §5.3').toBeGreaterThan(start);
+    const section = plan.slice(start, end);
+
+    expect(section, '§5.3 no longer declares DOC-001').toContain('`P1-27-DOC-001`');
+    expect(section, '§5.3 now carries test ids — OD-007 must be re-argued').not.toMatch(
+      /TC-P1-27-/
+    );
+
+    // And the Frontend sections DO carry them, so the absence above is a real
+    // difference between the tables rather than a pattern that matches nothing.
+    const fe = plan.slice(plan.indexOf('### 5.1'), start);
+    expect(fe, '§5.1 carries no test ids, so the contrast proves nothing').toMatch(/TC-P1-27-/);
+  });
+});
+
 describe('this file is not vacuous', () => {
   it('reads real documents from the real phase directory', () => {
     const files = readdirSync(PHASE);

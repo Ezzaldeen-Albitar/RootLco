@@ -246,6 +246,18 @@ nothing in this repository establishes that eighteen paths exist for
 twenty-nine ids. Building them is Frontend work with its own tasks; it is not
 something a documentation change may assert.
 
+**Which task these rows are charged to is decided, and it is not this record's
+to decide.** `P1-27-OD-007` in [`open-decisions.md`](../open-decisions.md) rules
+that `DOC-001` is judged on its canonical name — contract, catalogue and
+traceability **synchronization** — and that §6's eighteen-path expansion is an
+obligation on the twenty-nine Frontend **test** ids, which §5.3 never assigns to
+`DOC-001`. The five paths below that are not `PROVEN` stay charged to the tasks
+that name them: `stale version`, `concurrent update` and `idempotent replay` to
+`QA-004`, `scope denial` to `QA-003`, `cancellation` to `QA-002`. **That decision
+moved no status in this section.** It is recorded here so a reader arriving at
+§4 alone cannot mistake `DOC-001` passing for this matrix being discharged — it
+is not, and the sentence above still holds.
+
 Re-derived at `0c40499`, after the four closure-wave branches merged. **The
 shape was unchanged — 11 / 4 / 3 — and two reasons were not.** `stale version`
 and `concurrent update` were recorded against an OPEN finding; they are now

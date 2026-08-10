@@ -642,7 +642,7 @@ under-report itself by seven files.
 | `evidence/change-log.md`                          | 593   | `DOC-002` — the change-log half; its rows are scraped by a test                    |
 | `evidence/evidence-manifest.json`                 | 155   | `QA-005` — a SHA-256 digest of every document in this directory                    |
 | `evidence/task-traceability.md`                   | 432   | Every task, the operations it calls, the files it produced, the named proof        |
-| `evidence/test-catalogue-traceability.md`         | 394   | `DOC-001` — the 29 canonical `TC-P1-27-*` ids bound to executable tests            |
+| `evidence/test-catalogue-traceability.md`         | 406   | `DOC-001` — the 29 canonical `TC-P1-27-*` ids bound to executable tests            |
 | `evidence/test-catalogue-traceability.json`       | 866   | Its machine-readable form, checked by `validate:p1-27-doc-counts`                  |
 | `execution-checkpoint.md`                         | 289   | Base SHAs, surface baselines, the wave log                                         |
 | `final-canonical-remediation.md`                  | 448   | The canonical remediation wave                                                     |
@@ -653,7 +653,7 @@ under-report itself by seven files.
 | `findings/p1-27-int-006-cursor-precision.md`      | 166   | The cursor-precision finding in full                                               |
 | `independent-task-audit.md`                       | 137   | The 42-task independent audit, superseded by the adjudication                      |
 | `installed-chrome-review.md`                      | 215   | The measured review in the Owner's own Chrome, first and second passes             |
-| `open-decisions.md`                               | 1073  | `P1-OD-017`, `P1-OD-025` and the phase's own open questions                        |
+| `open-decisions.md`                               | 1200  | `P1-OD-017`, `P1-OD-025` and the phase's own open questions                        |
 | `operator-guide.md`                               | 205   | `DOC-002` — the operator half                                                      |
 | `owner-acceptance-checklist.md`                   | 128   | What the Owner is asked to test                                                    |
 | `owner-acceptance-fail-remediation.md`            | 193   | The `OWNER ACCEPTANCE: FAIL` result and the disposition of all eleven defects      |
@@ -958,7 +958,7 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
 <!-- derived: lines docs/phase-1/phase-1-27/evidence/evidence-manifest.json = 155 -->
 <!-- derived: lines docs/phase-1/phase-1-27/evidence/task-traceability.md = 432 -->
 <!-- derived: lines docs/phase-1/phase-1-27/evidence/test-catalogue-traceability.json = 866 -->
-<!-- derived: lines docs/phase-1/phase-1-27/evidence/test-catalogue-traceability.md = 394 -->
+<!-- derived: lines docs/phase-1/phase-1-27/evidence/test-catalogue-traceability.md = 406 -->
 <!-- derived: lines docs/phase-1/phase-1-27/execution-checkpoint.md = 289 -->
 <!-- derived: lines docs/phase-1/phase-1-27/final-canonical-remediation.md = 448 -->
 <!-- derived: lines docs/phase-1/phase-1-27/final-task-adjudication.md = 956 -->
@@ -968,7 +968,7 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
 <!-- derived: lines docs/phase-1/phase-1-27/findings/p1-27-int-006-cursor-precision.md = 166 -->
 <!-- derived: lines docs/phase-1/phase-1-27/independent-task-audit.md = 137 -->
 <!-- derived: lines docs/phase-1/phase-1-27/installed-chrome-review.md = 215 -->
-<!-- derived: lines docs/phase-1/phase-1-27/open-decisions.md = 1073 -->
+<!-- derived: lines docs/phase-1/phase-1-27/open-decisions.md = 1200 -->
 <!-- derived: lines docs/phase-1/phase-1-27/operator-guide.md = 205 -->
 <!-- derived: lines docs/phase-1/phase-1-27/owner-acceptance-checklist.md = 128 -->
 <!-- derived: lines docs/phase-1/phase-1-27/owner-acceptance-fail-remediation.md = 193 -->

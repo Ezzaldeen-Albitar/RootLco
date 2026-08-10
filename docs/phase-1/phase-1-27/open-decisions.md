@@ -63,16 +63,17 @@ repository.
 
 ### 0.2 The entries
 
-| id             | subject                                              | type                                           | status                                               |
-| -------------- | ---------------------------------------------------- | ---------------------------------------------- | ---------------------------------------------------- |
-| `P1-OD-017`    | Duplicate and merge rules, customers and vehicles    | Business decision — external                   | **OPEN**                                             |
-| `P1-OD-025`    | Vehicle document and media file policy               | Business decision — external                   | **OPEN**                                             |
-| `P1-27-OD-001` | Vehicle reference-data source                        | Commercial decision reserved to the Owner      | **Proposed — not recorded, no number allocated**     |
-| `P1-27-OD-002` | The customer-creation section model (Owner defect 6) | Scope decision with a Backend prerequisite     | **Open — partly addressed**                          |
-| `P1-27-OD-003` | A candidate count on either duplicate queue          | Engineering decision, ratification requested   | **Open — implemented decision-neutrally**            |
-| `P1-27-OD-004` | Vehicle document creation                            | Capability gap with a scope decision behind it | **Open — no create operation exists**                |
-| `P1-27-OD-005` | Concurrency semantics for CRM and Vehicle writes     | Engineering decision, ratification requested   | **Decided — last-writer-wins, stated and gated**     |
-| `P1-27-OD-006` | Alert routing — what it means at the web tier        | Engineering decision, ratification requested   | **Decided — routing built, paging absent and gated** |
+| id             | subject                                              | type                                                     | status                                                                         |
+| -------------- | ---------------------------------------------------- | -------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| `P1-OD-017`    | Duplicate and merge rules, customers and vehicles    | Business decision — external                             | **OPEN**                                                                       |
+| `P1-OD-025`    | Vehicle document and media file policy               | Business decision — external                             | **OPEN**                                                                       |
+| `P1-27-OD-001` | Vehicle reference-data source                        | Commercial decision reserved to the Owner                | **Proposed — not recorded, no number allocated**                               |
+| `P1-27-OD-002` | The customer-creation section model (Owner defect 6) | Scope decision with a Backend prerequisite               | **Open — partly addressed**                                                    |
+| `P1-27-OD-003` | A candidate count on either duplicate queue          | Engineering decision, ratification requested             | **Open — implemented decision-neutrally**                                      |
+| `P1-27-OD-004` | Vehicle document creation                            | Capability gap with a scope decision behind it           | **Open — no create operation exists**                                          |
+| `P1-27-OD-005` | Concurrency semantics for CRM and Vehicle writes     | Engineering decision, ratification requested             | **Decided — last-writer-wins, stated and gated**                               |
+| `P1-27-OD-006` | Alert routing — what it means at the web tier        | Engineering decision, ratification requested             | **Decided — routing built, paging absent and gated**                           |
+| `P1-27-OD-007` | What `DOC-001` is judged on — §6's eighteen paths    | Reading of the canonical wording, ratification requested | **Decided — synchronization, not coverage; paths stay undischarged and gated** |
 
 ### 0.3 What every entry states
 
@@ -1024,6 +1025,132 @@ _"alert routing — the threshold decides what leaves the browser"_:
 | Ratified — routing without paging is right for the pilot | Nothing changes. The review date stands, so the second half is re-examined rather than forgotten                                                                        |
 | A collector and an on-call destination are provisioned   | The threshold is already the switch: set the two variables for the build. What is then needed is the destination's own routing policy, which is not a `apps/web` change |
 | No answer                                                | The rule stands at its closed default: faults leave if a sink is configured, and nothing at all leaves if one is not                                                    |
+
+---
+
+## `P1-27-OD-007` — what `DOC-001` is judged on, and what §6's eighteen paths oblige
+
+**Type:** a reading of the canonical wording, ratification requested ·
+**Status:** **Decided — `DOC-001` is judged on synchronization; the eighteen-path
+matrix stays undischarged, gated, and owned elsewhere**
+
+**Owner:** Frontend, **P1-27** for the reading and for keeping the path record
+true; the outstanding paths themselves belong to the Frontend task ids that carry
+them and, for the two absent ones, to the Backend remediation `P1-27-OD-005`
+names. · **Review by:** 2026-11-30
+
+### The decision
+
+`P1-27-DOC-001` is judged on its canonical name — "Contract, catalogue and
+traceability **synchronization**" — and **not** on whether
+`canonical-plan.md` §6's eighteen-path matrix has been expanded for each of the
+twenty-nine Frontend test ids.
+
+**This decision changes no measurement.** `matrixDischarged` stays `false`, every
+per-path status stays exactly as measured, and the outstanding paths stay visible
+as findings. It settles which task those paths are charged to, and nothing else.
+
+### The two readings, both stated
+
+| reading                       | what it says                                                                                                                                                                                                                                                                                                          |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Per-id** — held until now   | §6's "each will expand into the required path matrix" is an obligation **per test id**. Twenty-nine ids × eighteen paths = **522** expansions. `DOC-001` cannot pass until they exist, and a surface-wide table of thirteen `PROVEN` rows is not twenty-nine expansions                                               |
+| **Synchronization** — adopted | `DOC-001`'s requirement is its name in §5.3. Its three conjuncts are contract, catalogue and traceability, and each is satisfied when the **record matches the tree**. §6 is a test-id **numbering** rule; its closing sentence is the rationale for granular ids, and the obligation it describes is not `DOC-001`'s |
+
+### Why the synchronization reading is adopted — four checks, and one that failed
+
+Recorded with the check that failed included, because an entry that only lists
+its supporting evidence is the shape this phase has repeatedly shipped as false.
+
+| check                                                        | result                                                                                                                                                                                                                                                                                                                      |
+| ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **§6's subject**                                             | **Holds.** §6 is titled "Test references — correction F". It opens on the id-numbering defect ("The previous plan alternated `TC-CRM-001` and `TC-VEH-001` **mechanically**") and its corrected rule is three bullets about which catalogue an id comes from. The eighteen-path sentence is the section's closing rationale |
+| **Whose obligation §6 states**                               | **Holds, and this is the load-bearing one.** "Each id above is **one per task**" — the ids in §6 are the **test ids of the twenty-nine Frontend tasks**. §5.3's table has two columns, id and canonical name, and assigns `DOC-001` **no test id at all**. An expansion of test ids cannot be `DOC-001`'s deliverable       |
+| **Where the plan states per-task obligations**               | **Holds.** The plan has a dedicated section for that, §10 "What every Frontend task owes", and its list is **different and shorter** — and carries the qualifier "conflict **where applicable**". The eighteen-path list is not §10                                                                                         |
+| **Any other canonical text binding the matrix to `DOC-001`** | **None.** `canonical-plan.md` names `DOC-001` exactly once, at `:192`, in §5.3's table, by name only. Every other occurrence of "path matrix" in this phase is in this phase's own derived records, which describe the judgement rather than set it                                                                         |
+| **"§6 is not written as an acceptance criterion at all"**    | **FAILED, and the reading is narrowed rather than rescued.** `P1-27-OD-005` above already reads the same sentence as asking for "a per-task **test** path matrix". §6 may well be an acceptance criterion — **for the twenty-nine Frontend test ids**. What it is not is `DOC-001`'s                                        |
+
+### The sibling precedent, which is the strongest evidence here
+
+Three closed Backend phases carry the same task under the same name, and not one
+was judged on path coverage.
+
+| phase     | what discharged its `DOC-001`                                                                                                                                                                                                                         | verdict       |
+| --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- |
+| **P1-19** | `evidence/errors-and-events.md` plus the **generated** `endpoint-inventory.md` and `task-traceability.md`. Its owner gate item 14 uses the word "synchronized"                                                                                        | **Delivered** |
+| **P1-20** | `docs/api/openapi.v1.json`, the live permission catalog, the **generated** inventories and registers. Its completeness audit's one `DOC-001` GAP was a record naming two paths that were never shipped — a record-versus-tree mismatch, rated **Low** | **PROVEN**    |
+| **P1-24** | The **generated** `evidence/operation-register.md` and `task-traceability.md`                                                                                                                                                                         | **Complete**  |
+
+And the converse: where a sibling phase did own a path-coverage obligation, it
+filed it under **QA**, not documentation — `P1-20-QA-002` is recorded against
+"§QA-002 — **error-path matrix**". In this phase the same paths are already
+charged to the tasks that name them: `stale version`, `concurrent update` and
+`idempotent replay` are `QA-004` "Concurrency and idempotency", `scope denial` is
+`QA-003` "Tenant / company / branch isolation", `timeout` and `cancellation` are
+`QA-002` "API contract and error-path coverage". Holding `DOC-001` for them
+charges the same paths twice.
+
+### The reductio, recorded as corroboration and not as the argument
+
+Under the per-id reading `DOC-001` requires 522 expansions, and **58 of them are
+forbidden by the plan that is said to require them**: `stale version` and
+`concurrent update` are `ABSENT` for every one of the twenty-nine ids because no
+route under `customers/`, `customer-duplicates/`, `vehicles/` or
+`vehicle-duplicates/` is `versionGuarded` — and §4 states "**No new Backend
+feature development is allowed inside the P1-27 Frontend branch.**" A further
+twenty-nine turn on a cancel affordance no canonical document specifies.
+
+This is corroboration, not the argument. A plan **may** contain an over-ambitious
+task, and impossibility alone would not prove a misreading. What it adds is that
+the per-id reading makes one section of the plan require what another section
+forbids, which the synchronization reading does not.
+
+### What is true of the path record, and stays true
+
+Unchanged by this decision, and stated here so the entry cannot be read as
+retiring it:
+
+| fact                                                                                                                                         | where                                                                                                                                                    |
+| -------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **13 `PROVEN` · 3 `PARTIAL` · 2 `ABSENT`**, measured across the whole CRM and Vehicle surface, not per id                                    | `evidence/test-catalogue-traceability.json` `pathMatrix`; §4 of the companion `.md`                                                                      |
+| `matrixDischarged` is **`false`**, and `check-p1-27-doc-counts.mjs` fails on any other value                                                 | `scripts/ci/check-p1-27-doc-counts.mjs`                                                                                                                  |
+| The three `PARTIAL` are `scope denial`, `idempotent replay` and `cancellation`; the two `ABSENT` are `stale version` and `concurrent update` | the same record, each with its reason, which the gate also requires                                                                                      |
+| Nothing here establishes that eighteen paths exist for twenty-nine ids, and no document claims it does                                       | `evidence/test-catalogue-traceability.md` §4: "Building them is Frontend work with its own tasks; it is not something a documentation change may assert" |
+
+`DOC-001` passing means **the records match the tree, including where the tree is
+incomplete**. It does not mean the matrix is discharged, and any reader who takes
+it that way is contradicted by the row's own figures.
+
+### The gate that stops this entry ageing
+
+A decision recorded only in prose is one edit away from being a decision nobody
+made. Bound to executable checks in
+`apps/web/tests/p1-27-doc-reconciliation.test.ts`, describe _"`P1-27-OD-007` —
+what `DOC-001` is judged on"_:
+
+| the check                                                                                                      | what it would catch                                                                                                                                                                          |
+| -------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| This entry, **sliced from its own heading to the next**, carries `P1-27-OD-007`, an owner and this review date | The entry being deleted, renamed or left undated — scoped to the entry, because a file-scoped assertion passed when OD-006's own owner line was deleted and a sibling supplied the substring |
+| The slice states **both** readings and names the check that failed                                             | The entry decaying into the conclusion alone, with the argument against it edited out                                                                                                        |
+| `matrixDischarged` is still `false` in the catalogue record                                                    | The decision being read as licence to discharge the matrix                                                                                                                                   |
+| The `pathMatrix` still measures **13 / 3 / 2**, and the five non-`PROVEN` rows are still the five named here   | The paths being quietly upgraded to make the row tidier                                                                                                                                      |
+| `DOC-001`'s matrix row cites `P1-27-OD-007` and carries the true figures                                       | A `PASS` that reads as a discharged matrix                                                                                                                                                   |
+| `canonical-plan.md` §5.3 still assigns `DOC-001` no test id                                                    | The premise of the load-bearing check changing under the decision without the decision being revisited                                                                                       |
+
+### What is needed to close it
+
+The Owner or the register owner ratifies the reading, or rejects it. If it is
+rejected, `DOC-001` returns to `PARTIAL` with the per-id reading as its binding
+reason, and the 522 expansions become scheduled Frontend work with the fifty-eight
+Backend-blocked cells routed by `P1-27-OD-005`.
+
+### What changes when the Owner answers
+
+| answer                                          | consequence                                                                                                                                                         |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Ratified — synchronization is the right reading | Nothing changes. The review date stands, so the outstanding paths are re-examined rather than forgotten, and they remain charged to `QA-002`, `QA-003` and `QA-004` |
+| Rejected — the obligation is per id             | `DOC-001` returns to `PARTIAL`. The path record does not move either way, because it was never what this decision was about                                         |
+| No answer                                       | The reading stands as recorded, held by the checks above, and the path record stays exactly as measured — `matrixDischarged` `false` and five paths not `PROVEN`    |
 
 ---
 
