@@ -76,7 +76,7 @@ cannot, that is said instead of guessed.
 | 4   | `170 file(s) checked`                  | `179 file(s) checked`                  | re-run; the colour count is unchanged at 54                         |
 | 5   | `195 / 0`, `197 / 0`, `170 / 0`        | `204 / 0`, `206 / 0`, `179 / 0`        | re-run; all three still report zero                                 |
 | 6   | `143 registered · 71 required · 71/71` | `148 registered · 74 required · 74/74` | derived — §7.1                                                      |
-| 8   | `39 files, 803 passed`                 | `66 files, 1231 passed`                | the file half derived — §3 and §6.1                                 |
+| 8   | `39 files, 803 passed`                 | `70` files; case total NOT restated    | the file half derived — §3 and §6.1; the case half is `E-03`        |
 | 9   | `77 files, 1680 passed`                | `86 files, 1821 passed`                | recorded, not derived — §6.4 says why                               |
 | 10  | `31 files, 638 passed`                 | `36 files, 715 passed`                 | the file half derived — §6.4                                        |
 | 11  | `150 tests in 2 files`                 | **not re-measured**                    | needs a browser install; unchanged as far as any record here states |
@@ -394,23 +394,50 @@ records.
 
 ## 6. Test files
 
-### 6.1 Web unit and component — `apps/web/tests` (70 files, 1493 cases, 0 failed)
+### 6.1 Web unit and component — `apps/web/tests` (70 files, and no case total — `E-03`)
 
-**The file half of that heading is derived. The case half is a measurement, and
-this section now says which is which** (`E-03`).
+**`E-03` is closed by DELETING the number, not by correcting it.** The heading
+used to read `(70 files, 1493 cases, 0 failed)`, and before that `(66 files, 1231
+cases)`. The file half was derived; the case half was a hand-copied measurement
+that nothing recomputed, sitting inside the same parenthesis as a checked number
+and borrowing its credibility. It drifted exactly as the finding predicted: the
+paragraphs below this heading still said `66` and `1231` while the heading beside
+them said `70` and `1493` — `E-02` returning, in the section written to close it.
 
-`66` is recomputed from the tree on every run, here and in §3.
+`70` is recomputed from the tree on every run, here and in §3, and
+`p1-27-doc-reconciliation.test.ts` fails if either statement of it disagrees with
+`apps/web/tests`.
 
-`1231` is what `npm run test:web` printed, and **no gate can derive it**.
-**Eighteen of the sixty-six files build their cases at runtime** — `it.each` over
-a table, or an `it(` inside a `for` — so the number of call sites in the source
-is not the number of cases the runner executes; `crm-customer-search.test.ts`
-runs more than it declares. A gate that reported the call sites would produce
-exactly the kind of plausible wrong number this document exists to stop, so it
-refuses those eighteen instead. **The derivable set is 48 of the 66, and every
-one of the forty-eight was compared against the runner and agreed.** That
-comparison is what found two files whose static count had been wrong, and it is
-recorded in `scripts/ci/check-p1-27-doc-counts.mjs` rather than here.
+**No tier-wide case total is stated anywhere in this document, because none can
+be derived.** A case count is derived by counting `it(` / `test(` call sites in
+comment-stripped source, and that number is only right for a file whose cases are
+all written down. **Twenty of the seventy files build theirs at runtime** —
+`it.each` over a table, or an `it(` inside a `for` or an iteration callback — so
+`scripts/ci/check-p1-27-doc-counts.mjs` refuses them rather than certify a
+plausible wrong number: `api-client.test.ts`, `crm-customer-search.test.ts`,
+`crm-governance-writes.test.ts`, `duplicate-review-writes.test.ts`,
+`field-error-translation.test.ts`, `governance-write-validation.test.ts`,
+`money.test.ts`, `operation-contract.test.ts`, `overlays.dom.test.tsx`,
+`p1-27-owner-acceptance.dom.test.tsx`,
+`p1-27-permission-route-binding.dom.test.tsx`,
+`profile-accessibility.dom.test.tsx`, `route-permission-binding.test.ts`,
+`server-vocabularies.test.ts`, `stylelint-policy.test.ts`,
+`vehicle-api.test.ts`, `vehicle-documents.test.ts`,
+`vehicle-duplicates.test.ts`, `vehicle-party-identity.dom.test.tsx` and
+`write-permission-gating.dom.test.tsx`. A total over 70 files that is unknowable
+for 20 of them is not a measurement, it is an estimate with a decimal point.
+
+**The derivable half is 50 files, and it is derived per file rather than summed.**
+Each of the fifty carries an exact answer the gate recomputes; the three this
+document actually cites are pinned by name at the foot of this file
+(`vehicle-screens.dom.test.tsx`, `tailwind-theme-gate.test.ts`,
+`navigation.test.ts`), and a citation that needs no count is written without one
+(`G-07`, `G-08`, and §6.2 below). The executed total belongs to the runner and to
+the floor that reads its report —
+`.github/ci-baselines/test-count-baseline.json` and
+`tests/ci/web-test-floor.test.ts`, which compare EXECUTED tests against a floor
+and against what the tree declares on disk. That is where a reader should go for
+it, and it is the only place it is held true.
 
 **The per-file table below is SUPERSEDED and is kept as a snapshot, not a
 status** (`MAN-04`). It records 39 files and 803 cases — the tier as it stood
@@ -629,7 +656,7 @@ under-report itself by seven files.
 
 | path                                              | lines | what it is                                                                         |
 | ------------------------------------------------- | ----- | ---------------------------------------------------------------------------------- |
-| `adversarial-round-five.md`                       | 386   | The live finding register; its totals are derived from its own rows                |
+| `adversarial-round-five.md`                       | 461   | The live finding register; its totals are derived from its own rows                |
 | `adversarial-round-four.md`                       | 147   | The previous round, superseded by round five                                       |
 | `blocker-remediation-plan.md`                     | 497   | What blocked the phase, and how each blocker was cleared                           |
 | `canonical-plan.md`                               | 340   | What P1-27 is scoped to build, and the disposition of `P1-OD-017` and `P1-OD-025`  |
@@ -637,7 +664,7 @@ under-report itself by seven files.
 | `ci-evidence.md`                                  | 126   | Hosted CI on PR #198                                                               |
 | `clean-room-evidence.md`                          | 210   | The clean-room build at `e14984e`                                                  |
 | `contract-archaeology.md`                         | 416   | What the Backend actually publishes, read before anything was built                |
-| `deliverable-manifest.md`                         | 995   | This file                                                                          |
+| `deliverable-manifest.md`                         | 1022  | This file                                                                          |
 | `developer-guide.md`                              | 184   | `DOC-002` — the developer half                                                     |
 | `evidence/change-log.md`                          | 593   | `DOC-002` — the change-log half; its rows are scraped by a test                    |
 | `evidence/evidence-manifest.json`                 | 155   | `QA-005` — a SHA-256 digest of every document in this directory                    |
@@ -785,7 +812,7 @@ editing whichever number is nearer to hand.
 
 | #   | the repository says                                                                                                                                                                                                            | a document says                                                                                      | disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | The web suite was **803** cases in 39 files when this row was written, and is **1231** in 66 now                                                                                                                               | `owner-acceptance-fail-remediation.md` records **801**                                               | The 801/803 difference was `p1-27-owner-acceptance.dom.test.tsx`: 34 declarations, 36 executed cases, because two are `it.each` over two locale directions. Both figures are superseded; the file half is derived in §3 and §6.1 and the case half is a measurement, per §6.1                                                                                                                                                                                                                                                       |
+| 1   | The web suite was **803** cases in 39 files when this row was written, and the tier is **70 files** now                                                                                                                        | `owner-acceptance-fail-remediation.md` records **801**                                               | The 801/803 difference was `p1-27-owner-acceptance.dom.test.tsx`: 34 declarations, 36 executed cases, because two are `it.each` over two locale directions. **Every case figure in this row is superseded and this document no longer states a current one** — the file half is derived in §3 and §6.1, and §6.1 says why no tier-wide case total is derivable and where the executed total is actually held (`E-03`)                                                                                                               |
 | 2   | `hostile-mutations.mjs` holds **20** `M-OA` identifiers                                                                                                                                                                        | The verification table records **19 / 19 caught**                                                    | `M-OA-06c`, the tablet-drawer mutation, is not in that table. Whether the matrix currently runs 20 / 20 is **not established** here — §13                                                                                                                                                                                                                                                                                                                                                                                           |
 | 3   | `findings.md` puts the remaining `P1-27-INT-006` cursor sites at **10**                                                                                                                                                        | `findings/p1-27-int-006-cursor-precision.md` and `canonical-plan.md` §4.1 both say **16**            | 10 is current. The six vehicle-module sites were closed by `P1-27-INT-008`; the two subordinate documents pre-date that closure                                                                                                                                                                                                                                                                                                                                                                                                     |
 | 4   | `crm.duplicate-scan` is not called by any file in `apps/web/src`; the duplicate warning is delivered on the **creation response**                                                                                              | `canonical-plan.md` §7 says `FE-003`'s warning "uses `crm.duplicate-list`"                           | The plan is stale. `task-register.md` and `findings.md` are correct. The gate's allow-list entry for `creation-actions.ts` under `no-duplicate-scan-on-a-queue` is currently **vacuous** — nothing there matches                                                                                                                                                                                                                                                                                                                    |
@@ -944,7 +971,7 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
 <!-- derived: cases navigation.test.ts = 22 -->
 <!-- LINE-COUNT MARKERS. Regenerated, never typed. -->
 
-<!-- derived: lines docs/phase-1/phase-1-27/adversarial-round-five.md = 386 -->
+<!-- derived: lines docs/phase-1/phase-1-27/adversarial-round-five.md = 461 -->
 <!-- derived: lines docs/phase-1/phase-1-27/adversarial-round-four.md = 147 -->
 <!-- derived: lines docs/phase-1/phase-1-27/blocker-remediation-plan.md = 497 -->
 <!-- derived: lines docs/phase-1/phase-1-27/canonical-plan.md = 340 -->
@@ -952,7 +979,7 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
 <!-- derived: lines docs/phase-1/phase-1-27/ci-evidence.md = 126 -->
 <!-- derived: lines docs/phase-1/phase-1-27/clean-room-evidence.md = 210 -->
 <!-- derived: lines docs/phase-1/phase-1-27/contract-archaeology.md = 416 -->
-<!-- derived: lines docs/phase-1/phase-1-27/deliverable-manifest.md = 995 -->
+<!-- derived: lines docs/phase-1/phase-1-27/deliverable-manifest.md = 1022 -->
 <!-- derived: lines docs/phase-1/phase-1-27/developer-guide.md = 184 -->
 <!-- derived: lines docs/phase-1/phase-1-27/evidence/change-log.md = 593 -->
 <!-- derived: lines docs/phase-1/phase-1-27/evidence/evidence-manifest.json = 155 -->

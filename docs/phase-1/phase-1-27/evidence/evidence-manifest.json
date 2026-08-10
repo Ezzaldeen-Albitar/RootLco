@@ -8,8 +8,8 @@
   "fileCount": 36,
   "files": {
     "docs/phase-1/phase-1-27/adversarial-round-five.md": {
-      "sha256": "871109f04cb27edb4b5ec51252be1e50704bc618092c12c701c1592a8165b04e",
-      "bytes": 206933
+      "sha256": "a343b6a4f6729d48c0c6225f52ee5efc9126d5a85e5e1d4e65139b490e77a940",
+      "bytes": 248321
     },
     "docs/phase-1/phase-1-27/adversarial-round-four.md": {
       "sha256": "94ec35bfa05c2b112a2dbd780bf157338d20a2c73dc8bfff598f27ddbb0e94a7",
@@ -44,8 +44,8 @@
       "bytes": 24145
     },
     "docs/phase-1/phase-1-27/deliverable-manifest.md": {
-      "sha256": "a0435f584c18a4f6a0853d2dba2216610218aa575601cda491f5c33c5c6077af",
-      "bytes": 139549
+      "sha256": "30a50f30ae4f613792429854ae2dcab805959ccd4635134befd269ad9fb962f0",
+      "bytes": 141348
     },
     "docs/phase-1/phase-1-27/developer-guide.md": {
       "sha256": "b233a40c4fac301597f2ceac30cd86fe7998ed3c3640544110ac9e1345f1b383",
@@ -76,16 +76,16 @@
       "bytes": 27435
     },
     "docs/phase-1/phase-1-27/final-task-adjudication.md": {
-      "sha256": "d3799656b4756231dbd727c245d6daf6f782f3827cfe59dfa899703802eacf2e",
-      "bytes": 66751
+      "sha256": "a2abb980245000f50ce278c9065ba789f1e405779892746e9d1f0da6ca39a1dd",
+      "bytes": 76023
     },
     "docs/phase-1/phase-1-27/finding-phase-disposition.md": {
       "sha256": "1636f04e7a7448e6f56f4702d7f06c9d5a413c442b4f66394e1a6dc3593b0aa2",
       "bytes": 125899
     },
     "docs/phase-1/phase-1-27/finding-task-map.json": {
-      "sha256": "b59f53409d70eb7f63a9c692e6cc5de826f23ec733cc1e46a3138770413278aa",
-      "bytes": 26002
+      "sha256": "b05356a05b7eaf3d3e7eb6af182e96acb11b81542b7d00ddfb9f6faafb21e007",
+      "bytes": 29410
     },
     "docs/phase-1/phase-1-27/findings.md": {
       "sha256": "fa873eec4a52efadb30d59adeddd5a7a5df76f7a820ab54ebc9ac9b866e95adc",
@@ -140,12 +140,12 @@
       "bytes": 169884
     },
     "docs/phase-1/phase-1-27/task-matrix-verdicts.json": {
-      "sha256": "507e4fce9b7b7e6a3c077600d1dd33381c7fa27d5122d12e4ce39e5e31846083",
-      "bytes": 229083
+      "sha256": "463e55bb5c8585b4bc708d495ca2785f7476ac6aeb86fb6846f19ffef9b1a4ba",
+      "bytes": 242543
     },
     "docs/phase-1/phase-1-27/task-matrix.json": {
-      "sha256": "7ad5f8b4ce582e8f26cf0921cba379d9c38e4eae4cd4864c7a1e4cc53d65903a",
-      "bytes": 246313
+      "sha256": "0d9b2d71144da7b2cd596b8a7cb36931f4a7190489d51e4d3e9937e42ae562fb",
+      "bytes": 259773
     },
     "docs/phase-1/phase-1-27/task-register.md": {
       "sha256": "f3bc7d8c07f5b852c5794ca53555f3369fe10a0ce25d424f40161a001fbee5fe",
