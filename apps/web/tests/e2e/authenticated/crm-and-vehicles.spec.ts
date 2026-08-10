@@ -210,7 +210,9 @@ test.describe('the merge affordance is absent in the running application', () =>
  * tier cannot see that traffic and no longer claims to.
  */
 test.describe('no screen fires an audited write just by being opened', () => {
-  test('opening either duplicate queue issues no POST at all', async ({ page }) => {
+  test('opening either duplicate queue issues no write beyond its own Server Action', async ({
+    page,
+  }) => {
     const observed: string[] = [];
     const writes: string[] = [];
     page.on('request', (request) => {
@@ -224,9 +226,34 @@ test.describe('no screen fires an audited write just by being opened', () => {
     await page.waitForLoadState('networkidle');
 
     expect(observed.length, 'the listener saw no requests at all').toBeGreaterThan(0);
-    // A queue that "refreshed" by scanning would write audit history every time
-    // somebody looked at it. Opening a page issues no write of any kind.
-    expect(writes, writes.join('\n')).toHaveLength(0);
+
+    /*
+     * A Server Action IS an HTTP POST to the page's own URL.
+     *
+     * This case previously demanded ZERO non-GET requests, and that is
+     * unsatisfiable by construction here. Both queues read through `'use server'`
+     * modules — `crm/customers/identity-api.ts` and `vehicles/duplicates-api.ts`
+     * — and a client component calling one issues, by the App Router's protocol,
+     * a POST to the current URL carrying a `Next-Action` header. The module then
+     * performs a GET against the API from the server, which the browser never
+     * sees at all. So the observed method carries no information about whether an
+     * audited write happened, and the assertion could only ever have passed on a
+     * screen that loaded no data.
+     *
+     * The docblock above this describe already said the `/api/v1/` filter was
+     * removed so the listener would see "Server Action POSTs to the web origin".
+     * The file asked to see them and then required there to be none.
+     *
+     * What this tier CAN prove is that no write leaves the browser for anywhere
+     * other than the page's own action endpoint. That no review screen calls
+     * `crm.duplicate-scan` or its vehicle twin is proved where it is visible —
+     * `p1-27-security.test.ts` and `vehicle-duplicates.test.ts` read the source —
+     * and the ownership gate's `no-duplicate-scan-on-a-queue` rule enforces it.
+     */
+    const foreign = writes.filter(
+      (w) => !/^POST \S+\/(en|ar)\/(crm\/customer-duplicates|vehicles\/duplicates)$/.test(w)
+    );
+    expect(foreign, foreign.join('\n')).toHaveLength(0);
   });
 });
 

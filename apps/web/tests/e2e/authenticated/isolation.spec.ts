@@ -95,7 +95,37 @@ async function renderedForTenantA(
 ): Promise<string> {
   const { email } = credentialsForTenantA();
   await page.goto(route);
-  await expect(page.getByRole('main'), `${route} rendered no main landmark`).toBeVisible();
+  const main = page.getByRole('main');
+  await expect(main, `${route} rendered no main landmark`).toBeVisible();
+
+  /*
+   * WAIT FOR THE SEGMENT, then read the body. The order is the point.
+   *
+   * `page.goto` resolves at `load`. Every screen here is an async server
+   * component, so Next streams `(dashboard)/loading.tsx` into `main` first —
+   * and that fallback's entire text is the `sr-only` `state.loading`, "Loading",
+   * seven characters. `main` belongs to the LAYOUT, so `toBeVisible()` above is
+   * satisfied by the skeleton and says nothing about the segment.
+   *
+   * The length check used to sit below the body assertions and read exactly
+   * those seven characters on the first hosted run of this tier. That was the
+   * visible half of the defect.
+   *
+   * The half that matters more: `body` was captured before anything guaranteed
+   * the segment had streamed, so on a PASSING route the `not.toContain` checks
+   * for Tenant B could have been evaluated against a page whose main was still a
+   * skeleton — an isolation proof that passed by looking at nothing. Polling
+   * here, above the capture, closes both.
+   *
+   * `expect.poll` keeps the control's full strength: a genuinely blank main
+   * still fails, at the configured expect timeout. Retries stay at 0 — the
+   * config pins them there deliberately.
+   */
+  await expect
+    .poll(async () => (await main.innerText()).trim().length, {
+      message: `${route} never rendered past the loading skeleton`,
+    })
+    .toBeGreaterThan(40);
 
   const body = (await page.locator('body').innerText()).toLowerCase();
   expect(body, `${route} does not show the signed-in Tenant A account`).toContain(
@@ -104,8 +134,6 @@ async function renderedForTenantA(
   expect(body, `${route} rendered the error boundary`).not.toContain('something went wrong');
   expect(body, `${route} rendered the not-found boundary`).not.toContain('not found');
 
-  const main = await page.getByRole('main').innerText();
-  expect(main.trim().length, `${route} rendered an empty main`).toBeGreaterThan(40);
   return body;
 }
 

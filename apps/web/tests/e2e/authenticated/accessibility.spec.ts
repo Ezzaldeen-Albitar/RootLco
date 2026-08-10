@@ -186,7 +186,26 @@ async function proveLabelInNameRuns(page: import('@playwright/test').Page): Prom
       const doc = document.createElement('div');
       // Visible text "V-0001", announced name "First record" — the defect.
       doc.innerHTML = '<a href="#x" aria-label="First record">V-0001</a>';
-      document.body.appendChild(doc);
+      /*
+       * NOT `document.body.appendChild`, and the difference is the whole case.
+       *
+       * `_reset.scss` sets `html, body { height: 100% }` with
+       * `body.app-viewport { overflow: hidden }`, and `AppShell` is `h-dvh
+       * overflow-hidden`. A node appended AFTER the shell therefore lands at
+       * exactly one viewport height, with no scroll gesture that could bring it
+       * into view. axe's `label-content-name-mismatch-matches` returns false when
+       * the node has no visible text, so the rule is dropped as INAPPLICABLE and
+       * `violations` comes back empty — indistinguishable from the rule being
+       * switched off, which is the one thing this case exists to detect.
+       *
+       * On the first hosted run of this tier that is exactly what happened, in
+       * both projects. Reproduced four ways against the pinned chromium: on a
+       * bare page the fixture fires; inside the real shell appended to `body` it
+       * is inapplicable; prepended into the scroll region, or pinned with
+       * `position: fixed`, it fires again.
+       */
+      const host = document.getElementById('main') ?? document.body;
+      host.prepend(doc);
       const axe = (
         window as unknown as { axe: { run: (c: unknown, o: unknown) => Promise<unknown> } }
       ).axe;
