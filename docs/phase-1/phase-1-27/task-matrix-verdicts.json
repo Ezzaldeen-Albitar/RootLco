@@ -2,7 +2,7 @@
   "FE-007": {
     "NORMAL_NAVIGATION_ENTRY": "Sidebar `config/navigation.ts:174` -> /crm/customers -> row action `CustomerSearchScreen.tsx:214` -> `/[locale]/crm/customers/[customerId]` -> the section tab. Mounted via SECTIONS/BUILT `CustomerProfileScreen.tsx:101-142`.",
     "REQUIRED_PERMISSIONS": "Page read `crm.customer.read` (`[customerId]/page.tsx:62`); the write form is gated by `ComponentSection` `CustomerProfileScreen.tsx:883` on `table.response && canWrite`, with `writes={permittedWrites(session.permissions)}` at `page.tsx:130`.",
-    "TENANT_ISOLATION_REQUIREMENT": "Client sends cursor and limit only (`profile-api.ts:67-69`); `query()` throws on any tenant/company/branch key (`read-operation.ts:89-100`), asserted `p1-27-security.test.ts:270-276`.",
+    "TENANT_ISOLATION_REQUIREMENT": "Client sends cursor and limit only (`profile-api.ts:67-69`); `query()` throws on any tenant/company/branch key (`read-operation.ts:89-100`), asserted `p1-27-security.test.ts:510-520`.",
     "LOADING_STATE": "`DataTable.tsx:267-279`.",
     "EMPTY_STATE": "`DataTable.tsx:302-321` — code present; no positive test for these sections.",
     "ZERO_RESULT_STATE": "N/A with rationale: the section defines no filters, so `isNarrowed()` is always false and the narrowed-empty branch is structurally unreachable. Correct rather than missing.",
@@ -28,7 +28,7 @@
   "FE-008": {
     "NORMAL_NAVIGATION_ENTRY": "Sidebar `config/navigation.ts:174` -> /crm/customers -> row action `CustomerSearchScreen.tsx:214` -> `/[locale]/crm/customers/[customerId]` -> the section tab. Mounted via SECTIONS/BUILT `CustomerProfileScreen.tsx:101-142`.",
     "REQUIRED_PERMISSIONS": "Page read `crm.customer.read` (`[customerId]/page.tsx:62`); the write form is gated by `ComponentSection` `CustomerProfileScreen.tsx:883` on `table.response && canWrite`, with `writes={permittedWrites(session.permissions)}` at `page.tsx:130`.",
-    "TENANT_ISOLATION_REQUIREMENT": "Client sends cursor and limit only (`profile-api.ts:67-69`); `query()` throws on any tenant/company/branch key (`read-operation.ts:89-100`), asserted `p1-27-security.test.ts:270-276`.",
+    "TENANT_ISOLATION_REQUIREMENT": "Client sends cursor and limit only (`profile-api.ts:67-69`); `query()` throws on any tenant/company/branch key (`read-operation.ts:89-100`), asserted `p1-27-security.test.ts:510-520`.",
     "LOADING_STATE": "`DataTable.tsx:267-279`.",
     "EMPTY_STATE": "`DataTable.tsx:302-321` — code present; no positive test for these sections.",
     "ZERO_RESULT_STATE": "N/A with rationale: the section defines no filters, so `isNarrowed()` is always false and the narrowed-empty branch is structurally unreachable. Correct rather than missing.",
@@ -54,7 +54,7 @@
   "FE-009": {
     "NORMAL_NAVIGATION_ENTRY": "Sidebar `config/navigation.ts:174` -> /crm/customers -> row action `CustomerSearchScreen.tsx:214` -> `/[locale]/crm/customers/[customerId]` -> the section tab. Mounted via SECTIONS/BUILT `CustomerProfileScreen.tsx:101-142`.",
     "REQUIRED_PERMISSIONS": "Page read `crm.customer.read` (`[customerId]/page.tsx:62`); the write form is gated by `ComponentSection` `CustomerProfileScreen.tsx:883` on `table.response && canWrite`, with `writes={permittedWrites(session.permissions)}` at `page.tsx:130`.",
-    "TENANT_ISOLATION_REQUIREMENT": "Client sends cursor and limit only (`profile-api.ts:67-69`); `query()` throws on any tenant/company/branch key (`read-operation.ts:89-100`), asserted `p1-27-security.test.ts:270-276`.",
+    "TENANT_ISOLATION_REQUIREMENT": "Client sends cursor and limit only (`profile-api.ts:67-69`); `query()` throws on any tenant/company/branch key (`read-operation.ts:89-100`), asserted `p1-27-security.test.ts:510-520`.",
     "LOADING_STATE": "`DataTable.tsx:267-279`.",
     "EMPTY_STATE": "`DataTable.tsx:302-321` — code present; no positive test for these sections.",
     "ZERO_RESULT_STATE": "N/A with rationale: the section defines no filters, so `isNarrowed()` is always false and the narrowed-empty branch is structurally unreachable. Correct rather than missing.",
@@ -65,7 +65,7 @@
     "IMPLEMENTATION_SURFACES": "`CustomerProfileScreen.tsx:888-998`; `profile-api.ts:101-107`; `governance-actions.ts:245-294`.",
     "BACKEND_READ_CONTRACTS": "`crm.preference-list` GET /api/v1/customers/{id}/preferences.",
     "BACKEND_WRITE_CONTRACTS": "`crm.preference-set` PUT same path; idempotency key required, proved `crm-governance-writes.test.ts:34,45-54`.",
-    "CONFLICT_STATE": "DEFECT. `profile-contract.ts:115` states `recordVersion` is \"What a client puts in `If-Match` on the preferences PUT\". `action-support.ts:73` calls `client.send(method, path, body)` with NO `ifMatch`, although the option exists (`client.ts:218,275`) and is used by `administration/organization/actions.ts:62`. The backend route never reads it either (`preferences/route.ts:97-123`). The documented stale-version path exists on neither side. Recorded as finding `H-03`.",
+    "CONFLICT_STATE": "DEFECT. `profile-contract.ts:115` states `recordVersion` is \"What a client puts in `If-Match` on the preferences PUT\". `action-support.ts:73` calls `client.send(method, path, body)` with NO `ifMatch`, although the option exists (`client.ts:218,275`) and is used by `administration/organization/actions.ts:62`. The backend route never reads it either (`apps/api/src/app/api/v1/customers/[customerId]/preferences/route.ts:97-123`). The documented stale-version path exists on neither side. Recorded as finding `H-03`.",
     "ARABIC_EVIDENCE": "`crm.purpose.*` resolve in ar.json, covered `crm-customer-components.dom.test.tsx:434`.",
     "ENGLISH_EVIDENCE": "en.json resolves every key.",
     "PRODUCTION_REACHABILITY": "Reachable, mounted, gated `write-permission-gating.dom.test.tsx:156`.",
@@ -80,7 +80,7 @@
   "FE-010": {
     "NORMAL_NAVIGATION_ENTRY": "Sidebar `config/navigation.ts:174` -> /crm/customers -> row action `CustomerSearchScreen.tsx:214` -> `/[locale]/crm/customers/[customerId]` -> the section tab. Mounted via SECTIONS/BUILT `CustomerProfileScreen.tsx:101-142`.",
     "REQUIRED_PERMISSIONS": "Page read `crm.customer.read` (`[customerId]/page.tsx:62`); the write form is gated by `ComponentSection` `CustomerProfileScreen.tsx:883` on `table.response && canWrite`, with `writes={permittedWrites(session.permissions)}` at `page.tsx:130`.",
-    "TENANT_ISOLATION_REQUIREMENT": "Client sends cursor and limit only (`profile-api.ts:67-69`); `query()` throws on any tenant/company/branch key (`read-operation.ts:89-100`), asserted `p1-27-security.test.ts:270-276`.",
+    "TENANT_ISOLATION_REQUIREMENT": "Client sends cursor and limit only (`profile-api.ts:67-69`); `query()` throws on any tenant/company/branch key (`read-operation.ts:89-100`), asserted `p1-27-security.test.ts:510-520`.",
     "LOADING_STATE": "`DataTable.tsx:267-279`.",
     "EMPTY_STATE": "`DataTable.tsx:302-321` — code present; no positive test for these sections.",
     "ZERO_RESULT_STATE": "N/A with rationale: the section defines no filters, so `isNarrowed()` is always false and the narrowed-empty branch is structurally unreachable. Correct rather than missing.",
@@ -106,7 +106,7 @@
   "FE-011": {
     "NORMAL_NAVIGATION_ENTRY": "Sidebar `config/navigation.ts:174` -> /crm/customers -> row action `CustomerSearchScreen.tsx:214` -> `/[locale]/crm/customers/[customerId]` -> the section tab. Mounted via SECTIONS/BUILT `CustomerProfileScreen.tsx:101-142`.",
     "REQUIRED_PERMISSIONS": "Page read `crm.customer.read` (`[customerId]/page.tsx:62`); the write form is gated by `ComponentSection` `CustomerProfileScreen.tsx:883` on `table.response && canWrite`, with `writes={permittedWrites(session.permissions)}` at `page.tsx:130`.",
-    "TENANT_ISOLATION_REQUIREMENT": "Client sends cursor and limit only (`profile-api.ts:67-69`); `query()` throws on any tenant/company/branch key (`read-operation.ts:89-100`), asserted `p1-27-security.test.ts:270-276`.",
+    "TENANT_ISOLATION_REQUIREMENT": "Client sends cursor and limit only (`profile-api.ts:67-69`); `query()` throws on any tenant/company/branch key (`read-operation.ts:89-100`), asserted `p1-27-security.test.ts:510-520`.",
     "LOADING_STATE": "`DataTable.tsx:267-279`.",
     "EMPTY_STATE": "`DataTable.tsx:302-321`, plus a fourth completeness state this section alone carries: `includesRestricted` true/false/null (`:1143,1201-1210`), which states whether restricted notes are hidden from this caller.",
     "ZERO_RESULT_STATE": "N/A with rationale: the section defines no filters, so `isNarrowed()` is always false and the narrowed-empty branch is structurally unreachable. Correct rather than missing.",
@@ -132,7 +132,7 @@
   "FE-012": {
     "NORMAL_NAVIGATION_ENTRY": "Sidebar `config/navigation.ts:174` -> /crm/customers -> row action `CustomerSearchScreen.tsx:214` -> `/[locale]/crm/customers/[customerId]` -> the section tab. Mounted via SECTIONS/BUILT `CustomerProfileScreen.tsx:101-142`.",
     "REQUIRED_PERMISSIONS": "Page read `crm.customer.read` (`[customerId]/page.tsx:62`); the write form is gated by `ComponentSection` `CustomerProfileScreen.tsx:883` on `table.response && canWrite`, with `writes={permittedWrites(session.permissions)}` at `page.tsx:130`.",
-    "TENANT_ISOLATION_REQUIREMENT": "Client sends cursor and limit only (`profile-api.ts:67-69`); `query()` throws on any tenant/company/branch key (`read-operation.ts:89-100`), asserted `p1-27-security.test.ts:270-276`.",
+    "TENANT_ISOLATION_REQUIREMENT": "Client sends cursor and limit only (`profile-api.ts:67-69`); `query()` throws on any tenant/company/branch key (`read-operation.ts:89-100`), asserted `p1-27-security.test.ts:510-520`.",
     "LOADING_STATE": "`DataTable.tsx:267-279`.",
     "EMPTY_STATE": "`DataTable.tsx:302-321` — code present; no positive test for these sections.",
     "ZERO_RESULT_STATE": "N/A with rationale: the section defines no filters, so `isNarrowed()` is always false and the narrowed-empty branch is structurally unreachable. Correct rather than missing.",
@@ -161,7 +161,7 @@
     "BACKEND_READ_CONTRACTS": "`searchCustomers` (`features/crm/customers/api.ts:20`) -> `searchCustomerDirectory` (`lib/customers/directory.ts:54`) -> GET /api/v1/customers, `retries: 0` at `:85`.",
     "BACKEND_WRITE_CONTRACTS": "N/A with rationale: a search performs no write and the plan registers none.",
     "REQUIRED_PERMISSIONS": "`crm.customer.read` (`page.tsx:36`); `crm.customer.create` gates the create links (`:52`).",
-    "TENANT_ISOLATION_REQUIREMENT": "Client sends no tenant/company/branch key; `query()` throws on any scope key (`lib/api/read-operation.ts:92-100,126-133`), asserted `apps/web/tests/p1-27-security.test.ts:270-276`.",
+    "TENANT_ISOLATION_REQUIREMENT": "Client sends no tenant/company/branch key; `query()` throws on any scope key (`lib/api/read-operation.ts:92-100,126-133`), asserted `apps/web/tests/p1-27-security.test.ts:510-520`.",
     "LOADING_STATE": "`DataTable.tsx:267-279`.",
     "EMPTY_STATE": "Not-yet-searched idle state `CustomerSearchScreen.tsx:95-102`, distinct from a zero-result.",
     "ZERO_RESULT_STATE": "`CustomerSearchScreen.tsx:235-247`; the table empty state is suppressed at `:210` so the two cannot be confused.",
@@ -187,7 +187,7 @@
     "BACKEND_READ_CONTRACTS": "Same adapter as FE-001; cursor paging via `useServerTable`.",
     "BACKEND_WRITE_CONTRACTS": "N/A with rationale: results perform no write.",
     "REQUIRED_PERMISSIONS": "Inherits `crm.customer.read`.",
-    "TENANT_ISOLATION_REQUIREMENT": "Client sends no tenant/company/branch key; `query()` throws on any scope key (`lib/api/read-operation.ts:92-100,126-133`), asserted `apps/web/tests/p1-27-security.test.ts:270-276`. Criteria are deliberately kept OUT of `TableRequest` so no customer name reaches the address bar (`:196-209`).",
+    "TENANT_ISOLATION_REQUIREMENT": "Client sends no tenant/company/branch key; `query()` throws on any scope key (`lib/api/read-operation.ts:92-100,126-133`), asserted `apps/web/tests/p1-27-security.test.ts:510-520`. Criteria are deliberately kept OUT of `TableRequest` so no customer name reaches the address bar (`:196-209`).",
     "LOADING_STATE": "`DataTable.tsx:267-279`.",
     "EMPTY_STATE": "Idle state as FE-001.",
     "ZERO_RESULT_STATE": "`:235-247`, with the create actions offered; proved not to claim the tenant is empty (`search-empty-states.dom.test.tsx:90`).",
@@ -213,7 +213,7 @@
     "BACKEND_READ_CONTRACTS": "NEITHER canonical operation is called. The warning reads `possibleDuplicates` off the creation response (`creation-actions.ts:120,136,155,167`). `crm.duplicate-list` serves FE-016; `crm.duplicate-scan` has ZERO callers in `apps/web`.",
     "BACKEND_WRITE_CONTRACTS": "N/A with rationale: the warning writes nothing; it reports what the create returned.",
     "REQUIRED_PERMISSIONS": "None of its own; inherits `crm.customer.create` (`new/[kind]/page.tsx:46`).",
-    "TENANT_ISOLATION_REQUIREMENT": "Client sends no tenant/company/branch key; `query()` throws on any scope key (`lib/api/read-operation.ts:92-100,126-133`), asserted `apps/web/tests/p1-27-security.test.ts:270-276`.",
+    "TENANT_ISOLATION_REQUIREMENT": "Client sends no tenant/company/branch key; `query()` throws on any scope key (`lib/api/read-operation.ts:92-100,126-133`), asserted `apps/web/tests/p1-27-security.test.ts:510-520`.",
     "LOADING_STATE": "Belongs to the creation action (`CustomerCreateScreen.tsx:247`).",
     "EMPTY_STATE": "No duplicates -> the section is absent (`:335`). Correct: an empty \"no look-alikes\" panel would be noise.",
     "ZERO_RESULT_STATE": "N/A with rationale: the section renders only when the response carries candidates.",
@@ -241,7 +241,7 @@
     "VERDICT_RATIONALE": "Screen behaviour was already proven, including that the chosen initial status survives a failed submit. The single reason this was PARTIAL was that `createIndividualAction` was never EXECUTED — its path, body and Zod bounds were asserted by source scan only. Re-assessed at `26eab7e`; the previous cell was written at `9eff8bd` and the tree moved. It is now one of the twenty-three adapters `write-adapters-driven.test.ts` executes (66 cases, measured at this head), and the driven set is compared against a filesystem walk in BOTH directions, so a twenty-fourth adapter fails the suite rather than joining it unnoticed.",
     "BACKEND_READ_CONTRACTS": "N/A with rationale: the create screen reads nothing; the duplicate warning consumes the create response (FE-003).",
     "REQUIRED_PERMISSIONS": "`crm.customer.create` at `new/[kind]/page.tsx:46` for visibility; no permission check inside the action, deliberately (`creation-actions.ts:26-29`) — the server is the authority.",
-    "TENANT_ISOLATION_REQUIREMENT": "Client sends no tenant/company/branch key; `query()` throws on any scope key (`lib/api/read-operation.ts:92-100,126-133`), asserted `apps/web/tests/p1-27-security.test.ts:270-276`. No scope key in the request body.",
+    "TENANT_ISOLATION_REQUIREMENT": "Client sends no tenant/company/branch key; `query()` throws on any scope key (`lib/api/read-operation.ts:92-100,126-133`), asserted `apps/web/tests/p1-27-security.test.ts:510-520`. No scope key in the request body.",
     "LOADING_STATE": "`CustomerCreateScreen.tsx:247` (`form.saving`).",
     "EMPTY_STATE": "N/A with rationale: a create form has no collection to be empty.",
     "ZERO_RESULT_STATE": "N/A with rationale: as above.",
@@ -267,7 +267,7 @@
     "VERDICT_RATIONALE": "Same shape as `FE-004` and closed by the same work. Both reasons this was PARTIAL are gone: `A42-10` (a miscounted evidence cell) is FIXED, and `createCompanyAction` is no longer mocked everywhere and executed nowhere. Re-assessed at `26eab7e`; the previous cell was written at `9eff8bd` and the tree moved. The company branch of the creation form is driven through the real adapter with the real schema, and the two-directional set comparison is what keeps that true.",
     "BACKEND_READ_CONTRACTS": "N/A with rationale: the create screen reads nothing; the duplicate warning consumes the create response (FE-003).",
     "REQUIRED_PERMISSIONS": "`crm.customer.create` at `new/[kind]/page.tsx:46` for visibility; no permission check inside the action, deliberately (`creation-actions.ts:26-29`) — the server is the authority.",
-    "TENANT_ISOLATION_REQUIREMENT": "Client sends no tenant/company/branch key; `query()` throws on any scope key (`lib/api/read-operation.ts:92-100,126-133`), asserted `apps/web/tests/p1-27-security.test.ts:270-276`. No scope key in the request body.",
+    "TENANT_ISOLATION_REQUIREMENT": "Client sends no tenant/company/branch key; `query()` throws on any scope key (`lib/api/read-operation.ts:92-100,126-133`), asserted `apps/web/tests/p1-27-security.test.ts:510-520`. No scope key in the request body.",
     "LOADING_STATE": "`CustomerCreateScreen.tsx:247` (`form.saving`).",
     "EMPTY_STATE": "N/A with rationale: a create form has no collection to be empty.",
     "ZERO_RESULT_STATE": "N/A with rationale: as above.",
@@ -291,7 +291,7 @@
     "BACKEND_READ_CONTRACTS": "`readCustomer` (`profile-api.ts:47-49`) -> GET /api/v1/customers/{id}, plus nine component lists `:85-186` and `listTimeline`.",
     "BACKEND_WRITE_CONTRACTS": "Nine section actions, each gated by `permittedWrites(session.permissions)` passed at `page.tsx:130`.",
     "REQUIRED_PERMISSIONS": "`crm.customer.read` at `page.tsx:62`; per-section write codes via `governance-contract.permittedWrites`, defaulting to `NO_WRITES` (`CustomerProfileScreen.tsx:161`).",
-    "TENANT_ISOLATION_REQUIREMENT": "Client sends no tenant/company/branch key; `query()` throws on any scope key (`lib/api/read-operation.ts:92-100,126-133`), asserted `apps/web/tests/p1-27-security.test.ts:270-276`. Paths are fixed segments plus `encodeURIComponent` (`profile-api.ts:58-69`).",
+    "TENANT_ISOLATION_REQUIREMENT": "Client sends no tenant/company/branch key; `query()` throws on any scope key (`lib/api/read-operation.ts:92-100,126-133`), asserted `apps/web/tests/p1-27-security.test.ts:510-520`. Paths are fixed segments plus `encodeURIComponent` (`profile-api.ts:58-69`).",
     "LOADING_STATE": "Route-level `app/[locale]/(dashboard)/loading.tsx`, plus per-section `DataTable` loading.",
     "EMPTY_STATE": "Per section via `DataTable`; the unbuilt `vehicles` tab says so honestly (`:277-281`).",
     "ZERO_RESULT_STATE": "N/A with rationale: the profile is a record view, not a filtered list.",
@@ -312,7 +312,7 @@
     "PROTECTED_REPROOF": "OUTSTANDING — the AUTHENTICATED browser tier. It is now wired and run: the `authenticated-browser` job (`protected-develop-verification.yml:176-419`) sets `ROOTLCO_E2E_AUTH: '1'` at `:319`, bootstraps a real operator and a second tenant, and fails unless every authenticated spec contributed an executed test. It runs on pushes to `develop` and `main` ONLY, and `.github/ci-baselines/unrun-test-tiers.json` (`notYetObservedOnARunner`) records that it has never executed on a hosted runner even once. Collection is proved locally at 229 tests across 7 spec files. The FEATURE is complete at this head; the REPROOF is unpaid."
   },
   "FE-013": {
-    "TENANT_ISOLATION_REQUIREMENT": "Client sends no tenant/company/branch key; `query()` throws on any scope key (`lib/api/read-operation.ts:92-100,126-133`), asserted `apps/web/tests/p1-27-security.test.ts:270-276`.",
+    "TENANT_ISOLATION_REQUIREMENT": "Client sends no tenant/company/branch key; `query()` throws on any scope key (`lib/api/read-operation.ts:92-100,126-133`), asserted `apps/web/tests/p1-27-security.test.ts:510-520`.",
     "RTL_LTR_EVIDENCE": "Catalogue parity `tests/i18n.test.ts:72`; RTL cases in the owning DOM suite.",
     "IMPLEMENTATION_SURFACES": "`CustomerProfileScreen.tsx:1386-1480`; `profile-api.ts:172-178`; `governance-actions.ts:215-243`.",
     "NORMAL_NAVIGATION_ENTRY": "Profile \"Tags\" tab `CustomerProfileScreen.tsx:258-265`.",
@@ -338,7 +338,7 @@
     "PROTECTED_REPROOF": "OUTSTANDING — the AUTHENTICATED browser tier. It is now wired and run: the `authenticated-browser` job (`protected-develop-verification.yml:176-419`) sets `ROOTLCO_E2E_AUTH: '1'` at `:319`, bootstraps a real operator and a second tenant, and fails unless every authenticated spec contributed an executed test. It runs on pushes to `develop` and `main` ONLY, and `.github/ci-baselines/unrun-test-tiers.json` (`notYetObservedOnARunner`) records that it has never executed on a hosted runner even once. Collection is proved locally at 229 tests across 7 spec files. The FEATURE is complete at this head; the REPROOF is unpaid."
   },
   "FE-014": {
-    "TENANT_ISOLATION_REQUIREMENT": "Client sends no tenant/company/branch key; `query()` throws on any scope key (`lib/api/read-operation.ts:92-100,126-133`), asserted `apps/web/tests/p1-27-security.test.ts:270-276`.",
+    "TENANT_ISOLATION_REQUIREMENT": "Client sends no tenant/company/branch key; `query()` throws on any scope key (`lib/api/read-operation.ts:92-100,126-133`), asserted `apps/web/tests/p1-27-security.test.ts:510-520`.",
     "RTL_LTR_EVIDENCE": "Catalogue parity `tests/i18n.test.ts:72`; RTL cases in the owning DOM suite.",
     "IMPLEMENTATION_SURFACES": "`CustomerProfileScreen.tsx:1493-1603`; `profile-api.ts:180-186`; `governance-actions.ts:136-168`.",
     "NORMAL_NAVIGATION_ENTRY": "Profile \"Restrictions\" tab `:266-273`.",
@@ -364,7 +364,7 @@
     "PROTECTED_REPROOF": "OUTSTANDING — the AUTHENTICATED browser tier. It is now wired and run: the `authenticated-browser` job (`protected-develop-verification.yml:176-419`) sets `ROOTLCO_E2E_AUTH: '1'` at `:319`, bootstraps a real operator and a second tenant, and fails unless every authenticated spec contributed an executed test. It runs on pushes to `develop` and `main` ONLY, and `.github/ci-baselines/unrun-test-tiers.json` (`notYetObservedOnARunner`) records that it has never executed on a hosted runner even once. Collection is proved locally at 229 tests across 7 spec files. The FEATURE is complete at this head; the REPROOF is unpaid."
   },
   "FE-015": {
-    "TENANT_ISOLATION_REQUIREMENT": "Client sends no tenant/company/branch key; `query()` throws on any scope key (`lib/api/read-operation.ts:92-100,126-133`), asserted `apps/web/tests/p1-27-security.test.ts:270-276`.",
+    "TENANT_ISOLATION_REQUIREMENT": "Client sends no tenant/company/branch key; `query()` throws on any scope key (`lib/api/read-operation.ts:92-100,126-133`), asserted `apps/web/tests/p1-27-security.test.ts:510-520`.",
     "RTL_LTR_EVIDENCE": "Catalogue parity `tests/i18n.test.ts:72`; RTL cases in the owning DOM suite.",
     "IMPLEMENTATION_SURFACES": "`CustomerProfileScreen.tsx:1613-1707`; `identity-api.ts:28-51`; `identity-contract.ts:41-105`.",
     "NORMAL_NAVIGATION_ENTRY": "Profile \"Timeline\" tab `:274-276`; no longer marked planned (`BUILT` at `:141`).",
@@ -390,7 +390,7 @@
     "PROTECTED_REPROOF": "OUTSTANDING — the AUTHENTICATED browser tier. It is now wired and run: the `authenticated-browser` job (`protected-develop-verification.yml:176-419`) sets `ROOTLCO_E2E_AUTH: '1'` at `:319`, bootstraps a real operator and a second tenant, and fails unless every authenticated spec contributed an executed test. It runs on pushes to `develop` and `main` ONLY, and `.github/ci-baselines/unrun-test-tiers.json` (`notYetObservedOnARunner`) records that it has never executed on a hosted runner even once. Collection is proved locally at 229 tests across 7 spec files. The FEATURE is complete at this head; the REPROOF is unpaid."
   },
   "FE-016": {
-    "TENANT_ISOLATION_REQUIREMENT": "Client sends no tenant/company/branch key; `query()` throws on any scope key (`lib/api/read-operation.ts:92-100,126-133`), asserted `apps/web/tests/p1-27-security.test.ts:270-276`.",
+    "TENANT_ISOLATION_REQUIREMENT": "Client sends no tenant/company/branch key; `query()` throws on any scope key (`lib/api/read-operation.ts:92-100,126-133`), asserted `apps/web/tests/p1-27-security.test.ts:510-520`.",
     "RTL_LTR_EVIDENCE": "Catalogue parity `tests/i18n.test.ts:72`; RTL cases in the owning DOM suite.",
     "IMPLEMENTATION_SURFACES": "`DuplicateReviewScreen.tsx:46-232`; `DuplicateDecisionPanel.tsx:56-247`; `identity-api.ts:74-145`.",
     "NORMAL_NAVIGATION_ENTRY": "`/[locale]/crm/customer-duplicates`, own sidebar entry `navigation.ts:188-199`.",
@@ -416,7 +416,7 @@
     "PROTECTED_REPROOF": "OUTSTANDING — the AUTHENTICATED browser tier. It is now wired and run: the `authenticated-browser` job (`protected-develop-verification.yml:176-419`) sets `ROOTLCO_E2E_AUTH: '1'` at `:319`, bootstraps a real operator and a second tenant, and fails unless every authenticated spec contributed an executed test. It runs on pushes to `develop` and `main` ONLY, and `.github/ci-baselines/unrun-test-tiers.json` (`notYetObservedOnARunner`) records that it has never executed on a hosted runner even once. Collection is proved locally at 229 tests across 7 spec files. The FEATURE is complete at this head; the REPROOF is unpaid."
   },
   "FE-017": {
-    "TENANT_ISOLATION_REQUIREMENT": "Client sends no tenant/company/branch key; `query()` throws on any scope key (`lib/api/read-operation.ts:92-100,126-133`), asserted `apps/web/tests/p1-27-security.test.ts:270-276`.",
+    "TENANT_ISOLATION_REQUIREMENT": "Client sends no tenant/company/branch key; `query()` throws on any scope key (`lib/api/read-operation.ts:92-100,126-133`), asserted `apps/web/tests/p1-27-security.test.ts:510-520`.",
     "RTL_LTR_EVIDENCE": "Catalogue parity `tests/i18n.test.ts:72`; RTL cases in the owning DOM suite.",
     "IMPLEMENTATION_SURFACES": "`VehicleSearchScreen.tsx:61-204` (form) and `:206-461` (results, separately mounted); `api.ts:40-69`.",
     "NORMAL_NAVIGATION_ENTRY": "`/[locale]/vehicles`, sidebar `navigation.ts:200-210`.",
@@ -442,13 +442,13 @@
     "PROTECTED_REPROOF": "OUTSTANDING — the AUTHENTICATED browser tier. It is now wired and run: the `authenticated-browser` job (`protected-develop-verification.yml:176-419`) sets `ROOTLCO_E2E_AUTH: '1'` at `:319`, bootstraps a real operator and a second tenant, and fails unless every authenticated spec contributed an executed test. It runs on pushes to `develop` and `main` ONLY, and `.github/ci-baselines/unrun-test-tiers.json` (`notYetObservedOnARunner`) records that it has never executed on a hosted runner even once. Collection is proved locally at 229 tests across 7 spec files. The FEATURE is complete at this head; the REPROOF is unpaid."
   },
   "FE-018": {
-    "TENANT_ISOLATION_REQUIREMENT": "Client sends no tenant/company/branch key; `query()` throws on any scope key (`lib/api/read-operation.ts:92-100,126-133`), asserted `apps/web/tests/p1-27-security.test.ts:270-276`.",
+    "TENANT_ISOLATION_REQUIREMENT": "Client sends no tenant/company/branch key; `query()` throws on any scope key (`lib/api/read-operation.ts:92-100,126-133`), asserted `apps/web/tests/p1-27-security.test.ts:510-520`.",
     "RTL_LTR_EVIDENCE": "Catalogue parity `tests/i18n.test.ts:72`; RTL cases in the owning DOM suite.",
     "IMPLEMENTATION_SURFACES": "`VehicleCreateScreen.tsx:75-404`, `CatalogueSelect:417-507`, `CreationOutcome:516-610`; `api.ts:119-192`.",
     "NORMAL_NAVIGATION_ENTRY": "`/[locale]/vehicles/new`, from the search header `:167-174` and the zero-result block `:444-452`.",
     "BACKEND_READ_CONTRACTS": "Five catalogue operations plus `checkVinAvailability` (`profile-api.ts:179-200`).",
     "BACKEND_WRITE_CONTRACTS": "`veh.vehicle-create` POST /api/v1/vehicles, idempotent, key from the shared authority.",
-    "REQUIRED_PERMISSIONS": "`veh.vehicle.manage` at `new/page.tsx:36` — correctly not `veh.vehicle.read`.",
+    "REQUIRED_PERMISSIONS": "`veh.vehicle.manage` at `apps/web/src/app/[locale]/(dashboard)/vehicles/new/page.tsx:36` — correctly not `veh.vehicle.read`.",
     "LOADING_STATE": "Submitting `:384`; catalogue loading `:484-497`.",
     "EMPTY_STATE": "Catalogue empty/truncated states `:484-497`.",
     "ZERO_RESULT_STATE": "N/A with rationale: a create form has no result set.",
@@ -549,7 +549,7 @@
     "IMPLEMENTATION_SURFACES": "`VehicleHistorySections.tsx:256-354`; `history-api.ts:88-94,118-158`.",
     "NORMAL_NAVIGATION_ENTRY": "Profile `plates` tab (`VehicleProfileScreen.tsx:186-197`).",
     "BACKEND_READ_CONTRACTS": "`veh.vehicle-plate-history` GET /vehicles/{id}/plates.",
-    "BACKEND_WRITE_CONTRACTS": "`veh.vehicle-plate-assign` POST same path — both halves wired; fields match `plates/route.ts:31-33`.",
+    "BACKEND_WRITE_CONTRACTS": "`veh.vehicle-plate-assign` POST same path — both halves wired; fields match `apps/api/src/app/api/v1/vehicles/[vehicleId]/plates/route.ts:31-33`.",
     "REQUIRED_PERMISSIONS": "`veh.vehicle.manage` AND `!terminal`; `canWrite` is a required prop.",
     "TENANT_ISOLATION_REQUIREMENT": "Clean.",
     "LOADING_STATE": "`DataTable.tsx:267`.",
@@ -624,7 +624,7 @@
     "PROTECTED_REPROOF": "NOT REQUIRED. Every proof this row cites is executed by the `web` tier or by `tests/ci`, both of which run on every pull request (`web-quality` and `static-quality` in `_reusable-node-quality.yml`). Nothing here waits on a job that only a protected push starts."
   },
   "FE-025": {
-    "TENANT_ISOLATION_REQUIREMENT": "No scope key anywhere in `features/vehicles`; `query()` throws, asserted `p1-27-security.test.ts:270-276`.",
+    "TENANT_ISOLATION_REQUIREMENT": "No scope key anywhere in `features/vehicles`; `query()` throws, asserted `p1-27-security.test.ts:510-520`.",
     "LOADING_STATE": "`DataTable.tsx:267`.",
     "ZERO_RESULT_STATE": "N/A with rationale: the section has no filters of its own.",
     "ERROR_STATE": "`DataTable.tsx:165` with retry.",
@@ -650,7 +650,7 @@
     "PROTECTED_REPROOF": "NOT REQUIRED. Every proof this row cites is executed by the `web` tier or by `tests/ci`, both of which run on every pull request (`web-quality` and `static-quality` in `_reusable-node-quality.yml`). Nothing here waits on a job that only a protected push starts."
   },
   "FE-026": {
-    "TENANT_ISOLATION_REQUIREMENT": "No scope key anywhere in `features/vehicles`; `query()` throws, asserted `p1-27-security.test.ts:270-276`.",
+    "TENANT_ISOLATION_REQUIREMENT": "No scope key anywhere in `features/vehicles`; `query()` throws, asserted `p1-27-security.test.ts:510-520`.",
     "LOADING_STATE": "`DataTable.tsx:267`.",
     "ZERO_RESULT_STATE": "N/A with rationale: the section has no filters of its own.",
     "ERROR_STATE": "`DataTable.tsx:165` with retry.",
@@ -676,7 +676,7 @@
     "PROTECTED_REPROOF": "NOT REQUIRED. Every proof this row cites is executed by the `web` tier or by `tests/ci`, both of which run on every pull request (`web-quality` and `static-quality` in `_reusable-node-quality.yml`). Nothing here waits on a job that only a protected push starts."
   },
   "FE-027": {
-    "TENANT_ISOLATION_REQUIREMENT": "No scope key anywhere in `features/vehicles`; `query()` throws, asserted `p1-27-security.test.ts:270-276`.",
+    "TENANT_ISOLATION_REQUIREMENT": "No scope key anywhere in `features/vehicles`; `query()` throws, asserted `p1-27-security.test.ts:510-520`.",
     "LOADING_STATE": "N/A with rationale: a stated status has no load.",
     "ZERO_RESULT_STATE": "N/A with rationale: the section has no filters of its own.",
     "ERROR_STATE": "N/A with rationale: as above.",
@@ -702,7 +702,7 @@
     "PROTECTED_REPROOF": "NOT REQUIRED. Every proof this row cites is executed by the `web` tier or by `tests/ci`, both of which run on every pull request (`web-quality` and `static-quality` in `_reusable-node-quality.yml`). Nothing here waits on a job that only a protected push starts."
   },
   "FE-028": {
-    "TENANT_ISOLATION_REQUIREMENT": "No scope key anywhere in `features/vehicles`; `query()` throws, asserted `p1-27-security.test.ts:270-276`.",
+    "TENANT_ISOLATION_REQUIREMENT": "No scope key anywhere in `features/vehicles`; `query()` throws, asserted `p1-27-security.test.ts:510-520`.",
     "LOADING_STATE": "`DataTable.tsx:267`.",
     "ZERO_RESULT_STATE": "Per status filter, re-reading with `loadKey: status` (`:102-105`).",
     "ERROR_STATE": "`DataTable.tsx:165` with retry.",
@@ -728,7 +728,7 @@
     "PROTECTED_REPROOF": "OUTSTANDING — the AUTHENTICATED browser tier. It is now wired and run: the `authenticated-browser` job (`protected-develop-verification.yml:176-419`) sets `ROOTLCO_E2E_AUTH: '1'` at `:319`, bootstraps a real operator and a second tenant, and fails unless every authenticated spec contributed an executed test. It runs on pushes to `develop` and `main` ONLY, and `.github/ci-baselines/unrun-test-tiers.json` (`notYetObservedOnARunner`) records that it has never executed on a hosted runner even once. Collection is proved locally at 229 tests across 7 spec files. The FEATURE is complete at this head; the REPROOF is unpaid."
   },
   "FE-029": {
-    "TENANT_ISOLATION_REQUIREMENT": "No scope key anywhere in `features/vehicles`; `query()` throws, asserted `p1-27-security.test.ts:270-276`.",
+    "TENANT_ISOLATION_REQUIREMENT": "No scope key anywhere in `features/vehicles`; `query()` throws, asserted `p1-27-security.test.ts:510-520`.",
     "LOADING_STATE": "`DataTable.tsx:267`.",
     "ZERO_RESULT_STATE": "N/A with rationale: the section has no filters of its own.",
     "ERROR_STATE": "`DataTable.tsx:165` with retry.",
@@ -738,7 +738,7 @@
     "NORMAL_NAVIGATION_ENTRY": "Profile `history` tab `VehicleProfileScreen.tsx:271-277`; the naming difference from \"timeline\" is justified at `:78-97`.",
     "BACKEND_READ_CONTRACTS": "`veh.vehicle-history` GET /api/v1/vehicles/{id}/history.",
     "BACKEND_WRITE_CONTRACTS": "N/A with rationale: an append-only ledger; the phase registers no write.",
-    "REQUIRED_PERMISSIONS": "`veh.vehicle.read`, the same code that gates the page; API declares it at `history/route.ts:30`.",
+    "REQUIRED_PERMISSIONS": "`veh.vehicle.read`, the same code that gates the page; API declares it at `apps/api/src/app/api/v1/vehicles/[vehicleId]/history/route.ts:30`.",
     "EMPTY_STATE": "`DataTable.tsx:302`.",
     "CONFLICT_STATE": "N/A with rationale: read only.",
     "ARABIC_EVIDENCE": "11 `vehicles.history.*` keys in ar.json; unknown field codes fall back to the key rather than to an empty cell.",

@@ -44,7 +44,7 @@
       "bytes": 24145
     },
     "docs/phase-1/phase-1-27/deliverable-manifest.md": {
-      "sha256": "43c536f594e2bf99370ff082c0e48e3af26c7964e9f94c50f732defbbfb10af8",
+      "sha256": "54970b571099aef55ada7b5e2ca042721e68dd757c391d845e518f749591a519",
       "bytes": 136427
     },
     "docs/phase-1/phase-1-27/developer-guide.md": {
@@ -56,7 +56,7 @@
       "bytes": 35282
     },
     "docs/phase-1/phase-1-27/evidence/task-traceability.md": {
-      "sha256": "dbc0a3a8427c1a4d0dccca2e57ec6033003bf5ca7aa9d1993038772c00d5f029",
+      "sha256": "78426391422ffb3db0f4e1e2d2e069d5fa2c9dbd01458f26bed3eee0964c6ebe",
       "bytes": 106111
     },
     "docs/phase-1/phase-1-27/evidence/test-catalogue-traceability.json": {
@@ -104,8 +104,8 @@
       "bytes": 14530
     },
     "docs/phase-1/phase-1-27/open-decisions.md": {
-      "sha256": "b0fd514eb0eb47c1823909d2e1f6d2933d397e1ec555e2cc0774c0c3ac8677b4",
-      "bytes": 77906
+      "sha256": "71f4b93a42b439b6a7c295ea37c0a325cc03e27bc80b87fd059a632c31c8e57f",
+      "bytes": 94846
     },
     "docs/phase-1/phase-1-27/operator-guide.md": {
       "sha256": "39ce0e5e0978f1e482f8eb855b02a7a324ca9f5079e74a7d556b4fc8d7882e50",
@@ -140,12 +140,12 @@
       "bytes": 167968
     },
     "docs/phase-1/phase-1-27/task-matrix-verdicts.json": {
-      "sha256": "b5022c6cc6f1c2afc1cce7cabf5d2130f5da54997481c5c871b73613d78ea8ac",
-      "bytes": 182629
+      "sha256": "ba5482a32d9e67670fb74c0f648dfa3b1efee1aaa0078bbf1ebf450837e6e9cc",
+      "bytes": 182813
     },
     "docs/phase-1/phase-1-27/task-matrix.json": {
-      "sha256": "8a7d8f8a91428bd67c9e80e02f3b55c8bdd2b59f181416019dbb42224ac1a501",
-      "bytes": 199859
+      "sha256": "ceb606c664fcef8a94d901372f248a3e0fb1787f9275e162f5190868a6441eb7",
+      "bytes": 200043
     },
     "docs/phase-1/phase-1-27/task-register.md": {
       "sha256": "cd69f6c21f390d54e812fa652ea27eb89042ea068f7a6b22ac698c2476b498bf",
