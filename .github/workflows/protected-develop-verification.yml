@@ -31,8 +31,9 @@ on:
   # and a ref is a moving target: between reading a pull request's head and the
   # run starting, a push can change what the name points at, and the evidence
   # would then describe a commit nobody reviewed. Naming the commit as well lets
-  # the run refuse to be evidence for the wrong one — see the first step of
-  # `authenticated-browser`, which is where the comparison is made.
+  # the run refuse to be evidence for the wrong one — the comparison is made in
+  # `_reusable-authenticated-browser.yml`, in the step named "The run is pinned
+  # to the commit it was asked for", against the commit the checkout resolved.
   #
   # READ THE PER-JOB CHECK, NOT THE RUN CONCLUSION, ON A DISPATCH.
   #
@@ -164,450 +165,52 @@ jobs:
       artifact-retention-days: 90
 
   # ===========================================================================
-  # The AUTHENTICATED browser tier — `P1-27-DO-001`.
+  # The AUTHENTICATED browser tier — `P1-27-DO-001`, and it is now GOVERNED.
   #
   # `apps/web/tests/e2e/authenticated/**` holds the repository's ONLY end-to-end
-  # tenant-isolation proof and its ONLY route-level accessibility proof, and for
-  # the whole of P1-27 it was executed by no hosted job at all. The omission was
-  # declared in `.github/ci-baselines/unrun-test-tiers.json` on the reasoning
-  # that "a hosted runner is not given a live Supabase, a live API and a real
-  # account". That reasoning is FALSE, and this job is the demonstration:
+  # tenant-isolation proof and its ONLY route-level accessibility proof. It was
+  # executed by no hosted job for the whole of P1-27; then it was executed by a
+  # forty-line job in THIS file that `protected-gate` did not wait for, so the
+  # gate could report **Go** while this check was red. That was recorded as a
+  # debt rather than defended, and this is its repayment: the job body moved to
+  # `_reusable-authenticated-browser.yml`, both gates call it, and both gates
+  # depend on the result.
   #
-  #   - a hosted runner has Docker, and the Supabase CLI is a devDependency of
-  #     this repository (`package.json`), so `supabase start` brings up the same
-  #     GoTrue the Owner signs in to;
-  #   - `scripts/dev/owner-acceptance/create-owner-account.mjs` builds the real
-  #     account, the second tenant and the permission grants through the
-  #     platform's own tables — no shortcut, no service-role key in the browser;
-  #   - its three local-only guards (`context.mjs`, `assertLocalTarget`) are an
-  #     opt-in value, a loopback database and a loopback identity provider. All
-  #     three are satisfiable here, and they are satisfied deliberately below
-  #     rather than by accident.
+  # The body lives in the reusable workflow because `DECLARED_JOBS` in
+  # `scripts/ci/evaluate-ci-gate.mjs` is shared with `pr-ci.yml` and the
+  # evaluator fails a gate for a declared job absent from `needs` — so a governed
+  # job must exist in BOTH workflows, and GitHub has no cross-workflow `needs`.
+  # See that file's header for the argument, including why the earlier decision
+  # against extraction no longer holds.
   #
-  # GoTrue is genuinely mandatory and no lighter substitute exists:
-  # `installIamRuntime()` in `apps/api/src/modules/iam/index.ts` builds a
-  # `SupabaseIdentityProvider` from configuration whenever no provider was
-  # installed by a test harness, and nothing outside a test can install the fake.
-  # So the API cannot be authenticated against the bare `postgres:17-alpine` the
-  # clean room provisions — and it could not share that job in any case, because
-  # `assertLocalTarget` pins `DB_PORT` to 54322, the very port that service
-  # container already binds.
-  #
-  # WHY HERE, AND WHAT THIS JOB IS NOT
-  #
-  # It is NOT in `protected-gate`'s `needs`, and that is a limitation rather than
-  # a design: `DECLARED_JOBS` in `scripts/ci/evaluate-ci-gate.mjs` is shared by
-  # this workflow and `pr-ci.yml`, so a job added there must exist in BOTH, and
-  # adding a job to `pr-ci.yml` requires updating the job counts recorded in
-  # `docs/engineering/ci-automation/pull-request-body.md` — a document outside
-  # this branch's ownership. Until that is done, `protected-gate` can be green
-  # while this check is red, so the check must be read on its own. That state is
-  # written down in `.github/ci-baselines/unrun-test-tiers.json` and asserted by
-  # `tests/ci/e2e-tier-coverage.test.ts` so it cannot quietly become permanent.
-  #
-  # A GREEN RUN THAT RAN NOTHING IS THE FAILURE MODE THIS PHASE EXISTS TO CATCH,
-  # so the last step derives what executed from the Playwright report and fails
-  # unless every authenticated spec file contributed at least one executed test.
-  #
-  # HOW THIS RUNS BEFORE A MERGE, AND WHY BY DISPATCH RATHER THAN ON THE PR
-  #
-  # Being reachable only by `push` would have forced the phase to merge in order
-  # to find out whether what it was merging worked. It never was: the
-  # `workflow_dispatch` trigger at the top of this file runs these same jobs, on
-  # any branch of this repository, before anything lands. `candidate-sha` pins
-  # the commit, and the first step below refuses the run when the pin does not
-  # match. That combination — dispatch plus pin — is the pre-merge mechanism.
-  #
-  # Two alternatives were considered and rejected on evidence, not taste:
-  #
-  #   - a `pull_request` trigger. `actions/checkout` on `pull_request` defaults
-  #     to the MERGE ref, so the run would test a commit that exists in no
-  #     branch and that nobody reviewed — a trap this repository has already
-  #     been caught by. It would also expose a privileged forty-minute stack to
-  #     fork pull requests unless guarded, and put that cost on every PR.
-  #     `workflow_dispatch` has no merge ref to be fooled by, and a fork cannot
-  #     reach it at all: dispatching requires write access to THIS repository
-  #     and a ref inside it, so the fork exposure is structural rather than a
-  #     condition somebody has to remember to write.
-  #   - extracting the job into a `_reusable-*.yml` called from both places.
-  #     That adds a workflow FILE, and `tests/ci/documented-counts.test.ts`
-  #     holds the workflow count against `docs/engineering/ci-automation/
-  #     pull-request-body.md` (line 62), a document outside this branch's
-  #     ownership. It would also put the tier in two workflow files, which
-  #     `tests/ci/e2e-tier-coverage.test.ts` forbids on purpose so that a stray
-  #     copy-paste cannot land a Docker stack on the merge gate. Indirection
-  #     for no new capability: dispatch already reaches this job.
-  #
-  # The `push` path above is UNCHANGED and remains the post-merge protected
-  # reproof — the run a gate record quotes.
+  # `push` is the post-merge protected reproof — the run a gate record quotes.
+  # `workflow_dispatch` is the pre-merge path: it runs the same job from the same
+  # file on any branch of this repository, and `candidate-sha` pins the commit so
+  # the result cannot be attributed to a ref that moved underneath it.
   # ===========================================================================
   authenticated-browser:
-    # NOT GOVERNED BY protected-gate. This job is absent from that gate's
-    # `needs`, so the gate can report Go while this check is red — read this
-    # check on its own. Repaying it is described in
-    # `.github/ci-baselines/unrun-test-tiers.json` under `howToClose`.
-    #
-    # Stated INSIDE the job block, below the key, because that is the only
-    # place a reader of the job is guaranteed to see it and the only place a
-    # check that extracts the job body can read it. The same sentence above the
-    # key is not in the body, and a sentence elsewhere in the file is at the
-    # mercy of where the extraction happens to start.
     name: authenticated-browser
-    # NOT GOVERNED BY protected-gate: this job is absent from that gate's `needs`,
-    # so the gate can report Go while this check is red. Repayment is described in
-    # `.github/ci-baselines/unrun-test-tiers.json` under `howToClose`.
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-
-    env:
-      NEXT_TELEMETRY_DISABLED: '1'
-      # The three guards in `scripts/dev/owner-acceptance/context.mjs`, met on
-      # purpose. `DB_PORT` is not a choice: `assertLocalTarget` refuses anything
-      # but 54322, the Supabase local database port.
-      ROOTLCO_ENV: local-acceptance
-      DB_HOST: 127.0.0.1
-      DB_PORT: '54322'
-      DB_NAME: postgres
-      DB_USER: postgres
-      DB_PASSWORD: postgres # pragma: allowlist secret -- the Supabase local default, on a runner destroyed with the job
-      # `local` is what keeps the session cookie unmarked `Secure`, which a
-      # plain-HTTP origin would otherwise discard silently — the exact failure
-      # `auth.setup.ts` warns about. It is a BUILD-time value for the web.
-      NEXT_PUBLIC_APP_ENV: local
-      NEXT_PUBLIC_API_BASE_URL: http://localhost:3000
-
-    steps:
-      # ---------------------------------------------------------------------
-      # THE RUN TESTS THE COMMIT IT WAS ASKED FOR, OR IT DOES NOT RUN.
-      #
-      # FIRST, before the stack costs forty minutes, and before anything is
-      # checked out — a result attributed to the wrong commit is worse than no
-      # result, because it will be quoted.
-      #
-      # Two separate rules:
-      #   - a dispatch of any ref OTHER than develop or main is the pre-merge
-      #     case, so `candidate-sha` is mandatory there. Without it the run
-      #     would say only "the tip of that branch, whenever it started", which
-      #     is not a commit anybody can check.
-      #   - whenever the input is given, it must equal the commit this run
-      #     actually resolved. `github.sha` on a dispatch IS the tip the ref
-      #     pointed at when the run was created, so a push that lands in the
-      #     gap makes these two differ — which is exactly the case to fail on.
-      #
-      # Values arrive through `env`, never interpolated into the script body:
-      # an expression pasted into a shell is a command-injection shape, and it
-      # is the shape WFS-006 exists to keep out of this repository.
-      - name: The run is pinned to the commit it was asked for
-        env:
-          REQUESTED_SHA: ${{ inputs.candidate-sha }}
-          RESOLVED_SHA: ${{ github.sha }}
-          DISPATCHED_REF: ${{ github.ref }}
-          EVENT_NAME: ${{ github.event_name }}
-        run: |
-          set -euo pipefail
-          protected=false
-          if [ "${DISPATCHED_REF}" = "refs/heads/develop" ] || [ "${DISPATCHED_REF}" = "refs/heads/main" ]; then
-            protected=true
-          fi
-          if [ -z "${REQUESTED_SHA}" ]; then
-            if [ "${EVENT_NAME}" = "workflow_dispatch" ] && [ "${protected}" = "false" ]; then
-              echo "::error::This is a pre-merge dispatch of ${DISPATCHED_REF}, so candidate-sha is required. Re-dispatch naming the exact commit the result should be attributed to; a branch name alone is not a commit."
-              exit 1
-            fi
-            printf 'No candidate-sha given; this is the protected %s path at %s\n' "${EVENT_NAME}" "${RESOLVED_SHA}"
-            exit 0
-          fi
-          if [ "${REQUESTED_SHA}" != "${RESOLVED_SHA}" ]; then
-            echo "::error::Asked to test ${REQUESTED_SHA} but this run resolved to ${RESOLVED_SHA}. The ref moved between the request and the run, so this result belongs to a different commit and must not be quoted for the requested one."
-            exit 1
-          fi
-          printf 'Pinned: this run tests exactly %s\n' "${RESOLVED_SHA}"
-
-      # A local `uses: ./…` action is resolved from the workspace, which is
-      # empty when a job starts — so the composite action below cannot be
-      # found without this. Sparse and shallow on purpose: it exists only to
-      # make the action file present. The composite then performs the real
-      # exact-head checkout and replaces the workspace.
-      - name: Make the repository's own actions resolvable
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          sparse-checkout: .github/actions
-          fetch-depth: 1
-          persist-credentials: false
-
-      - name: Set up the project
-        uses: ./.github/actions/setup-project
-
-      - name: Start the local Supabase stack
-        run: |
-          set -euo pipefail
-          docker --version
-          npx --no-install supabase start
-
-      - name: Apply every migration and every seed, deterministically
-        run: |
-          set -euo pipefail
-          # `supabase start` seeds a fresh volume, but "fresh" is an assumption
-          # about the runner rather than a statement about this step. A reset
-          # makes the database state a consequence of the committed migrations
-          # and seeds and of nothing else — and `create-owner` refuses to run
-          # against an empty `iam.permissions`, which is what seed 04 fills.
-          npm run supabase:reset
-
-      - name: Publish the identity-provider settings the API needs
-        run: |
-          set -euo pipefail
-          # Read from the CLI, never from a committed default: the CLI is the
-          # only thing that knows what the running stack actually issued. The two
-          # secrets are masked BEFORE they are written anywhere.
-          npx --no-install supabase status -o json > "${RUNNER_TEMP}/supabase-status.json"
-          node -e '
-            const fs = require("node:fs");
-            const raw = fs.readFileSync(process.env.RUNNER_TEMP + "/supabase-status.json", "utf8");
-            const status = JSON.parse(raw.slice(raw.indexOf("{"), raw.lastIndexOf("}") + 1));
-            const missing = ["API_URL", "ANON_KEY", "SERVICE_ROLE_KEY", "JWT_SECRET"].filter((name) => !status[name]);
-            if (missing.length > 0) {
-              console.log("::error::supabase status did not report: " + missing.join(", "));
-              process.exit(1);
-            }
-            for (const secret of [status.SERVICE_ROLE_KEY, status.JWT_SECRET]) console.log("::add-mask::" + secret);
-            const api = String(status.API_URL).replace(/\/$/, "");
-            fs.appendFileSync(process.env.GITHUB_ENV, [
-              "NEXT_PUBLIC_SUPABASE_URL=" + api,
-              "NEXT_PUBLIC_SUPABASE_ANON_KEY=" + status.ANON_KEY,
-              "SUPABASE_SERVICE_ROLE_KEY=" + status.SERVICE_ROLE_KEY,
-              "AUTH_JWT_SECRET=" + status.JWT_SECRET,
-              "AUTH_JWT_ISSUER=" + api + "/auth/v1",
-              ""
-            ].join("\n"));
-            console.log("identity provider: " + api);
-          '
-
-      - name: The identity provider answers before anything depends on it
-        run: |
-          set -euo pipefail
-          # Proving the precondition separately is the point. Without it, a stack
-          # that came up half-formed would surface as twenty failing browser
-          # tests rather than as one named missing service.
-          curl -fsS "${NEXT_PUBLIC_SUPABASE_URL}/auth/v1/health"
-          printf '\n'
-
-      - name: Install the browser the tier needs
-        # Its own step: a download is not a verification, and folding it into
-        # the run would make a network failure look like a test failure.
-        run: npm run test:e2e:install --workspace @rootlco/web
-
-      # -----------------------------------------------------------------------
-      # REALIGN THE PROVIDER SIGNING FIRST, THEN WAIT FOR IT TO COME BACK.
-      #
-      # This step exists because of a defect it does NOT own, found by the first
-      # hosted execution of this job (run 31337158296, commit 155a5f5):
-      #
-      #   `alignLocalJwtSigning` recreates the GoTrue container to strip
-      #   GOTRUE_JWT_KEYS — `scripts/dev/owner-acceptance/align-local-jwt.mjs`
-      #   lines 119-126, `docker rm -f` then `docker run -d`. `docker run -d`
-      #   returns when the container is CREATED, not when GoTrue is listening.
-      #   `create-owner-account.mjs:607` then calls `assertHs256`, which POSTs
-      #   to the token endpoint exactly once with no retry
-      #   (align-local-jwt.mjs:140). Kong answers 502 until the new container
-      #   is up, so the bootstrap fails.
-      #
-      #   In that run the recreate returned at 21:38:21.029 and the token probe
-      #   failed at 21:38:21.039 — ten milliseconds later. Nothing boots in ten
-      #   milliseconds; this is a readiness race, NOT the algorithm refusal the
-      #   error text blames it on.
-      #
-      # The durable repair is a wait inside that module, which lives outside
-      # this branch ownership. What IS in scope here is ordering: do the
-      # realignment as its own step, wait for the provider, and only then run
-      # the bootstrap. `alignLocalJwtSigning` is idempotent — a second call
-      # finds no GOTRUE_JWT_KEYS and returns "already signing with the shared
-      # secret" (align-local-jwt.mjs:84) — so the call inside the bootstrap
-      # becomes a no-op and its single-shot probe meets a provider that is up.
-      - name: Align the provider signing, and wait for it to answer again
-        run: |
-          set -euo pipefail
-          node --input-type=module -e '
-            import { alignLocalJwtSigning } from "./scripts/dev/owner-acceptance/align-local-jwt.mjs";
-            const result = alignLocalJwtSigning({ project: "RootLco", log: (m) => console.log(m) });
-            console.log("alignment: changed=" + result.changed + " — " + result.reason);
-          '
-          # The same probe the earlier step uses, for the same reason: a
-          # provider that is not listening must surface as one named missing
-          # service rather than as a bootstrap that blames its own credentials.
-          for attempt in $(seq 1 60); do
-            if curl -fsS "${NEXT_PUBLIC_SUPABASE_URL}/auth/v1/health" > /dev/null; then
-              printf 'identity provider answering again after %s attempt(s)\n' "${attempt}"
-              exit 0
-            fi
-            sleep 2
-          done
-          echo "::error::The identity provider never came back after the signing realignment. The bootstrap would have failed on a 502 from the token endpoint."
-          exit 1
-
-      - name: Bootstrap the operator, the workspace and the isolation counterpart
-        run: |
-          set -euo pipefail
-          # Creates Tenant A, Tenant B — which the Owner holds no membership in —
-          # the roles, the grants and the permission catalogue mapping, plus the
-          # database login the API runs as: a member of `app_runtime` with
-          # neither SUPERUSER nor BYPASSRLS. That last property is what makes the
-          # isolation result mean anything; an API connected as `postgres` would
-          # bypass every row-level policy and pass this suite regardless.
-          npm run acceptance:create-owner
-
-      - name: Build the API and the web application
-        run: |
-          set -euo pipefail
-          npm run build:api
-          npm run build:web
-
-      - name: Start the API and wait for it to report itself ready
-        run: |
-          set -euo pipefail
-          # `next start` against the production build, not `next dev`: a dev
-          # server compiles each route on first request, and a cold compile on a
-          # shared runner does not fit the 30-second per-test budget.
-          #
-          # `--hostname localhost`, because that is the origin the suite and the
-          # API base URL both name, and a hostname binds ONE address family.
-          nohup npm run start --workspace @rootlco/api -- --hostname localhost --port 3000 > api.log 2>&1 &
-          for attempt in $(seq 1 60); do
-            if curl -fsS http://localhost:3000/api/v1/health/ready > api-ready.json; then
-              printf 'API ready after %s attempt(s)\n' "${attempt}"
-              cat api-ready.json
-              printf '\n'
-              exit 0
-            fi
-            sleep 2
-          done
-          echo "::error::The API never reported ready. Its output follows."
-          cat api.log
-          exit 1
-
-      - name: The authenticated browser tier
-        env:
-          # The variable whose absence was the finding. Nothing else in the
-          # repository sets it; `apps/web/playwright.config.ts` gates the three
-          # authenticated projects on it, and the five anonymous projects carry
-          # `testIgnore` for the same directory.
-          ROOTLCO_E2E_AUTH: '1'
-        run: |
-          set -euo pipefail
-          # Credentials are NOT passed through the environment. `auth.setup.ts`
-          # and `isolation.spec.ts` both read the git-ignored handoff file the
-          # bootstrap wrote, so the password never becomes a workflow value.
-          npm run test:web-e2e-authenticated
-
-      - name: A run that collected nothing is a failure, not a pass
-        if: always()
-        run: |
-          set -euo pipefail
-          # Derived from the report and from the spec directory — never from a
-          # written-down number, which is the shape that lets a floor and a
-          # measurement be lowered together.
-          node -e '
-            const fs = require("node:fs");
-            const path = require("node:path");
-            const report = path.join("apps", "web", "playwright-report.json");
-            if (!fs.existsSync(report)) {
-              console.log("::error::" + report + " does not exist, so nothing can be said about what ran.");
-              process.exit(1);
-            }
-            const doc = JSON.parse(fs.readFileSync(report, "utf8"));
-            const perFile = new Map();
-            const visit = (node, file) => {
-              if (node === null || typeof node !== "object") return;
-              if (Array.isArray(node)) {
-                for (const item of node) visit(item, file);
-                return;
-              }
-              const current = typeof node.file === "string" ? node.file : file;
-              if (Array.isArray(node.results) && current) {
-                const ran = node.results.filter((r) => r && r.status && r.status !== "skipped").length;
-                perFile.set(current, (perFile.get(current) ?? 0) + ran);
-              }
-              for (const value of Object.values(node)) visit(value, current);
-            };
-            visit(doc, null);
-            const dir = path.join("apps", "web", "tests", "e2e", "authenticated");
-            const specs = fs.readdirSync(dir).filter((name) => name.endsWith(".spec.ts")).sort();
-            const normalise = (value) => String(value).split("\\").join("/");
-            const rows = ["### Authenticated browser tier", "", "| Spec | Tests executed |", "| --- | --- |"];
-            const silent = [];
-            let total = 0;
-            for (const name of specs) {
-              const suffix = "authenticated/" + name;
-              let count = 0;
-              for (const [file, ran] of perFile) {
-                if (normalise(file).endsWith(suffix)) count += ran;
-              }
-              total += count;
-              if (count === 0) silent.push(name);
-              rows.push("| `" + suffix + "` | " + count + " |");
-            }
-            rows.push("", "**" + total + "** test(s) executed across " + specs.length + " spec file(s).", "");
-            fs.writeFileSync("authenticated-browser.md", rows.join("\n") + "\n");
-            console.log(rows.join("\n"));
-            if (total === 0) {
-              console.log("::error::The authenticated tier executed ZERO tests. A green job that ran nothing is worse than the declared gap it replaced.");
-              process.exit(1);
-            }
-            if (silent.length > 0) {
-              console.log("::error::These authenticated specs contributed no executed test: " + silent.join(", "));
-              process.exit(1);
-            }
-          '
-
-      - name: Job summary
-        if: always()
-        env:
-          RESOLVED_SHA: ${{ github.sha }}
-          EVENT_NAME: ${{ github.event_name }}
-          DISPATCHED_REF: ${{ github.ref }}
-        run: |
-          set -euo pipefail
-          # The commit is part of the evidence, not context around it. A table of
-          # executed tests that does not say what it ran against cannot be quoted
-          # for anything — and this job now runs both before a merge (dispatch)
-          # and after one (push), so which of the two produced a result is no
-          # longer inferable from the fact that a result exists.
-          printf 'Commit `%s` — %s on `%s`\n\n' "${RESOLVED_SHA}" "${EVENT_NAME}" "${DISPATCHED_REF}" >> "${GITHUB_STEP_SUMMARY}"
-          if [ -f authenticated-browser.md ]; then
-            cat authenticated-browser.md >> "${GITHUB_STEP_SUMMARY}"
-          fi
-
-      - name: Upload evidence
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: evidence-authenticated-browser
-          retention-days: 30
-          if-no-files-found: ignore
-          path: |
-            apps/web/playwright-report.json
-            authenticated-browser.md
-            api.log
-            api-ready.json
-
-      - name: Stop the stack
-        if: always()
-        run: |
-          set -euo pipefail
-          # A stop that fails must not turn a green run red: the runner and every
-          # container on it are destroyed either way, so this is tidiness rather
-          # than a verdict. It is still reported.
-          if npx --no-install supabase stop --no-backup; then
-            echo 'stack stopped'
-          else
-            echo '::warning::supabase stop did not succeed; the runner is discarded regardless'
-          fi
+    uses: ./.github/workflows/_reusable-authenticated-browser.yml
+    with:
+      expected-sha: ${{ inputs.candidate-sha }}
+      # A dispatch of any ref OTHER than develop or main is the pre-merge case,
+      # so naming the commit is mandatory there: without it the run would say
+      # only "the tip of that branch, whenever it started", which is not a commit
+      # anybody can check. On a protected push the pushed commit IS the answer,
+      # so nothing has to be named.
+      require-pin: ${{ github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/develop' && github.ref != 'refs/heads/main' }}
+      artifact-retention-days: 30
 
   protected-gate:
     name: protected-gate
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # `authenticated-browser` is in this list, and its ABSENCE was the finding:
+    # the gate could report Go while the repository's only end-to-end
+    # tenant-isolation proof was red. `tests/ci/ci-gate.test.ts` reconciles this
+    # list against the jobs this file declares and against `DECLARED_JOBS`, so it
+    # cannot fall out again quietly.
     needs:
       - static-quality
       - web-quality
@@ -621,6 +224,7 @@ jobs:
       - container-security
       - secret-scan
       - hosted-clean-room
+      - authenticated-browser
 
     steps:
       # A local `uses: ./…` action is resolved from the workspace, which is
@@ -658,9 +262,15 @@ jobs:
           # a skip here is always a failure.
           node scripts/ci/protected-classification.mjs \
             --needs needs.json --out-classification classification.json --out-needs needs.json
+          # `--trusted-context true` is a statement of fact about this event, not
+          # a convenience: a `push` to develop or main, and a dispatch of a ref
+          # inside this repository, both require write access here. There is no
+          # untrusted-fork path into this workflow at all, so the security-gated
+          # job is unconditionally eligible and a skip of it is a failure.
           node scripts/ci/evaluate-ci-gate.mjs \
             --needs needs.json --classification classification.json --evidence evidence \
             --expected-sha "${COMMIT}" --actual-sha "$(git rev-parse HEAD)" \
+            --trusted-context true \
             --markdown protected-gate.md --json protected-gate.json
 
       - name: Publish the summary

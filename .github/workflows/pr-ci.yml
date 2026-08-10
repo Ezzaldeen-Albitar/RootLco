@@ -10,9 +10,17 @@
 # job that succeeded, a job that was skipped for a recorded reason, and a job
 # that was skipped for no reason at all — and only the first two are acceptable.
 #
-# NO SECRETS. Nothing here reads a repository secret, so a forked pull request
-# neither loses capability nor gains exposure. There is no `pull_request_target`
-# anywhere in this repository.
+# NO SECRETS. Nothing here reads a repository secret, and there is no
+# `pull_request_target` anywhere in this repository.
+#
+# A FORK DOES, HOWEVER, LOSE ONE CAPABILITY, and saying otherwise would be a
+# comment describing a workflow that no longer exists. `authenticated-browser`
+# stands a full Supabase stack, a production API and a real operator account up
+# on the runner, so it runs only when the pull-request head is a branch of THIS
+# repository. That is a deliberate refusal of privileged execution to untrusted
+# code, not an oversight — and `ci-gate` is told about it explicitly rather than
+# inferring it, so an ineligible skip is recorded as
+# `NOT_ELIGIBLE_FOR_SECURITY_REASON` and never rounded up to a pass.
 # =============================================================================
 
 name: PR CI
@@ -214,6 +222,48 @@ jobs:
       expected-sha: ${{ needs.change-detection.outputs.head-sha }}
 
   # ===========================================================================
+  # The AUTHENTICATED browser tier — required, and gated on TRUST rather than on
+  # change detection.
+  #
+  # `apps/web/tests/e2e/authenticated/**` is the repository's ONLY end-to-end
+  # tenant-isolation proof and its ONLY route-level accessibility proof. It ran
+  # on no pull request at all, and the protected job that did run it was outside
+  # `protected-gate`'s `needs`, so BOTH gates could report Go while it was red.
+  # It is a real dependency of `ci-gate` below now, which is the whole point.
+  #
+  # THE COST IS REAL AND IS ACCEPTED, NOT OVERLOOKED: this stands a Supabase
+  # stack, a production API and a production web build up on every same-repository
+  # pull request, roughly forty minutes of runner time. A cheaper arrangement was
+  # in place and it was the arrangement that let the check be red under a green
+  # gate.
+  #
+  # THE `if:` IS THE SECURITY BOUNDARY. A pull request from a FORK must not
+  # receive privileged browser execution, so the job runs only when the head is a
+  # branch of this repository. `success()` is written explicitly because supplying
+  # an `if:` removes the implicit one, and without it this job would start after
+  # `change-detection` had failed.
+  #
+  # A skip here is NOT silently accepted. `ci-gate` is told, in the same
+  # expression, whether this run was eligible at all; an ineligible skip is
+  # recorded as `NOT_ELIGIBLE_FOR_SECURITY_REASON`, and a skip with no such
+  # statement fails the gate closed.
+  # ===========================================================================
+  authenticated-browser:
+    name: authenticated-browser
+    needs: change-detection
+    if: >-
+      success() && (github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository)
+    uses: ./.github/workflows/_reusable-authenticated-browser.yml
+    with:
+      ref: ${{ needs.change-detection.outputs.head-sha }}
+      # The exact head, never the merge ref. `require-pin` is on because a pull
+      # request IS the pre-merge case: a result that cannot name its commit is
+      # not evidence for the commit under review.
+      expected-sha: ${{ needs.change-detection.outputs.head-sha }}
+      require-pin: true
+
+  # ===========================================================================
   # Conditional. Each skip is a recorded decision that ci-gate re-checks.
   # ===========================================================================
   application-build:
@@ -284,6 +334,10 @@ jobs:
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # `authenticated-browser` is in this list, and removing it makes
+    # `tests/ci/ci-gate.test.ts` fail: the three-list reconciliation there
+    # compares the YAML jobs, this `needs` list and `DECLARED_JOBS`, so a job
+    # cannot run unwatched and the gate cannot declare a job that does not exist.
     needs:
       - change-detection
       - static-quality
@@ -298,6 +352,7 @@ jobs:
       - container-security
       - secret-scan
       - hosted-clean-room
+      - authenticated-browser
 
     steps:
       # A local `uses: ./…` action is resolved from the workspace, which is
@@ -337,6 +392,18 @@ jobs:
         env:
           EXPECTED_SHA: ${{ needs.change-detection.outputs.head-sha }}
           BASE_SHA: ${{ needs.change-detection.outputs.base-sha }}
+          # THE SAME EXPRESSION that decides whether `authenticated-browser`
+          # runs, so the gate cannot disagree with the workflow about why the job
+          # is absent. It reaches the script through `env:` and never through the
+          # shell body — an attacker-influenced expression pasted into a `run:`
+          # is the shape WFS-006 exists to keep out of this repository.
+          #
+          # `false` is the ONLY value that excuses the skip, and it excuses it as
+          # `NOT_ELIGIBLE_FOR_SECURITY_REASON` rather than as a pass. Anything
+          # else — including a missing value — makes a skip a failure.
+          TRUSTED_CONTEXT: >-
+            ${{ github.event_name != 'pull_request' ||
+            github.event.pull_request.head.repo.full_name == github.repository }}
         run: |
           set -euo pipefail
           # The classification is read back from the artifact rather than from a
@@ -354,6 +421,7 @@ jobs:
             --expected-sha "${EXPECTED_SHA}" \
             --actual-sha "$(git rev-parse HEAD)" \
             --base-sha "${BASE_SHA}" \
+            --trusted-context "${TRUSTED_CONTEXT}" \
             --markdown ci-gate.md --json ci-gate.json
 
       - name: Publish the gate summary
