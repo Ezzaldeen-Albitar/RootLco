@@ -30,6 +30,18 @@ import {
 
 type JobResult = 'success' | 'failure' | 'cancelled' | 'skipped';
 
+/**
+ * A figure in rendered markdown, matched as a figure rather than as a substring.
+ *
+ * `QA005-05`: a number compared with `toContain` is bounded by nothing, so
+ * `toContain('926')` passes on `1926` and on `9261`. Refusing a digit or a
+ * decimal point on either side makes the assertion two-sided.
+ */
+const exactly = (value: string | number): RegExp =>
+  new RegExp(
+    String.raw`(?<![\d.])${String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\d.])`
+  );
+
 /** A `needs` context in which every declared job succeeded. */
 function allSucceeded(
   overrides: Record<string, JobResult> = {}
@@ -218,10 +230,22 @@ describe('ci-gate', () => {
       }
     );
     expect(markdown).toContain('**Go**');
-    expect(markdown).toContain('91.06%');
-    expect(markdown).toContain('926');
-    expect(markdown).toContain('119');
-    expect(markdown).toContain('a677eb05');
+    /*
+     * `QA005-05`. These were `toContain('926')` and friends — a substring match
+     * on a number, which is satisfied by `1926` and by `9261` alike. A renderer
+     * that concatenated two totals, or dropped a separator, would have passed
+     * every one of them; only the digits going MISSING was ever detectable.
+     *
+     * `exactly()` refuses an adjacent digit or decimal point on either side, so
+     * the rendered token has to be the figure itself rather than a substring of
+     * something larger.
+     */
+    expect(markdown).toMatch(exactly('91.06%'));
+    expect(markdown).toMatch(exactly(926));
+    expect(markdown).toMatch(exactly(119));
+    // The schema hash is hex, so the boundary that matters is a hex character
+    // rather than a digit: `a677eb05a` must not satisfy `a677eb05`.
+    expect(markdown).toMatch(/(?<![0-9a-f])a677eb05(?![0-9a-f])/);
     for (const job of DECLARED_JOBS as Array<{ id: string }>) {
       expect(markdown).toContain(job.id);
     }
