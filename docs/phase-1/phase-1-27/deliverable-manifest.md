@@ -656,17 +656,17 @@ under-report itself by seven files.
 
 | path                                              | lines | what it is                                                                         |
 | ------------------------------------------------- | ----- | ---------------------------------------------------------------------------------- |
-| `adversarial-round-five.md`                       | 507   | The live finding register; its totals are derived from its own rows                |
+| `adversarial-round-five.md`                       | 623   | The live finding register; its totals are derived from its own rows                |
 | `adversarial-round-four.md`                       | 147   | The previous round, superseded by round five                                       |
 | `blocker-remediation-plan.md`                     | 497   | What blocked the phase, and how each blocker was cleared                           |
 | `canonical-plan.md`                               | 340   | What P1-27 is scoped to build, and the disposition of `P1-OD-017` and `P1-OD-025`  |
 | `canonical-write-reachability.json`               | 66    | Every write operation classified reachable or deliberately absent, with a decision |
-| `ci-evidence.md`                                  | 126   | Hosted CI on PR #198                                                               |
+| `ci-evidence.md`                                  | 140   | Hosted CI on PR #198                                                               |
 | `clean-room-evidence.md`                          | 210   | The clean-room build at `e14984e`                                                  |
 | `contract-archaeology.md`                         | 416   | What the Backend actually publishes, read before anything was built                |
 | `deliverable-manifest.md`                         | 1022  | This file                                                                          |
 | `developer-guide.md`                              | 184   | `DOC-002` — the developer half                                                     |
-| `evidence/change-log.md`                          | 593   | `DOC-002` — the change-log half; its rows are scraped by a test                    |
+| `evidence/change-log.md`                          | 706   | `DOC-002` — the change-log half; its rows are scraped by a test                    |
 | `evidence/evidence-manifest.json`                 | 155   | `QA-005` — a SHA-256 digest of every document in this directory                    |
 | `evidence/task-traceability.md`                   | 432   | Every task, the operations it calls, the files it produced, the named proof        |
 | `evidence/test-catalogue-traceability.md`         | 406   | `DOC-001` — the 29 canonical `TC-P1-27-*` ids bound to executable tests            |
@@ -971,17 +971,17 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
 <!-- derived: cases navigation.test.ts = 22 -->
 <!-- LINE-COUNT MARKERS. Regenerated, never typed. -->
 
-<!-- derived: lines docs/phase-1/phase-1-27/adversarial-round-five.md = 507 -->
+<!-- derived: lines docs/phase-1/phase-1-27/adversarial-round-five.md = 623 -->
 <!-- derived: lines docs/phase-1/phase-1-27/adversarial-round-four.md = 147 -->
 <!-- derived: lines docs/phase-1/phase-1-27/blocker-remediation-plan.md = 497 -->
 <!-- derived: lines docs/phase-1/phase-1-27/canonical-plan.md = 340 -->
 <!-- derived: lines docs/phase-1/phase-1-27/canonical-write-reachability.json = 66 -->
-<!-- derived: lines docs/phase-1/phase-1-27/ci-evidence.md = 126 -->
+<!-- derived: lines docs/phase-1/phase-1-27/ci-evidence.md = 140 -->
 <!-- derived: lines docs/phase-1/phase-1-27/clean-room-evidence.md = 210 -->
 <!-- derived: lines docs/phase-1/phase-1-27/contract-archaeology.md = 416 -->
 <!-- derived: lines docs/phase-1/phase-1-27/deliverable-manifest.md = 1022 -->
 <!-- derived: lines docs/phase-1/phase-1-27/developer-guide.md = 184 -->
-<!-- derived: lines docs/phase-1/phase-1-27/evidence/change-log.md = 593 -->
+<!-- derived: lines docs/phase-1/phase-1-27/evidence/change-log.md = 706 -->
 <!-- derived: lines docs/phase-1/phase-1-27/evidence/evidence-manifest.json = 155 -->
 <!-- derived: lines docs/phase-1/phase-1-27/evidence/task-traceability.md = 432 -->
 <!-- derived: lines docs/phase-1/phase-1-27/evidence/test-catalogue-traceability.json = 866 -->
