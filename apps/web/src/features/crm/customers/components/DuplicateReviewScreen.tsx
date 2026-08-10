@@ -164,14 +164,20 @@ export function DuplicateReviewScreen({ locale, messages }: Props) {
 
   return (
     <div className="flex min-h-0 flex-col gap-4">
-      <header>
-        <h1 className="text-page-title font-semibold text-text-primary">
-          {translate(messages, 'crm.duplicates.title')}
-        </h1>
-        <p className="mt-1 text-body text-text-secondary">
-          {translate(messages, 'crm.duplicates.intro')}
-        </p>
-      </header>
+      {/*
+        No heading here, and no `<header>` to hang one on.
+
+        `crm/customer-duplicates/page.tsx` already renders `PageHeader` with THIS
+        SAME `crm.duplicates.title`, and `PageHeader` is the page's `<h1>` — one
+        per page, as its own docblock states. This screen printed the identical
+        string a second time, so the queue shipped with two `<h1>`s and the title
+        visibly twice. Measured on `/en/crm/customer-duplicates`: `h1 count: 2`.
+        Dropping it here loses no text; the title is still on screen, once.
+
+        The intro stays. It is not the title said again — it explains what the
+        pairs are and that merge is not offered yet, which nothing else says.
+      */}
+      <p className="text-body text-text-secondary">{translate(messages, 'crm.duplicates.intro')}</p>
 
       <div className="flex flex-wrap items-end gap-3">
         <label className="flex flex-col gap-1">

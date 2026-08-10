@@ -251,7 +251,10 @@ describe('Arabic', () => {
     render('ar');
     expect(document.documentElement.dir).toBe('rtl');
     expect(await screen.findByText('Nadia Khoury')).toBeInTheDocument();
-    expect(screen.getByText(ar['crm.duplicates.title'])).toBeInTheDocument();
+    // The intro, not the title. The title is no longer rendered by this screen:
+    // the route's `PageHeader` renders it, and printing it here too gave the
+    // page two `<h1>`s and the same string twice on screen.
+    expect(screen.getByText(ar['crm.duplicates.intro'])).toBeInTheDocument();
   });
 });
 

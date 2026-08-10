@@ -894,7 +894,9 @@ describe('the same screens in Arabic and RTL', () => {
     // rather than on the container — a component asserting its own `dir` would
     // be asserting something the layout, not the component, is responsible for.
     expect(document.documentElement.dir).toBe('rtl');
-    expect(await screen.findByText(ar['vehicles.duplicates.title'])).toBeInTheDocument();
+    // The intro, not the title: the title belongs to the route's `PageHeader`,
+    // and this screen printing it too gave the queue two `<h1>`s.
+    expect(await screen.findByText(ar['vehicles.duplicates.intro'])).toBeInTheDocument();
     // The score keeps LTR direction inside an RTL row, or "93%" reorders.
     const score = await screen.findByText('93%');
     expect(score.closest('[dir="ltr"]')).not.toBeNull();

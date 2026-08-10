@@ -450,7 +450,21 @@ function ProfileHeader({
   return (
     <header className="rounded-lg border border-border bg-surface p-4">
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-        <h1 className="text-page-title font-semibold text-text-primary">{customer.displayName}</h1>
+        {/*
+          `h2`, not `h1`, and DEMOTED rather than dropped.
+
+          `crm/customers/[customerId]/page.tsx` renders `PageHeader` with
+          `crm.customers.profile.title` — that is the page's `<h1>`, and this was
+          a second one. But unlike the two duplicate queues, this heading is not
+          the page title said twice: it is the customer's own name, which the
+          header does not carry, so deleting it would delete information.
+
+          So it becomes the section heading it always was in meaning: h1 "Customer
+          profile", h2 the customer. The class is unchanged, so the name is the
+          same size on screen as before — the level is a fact about the outline,
+          not about the type scale.
+        */}
+        <h2 className="text-page-title font-semibold text-text-primary">{customer.displayName}</h2>
         {customer.displayNumber ? (
           <code className="font-mono text-caption text-text-secondary">
             {customer.displayNumber}
