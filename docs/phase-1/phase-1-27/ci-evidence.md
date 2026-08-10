@@ -64,20 +64,38 @@ authenticated end-to-end tier that it needs a running Supabase, a running API an
 a real account with a real password, "none of which a hosted runner is given".
 That was false and is corrected rather than deleted — it is the `H-15` premise, in
 the evidence document.** A hosted runner has Docker and the Supabase CLI is a
-devDependency of this repository. The `authenticated-browser` job in
-`.github/workflows/protected-develop-verification.yml` starts the stack,
+devDependency of this repository. The `authenticated-browser` job — whose body is
+`.github/workflows/_reusable-authenticated-browser.yml` — starts the stack,
 bootstraps the real operator and a second tenant, sets `ROOTLCO_E2E_AUTH`, runs
-the tier, and fails on a run that collected nothing — and it has **passed on a
-GitHub-hosted runner**: run `31347643485`, 225 tests, 0 failed, against candidate
-`78c4587`.
+the tier, and fails on a run that collected nothing.
 
-What is true, and is the reason this section still exists: **no job the
-pull-request gate runs executes the tier.** `ROOTLCO_E2E_AUTH=1` gates it, the
-five anonymous Playwright projects carry `testIgnore` for that directory, and the
-authenticated job runs only on pushes to `develop` and `main` or by an explicit
-`workflow_dispatch`. So a green pull request still does not include it, and the
-one hosted pass was dispatched against a candidate rather than collected on a
-protected push.
+**A second sentence here has since become false and is corrected rather than
+deleted, for the same reason as the first.** This section said "no job the
+pull-request gate runs executes the tier … the authenticated job runs only on
+pushes to `develop` and `main` or by an explicit `workflow_dispatch`. So a green
+pull request still does not include it." At this head the reusable workflow is
+called from `pr-ci.yml` on every pull request whose head is a branch of this
+repository, and `ci-gate` lists `authenticated-browser` in its `needs`;
+`scripts/ci/evaluate-ci-gate.mjs` declares the job `alwaysRequired`. A green pull
+request from this repository DOES include the tier.
+
+What is still true, and is the reason this section exists at all: **a pull request
+from a FORK does not get it.** Standing a Supabase stack, a production API and a
+real operator account up on a runner is privileged execution, and untrusted code
+is refused it — stated to the gate explicitly, so the skip is recorded as an
+ineligibility rather than accepted as a pass. `ROOTLCO_E2E_AUTH=1` still gates the
+tier and the five anonymous Playwright projects still carry `testIgnore` for that
+directory, so any run that has not stood the stack up covers none of it.
+
+**One claim that stood here is now DISPUTED inside this repository, and this
+document will not settle it by preference.** It recorded that the tier had
+**passed on a GitHub-hosted runner** — run `31347643485`, 225 tests, 0 failed,
+against candidate `78c4587`. `.github/ci-baselines/unrun-test-tiers.json`
+`hostedObservation` states instead that run `31337158296` is the only hosted
+execution of this tier in the repository's history and that it FAILED in the
+acceptance bootstrap. Both cannot be true; a GitHub run record is not in this
+tree; the disagreement is finding `H-24` in `adversarial-round-five.md`. Either
+way, no run has been observed against the closing candidate.
 
 Neither tier is a superset. A change that passes one and is never run through the
 other has been half-measured.
