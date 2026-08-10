@@ -353,6 +353,55 @@ design), `DO-002` (alert routing absent) and `DOC-001` (the eighteen-path matrix
 undischarged). Twenty-three of the thirty-five passes carry an OUTSTANDING
 protected reproof.
 
+### Closure wave three — re-judging three of the four remaining `PARTIAL`
+
+`FE-006`, `SEC-003` and `QA-004` closed in wave two, leaving four: `SEC-002`,
+`DO-002`, `DOC-001` and `QA-005`. Three of the four had been `PARTIAL` for
+reasons that landed in the tree AFTER the last judgement, by agents who did not
+own the matrix — so each was re-verified here rather than accepted, and each
+mutation was run and then restored by file copy.
+
+**`SEC-002` → `PASS`.** The binding reason was that only `file-access` had a gate
+rule, leaving `export`, `document` and `media` on a deletable suite. The gate now
+declares **eight** rules, not six: `no-export-surface` and `no-invented-media-limit`
+are new and `no-upload-path` went from three constructs to seven. Verified by
+planting `URL.createObjectURL` and a `MAX_FILE_SIZE_BYTES` constant into a real
+source file — exactly two failures, naming exactly those two rules. The
+deletability argument is answered too, which the named closure action did not
+require: deleting the security suite fails ten of the gate suite's 133 cases, and
+adding one undeclared suite rule fails the both-directions reconciliation. **The
+residual is recorded rather than rounded away:** `storage` and `unescaped-html`
+still have no gate rule, measured at 0 hits across 97 files, and of the two only
+`storage` is inside this task's canonical wording at all — `unescaped-html` is
+output encoding, which is `SEC-003` territory. **A naming error is corrected:** the
+matrix named the closure action `no-export-caller`; the shipped rule id is
+`no-export-surface`, and `export-caller` is a construct inside it.
+
+**`DO-002` → `PASS`.** Alert routing existed nowhere; it exists now, as a severity
+threshold validated against the same `LOG_LEVELS` tuple the logger orders by and
+applied inside `deliveringAdapter` — the one place an event leaves the device, and
+deliberately not in `report`, because the console is not egress. Verified by
+mutation twice: an exclusive comparison fails six of forty-four cases, and
+deleting `P1-27-OD-006`'s own owner line fails exactly one, which the earlier
+file-scoped assertion did not. What remains absent is paging, and `ADR-012`
+records there is no environment beyond Local to operate a collector in.
+
+**`DOC-001` stays `PARTIAL`, and is NOT rounded up.** The `recovery` path closed —
+a case now presses Retry, asserts the adapter was called again, and asserts the
+rows replace the failure; neutralising the button's `onClick` fails that one case
+and no other, 1 failed against 1605 passed. The eighteen-path matrix is therefore
+**12 PROVEN / 4 PARTIAL / 2 ABSENT**, not 11/4/3, and `matrixDischarged` stays
+`false`. Six paths remain unproved and each is named in the row rather than
+summarised.
+
+**The matrix is 40 PASS / 2 PARTIAL / 0 FAIL.** The two are `DOC-001` and
+`QA-005`, which is sealed last by design.
+
+**One count was left stale by the commit that created it.** `78c4587` added a case
+to `vehicle-screens.dom.test.tsx` and three documents still claimed 36; the
+`derived: cases` gate caught all three. Corrected here, with the four line-count
+cells the same edits moved.
+
 ---
 
 ## The through-line

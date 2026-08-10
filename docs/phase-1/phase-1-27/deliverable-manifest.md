@@ -629,7 +629,7 @@ under-report itself by seven files.
 
 | path                                              | lines | what it is                                                                         |
 | ------------------------------------------------- | ----- | ---------------------------------------------------------------------------------- |
-| `adversarial-round-five.md`                       | 349   | The live finding register; its totals are derived from its own rows                |
+| `adversarial-round-five.md`                       | 386   | The live finding register; its totals are derived from its own rows                |
 | `adversarial-round-four.md`                       | 147   | The previous round, superseded by round five                                       |
 | `blocker-remediation-plan.md`                     | 497   | What blocked the phase, and how each blocker was cleared                           |
 | `canonical-plan.md`                               | 340   | What P1-27 is scoped to build, and the disposition of `P1-OD-017` and `P1-OD-025`  |
@@ -639,11 +639,11 @@ under-report itself by seven files.
 | `contract-archaeology.md`                         | 416   | What the Backend actually publishes, read before anything was built                |
 | `deliverable-manifest.md`                         | 995   | This file                                                                          |
 | `developer-guide.md`                              | 184   | `DOC-002` — the developer half                                                     |
-| `evidence/change-log.md`                          | 483   | `DOC-002` — the change-log half; its rows are scraped by a test                    |
+| `evidence/change-log.md`                          | 532   | `DOC-002` — the change-log half; its rows are scraped by a test                    |
 | `evidence/evidence-manifest.json`                 | 155   | `QA-005` — a SHA-256 digest of every document in this directory                    |
 | `evidence/task-traceability.md`                   | 432   | Every task, the operations it calls, the files it produced, the named proof        |
-| `evidence/test-catalogue-traceability.md`         | 299   | `DOC-001` — the 29 canonical `TC-P1-27-*` ids bound to executable tests            |
-| `evidence/test-catalogue-traceability.json`       | 842   | Its machine-readable form, checked by `validate:p1-27-doc-counts`                  |
+| `evidence/test-catalogue-traceability.md`         | 320   | `DOC-001` — the 29 canonical `TC-P1-27-*` ids bound to executable tests            |
+| `evidence/test-catalogue-traceability.json`       | 846   | Its machine-readable form, checked by `validate:p1-27-doc-counts`                  |
 | `execution-checkpoint.md`                         | 289   | Base SHAs, surface baselines, the wave log                                         |
 | `final-canonical-remediation.md`                  | 448   | The canonical remediation wave                                                     |
 | `final-task-adjudication.md`                      | 956   | The 33 adjudicated audit items, and the retraction of `42 / 42`                    |
@@ -932,7 +932,7 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
 <!-- derived: files apps/web/src/features/vehicles = 23 -->
 <!-- derived: files p1-27-frontend-gate = 69 -->
 <!-- derived: files p1-27-frontend-gate:trees = 3 -->
-<!-- derived: tracked docs/phase-1/phase-1-27 = 37 -->
+<!-- derived: tracked docs/phase-1/phase-1-27 = 39 -->
 <!-- derived: tracked docs/phase-1/phase-1-27:md = 30 -->
 <!-- derived: tracked docs/product = 13 -->
 <!-- derived: commands registered = 148 -->
@@ -944,7 +944,7 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
 <!-- derived: cases navigation.test.ts = 22 -->
 <!-- LINE-COUNT MARKERS. Regenerated, never typed. -->
 
-<!-- derived: lines docs/phase-1/phase-1-27/adversarial-round-five.md = 349 -->
+<!-- derived: lines docs/phase-1/phase-1-27/adversarial-round-five.md = 386 -->
 <!-- derived: lines docs/phase-1/phase-1-27/adversarial-round-four.md = 147 -->
 <!-- derived: lines docs/phase-1/phase-1-27/blocker-remediation-plan.md = 497 -->
 <!-- derived: lines docs/phase-1/phase-1-27/canonical-plan.md = 340 -->
@@ -954,11 +954,11 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
 <!-- derived: lines docs/phase-1/phase-1-27/contract-archaeology.md = 416 -->
 <!-- derived: lines docs/phase-1/phase-1-27/deliverable-manifest.md = 995 -->
 <!-- derived: lines docs/phase-1/phase-1-27/developer-guide.md = 184 -->
-<!-- derived: lines docs/phase-1/phase-1-27/evidence/change-log.md = 483 -->
+<!-- derived: lines docs/phase-1/phase-1-27/evidence/change-log.md = 532 -->
 <!-- derived: lines docs/phase-1/phase-1-27/evidence/evidence-manifest.json = 155 -->
 <!-- derived: lines docs/phase-1/phase-1-27/evidence/task-traceability.md = 432 -->
-<!-- derived: lines docs/phase-1/phase-1-27/evidence/test-catalogue-traceability.json = 842 -->
-<!-- derived: lines docs/phase-1/phase-1-27/evidence/test-catalogue-traceability.md = 299 -->
+<!-- derived: lines docs/phase-1/phase-1-27/evidence/test-catalogue-traceability.json = 846 -->
+<!-- derived: lines docs/phase-1/phase-1-27/evidence/test-catalogue-traceability.md = 320 -->
 <!-- derived: lines docs/phase-1/phase-1-27/execution-checkpoint.md = 289 -->
 <!-- derived: lines docs/phase-1/phase-1-27/final-canonical-remediation.md = 448 -->
 <!-- derived: lines docs/phase-1/phase-1-27/final-task-adjudication.md = 956 -->

@@ -236,9 +236,9 @@ what those become:
 | backend unavailable | `PROVEN`  |                                                                                      |
 | timeout             | `PARTIAL` | proven in the shared client, on no screen                                            |
 | cancellation        | `PARTIAL` | the same shape                                                                       |
-| recovery            | `ABSENT`  | the Retry control is wired and asserted present; no case clicks it — see the JSON    |
+| recovery            | `PROVEN`  | a rendered failure, the Retry press, the re-read and the rows — one case, `78c4587`  |
 
-**11 `PROVEN` · 4 `PARTIAL` · 3 `ABSENT`.** Each `PARTIAL` and each `ABSENT`
+**12 `PROVEN` · 4 `PARTIAL` · 2 `ABSENT`.** Each `PARTIAL` and each `ABSENT`
 carries its reason in the JSON, and the gate refuses one that does not.
 
 `matrixDischarged` is `false` and the gate refuses any other value, because
@@ -247,16 +247,37 @@ twenty-nine ids. Building them is Frontend work with its own tasks; it is not
 something a documentation change may assert.
 
 Re-derived at `0c40499`, after the four closure-wave branches merged. **The
-shape is unchanged — 11 / 4 / 3 — and two reasons are not.** `stale version` and
-`concurrent update` were recorded against an OPEN finding; they are now recorded
-against a RATIFIED decision, `P1-27-OD-005`, which names the Backend remediation
-that would create the path and binds itself to six executable checks that fail
-the day it lands. An absence that is decided is still an absence, and the status
-does not move for it. `idempotent replay` gains the on-the-wire proof and the two
-Backend suites that bound what is left of it. `recovery` is unchanged and is now
-SPECIFIED: it is the only `ABSENT` row closable without a Backend change, it
-needs one case in an existing `apps/web` suite, and that tree does not belong to
-this branch — so it is written down for its owner rather than left as a verdict.
+shape was unchanged — 11 / 4 / 3 — and two reasons were not.** `stale version`
+and `concurrent update` were recorded against an OPEN finding; they are now
+recorded against a RATIFIED decision, `P1-27-OD-005`, which names the Backend
+remediation that would create the path and binds itself to six executable checks
+that fail the day it lands. An absence that is decided is still an absence, and
+the status does not move for it. `idempotent replay` gains the on-the-wire proof
+and the two Backend suites that bound what is left of it.
+
+**Re-measured again at `78c4587`, and one row moved: `recovery`, `ABSENT` →
+`PROVEN`.** The previous revision of this section specified the missing case
+rather than asserting it — the only `ABSENT` row closable without a Backend
+change, one case in an existing `apps/web` suite, written down for its owner. It
+was written: `apps/web/tests/vehicle-screens.dom.test.tsx`, _"RECOVERS when Retry
+is pressed: it re-reads, and the rows arrive"_. It drives the whole path — a
+transient failure renders, the control is pressed, the adapter is asserted to
+have been called AGAIN before anything visual is asserted, the rows arrive and
+the failure state is asserted gone. **Mutation-proved here rather than taken on
+the commit message: making `DataTable.tsx`'s Retry button `onClick` a no-op
+failed that one case and no other — 1 failed, 1605 passed across 70 web files —
+and the file was restored by copy.** That is what distinguishes it from the four
+cases that preceded it, each of which asserted only that the control _is_ or _is
+not_ offered and every one of which a button that renders and does nothing would
+satisfy.
+
+**The matrix is still NOT discharged.** Four `PARTIAL` and two `ABSENT` remain,
+and this record does not round them up. `scope denial`, `idempotent replay`,
+`timeout` and `cancellation` are `PARTIAL`; `stale version` and `concurrent
+update` are `ABSENT` behind `P1-27-OD-005`. Of the six, only `idempotent replay`,
+`timeout` and `cancellation` are closable from `apps/web` at all — the other
+three need either a Backend capability that is deliberately absent or a
+server-side distinction the wire does not carry.
 
 ---
 
