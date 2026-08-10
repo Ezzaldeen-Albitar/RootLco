@@ -605,6 +605,83 @@ describe('a screen mounted in the dashboard shell contributes no second h1', () 
       'src/features/vehicles/components/VehicleProfileScreen.tsx',
     ]);
   });
+
+  it('lets no ROUTE put a page header above a screen that brings its own h1', () => {
+    /*
+     * The compositions above model the routes BY HAND, and the scan above reads
+     * only `src/components` and `src/features`. Nothing read `src/app/**`, so
+     * the one screen that legitimately owns its `<h1>` —
+     * `VehicleProfileScreen`, because its route renders no header on the
+     * success path — was protected by a hand-written `titleKey: null` and by
+     * nothing else. Adding a `<PageHeader>` back to that success path would
+     * ship two `<h1>`s again with every case in this suite green. That gap was
+     * named in review, and this is the case that closes it.
+     *
+     * It reads the ROUTES, and it reasons per RENDER PATH rather than per file:
+     * a page may legitimately render a header on its denial, not-found and
+     * error branches while the success branch renders the screen alone, which
+     * is exactly what the vehicle profile does. A violation is a single
+     * `return` that contains BOTH.
+     *
+     * The header is often hoisted (`const header = (<PageHeader … />)`) and
+     * used as `{header}`, so aliases are resolved rather than only the literal
+     * element being matched — a scan for `<PageHeader` alone would read every
+     * branch of that page as headerless and prove nothing.
+     */
+    const appRoot = join(__dirname, '..', 'src', 'app');
+    const pages: string[] = [];
+    const walkPages = (dir: string) => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const full = join(dir, entry.name);
+        if (entry.isDirectory()) walkPages(full);
+        else if (entry.name === 'page.tsx') pages.push(full);
+      }
+    };
+    walkPages(appRoot);
+    expect(pages.length, 'no route files were read').toBeGreaterThan(15);
+
+    const stripped = (source: string): string =>
+      source
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .split('\n')
+        .filter((line) => !line.trimStart().startsWith('//'))
+        .join('\n');
+
+    // Derived from the case above rather than restated, so the two cannot drift.
+    const OWNS_ITS_H1 = ['VehicleProfileScreen'];
+
+    const violations: string[] = [];
+    for (const page of pages) {
+      const source = stripped(readFileSync(page, 'utf8'));
+
+      const aliases = [...source.matchAll(/const\s+(\w+)\s*=\s*\(\s*<PageHeader\b/g)].map(
+        (match) => match[1] as string
+      );
+      const headerIn = (block: string): boolean =>
+        /<PageHeader\b/.test(block) || aliases.some((name) => block.includes(`{${name}}`));
+
+      // Each `return (` and everything to the end of the file is an
+      // over-approximation of that branch, so a header ABOVE a return cannot be
+      // missed; the screen match is what narrows it back to one path.
+      for (const match of source.matchAll(/return\s*\(/g)) {
+        const block = source.slice(match.index ?? 0);
+        const upToNextReturn = block.slice(
+          0,
+          block.slice(1).search(/\n\s*return\s*\(/) + 1 || block.length
+        );
+        for (const screen of OWNS_ITS_H1) {
+          if (upToNextReturn.includes(`<${screen}`) && headerIn(upToNextReturn)) {
+            violations.push(
+              `${relative(join(__dirname, '..'), page).split(sep).join('/')} renders both a page ` +
+                `header and <${screen}>, which declares its own h1, on one render path`
+            );
+          }
+        }
+      }
+    }
+
+    expect(violations, violations.join('\n')).toEqual([]);
+  });
 });
 
 describe('this file is not vacuous', () => {
