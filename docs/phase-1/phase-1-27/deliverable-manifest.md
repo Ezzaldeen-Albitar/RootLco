@@ -932,7 +932,7 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
 <!-- derived: files apps/web/src/features/vehicles = 23 -->
 <!-- derived: files p1-27-frontend-gate = 69 -->
 <!-- derived: files p1-27-frontend-gate:trees = 3 -->
-<!-- derived: tracked docs/phase-1/phase-1-27 = 39 -->
+<!-- derived: tracked docs/phase-1/phase-1-27 = 37 -->
 <!-- derived: tracked docs/phase-1/phase-1-27:md = 30 -->
 <!-- derived: tracked docs/product = 13 -->
 <!-- derived: commands registered = 148 -->
