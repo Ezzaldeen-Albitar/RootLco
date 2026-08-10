@@ -232,13 +232,13 @@ what those become:
 | duplicate           | `PROVEN`  |                                                                                      |
 | stale version       | `ABSENT`  | decided as last-writer-wins by `P1-27-OD-005`; no route here is `versionGuarded`     |
 | concurrent update   | `ABSENT`  | the same decision; `A42-13` still holds and `P1-27-OD-005` disposes of it            |
-| idempotent replay   | `PARTIAL` | the key is proven on the wire; no P1-27 request is replayed and counted as a delta   |
+| idempotent replay   | `PARTIAL` | the replay is issued and counted as three deltas; the effects counted are a fixture  |
 | backend unavailable | `PROVEN`  |                                                                                      |
-| timeout             | `PARTIAL` | proven in the shared client, on no screen                                            |
-| cancellation        | `PARTIAL` | the same shape                                                                       |
+| timeout             | `PROVEN`  | the deadline fires on a rendered screen, through the production adapter              |
+| cancellation        | `PARTIAL` | no control cancels a request, so the only cause unmounts the screen                  |
 | recovery            | `PROVEN`  | a rendered failure, the Retry press, the re-read and the rows — one case, `78c4587`  |
 
-**12 `PROVEN` · 4 `PARTIAL` · 2 `ABSENT`.** Each `PARTIAL` and each `ABSENT`
+**13 `PROVEN` · 3 `PARTIAL` · 2 `ABSENT`.** Each `PARTIAL` and each `ABSENT`
 carries its reason in the JSON, and the gate refuses one that does not.
 
 `matrixDischarged` is `false` and the gate refuses any other value, because
@@ -271,13 +271,87 @@ cases that preceded it, each of which asserted only that the control _is_ or _is
 not_ offered and every one of which a button that renders and does nothing would
 satisfy.
 
-**The matrix is still NOT discharged.** Four `PARTIAL` and two `ABSENT` remain,
-and this record does not round them up. `scope denial`, `idempotent replay`,
-`timeout` and `cancellation` are `PARTIAL`; `stale version` and `concurrent
-update` are `ABSENT` behind `P1-27-OD-005`. Of the six, only `idempotent replay`,
-`timeout` and `cancellation` are closable from `apps/web` at all — the other
-three need either a Backend capability that is deliberately absent or a
-server-side distinction the wire does not carry.
+### 4.1 Re-measured after the transport wave — one row moved, two did not
+
+The three rows this record had named as the only ones closable from `apps/web`
+were attacked directly. Every case and every mutation below was re-run here, on
+the merged tree, rather than taken from the commit that wrote them; the baseline
+is **70 files, 1614 passed**, and each mutated file was restored by copy and its
+md5 compared.
+
+| mutation                                                   | result               | which cases                                            |
+| ---------------------------------------------------------- | -------------------- | ------------------------------------------------------ |
+| `client.ts` — the `setTimeout` callback emptied            | **1 failed / 1613**  | the new timeout case, alone                            |
+| `read-operation.ts` — `STATUS_BY_KIND.timeout` → `'error'` | **2 failed / 1612**  | the new timeout case + `p1-27-qa.test.ts`              |
+| `client.ts` — `const isAbort = false`                      | **6 failed / 1608**  | the new cancellation case + 1 client + 4 observability |
+| `client.ts` — a generated key overwrites the caller's      | **5 failed / 1609**  | 3 of the five new replay cases                         |
+| `client.ts` — `send` issues the request twice              | **28 failed / 1586** | both replay deltas among them (see the note below)     |
+
+**The first mutation is the one worth reading.** A client whose deadline never
+fires was invisible to `tests/api-client.test.ts` — the suite this record cited
+as the timeout path's whole proof. Its timeout cases feed the error in rather
+than letting the deadline produce it, so the classification was proved and the
+deadline was not.
+
+**One reported number was not reproduced, and it is recorded rather than
+smoothed.** The double-send mutation was reported as "4 failed"; duplicating the
+`#request` call in `send` here fails **28**, because a duplicated request also
+consumes the one-shot responses seven other suites queue. The direction is
+unchanged and stronger — both replay deltas fail — but the aggregate in the
+originating commit message does not describe the mutation as re-applied here.
+
+**`timeout` → `PROVEN`.** The stated reason for `PARTIAL` was "proved in the
+shared client, on no screen", and that is now false:
+`vehicle-screens.dom.test.tsx`, _"shows a TIMEOUT as 'service unavailable', with
+the reference to quote"_, drives `VehicleSearchScreen` → `useServerTable` →
+the real `searchVehicles` → the real `ApiClient` over a transport that never
+answers, so the client's own deadline is what ends the request. It asserts the
+translated copy, the correlation reference the failure actually carried, that
+`state.error.title` is absent, that Retry is offered, and **one** wire attempt —
+search is `expensive-read` and sends `retries: 0`, so a timeout must not become
+two. A timeout is an outcome an operator meets while still on the screen, and
+the whole chain from the deadline to the sentence they read is now executed.
+
+**`cancellation` stays `PARTIAL`, and the reason is narrowed rather than
+removed.** The screen half is closed the same way: an abort the client did not
+raise reaches a rendered screen and puts **no** service-unavailable state there,
+which is the false incident the classification exists to prevent. What is still
+missing is the operator's half. **No P1-27 control cancels a request** —
+`form.cancel` is a `Link` back to the list and `admin.cancel` calls
+`setConfirming(false)`; neither touches the request — and **no P1-27 adapter
+accepts an `AbortSignal`**, `grep AbortSignal apps/web/src/features/` being
+empty. So the only production cause is navigating away, which unmounts the very
+screen the assertion is made against. That is the same shape this record refuses
+to round up one row above: a capability that is deliberately absent is not a
+path that has been proved. It is `PARTIAL` and not `ABSENT` because, unlike
+`stale version`, the reachable half is genuinely exercised end to end.
+
+**`idempotent replay` stays `PARTIAL`, on the two limits its own author wrote
+down.** A real P1-27 write now replays through the real client against a
+key-arbitrating transport, counted as three deltas with a fresh-key control. But
+the effects counted are `createdVehicles`, an array in the test file — that a
+replay writes no second row, no audit record and no outbox event is a property of
+`veh.vehicle-create` in PostgreSQL, and `p1-14-idempotency-replay.test.ts` counts
+those durable consequences for ten IAM operations and for no CRM or Vehicle one.
+And no production path replays at all: `grep idempotencyKey apps/web/src/`
+resolves to `lib/api/client.ts` alone, verified here, so the replay is a
+capability of the client that no screen uses.
+
+**The matrix is still NOT discharged.** Three `PARTIAL` and two `ABSENT` remain,
+and this record does not round them up. `scope denial`, `idempotent replay` and
+`cancellation` are `PARTIAL`; `stale version` and `concurrent update` are
+`ABSENT` behind `P1-27-OD-005`. Of the five, **none is closable from `apps/web`
+alone any more** — the two that were have been closed as far as this workspace
+can close them, and what is left of each needs either a Backend capability that
+is deliberately absent, a durable-effect count against a real database, a
+Frontend cancel affordance nobody has specified, or a server-side distinction the
+wire does not carry.
+
+**And the per-id expansion §6 asks for still does not exist.** Every figure in
+this section is measured across the whole CRM and Vehicle surface. §6 requires
+each of the twenty-nine ids to expand into the matrix; thirteen surface-level
+`PROVEN` rows are not twenty-nine expansions, and no document in this phase has
+ever claimed they are.
 
 ---
 

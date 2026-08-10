@@ -108,7 +108,7 @@ Component/DOM tests for VehicleCreateScreen.tsx, VehicleProfileScreen.tsx, VinFi
 
 ### P1-27-QA-002
 
-listVehicleDocuments (documents-api.ts:27) is absent from LIST_ADAPTERS and untested against every failure kind despite carrying its own mapping at documents-api.ts:38-45; the five catalogue-api.ts adapters are covered for 1 of 11 kinds (vehicle-api.test.ts:187-195); identity-api.ts:53 listHistory has no coverage at all.
+listVehicleDocuments (documents-api.ts:27) is absent from LIST_ADAPTERS and untested against every failure kind despite carrying its own mapping at documents-api.ts:38-45; the five catalogue-api.ts adapters are covered for 1 of 11 kinds (vehicle-api.test.ts:188-196); identity-api.ts:53 listHistory has no coverage at all.
 
 ### P1-27-QA-005
 

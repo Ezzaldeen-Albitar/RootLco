@@ -402,6 +402,67 @@ to `vehicle-screens.dom.test.tsx` and three documents still claimed 36; the
 `derived: cases` gate caught all three. Corrected here, with the four line-count
 cells the same edits moved.
 
+### Closure wave four — the transport paths, verified rather than accepted
+
+The previous entry named three of the six unproved paths as the only ones
+closable from `apps/web`. A Frontend change (`8916e18`, merged here) attacked all
+three. **Every case and every mutation it reported was re-run on the merged tree
+before any status moved**, each mutated file restored by copy with its md5
+compared, against a baseline of **70 files / 1614 passed**.
+
+**`timeout` → `PROVEN`.** Its recorded reason — "proved in the shared client, on
+no screen" — is now false. `vehicle-screens.dom.test.tsx:495-514` drives
+`VehicleSearchScreen` → `useServerTable` → the REAL `searchVehicles` → a real
+`ApiClient` over a transport that never answers, so the client's own deadline
+ends the request and nothing between the screen and `fetch` is a fixture. It
+asserts the translated copy, the correlation reference the failure carried, that
+Retry is offered, and exactly one wire attempt. Emptying the `setTimeout`
+callback fails that case **alone** — 1 failed / 1613 — and the suite that had
+been cited as this path's whole proof, `api-client.test.ts`, **did not fail**: it
+feeds the timeout error in rather than letting the deadline produce it, so the
+classification was proved and the deadline was not.
+
+**`cancellation` stays `PARTIAL`, narrowed.** The screen half closed the same
+way — an abort the client did not raise puts no service-unavailable state on
+screen; `const isAbort = false` fails it, 6 failed / 1608. The operator's half
+did not: no P1-27 control cancels a request (`form.cancel` is a `Link`,
+`admin.cancel` calls `setConfirming(false)`) and no adapter accepts an
+`AbortSignal`, so the only production cause is navigating away — which unmounts
+the screen the assertion is made against. That is the standard this record
+already applies to `stale version`, and applying it to one row and not the other
+would be the rounding-up this phase exists to stop.
+
+**`idempotent replay` stays `PARTIAL`, on the two limits its own author wrote
+down.** A real write now replays through the real client against a
+key-arbitrating transport, counted as three deltas with a fresh-key control. But
+the effects counted are an array in the test file, and no suite counts durable
+consequences across a replay of any CRM or Vehicle operation; and `grep
+idempotencyKey apps/web/src/` resolves to `lib/api/client.ts` alone, so no
+shipped adapter can re-present a key.
+
+**The matrix is 13 PROVEN / 3 PARTIAL / 2 ABSENT**, `matrixDischarged` stays
+`false`, and `DOC-001` stays `PARTIAL` — its binding reason is `canonical-plan.md`
+§6, which requires each of the twenty-nine ids to expand into the matrix, and
+every figure here is measured across the surface instead.
+
+**One reported number did not reproduce, and it is recorded rather than
+smoothed.** The "`send` issues the request twice" mutation was reported as 4
+failed; re-applied here it fails **28**, because a duplicated request also
+consumes the one-shot responses seven other suites queue. Both replay deltas
+still fail, so the direction holds — but the aggregate in the originating commit
+message does not describe the mutation as re-applied.
+
+**Six stale citations were re-pinned, and one of them was wrong before the
+merge.** The merged file grew by 173 lines above its own tail, shifting five
+`file:line` ranges in the matrix and three in other documents; all were corrected
+against the source text they had described. `FE-028` was the exception:
+`vehicle-screens.dom.test.tsx:335-440` had always begun inside the `recovery`
+case and ended inside the duplicate queue, straddling two describes. It is
+re-pinned to `544-613`, the queue block its sentence actually claims. That is the
+citation-drift defect `tests/ci/p1-27-matrix-citations.test.ts` was written for,
+found by hand because the check verifies a range holds an assertion and cannot
+verify it holds the RIGHT one.
+
 ---
 
 ## The through-line

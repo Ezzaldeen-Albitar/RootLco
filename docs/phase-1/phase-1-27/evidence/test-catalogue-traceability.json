@@ -735,11 +735,21 @@
     {
       "path": "idempotent replay",
       "status": "PARTIAL",
-      "reason": "Stronger than it was, and still not the whole path. That a key is sent on every write and on no read is proven, and since `c060b93` it is proven over a set DERIVED from the adapters (23 writes, against 11 written by hand) and read off the wire from a request a shipped adapter produced, rather than from a pure function. What is still absent is the replay itself: no case issues the same P1-27 request twice and counts the server-side effects as a delta. That is a server property, and the two places it IS proved do not reach a P1-27 operation — `tests/backend/idempotency.test.ts` proves the MECHANISM with effects counted but over a generic command, and `tests/backend/p1-14-idempotency-replay.test.ts` proves it per-operation for IAM and for no CRM or Vehicle operation. Both are cited so the gap is bounded rather than open-ended.",
+      "reason": "Stronger again, and still not the whole path. The replay itself is now ISSUED: a real P1-27 write (`createVehicleAction` -> `veh.vehicle-create`) goes through the real `ApiClient` over a transport that arbitrates by key as `route-handler.ts` and `withIdempotency` do, and three DELTAS are counted around it per the `p1-14-idempotency-replay.test.ts` precedent — requests issued +1, distinct keys on the wire +0, vehicles created +0 — with a fresh-key control that creates a second vehicle so the zeros discriminate. Mutation-proved: a generated key overwriting the caller's fails 5 (3 of them these), and a `send` that issues twice fails the requests delta. TWO THINGS STILL BLOCK IT, and neither is rounded up. FIRST, the side-effect counter is the test's own fixture: `createdVehicles` is an array in the test file, and that a replay writes no second row, no second audit record and no outbox event is a property of `veh.vehicle-create` in PostgreSQL that nothing at this tier can observe. `tests/backend/p1-14-idempotency-replay.test.ts` counts those durable consequences against a real database for ten IAM operations, and NO equivalent exists for any CRM or Vehicle operation. SECOND, no production path replays: `grep idempotencyKey apps/web/src/` resolves to `lib/api/client.ts` and nothing else, so no shipped adapter can re-present a key — `createVehicleAction` mints a fresh one per invocation, which is correct and which makes a double submit two attempts rather than a replay. The replay proved here is a capability of the client that no screen uses.",
       "provenBy": [
         {
           "file": "apps/web/tests/p1-27-security.test.ts",
           "cases": ["sends an idempotency key on every write and on no read"]
+        },
+        {
+          "file": "apps/web/tests/vehicle-api.test.ts",
+          "cases": [
+            "the adapter reaches the wire with a key at all, or nothing below means anything",
+            "re-presenting the SAME key issues one more request and creates NO second vehicle",
+            "a second ATTEMPT is not a replay: a new key, and a second vehicle",
+            "the same key with a DIFFERENT payload is refused, and executes neither version",
+            "the fixture really refuses a keyless request, so its arbitration is not decoration"
+          ]
         },
         {
           "file": "apps/web/tests/api-client.test.ts",
@@ -777,23 +787,33 @@
     },
     {
       "path": "timeout",
-      "status": "PARTIAL",
-      "reason": "Proven in the shared client, which every P1-27 adapter goes through. No CRM or vehicle screen renders a timeout as its own state — it resolves to the unavailable state, which is proven.",
+      "status": "PROVEN",
       "provenBy": [
         {
           "file": "apps/web/tests/api-client.test.ts",
           "cases": ["reports our own timeout as a timeout"]
+        },
+        {
+          "file": "apps/web/tests/vehicle-screens.dom.test.tsx",
+          "cases": [
+            "shows a TIMEOUT as \"service unavailable\", with the reference to quote",
+            "tells the two apart, which is the only thing that makes either case mean anything"
+          ]
         }
       ]
     },
     {
       "path": "cancellation",
       "status": "PARTIAL",
-      "reason": "The same shape: the client distinguishes a caller cancellation, and no P1-27 screen cancels a request, so the path has no screen-level case.",
+      "reason": "NARROWED, not closed. The half that was missing is now closed: the `cancelled` classification is proved to survive to a RENDERED screen, through the production adapter and the production client, and to put NO service-unavailable state there — mutation-proved, `const isAbort = false` fails that case (6 failed / 1608 passed). What remains absent is the operator's half. No P1-27 screen offers a control that cancels an in-flight request — `form.cancel` is a `Link` back and `admin.cancel` closes a confirm block, neither touches the request — and no P1-27 adapter accepts an `AbortSignal` (`grep AbortSignal apps/web/src/features/` is empty), so the only production cause of this path is navigating away, which UNMOUNTS the very screen the assertion is made against. This is the shape the record already refuses to round up for `stale version`: a capability that is deliberately absent is not a path that has been proved. It is PARTIAL rather than ABSENT because, unlike that row, the reachable half is genuinely exercised end to end.",
       "provenBy": [
         {
           "file": "apps/web/tests/api-client.test.ts",
           "cases": ["reports a caller cancellation as cancelled"]
+        },
+        {
+          "file": "apps/web/tests/vehicle-screens.dom.test.tsx",
+          "cases": ["does NOT report a CANCELLED request as a backend outage"]
         }
       ]
     },
