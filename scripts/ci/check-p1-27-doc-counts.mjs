@@ -641,6 +641,8 @@ export const GUIDE_CLAIMS = {
       'no-client-asserted-scope': 'a client-asserted',
       'no-invented-total': 'a total computed from `rows.length`',
       'no-upload-path': 'any upload path',
+      'no-export-surface': 'any export surface',
+      'no-invented-media-limit': 'any invented media limit',
       'no-console-output': 'any `console.*`',
     };
     const problems = [];

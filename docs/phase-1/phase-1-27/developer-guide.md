@@ -74,7 +74,21 @@ contributes none.
   merely displayed: the profile screen renders the tenant the server resolved
   and passes, because the rule is positional,
 - a total computed from `rows.length`,
-- any upload path while `P1-OD-025` is open,
+- any upload path while `P1-OD-025` is open — seven constructs, not three:
+  `new FormData(` with or without an argument, `multipart/form-data`, a file
+  input in any of its spellings, `FileReader`, an `input.files` list, an
+  `onDrop=` / `onDragOver=` target and a `DataTransfer`,
+- any export surface: `shared.export-authorize`, `shared.export-catalogue`, an
+  `/exports` path, an `exportSomething` caller, a download authorization, a
+  `download=` attribute, `createObjectURL`, a `new Blob(`, `text/csv`,
+  `application/pdf` or a `Content-Disposition` header. P1-27 publishes no export
+  surface — `canonical-plan.md` §6 names the operation behind all 29 Frontend
+  tasks and none of them is one,
+- any invented media limit while `P1-OD-025` is open — a `MAX_FILE_SIZE_`-style
+  constant, byte arithmetic such as `10 * 1024`, an accepted-MIME list, an
+  extension allow-list or an `accept=` attribute. §14 says keep upload
+  acceptance blocked **and** do not invent limits; a "sensible default" of 10 MB
+  and JPEG/PNG pre-empts the Owner's decision while looking like diligence,
 - any `console.*` in any of the three trees.
 
 A test can be deleted around a decision. A gate has to be argued with in a diff.

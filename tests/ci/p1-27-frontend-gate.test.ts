@@ -3,6 +3,13 @@ import { dirname, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
+  EXPORT_CONSTRUCTS,
+  EXPORT_INNOCENT,
+  FILE_ACCESS_CONSTRUCTS,
+  FILE_ACCESS_INNOCENT,
+  INVENTED_MEDIA_LIMIT_CONSTRUCTS,
+  INVENTED_MEDIA_LIMIT_INNOCENT,
+  MODULE_DISPOSITION,
   ROOT_AUTHORITY,
   RULES,
   SCAN_ROOTS,
@@ -12,8 +19,11 @@ import {
   assertedScopes,
   collects,
   evaluate,
+  evaluateModuleDispositions,
   fires,
+  importedModuleDirectories,
   literalMask,
+  moduleSourceRoot,
   selfTest,
   stripComments,
 } from '../../scripts/ci/check-p1-27-frontend.mjs';
@@ -68,6 +78,37 @@ const OP = {
   duplicateScan: 'duplicate-scan',
 } as const;
 
+/**
+ * Every rule match inside the two `platform-transport` modules, named.
+ *
+ * These are the lines that make the exclusion earn itself, and each is CORRECT
+ * code that a wider gate would turn red:
+ *
+ *   - `idempotent-operations.ts` is the GENERATED operation catalogue. It
+ *     contains the merge ids, the duplicate-scan ids, `/exports` and
+ *     `download-authorizations` as DATA — the operations rules 1, 2 and 7 prove
+ *     this phase never calls. It also names `tenantId` in operation parameter
+ *     lists. Scanning it would accuse the catalogue of being the list it is.
+ *   - `read-operation.ts` names `tenantId` because it is the guard that REFUSES
+ *     one; `session-cookie.ts` because a server-side session legitimately holds
+ *     the resolved scope.
+ *   - `client-log.ts` IS the structured logger the console rule tells people to
+ *     use instead of `console.*`.
+ *
+ * A fourth file, or a new rule matching one of these three, fails the case that
+ * pins this list — which is what makes "excluded" a measurement rather than a
+ * word.
+ */
+const EXCLUDED_MODULE_MATCHES = [
+  'no-client-asserted-scope: apps/web/src/lib/api/idempotent-operations.ts',
+  'no-client-asserted-scope: apps/web/src/lib/api/read-operation.ts',
+  'no-client-asserted-scope: apps/web/src/lib/api/session-cookie.ts',
+  'no-console-output: apps/web/src/lib/observability/client-log.ts',
+  'no-duplicate-scan-on-a-queue: apps/web/src/lib/api/idempotent-operations.ts',
+  'no-export-surface: apps/web/src/lib/api/idempotent-operations.ts',
+  'no-merge-caller: apps/web/src/lib/api/idempotent-operations.ts',
+];
+
 const CLEAN = [
   { path: 'apps/web/src/features/crm/customers/api.ts', source: 'export const a = 1;\n' },
   { path: 'apps/web/src/features/vehicles/api.ts', source: 'export const b = 2;\n' },
@@ -116,13 +157,349 @@ describe('the gate does not accuse the explanation of the rule', () => {
       ` * \`${OP.vehicleMerge}\` and \`${OP.customerMerge}\` are never called:`,
       ' * `P1-OD-017` is open. The two `' + OP.duplicateScan + '` operations are',
       ' * privileged audited writes. The client asserts no tenantId, companyId or',
-      ' * branchId. No total is invented. There is no FormData() upload path.',
+      ' * branchId. No total is invented. There is no FormData() upload path, no',
+      ' * FileReader, no input.files, no onDrop= target and no DataTransfer.',
+      ' * Nothing calls shared.export-authorize or shared.export-catalogue, posts',
+      ' * to /api/v1/exports, calls exportCustomers, builds a new Blob(), reaches',
+      ' * for createObjectURL or a download= attribute, assembles text/csv or',
+      ' * application/pdf, or sets a Content-Disposition header.',
+      ' * No MAX_FILE_SIZE_BYTES, no 10 * 1024 * 1024, no image/jpeg type list,',
+      " * no allowedExtensions of '.jpg', and no accept= attribute: P1-OD-025 is",
+      ' * open and §14 says do not invent limits.',
       ' */',
       '// console.log is never used here either.',
       'export const ok = 1;',
     ].join('\n');
     const { failures } = evaluate(withViolation(prose));
     expect(failures.filter((f) => f.startsWith(`${ruleId}:`))).toEqual([]);
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * The three rules `SEC-002`'s absent capabilities now rest on
+ * ------------------------------------------------------------------ */
+
+interface Construct {
+  /**
+   * `construct`, not `id`, and the name is load-bearing outside this file:
+   * `apps/web/tests/p1-27-guidance-reconciliation.test.ts` finds the gate's RULE
+   * ids by scraping `id: '…',` lines out of `check-p1-27-frontend.mjs`, and
+   * asserts each one has a sentence in the developer guide. Nineteen construct
+   * entries spelled `id` would be read as nineteen rules with no sentence.
+   */
+  readonly construct: string;
+  readonly pattern: RegExp;
+  readonly samples: readonly string[];
+}
+
+/**
+ * `SEC-002` reads "sensitive-data, export, document, media and file-access
+ * controls" — five obligations joined by "and". Only the file-access one had a
+ * gate rule, and that rule covered three of the seven constructs
+ * `apps/web/tests/p1-27-security.test.ts` forbids on the same surface. Export and
+ * media rested on that suite alone, and a suite can be deleted in the same commit
+ * as the code it guards.
+ *
+ * Each rule below is assembled from a table of NAMED constructs, so there is
+ * something to count; each construct carries the smallest source that constitutes
+ * it, and each table carries innocent sources that must not fire. Both directions
+ * are asserted, because a rule satisfied by `/./` is not a rule — it is an outage
+ * that reports as diligence.
+ */
+const CONSTRUCT_TABLES: readonly [string, readonly Construct[], readonly string[]][] = [
+  ['no-upload-path', FILE_ACCESS_CONSTRUCTS, FILE_ACCESS_INNOCENT],
+  ['no-export-surface', EXPORT_CONSTRUCTS, EXPORT_INNOCENT],
+  ['no-invented-media-limit', INVENTED_MEDIA_LIMIT_CONSTRUCTS, INVENTED_MEDIA_LIMIT_INNOCENT],
+];
+
+describe.each(CONSTRUCT_TABLES)('%s', (ruleId, constructs, innocent) => {
+  const rule = RULES.find((r) => r.id === ruleId);
+  const planted = constructs.flatMap((c) => c.samples.map((s) => [c.construct, s] as const));
+
+  it('is a live rule with a construct table behind it', () => {
+    expect(rule, `${ruleId} is not in RULES`).toBeDefined();
+    expect(constructs.length, `${ruleId} names no construct`).toBeGreaterThan(2);
+    expect(planted.length, 'a construct carries no sample').toBeGreaterThanOrEqual(
+      constructs.length
+    );
+    expect(innocent.length, `${ruleId} has nothing it must NOT fire on`).toBeGreaterThan(2);
+    // The pattern really is assembled from the table. A rule whose pattern had
+    // drifted away from its constructs would pass every case below on its own
+    // samples while enforcing something else on the tree.
+    for (const construct of constructs) {
+      expect(
+        rule?.pattern.source,
+        `${construct.construct} is in the table and not in the rule`
+      ).toContain(construct.pattern.source);
+    }
+  });
+
+  it.each(planted)('catches the %s construct: %s', (_constructId, source) => {
+    // Planted through the gate's OWN `evaluate()`, so this is the rule CI runs
+    // rather than a regex restated in a test.
+    const { failures } = evaluate(withViolation(source));
+    expect(
+      failures.filter((f) => f.startsWith(`${ruleId}:`)),
+      failures.join('\n')
+    ).toHaveLength(1);
+  });
+
+  it.each(innocent.map((source) => [source]))('does not fire on innocent text: %s', (source) => {
+    // Asserted over the WHOLE failure list, not this rule's share of it, so a
+    // sample that trips some OTHER rule is caught here too.
+    expect(evaluate(withViolation(source)).failures).toEqual([]);
+  });
+
+  it('separates the two sets, so neither is satisfied by a constant answer', () => {
+    const caught = planted.filter(([, source]) => fires(rule, source));
+    const cleared = innocent.filter((source) => !fires(rule, source));
+    expect(caught.length, `${ruleId} flags nothing`).toBe(planted.length);
+    expect(cleared.length, `${ruleId} permits nothing`).toBe(innocent.length);
+  });
+});
+
+describe('the gate catches everything the deletable security suite forbids', () => {
+  /**
+   * The whole reason these rules were added: `apps/web/tests/p1-27-security.test.ts`
+   * is ONE file, and `SEC-002`'s export, media and file-access conjuncts were
+   * proved by it and by nothing else. Moving those proofs into the gate is only
+   * worth doing if the gate is genuinely at least as wide, so the suite's own
+   * refusals are re-read here and each one is required to fire a gate rule.
+   *
+   * Deliberately NOT a restatement: the patterns are parsed out of the suite. If
+   * the suite widens a rule and the gate does not follow, this goes red.
+   */
+  const SUITE = join(REPO_ROOT, 'apps', 'web', 'tests', 'p1-27-security.test.ts');
+
+  /** The smallest source that IS one alternative of a flat alternation. */
+  function literalOf(alternative: string): string {
+    return alternative.replace(/\\b/g, '').replace(/\\(.)/g, '$1');
+  }
+
+  /**
+   * What each of the suite's named absence rules maps to in the gate.
+   *
+   * `how` is the proof technique, and it is recorded because two of the suite's
+   * patterns cannot be split on `|` — they contain groups — and one is
+   * deliberately NOT mirrored:
+   *
+   *   - `every-alternative`: the suite pattern is a flat alternation of literals,
+   *     so each alternative becomes a source and the gate must fire on it.
+   *   - `corpus`: the pattern contains a group. Each corpus entry is asserted to
+   *     match the SUITE first, so the corpus is provably inside what the suite
+   *     refuses before the gate is asked about it.
+   *   - `none`: no gate rule, recorded as a residual rather than left silent.
+   *   - `divergent`: mirroring it would be WRONG — see the note.
+   */
+  const SUITE_PARITY: readonly {
+    readonly suiteRule: string;
+    readonly gateRule: string | null;
+    readonly how: 'every-alternative' | 'corpus' | 'none' | 'divergent';
+    readonly corpus?: readonly string[];
+  }[] = [
+    { suiteRule: 'export', gateRule: 'no-export-surface', how: 'every-alternative' },
+    { suiteRule: 'export-operation', gateRule: 'no-export-surface', how: 'every-alternative' },
+    { suiteRule: 'client-extraction', gateRule: 'no-export-surface', how: 'every-alternative' },
+    { suiteRule: 'attachment-download', gateRule: 'no-export-surface', how: 'every-alternative' },
+    { suiteRule: 'file-access', gateRule: 'no-upload-path', how: 'every-alternative' },
+    {
+      suiteRule: 'invented-limit',
+      gateRule: 'no-invented-media-limit',
+      how: 'corpus',
+      corpus: [
+        'const MAX_FILE_SIZE = n;',
+        'const MAX_UPLOAD_SIZE = n;',
+        'const MAX_IMAGE_WIDTH = n;',
+        'const MAX_MEDIA_BYTES = n;',
+        'const ACCEPTED_FILES = list;',
+        'const ACCEPTED_MIME = list;',
+        'const ACCEPTED_IMAGES = list;',
+        '<Field accept={types} />',
+      ],
+    },
+    /*
+     * `SEC-002`'s sensitive-data conjunct has a SURFACE in this phase, so the
+     * suite proves it positively (the notes-completeness caveat) as well as by
+     * these two absences. Neither absence has a gate rule today, and that is
+     * recorded here rather than left as a silence for somebody to discover.
+     * Measured on this branch: no file in the scanned trees or in any recorded
+     * module matches either pattern, so a rule would be adding enforcement to a
+     * property that currently holds — a decision, not a correction, and one this
+     * branch was not asked to make.
+     */
+    { suiteRule: 'storage', gateRule: null, how: 'none' },
+    { suiteRule: 'unescaped-html', gateRule: null, how: 'none' },
+    /*
+     * NOT mirrored, and mirroring it would be a regression.
+     *
+     * The suite's pattern is `['"]?(tenantId|companyId|branchId)['"]?\s*[:,]`,
+     * which fires on `f(session.tenantId, x)` — a scope READ off the session the
+     * server resolved and passed to a component. The gate's rule is positional
+     * (`assertedScopes()`) precisely so that displaying a resolved scope is
+     * permitted and placing one into a request is not. The suite runs its
+     * version over `PHASE_FILES` only, where no such construct exists; the gate
+     * runs over the dashboard tree, where `profile/page.tsx` does exactly that.
+     */
+    { suiteRule: 'client-asserted-scope', gateRule: 'no-client-asserted-scope', how: 'divergent' },
+  ];
+
+  const suiteSource = existsSync(SUITE) ? readFileSync(SUITE, 'utf8') : '';
+
+  /** The suite's `ABSENCE_RULES` table, parsed rather than remembered. */
+  const declared = new Map<string, string>(
+    [...suiteSource.matchAll(/^\s*\['([a-z-]+)', (\/.+\/)\],$/gm)].map((m) => [
+      m[1] as string,
+      m[2] as string,
+    ])
+  );
+
+  it('reads the suite, so nothing below can pass over an empty parse', () => {
+    expect(
+      existsSync(SUITE),
+      'the security suite is gone — the gate rules are now the only enforcement of SEC-002, ' +
+        'and this parity section must be removed deliberately rather than left failing'
+    ).toBe(true);
+    expect(declared.size, 'the suite’s ABSENCE_RULES table was not parsed').toBeGreaterThan(8);
+  });
+
+  it('accounts for every absence rule the suite declares, in both directions', () => {
+    expect(
+      [...declared.keys()].sort(),
+      'the suite declares a rule the gate has not decided'
+    ).toEqual(SUITE_PARITY.map((entry) => entry.suiteRule).sort());
+  });
+
+  it.each(
+    SUITE_PARITY.filter((entry) => entry.how === 'every-alternative').map((entry) => [
+      entry.suiteRule,
+      entry.gateRule as string,
+    ])
+  )('fires on every alternative the suite’s %s rule forbids', (suiteRule, gateRule) => {
+    const source = declared.get(suiteRule) as string;
+    expect(source, `${suiteRule} was not parsed`).toBeDefined();
+    // Flatness is the precondition of splitting on `|`. A future rewrite that
+    // introduced a group would otherwise split mid-group and silently assert
+    // nonsense; this makes it fail instead. Escapes are removed first, or
+    // `new Blob\(` would read as a group and every flat rule would fail.
+    expect(
+      source.replace(/\\./g, ''),
+      `${suiteRule} is no longer a flat alternation — move it to a corpus`
+    ).not.toMatch(/[([]/);
+    const alternatives = source.slice(1, -1).split('|');
+    expect(alternatives.length, `${suiteRule} has one alternative`).toBeGreaterThan(1);
+    const rule = RULES.find((r) => r.id === gateRule);
+    for (const alternative of alternatives) {
+      const sample = literalOf(alternative);
+      expect(
+        fires(rule, sample),
+        `the suite's ${suiteRule} rule refuses \`${alternative}\` and the gate's ${gateRule} does not`
+      ).toBe(true);
+    }
+  });
+
+  it('fires on every construct the suite’s wider FILE_ACCESS sweep forbids', () => {
+    /*
+     * The suite forbids file access in TWO places and they are not the same
+     * regex. `ABSENCE_RULES['file-access']` lists five constructs; the `5/5 file
+     * access` conjunct declares `FILE_ACCESS` with eight, adding the braced file
+     * input, `onDrop=` and `DataTransfer`.
+     *
+     * The wider one is the one that matters — every drag-and-drop upload is built
+     * out of the last three and none of them needs an `<input type="file">` — and
+     * it is the one the gate's three-construct rule missed entirely. Parsed
+     * separately, because the parse above only reaches the `ABSENCE_RULES` table.
+     */
+    const declaration = /const FILE_ACCESS\s*=\s*(\/.+\/);/.exec(suiteSource)?.[1];
+    expect(declaration, 'the suite’s FILE_ACCESS declaration was not parsed').toBeDefined();
+    const alternatives = (declaration as string).slice(1, -1).split('|');
+    expect(alternatives.length, 'the FILE_ACCESS sweep lists fewer constructs than it did').toBe(8);
+    const rule = RULES.find((r) => r.id === 'no-upload-path');
+    for (const alternative of alternatives) {
+      expect(
+        fires(rule, literalOf(alternative)),
+        `the suite refuses \`${alternative}\` on the whole phase surface and no-upload-path does not`
+      ).toBe(true);
+    }
+  });
+
+  it.each(
+    SUITE_PARITY.filter((entry) => entry.how === 'corpus').map((entry) => [
+      entry.suiteRule,
+      entry.gateRule as string,
+      entry.corpus as readonly string[],
+    ])
+  )('fires on a corpus that the suite’s %s rule already refuses', (suiteRule, gateRule, corpus) => {
+    const suiteRegex = new RegExp((declared.get(suiteRule) as string).slice(1, -1));
+    const rule = RULES.find((r) => r.id === gateRule);
+    expect(corpus.length).toBeGreaterThan(4);
+    for (const sample of corpus) {
+      // The order matters: the corpus is proved to be INSIDE the suite's refusal
+      // first, so the gate assertion afterwards is a statement about coverage
+      // rather than about a set somebody made up.
+      expect(suiteRegex.test(sample), `${sample} is not refused by the suite's ${suiteRule}`).toBe(
+        true
+      );
+      expect(fires(rule, sample), `the suite refuses ${sample} and ${gateRule} does not`).toBe(
+        true
+      );
+    }
+  });
+
+  it('records the residual: two suite refusals have no gate rule, and why', () => {
+    const residual = SUITE_PARITY.filter((entry) => entry.how === 'none');
+    expect(residual.map((entry) => entry.suiteRule).sort()).toEqual(['storage', 'unescaped-html']);
+    for (const entry of residual) expect(entry.gateRule).toBeNull();
+    // And the property they assert does hold on this branch, which is what makes
+    // the residual a scope decision rather than a live defect.
+    const files = [
+      ...SCAN_ROOTS.flatMap((root: string) => listSources(join(REPO_ROOT, root))),
+      ...UNCOLLECTED_PHASE_MODULES.flatMap((dir) => {
+        const resolved = moduleSourceRoot(dir, REPO_ROOT) as string;
+        return statSync(resolved).isDirectory() ? listSources(resolved) : [resolved];
+      }),
+    ];
+    expect(files.length).toBeGreaterThan(80);
+    for (const entry of residual) {
+      const pattern = new RegExp((declared.get(entry.suiteRule) as string).slice(1, -1));
+      const hits = files.filter((file) => pattern.test(stripComments(readFileSync(file, 'utf8'))));
+      expect(
+        hits.map((f) => relative(REPO_ROOT, f).split(sep).join('/')),
+        entry.suiteRule
+      ).toEqual([]);
+    }
+  });
+});
+
+describe('no-export-surface is what the canonical plan records, re-read not remembered', () => {
+  /**
+   * The rule's authority. `canonical-plan.md` §6 names the operation behind each
+   * of the 29 Frontend tasks; not one of them is an export. That is the document
+   * saying "this phase publishes no export surface", and it is parsed here rather
+   * than paraphrased in the rule's docblock — so a task table that grew an export
+   * task would fail this case and force the rule to be reconsidered, instead of
+   * the gate quietly forbidding something the plan had started requiring.
+   */
+  const plan = readFileSync(join(REPO_ROOT, ROOT_AUTHORITY), 'utf8');
+  const tasks = [...plan.matchAll(/^\|\s*`(P1-27-FE-\d{3})`\s*\|([^|]*)\|([^|]*)\|/gm)].map(
+    (match) => ({
+      id: match[1] as string,
+      title: (match[2] as string).trim(),
+      operations: (match[3] as string).trim(),
+    })
+  );
+
+  it('parses the Frontend task table at all', () => {
+    expect(tasks.length, 'the canonical plan’s Frontend task table was not parsed').toBe(29);
+    // Anti-vacuity in the other direction: the operation column really carries
+    // operations, so "no export among them" is a statement about content.
+    expect(tasks.filter((task) => /`[a-z]+\./.test(task.operations)).length).toBeGreaterThan(20);
+  });
+
+  it('names no export operation and no export task', () => {
+    for (const task of tasks) {
+      expect(task.operations, `${task.id} names an export operation`).not.toMatch(/export/i);
+      expect(task.title, `${task.id} is an export task`).not.toMatch(/export/i);
+    }
   });
 });
 
@@ -549,7 +926,7 @@ describe('a rule firing is not the same fact as the gate opening the file', () =
   });
 });
 
-describe('the phase modules that live outside every scan root', () => {
+describe('the phase modules outside every scan root are DERIVED, not listed', () => {
   /**
    * The D1 remediation moved shared code out of `features/` and the gate's roots
    * did not follow it. Extending `SCAN_ROOTS` is not available to this branch:
@@ -558,46 +935,132 @@ describe('the phase modules that live outside every scan root', () => {
    * documents. So the property a fourth root would have bought is asserted here
    * instead, over exactly the files it would have covered.
    *
-   * See `UNCOLLECTED_PHASE_MODULES` in the gate for the full reasoning, including
-   * why widening to `apps/web/src` is worse rather than better.
+   * ## What changed, and why a list could not have noticed
+   *
+   * `UNCOLLECTED_PHASE_MODULES` was five directories, written by hand. The
+   * scanned trees import **fourteen**. A hand-written list can only fail when one
+   * of ITS entries goes missing; it can never fail because something was never
+   * added — and the largest omission was `components/data-table`, which holds
+   * `DataTable.tsx`, the component that renders every customer and vehicle row on
+   * screen. It was in neither this list nor the security suite's own
+   * hand-written five, and the two lists did not agree with each other either.
+   *
+   * The set is now derived from the imports the scanned trees actually make and
+   * `MODULE_DISPOSITION` must decide each one, asserted as an equality in both
+   * directions — by the GATE on every real run, not only here.
+   *
+   * See `UNCOLLECTED_PHASE_MODULES` in the gate for why widening `SCAN_ROOTS` to
+   * `apps/web/src` is worse rather than better.
    */
-  it('is a live, non-empty list of directories that exist and are not collected', () => {
-    expect(UNCOLLECTED_PHASE_MODULES.length).toBeGreaterThan(0);
+
+  /** Every `.ts`/`.tsx` of a recorded module, whether it is a directory or a file. */
+  function moduleSources(directory: string): string[] {
+    const resolved = moduleSourceRoot(directory, REPO_ROOT);
+    expect(resolved, `${directory} resolves to nothing under the repository`).not.toBeNull();
+    const path = resolved as string;
+    return statSync(path).isDirectory() ? listSources(path) : [path];
+  }
+
+  /** The real scanned files, exactly as `main()` hands them to the gate. */
+  const scanned = SCAN_ROOTS.flatMap((root: string) =>
+    listSources(join(REPO_ROOT, root)).map((path) => ({
+      path: relative(REPO_ROOT, path).split(sep).join('/'),
+      source: readFileSync(path, 'utf8'),
+    }))
+  );
+
+  it('derives the module set from real imports rather than from a hand-written list', () => {
+    const derived = importedModuleDirectories(scanned);
+    // Anti-vacuity: the derivation really read something. A regex that matched
+    // nothing would make the equality below a comparison of two empty sets.
+    expect(derived.length, 'no module import was discovered — the derivation is broken').toBe(14);
+    expect(
+      derived,
+      'a module the scanned trees import has no recorded disposition, or a recorded module is ' +
+        'imported by nothing'
+    ).toEqual(Object.keys(MODULE_DISPOSITION).sort());
+  });
+
+  it('sees the directory that was in NO list — components/data-table', () => {
+    // Named individually, because a count of fourteen is satisfied by any
+    // fourteen and this is the one that renders the data the SEC-002 sweeps are
+    // about. `DataTable.tsx` is the file six sweeps claiming to cover "the
+    // phase's WHOLE surface" had never opened.
+    expect(importedModuleDirectories(scanned)).toContain('apps/web/src/components/data-table');
+    expect(UNCOLLECTED_PHASE_MODULES).toContain('apps/web/src/components/data-table');
+    expect(
+      moduleSources('apps/web/src/components/data-table').map((p) => p.split(/[\\/]/).pop())
+    ).toContain('DataTable.tsx');
+  });
+
+  it('fails a real run when an import has no recorded disposition', () => {
+    const { failures } = evaluateModuleDispositions([
+      ...scanned,
+      {
+        path: 'apps/web/src/features/crm/customers/planted.ts',
+        source: "import { thing } from '@/lib/not-yet-decided/thing';",
+      },
+    ]);
+    expect(
+      failures.filter((f) => f.includes('apps/web/src/lib/not-yet-decided')),
+      failures.join('\n')
+    ).toHaveLength(1);
+  });
+
+  it('fails a real run when a recorded module is imported by nothing', () => {
+    // The other direction. Handed a file set that imports one module, every other
+    // recorded module is stale — which is exactly the failure a hand-written list
+    // could report and the failure it could never report was the one above.
+    const { failures } = evaluateModuleDispositions([
+      {
+        path: 'apps/web/src/features/crm/customers/planted.ts',
+        source: "import { score } from '@/lib/duplicates/score';",
+      },
+    ]);
+    expect(
+      failures.some(
+        (f) => f.includes('apps/web/src/components/data-table') && f.includes('the record is stale')
+      ),
+      failures.join('\n')
+    ).toBe(true);
+  });
+
+  it('fails a real run when the derivation itself finds nothing', () => {
+    // The guard that stops the equality from being satisfied by two empty sets —
+    // the exact failure mode the hand-written list had no defence against.
+    const { failures } = evaluateModuleDispositions([
+      { path: 'apps/web/src/features/crm/a.ts', source: 'export const a = 1;' },
+    ]);
+    expect(failures.some((f) => f.includes('the derivation is broken'))).toBe(true);
+  });
+
+  it('is clean on the real tree, which is the run CI performs', () => {
+    expect(evaluateModuleDispositions(scanned).failures).toEqual([]);
+  });
+
+  it('is a live set of modules that exist and are not collected', () => {
+    expect(UNCOLLECTED_PHASE_MODULES.length).toBe(12);
     for (const dir of UNCOLLECTED_PHASE_MODULES) {
-      expect(existsSync(join(REPO_ROOT, dir)), `${dir} no longer exists`).toBe(true);
+      // `moduleSourceRoot`, not `existsSync`: `apps/web/src/lib/page-metadata`
+      // is a FILE, and dropping it to avoid an `ENOENT` would be precisely the
+      // omission the derivation exists to stop.
+      expect(moduleSourceRoot(dir, REPO_ROOT), `${dir} no longer exists`).not.toBeNull();
       // If one of these ever comes inside a root, the record is stale and must
       // be shortened — a note describing a fixed problem is a lie in waiting.
       expect(collects(`${dir}/Sample.tsx`), `${dir} is now inside a SCAN_ROOT`).toBe(false);
     }
   });
 
-  it('is reached from inside the scanned trees, so it is unambiguously this phase', () => {
-    const scanned = SCAN_ROOTS.flatMap((root: string) => listSources(join(REPO_ROOT, root)));
-    const imported = new Set<string>();
-    for (const file of scanned) {
-      const source = readFileSync(file, 'utf8');
-      for (const dir of UNCOLLECTED_PHASE_MODULES) {
-        // `apps/web/src/lib/customers` -> the `@/lib/customers` alias the tree uses.
-        const alias = `@/${dir.replace('apps/web/src/', '')}/`;
-        if (source.includes(`from '${alias}`)) imported.add(dir);
-      }
-    }
-    expect(
-      [...imported].sort(),
-      'a recorded module nothing imports is not this phase’s surface'
-    ).toEqual([...UNCOLLECTED_PHASE_MODULES].sort());
-  });
-
   it('trips NO rule today — measured over the real files, not assumed', () => {
     /*
      * The teeth. The gate cannot reach these files, so this case reaches them:
-     * every rule, over every `.ts`/`.tsx` in the recorded directories, read from
-     * disk. Green today at 10 files. The day a merge caller, an upload path or a
+     * every rule, over every `.ts`/`.tsx` in the recorded modules, read from
+     * disk. The day a merge caller, an upload path, an export construction or a
      * `console.log` lands in one of them, this goes red and the question of a
      * fourth scan root arrives with evidence attached instead of as an opinion.
      */
-    const files = UNCOLLECTED_PHASE_MODULES.flatMap((dir) => listSources(join(REPO_ROOT, dir)));
-    expect(files.length, 'the recorded directories hold no source at all').toBeGreaterThan(0);
+    const files = UNCOLLECTED_PHASE_MODULES.flatMap((dir) => moduleSources(dir));
+    expect(files.length, 'the recorded modules hold no source at all').toBeGreaterThan(15);
 
     const violations: string[] = [];
     for (const file of files) {
@@ -609,5 +1072,38 @@ describe('the phase modules that live outside every scan root', () => {
       }
     }
     expect(violations).toEqual([]);
+  });
+
+  it('pins the two exclusions to the exact files that earn them', () => {
+    /*
+     * `platform-transport` is the only disposition that keeps a module OUT, so it
+     * is the only place this section could hide a violation. It is measured.
+     *
+     * Every rule is run over both excluded modules and the matches are named. A
+     * new match — or one of these ceasing to match — fails, and the reader is
+     * told the exclusion has stopped being true rather than reading the word
+     * "excluded" and believing it.
+     */
+    const excluded = Object.entries(MODULE_DISPOSITION)
+      .filter(([, disposition]) => disposition === 'platform-transport')
+      .map(([directory]) => directory)
+      .sort();
+    expect(excluded).toEqual(['apps/web/src/lib/api', 'apps/web/src/lib/observability']);
+
+    const matches: string[] = [];
+    for (const dir of excluded) {
+      for (const file of moduleSources(dir)) {
+        const source = stripComments(readFileSync(file, 'utf8'));
+        for (const rule of RULES) {
+          if (fires(rule, source)) {
+            matches.push(`${rule.id}: ${relative(REPO_ROOT, file).split(sep).join('/')}`);
+          }
+        }
+      }
+    }
+    expect(
+      matches.sort(),
+      'the platform-transport exclusion no longer describes what is in it'
+    ).toEqual(EXCLUDED_MODULE_MATCHES);
   });
 });
