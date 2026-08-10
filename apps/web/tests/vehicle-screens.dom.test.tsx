@@ -330,6 +330,40 @@ describe('vehicle search asks nothing until it is asked', () => {
     await user.type(screen.getByLabelText(en['vehicles.search.plate']), '12-3456{Enter}');
     expect(await screen.findByRole('button', { name: en['state.retry'] })).toBeInTheDocument();
   });
+
+  it('RECOVERS when Retry is pressed: it re-reads, and the rows arrive', async () => {
+    /*
+     * The `recovery` path of the canonical 18-path matrix (`canonical-plan.md`
+     * §6), and until now the one path with no executable proof at all.
+     *
+     * Every other case about Retry asserts that the control is OFFERED or
+     * WITHHELD. None pressed it. A button that renders and does nothing passes
+     * every one of those assertions, which is precisely the shape this phase has
+     * been finding — an affordance proved by its presence rather than its
+     * effect.
+     *
+     * So this drives the whole path: a transient failure, the control, the
+     * press, a second read, and the rows on screen. The second `mockResolvedValue`
+     * is what makes it recovery rather than a retry that fails again.
+     */
+    const user = userEvent.setup();
+    searchVehicles.mockResolvedValue(page([], { status: 'unavailable' }));
+    render();
+    await user.type(screen.getByLabelText(en['vehicles.search.plate']), '12-3456{Enter}');
+
+    const retry = await screen.findByRole('button', { name: en['state.retry'] });
+    const readsBeforeRetry = searchVehicles.mock.calls.length;
+
+    searchVehicles.mockResolvedValue(page([HIT]));
+    await user.click(retry);
+
+    // It re-read. Without this the assertion below could be satisfied by a
+    // render that never called the adapter again.
+    await waitFor(() => expect(searchVehicles.mock.calls.length).toBeGreaterThan(readsBeforeRetry));
+    // And the operator sees the result rather than the failure.
+    expect(await screen.findByText(HIT.displayNumber)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: en['state.retry'] })).not.toBeInTheDocument();
+  });
 });
 
 describe('the vehicle duplicate queue', () => {
