@@ -615,35 +615,36 @@ is — `evidence-manifest.json` digests the directory, `task-matrix.json` carrie
 the canonical ids — and a documentation set that counted only Markdown would
 under-report itself by seven files.
 
+<!-- derived: linecolumn phase-documentation = 0 -->
 <!-- derived: rows phase-documentation = 36 -->
 
 | path                                              | lines | what it is                                                                         |
 | ------------------------------------------------- | ----- | ---------------------------------------------------------------------------------- |
-| `adversarial-round-five.md`                       | 279   | The live finding register; its totals are derived from its own rows                |
+| `adversarial-round-five.md`                       | 349   | The live finding register; its totals are derived from its own rows                |
 | `adversarial-round-four.md`                       | 147   | The previous round, superseded by round five                                       |
-| `blocker-remediation-plan.md`                     | 496   | What blocked the phase, and how each blocker was cleared                           |
+| `blocker-remediation-plan.md`                     | 497   | What blocked the phase, and how each blocker was cleared                           |
 | `canonical-plan.md`                               | 340   | What P1-27 is scoped to build, and the disposition of `P1-OD-017` and `P1-OD-025`  |
 | `canonical-write-reachability.json`               | 66    | Every write operation classified reachable or deliberately absent, with a decision |
 | `ci-evidence.md`                                  | 126   | Hosted CI on PR #198                                                               |
-| `clean-room-evidence.md`                          | 197   | The clean-room build at `e14984e`                                                  |
+| `clean-room-evidence.md`                          | 210   | The clean-room build at `e14984e`                                                  |
 | `contract-archaeology.md`                         | 416   | What the Backend actually publishes, read before anything was built                |
-| `deliverable-manifest.md`                         | 974   | This file                                                                          |
-| `developer-guide.md`                              | 160   | `DOC-002` — the developer half                                                     |
-| `evidence/change-log.md`                          | 344   | `DOC-002` — the change-log half; its rows are scraped by a test                    |
-| `evidence/evidence-manifest.json`                 | 151   | `QA-005` — a SHA-256 digest of every document in this directory                    |
-| `evidence/task-traceability.md`                   | 400   | Every task, the operations it calls, the files it produced, the named proof        |
-| `evidence/test-catalogue-traceability.md`         | 265   | `DOC-001` — the 29 canonical `TC-P1-27-*` ids bound to executable tests            |
-| `evidence/test-catalogue-traceability.json`       | 820   | Its machine-readable form, checked by `validate:p1-27-doc-counts`                  |
+| `deliverable-manifest.md`                         | 986   | This file                                                                          |
+| `developer-guide.md`                              | 170   | `DOC-002` — the developer half                                                     |
+| `evidence/change-log.md`                          | 483   | `DOC-002` — the change-log half; its rows are scraped by a test                    |
+| `evidence/evidence-manifest.json`                 | 155   | `QA-005` — a SHA-256 digest of every document in this directory                    |
+| `evidence/task-traceability.md`                   | 432   | Every task, the operations it calls, the files it produced, the named proof        |
+| `evidence/test-catalogue-traceability.md`         | 299   | `DOC-001` — the 29 canonical `TC-P1-27-*` ids bound to executable tests            |
+| `evidence/test-catalogue-traceability.json`       | 842   | Its machine-readable form, checked by `validate:p1-27-doc-counts`                  |
 | `execution-checkpoint.md`                         | 289   | Base SHAs, surface baselines, the wave log                                         |
 | `final-canonical-remediation.md`                  | 448   | The canonical remediation wave                                                     |
-| `final-task-adjudication.md`                      | 947   | The 33 adjudicated audit items, and the retraction of `42 / 42`                    |
+| `final-task-adjudication.md`                      | 956   | The 33 adjudicated audit items, and the retraction of `42 / 42`                    |
 | `finding-phase-disposition.md`                    | 428   | Which phase owns each finding                                                      |
-| `finding-task-map.json`                           | 486   | Findings to tasks, machine-readable                                                |
+| `finding-task-map.json`                           | 521   | Findings to tasks, machine-readable                                                |
 | `findings.md`                                     | 887   | The live `P1-27-INT-###` register                                                  |
 | `findings/p1-27-int-006-cursor-precision.md`      | 166   | The cursor-precision finding in full                                               |
 | `independent-task-audit.md`                       | 137   | The 42-task independent audit, superseded by the adjudication                      |
 | `installed-chrome-review.md`                      | 215   | The measured review in the Owner's own Chrome, first and second passes             |
-| `open-decisions.md`                               | 837   | `P1-OD-017`, `P1-OD-025` and the phase's own open questions                        |
+| `open-decisions.md`                               | 978   | `P1-OD-017`, `P1-OD-025` and the phase's own open questions                        |
 | `operator-guide.md`                               | 205   | `DOC-002` — the operator half                                                      |
 | `owner-acceptance-checklist.md`                   | 128   | What the Owner is asked to test                                                    |
 | `owner-acceptance-fail-remediation.md`            | 193   | The `OWNER ACCEPTANCE: FAIL` result and the disposition of all eleven defects      |
@@ -651,9 +652,9 @@ under-report itself by seven files.
 | `preflight/final-readiness.json`                  | 218   | The machine-readable readiness record                                              |
 | `preflight/final-readiness.md`                    | 169   | The 9/9 readiness record                                                           |
 | `reception-read-surface-plan.md`                  | 592   | The reception read surface — planned, not built                                    |
-| `risk-register.md`                                | 570   | The phase's document-local `P1-27-R-##` risks                                      |
-| `task-matrix-verdicts.json`                       | 1052  | Per-task verdicts, machine-readable                                                |
-| `task-matrix.json`                                | 1396  | The canonical 42-task matrix, machine-readable                                     |
+| `risk-register.md`                                | 583   | The phase's document-local `P1-27-R-##` risks                                      |
+| `task-matrix-verdicts.json`                       | 1094  | Per-task verdicts, machine-readable                                                |
+| `task-matrix.json`                                | 1442  | The canonical 42-task matrix, machine-readable                                     |
 | `task-register.md`                                | 295   | Every task with its contract, evidence and SHA, plus `OA-01` … `OA-09`             |
 
 `docs/engineering/ci-automation/pull-request-body.md` was also updated under
@@ -670,6 +671,7 @@ are tracked now, and this row said **11** until they were counted (`E-07`).
 **Planning and traceability only. Nothing in this set is implemented, and every
 document says so in its own header.**
 
+<!-- derived: linecolumn product-documentation = 0 -->
 <!-- derived: rows product-documentation = 13 -->
 
 | path                                                  | lines |
@@ -933,7 +935,7 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
 <!-- derived: cases navigation.test.ts = 22 -->
 <!-- LINE-COUNT MARKERS. Regenerated, never typed. -->
 
-<!-- derived: lines docs/phase-1/phase-1-27/adversarial-round-five.md = 338 -->
+<!-- derived: lines docs/phase-1/phase-1-27/adversarial-round-five.md = 349 -->
 <!-- derived: lines docs/phase-1/phase-1-27/adversarial-round-four.md = 147 -->
 <!-- derived: lines docs/phase-1/phase-1-27/blocker-remediation-plan.md = 497 -->
 <!-- derived: lines docs/phase-1/phase-1-27/canonical-plan.md = 340 -->
@@ -941,18 +943,18 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
 <!-- derived: lines docs/phase-1/phase-1-27/ci-evidence.md = 126 -->
 <!-- derived: lines docs/phase-1/phase-1-27/clean-room-evidence.md = 210 -->
 <!-- derived: lines docs/phase-1/phase-1-27/contract-archaeology.md = 416 -->
-<!-- derived: lines docs/phase-1/phase-1-27/deliverable-manifest.md = 984 -->
+<!-- derived: lines docs/phase-1/phase-1-27/deliverable-manifest.md = 986 -->
 <!-- derived: lines docs/phase-1/phase-1-27/developer-guide.md = 170 -->
 <!-- derived: lines docs/phase-1/phase-1-27/evidence/change-log.md = 483 -->
 <!-- derived: lines docs/phase-1/phase-1-27/evidence/evidence-manifest.json = 155 -->
 <!-- derived: lines docs/phase-1/phase-1-27/evidence/task-traceability.md = 432 -->
-<!-- derived: lines docs/phase-1/phase-1-27/evidence/test-catalogue-traceability.json = 828 -->
-<!-- derived: lines docs/phase-1/phase-1-27/evidence/test-catalogue-traceability.md = 287 -->
+<!-- derived: lines docs/phase-1/phase-1-27/evidence/test-catalogue-traceability.json = 842 -->
+<!-- derived: lines docs/phase-1/phase-1-27/evidence/test-catalogue-traceability.md = 299 -->
 <!-- derived: lines docs/phase-1/phase-1-27/execution-checkpoint.md = 289 -->
 <!-- derived: lines docs/phase-1/phase-1-27/final-canonical-remediation.md = 448 -->
 <!-- derived: lines docs/phase-1/phase-1-27/final-task-adjudication.md = 956 -->
 <!-- derived: lines docs/phase-1/phase-1-27/finding-phase-disposition.md = 428 -->
-<!-- derived: lines docs/phase-1/phase-1-27/finding-task-map.json = 506 -->
+<!-- derived: lines docs/phase-1/phase-1-27/finding-task-map.json = 521 -->
 <!-- derived: lines docs/phase-1/phase-1-27/findings.md = 887 -->
 <!-- derived: lines docs/phase-1/phase-1-27/findings/p1-27-int-006-cursor-precision.md = 166 -->
 <!-- derived: lines docs/phase-1/phase-1-27/independent-task-audit.md = 137 -->
