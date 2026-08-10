@@ -181,7 +181,7 @@
     "A42-06": {
       "TASK_IDS": ["DOC-001", "FE-021", "FE-022"],
       "CLASSIFICATION": "DOCUMENTATION_DEFECT",
-      "WHY": "Two tasks carry different roots and different commits in the Summary than in their own sections."
+      "WHY": "FIXED at 711a90e on the change history the previous disposition said did not decide it. Two tasks carried different roots and different commits in the Summary of final-task-adjudication.md than in their own sections. Each section names a remedy and each remedy is in exactly one commit: 8daf8e9 is the only one of the three touching VehicleSearchScreen.tsx, where it adds the rowActions that make the vehicle profile reachable (FE-021); 915b861 is the only one touching VehicleHistorySections.tsx, where it adds the plate and odometer permission gates (FE-022); 0272e1d, credited for both in the Summary, touches neither surface and adds isTerminal to profile-contract.ts, which the same page already attributes to FE-024 in its round-one recheck table. Both attributions were true about different things: the sections carry the original adjudication and the Summary had been overwritten with the recheck commit. The two Summary rows are corrected to their sections and what they used to say is preserved in the disposition row."
     },
     "A42-07": {
       "TASK_IDS": ["FE-003", "DOC-001"],
@@ -301,7 +301,7 @@
     "E-03": {
       "TASK_IDS": ["DOC-001"],
       "CLASSIFICATION": "DOCUMENTATION_DEFECT",
-      "WHY": "A case count is unchecked while the file count beside it is pinned, so half the figure can drift silently."
+      "WHY": "FIXED at 711a90e by DELETING the number rather than correcting it. A tier-wide case count sat unchecked beside a derived file count in deliverable-manifest.md 6.1, and it drifted inside a single revision exactly as this finding predicted: the heading read 1493 while its own paragraphs read 1231. No total is derivable, because 20 of the 70 web test files build their cases at runtime (it.each over a table, or an it( inside a for or an iteration callback) and a static call-site count is not what the runner executes. 6.1 now states the derived file count, enumerates those 20 files, gives the derivable half as 50 files derived per file, and points a reader wanting the EXECUTED total at .github/ci-baselines/test-count-baseline.json and tests/ci/web-test-floor.test.ts, which read it off the runner report. The same figure in 1.1.1 row 8 and 12 row 1 is retired with it."
     },
     "E-04": {
       "TASK_IDS": ["DOC-001"],
@@ -430,7 +430,7 @@
     "H-04": {
       "TASK_IDS": ["FE-016", "SEC-003"],
       "CLASSIFICATION": "DOCUMENTATION_DEFECT",
-      "WHY": "The customer-duplicates route docblock justifies not checking crm.customer.merge by a control inside the screen; while P1-OD-017 is open no merge control exists, so the justification names something absent. SEC-003 owns the deliberate absence."
+      "WHY": "The customer-duplicates route docblock justifies not checking crm.customer.merge by a control inside the screen; while P1-OD-017 is open no merge control exists, so the justification names something absent. SEC-003 owns the deliberate absence. Re-verified at 711a90e: page.tsx:18-21 and DuplicateReviewScreen.tsx:23-32 are both exact, and crm.customer-merge appears across five modules only as a documented absence while CRM_PERMISSIONS.merge has no reader. What closes it: state that the check is omitted because this phase ships no merge affordance at all, not because one is gated elsewhere. Still OPEN: apps/web/src belongs to another branch."
     },
     "H-05": {
       "TASK_IDS": ["FE-004", "FE-005", "QA-001"],
@@ -465,7 +465,7 @@
     "H-11": {
       "TASK_IDS": ["FE-019", "DOC-001"],
       "CLASSIFICATION": "DOCUMENTATION_DEFECT",
-      "WHY": "An id that names nothing. H-11 occurs only inside FE-019 ROUND5_FINDING_IDS and no document says what it is, so it can be neither closed nor refuted. DOC-001 owns traceability, and an unresolvable id is a traceability failure."
+      "WHY": "WITHDRAWN at 711a90e as a bookkeeping artefact, and registered REFUTED rather than OPEN. H-11 occurs only inside FE-019 ROUND5_FINDING_IDS and names no defect. Traced to its origin ab87167, where the H-01..H-13 series was issued: that cell names four ids beside a rationale describing three defects (H-07 the missing re-read, H-08 the unrendered field errors, H-09 the 409 copy shared with FE-020), and every other id in the series is claimed by some cell in the same commit, so it is not a typo for an unclaimed neighbour either. An id that resolves to no finding cannot be closed or refuted as a defect, but it can be examined and found to name nothing, and carrying it as OPEN asserted a debt that did not exist on every re-derivation since it was registered. DOC-001 owns traceability, and the id is kept searchable rather than deleted."
     },
     "H-12": {
       "TASK_IDS": ["FE-009", "DOC-002"],
@@ -485,7 +485,7 @@
     "H-15": {
       "TASK_IDS": ["QA-003", "DO-001", "DOC-002"],
       "CLASSIFICATION": "DOCUMENTATION_DEFECT",
-      "WHY": "Two docblocks in apps/web/tests/p1-27-security.test.ts say the authenticated isolation spec runs in no CI job, and one concludes that QA-003 is therefore not closed. The authenticated-browser job in protected-develop-verification.yml runs it, so a reader is told a gap exists that was repaid. Same class as H-13, one wave later."
+      "WHY": "THREE docblocks in apps/web/tests/p1-27-security.test.ts (:1287, :1557, :1809) say the authenticated isolation spec runs in no CI job, and one concludes that QA-003 is therefore not closed. This entry said TWO and undercounted the defect. The authenticated-browser job in protected-develop-verification.yml runs it, and at 711a90e the tier has also PASSED on a hosted runner (run 31347643485, 225 tests, 0 failed, candidate 78c4587), so a reader is told a gap exists that was repaid twice over. What survives and must survive the edit: no job the PULL-REQUEST gate runs executes it, and QA-003 is genuinely not closed by that unit-tier file. Same class as H-13, one wave later. Still OPEN: apps/web/tests belongs to another branch."
     },
     "H-16": {
       "TASK_IDS": ["DO-001", "DOC-002"],
@@ -510,7 +510,7 @@
     "H-20": {
       "TASK_IDS": ["DO-001", "DOC-002"],
       "CLASSIFICATION": "DOCUMENTATION_DEFECT",
-      "WHY": "The docblock that closed H-16 in apps/web/playwright.config.ts cites four line numbers in protected-develop-verification.yml and all four are wrong. Every claim it makes is true and every pointer it gives a reader to check it with is not. DO-001 owns the workflow it cites; DOC-002 owns the developer-facing prose."
+      "WHY": "The docblock that closed H-16 in apps/web/playwright.config.ts cites four line numbers in protected-develop-verification.yml and all four are wrong. Every claim it makes is true and every pointer it gives a reader to check it with is not. Re-verified at 711a90e, with the replacements read off the workflow: :41 says 319 (supabase start is at 345) and 383 (acceptance:create-owner is at 457), :42 says 391 (the API start is at 474), :64 says 420 (ROOTLCO_E2E_AUTH is set at 494). DO-001 owns the workflow it cites; DOC-002 owns the developer-facing prose. Still OPEN: apps/web belongs to another branch."
     },
     "H-21": {
       "TASK_IDS": ["DOC-001", "DOC-002"],
