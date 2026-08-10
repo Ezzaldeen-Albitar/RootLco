@@ -15,10 +15,17 @@ import { pageMetadata } from '@/lib/page-metadata';
  * `GET /api/v1/customer-duplicates` requires. The route renders the denial
  * **instead of** the screen so a denied operator never issues the first read.
  *
- * `crm.customer.merge` is deliberately **not** checked here. It gates a control
- * inside the screen, not the page: a reviewer who may clear false pairs should
- * still reach this queue even when they may not merge, and hiding the whole page
- * from them would remove work they are entitled to do.
+ * `crm.customer.merge` is deliberately **not** checked here, and the reason is
+ * not that it gates a control further in — there is no such control. This phase
+ * ships **no merge affordance at all**: `P1-OD-017` is an open Owner decision
+ * and the canonical plan requires the affordance to be *absent* rather than
+ * disabled, so `DuplicateReviewScreen` and its decision panel offer exactly one
+ * decision, dismissal, and say that merge rules are pending.
+ *
+ * Checking a code that governs nothing on this page could therefore only
+ * subtract. It would hide the queue from an operator who may dismiss false
+ * pairs — the one decision this screen does offer, and work they are entitled
+ * to do.
  */
 export default async function CustomerDuplicatesPage({
   params,
