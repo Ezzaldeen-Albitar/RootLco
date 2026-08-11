@@ -195,7 +195,7 @@ figures below are checked against the files on disk. They read **18** and **24**
 here until this pass, having been written before the write-adapter sweep, the
 isolation positive controls and the audit-class cases were added to the first.
 
-<!-- derived: cases p1-27-qa.test.ts = 29 -->
+<!-- derived: cases p1-27-qa.test.ts = 33 -->
 <!-- derived: cases vehicle-screens.dom.test.tsx = 40 -->
 
 | Task                                                 | Operations                                                                                   | Output                                                                                   | Proof                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |

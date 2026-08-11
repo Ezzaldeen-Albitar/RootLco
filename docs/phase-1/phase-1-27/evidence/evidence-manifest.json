@@ -56,7 +56,7 @@
       "bytes": 65881
     },
     "docs/phase-1/phase-1-27/evidence/task-traceability.md": {
-      "sha256": "78bcc25ce3ddfa03ad0ecb99ee8e1485218c4dee86f7431c0b68d301c1a80f8b",
+      "sha256": "b3e8be198627c0e2d0a0fac60946da95ade5d73414c709efeee56f3957cf3f99",
       "bytes": 113040
     },
     "docs/phase-1/phase-1-27/evidence/test-catalogue-traceability.json": {
@@ -140,11 +140,11 @@
       "bytes": 184434
     },
     "docs/phase-1/phase-1-27/task-matrix-verdicts.json": {
-      "sha256": "7b4d535556d814f948edc15c89fa456b600ef659166752a8f655c953b821fe47",
+      "sha256": "db0a6ed5f4c02a9e526bc431b8890ce50b48ca6c6c5ffd59e49f2649633cfc72",
       "bytes": 336080
     },
     "docs/phase-1/phase-1-27/task-matrix.json": {
-      "sha256": "2ebac28835a4bc4d86177f696f34c06903d0d6d518fbe3549fc31910ec4f8a3f",
+      "sha256": "0a0ac8960113225f296660daac3cad61d79b5f06871d07ca2fe812874545172e",
       "bytes": 353310
     },
     "docs/phase-1/phase-1-27/task-register.md": {

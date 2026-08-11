@@ -258,6 +258,15 @@ export const MODULE_DISPOSITION = Object.freeze({
   'apps/web/src/lib/duplicates': 'in-surface',
   /** `action-result` and `field-errors` — what a refused write becomes. */
   'apps/web/src/lib/forms': 'in-surface',
+  /*
+   * `intlLocale`, `formatDate`, `formatDateTime` — the product's one date and
+   * clock convention. `in-surface` because it renders operator-visible text:
+   * seven P1-27 components used to construct `Intl.DateTimeFormat` with the bare
+   * locale, so an English operator saw `Mar 4, 2026, 12:14 PM` in Vehicle
+   * History and `4 Mar 2026, 12:14` in the audit log. Routing them through this
+   * module is what made it a newly imported dependency of a scanned tree.
+   */
+  'apps/web/src/lib/format': 'in-surface',
   /** The structured logger the console rule points at. Excluded, measured. */
   'apps/web/src/lib/observability': 'platform-transport',
   'apps/web/src/lib/page-metadata': 'in-surface',

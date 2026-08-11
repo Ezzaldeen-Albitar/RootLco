@@ -84,11 +84,17 @@ export default async function CustomerProfilePage({
      * The reference is carried HERE too, and it was not.
      *
      * `PermissionDeniedState` twelve lines up already passes it, and the vehicle
-     * profile's equivalent branch passes it
-     * (`vehicles/[vehicleId]/page.tsx:85`) — so this route dropped it on the one
-     * outcome where an operator most needs something to quote. A denial is
-     * self-explanatory; "the service is unavailable" is not, and without a
-     * reference the only thing they can report is the time of day.
+     * profile's equivalent branch passes it too — its `ErrorState` and its
+     * `PermissionDeniedState` both carry the reference. Named by content rather
+     * than by line: this sentence cited `vehicles/[vehicleId]/page.tsx:85` until
+     * that route was restructured to add its missing `expired` branch, after
+     * which line 85 was this same explanation in prose. A cross-file line number
+     * is the one citation form nothing in this repository can check.
+     *
+     * So this route had dropped it on the one outcome where an operator most
+     * needs something to quote. A denial is self-explanatory; "the service is
+     * unavailable" is not, and without a reference the only thing they can
+     * report is the time of day.
      *
      * `SEC-004` swept `features/**` for `correlationId` and never opened a route
      * file, so the omission sat inside its blind spot; the prop is optional

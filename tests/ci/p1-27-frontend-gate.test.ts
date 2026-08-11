@@ -973,7 +973,7 @@ describe('the phase modules outside every scan root are DERIVED, not listed', ()
     const derived = importedModuleDirectories(scanned);
     // Anti-vacuity: the derivation really read something. A regex that matched
     // nothing would make the equality below a comparison of two empty sets.
-    expect(derived.length, 'no module import was discovered — the derivation is broken').toBe(14);
+    expect(derived.length, 'no module import was discovered — the derivation is broken').toBe(15);
     expect(
       derived,
       'a module the scanned trees import has no recorded disposition, or a recorded module is ' +
@@ -1039,7 +1039,7 @@ describe('the phase modules outside every scan root are DERIVED, not listed', ()
   });
 
   it('is a live set of modules that exist and are not collected', () => {
-    expect(UNCOLLECTED_PHASE_MODULES.length).toBe(12);
+    expect(UNCOLLECTED_PHASE_MODULES.length).toBe(13);
     for (const dir of UNCOLLECTED_PHASE_MODULES) {
       // `moduleSourceRoot`, not `existsSync`: `apps/web/src/lib/page-metadata`
       // is a FILE, and dropping it to avoid an `ENOENT` would be precisely the
