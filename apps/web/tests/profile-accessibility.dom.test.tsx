@@ -623,10 +623,20 @@ describe('a screen mounted in the dashboard shell contributes no second h1', () 
      * is exactly what the vehicle profile does. A violation is a single
      * `return` that contains BOTH.
      *
-     * The header is often hoisted (`const header = (<PageHeader … />)`) and
-     * used as `{header}`, so aliases are resolved rather than only the literal
-     * element being matched — a scan for `<PageHeader` alone would read every
-     * branch of that page as headerless and prove nothing.
+     * The header is often hoisted, so aliases are resolved rather than only the
+     * literal element being matched — a scan for `<PageHeader` alone would read
+     * every branch of such a page as headerless and prove nothing.
+     *
+     * TWO hoisting shapes, and the second was learned the hard way. An ELEMENT
+     * (`const header = (<PageHeader … />)`) used as `{header}`, and a FRAME
+     * FUNCTION (`const frame = (body) => (<><PageHeader … />…</>)`) used as
+     * `frame(…)`. This case originally understood only the first. The vehicle
+     * profile — the one route it exists to protect — was then restructured onto
+     * the second, and the guard went quiet: routing its success path through
+     * `frame()` reintroduced the double `<h1>` with all 35 cases here green.
+     * Measured, not supposed. So the alias rule is now "any local const whose
+     * initialiser mentions `<PageHeader`", and a reference is either `{name}` or
+     * `name(`.
      */
     const appRoot = join(__dirname, '..', 'src', 'app');
     const pages: string[] = [];
@@ -651,24 +661,68 @@ describe('a screen mounted in the dashboard shell contributes no second h1', () 
     const OWNS_ITS_H1 = ['VehicleProfileScreen'];
 
     const violations: string[] = [];
+    let returnsSeen = 0;
+    let blockCharsSeen = 0;
     for (const page of pages) {
       const source = stripped(readFileSync(page, 'utf8'));
 
-      const aliases = [...source.matchAll(/const\s+(\w+)\s*=\s*\(\s*<PageHeader\b/g)].map(
-        (match) => match[1] as string
-      );
-      const headerIn = (block: string): boolean =>
-        /<PageHeader\b/.test(block) || aliases.some((name) => block.includes(`{${name}}`));
+      // Any local `const NAME =` whose initialiser reaches a `<PageHeader`
+      // before the next top-level `const` is a header alias, whichever shape it
+      // takes. Bounded deliberately: an unbounded look-ahead would make every
+      // const in the file an alias of a header declared later.
+      // Bounded by the next TOP-LEVEL statement, not by the next `const` at any
+      // depth. An unbounded scan made every earlier const an alias of a header
+      // declared later — `session` and `messages` both resolved as headers — and
+      // the guard then fired on a clean tree. A false positive here is as bad as
+      // a false negative: it trains the next reader to widen the rule.
+      const BOUNDARY = /^ {0,2}(?:const|return|if|for|while|switch|export)\b/m;
+      const aliases = [...source.matchAll(/^ {0,2}const\s+(\w+)\s*=/gm)]
+        .filter((match) => {
+          const rest = source.slice((match.index ?? 0) + match[0].length);
+          const next = rest.search(BOUNDARY);
+          return /<PageHeader\b/.test(next > 0 ? rest.slice(0, next) : rest);
+        })
+        .map((match) => match[1] as string);
 
-      // Each `return (` and everything to the end of the file is an
-      // over-approximation of that branch, so a header ABOVE a return cannot be
-      // missed; the screen match is what narrows it back to one path.
-      for (const match of source.matchAll(/return\s*\(/g)) {
-        const block = source.slice(match.index ?? 0);
-        const upToNextReturn = block.slice(
-          0,
-          block.slice(1).search(/\n\s*return\s*\(/) + 1 || block.length
+      const headerIn = (block: string): boolean =>
+        /<PageHeader\b/.test(block) ||
+        aliases.some((name) => block.includes(`{${name}}`) || block.includes(`${name}(`));
+
+      /*
+       * EVERY `return`, not just `return (`.
+       *
+       * The first version matched `/return\s*\(/`, which cannot see
+       * `return frame(…)` — the exact shape this route was later restructured
+       * onto. Routing the success path through the frame then reintroduced the
+       * double `<h1>` and this case stayed green, because with no matched
+       * return the loop body never ran at all. A guard that silently iterates
+       * nothing is the failure this suite exists to catch, so it is worth
+       * saying plainly: the bug was not a weak assertion, it was an empty loop.
+       *
+       * Each block runs to the next `return`, which over-approximates the
+       * branch, so a header ABOVE it cannot be missed; the screen match is what
+       * narrows it back to one path.
+       */
+      /*
+       * Boundaries computed from the FULL list of return positions.
+       *
+       * The previous shape sliced forward from each match and searched the
+       * remainder for the next return. Because the match itself begins with
+       * `\s*`, that search matched at index 0 every single time, so every block
+       * was ONE CHARACTER long: the loop ran six times over this route and
+       * examined nothing. It survived a literal `<PageHeader>` planted in the
+       * success return. Two empty-loop bugs in one guard, so the block bounds
+       * are now arithmetic between known offsets rather than a re-search, and
+       * `blockCharsSeen` below makes a one-character block impossible to ship.
+       */
+      const returnAt = [...source.matchAll(/^\s*return\b/gm)].map((m) => m.index ?? 0);
+      for (let i = 0; i < returnAt.length; i += 1) {
+        returnsSeen += 1;
+        const upToNextReturn = source.slice(
+          returnAt[i] as number,
+          (returnAt[i + 1] as number | undefined) ?? source.length
         );
+        blockCharsSeen += upToNextReturn.length;
         for (const screen of OWNS_ITS_H1) {
           if (upToNextReturn.includes(`<${screen}`) && headerIn(upToNextReturn)) {
             violations.push(
@@ -680,6 +734,15 @@ describe('a screen mounted in the dashboard shell contributes no second h1', () 
       }
     }
 
+    expect(
+      returnsSeen,
+      'no return statement was read in any route — the sweep iterated nothing'
+    ).toBeGreaterThan(30);
+    // The bound that catches the real bug: iterating is not examining.
+    expect(
+      Math.round(blockCharsSeen / Math.max(returnsSeen, 1)),
+      'return blocks averaged almost no content — the sweep read nothing'
+    ).toBeGreaterThan(80);
     expect(violations, violations.join('\n')).toEqual([]);
   });
 });
