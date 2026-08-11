@@ -240,7 +240,7 @@ rather than task deliverables in their own right:
 
 <!-- derived: cases documented-counts.test.ts = 4 -->
 <!-- derived: cases p1-27-guidance-reconciliation.test.ts = 10 -->
-<!-- derived: cases p1-27-evidence-manifest.test.ts = 32 -->
+<!-- derived: cases p1-27-evidence-manifest.test.ts = 39 -->
 <!-- derived: cases idempotent-operations-manifest.test.ts = 6 -->
 <!-- derived: commands registered = 148 -->
 <!-- derived: commands required = 74 -->

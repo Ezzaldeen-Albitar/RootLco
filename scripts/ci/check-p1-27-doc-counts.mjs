@@ -73,7 +73,7 @@ import { readdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { join, posix, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-import { SCAN_ROOTS, RULES } from './check-p1-27-frontend.mjs';
+import { SCAN_ROOTS, RULES, assertNotSymlink } from './check-p1-27-frontend.mjs';
 import {
   REGISTER,
   readScripts,
@@ -340,11 +340,31 @@ function countCases(code) {
   return count;
 }
 
-function walk(dir, predicate, out = []) {
+/**
+ * Every file under `dir` that `predicate` accepts. A symlink is REFUSED.
+ *
+ * `QA005-12` closed this in the two evidence walkers and this one was missed,
+ * while the docblock in `build-p1-27-evidence-manifest.mjs` said "every walker in
+ * this phase now applies the same policy". It did not, and the omission is the
+ * dangerous half: `Dirent.isDirectory()` is FALSE for a directory symlink or a
+ * Windows junction, so the recursion did not descend into it, and then
+ * `predicate(full)` rejected `some-junction` because it does not end in `.md` —
+ * so the tree beyond it contributed nothing to any derived count and no line of
+ * output said so. Every number this gate holds documents to would have been
+ * measured over a smaller tree than the reader believes, which is precisely the
+ * defect family this gate exists to close.
+ *
+ * The guard sits after the `node_modules`/dotfile skip, not before it: those two
+ * names are excluded by policy whatever they are, and a linked `node_modules` is
+ * an ordinary package-manager layout rather than a signal. Anything this gate
+ * actually reads must be a real file in a real directory.
+ */
+export function walk(dir, predicate, out = []) {
   if (!existsSync(dir)) return out;
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     if (entry.name === 'node_modules' || entry.name.startsWith('.')) continue;
     const full = join(dir, entry.name);
+    assertNotSymlink(entry, full);
     if (entry.isDirectory()) walk(full, predicate, out);
     else if (predicate(full)) out.push(full);
   }
@@ -371,8 +391,12 @@ function gateFiles(root) {
   const descend = (dir) => {
     if (!existsSync(dir)) return;
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (GATE_SKIP.has(entry.name)) continue;
+      // Same policy as `walk` above and as the two evidence walkers: a link is
+      // invisible to `isDirectory()`, so walking past it scans nothing quietly.
+      assertNotSymlink(entry, join(dir, entry.name));
       if (entry.isDirectory()) {
-        if (!GATE_SKIP.has(entry.name)) descend(join(dir, entry.name));
+        descend(join(dir, entry.name));
       } else if (GATE_EXTENSIONS.test(entry.name)) out.push(join(dir, entry.name));
     }
   };
