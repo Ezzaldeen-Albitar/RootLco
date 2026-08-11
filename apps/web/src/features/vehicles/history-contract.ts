@@ -48,13 +48,25 @@ export type OdometerUnit = (typeof ODOMETER_UNITS)[number];
 /** Non-correction capture methods. A correction carries `'correction'`. */
 export const ODOMETER_CAPTURE_METHODS = ['reception', 'delivery', 'manual'] as const;
 
-/** `veh.odometer_readings.correction_reason` — a closed, approved vocabulary. */
+/**
+ * `veh.odometer_readings.correction_reason` — a closed, approved vocabulary.
+ *
+ * The platform's own list (`vehicle-odometer.ts:28-34`) carries a FIFTH member,
+ * `'unknown'`, and the route accepts it. It is deliberately not offered here:
+ * "unknown" is what a reason is when nobody recorded one, not something an
+ * operator with the vehicle in front of them should be invited to choose, and
+ * `data_entry_correction` covers the honest "I typed it wrong" case. Offering
+ * only four is a narrower OFFER, not a narrower rule — nothing here refuses a
+ * value the server would have taken, and the read side renders `'unknown'` in
+ * words when a reading arrives carrying it.
+ */
 export const ODOMETER_ANOMALY_REASONS = [
   'lower_than_prior',
   'possible_rollover',
   'meter_replacement',
   'data_entry_correction',
 ] as const;
+export type OdometerAnomalyReason = (typeof ODOMETER_ANOMALY_REASONS)[number];
 
 /** `ck_plate_history_country`: an ISO-style 2–3 letter code, upper-case. */
 export const COUNTRY_CODE_PATTERN = /^[A-Z]{2,3}$/;
@@ -211,4 +223,56 @@ export function odometerDisplay(reading: OdometerReadingEntry): {
 /** A correction is a reading ABOUT another reading, and reads differently. */
 export function isCorrection(reading: OdometerReadingEntry): boolean {
   return reading.correctionOf !== null || reading.captureMethod === 'correction';
+}
+
+/** A prior reading, offered as something an operator can recognise. */
+export interface CorrectionChoice {
+  /** `veh.odometer_readings.id` — submitted, never rendered. */
+  readonly value: string;
+  /** What the operator reads: the reading, its unit, and when it was taken. */
+  readonly label: string;
+}
+
+/**
+ * The readings a correction may point at, turned into human choices.
+ *
+ * ## Why the id never reaches the screen
+ *
+ * `correctionOf` is a uuid. A text box for one would be a control no workshop
+ * employee could use — the same conclusion `TransferOwnershipForm` reached about
+ * `partnerId`, and the reason `veh.vehicle-ownership-transfer` stayed unwired
+ * for the whole of P1-27. So the value is carried and the LABEL is what is
+ * shown: "120000 km — 4 March 2026, 09:30".
+ *
+ * ## Derived from THIS vehicle's readings, and from nothing else
+ *
+ * The rows come from the odometer history already on screen, which is
+ * `veh.vehicle-odometer-history` for this vehicle id. A reading belonging to
+ * another vehicle is therefore not in the set and cannot be chosen; the server
+ * refuses one anyway with a foreign-key violation mapped to
+ * `body.correctionOf` / `unknown_reference`, and this is the reason an operator
+ * never has to meet that refusal.
+ *
+ * ## What it does NOT filter
+ *
+ * Not by time, and not by whether the row is itself a correction. The server's
+ * rule is "earlier or equal", checked in the database against the value being
+ * written — which is not known until the form is submitted. Pre-filtering here
+ * would be a client bound that disagrees with the server and hides a reading the
+ * server would have accepted; `form.violation.not_earlier` states that refusal
+ * instead, against the field that produced it.
+ *
+ * `formatObservedAt` is injected rather than imported so this stays a pure
+ * function of its inputs: the caller owns the locale.
+ */
+export function correctionChoices(
+  readings: readonly OdometerReadingEntry[],
+  formatObservedAt: (observedAt: string) => string
+): readonly CorrectionChoice[] {
+  return readings.map((reading) => ({
+    value: reading.id,
+    // The value keeps its own unit and is never converted — the same rule the
+    // table follows one component away.
+    label: `${odometerDisplay(reading).primary} — ${formatObservedAt(reading.observedAt)}`,
+  }));
 }

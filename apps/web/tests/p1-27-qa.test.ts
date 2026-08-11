@@ -812,6 +812,160 @@ describe('P1-27-QA-003 — tenant, company and branch isolation', () => {
     ).toHaveBeenCalledTimes(1);
   });
 
+  /**
+   * The correction body (`P1-27-FE-023`).
+   *
+   * An odometer reading recorded too high could never be brought back down from
+   * the product. `guard_odometer_reading` refuses a NORMAL reading below the
+   * current effective value — correctly; that refusal is the anomaly detection —
+   * and the disposition is a CORRECTION: the same operation,
+   * `veh.vehicle-odometer-record`, with two more body fields. The form offered
+   * neither, so the platform accepted a correction the interface could not
+   * express.
+   *
+   * These cases are about the BODY, which is the half a DOM suite cannot see:
+   * mutating an adapter left twenty DOM tests green in Wave 5.
+   */
+  const ODO_BASE = { value: '118000', unit: 'km', observedAt: '2026-03-04T09:30:00Z' };
+  const PRIOR = 'f1a2b3c4-0000-4000-8000-000000000001';
+
+  /** The body of the single request the adapter issued. */
+  function sentBody(): Record<string, unknown> {
+    expect(send, 'the adapter issued no request').toHaveBeenCalledTimes(1);
+    const [method, path, body] = send.mock.calls[0] as [string, string, Record<string, unknown>];
+    expect(method).toBe('POST');
+    expect(path).toContain('/odometer-readings');
+    return body;
+  }
+
+  it('sends NEITHER correction field for an ordinary reading', async () => {
+    /*
+     * Omitted, not blanked. `ck_odometer_readings_correction_meta` requires a
+     * non-correction to carry `correction_reason IS NULL` and
+     * `anomaly_flag = false`, and the domain refuses a reason with no reference
+     * outright (`vehicle-odometer.ts:141-146`) — so a form that helpfully sent
+     * empty strings would turn every ordinary reading into a 422.
+     *
+     * `toEqual` rather than a pair of `not.toHaveProperty` checks: an exact body
+     * also fails if a THIRD field is smuggled in later.
+     */
+    send.mockReset();
+    send.mockResolvedValue({ ok: true, data: {}, correlationId: 'c' });
+
+    await vehHistory.recordOdometerAction('v1', { status: 'idle' } as never, formOf(ODO_BASE));
+
+    expect(sentBody()).toEqual({
+      value: 118000,
+      unit: 'km',
+      observedAt: '2026-03-04T09:30:00Z',
+    });
+  });
+
+  it('sends BOTH correction fields when a prior reading and a reason are chosen', async () => {
+    send.mockReset();
+    send.mockResolvedValue({ ok: true, data: {}, correlationId: 'c' });
+
+    await vehHistory.recordOdometerAction(
+      'v1',
+      { status: 'idle' } as never,
+      formOf({ ...ODO_BASE, correctionOf: PRIOR, correctionReason: 'data_entry_correction' })
+    );
+
+    const body = sentBody();
+    // The two values, by name. This is the assertion the capability exists for:
+    // before it, no request the product could issue carried either field.
+    expect(body.correctionOf).toBe(PRIOR);
+    expect(body.correctionReason).toBe('data_entry_correction');
+    // And nothing the caller must NOT claim. `captureMethod: 'correction'` and
+    // the anomaly flag are set server-side (`vehicle-odometer.ts:130-138`); a
+    // client that sent either would be asserting the platform's own conclusion.
+    expect(body).not.toHaveProperty('anomalyFlag');
+    expect(body.captureMethod).toBeUndefined();
+  });
+
+  it('refuses a reference with no reason, exactly as the server would, without sending', async () => {
+    /*
+     * `toOdometerReadingPlan` decides `isCorrection` from `correctionOf` alone
+     * and then requires the reason — `body.correctionReason` / `required`. The
+     * mirror is local because the alternative is a 422 the operator waited for,
+     * on an operation limited to thirty calls a minute.
+     *
+     * `toHaveBeenCalledTimes(0)` is the load-bearing half: refusing AFTER the
+     * request satisfies the message assertion and still burns the slot.
+     */
+    send.mockReset();
+    send.mockResolvedValue({ ok: true, data: {}, correlationId: 'c' });
+
+    const rejected = await vehHistory.recordOdometerAction(
+      'v1',
+      { status: 'idle' } as never,
+      formOf({ ...ODO_BASE, correctionOf: PRIOR })
+    );
+
+    expect(send, 'a correction with no reason reached the platform').toHaveBeenCalledTimes(0);
+    expect(rejected.fieldErrors?.correctionReason).toBe('vehicles.odometer.error.reasonRequired');
+  });
+
+  it('refuses a reason with no reference, against the field the server names', async () => {
+    // The other direction. `vehicle-odometer.ts:141-146` throws `unexpected` on
+    // `body.correctionReason`, so the error lands on the control the operator can
+    // actually clear.
+    send.mockReset();
+    send.mockResolvedValue({ ok: true, data: {}, correlationId: 'c' });
+
+    const rejected = await vehHistory.recordOdometerAction(
+      'v1',
+      { status: 'idle' } as never,
+      formOf({ ...ODO_BASE, correctionReason: 'possible_rollover' })
+    );
+
+    expect(send, 'a lone reason reached the platform').toHaveBeenCalledTimes(0);
+    expect(rejected.fieldErrors?.correctionReason).toBe(
+      'vehicles.odometer.error.reasonWithoutReading'
+    );
+  });
+
+  it('refuses a reason outside the approved vocabulary', async () => {
+    // `unknown_reason` is what the domain answers. The select cannot produce
+    // one, so this is about the adapter being the authority rather than the
+    // control — a hand-built request is the only way in, and it stops here.
+    send.mockReset();
+    send.mockResolvedValue({ ok: true, data: {}, correlationId: 'c' });
+
+    const rejected = await vehHistory.recordOdometerAction(
+      'v1',
+      { status: 'idle' } as never,
+      formOf({ ...ODO_BASE, correctionOf: PRIOR, correctionReason: 'because_i_said_so' })
+    );
+
+    expect(send).toHaveBeenCalledTimes(0);
+    expect(rejected.status).toBe('invalid');
+    expect(rejected.fieldErrors?.correctionReason).toBeTruthy();
+  });
+
+  it('does NOT add a bound the server does not have: a lower value still goes out', async () => {
+    /*
+     * The direction that keeps this a mirror rather than a tightening.
+     *
+     * Whether a value is below the current effective odometer is decided by the
+     * database, against rows this process cannot see. A client that guessed
+     * would refuse readings the server would have stored — the exact thing
+     * `FieldSpec`'s docblock forbids — so a correction carrying a LOWER value is
+     * sent, and `below_current_odometer` is catalogued for the refusal that is
+     * the server's to make.
+     */
+    send.mockReset();
+    send.mockResolvedValue({ ok: true, data: {}, correlationId: 'c' });
+
+    await vehHistory.recordOdometerAction(
+      'v1',
+      { status: 'idle' } as never,
+      formOf({ ...ODO_BASE, value: '1', correctionOf: PRIOR, correctionReason: 'lower_than_prior' })
+    );
+
+    expect(sentBody().value, 'the edge invented a floor the server does not have').toBe(1);
+  });
+
   it('the write sweep is exhaustive, and fails closed when an adapter is added', () => {
     /*
      * The number of write adapters the sweep above DRIVES, against the number

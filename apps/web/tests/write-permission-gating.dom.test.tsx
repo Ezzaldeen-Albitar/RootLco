@@ -285,6 +285,58 @@ describe('the two ungated vehicle writes', () => {
     expect(hidden.container.textContent ?? '').not.toContain(en['vehicles.odometer.record']);
   });
 
+  it('withholds the CORRECTION controls from an operator who cannot record readings', async () => {
+    /*
+     * `P1-27-FE-023`. A correction is not a second capability: it is the same
+     * operation, `veh.vehicle-odometer-record`, with two more body fields, so it
+     * is `veh.vehicle.odometer.record` and nothing else. Inventing a second
+     * permission would have put a control in front of operators the platform
+     * will refuse, and gating it on the READ — which is what plates and odometer
+     * both did until `P1-27-SEC-001` — would have offered it to everyone who can
+     * open a vehicle.
+     *
+     * The list must return a ROW for this to mean anything: the correction
+     * selector is only rendered when there is a reading to correct, so an empty
+     * page hides it from everybody and would make the denial look like a working
+     * gate. That is the shape of failure this whole file exists to rule out.
+     */
+    listOdometer.mockResolvedValue({
+      ...okPage,
+      rows: [
+        {
+          id: 'f1a2b3c4-0000-4000-8000-000000000001',
+          value: '180000',
+          unit: 'km',
+          valueKm: '180000',
+          observedAt: '2026-03-04T09:30:00.000Z',
+          captureMethod: 'reception',
+          anomalyFlag: false,
+          correctionOf: null,
+          correctionReason: null,
+        },
+      ],
+    });
+
+    const shown = renderLtr(
+      <OdometerSection locale="en" messages={en} vehicleId="v-1" canRecord />
+    );
+    await expectOffered(en['vehicles.odometer.correctionOf']);
+    await expectOffered(en['vehicles.odometer.correctionReason']);
+    shown.unmount();
+
+    const hidden = renderLtr(
+      <OdometerSection locale="en" messages={en} vehicleId="v-1" canRecord={false} />
+    );
+    await waitFor(() => expect(hidden.container.querySelector('table')).not.toBeNull());
+    const text = hidden.container.textContent ?? '';
+    expect(text).not.toContain(en['vehicles.odometer.correctionOf']);
+    expect(text).not.toContain(en['vehicles.odometer.correctionReason']);
+    // The anomaly vocabulary goes with it. A denial that still printed the four
+    // approved reasons would leak the workshop's own correction policy to a
+    // reader, the same way the restriction types would.
+    expect(text).not.toContain(en['vehicles.anomalyReason.possible_rollover']);
+  });
+
   it('defaults both to hidden', async () => {
     // Neither prop is required at the section boundary, because the profile
     // screen supplies them. The default still has to be the closed one.

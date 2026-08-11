@@ -8,7 +8,7 @@ import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { Locale } from '@/i18n/config';
 import { formatDateTime } from '@/lib/format';
-import { RecordForm } from '@/components/forms/RecordForm';
+import { RecordForm, type FieldSpec } from '@/components/forms/RecordForm';
 import { PartyLabel } from '@/components/party/PartyLabel';
 import { CustomerSelector, type SelectedCustomer } from '@/components/party/CustomerSelector';
 import {
@@ -20,11 +20,13 @@ import {
   transferOwnershipAction,
 } from '../history-api';
 import {
+  correctionChoices,
   intervalState,
   isCorrection,
   localToday,
   MAX_PLATE_RAW,
   MAX_TRANSFER_REASON,
+  ODOMETER_ANOMALY_REASONS,
   ODOMETER_CAPTURE_METHODS,
   ODOMETER_UNITS,
   OWNERSHIP_KINDS,
@@ -365,6 +367,69 @@ export function PlateSection({
 type OdometerProps = Omit<SectionProps, 'today'>;
 
 /**
+ * The two fields that turn the reading form into a correction (`P1-27-FE-023`).
+ *
+ * ## Why the product needs them at all
+ *
+ * `guard_odometer_reading` refuses a NORMAL reading below the vehicle's current
+ * effective value, and the refusal is the anomaly detection working: a lower
+ * reading is not silently stored and the original is preserved. The disposition
+ * is a CORRECTION — the same operation, `veh.vehicle-odometer-record`, with two
+ * more body fields — and the form offered neither. So an odometer entered too
+ * high could never be brought back down from the product: the platform accepted
+ * the correction and the interface could not express one.
+ *
+ * ## Why a mode switch is not needed
+ *
+ * The server's rule is exactly "`correctionOf` present ⇒ this is a correction"
+ * (`vehicle-odometer.ts:112-113`), so CHOOSING A PRIOR READING *is* choosing to
+ * record a correction. A separate toggle would be a second, client-side notion of
+ * what a correction is, and a screen that thought it was in correction mode while
+ * the body said otherwise. The empty placeholder means "a new reading", which is
+ * what the form does when nobody touches these controls, and the hint says so.
+ *
+ * ## Why they disappear when there is no history
+ *
+ * A correction points at a reading. With no readings on the page there is
+ * nothing to point at, and an empty selector is a control that can only fail —
+ * the same failure as offering a form to an operator who cannot use it, which
+ * `P1-27-SEC-001` was about. The reading form itself stays: a first reading is a
+ * normal one by definition.
+ *
+ * `captureMethod` is left in place beside them and is honest either way: the
+ * server sets `'correction'` itself and ignores what the caller sent
+ * (`vehicle-odometer.ts:130-138`), which the hint states rather than hiding the
+ * control and leaving the operator to wonder where it went.
+ */
+function correctionFields(choices: readonly { value: string; label: string }[]): FieldSpec[] {
+  if (choices.length === 0) return [];
+  return [
+    {
+      name: 'correctionOf',
+      kind: 'select',
+      labelKey: 'vehicles.odometer.correctionOf',
+      // No raw ids: each option carries the reading, its unit and when it was
+      // observed, and the uuid stays in the option's value.
+      options: choices,
+      hintKey: 'vehicles.odometer.correctionOfHint',
+    },
+    {
+      name: 'correctionReason',
+      kind: 'select',
+      labelKey: 'vehicles.odometer.correctionReason',
+      // NOT `required`: it is required only WITH a reference, which an input
+      // attribute cannot express. The adapter refuses the pair, exactly as the
+      // server does, before spending a request.
+      options: ODOMETER_ANOMALY_REASONS,
+      // The same vocabulary the history table reads back, so the reason chosen
+      // here and the reason printed there are the same words.
+      optionKeyPrefix: 'vehicles.anomalyReason.',
+      hintKey: 'vehicles.odometer.correctionReasonHint',
+    },
+  ];
+}
+
+/**
  * `veh.vehicle-odometer-record` needs `veh.vehicle.odometer.record` — its OWN
  * code, held by neither `veh.vehicle.manage` nor `veh.vehicle.status.manage`.
  *
@@ -386,6 +451,27 @@ export function OdometerSection({
     [vehicleId]
   );
   const table = useServerTable<OdometerReadingEntry>(load, { initial: INITIAL_REQUEST });
+
+  /*
+   * The prior readings the correction control offers, derived from the rows the
+   * table above is already holding.
+   *
+   * NOT a second read. `veh.vehicle-odometer-history` is `expensive-read` and the
+   * page has just paid for it; issuing it twice to populate a select would double
+   * the cost of opening the section for every operator, including the ones who
+   * never record anything.
+   *
+   * It follows that the offer is the CURRENT PAGE of the history — the same rows
+   * printed above the form, in the same order, newest observed first. That is
+   * stated to the operator in the hint rather than left to be discovered: a
+   * correction to a reading from six months ago is reached by paging back to it,
+   * which is also how they would find it to check the value.
+   */
+  const rows = table.response?.rows;
+  const corrections = useMemo(
+    () => correctionChoices(rows ?? [], (observedAt) => formatDateTime(observedAt, locale)),
+    [rows, locale]
+  );
 
   const columns = useMemo<readonly Column<OdometerReadingEntry>[]>(
     () => [
@@ -507,7 +593,9 @@ export function OdometerSection({
               labelKey: 'vehicles.odometer.captureMethod',
               options: ODOMETER_CAPTURE_METHODS,
               optionKeyPrefix: 'vehicles.captureMethod.',
+              hintKey: 'vehicles.odometer.captureMethodHint',
             },
+            ...correctionFields(corrections),
           ]}
         />
       )}
