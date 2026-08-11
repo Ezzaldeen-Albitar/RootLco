@@ -166,6 +166,11 @@ ROUND5_SEALED_OPEN           = 17
 ROUND5_DISPOSITIONED_PARTIAL =  1
 ROUND5_CLOSURE_BLOCKERS      =  0
 ROUND5_CLOSURE_STATE         = SEALED-ONLY
+
+ROUND5_DEFECT_OPEN              =  0
+ROUND5_DEFECT_PARTIAL           =  0
+ROUND5_PENDING_PROTECTED_EVENT  =  0
+ROUND5_CANDIDATE_DEFECTS        =  0
 ```
 <!-- prettier-ignore-end -->
 
@@ -189,11 +194,55 @@ and this phase has already been closed once on sentences.
 The distinction is therefore made executable. Every `OPEN` and `PARTIAL` row
 carries exactly one class, enumerated below rather than inferred:
 
-| class           | meaning                                                                                                                      | may it remain unresolved at closure?                          |
-| --------------- | ---------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
-| `ACTIONABLE`    | Closable now, on some branch of this wave. These are what the phase is actually blocked on.                                  | **No.** `ACTIONABLE_OPEN` and `ACTIONABLE_PARTIAL` must be 0. |
-| `SEALED`        | Closable only against the closing candidate, because what it measures IS the record of that candidate.                       | **Yes, until `QA-005` executes; then no.**                    |
-| `DISPOSITIONED` | True, and disposed of by a recorded decision with an owner and a review date. The finding is not withdrawn and not repaired. | **Yes**, while the decision stands and its checks pass.       |
+| class                     | meaning                                                                                                                      | may it remain unresolved at closure?                          |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| `ACTIONABLE`              | Closable now, on some branch of this wave. These are what the phase is actually blocked on.                                  | **No.** `ACTIONABLE_OPEN` and `ACTIONABLE_PARTIAL` must be 0. |
+| `SEALED`                  | Closable only against the closing candidate, because what it measures IS the record of that candidate.                       | **Yes, until `QA-005` executes; then no.**                    |
+| `PENDING_PROTECTED_EVENT` | Waits on a job that only a push to a protected branch starts. Not a defect, and nobody can pay it before the merge.          | **Yes** before the merge; **no** after the protected reproof. |
+| `DISPOSITIONED`           | True, and disposed of by a recorded decision with an owner and a review date. The finding is not withdrawn and not repaired. | **Yes**, while the decision stands and its checks pass.       |
+
+### A DEFECT and a PENDING EVENT are not the same thing
+
+The status column answers _what happened to this finding_. It has one word,
+`OPEN`, for two states that behave completely differently, and the register
+could not tell them apart:
+
+- **an OPEN DEFECT** — something is wrong and a person can fix it. It **blocks
+  the candidate merge**.
+- **a PENDING EVENT** — nothing is wrong; an observation has not been taken yet,
+  and in one case cannot be taken until after the merge. It is **not a defect**,
+  and a pending protected event **does not block the candidate merge**.
+
+Recording both as `OPEN` is how "the phase is not finished yet" became
+indistinguishable from "something is broken". Four derived numbers now separate
+them, and they are declared in the block above so the rows and the prose cannot
+drift apart:
+
+<!-- prettier-ignore-start -->
+
+```text
+ROUND5_DEFECT_OPEN              ACTIONABLE and OPEN     — blocks the candidate merge
+ROUND5_DEFECT_PARTIAL           ACTIONABLE and PARTIAL  — blocks the candidate merge
+ROUND5_PENDING_PROTECTED_EVENT  PENDING_PROTECTED_EVENT — blocks nothing before the merge
+ROUND5_CANDIDATE_DEFECTS        the sum of the first two
+```
+
+<!-- prettier-ignore-end -->
+
+`SEALED` is neither of those and keeps its own count. It is a
+candidate-evidence obligation: `QA-005` discharges it against the frozen
+candidate, and until then `scripts/ci/check-p1-27-lifecycle.mjs` raises
+`CANDIDATE_EVIDENCE_SEAL_PENDING`, which does block the merge. So the register
+now carries three distinct reasons a row can be unresolved — broken, unmeasured
+at the candidate, unmeasurable before the merge — where it used to carry one.
+
+**`PENDING_PROTECTED_EVENT` is deliberately hard to reach.** `checkRoundFive`
+refuses a row in that class whose stated reason does not name a protected push,
+branch, merge or `develop`. That rule reads the reason, so it can refuse a class
+applied with no protected story at all; it cannot judge whether a protected
+story that IS told is true. The limitation is stated because an escape hatch
+that nothing argues with becomes a habit, and this phase has watched that happen
+to an allow-list already.
 
 **The class is not derivable from the id, and that was tested rather than
 assumed.** `QA005-10` begins `QA005-`, sits in the `EVIDENCE` area, and is
@@ -276,6 +325,63 @@ now read as what they are: a recorded engineering decision, awaiting the Owner.
 `check-p1-27-doc-counts.mjs` (`checkRatificationClaims`) refuses that word across
 the phase tree while the entries ask for the act, and stops refusing it the day
 an entry records that it was granted.
+
+#### Re-adjudication of the eighteen unresolved rows against DEFECT / PENDING EVENT
+
+Every unresolved row was re-read and asked one question: **what would actually
+have to happen for this to close?** The answers, and where each row landed:
+
+| rows                                                         | what closes it                                                                                                                                                                      | class                                  |
+| ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
+| `QA005-01` … `QA005-09`, `QA005-12`, `A-05`, `B-01` … `B-06` | The `QA-005` measurement against the frozen candidate. Every one of them is an attack on an evidence-page guard, and what a guard is judged against is the record of the candidate. | `SEALED` — **17 rows**                 |
+| `A42-13`                                                     | A Backend phase closing the `recordVersion` gap. `P1-27-OD-005` disposes of it as last-writer-wins.                                                                                 | `DISPOSITIONED` — 1 row                |
+| —                                                            | Nothing here waits on a job only a protected push starts.                                                                                                                           | `PENDING_PROTECTED_EVENT` — **0 rows** |
+| —                                                            | Nothing here is broken and fixable now.                                                                                                                                             | `ACTIONABLE` — **0 rows**              |
+
+**`PENDING_PROTECTED_EVENT` has no members at this head, and that is a result
+rather than an oversight.** The register's unresolved set was checked row by row
+for the protected-only case and none of the eighteen is one: they are all
+judgements about evidence-page guards, and an evidence-page guard is judged
+against the candidate the phase closes on, not against `develop`. The class is
+exercised anyway — `scripts/ci/check-p1-27-lifecycle.mjs` drives it through its
+self-check on every invocation, so a rule that stopped distinguishing it from a
+defect fails the gate rather than passing quietly for want of a real row.
+
+**The seventeen were NOT re-adjudicated into `FIXED`, and that is deliberate.**
+Real remediation has landed for many of them — `079dc56`, `d4cfdba`, `854a7a9`,
+`0e5692b`, `2467db5` — and several, `QA005-07` and `QA005-12` among them, look
+structural enough to be closable by reading the source. They stay `SEALED`
+because closing one on a reading rather than on the candidate measurement is the
+precise defect `QA-005` exists to report, and because this branch changes
+executable files, so the candidate is not frozen while it is being written. The
+sequence that closes them is now written down and executable: **freeze the code
+candidate → take the exact-head hosted and authenticated-browser runs → seal
+`QA-005` → close the seventeen → merge.** That is a sequence. The condition it
+replaces was a cycle.
+
+#### What the cycle was, and why it is gone
+
+The phase carried, in effect: _the branch may not merge until every task row is
+`PASS`; a row may not be `PASS` while its reproof is `OUTSTANDING`; and the
+reproof is a job only the merge starts._ Each clause is defensible and the
+conjunction cannot be satisfied in any order.
+
+It is broken at the one clause that was never true. `canonical-plan.md` states
+`P1-27-QA-005` in full as **"Regression and immutable evidence packaging"** and
+nothing more; the plan mentions protected change control exactly twice and both
+mentions route a **Backend** defect through protected remediation. **No canonical
+task requires proof on protected `develop`.** So `QA-005` is candidate assurance
+and may `PASS` before the merge once the exact-head evidence is complete, and a
+protected re-run is a property of the GATE LIFECYCLE rather than a requirement of
+any task. `scripts/ci/check-p1-27-lifecycle.mjs` holds the three states —
+`PRE_MERGE_CANDIDATE`, `POST_MERGE_PROTECTED_REPROOF`, `OWNER_ACCEPTANCE` — and
+refuses each transition the ledger cannot support.
+
+**`PENDING_PROTECTED_MERGE` is a legitimate expected pre-merge value.** It is not
+`PASS`, not `FAIL`, and not a defect, and a row carrying it does not block the
+merge. The phase is still **not closed** at `PRE_MERGE_CANDIDATE`; the state word
+says so rather than leaving it to a reader, which is how this phase was closed
+once already on an inference.
 
 ### Re-derivation at `26eab7e`, and the five rows that were stale the day they were published
 
@@ -602,12 +708,31 @@ members — a state rather than an omission, because `checkRoundFive` fails any
 manufactured by forgetting to classify a row.
 
 **What did NOT move, said plainly so it is not inferred away by two closures.**
-The protected reproof is unchanged at <!-- derived: matrix OUTSTANDING = 23 --> **23** rows
-OUTSTANDING — derived from `task-matrix.json` rather than typed here, because a
-figure this register states about the matrix is exactly the kind that ages: no run has been
-observed against the closing candidate, and all three executions predate this
-wave. `QA-005` is `PARTIAL` and stays `PARTIAL`. Closing `H-24` settled what the
-record SAYS about three past runs; it measured nothing about this head.
+The reproof debt is unchanged in SIZE at
+<!-- derived: matrix PENDING_CANDIDATE_OBSERVATION = 23 --> **23** rows — derived
+
+from `task-matrix.json` rather than typed here, because a figure this register
+states about the matrix is exactly the kind that ages: no run has been observed
+against the closing candidate, and all three executions predate this wave.
+`QA-005` is `PARTIAL` and stays `PARTIAL`. Closing `H-24` settled what the record
+SAYS about three past runs; it measured nothing about this head.
+
+**What DID move is the label on those 23, and only the label.** They were filed
+under `OUTSTANDING`, a word this record also used for a job only a protected push
+starts. Twenty-two of them are the authenticated browser tier, and that tier is
+called by `pr-ci.yml:251-264` on every pull request whose head is a branch of
+this repository — so what they wait on is an exact-head CANDIDATE run, available
+before the merge. The twenty-third is the web coverage baseline's provenance,
+which the first hosted run replaces, and a pull-request run is a hosted run. All
+23 now read `PENDING_CANDIDATE_OBSERVATION`, and
+<!-- derived: matrix PENDING_PROTECTED_MERGE = 0 --> **0** rows carry
+
+`PENDING_PROTECTED_MERGE`. **Nothing is discharged by the relabelling.** The
+observation is still unpaid, it still blocks the candidate merge through the
+lifecycle's `CANDIDATE_AUTHENTICATED_BROWSER` condition, and the phase is no
+closer to closing than it was. What changed is that the debt is no longer
+recorded under a word implying it can only be paid after the merge it is
+blocking.
 
 ---
 

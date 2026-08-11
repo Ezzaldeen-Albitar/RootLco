@@ -57,6 +57,54 @@ export const CATEGORIES = Object.freeze({
 export const VERDICTS_ALLOWED = Object.freeze(['PASS', 'PARTIAL', 'FAIL']);
 
 /**
+ * The reproof vocabulary, and the prose marker each cell must open with.
+ *
+ * `PROTECTED_REPROOF` is a paragraph, because the reason matters and a token
+ * cannot carry one. A paragraph is also unreadable by a gate, which is how 23
+ * rows came to sit under one word — `OUTSTANDING` — that said nothing about
+ * WHICH kind of re-run was owed. Two entirely different obligations were filed
+ * under it:
+ *
+ *   the authenticated browser tier had not been observed at the closing
+ *   candidate. That tier is called by `pr-ci.yml` on every pull request whose
+ *   head is a branch of this repository, so what it waits on is an EXACT-HEAD
+ *   CANDIDATE run — available before the merge;
+ *
+ *   a job only a push to a protected branch starts. That one genuinely waits
+ *   for the merge.
+ *
+ * Filing the first under a word that reads as the second is what built the
+ * deadlock. So the token is derived from the marker the cell opens with, the
+ * markers are enumerated, and an unrecognised opening is a HARD ERROR rather
+ * than an unknown value — a blank or unmatched cell is exactly how a lifecycle
+ * obligation stops being counted.
+ */
+export const REPROOF_MARKERS = Object.freeze([
+  ['NOT REQUIRED', 'NOT_REQUIRED'],
+  ['PENDING CANDIDATE OBSERVATION', 'PENDING_CANDIDATE_OBSERVATION'],
+  ['PENDING PROTECTED MERGE', 'PENDING_PROTECTED_MERGE'],
+  ['TAKEN GREEN', 'TAKEN_GREEN'],
+  ['TAKEN RED', 'TAKEN_RED'],
+]);
+
+export const REPROOF_STATUSES = Object.freeze(REPROOF_MARKERS.map(([, token]) => token));
+
+/** The token a `PROTECTED_REPROOF` cell declares. Throws rather than guessing. */
+export function reproofStatus(taskId, prose) {
+  const text = String(prose ?? '').trimStart();
+  for (const [marker, token] of REPROOF_MARKERS) {
+    if (text.startsWith(marker)) return token;
+  }
+  throw new Error(
+    `${taskId}: its PROTECTED_REPROOF cell opens with none of ` +
+      `${REPROOF_MARKERS.map(([m]) => `"${m}"`).join(', ')}. ` +
+      'The reproof kind must be declared in the first words of the cell, because a ' +
+      'paragraph nothing can read is how 23 rows spent a phase under one word that ' +
+      'meant two different things.'
+  );
+}
+
+/**
  * Every evidence field a task must account for. A field may be `N/A` only with a
  * rationale — never blank, because a blank reads as "nobody looked" and as
  * "nothing to look at" at the same time.
@@ -71,10 +119,33 @@ export const VERDICTS_ALLOWED = Object.freeze(['PASS', 'PARTIAL', 'FAIL']);
  * to distinguish "this does not work" from "this has not been re-run yet", and
  * the phase cannot close on either reading without knowing which it is.
  *
- * So the judgement splits. `FINAL_VERDICT` answers *is the canonical requirement
- * satisfied at this head*. `PROTECTED_REPROOF` answers *does anything on this row
- * still wait on a protected-push job*. A row may be `PASS` with an OUTSTANDING
- * reproof; the phase still may not close until every OUTSTANDING one is taken.
+ * So the judgement splits. `FINAL_VERDICT` is the TASK verdict and answers *is
+ * the canonical requirement satisfied at this candidate head*. `PROTECTED_REPROOF`
+ * — with its controlled token in `PROTECTED_REPROOF_STATUS` — answers *does
+ * anything on this row still wait on a re-run, and of which kind*.
+ *
+ * ## The sentence that used to be here, and why it was wrong
+ *
+ * It read: *"A row may be `PASS` with an OUTSTANDING reproof; the phase still may
+ * not close until every OUTSTANDING one is taken."* The first clause is right.
+ * The second conflated **candidate acceptance** with **post-merge reproof**, and
+ * that conflation is a closed cycle: the branch cannot merge until every row is
+ * PASS, a row cannot be PASS while its reproof is outstanding, and the reproof is
+ * a job only the merge starts.
+ *
+ * The authority for splitting them is the plan itself.
+ * `docs/phase-1/phase-1-27/canonical-plan.md:189` states `P1-27-QA-005` in full
+ * as **"Regression and immutable evidence packaging"** and binds it to nothing
+ * else. The plan mentions protected change control exactly twice, at lines 98 and
+ * 100, and both are about routing a **Backend** defect through protected
+ * remediation — not about proving a Frontend task on protected `develop`. **No
+ * canonical task requires proof on protected `develop`.**
+ *
+ * A protected re-run is therefore a property of the GATE LIFECYCLE, not a
+ * requirement of any task, and the two now live in different places:
+ * `scripts/ci/check-p1-27-lifecycle.mjs` owns the lifecycle, this file owns the
+ * tasks, and `PENDING_PROTECTED_MERGE` is a legitimate expected pre-merge value
+ * that is neither `PASS`, nor `FAIL`, nor a defect.
  */
 export const EVIDENCE_FIELDS = Object.freeze([
   'IMPLEMENTATION_SURFACES',
@@ -139,6 +210,12 @@ export function buildMatrix(root = ROOT) {
     const row = { ...task };
     for (const field of EVIDENCE_FIELDS) {
       row[field] = judged[field] ?? 'NOT YET ASSESSED';
+      // Derived, never judged: the token is a reading of the prose beside it, so
+      // the two cannot disagree. A second hand-written field would be a second
+      // authority for one fact, which is the shape this phase keeps punishing.
+      if (field === 'PROTECTED_REPROOF') {
+        row.PROTECTED_REPROOF_STATUS = reproofStatus(task.TASK_ID, row[field]);
+      }
     }
     row.FINAL_VERDICT = judged.FINAL_VERDICT ?? 'PARTIAL';
     row.VERDICT_RATIONALE =
@@ -166,15 +243,26 @@ export function buildMatrix(root = ROOT) {
       FAIL: rows.filter((r) => r.FINAL_VERDICT === 'FAIL').length,
     },
     /**
-     * The reproof debt, counted rather than described. A `PASS` row with an
-     * OUTSTANDING reproof is a complete feature and an unpaid re-run; summing
-     * them here means the phase cannot be read as closeable from `totals` alone.
+     * The reproof debt, counted per KIND rather than under one word.
+     *
+     * A `PASS` row with a pending reproof is a complete feature and an unpaid
+     * re-run, and the kind decides who pays it: a
+     * `PENDING_CANDIDATE_OBSERVATION` is discharged by the exact-head run before
+     * the merge, a `PENDING_PROTECTED_MERGE` only after it. Summing them
+     * separately means the phase cannot be read as closeable from `totals`
+     * alone, and cannot be read as DEADLOCKED either — which is the reading the
+     * single `OUTSTANDING` count produced.
+     *
+     * Every token is emitted even at zero. A key that appears only when it is
+     * non-zero cannot be cited by a document, and an absent count reads as
+     * "none" and as "nobody counted" at the same time.
      */
-    protectedReproof: {
-      OUTSTANDING: rows.filter((r) => String(r.PROTECTED_REPROOF).startsWith('OUTSTANDING')).length,
-      NOT_REQUIRED: rows.filter((r) => String(r.PROTECTED_REPROOF).startsWith('NOT REQUIRED'))
-        .length,
-    },
+    protectedReproof: Object.fromEntries(
+      REPROOF_STATUSES.map((token) => [
+        token,
+        rows.filter((r) => r.PROTECTED_REPROOF_STATUS === token).length,
+      ])
+    ),
     tasks: rows,
   };
 }

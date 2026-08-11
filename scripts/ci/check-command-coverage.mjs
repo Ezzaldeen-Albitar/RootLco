@@ -196,6 +196,18 @@ export const REGISTER = Object.freeze([
     why: 'every count a P1-27 document states about the repository is derivable',
   },
   {
+    name: 'validate:p1-27-lifecycle',
+    owner: ROOT,
+    tier: 'required',
+    // The closure lifecycle as a state machine. The phase carried a rule that
+    // could not be satisfied in any order — no merge until every row is PASS, no
+    // PASS while a reproof is outstanding, no reproof without the merge — and
+    // this refuses any declared state the tree does not support, in either
+    // direction: a blocker the ledger does not declare, and a declared blocker
+    // the tree no longer raises.
+    why: 'the declared P1-27 lifecycle state is the one the tree actually holds',
+  },
+  {
     name: 'matrix:p1-27',
     owner: ROOT,
     tier: 'informational',
