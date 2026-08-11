@@ -423,6 +423,154 @@ describe('P1-27-QA-001 — every adapter is reached, and this file proves it', (
   });
 });
 
+/**
+ * Every feature source, comment-stripped, paired with its repository path.
+ *
+ * Comments are removed for the reason the component sweep above removes them,
+ * and it is the same reason for the sixth time in this repository: the docblocks
+ * in these files QUOTE the construct the rule forbids, in order to explain why
+ * it is forbidden. A raw-text scan reads that prose as code and reports the very
+ * files the fix corrected.
+ */
+function featureSources(): readonly { readonly path: string; readonly source: string }[] {
+  const root = join(process.cwd(), 'src', 'features');
+  const out: { path: string; source: string }[] = [];
+  const walk = (dir: string) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        walk(full);
+        continue;
+      }
+      if (!/\.tsx?$/.test(entry.name)) continue;
+      out.push({
+        path: full.slice(process.cwd().length + 1).replace(/\\/g, '/'),
+        source: stripComments(readFileSync(full, 'utf8')),
+      });
+    }
+  };
+  walk(root);
+  return out;
+}
+
+/**
+ * The platform date and time formatters, with whatever they were handed as a
+ * locale. `new` is optional on `Intl.DateTimeFormat`, and the `toLocale*`
+ * methods take the locale in the same first position, so one pattern covers all
+ * five spellings.
+ */
+const LOCALE_FORMATTERS =
+  /(?:(?:new\s+)?Intl\.DateTimeFormat|\.toLocale(?:Date|Time)?String)\s*\(\s*([^,)]*)/g;
+
+/** The only locale expression that is a real BCP-47 tag in this application. */
+function goesThroughIntlLocale(argument: string): boolean {
+  return argument.trim().startsWith('intlLocale(');
+}
+
+function bareLocaleFormatters(source: string): readonly string[] {
+  const found: string[] = [];
+  for (const match of source.matchAll(LOCALE_FORMATTERS)) {
+    if (!goesThroughIntlLocale(match[1] ?? '')) found.push(match[0].trim());
+  }
+  return found;
+}
+
+/**
+ * A `Locale` is not a locale tag (`P1-27-FE-030`).
+ *
+ * ## The defect
+ *
+ * `Locale` is `'en' | 'ar'` — the two segments this application puts in a URL.
+ * They are not the tags it FORMATS in: `intlLocale` maps `en` to `en-GB` and
+ * `ar` to `ar-JO-u-nu-latn`, the second because Jordanian workshop paperwork is
+ * written in Latin digits. Both are deliberate and both are documented in
+ * `src/lib/format.ts`. Seven call sites across five components passed the bare
+ * union member straight to `Intl.DateTimeFormat`, so they silently asked for
+ * whatever CLDR considers plain `en`, which is US convention. Measured on this
+ * tree for `2026-03-04T09:14:00Z` in Asia/Amman:
+ *
+ *     'en'    -> Mar 4, 2026, 12:14 PM   <- what those seven sites printed
+ *     'en-GB' ->   4 Mar 2026, 12:14     <- what the rest of the product prints
+ *
+ * So an English operator read month-day order and a 12-hour clock in the CRM
+ * timeline and the vehicle history, and day-month order and a 24-hour clock in
+ * the audit log and the users list. Two conventions, one screen apart, for the
+ * same instant.
+ *
+ * The Arabic half does NOT reproduce: bare `'ar'` already resolves to Latin
+ * digits, so `ar` and `ar-JO-u-nu-latn` agree here. That is luck, not design —
+ * it is exactly the kind of agreement a CLDR update withdraws — and the rule
+ * below is written against the construct rather than against the one output it
+ * happened to change.
+ *
+ * ## Why a source rule and not seven rendered assertions
+ *
+ * A rendered assertion proves the seven sites that exist. The eighth is written
+ * next week by copying the sixth, and the divergence returns in a component no
+ * test has been taught to look at. The construct is what is wrong, so the
+ * construct is what is banned; `intlLocale(locale)` stays allowed so a genuinely
+ * different set of options is still expressible without leaving the product's
+ * locale mapping behind.
+ */
+describe('P1-27-FE-030 — no feature file hands a bare Locale to a formatter', () => {
+  it('scanned a real corpus, so the sweep below is not vacuous', () => {
+    const files = featureSources();
+    expect(files.length, 'the feature walk found nothing — the scan is broken').toBeGreaterThan(30);
+    expect(
+      files.filter((f) => f.path.endsWith('.tsx')).length,
+      'no component files were scanned'
+    ).toBeGreaterThan(10);
+    // The corpus really contains the text this rule is about. Without this, a
+    // walk that silently returned empty strings would pass the sweep.
+    expect(
+      files.some((f) => f.source.includes('formatDateTime(')),
+      'no feature file formats a date at all — the corpus is not the one under test'
+    ).toBe(true);
+  });
+
+  it('fires on the construct it forbids, and spares the one it allows', () => {
+    // The positive control. If this stopped detecting, the sweep would report
+    // green over any amount of the defect.
+    expect(
+      bareLocaleFormatters("new Intl.DateTimeFormat(locale, { dateStyle: 'medium' })")
+    ).toHaveLength(1);
+    expect(bareLocaleFormatters('Intl.DateTimeFormat(locale).format(d)')).toHaveLength(1);
+    expect(bareLocaleFormatters('d.toLocaleDateString(locale)')).toHaveLength(1);
+    expect(bareLocaleFormatters('d.toLocaleTimeString(locale)')).toHaveLength(1);
+    expect(bareLocaleFormatters('d.toLocaleString(locale)')).toHaveLength(1);
+    // No locale at all is the same defect wearing a different hat: it formats
+    // in whatever the host default happens to be.
+    expect(bareLocaleFormatters('d.toLocaleString()')).toHaveLength(1);
+    // The permitted form.
+    expect(
+      bareLocaleFormatters("new Intl.DateTimeFormat(intlLocale(locale), { dateStyle: 'medium' })")
+    ).toEqual([]);
+  });
+
+  it('cannot be satisfied — or triggered — by prose', () => {
+    // Both directions matter. The docblocks in `format.ts` and in the corrected
+    // components quote `Intl.DateTimeFormat(locale, ...)` to explain the ban, so
+    // a scanner that reads comments reports the fixed files as broken.
+    const sample = [
+      '/** Never write new Intl.DateTimeFormat(locale, {}) — use the helper. */',
+      '// d.toLocaleDateString(locale) is wrong for the same reason',
+      "const keep = 'https://example.test/x';",
+    ].join('\n');
+    expect(bareLocaleFormatters(stripComments(sample))).toEqual([]);
+    expect(stripComments(sample)).toContain("'https://example.test/x'");
+  });
+
+  it('finds no bare-Locale formatter anywhere under src/features', () => {
+    const offenders = featureSources()
+      .map((file) => ({ file, hits: bareLocaleFormatters(file.source) }))
+      .filter((entry) => entry.hits.length > 0);
+    expect(
+      offenders.map((entry) => `${entry.file.path}: ${entry.hits.join(' | ')}`),
+      'these format an instant outside the product locale mapping'
+    ).toEqual([]);
+  });
+});
+
 describe('P1-27-QA-002 — every adapter through every failure kind', () => {
   const KINDS = Object.keys(STATUS_BY_KIND);
 

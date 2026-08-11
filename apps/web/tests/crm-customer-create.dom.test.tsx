@@ -241,7 +241,21 @@ describe('failure', () => {
     await user.click(screen.getByRole('button', { name: en['form.submit'] }));
 
     const field = await screen.findByLabelText(/Given name/);
-    expect(field).toHaveAttribute('aria-invalid', 'true');
+    /*
+     * The wait has to be on the ATTRIBUTE, not on the field.
+     *
+     * `findByLabelText` is satisfied the moment the input exists, and the input
+     * exists before the submit is ever made — so it waited for nothing and this
+     * assertion raced the action's state update. `aria-invalid` is rendered as
+     * `invalid || undefined`, so losing that race reads the attribute as `null`
+     * and fails on a screen that is about to be correct.
+     *
+     * Latent since the case was written: it needs the machine to be slow enough,
+     * which under a full parallel DOM run it intermittently is. Found when
+     * `FE-030` changed formatting timings just enough to lose the race about
+     * half the time. Nothing about what is asserted changes.
+     */
+    await waitFor(() => expect(field).toHaveAttribute('aria-invalid', 'true'));
     // Described, not merely coloured. A colour is not an announcement.
     expect(field.getAttribute('aria-describedby')).toBeTruthy();
   });

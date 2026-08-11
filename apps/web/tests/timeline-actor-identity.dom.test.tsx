@@ -6,6 +6,7 @@ import ar from '../src/i18n/messages/ar.json';
 import { renderLtr, renderRtl } from './render';
 import { permittedWrites, WRITE_PERMISSIONS } from '@/features/crm/customers/governance-contract';
 import type { CustomerDetail } from '@/features/crm/customers/profile-contract';
+import { formatDateTime, intlLocale } from '@/lib/format';
 
 /**
  * The customer timeline names a person, or says it cannot (`P1-27-FE-015`).
@@ -232,6 +233,63 @@ describe('this file is not vacuous', () => {
     await screen.findByText('Rami Haddad');
     expect(container.querySelectorAll('tbody tr').length).toBeGreaterThan(0);
     expect(listTimeline).toHaveBeenCalled();
+  });
+
+  it('asserted a RENDERED instant, which no test in this workspace previously did', async () => {
+    // Before `FE-030` the string `Intl.DateTimeFormat` did not appear anywhere
+    // under `apps/web/tests`, and no case asserted a formatted date at all. Seven
+    // sites could therefore print in any convention they liked. This renders the
+    // real cell through the real screen and reads the text off the DOM.
+    const occurredAt = '2026-03-04T09:14:00.000Z';
+    listTimeline.mockResolvedValue({
+      ...okPage,
+      rows: [row({ occurredAt, actorId: ACTOR_UUID, actorName: 'Rami Haddad' })],
+    });
+    const { container } = await openTimeline();
+    await screen.findByText('Rami Haddad');
+
+    const cell = container.querySelector(`time[datetime="${occurredAt}"]`);
+    expect(cell, 'the timeline printed no machine-readable instant').not.toBeNull();
+    const rendered = cell?.textContent ?? '';
+
+    // What the product formats in.
+    expect(rendered).toBe(formatDateTime(occurredAt, 'en'));
+
+    // What it must NOT format in. `en` and `en-GB` differ in field order AND in
+    // clock, so this holds in every timezone the suite might run in — which
+    // matters, because nothing pins `TZ` for this project.
+    const bare = new Intl.DateTimeFormat('en', {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    }).format(new Date(occurredAt));
+    expect(intlLocale('en')).toBe('en-GB');
+    expect(bare, 'the defect and the fix cannot be told apart — this test proves nothing').not.toBe(
+      formatDateTime(occurredAt, 'en')
+    );
+    expect(rendered, 'the timeline printed US convention').not.toBe(bare);
+
+    // Stated structurally as well as by comparison, so the case still describes
+    // the requirement if the helper itself is ever changed: day before month,
+    // 24-hour clock, no meridiem.
+    expect(rendered).toMatch(/^\d{1,2} [A-Za-z]{3,} \d{4}, \d{2}:\d{2}$/);
+    expect(rendered).not.toMatch(/\b[AP]M\b/);
+  });
+
+  it('renders the Arabic timeline through the same mapping', async () => {
+    // The Arabic half of this defect does NOT reproduce — bare `'ar'` already
+    // resolves to Latin digits, so it printed correctly by luck. Asserted anyway,
+    // because the luck is a CLDR datum and not a decision: if a future ICU makes
+    // plain `ar` use Eastern Arabic numerals, this fails here rather than on a
+    // Jordanian invoice.
+    const occurredAt = '2026-03-04T09:14:00.000Z';
+    listTimeline.mockResolvedValue({ ...okPage, rows: [row({ occurredAt })] });
+    const { container } = await openTimeline('ar');
+    const rendered = container.querySelector(`time[datetime="${occurredAt}"]`)?.textContent ?? '';
+    expect(rendered).toBe(formatDateTime(occurredAt, 'ar'));
+    expect(intlLocale('ar')).toBe('ar-JO-u-nu-latn');
+    // Latin digits, not ٠١٢٣.
+    expect(rendered).toMatch(/\d/);
+    expect(rendered).not.toMatch(/[٠-٩]/);
   });
 
   it('asserts against a phrase that exists in both catalogues and differs between them', () => {

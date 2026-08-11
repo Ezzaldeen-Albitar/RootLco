@@ -8,6 +8,7 @@ import { useServerTable } from '@/components/data-table/use-server-table';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { Locale } from '@/i18n/config';
+import { formatDateTime } from '@/lib/format';
 import {
   listAddresses,
   listAlerts,
@@ -1728,6 +1729,13 @@ function TimelineSection({
  * cursor carries microseconds and a millisecond value silently skips rows. That
  * is `P1-27-INT-006`, and it is why nothing here ever feeds a formatted instant
  * back into a request.
+ *
+ * Formatted through `formatDateTime`, never through `Intl` directly. A `Locale`
+ * is `'en' | 'ar'`, and those are not the tags this product formats in:
+ * `intlLocale` maps `en` to `en-GB` and `ar` to `ar-JO-u-nu-latn`. Passing the
+ * bare `'en'` to `Intl` asks for US convention, so this cell printed
+ * "Mar 4, 2026, 12:14 PM" while the audit log two screens away printed
+ * "4 Mar 2026, 12:14" for the same instant.
  */
 function FormattedInstant({ locale, value }: { readonly locale: Locale; readonly value: string }) {
   const parsed = new Date(value);
@@ -1737,7 +1745,7 @@ function FormattedInstant({ locale, value }: { readonly locale: Locale; readonly
   }
   return (
     <time dateTime={value} dir="ltr">
-      {new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' }).format(parsed)}
+      {formatDateTime(parsed, locale)}
     </time>
   );
 }

@@ -467,6 +467,7 @@
   "form.submit": "حفظ",
   "form.unsavedBody": "يحتوي هذا النموذج على تغييرات لم تُحفظ.",
   "form.unsavedTitle": "تجاهل التغييرات؟",
+  "form.violation.below_current_odometer": "هذه القراءة أقل من القراءة المسجّلة لهذه المركبة. وعدّاد المسافة لا يعدّ إلا إلى الأعلى، لذا لا تُحفظ القراءة الأقل.",
   "form.violation.branch_company_mismatch": "هذا الفرع لا يتبع الشركة المختارة.",
   "form.violation.custom": "هذه القيمة غير مقبولة هنا.",
   "form.violation.empty_patch": "لم يتغيّر شيء، فلا يوجد ما يُحفظ.",

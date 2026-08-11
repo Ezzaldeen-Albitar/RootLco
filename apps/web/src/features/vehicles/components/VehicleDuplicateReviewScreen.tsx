@@ -11,6 +11,7 @@ import { vehicleMatchReasons } from '@/lib/duplicates/explanations';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { Locale } from '@/i18n/config';
+import { formatDate, formatDateTime } from '@/lib/format';
 import { listVehicleDuplicates, reviewVehicleDuplicateAction } from '../duplicates-api';
 import {
   MAX_REVIEW_REASON,
@@ -181,9 +182,7 @@ export function VehicleDuplicateReviewScreen({ locale, messages }: Props) {
         headerKey: 'crm.duplicates.detectedAt',
         cell: (row) => (
           <time dateTime={row.detectedAt} dir="ltr">
-            {new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' }).format(
-              new Date(row.detectedAt)
-            )}
+            {formatDateTime(row.detectedAt, locale)}
           </time>
         ),
       },
@@ -203,9 +202,7 @@ export function VehicleDuplicateReviewScreen({ locale, messages }: Props) {
             <span className="text-caption text-text-muted">
               {row.reviewedAt ? (
                 <time dateTime={row.reviewedAt} dir="ltr">
-                  {new Intl.DateTimeFormat(locale, { dateStyle: 'medium' }).format(
-                    new Date(row.reviewedAt)
-                  )}
+                  {formatDate(row.reviewedAt, locale)}
                 </time>
               ) : (
                 '—'
