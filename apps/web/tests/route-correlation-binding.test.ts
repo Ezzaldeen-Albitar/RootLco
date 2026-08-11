@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import ts from 'typescript';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
@@ -319,11 +319,19 @@ function denialSitesIn(fileName: string, text: string): readonly DenialSite[] {
 function routeSources(): readonly { readonly file: string; readonly text: string }[] {
   const root = join(process.cwd(), 'src', 'app');
   const out: { file: string; text: string }[] = [];
+  /*
+   * `withFileTypes`, so the directory decision comes from the entry the
+   * directory read already returned rather than from a second `statSync` on the
+   * path. The two-call shape is a check-then-use window — CodeQL reported it
+   * HIGH as `js/file-system-race` against a ceiling of 0 — and the window is
+   * real even here: a path can stop being a directory between the stat and the
+   * read. Every sibling sweep in this repository already reads entries this way.
+   */
   const walk = (dir: string) => {
-    for (const entry of readdirSync(dir)) {
-      const path = join(dir, entry);
-      if (statSync(path).isDirectory()) walk(path);
-      else if (entry === 'page.tsx') {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const path = join(dir, entry.name);
+      if (entry.isDirectory()) walk(path);
+      else if (entry.name === 'page.tsx') {
         out.push({
           file: path.replace(/\\/g, '/').split('/src/app/')[1] as string,
           text: readFileSync(path, 'utf8'),
@@ -669,10 +677,13 @@ describe('the scoped surface stays the surface', () => {
     const routes = join(process.cwd(), 'src', 'app');
     const pages: string[] = [];
     const walk = (dir: string) => {
-      for (const entry of readdirSync(dir)) {
-        const path = join(dir, entry);
-        if (statSync(path).isDirectory()) walk(path);
-        else if (entry === 'page.tsx') pages.push(path);
+      // Entry-typed, for the same reason as `routeSources` above: a stat after
+      // a readdir is a check-then-use window CodeQL reports as
+      // `js/file-system-race`.
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const path = join(dir, entry.name);
+        if (entry.isDirectory()) walk(path);
+        else if (entry.name === 'page.tsx') pages.push(path);
       }
     };
     walk(routes);
@@ -770,10 +781,10 @@ describe('an ended session reads as an ended session, not as a server fault', ()
      */
     const pages: string[] = [];
     const walk = (dir: string) => {
-      for (const entry of readdirSync(dir)) {
-        const path = join(dir, entry);
-        if (statSync(path).isDirectory()) walk(path);
-        else if (entry === 'page.tsx') pages.push(path);
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const path = join(dir, entry.name);
+        if (entry.isDirectory()) walk(path);
+        else if (entry.name === 'page.tsx') pages.push(path);
       }
     };
     walk(join(process.cwd(), 'src', 'app'));
