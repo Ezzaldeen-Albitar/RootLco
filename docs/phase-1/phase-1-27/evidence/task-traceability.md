@@ -195,7 +195,7 @@ figures below are checked against the files on disk. They read **18** and **24**
 here until this pass, having been written before the write-adapter sweep, the
 isolation positive controls and the audit-class cases were added to the first.
 
-<!-- derived: cases p1-27-qa.test.ts = 33 -->
+<!-- derived: cases p1-27-qa.test.ts = 39 -->
 <!-- derived: cases vehicle-screens.dom.test.tsx = 40 -->
 
 | Task                                                 | Operations                                                                                   | Output                                                                                   | Proof                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
@@ -360,9 +360,9 @@ record.
 | `crm.address-add`                | `FE-008`      | `profile-actions.ts:130`    |
 | `crm.customer-status-set`        | CRM profile   | `governance-actions.ts:210` |
 | `crm.vehicle-link`               | `FE-025`      | `relations-api.ts:226`      |
-| `veh.vehicle-ownership-transfer` | `FE-021`      | `history-api.ts:212`        |
-| `veh.vehicle-plate-assign`       | `FE-022`      | `history-api.ts:155`        |
-| `veh.vehicle-odometer-record`    | `FE-023`      | `history-api.ts:303`        |
+| `veh.vehicle-ownership-transfer` | `FE-021`      | `history-api.ts:213`        |
+| `veh.vehicle-plate-assign`       | `FE-022`      | `history-api.ts:156`        |
+| `veh.vehicle-odometer-record`    | `FE-023`      | `history-api.ts:379`        |
 
 The earlier version of this section said "the other **seven** are simply not
 built". That was true when it was written and false by the time it was read,

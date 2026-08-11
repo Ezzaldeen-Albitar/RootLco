@@ -55,10 +55,16 @@ export const ODOMETER_CAPTURE_METHODS = ['reception', 'delivery', 'manual'] as c
  * `'unknown'`, and the route accepts it. It is deliberately not offered here:
  * "unknown" is what a reason is when nobody recorded one, not something an
  * operator with the vehicle in front of them should be invited to choose, and
- * `data_entry_correction` covers the honest "I typed it wrong" case. Offering
- * only four is a narrower OFFER, not a narrower rule — nothing here refuses a
- * value the server would have taken, and the read side renders `'unknown'` in
- * words when a reading arrives carrying it.
+ * `data_entry_correction` covers the honest "I typed it wrong" case.
+ *
+ * Being exact about the consequence, because the first version of this docblock
+ * was not: this list is BOTH the offer and the rule. `history-api.ts:290` builds
+ * `z.enum(ODOMETER_ANOMALY_REASONS)` from it, so the adapter refuses
+ * `'unknown'` — a value the route would accept. That is the one place this
+ * client is deliberately stricter than the server, and it is reachable only by
+ * calling the adapter directly, since the form offers no such choice. It is a
+ * narrower vocabulary for WRITING; the read side still renders `'unknown'` in
+ * words when a reading arrives carrying it, so nothing displayed is lost.
  */
 export const ODOMETER_ANOMALY_REASONS = [
   'lower_than_prior',
