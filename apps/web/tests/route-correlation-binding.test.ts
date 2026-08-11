@@ -6,6 +6,7 @@ import type { ReactElement } from 'react';
 import {
   BackendUnavailableState,
   ErrorState,
+  PermissionDeniedState,
   SessionExpiredState,
 } from '@/components/states/States';
 
@@ -43,15 +44,20 @@ import {
  * Outside the requirement is not the same as forbidden, and the line falls
  * between two different denials rather than around the component. A denial
  * decided IN THE CLIENT — the permission gate every route runs before its first
- * read — has no reference because no request was made, and that is what the
- * last case here asserts. A denial the BACKEND issued does have one: a request
- * was made, the API answered 403 and logged it. `DataTable.tsx:134` carries it
- * on every list in the product and the CRM profile carries it on its own 403,
- * so the vehicle profile dropping it made one 403 traceable through a list and
- * untraceable through a profile. This file does not require that value, because
- * requiring it would also require it of the client-side gate where none exists;
- * it states the distinction so the next reader does not "fix" the twins apart
- * again.
+ * read — has no reference because no request was made. A denial the BACKEND
+ * issued does have one: a request was made, the API answered 403 and logged it.
+ * `DataTable.tsx:134` carries it on every list in the product, and both profile
+ * routes carry it on their own 403, so a route dropping it would make one 403
+ * traceable through a list and untraceable through a profile.
+ *
+ * That distinction USED to be stated here and asserted in one direction only —
+ * the client gate was required to carry nothing, and the backend branch was
+ * required to carry anything at all by nothing whatsoever. Removing
+ * `correlationId` from the vehicle profile's 403 left the entire web tier green.
+ * The paragraph was true and it was not a test, which is this phase's dominant
+ * defect class written about itself. Both directions are now measured, per
+ * BRANCH rather than per component, in "a denial the backend issued is
+ * traceable" below.
  *
  * Six of the eight P1-27 routes render only `PermissionDeniedState` — they do no
  * failable server-side read, deferring their reads to a client table — so the
@@ -166,6 +172,166 @@ function jsxTagsIn(file: string): ReadonlySet<string> {
   return tags;
 }
 
+/**
+ * Which denial a `<PermissionDeniedState>` belongs to, and whether it carries
+ * the reference.
+ *
+ * `client-gate` is decided in this process before any request is made;
+ * `backend` is a 403 the API issued and logged. `unclassified` is neither, and
+ * it FAILS rather than being skipped — a third shape of denial arriving with no
+ * rule attached is the case a "check the ones we recognise" sweep would wave
+ * through.
+ */
+type DenialKind = 'backend' | 'client-gate' | 'unclassified';
+
+interface DenialSite {
+  readonly file: string;
+  readonly line: number;
+  readonly kind: DenialKind;
+  readonly carriesReference: boolean;
+}
+
+/**
+ * Every `<PermissionDeniedState>` in a source, classified by the branch that
+ * DECIDED it.
+ *
+ * Classification is structural, over the AST of the nearest enclosing `if`
+ * condition — a `===` against a `.status` property with the literal `'denied'`
+ * is a backend outcome; a call to `holds` is the client-side gate. Not text: a
+ * condition's `getText()` would drag in any comment written inside it, and this
+ * repository has watched a scanner read prose as code six times. The parser also
+ * cannot see the `<PermissionDeniedState correlationId={…} />` this very file
+ * quotes in its docblocks, because a comment is not JSX.
+ *
+ * Both tests resolve local ALIASES, for the reason the `h1` route guard resolves
+ * `const header = (<PageHeader …/>)`: system settings hoists its two gates
+ * (`const canReadCompany = holds(…)`) and branches on
+ * `!canReadCompany && !canReadBranch`, so a test that only recognised a literal
+ * call would have filed the most permission-dense page in the product as
+ * "unclassified" — and whoever met that would have relaxed the rule rather than
+ * taught it to read.
+ */
+function denialSitesIn(fileName: string, text: string): readonly DenialSite[] {
+  const source = ts.createSourceFile(
+    fileName,
+    text,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TSX
+  );
+  const sites: DenialSite[] = [];
+
+  /** `result.status === 'denied'` — a request was made and the API refused it. */
+  const readsDeniedStatus = (node: ts.Node): boolean => {
+    if (
+      ts.isBinaryExpression(node) &&
+      node.operatorToken.kind === ts.SyntaxKind.EqualsEqualsEqualsToken
+    ) {
+      const sides = [node.left, node.right];
+      const properties = sides.filter(ts.isPropertyAccessExpression).map((side) => side.name.text);
+      const literals = sides.filter(ts.isStringLiteralLike).map((side) => side.text);
+      if (properties.includes('status') && literals.includes('denied')) return true;
+    }
+    return ts.forEachChild(node, readsDeniedStatus) ?? false;
+  };
+
+  /** `holds(session.permissions, …)` — refused here, before anything was asked. */
+  const callsHolds = (node: ts.Node): boolean => {
+    if (
+      ts.isCallExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      node.expression.text === 'holds'
+    ) {
+      return true;
+    }
+    return ts.forEachChild(node, callsHolds) ?? false;
+  };
+
+  /** Local names bound to either test, so a hoisted gate still reads as one. */
+  const aliasesFor = (test: (node: ts.Node) => boolean): ReadonlySet<string> => {
+    const names = new Set<string>();
+    const collect = (node: ts.Node) => {
+      if (
+        ts.isVariableDeclaration(node) &&
+        ts.isIdentifier(node.name) &&
+        node.initializer &&
+        test(node.initializer)
+      ) {
+        names.add(node.name.text);
+      }
+      ts.forEachChild(node, collect);
+    };
+    collect(source);
+    return names;
+  };
+
+  const gateAliases = aliasesFor(callsHolds);
+  const statusAliases = aliasesFor(readsDeniedStatus);
+
+  const mentions = (node: ts.Node, names: ReadonlySet<string>): boolean => {
+    if (ts.isIdentifier(node) && names.has(node.text)) return true;
+    return ts.forEachChild(node, (child) => mentions(child, names)) ?? false;
+  };
+
+  const visit = (node: ts.Node) => {
+    if (
+      (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) &&
+      node.tagName.getText(source) === 'PermissionDeniedState'
+    ) {
+      const carriesReference = node.attributes.properties.some(
+        (property) =>
+          ts.isJsxAttribute(property) && property.name.getText(source) === 'correlationId'
+      );
+      let ancestor: ts.Node | undefined = node.parent;
+      let condition: ts.Expression | undefined;
+      while (ancestor) {
+        if (ts.isIfStatement(ancestor)) {
+          condition = ancestor.expression;
+          break;
+        }
+        ancestor = ancestor.parent;
+      }
+      const backend = condition
+        ? readsDeniedStatus(condition) || mentions(condition, statusAliases)
+        : false;
+      const gate = condition ? callsHolds(condition) || mentions(condition, gateAliases) : false;
+      // Both or neither is `unclassified` on purpose: a branch that reads as
+      // each is not one this rule may guess about.
+      const kind: DenialKind =
+        backend === gate ? 'unclassified' : backend ? 'backend' : 'client-gate';
+      sites.push({
+        file: fileName,
+        line: source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1,
+        kind,
+        carriesReference,
+      });
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return sites;
+}
+
+/** Every `page.tsx` under `src/app`, repository-path and text. */
+function routeSources(): readonly { readonly file: string; readonly text: string }[] {
+  const root = join(process.cwd(), 'src', 'app');
+  const out: { file: string; text: string }[] = [];
+  const walk = (dir: string) => {
+    for (const entry of readdirSync(dir)) {
+      const path = join(dir, entry);
+      if (statSync(path).isDirectory()) walk(path);
+      else if (entry === 'page.tsx') {
+        out.push({
+          file: path.replace(/\\/g, '/').split('/src/app/')[1] as string,
+          text: readFileSync(path, 'utf8'),
+        });
+      }
+    }
+  };
+  walk(root);
+  return out;
+}
+
 beforeEach(() => {
   readCustomer.mockReset();
   readVehicle.mockReset();
@@ -242,6 +408,226 @@ describe('a denial is not a fault, and carries no reference', () => {
     expect(findCorrelation(tree)).toBeUndefined();
     // And the read never happened — the route refuses before it asks.
     expect(readCustomer, 'a denied caller still reached the backend').not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * A denial the BACKEND issued is traceable; a denial the CLIENT decided is not.
+ *
+ * ## The gap this closes
+ *
+ * `PermissionDeniedState` is outside the recoverable-failure requirement above,
+ * and that is correct — but "outside the requirement" was read as "measured by
+ * nothing". Both profile routes pass `correlationId={result.correlationId ??
+ * undefined}` on their 403 branch, and an adversarial pass deleted that prop
+ * from the vehicle profile and ran the ENTIRE web tier: every case passed. The
+ * one 403 an operator can reach through a profile had become the one 403 support
+ * cannot find in the log, and nothing in this repository objected.
+ *
+ * ## Why BOTH a real invocation and a source rule, when the brief allows either
+ *
+ * They fail for different reasons and neither subsumes the other.
+ *
+ * The INVOCATION is the discriminating half. It drives the real route
+ * composition — the same import, the same `readVehicle`, the same branch order —
+ * and asserts the exact reference the transport produced arrives at the screen.
+ * A source rule cannot do that: `correlationId={'x'}`, or a component that
+ * generates its own id, satisfies "the attribute is present" while an operator
+ * quotes a number support has never seen. Each route's reference is distinct and
+ * asserted exactly, so one hard-coded string cannot satisfy both.
+ *
+ * The SOURCE rule is the general half. Invocation proves the two routes that
+ * exist; it says nothing about the third, which is written next month by copying
+ * one of these two and inherits the defect with every case here still green —
+ * exactly how the duplicate-`h1` defect survived its own fix in this phase. So
+ * the corpus is `src/app/**` and every `<PermissionDeniedState>` in it is
+ * classified by the branch that decided it, structurally, from the AST.
+ *
+ * ## Why the rule is per BRANCH and not per component
+ *
+ * Twelve of the sixteen denial sites in this product are the client-side gate,
+ * where no request was made and no reference exists. A rule reading "this
+ * component always carries a reference" would demand one from all twelve, and
+ * the only way to satisfy it is to invent a token an operator would quote to
+ * support in vain. So the two denials are told apart by their deciding
+ * condition, and each gets the direction it deserves.
+ */
+describe('a denial the backend issued is traceable', () => {
+  it('vehicle profile — the 403 an adversarial pass silently untraced', async () => {
+    PERMISSIONS = [VEHICLE_PERMISSIONS.vehicleRead];
+    readVehicle.mockResolvedValue({ status: 'denied', correlationId: VEHICLE_REFERENCE });
+
+    const tree = await VehiclePage({
+      params: Promise.resolve({ locale: 'en', vehicleId: 'v-1' }),
+    } as never);
+
+    // The screen really is the denial, so the reference below is being read off
+    // the state the operator is looking at rather than off some other node.
+    expect(
+      rendersState(tree, PermissionDeniedState),
+      'the backend 403 did not render as a permission denial'
+    ).toBe(true);
+    expect(
+      findCorrelation(tree),
+      '[locale]/(dashboard)/vehicles/[vehicleId]/page.tsx: the backend 403 reached the operator ' +
+        'without the reference the API logged — support cannot find this refusal'
+    ).toBe(VEHICLE_REFERENCE);
+  });
+
+  it('CRM customer profile — the twin, with its own distinct reference', async () => {
+    PERMISSIONS = [CRM_PERMISSIONS.customerRead];
+    readCustomer.mockResolvedValue({ status: 'denied', correlationId: CRM_REFERENCE });
+
+    const tree = await CustomerPage({
+      params: Promise.resolve({ locale: 'en', customerId: 'c-1' }),
+    } as never);
+
+    expect(rendersState(tree, PermissionDeniedState)).toBe(true);
+    expect(
+      findCorrelation(tree),
+      '[locale]/(dashboard)/crm/customers/[customerId]/page.tsx: the backend 403 reached the ' +
+        'operator without the reference the API logged'
+    ).toBe(CRM_REFERENCE);
+  });
+
+  it('vehicle profile — the CLIENT gate on the same route carries nothing', async () => {
+    /*
+     * The other direction, on the SAME route, so the pair cannot be satisfied by
+     * a component that always prints a reference. The gate runs before the read:
+     * nothing was asked, so there is nothing to quote.
+     */
+    PERMISSIONS = [];
+
+    const tree = await VehiclePage({
+      params: Promise.resolve({ locale: 'en', vehicleId: 'v-1' }),
+    } as never);
+
+    expect(rendersState(tree, PermissionDeniedState)).toBe(true);
+    expect(
+      findCorrelation(tree),
+      'the client-side gate invented a reference for a request that was never made'
+    ).toBeUndefined();
+    expect(readVehicle, 'a denied caller still reached the backend').not.toHaveBeenCalled();
+  });
+
+  it('invents nothing when the backend 403 itself carried no reference', async () => {
+    /*
+     * The third state. A 403 whose response had no reference must render the
+     * denial with no reference — not with a fabricated one, and not by falling
+     * out of the branch.
+     */
+    PERMISSIONS = [VEHICLE_PERMISSIONS.vehicleRead];
+    readVehicle.mockResolvedValue({ status: 'denied', correlationId: null });
+
+    const tree = await VehiclePage({
+      params: Promise.resolve({ locale: 'en', vehicleId: 'v-1' }),
+    } as never);
+
+    expect(rendersState(tree, PermissionDeniedState)).toBe(true);
+    const found = findCorrelation(tree);
+    expect(found, 'a reference was invented for a 403 that carried none').not.toBe(
+      VEHICLE_REFERENCE
+    );
+    expect([null, undefined]).toContain(found);
+  });
+
+  it('holds for every denial in the route tree, derived rather than listed', () => {
+    const sites = routeSources().flatMap((route) => denialSitesIn(route.file, route.text));
+
+    /*
+     * Anti-vacuity first. A classifier that stopped matching returns an empty
+     * corpus, and a sweep over an empty corpus is green over any amount of the
+     * defect. Floors, not equalities: a route added tomorrow must fail for
+     * BREAKING the rule, never for having been added — a hand-written list is
+     * what stops checking things.
+     */
+    expect(
+      sites.length,
+      'no <PermissionDeniedState> was found in src/app/** at all'
+    ).toBeGreaterThanOrEqual(14);
+    const backend = sites.filter((site) => site.kind === 'backend');
+    const gate = sites.filter((site) => site.kind === 'client-gate');
+    expect(backend.length, 'no backend 403 branch was recognised').toBeGreaterThanOrEqual(2);
+    expect(gate.length, 'no client-side gate was recognised').toBeGreaterThanOrEqual(10);
+
+    // The two routes that read on the server, named because they are the pair
+    // the invocation cases above drive. If the classifier ever stops seeing one
+    // of them, this says which.
+    expect(backend.map((site) => site.file).sort()).toEqual([
+      '[locale]/(dashboard)/crm/customers/[customerId]/page.tsx',
+      '[locale]/(dashboard)/vehicles/[vehicleId]/page.tsx',
+    ]);
+
+    const unclassified = sites
+      .filter((site) => site.kind === 'unclassified')
+      .map((site) => `${site.file}:${site.line}`);
+    expect(
+      unclassified,
+      'a denial is decided by neither a permission gate nor a read outcome, so no rule below ' +
+        `applies to it: ${unclassified.join(', ')}`
+    ).toEqual([]);
+
+    const untraceable = backend
+      .filter((site) => !site.carriesReference)
+      .map((site) => `${site.file}:${site.line}`);
+    expect(
+      untraceable,
+      'these render a BACKEND 403 without its reference — the API logged the refusal and the ' +
+        `operator has nothing to quote: ${untraceable.join(', ')}`
+    ).toEqual([]);
+
+    const invented = gate
+      .filter((site) => site.carriesReference)
+      .map((site) => `${site.file}:${site.line}`);
+    expect(
+      invented,
+      'these carry a reference on a denial decided BEFORE any request, so whatever they print ' +
+        `cannot be in any server log: ${invented.join(', ')}`
+    ).toEqual([]);
+  });
+
+  it('really classifies denials by branch, and cannot be fooled by prose', () => {
+    /*
+     * The sweep above is only as good as `denialSitesIn`. All three verdicts are
+     * stated here against sources built by hand, in one file, so a classifier
+     * that collapsed to a single answer fails here and names itself rather than
+     * turning the sweep green.
+     */
+    const sites = denialSitesIn(
+      'fixture.tsx',
+      [
+        'export function Page() {',
+        '  const canRead = holds(session.permissions, X);',
+        '  if (!holds(session.permissions, X)) {',
+        '    return <PermissionDeniedState messages={messages} />;',
+        '  }',
+        "  if (result.status === 'denied') {",
+        '    return <PermissionDeniedState messages={messages} correlationId={result.correlationId} />;',
+        '  }',
+        // The hoisted form system settings actually uses.
+        '  if (!canRead) {',
+        '    return <PermissionDeniedState messages={messages} />;',
+        '  }',
+        '  if (somethingElse) {',
+        '    return <PermissionDeniedState messages={messages} />;',
+        '  }',
+        '  /* A docblock may quote <PermissionDeniedState correlationId={x} /> freely. */',
+        '  // and so may a line comment: <PermissionDeniedState />',
+        '  return null;',
+        '}',
+      ].join('\n')
+    );
+
+    expect(sites.map((site) => site.kind)).toEqual([
+      'client-gate',
+      'backend',
+      'client-gate',
+      'unclassified',
+    ]);
+    expect(sites.map((site) => site.carriesReference)).toEqual([false, true, false, false]);
+    // The parser is what makes the comment lines invisible; a text scan would
+    // have read six sites here, two of them from prose.
+    expect(sites, 'a comment was read as a rendered denial').toHaveLength(4);
   });
 });
 
