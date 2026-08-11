@@ -37,14 +37,44 @@ import { translate, translateDynamic } from '@/i18n/get-messages';
 
 export type FieldKind = 'text' | 'textarea' | 'select' | 'checkbox' | 'number' | 'date';
 
+/**
+ * One `select` choice.
+ *
+ * **A token, or a value with the words to show for it.**
+ *
+ * The string form is the original and the common one: a closed vocabulary whose
+ * labels live in the catalogue under `optionKeyPrefix`, so `'reception'` renders
+ * as "Reception" and translates itself. Every existing consumer uses it and none
+ * of them changed.
+ *
+ * The object form exists because some vocabularies are not vocabularies. The
+ * odometer correction has to name the reading being corrected, and a reading is
+ * identified by a uuid — which has no catalogue key, will never have one, and
+ * must never be on screen. Its label is DERIVED from the row (a value, its unit
+ * and when it was observed) and is therefore already the operator's own words by
+ * the time it arrives here.
+ *
+ * Widening `options` rather than adding a parallel `optionLabels` map was
+ * deliberate: two arrays can disagree about their length, their order, or which
+ * entry a label belongs to, and every one of those disagreements renders a
+ * plausible screen. A value and its label in one object cannot come apart.
+ */
+export type FieldOption = string | { readonly value: string; readonly label: string };
+
 export interface FieldSpec {
   readonly name: string;
   readonly kind: FieldKind;
   readonly labelKey: string;
   readonly required?: boolean;
   readonly maxLength?: number;
-  /** `select` only — the vocabulary, and the key prefix its labels live under. */
-  readonly options?: readonly string[];
+  /**
+   * `select` only — the vocabulary, and the key prefix its labels live under.
+   *
+   * `optionKeyPrefix` applies to the STRING entries only. An object entry
+   * carries its own label and is rendered verbatim, because there is no key to
+   * prefix.
+   */
+  readonly options?: readonly FieldOption[];
   readonly optionKeyPrefix?: string;
   /** Rendered under the field. Use for a constraint the operator cannot see. */
   readonly hintKey?: string;
@@ -226,11 +256,20 @@ export function RecordForm({
                   className="mt-1 w-full rounded-md border border-border bg-surface px-2 py-1.5 text-body text-text-primary"
                 >
                   <option value="">{translate(messages, 'form.select.placeholder')}</option>
-                  {field.options?.map((option) => (
-                    <option key={option} value={option}>
-                      {translateDynamic(messages, `${field.optionKeyPrefix ?? ''}${option}`)}
-                    </option>
-                  ))}
+                  {field.options?.map((option) => {
+                    // One expression per entry, so the value and the words shown
+                    // for it are read off the SAME object. A second lookup by
+                    // index — the parallel-array shape this replaced — is what
+                    // lets a label drift onto the wrong value.
+                    const value = typeof option === 'string' ? option : option.value;
+                    return (
+                      <option key={value} value={value}>
+                        {typeof option === 'string'
+                          ? translateDynamic(messages, `${field.optionKeyPrefix ?? ''}${option}`)
+                          : option.label}
+                      </option>
+                    );
+                  })}
                 </select>
               ) : field.kind === 'checkbox' ? (
                 <input

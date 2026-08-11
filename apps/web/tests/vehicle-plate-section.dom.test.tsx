@@ -4,10 +4,17 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
 import { renderLtr, renderRtl } from './render';
-import type { PlateHistoryEntry } from '@/features/vehicles/history-contract';
+import type { OdometerReadingEntry, PlateHistoryEntry } from '@/features/vehicles/history-contract';
 
 /**
- * `PlateSection` with real rows and a real write (`P1-27-FE-022`).
+ * `PlateSection` and `OdometerSection` with real rows and real writes
+ * (`P1-27-FE-022`, `P1-27-FE-023`).
+ *
+ * The file is named for the plate section it began as. The odometer correction
+ * cases live here rather than in a file of their own because three gates assert
+ * the web tier's test-FILE count, and because this is the only suite in the tree
+ * that drives a history section through its REAL adapter — which is precisely
+ * what those cases need.
  *
  * ## What was untested
  *
@@ -45,7 +52,8 @@ vi.mock('@/lib/api/server-client', () => ({
   authorizedClient: () => authorizedClient(),
 }));
 
-const { PlateSection } = await import('@/features/vehicles/components/VehicleHistorySections');
+const { PlateSection, OdometerSection } =
+  await import('@/features/vehicles/components/VehicleHistorySections');
 
 const VEHICLE = 'a1b2c3d4-0000-4000-8000-000000000001';
 /** Fixed, so "in force" is a property of the data rather than of the clock. */
@@ -86,7 +94,7 @@ const ENDED: PlateHistoryEntry = {
   createdAt: '2020-01-01T00:00:00.000Z',
 };
 
-function page(rows: readonly PlateHistoryEntry[]) {
+function page<Row>(rows: readonly Row[]) {
   return {
     ok: true as const,
     data: { items: rows, nextCursor: null, hasMore: false },
@@ -283,6 +291,322 @@ describe('the assignment form runs the real validation', () => {
     // A `date` input yields `YYYY-MM-DD` with no time and no zone. A text box
     // here would let a locale-shaped date through the ten-character check.
     expect(date.type).toBe('date');
+  });
+});
+
+/**
+ * Recording a correction to an odometer reading (`P1-27-FE-023`).
+ *
+ * ## The capability that was missing
+ *
+ * A reading entered too high could never be brought back down from the product.
+ * `guard_odometer_reading` refuses a NORMAL reading below the current effective
+ * value — correctly, because that refusal IS the anomaly detection, and the
+ * original is preserved — and the platform's remedy is a CORRECTION: the same
+ * operation, `veh.vehicle-odometer-record`, with `correctionOf` and
+ * `correctionReason` added. The form offered neither control, so the refusal was
+ * the end of the road for the operator.
+ *
+ * `FE-022` beside it is the sibling that shows this was an omission rather than
+ * a decision: its form sends the route's optional `effectiveDate`, and its
+ * matrix cell records the reason as "fields match the route". `FE-023` was the
+ * only write in the phase that did not.
+ *
+ * ## What these cases can see that the adapter tests cannot
+ *
+ * The adapter suite proves the body. It cannot prove that an operator can reach
+ * it: that the options carry readings rather than uuids, that the set comes from
+ * THIS vehicle, that a refusal lands under the control that caused it, or that a
+ * failed attempt does not silently discard the three things they chose.
+ */
+describe('an odometer reading can be corrected', () => {
+  /** The reading a correction will point at — the one entered too high. */
+  const TOO_HIGH: OdometerReadingEntry = {
+    id: 'f1a2b3c4-0000-4000-8000-000000000001',
+    value: '180000',
+    unit: 'km',
+    valueKm: '180000',
+    observedAt: '2026-03-04T09:30:00.000Z',
+    captureMethod: 'reception',
+    anomalyFlag: false,
+    correctionOf: null,
+    correctionReason: null,
+  };
+  const EARLIER: OdometerReadingEntry = {
+    ...TOO_HIGH,
+    id: 'f1a2b3c4-0000-4000-8000-000000000002',
+    value: '120000',
+    valueKm: '120000',
+    observedAt: '2026-01-10T08:00:00.000Z',
+    captureMethod: 'manual',
+  };
+  /** The correction as the history reads it back. */
+  const CORRECTION: OdometerReadingEntry = {
+    ...TOO_HIGH,
+    id: 'f1a2b3c4-0000-4000-8000-000000000003',
+    value: '118000',
+    valueKm: '118000',
+    captureMethod: 'correction',
+    anomalyFlag: true,
+    correctionOf: TOO_HIGH.id,
+    correctionReason: 'data_entry_correction',
+  };
+  /** A reading of a DIFFERENT vehicle. It is never in any page this section reads. */
+  const FOREIGN_ID = 'f1a2b3c4-0000-4000-8000-0000000000ff';
+
+  const ODOMETER = { locale: 'en' as const, messages: en, vehicleId: VEHICLE };
+
+  beforeEach(() => {
+    get.mockResolvedValue(page([TOO_HIGH, EARLIER]));
+  });
+
+  /** Renders with the write offered and waits for the form to mount. */
+  async function open() {
+    const user = userEvent.setup();
+    renderLtr(<OdometerSection {...ODOMETER} canRecord />);
+    await screen.findByRole('combobox', { name: en['vehicles.odometer.correctionOf'] });
+    return user;
+  }
+
+  const priorSelect = () =>
+    screen.getByRole('combobox', { name: en['vehicles.odometer.correctionOf'] });
+  const reasonSelect = () =>
+    screen.getByRole('combobox', { name: en['vehicles.odometer.correctionReason'] });
+  const readingBox = () =>
+    screen.getByRole('spinbutton', { name: en['vehicles.odometer.reading'] });
+  const observedBox = () =>
+    screen.getByRole('textbox', { name: en['vehicles.odometer.observedAt'] });
+  const submit = () => screen.getByRole('button', { name: en['vehicles.odometer.record'] });
+
+  /** Fills the three fields every reading needs, correction or not. */
+  async function enterReading(user: ReturnType<typeof userEvent.setup>, value: string) {
+    await user.type(readingBox(), value);
+    await user.selectOptions(
+      screen.getByRole('combobox', { name: en['vehicles.odometer.unit'] }),
+      'km'
+    );
+    await user.type(observedBox(), '2026-03-05T09:30:00Z');
+  }
+
+  it('offers the prior readings by value and time, and never by id', async () => {
+    await open();
+
+    const options = [...priorSelect().querySelectorAll('option')];
+    // Anti-vacuity: the placeholder plus the two rows the read returned.
+    expect(options).toHaveLength(3);
+
+    const labels = options.map((option) => option.textContent ?? '');
+    expect(labels.some((label) => label.startsWith('180000 km'))).toBe(true);
+    expect(labels.some((label) => label.startsWith('120000 km'))).toBe(true);
+    // The observed time is in the label, in the operator's own format — the
+    // second half of "human information", and what tells two readings of the
+    // same value apart.
+    expect(labels.filter((label) => label.includes('2026'))).toHaveLength(2);
+    // And the id is carried, not shown.
+    expect(labels.join('|'), 'a uuid reached the screen').not.toContain(TOO_HIGH.id);
+    expect(options.map((option) => option.value)).toContain(TOO_HIGH.id);
+  });
+
+  it('offers only readings of THIS vehicle, because the set is the list it just read', async () => {
+    /*
+     * The guarantee that a reading belonging to another vehicle cannot be
+     * submitted from the interface. The rows come from
+     * `veh.vehicle-odometer-history` for this vehicle id — asserted, not assumed
+     * — and the options are exactly those rows. The server refuses a foreign id
+     * anyway with a foreign-key violation mapped to `unknown_reference`; this is
+     * the reason an operator never has to meet it.
+     */
+    await open();
+
+    const requested = String(get.mock.calls[0]?.[0] ?? '');
+    expect(requested.startsWith(`/api/v1/vehicles/${VEHICLE}/odometer-readings`)).toBe(true);
+
+    const offered = [...priorSelect().querySelectorAll('option')]
+      .map((option) => option.value)
+      .filter((value) => value.length > 0);
+    expect(offered).toEqual([TOO_HIGH.id, EARLIER.id]);
+    expect(offered, 'a reading from another vehicle was offered').not.toContain(FOREIGN_ID);
+  });
+
+  it('offers no correction control when the vehicle has no readings yet', async () => {
+    /*
+     * A correction points AT a reading. With none on the page there is nothing
+     * to point at, and an empty selector is a control that can only fail — the
+     * same failure as offering a form to an operator who cannot use it. The
+     * reading form itself stays: a first reading is a normal one by definition.
+     */
+    get.mockResolvedValue(page<OdometerReadingEntry>([]));
+    renderLtr(<OdometerSection {...ODOMETER} canRecord />);
+
+    await screen.findByRole('button', { name: en['vehicles.odometer.record'] });
+    expect(
+      screen.queryByRole('combobox', { name: en['vehicles.odometer.correctionOf'] })
+    ).toBeNull();
+    expect(
+      screen.queryByRole('combobox', { name: en['vehicles.odometer.correctionReason'] })
+    ).toBeNull();
+  });
+
+  it('sends neither correction field for an ordinary increasing reading', async () => {
+    // The control for every case below. A form that always sent the pair would
+    // turn every routine reading into a check-constraint violation.
+    const user = await open();
+    await enterReading(user, '190000');
+    await user.click(submit());
+
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+    const [, , body] = send.mock.calls[0] as [string, string, Record<string, unknown>];
+    expect(body).toEqual({ value: 190000, unit: 'km', observedAt: '2026-03-05T09:30:00Z' });
+  });
+
+  it('sends both values when a prior reading and a reason are chosen', async () => {
+    const user = await open();
+    await enterReading(user, '118000');
+    await user.selectOptions(priorSelect(), TOO_HIGH.id);
+    await user.selectOptions(reasonSelect(), 'data_entry_correction');
+    await user.click(submit());
+
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+    const [method, path, body] = send.mock.calls[0] as [string, string, Record<string, unknown>];
+    expect(method).toBe('POST');
+    expect(path).toBe(`/api/v1/vehicles/${VEHICLE}/odometer-readings`);
+    expect(body.correctionOf).toBe(TOO_HIGH.id);
+    expect(body.correctionReason).toBe('data_entry_correction');
+    // The value went DOWN, which is the whole point: a normal reading here would
+    // be refused by the database and a correction is how it is recorded.
+    expect(body.value).toBe(118000);
+  });
+
+  it('refuses a chosen reading with no reason, against that control, without sending', async () => {
+    const user = await open();
+    await enterReading(user, '118000');
+    await user.selectOptions(priorSelect(), TOO_HIGH.id);
+    await user.click(submit());
+
+    expect(await screen.findByText(en['vehicles.odometer.error.reasonRequired'])).toBeTruthy();
+    // The load-bearing half: refusing after the request would satisfy the
+    // message assertion and still spend one of thirty calls a minute.
+    expect(send, 'the edge sent a request it could have refused itself').toHaveBeenCalledTimes(0);
+  });
+
+  it('tells a downward reading what to do about it, and the control it names exists', async () => {
+    /*
+     * The refusal an operator actually meets. The server answers
+     * `422 ERR-VAL-001` with `body.value` / `below_current_odometer`, which
+     * `violationKeysOf` maps onto the reading box.
+     *
+     * Until this wave the copy stopped at "a lower reading is not stored",
+     * because naming the remedy would have described a control that did not
+     * exist. It now names it — so the case asserts BOTH halves at once: the
+     * sentence, and the control the sentence sends them to.
+     */
+    send.mockResolvedValue({
+      ok: false,
+      kind: 'validation',
+      status: 422,
+      problem: {
+        code: 'ERR-VAL-001',
+        violations: [{ path: 'body.value', rule: 'below_current_odometer' }],
+      },
+      correlationId: 'fixed-correlation-id',
+    });
+
+    const user = await open();
+    await enterReading(user, '118000');
+    await user.click(submit());
+
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+    const refusal = await screen.findByText(en['form.violation.below_current_odometer']);
+    expect(refusal).toBeTruthy();
+    // Truthful guidance: the message says to choose the earlier reading it
+    // corrects, and that selector is on the same screen.
+    expect(en['form.violation.below_current_odometer']).toMatch(/correct/i);
+    expect(priorSelect()).toBeTruthy();
+    expect(reasonSelect()).toBeTruthy();
+  });
+
+  it('keeps the reading, the prior choice and the reason when the write fails', async () => {
+    /*
+     * `NEW-FE-01`, on the two controls this wave added. A reverted select leaves
+     * no visual trace, so an operator who hit a 503 would press Save again on a
+     * form that had silently become an ordinary reading — and a downward
+     * ordinary reading is refused, which reads as the product losing the
+     * correction twice.
+     */
+    send.mockResolvedValue({
+      ok: false,
+      kind: 'unavailable',
+      status: 503,
+      problem: null,
+      correlationId: 'fixed-correlation-id',
+    });
+
+    const user = await open();
+    await enterReading(user, '118000');
+    await user.selectOptions(priorSelect(), TOO_HIGH.id);
+    await user.selectOptions(reasonSelect(), 'possible_rollover');
+    await user.click(submit());
+
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(priorSelect()).toHaveValue(TOO_HIGH.id));
+    expect(reasonSelect()).toHaveValue('possible_rollover');
+    expect(readingBox()).toHaveValue(118000);
+    expect(observedBox()).toHaveValue('2026-03-05T09:30:00Z');
+  });
+
+  it('shows the correction in the history in words, with the original still listed', async () => {
+    /*
+     * The read side, which is what the operator checks afterwards. A correction
+     * never edits or deletes the reading it corrects: the history keeps both and
+     * the effective odometer simply ignores the superseded one.
+     */
+    get.mockResolvedValue(page([CORRECTION, TOO_HIGH, EARLIER]));
+    renderLtr(<OdometerSection {...ODOMETER} />);
+
+    const correctionRow = (await screen.findByText('118000 km')).closest('tr') as HTMLElement;
+    expect(correctionRow).not.toBeNull();
+    // Plain business language, and the same vocabulary the form offers.
+    expect(within(correctionRow).getByText(en['vehicles.odometer.correction'])).toBeTruthy();
+    expect(
+      within(correctionRow).getByText(en['vehicles.anomalyReason.data_entry_correction'])
+    ).toBeTruthy();
+    expect(within(correctionRow).getByText(en['vehicles.odometer.anomaly'])).toBeTruthy();
+
+    // The original is still there, still reading as an ordinary observation.
+    const originalRow = screen.getByText('180000 km').closest('tr') as HTMLElement;
+    expect(originalRow).not.toBeNull();
+    expect(within(originalRow).queryByText(en['vehicles.odometer.correction'])).toBeNull();
+    expect(within(originalRow).getByText(en['vehicles.captureMethod.reception'])).toBeTruthy();
+  });
+
+  it('re-reads the history after a correction is recorded', async () => {
+    // The corrected value is now the effective one and the table above the form
+    // is the only place that says so.
+    const user = await open();
+    expect(get).toHaveBeenCalledTimes(1);
+
+    await enterReading(user, '118000');
+    await user.selectOptions(priorSelect(), TOO_HIGH.id);
+    await user.selectOptions(reasonSelect(), 'meter_replacement');
+    await user.click(submit());
+
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(get.mock.calls.length).toBeGreaterThan(1));
+  });
+
+  it('offers nothing at all when the history read failed', async () => {
+    // The control for this whole block: every case above would pass against a
+    // section that rendered an empty table, so the failure path must look
+    // different — no table, and no write form of any kind.
+    get.mockResolvedValue({ ok: false, kind: 'forbidden', correlationId: 'fixed-correlation-id' });
+    renderLtr(<OdometerSection {...ODOMETER} canRecord />);
+
+    await waitFor(() => expect(get).toHaveBeenCalled());
+    await waitFor(() => expect(screen.queryByText('180000 km')).toBeNull());
+    expect(screen.queryByRole('button', { name: en['vehicles.odometer.record'] })).toBeNull();
+    expect(
+      screen.queryByRole('combobox', { name: en['vehicles.odometer.correctionOf'] })
+    ).toBeNull();
   });
 });
 

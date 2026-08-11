@@ -225,15 +225,22 @@ describe('the fallback keys exist in both catalogues', () => {
  * accepted here." — under a field they had just typed a number into, with no
  * indication that the number was compared against anything.
  *
- * ## Scope, stated because the copy is deliberately incomplete
+ * ## Scope, and the two directions this section has now held
  *
- * The server's full remedy is a CORRECTION: the route accepts `correctionOf`
- * and `correctionReason` and requires the reason when the reference is present.
- * The web form offers neither control, and building one is a new capability with
- * a dynamic option list, not a copy fix. So the message names what is wrong and
- * stops there. It must NOT tell an operator to record a correction instead,
- * because there is nothing on the screen with which to do that — a message that
- * describes an absent control is a worse failure than a vague one.
+ * The server's full remedy is a CORRECTION: the route accepts `correctionOf` and
+ * `correctionReason` and requires the reason when the reference is present.
+ *
+ * When this section was written the web form offered neither control, so the
+ * copy named what was wrong and stopped there — and the rule was asserted rather
+ * than described: a message that sends an operator to a control the screen does
+ * not have is a worse failure than a vague one, so the case READ THE COMPONENT
+ * and required the absence.
+ *
+ * `P1-27-FE-023` built the control. The obligation therefore inverts rather than
+ * disappearing: the same case now reads the same component and requires the
+ * fields to be PRESENT, and requires the copy to name the remedy. Written this
+ * way round, neither half can be edited alone — deleting the control fails the
+ * copy assertion, and softening the copy fails beside it.
  */
 describe('a violation rule a shipped form can produce is catalogued', () => {
   const violationKeys = Object.keys(en).filter((key) => key.startsWith(VIOLATION_KEY_PREFIX));
@@ -278,11 +285,21 @@ describe('a violation rule a shipped form can produce is catalogued', () => {
     expect(controlNameFor('body.value')).toBe('value');
   });
 
-  it('promises no control the odometer form does not have', () => {
-    // The server suggests submitting a correction. The form has no
-    // `correctionOf` or `correctionReason` input, so the copy must not send an
-    // operator looking for one. This is the capability gap, asserted rather than
-    // described, so that building the control is what unblocks changing the copy.
+  it('names the correction control, and the odometer form has one', () => {
+    /*
+     * The two halves, in one case, because they are only true together.
+     *
+     * The server's answer to a downward reading is "submit it as a correction
+     * with a reason". This case previously required the OPPOSITE of everything
+     * below — no `correctionOf` field, no `correctionReason` field, and no
+     * mention of a correction in either catalogue — because the form had no such
+     * control and copy that describes an absent control is a worse failure than
+     * copy that is merely vague.
+     *
+     * `P1-27-FE-023` built it. Reading the component rather than trusting a
+     * comment is what makes the pairing enforceable in both directions: remove
+     * the fields and the copy assertion is what fails.
+     */
     const source = readFileSync(
       join(
         process.cwd(),
@@ -294,21 +311,58 @@ describe('a violation rule a shipped form can produce is catalogued', () => {
       ),
       'utf8'
     );
-    expect(source).not.toMatch(/name:\s*'correction(Of|Reason)'/);
-    for (const catalogue of Object.values(CATALOGUES)) {
+    expect(source, 'the odometer form has no correctionOf control').toMatch(
+      /name:\s*'correctionOf'/
+    );
+    expect(source, 'the odometer form has no correctionReason control').toMatch(
+      /name:\s*'correctionReason'/
+    );
+
+    for (const [locale, catalogue] of Object.entries(CATALOGUES)) {
       const message = (catalogue as Record<string, string>)[
         'form.violation.below_current_odometer'
       ];
       expect(message, 'the key is missing').toBeTruthy();
-      expect(message).not.toMatch(/correction|تصحيح/i);
+      // Named in each language's own words, not by matching one shared token.
+      expect(message, `${locale} does not name the remedy`).toMatch(
+        locale === 'ar' ? /تصحيح/ : /correct/i
+      );
+    }
+  });
+
+  it('catalogues the refusals only a correction can produce', () => {
+    /*
+     * `not_earlier` and `unknown_reason` are emitted for a correction and for
+     * nothing else. While no form could submit one they stayed on the generic
+     * fallback deliberately; now that one can, an operator meeting either would
+     * be told only "This value is not accepted here" under a select they had
+     * just made a deliberate choice in.
+     *
+     * `unknown_reference` and `required` were already carried — checked here so
+     * that the FOUR refusals this control can provoke are asserted as a set
+     * rather than as the two that happened to be added.
+     */
+    for (const rule of ['not_earlier', 'unknown_reason', 'unknown_reference', 'required']) {
+      expect(violationMessageKey(rule), rule).toBe(`${VIOLATION_KEY_PREFIX}${rule}`);
+      expect(violationMessageKey(rule), rule).not.toBe(VIOLATION_FALLBACK_KEY);
+    }
+    // Each says something different from the generic message and from the other
+    // language, so a key that exists but was pasted from its neighbour fails.
+    for (const rule of ['not_earlier', 'unknown_reason']) {
+      const key = `${VIOLATION_KEY_PREFIX}${rule}`;
+      expect((en as Record<string, string>)[key]).not.toBe(
+        (en as Record<string, string>)[VIOLATION_FALLBACK_KEY]
+      );
+      expect((en as Record<string, string>)[key]).not.toBe((ar as Record<string, string>)[key]);
     }
   });
 
   it('still falls back for a rule no form can produce', () => {
-    // The fallback is not a bug to be catalogued away. `not_earlier` is emitted
-    // only for a correction, which this build cannot submit, so it stays generic
-    // on purpose — and an invented token must never render as itself.
-    expect(violationMessageKey('not_earlier')).toBe(VIOLATION_FALLBACK_KEY);
+    // The fallback is not a bug to be catalogued away: the API emits more than
+    // eighty rule tokens across eleven modules and an exhaustive catalogue would
+    // be wrong within a week. An invented token must render as the generic
+    // message and never as itself.
     expect(violationMessageKey('unregistered_aggregate')).toBe(VIOLATION_FALLBACK_KEY);
+    expect(violationMessageKey('no_such_rule_at_all')).toBe(VIOLATION_FALLBACK_KEY);
   });
 });

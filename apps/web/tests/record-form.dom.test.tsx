@@ -127,3 +127,155 @@ describe('RecordForm keeps what the operator typed when the write fails', () => 
     );
   });
 });
+
+/**
+ * A `select` whose values have no catalogue key (`P1-27-FE-023`).
+ *
+ * ## What forced the change
+ *
+ * `options` was `readonly string[]` and every label was resolved as
+ * `optionKeyPrefix + option` through `translateDynamic`. That is exactly right
+ * for a closed vocabulary — `'reception'` under `vehicles.captureMethod.` — and
+ * cannot express the odometer correction's first control, which has to name the
+ * READING being corrected. A reading is identified by a uuid: there is no
+ * catalogue key for it, there never will be, and it must not be on screen.
+ *
+ * So `options` also accepts `{ value, label }`, where the label is already the
+ * operator's own words. The cases below are what "safely" means here: the object
+ * form renders its own label and submits its own value, and the string form
+ * still translates — in the SAME component, on the same render, because five
+ * other screens depend on the string form and none of them changed.
+ *
+ * A parallel `optionLabels` array was the alternative, and is the reason this is
+ * a widening instead: two arrays can disagree about length, order, or which
+ * label belongs to which value, and every one of those disagreements renders a
+ * plausible screen.
+ */
+describe('RecordForm renders a select option that has no translation key', () => {
+  const READING_A = {
+    value: 'f1a2b3c4-0000-4000-8000-000000000001',
+    label: '180000 km — 4 Mar 2026',
+  };
+  const READING_B = {
+    value: 'f1a2b3c4-0000-4000-8000-000000000002',
+    label: '120000 km — 10 Jan 2026',
+  };
+
+  /** Both forms on one form, because the point is that they coexist. */
+  const MIXED_FIELDS = [
+    {
+      name: 'correctionOf',
+      kind: 'select' as const,
+      labelKey: 'vehicles.odometer.correctionOf',
+      options: [READING_A, READING_B],
+    },
+    {
+      name: 'correctionReason',
+      kind: 'select' as const,
+      labelKey: 'vehicles.odometer.correctionReason',
+      options: ['lower_than_prior', 'data_entry_correction'] as const,
+      optionKeyPrefix: 'vehicles.anomalyReason.',
+    },
+  ];
+
+  function renderMixed(action: (previous: ActionState, form: FormData) => Promise<ActionState>) {
+    return renderLtr(
+      <RecordForm
+        messages={en}
+        fields={MIXED_FIELDS}
+        action={action}
+        submitKey="form.submit"
+        titleKey="vehicles.odometer.record"
+      />
+    );
+  }
+
+  it('shows the supplied label and never the value it carries', () => {
+    renderMixed(vi.fn(async (): Promise<ActionState> => ({ status: 'success' })));
+
+    const select = screen.getByLabelText(en['vehicles.odometer.correctionOf']);
+    const options = [...select.querySelectorAll('option')];
+    // Anti-vacuity: the placeholder plus the two readings. A component that
+    // rendered no options at all would satisfy every "is not on screen"
+    // assertion below.
+    expect(options).toHaveLength(3);
+
+    const rendered = options.map((option) => option.textContent ?? '');
+    expect(rendered).toContain(READING_A.label);
+    expect(rendered).toContain(READING_B.label);
+    // The load-bearing half. `translateDynamic` returns a non-catalogue string
+    // unchanged, so a component that still translated the object form would put
+    // the raw uuid on screen — and this is the only assertion here that can see
+    // the difference.
+    for (const uuid of [READING_A.value, READING_B.value]) {
+      expect(rendered.join('|'), 'a raw id reached the screen').not.toContain(uuid);
+    }
+  });
+
+  it('submits the VALUE the operator chose, not the words they read', async () => {
+    // The submitted `FormData` is captured rather than cast out of the mock's
+    // call tuple: a zero-argument mock records `calls: []`, so every assertion
+    // about the body would have to be written past the type system.
+    const submitted: FormData[] = [];
+    const action = vi.fn(async (previous: ActionState, form: FormData): Promise<ActionState> => {
+      submitted.push(form);
+      return { status: 'success', attempt: (previous.attempt ?? 0) + 1 };
+    });
+    const user = userEvent.setup();
+    renderMixed(action);
+
+    // Chosen by its human label, which is the only handle an operator has.
+    await user.selectOptions(
+      screen.getByLabelText(en['vehicles.odometer.correctionOf']),
+      screen.getByRole('option', { name: READING_B.label })
+    );
+    await user.click(screen.getByRole('button', { name: en['form.submit'] }));
+
+    await waitFor(() => expect(action).toHaveBeenCalledTimes(1));
+    expect(submitted, 'the form submitted nothing').toHaveLength(1);
+    expect(submitted[0]?.get('correctionOf')).toBe(READING_B.value);
+  });
+
+  it('still translates a string option through its key prefix, on the same form', () => {
+    // The regression guard for the five surfaces that were already shipping.
+    // Widening a union is the kind of change that passes a typecheck while the
+    // renderer quietly takes one branch for everything.
+    renderMixed(vi.fn(async (): Promise<ActionState> => ({ status: 'success' })));
+
+    const select = screen.getByLabelText(en['vehicles.odometer.correctionReason']);
+    const rendered = [...select.querySelectorAll('option')].map((o) => o.textContent ?? '');
+    expect(rendered).toContain(en['vehicles.anomalyReason.lower_than_prior']);
+    expect(rendered).toContain(en['vehicles.anomalyReason.data_entry_correction']);
+    // And the token itself is not what is shown.
+    expect(rendered).not.toContain('lower_than_prior');
+  });
+
+  it('preserves an object-form choice across a failure, like every other control', async () => {
+    /*
+     * `NEW-FE-01` applies to the new shape too. The select is keyed on the
+     * attempt and seeded from state by `defaultValue`, and neither depends on
+     * where the label came from — but "neither depends on" is a claim, and this
+     * is the case that turns it into one the suite can check.
+     */
+    const action = vi.fn(async (): Promise<ActionState> => ({
+      status: 'unavailable',
+      messageKey: 'state.unavailable.title',
+      attempt: 1,
+    }));
+    const user = userEvent.setup();
+    renderMixed(action);
+
+    await user.selectOptions(
+      screen.getByLabelText(en['vehicles.odometer.correctionOf']),
+      screen.getByRole('option', { name: READING_A.label })
+    );
+    await user.click(screen.getByRole('button', { name: en['form.submit'] }));
+
+    await waitFor(() => expect(action).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(screen.getByLabelText(en['vehicles.odometer.correctionOf'])).toHaveValue(
+        READING_A.value
+      )
+    );
+  });
+});

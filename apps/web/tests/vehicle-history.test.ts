@@ -4,6 +4,7 @@ import {
   ODOMETER_CAPTURE_METHODS,
   ODOMETER_UNITS,
   OWNERSHIP_KINDS,
+  correctionChoices,
   intervalState,
   isCorrection,
   isInForceOn,
@@ -177,6 +178,100 @@ describe('an odometer value stays a string', () => {
   });
 });
 
+/**
+ * The readings a correction may point at (`P1-27-FE-023`).
+ *
+ * `correctionOf` is a uuid, and a text box for one would be a control no
+ * workshop employee could use — the conclusion `TransferOwnershipForm` reached
+ * about `partnerId`, and the reason ownership transfer was reachable from no
+ * screen for the whole of P1-27. So the id is carried and the LABEL is what is
+ * shown.
+ */
+describe('a prior reading is offered by its words, not by its id', () => {
+  const first: OdometerReadingEntry = {
+    id: 'f1a2b3c4-0000-4000-8000-000000000001',
+    value: '120000',
+    unit: 'km',
+    valueKm: '120000',
+    observedAt: '2026-01-10T08:00:00.000Z',
+    captureMethod: 'manual',
+    anomalyFlag: false,
+    correctionOf: null,
+    correctionReason: null,
+  };
+  const second: OdometerReadingEntry = {
+    ...first,
+    id: 'f1a2b3c4-0000-4000-8000-000000000002',
+    value: '76543.21',
+    unit: 'mi',
+    valueKm: '123184.6',
+    observedAt: '2026-03-04T09:30:00.000Z',
+    captureMethod: 'reception',
+  };
+  /** A fixed formatter, so this stays a test of the derivation and not of Intl. */
+  const at = (observedAt: string) => `AT:${observedAt}`;
+
+  it('carries the id as the value and the reading as the label', () => {
+    const choices = correctionChoices([first, second], at);
+    // Anti-vacuity: two readings in, two choices out.
+    expect(choices).toHaveLength(2);
+    expect(choices[0]).toEqual({
+      value: first.id,
+      label: `120000 km — AT:${first.observedAt}`,
+    });
+  });
+
+  it('keeps the unit the reading was taken in, unconverted', () => {
+    // The same rule the table one component away follows: `value_km` is the
+    // database's generated column, and a second conversion here would be a
+    // second authority that disagrees at the rounding.
+    const [, miles] = correctionChoices([first, second], at);
+    expect(miles?.label.startsWith('76543.21 mi')).toBe(true);
+    expect(miles?.label).not.toContain('123184.6');
+  });
+
+  it('offers exactly the readings it was given, in the order it was given them', () => {
+    /*
+     * The property that makes a reading from ANOTHER vehicle unofferable. The
+     * rows come from `veh.vehicle-odometer-history` for one vehicle id, so
+     * "derived from this list" and "belongs to this vehicle" are the same fact —
+     * as long as nothing here invents, reorders or drops an entry.
+     */
+    const choices = correctionChoices([second, first], at);
+    expect(choices.map((choice) => choice.value)).toEqual([second.id, first.id]);
+  });
+
+  it('filters nothing — not by time, and not by whether the row is itself a correction', () => {
+    /*
+     * A client bound that disagrees with the server refuses a value the server
+     * would have stored, which is what `FieldSpec`'s docblock forbids. "Earlier
+     * or equal" is decided in the database against the value being written, and
+     * that value does not exist until the form is submitted, so filtering here
+     * could only ever be a guess. `form.violation.not_earlier` states the
+     * refusal instead.
+     */
+    const correction: OdometerReadingEntry = {
+      ...first,
+      id: 'f1a2b3c4-0000-4000-8000-000000000003',
+      captureMethod: 'correction',
+      anomalyFlag: true,
+      correctionOf: first.id,
+      correctionReason: 'data_entry_correction',
+    };
+    expect(isCorrection(correction)).toBe(true);
+    expect(correctionChoices([first, correction], at).map((c) => c.value)).toEqual([
+      first.id,
+      correction.id,
+    ]);
+  });
+
+  it('offers nothing when there is nothing to correct', () => {
+    // The empty-history case, stated rather than left to the caller: a section
+    // that has loaded no readings must not render a selector it cannot populate.
+    expect(correctionChoices([], at)).toEqual([]);
+  });
+});
+
 describe('the history adapters send only what the contract accepts', () => {
   it('builds each path from a fixed segment with the id encoded', async () => {
     client.get.mockResolvedValue({
@@ -245,7 +340,13 @@ describe('every vocabulary is complete and translated', () => {
       // `correction` is not in ODOMETER_CAPTURE_METHODS — the read can return it
       // while the write cannot send it, and a missing key would render raw.
       ...[...ODOMETER_CAPTURE_METHODS, 'correction'].map((v) => `vehicles.captureMethod.${v}`),
-      ...ODOMETER_ANOMALY_REASONS.map((v) => `vehicles.anomalyReason.${v}`),
+      // `unknown` is the same shape as `correction` above, one column over: the
+      // platform's `ODOMETER_ANOMALY_REASONS` carries five members and the route
+      // accepts all five, while the form deliberately offers four — "unknown" is
+      // what a reason is when nobody recorded one, not something to invite an
+      // operator to choose. A reading that arrives carrying it must still read
+      // as words rather than as the raw token.
+      ...[...ODOMETER_ANOMALY_REASONS, 'unknown'].map((v) => `vehicles.anomalyReason.${v}`),
       ...['in-force', 'scheduled', 'ended', 'unknown'].map((v) => `vehicles.interval.${v}`),
     ];
     const missing = required.filter((k) => !(k in en) || !(k in ar));
