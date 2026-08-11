@@ -35,7 +35,13 @@ export default async function VehicleDuplicatesPage({
       locale={locale}
       messages={messages}
       titleKey="vehicles.duplicates.title"
-      crumbs={[{ labelKey: 'nav.vehicles' }, { labelKey: 'vehicles.duplicates.title' }]}
+      // The parent crumb LINKS. Without an href it rendered as a `<span>`, which
+      // both marked a second current page in the landmark and left this queue
+      // with no breadcrumb route back to the list it belongs to.
+      crumbs={[
+        { labelKey: 'nav.vehicles', href: `/${locale}/vehicles` },
+        { labelKey: 'vehicles.duplicates.title' },
+      ]}
     />
   );
 

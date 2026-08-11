@@ -45,7 +45,11 @@ export default async function CustomerDuplicatesPage({
           locale={locale}
           messages={messages}
           titleKey="crm.duplicates.title"
-          crumbs={[{ labelKey: 'nav.customers' }, { labelKey: 'crm.duplicates.title' }]}
+          // Both branches. A denied operator needs the way back most.
+          crumbs={[
+            { labelKey: 'nav.customers', href: `/${locale}/crm/customers` },
+            { labelKey: 'crm.duplicates.title' },
+          ]}
         />
         <PageBody>
           <PermissionDeniedState messages={messages} />
@@ -61,7 +65,13 @@ export default async function CustomerDuplicatesPage({
         messages={messages}
         titleKey="crm.duplicates.title"
         descriptionKey="crm.duplicates.description"
-        crumbs={[{ labelKey: 'nav.customers' }, { labelKey: 'crm.duplicates.title' }]}
+        // The parent crumb LINKS. Without an href it rendered as a `<span>`,
+        // which both marked a second current page in the landmark and left this
+        // queue with no breadcrumb route back to the customer list.
+        crumbs={[
+          { labelKey: 'nav.customers', href: `/${locale}/crm/customers` },
+          { labelKey: 'crm.duplicates.title' },
+        ]}
       />
       <PageBody fill>
         <DuplicateReviewScreen locale={locale} messages={messages} />

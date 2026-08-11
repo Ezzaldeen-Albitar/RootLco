@@ -1,6 +1,12 @@
 import { notFound } from 'next/navigation';
+import type { ReactNode } from 'react';
 import { PageBody, PageHeader } from '@/components/shell/PageHeader';
-import { NotFoundState, PermissionDeniedState, ErrorState } from '@/components/states/States';
+import {
+  NotFoundState,
+  PermissionDeniedState,
+  ErrorState,
+  SessionExpiredState,
+} from '@/components/states/States';
 import { requireSession } from '@/features/authentication/api/session';
 import { VehicleProfileScreen } from '@/features/vehicles/components/VehicleProfileScreen';
 import { readVehicle } from '@/features/vehicles/profile-api';
@@ -41,51 +47,78 @@ export default async function VehicleProfilePage({
   const session = await requireSession(locale);
   const messages = getMessages(locale);
 
-  const header = (
-    <PageHeader
-      locale={locale}
-      messages={messages}
-      titleKey="vehicles.profile.title"
-      crumbs={[{ labelKey: 'nav.vehicles' }, { labelKey: 'vehicles.profile.title' }]}
-    />
+  const frame = (body: ReactNode) => (
+    <>
+      <PageHeader
+        locale={locale}
+        messages={messages}
+        titleKey="vehicles.profile.title"
+        // The parent crumb LINKS. Without an href it rendered as a `<span>`,
+        // which marked a second current page in the breadcrumb landmark and
+        // left a failed profile with no route back to the vehicle list.
+        crumbs={[
+          { labelKey: 'nav.vehicles', href: `/${locale}/vehicles` },
+          { labelKey: 'vehicles.profile.title' },
+        ]}
+      />
+      <PageBody>{body}</PageBody>
+    </>
   );
 
   if (!holds(session.permissions, VEHICLE_PERMISSIONS.vehicleRead)) {
-    return (
-      <>
-        {header}
-        <PageBody>
-          <PermissionDeniedState messages={messages} />
-        </PageBody>
-      </>
-    );
+    // Decided here, before any request. Nothing was called, so there is no
+    // reference to carry — unlike the backend denial below.
+    return frame(<PermissionDeniedState messages={messages} />);
   }
 
   const result = await readVehicle(vehicleId);
 
-  if (result.status === 'not-found' || (result.status === 'ok' && result.data === null)) {
-    return (
-      <>
-        {header}
-        <PageBody>
-          <NotFoundState messages={messages} />
-        </PageBody>
-      </>
+  /*
+   * One branch per outcome, in the same order as the CRM twin
+   * (`crm/customers/[customerId]/page.tsx`), because the shapes diverged and one
+   * of the two was wrong.
+   *
+   * This route read `not-found`, `denied` and `ok`, and let EVERYTHING else fall
+   * into `ErrorState`. `readOperation` returns `{status:'expired'}` whenever
+   * there is no authorized client, and `STATUS_BY_KIND.unauthenticated` is
+   * `'expired'` as well — so an operator whose session had simply ended was told
+   * the service had failed. They then retry, or call support about a system that
+   * is working; what they needed to be told is to sign in again.
+   *
+   * The twin handles it, and `DataTable` handles it for every list on every
+   * screen. This detail page was the outlier.
+   *
+   * Scope, stated plainly: the P1-27 task matrix has no field for this, so it is
+   * a product inconsistency between two twins rather than a canonical
+   * requirement being violated.
+   */
+  if (result.status === 'denied') {
+    // A denial the BACKEND issued, which is a different fact from the gate
+    // above: a request was made, the API answered 403, and there is a log line
+    // to quote. `DataTable` and the CRM twin both carry the reference on this
+    // outcome; this route dropped it, so the same 403 was traceable through a
+    // list and untraceable through a profile.
+    return frame(
+      <PermissionDeniedState
+        messages={messages}
+        correlationId={result.correlationId ?? undefined}
+      />
     );
   }
 
+  if (result.status === 'not-found' || (result.status === 'ok' && result.data === null)) {
+    return frame(<NotFoundState messages={messages} />);
+  }
+
+  if (result.status === 'expired') {
+    // No retry control, deliberately, matching `DataTable`: re-issuing the same
+    // request with the same dead session fails identically.
+    return frame(<SessionExpiredState messages={messages} />);
+  }
+
   if (result.status !== 'ok' || result.data === null) {
-    return (
-      <>
-        {header}
-        <PageBody>
-          {result.status === 'denied' ? (
-            <PermissionDeniedState messages={messages} />
-          ) : (
-            <ErrorState messages={messages} correlationId={result.correlationId ?? undefined} />
-          )}
-        </PageBody>
-      </>
+    return frame(
+      <ErrorState messages={messages} correlationId={result.correlationId ?? undefined} />
     );
   }
 
