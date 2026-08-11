@@ -188,6 +188,34 @@ function commitExists(sha: string): boolean {
   }
 }
 
+/**
+ * Whether this clone was truncated, and the reason these checks state when a
+ * commit is absent.
+ *
+ * `actions/checkout` fetches depth 1 by default. Every case below that reads a
+ * SUPERSEDED head — the recorded measurements, the cited candidate — needs
+ * history this repository has, and a runner may not. Locally they all passed;
+ * hosted, two failed, one of them reporting
+ * "78c458723671… is not a commit in this repository" about a commit that is in
+ * the repository. That sentence is alarming and wrong: the commit exists, the
+ * CLONE does not have it.
+ *
+ * So the job that runs these checks now takes `fetch-depth: 0`
+ * (`.github/workflows/ci.yml`), and this exists to make the failure name the
+ * real cause if that is ever undone — rather than accusing the record of citing
+ * a commit that never existed, or, worse, being softened into a skip. A check
+ * that cannot see its evidence must say which of the two is missing.
+ */
+function shallowNote(): string {
+  try {
+    return git('rev-parse', '--is-shallow-repository').trim() === 'true'
+      ? ' — THIS CLONE IS SHALLOW, so the commit may exist and simply not be present here; the job needs `fetch-depth: 0`'
+      : '';
+  } catch {
+    return '';
+  }
+}
+
 /** Is `sha` the same commit as `ref`, or one of its ancestors? */
 function isAncestorOrEqual(sha: string, ref: string): boolean {
   try {
@@ -360,10 +388,16 @@ describe('P1-27-QA-005 — a recorded head is a commit this repository holds', (
       );
       const described = DESCRIBED_HEAD.exec(CLEAN_ROOM)?.[1];
       expect(described, 'a superseded record must still name the head it describes').toBeDefined();
-      expect(commitExists(described as string), `${described} is not a commit here`).toBe(true);
+      expect(
+        commitExists(described as string),
+        `${described} is not a commit here` + shallowNote()
+      ).toBe(true);
       return;
     }
-    expect(commitExists(candidate), `${candidate} is not a commit in this repository`).toBe(true);
+    expect(
+      commitExists(candidate),
+      `${candidate} is not a commit in this repository` + shallowNote()
+    ).toBe(true);
     expect(isAncestorOrEqual(candidate, 'HEAD'), `${candidate} is not on this branch`).toBe(true);
   });
 });
@@ -436,7 +470,9 @@ describe('P1-27-QA-005 — a measurement of a past head is checked against that 
     const sha = recordedHead();
     expect(sha, 'the record names no head at all').toBeDefined();
     const head = sha as string;
-    expect(commitExists(head), `${head} is not a commit in this repository`).toBe(true);
+    expect(commitExists(head), `${head} is not a commit in this repository` + shallowNote()).toBe(
+      true
+    );
 
     const web = webTestFilesAt(head).length;
     expect(web, `${head} has no web tests — the comparison would be vacuous`).toBeGreaterThan(20);
@@ -576,7 +612,7 @@ describe('P1-27-QA-005 — a measurement of a past head is checked against that 
     }
     expect(
       compared,
-      'no superseded row states a file count — this would be vacuous'
+      'no superseded row states a file count — this would be vacuous' + shallowNote()
     ).toBeGreaterThan(1);
     expect(problems, 'a superseded row disagrees with the tree it describes').toEqual([]);
   });
@@ -724,7 +760,10 @@ describe('P1-27-QA-005 — the two evidence pages agree with each other and the 
     expect(fullSha.startsWith(abbreviated), `${abbreviated} is not a prefix of ${fullSha}`).toBe(
       true
     );
-    expect(commitExists(fullSha), `${fullSha} is not a commit in this repository`).toBe(true);
+    expect(
+      commitExists(fullSha),
+      `${fullSha} is not a commit in this repository` + shallowNote()
+    ).toBe(true);
   });
 
   it('states a floor, a measurement and a headroom that agree arithmetically', () => {
