@@ -46,7 +46,10 @@ import {
  * decided IN THE CLIENT — the permission gate every route runs before its first
  * read — has no reference because no request was made. A denial the BACKEND
  * issued does have one: a request was made, the API answered 403 and logged it.
- * `DataTable.tsx:134` carries it on every list in the product, and both profile
+ * `DataTable` carries it on every list in the product — named without a line
+ * number because this cited `:134` while the branch sat at `:135`, and guarded
+ * now by `data-table.dom.test.tsx` rather than by this file, whose corpus is
+ * `src/app/**` and cannot see a shared component at all — and both profile
  * routes carry it on their own 403, so a route dropping it would make one 403
  * traceable through a list and untraceable through a profile.
  *
@@ -445,9 +448,12 @@ describe('a denial is not a fault, and carries no reference', () => {
  *
  * ## Why the rule is per BRANCH and not per component
  *
- * Twelve of the sixteen denial sites in this product are the client-side gate,
- * where no request was made and no reference exists. A rule reading "this
- * component always carries a reference" would demand one from all twelve, and
+ * Fourteen of the sixteen denial sites this sweep classifies are the
+ * client-side gate, where no request was made and no reference exists. (Sixteen
+ * is what the corpus holds; twenty-one such sites exist across `src/**`, and the
+ * difference is the roots this sweep walks — see the scope note below.) A rule
+ * reading "this component always carries a reference" would demand one from all
+ * fourteen, and
  * the only way to satisfy it is to invent a token an operator would quote to
  * support in vain. So the two denials are told apart by their deciding
  * condition, and each gets the direction it deserves.
@@ -461,8 +467,12 @@ describe('a denial the backend issued is traceable', () => {
       params: Promise.resolve({ locale: 'en', vehicleId: 'v-1' }),
     } as never);
 
-    // The screen really is the denial, so the reference below is being read off
-    // the state the operator is looking at rather than off some other node.
+    // Two INDEPENDENT walks of the same tree: one finds the denial state, the
+    // other finds the reference. Deliberately not localised to a single node —
+    // this asserts that the route rendered a denial AND carried the reference,
+    // not that the reference hangs off that particular element. A review proved
+    // the point by passing this case with the prop on <PageHeader>, so the
+    // weaker claim is the one written here.
     expect(
       rendersState(tree, PermissionDeniedState),
       'the backend 403 did not render as a permission denial'
@@ -550,13 +560,25 @@ describe('a denial the backend issued is traceable', () => {
     expect(backend.length, 'no backend 403 branch was recognised').toBeGreaterThanOrEqual(2);
     expect(gate.length, 'no client-side gate was recognised').toBeGreaterThanOrEqual(10);
 
-    // The two routes that read on the server, named because they are the pair
-    // the invocation cases above drive. If the classifier ever stops seeing one
-    // of them, this says which.
-    expect(backend.map((site) => site.file).sort()).toEqual([
+    /*
+     * The two routes that read on the server, named because they are the pair
+     * the invocation cases above drive. If the classifier ever stops seeing one
+     * of them, this says which.
+     *
+     * CONTAINMENT, not equality. An equality pin here would fail the day someone
+     * adds a THIRD server-reading route that carries its reference correctly —
+     * punishing correct code for existing, inside a case whose own name is
+     * 'derived rather than listed'. The rule that governs a new route is the
+     * sweep below, which requires every backend branch to carry the reference;
+     * this only guarantees the two the invocation cases pin are still seen.
+     */
+    const recognised = backend.map((site) => site.file);
+    for (const known of [
       '[locale]/(dashboard)/crm/customers/[customerId]/page.tsx',
       '[locale]/(dashboard)/vehicles/[vehicleId]/page.tsx',
-    ]);
+    ]) {
+      expect(recognised, `the classifier stopped recognising ${known}`).toContain(known);
+    }
 
     const unclassified = sites
       .filter((site) => site.kind === 'unclassified')

@@ -42,6 +42,7 @@ function renderTable(
     readonly status?: 'idle' | 'loading' | 'error' | 'denied';
     readonly request?: TableRequest;
     readonly onRequestChange?: (next: TableRequest) => void;
+    readonly correlationId?: string;
   } = {}
 ) {
   return renderLtr(
@@ -54,6 +55,7 @@ function renderTable(
       status={overrides.status ?? 'idle'}
       onRequestChange={overrides.onRequestChange ?? (() => undefined)}
       caption="Rows"
+      correlationId={overrides.correlationId}
     />
   );
 }
@@ -143,5 +145,31 @@ describe('a denial replaces the table', () => {
     // Not "hidden" and not "covered" — absent.
     expect(screen.queryByRole('table')).toBeNull();
     expect(screen.getByText('You do not have access')).toBeInTheDocument();
+  });
+
+  it('carries the reference the backend logged, because support cannot find the refusal without it', () => {
+    /*
+     * This is the highest-traffic denial surface in the product — every CRM and
+     * every Vehicle list renders its refusal here, not in a route file.
+     *
+     * `route-correlation-binding.test.ts` proves the rule for the two routes
+     * that read on the server, and its corpus is `src/app/**`, so it cannot see
+     * this component at all. A review measured the consequence: deleting
+     * `correlationId` from the denial branch of `DataTable` left the whole web
+     * tier — 70 files, 1866 tests — green. One assertion in a route suite and a
+     * shared component doing the same job unguarded is the shape this phase has
+     * hit repeatedly.
+     *
+     * A distinctive token, so a component inventing its own could not satisfy it.
+     */
+    renderTable(
+      { rows: ROWS, total: 2, page: 1, pageSize: 25 },
+      { status: 'denied', correlationId: 'corr-table-4c8d' }
+    );
+    expect(screen.getByText('You do not have access')).toBeInTheDocument();
+    expect(
+      screen.getByText(/corr-table-4c8d/),
+      'the denied list reached the operator without the reference the API logged'
+    ).toBeInTheDocument();
   });
 });
