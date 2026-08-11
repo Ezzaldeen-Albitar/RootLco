@@ -58,6 +58,40 @@ function declared(name: string): number {
   return Number(match?.[1]);
 }
 
+/**
+ * The CLASS table — the orthogonal disposition, parsed INDEPENDENTLY here.
+ *
+ * A status says what happened to a finding; a class says how it is dispositioned
+ * (ACTIONABLE must close before the phase freezes, SEALED is judged against the
+ * closing candidate, DISPOSITIONED is settled by a numbered decision). Ten totals
+ * are declared. Five were checked here; the other five — the ones the phase
+ * actually closes on — were checked by `scripts/ci/check-p1-27-doc-counts.mjs`
+ * and by nothing else. A mutation that moved `ROUND5_ACTIONABLE_OPEN` failed that
+ * script while this suite stayed green, which is a single-tier check on the
+ * numbers that decide the freeze.
+ *
+ * Deliberately parsed here rather than imported from that script: importing the
+ * derivation under test would make this a second call to one implementation, not
+ * a second opinion. Two independent readings of the same table is the point — it
+ * is how `B-05` and `B-01` were found to be checking a private copy instead of
+ * the production predicate.
+ *
+ * Three columns, so this cannot match the five-column register row above.
+ */
+const CLASSES = ['ACTIONABLE', 'SEALED', 'DISPOSITIONED'] as const;
+
+const classRows: { id: string; klass: string }[] = [
+  ...source.matchAll(/^\|\s*`([^`]+)`\s*\|\s*([A-Z]+)\s*\|([^|]*)\|\s*$/gm),
+]
+  .map((m) => ({ id: (m[1] ?? '').trim(), klass: (m[2] ?? '').trim() }))
+  .filter((r) => (CLASSES as readonly string[]).includes(r.klass));
+
+/** The status of a finding id, from the register table. */
+const statusOf = (id: string): string | undefined => rows.find((r) => r.id === id)?.status;
+
+const classCount = (klass: string, status: string): number =>
+  classRows.filter((c) => c.klass === klass && statusOf(c.id) === status).length;
+
 describe('the round-five register can be read mechanically', () => {
   it('finds the rows at all, so nothing below is vacuous', () => {
     expect(rows.length, 'no register row matched the canonical shape').toBeGreaterThan(50);
@@ -110,6 +144,57 @@ describe('the round-five register can be read mechanically', () => {
       count('FIXED') + count('OPEN') + count('PARTIAL') + count('REFUTED'),
       'the statuses do not account for every row'
     ).toBe(rows.length);
+  });
+
+  it('declares the CLASS totals its own class rows support', () => {
+    // Anti-vacuity first: a loop over an empty class table would satisfy every
+    // comparison below by declaring 0 = 0.
+    expect(classRows.length, 'no class row matched the canonical shape').toBeGreaterThan(15);
+    for (const row of classRows) {
+      expect(statusOf(row.id), `${row.id} has a class but no register row`).toBeTypeOf('string');
+    }
+
+    expect(
+      declared('ROUND5_ACTIONABLE_OPEN'),
+      'the declared actionable-open count disagrees with the class rows'
+    ).toBe(classCount('ACTIONABLE', 'OPEN'));
+    expect(declared('ROUND5_ACTIONABLE_PARTIAL')).toBe(classCount('ACTIONABLE', 'PARTIAL'));
+    expect(declared('ROUND5_SEALED_OPEN')).toBe(classCount('SEALED', 'OPEN'));
+    expect(declared('ROUND5_DISPOSITIONED_PARTIAL')).toBe(classCount('DISPOSITIONED', 'PARTIAL'));
+    expect(
+      declared('ROUND5_CLOSURE_BLOCKERS'),
+      'a closure blocker is an actionable finding that is not closed'
+    ).toBe(classCount('ACTIONABLE', 'OPEN') + classCount('ACTIONABLE', 'PARTIAL'));
+  });
+
+  it('refuses to call a SEALED finding closed before QA-005 has executed', () => {
+    /*
+     * A sealed finding is judged against the closing candidate. Marking one
+     * FIXED while QA-005 is still PARTIAL claims a measurement of a head that
+     * does not exist yet — the single most likely way this register goes wrong
+     * on the last day, and the reason the class column exists at all.
+     */
+    const matrix = JSON.parse(
+      readFileSync(join(REPO, 'docs', 'phase-1', 'phase-1-27', 'task-matrix.json'), 'utf8')
+    ) as { tasks?: { TASK_ID?: string; FINAL_VERDICT?: string }[] };
+    const tasks = matrix.tasks ?? [];
+    expect(tasks.length, 'the matrix holds no tasks — this case would be vacuous').toBeGreaterThan(
+      40
+    );
+    const qa005 = tasks.find((t) => t.TASK_ID === 'QA-005');
+    expect(qa005, 'the matrix has no QA-005 row to read the seal against').toBeDefined();
+
+    const sealed = classRows.filter((c) => c.klass === 'SEALED');
+    expect(sealed.length, 'no finding is sealed — this case would be vacuous').toBeGreaterThan(5);
+
+    // QA-005 seals the phase against the closing candidate. While it is still
+    // PARTIAL that candidate has not been measured, so nothing judged against it
+    // can honestly be closed.
+    if (qa005?.FINAL_VERDICT !== 'PARTIAL') return;
+    const wronglyClosed = sealed.filter((c) => statusOf(c.id) === 'FIXED').map((c) => c.id);
+    expect(wronglyClosed, 'a SEALED finding is marked FIXED while QA-005 is still PARTIAL').toEqual(
+      []
+    );
   });
 
   it('names the two partials, because they are the phase-level ones', () => {
