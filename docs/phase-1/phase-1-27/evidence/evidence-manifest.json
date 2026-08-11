@@ -5,7 +5,7 @@
   "whatThisProves": "An evidence document cannot be edited without this file changing in the same diff. Digests are over file BYTES, so an encoding change counts as a change.",
   "whatThisDoesNotProve": "This is not a tamper-proof seal. Anyone able to edit a document is able to re-run the generator and commit both. It removes SILENT revision, not revision.",
   "selfExclusion": "This manifest is the only path excluded from its own digest set, because a file containing its own hash has no fixed point. tests/ci/p1-27-evidence-manifest.test.ts asserts the exclusion is exactly this one path.",
-  "fileCount": 37,
+  "fileCount": 39,
   "files": {
     "docs/phase-1/phase-1-27/adversarial-round-five.md": {
       "sha256": "976de915ab39918ee299e5adf43f7a172e6dcbf9cbc4bcf85077064a0e29d6b9",
@@ -28,12 +28,12 @@
       "bytes": 3902
     },
     "docs/phase-1/phase-1-27/ci-evidence.md": {
-      "sha256": "ce477c351fb607154d0c5764fcb1e001c87adaf68f1aa7274bb73d06d6e2b98f",
-      "bytes": 9969
+      "sha256": "2aa035cc91f6236e2748d18a4236f494521fc7bf99aec24335623279cb9e15ff",
+      "bytes": 13155
     },
     "docs/phase-1/phase-1-27/clean-room-evidence.md": {
-      "sha256": "2c8d1407f717c2c1033c90e79f1de7b9c6613b655f6d387931bb177c33a995d7",
-      "bytes": 13043
+      "sha256": "8593037fe2c5cf788c7b393d33a05a949253834137d7f1b41b4a390f5b84b22b",
+      "bytes": 22949
     },
     "docs/phase-1/phase-1-27/continuation-checkpoint.md": {
       "sha256": "fbfdf7daca0f7600d12f77970da908d0f329e79d2d06f2fc9cacfb1e87b1310a",
@@ -44,23 +44,31 @@
       "bytes": 24145
     },
     "docs/phase-1/phase-1-27/deliverable-manifest.md": {
-      "sha256": "07788eea9a3508834388c18ce462c18aab21f88b12c737aadcb7a7aa52d24a7f",
-      "bytes": 142168
+      "sha256": "f6be89328fdef63173db0ccae06846063c2b33b88ad2c1f32deb0dcd0cac813c",
+      "bytes": 143227
     },
     "docs/phase-1/phase-1-27/developer-guide.md": {
       "sha256": "b233a40c4fac301597f2ceac30cd86fe7998ed3c3640544110ac9e1345f1b383",
       "bytes": 10332
     },
     "docs/phase-1/phase-1-27/evidence/change-log.md": {
-      "sha256": "b96bd87fd4d43b0293b58bb45c8e6e7240018d3e649e5b537487547651a67155",
-      "bytes": 70639
+      "sha256": "3f8ddb53d930854c5b460d4cf3aab4a480c33f3e0d94fa228ced54008de0dab8",
+      "bytes": 74994
+    },
+    "docs/phase-1/phase-1-27/evidence/closing-value-ledger.json": {
+      "sha256": "edcbf0b28ed4fae7ca7c3d67eb13fbb8c6ca02c04ab8e2ce3c2781b6cee32d9c",
+      "bytes": 30792
     },
     "docs/phase-1/phase-1-27/evidence/lifecycle-ledger.json": {
       "sha256": "e5bbbba99f8f83bf994eb6413ad08df690d2c03708747003bb3618366780016e",
       "bytes": 6801
     },
+    "docs/phase-1/phase-1-27/evidence/local-run-ledger.json": {
+      "sha256": "9846748b2ca1803f8a5320b82188c72f4c45fd3fff1b9660de9b84213e1818ce",
+      "bytes": 1200
+    },
     "docs/phase-1/phase-1-27/evidence/task-traceability.md": {
-      "sha256": "db56c627585c621b84614c724c33acaa39311c9f82a3134d39275c23417e8ce3",
+      "sha256": "7348da65d5e3e1f04837628740d72a8da222fbc09b89f843a765a8a80d6fc4cf",
       "bytes": 113040
     },
     "docs/phase-1/phase-1-27/evidence/test-catalogue-traceability.json": {

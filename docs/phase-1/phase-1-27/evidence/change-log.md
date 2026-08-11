@@ -810,6 +810,65 @@ green to order; that is stated rather than implied, and it is how
 `PARTIAL` and stays `PARTIAL`, for a reason that is now a named blocker rather
 than a paragraph. The phase status is unchanged: `OWNER ACCEPTANCE: FAIL`.
 
+### Closure wave eleven — every closing value on the evidence pages now names an authority
+
+An adversarial pass falsified six hosted-CI figures on `ci-evidence.md` and
+`clean-room-evidence.md` with every gate green, and measured that fewer than half
+the values those two pages state were read by anything at all. The two pages are
+the phase's record of what was verified. A number on them that no check consults
+is a decoration standing where evidence is supposed to be, and the checked
+numbers beside it lend it credibility it has not earned.
+
+Correcting six figures produces six figures that will be wrong again. What was
+missing was the rule.
+
+**`scripts/ci/check-p1-27-closing-values.mjs`** (`validate:p1-27-closing-values`,
+registered `required`, in `verify:policies`) classifies every value on both pages
+as exactly one of six classes and resolves the authority each names:
+`DERIVABLE_LOCAL` runs the command, `DERIVABLE_GIT` asks the object database,
+`HOSTED_ARTIFACT_ATTESTED` must name a run, a job or artefact and the exact head,
+`PROTECTED_POST_MERGE_ONLY` may carry no figure before the merge, and
+`HISTORICAL_SUPERSEDED` and `NON_NORMATIVE_EXAMPLE` are kept, banner-marked and
+excluded from the current seal.
+
+**The pages are TILED, not annotated.** A classifier that only inspects values a
+document opts into reports zero problems about a document that opts nothing in —
+the vacuity this repository has now shipped in four scanners. Both pages are
+covered edge to edge by seal regions with no gaps, and every value token inside a
+`current` region must be claimed. A `narrative` region is a positive claim that
+it holds no values; a figure appearing in one is reported with its line.
+
+**It re-derives no hosted observation, and says so.** For a hosted value the gate
+proves internal consistency only. The observation is collected from the GitHub
+API during exact-head CI by a reader of the run. Pretending a local validator
+reproduces a hosted figure would be a worse defect than the one being fixed.
+
+**Two circular bindings were cut.** `tests/ci/p1-27-doc-counts.test.ts` and
+`tests/ci/p1-27-evidence-manifest.test.ts` both compared the executed web total
+on the page to `measured` in `.github/ci-baselines/test-count-baseline.json`.
+Both of those are documents; the record and the baseline agreed with each other
+while both disagreed with the repository, which is how a total 281 tests below
+the tree survived a wave under two gates. Executed totals are now bound to
+`evidence/local-run-ledger.json`, written only by `record:p1-27-run` from the
+JSON a `vitest` run emits, carrying the commit it was taken at, refused once any
+executable path changes, and cross-checked against a walk of the tree — the
+comparison that would have caught the stale total the day it was written.
+
+**Three misrepresentations found and corrected.** `Hosted corroboration at the
+same head` described run `31312531302` at a head the branch had left behind, in a
+section nothing marked as history. `| Root unit tier | **1762** tests |` — a row
+inside the block headed SUPERSEDED — was being read by a live check as the root
+tier's current total, four lines under a sentence saying a superseded block must
+never be the thing a test reads. And both pages stated the CodeQL figure as
+`repository-wide` when it came from a pull-request analysis, which is
+diff-informed and cannot establish a repository ceiling; that ceiling is now a
+`PROTECTED_POST_MERGE_ONLY` entry carrying no figure.
+
+**What did NOT move.** No task verdict changed. No finding closed. No hosted run
+was taken, so the pages state no current hosted value at all — every hosted
+record is `HISTORICAL` with full provenance or `PENDING_CANDIDATE_OBSERVATION`
+with none. The phase status is unchanged: `OWNER ACCEPTANCE: FAIL`.
+
 ### Where the record stands at this head
 
 Every figure in this section is **derived**, and a document that restates one
@@ -864,7 +923,7 @@ Three things changed, and only one of them is a document.
 
 **A digest over the evidence.** `evidence/evidence-manifest.json` carries SHA-256
 over the _bytes_ of every `.md` and `.json` file in the phase directory, walked
-rather than listed — <!-- derived: manifest fileCount = 37 --> **36** of them at
+rather than listed — <!-- derived: manifest fileCount = 39 --> **36** of them at
 this head. That number was written here as "29" and stayed there while the phase
 directory grew by seven documents: a sentence about a walk, holding a figure
 nothing read. It is derived now, so the next document that joins the tree fails
@@ -955,9 +1014,16 @@ any byte of difference, and `tests/ci/p1-27-task-matrix.test.ts` requires
 with it; a pointer cannot.
 
 Read alongside it: `totals.PASS` is the verdict on the FEATURE, and
-`protectedReproof.OUTSTANDING` is the count of rows whose evidence includes a job
-only a protected push starts. The phase cannot close while the second is
-non-zero, and neither number can substitute for the other.
+`protectedReproof` counts the rows whose evidence includes a job this tree has
+not yet run. **That sentence used to name `protectedReproof.OUTSTANDING`, a key
+the matrix no longer has** — closure wave ten split it, because 22 of the 23 were
+the authenticated browser tier, which `pr-ci.yml` calls on every pull request
+from this repository and which is therefore discharged by a candidate run rather
+than by the merge. The key is now `PENDING_CANDIDATE_OBSERVATION` or
+`PENDING_PROTECTED_MERGE`, and this paragraph named neither for a whole wave: a
+document restating a field name it does not read is the same defect as a document
+restating a count it does not derive. The phase cannot close while either is
+non-zero, and no one of these numbers can substitute for another.
 
 The first row and the last describe the same universe. They are not the same
 claim: the first was asserted, the last is derived and re-derived on every run.

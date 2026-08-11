@@ -75,7 +75,7 @@ cannot, that is said instead of guessed.
 | 2   | `69 file(s) across 3 tree(s)`          | unchanged at the time of writing       | derived — §3 and §5.1                                               |
 | 4   | `170 file(s) checked`                  | `179 file(s) checked`                  | re-run; the colour count is unchanged at 54                         |
 | 5   | `195 / 0`, `197 / 0`, `170 / 0`        | `204 / 0`, `206 / 0`, `179 / 0`        | re-run; all three still report zero                                 |
-| 6   | `143 registered · 71 required · 71/71` | `148 registered · 74 required · 74/74` | derived — §7.1                                                      |
+| 6   | `143 registered · 71 required · 71/71` | `151 registered · 76 required · 76/76` | derived — §7.1                                                      |
 | 8   | `39 files, 803 passed`                 | `70` files; case total NOT restated    | the file half derived — §3 and §6.1; the case half is `E-03`        |
 | 9   | `77 files, 1680 passed`                | `86 files, 1821 passed`                | recorded, not derived — §6.4 says why                               |
 | 10  | `31 files, 638 passed`                 | `36 files, 715 passed`                 | the file half derived — §6.4                                        |
@@ -162,7 +162,7 @@ fact in words did not, which is the gap this revision closes.
 | Web unit and component test files                                      | **70**                                                             | derived                                                                    |
 | Playwright specification files                                         | **9** (2 anonymous, 7 authenticated)                               | commands 11 and 12 — **not re-measured**, §1.1.1                           |
 | Root CI-contract test files                                            | **36**                                                             | derived                                                                    |
-| CI gate scripts under `scripts/ci`                                     | **45** in the directory, **7** introduced or changed by this phase | derived; the seven are the `scripts/ci` rows of §7.1                       |
+| CI gate scripts under `scripts/ci`                                     | **46** in the directory, **8** introduced or changed by this phase | derived; the eight are the `scripts/ci` rows of §7.1                       |
 | Web gate scripts under `apps/web/scripts`                              | **4** in the directory, **1** introduced by this phase             | derived                                                                    |
 | Phase documentation under `docs/phase-1/phase-1-27`                    | **38** tracked, of which **30** are `.md`                          | derived from `git ls-files` — see §9.1                                     |
 | Product planning documentation under `docs/product`                    | **13** tracked                                                     | derived from `git ls-files` — see §9.2                                     |
@@ -580,9 +580,10 @@ gate that keeps this document honest.
 | `scripts/ci/generate-idempotent-operations.mjs` | `validate:idempotent-operations`                     | `P1-27-INT-003` (new)      | Drift between the published contract and the generated table                                                                                                                                                                                                                                                                                                         | `243 published operation(s), 120 idempotent` — manifest matches                           |
 | `scripts/ci/hostile-mutations.mjs`              | none — hand-run                                      | changed by `OA-*`          | The 20 `M-OA` mutations in §8                                                                                                                                                                                                                                                                                                                                        | not re-run here; it mutates tracked source in place                                       |
 | `eslint.config.mjs`                             | `lint` → `verify:repository`                         | `P1-27-F-001` (changed)    | `globalIgnores` gained `'supabase/.temp/**'` and `'supabase/.branches/**'`                                                                                                                                                                                                                                                                                           | covered by `tests/ci/eslint-global-ignores.test.ts`                                       |
-| `scripts/ci/check-command-coverage.mjs`         | `validate:command-coverage`                          | changed — registry entries | A required command not reachable from `verify:workspaces` **and** not invoked by hosted CI                                                                                                                                                                                                                                                                           | **149 registered · 75 required · 75/75 reachable · 75/75 invoked by hosted CI** — derived |
-| `scripts/ci/build-p1-27-evidence-manifest.mjs`  | `validate:p1-27-evidence` / `evidence:p1-27`         | `QA-005` (new)             | An evidence document edited without its SHA-256 digest being regenerated in the same commit. Digests are over file BYTES, so a BOM or an encoding repair counts as a change. The `--check` half is required; the writer is deliberately optional, because a CI job that ran it would repair the drift the check exists to report                                     | `37 evidence document(s), in sync`                                                        |
+| `scripts/ci/check-command-coverage.mjs`         | `validate:command-coverage`                          | changed — registry entries | A required command not reachable from `verify:workspaces` **and** not invoked by hosted CI                                                                                                                                                                                                                                                                           | **151 registered · 76 required · 76/76 reachable · 76/76 invoked by hosted CI** — derived |
+| `scripts/ci/build-p1-27-evidence-manifest.mjs`  | `validate:p1-27-evidence` / `evidence:p1-27`         | `QA-005` (new)             | An evidence document edited without its SHA-256 digest being regenerated in the same commit. Digests are over file BYTES, so a BOM or an encoding repair counts as a change. The `--check` half is required; the writer is deliberately optional, because a CI job that ran it would repair the drift the check exists to report                                     | `39 evidence document(s), in sync`                                                        |
 | `scripts/ci/check-p1-27-lifecycle.mjs`          | `validate:p1-27-lifecycle`                           | closure lifecycle (new)    | A declared lifecycle state the tree does not hold, in either direction: a blocker the ledger does not declare, and a declared blocker the tree no longer raises. Eight negative cases run inside the gate on every invocation, so a rule that stopped refusing a transition fails rather than passing quietly                                                        | `CANDIDATE_INCOMPLETE` — merge blocked, 23 blocker(s), 0 disagreement(s)                  |
+| `scripts/ci/check-p1-27-closing-values.mjs`     | `validate:p1-27-closing-values` / `record:p1-27-run` | `QA-005` (new)             | A closing value on either evidence page that names no authority: an unclassified figure, a locally derivable one the tree contradicts, a hosted one naming no run or job, a protected-only one carrying a figure before the merge, an excluded one sitting in a current region. Thirteen negative cases run inside the gate on every invocation                      | `49 classified, A:12 B:4 C:18 D:4 E:10 F:1` — five counts all zero                        |
 
 `validate:web-theme` exists because seven Tailwind colour names were used across
 fourteen components and registered in the theme in none of them, so **51
@@ -653,7 +654,7 @@ the canonical ids — and a documentation set that counted only Markdown would
 under-report itself by seven files.
 
 <!-- derived: linecolumn phase-documentation = 0 -->
-<!-- derived: rows phase-documentation = 37 -->
+<!-- derived: rows phase-documentation = 39 -->
 
 | path                                              | lines | what it is                                                                         |
 | ------------------------------------------------- | ----- | ---------------------------------------------------------------------------------- |
@@ -662,14 +663,16 @@ under-report itself by seven files.
 | `blocker-remediation-plan.md`                     | 497   | What blocked the phase, and how each blocker was cleared                           |
 | `canonical-plan.md`                               | 340   | What P1-27 is scoped to build, and the disposition of `P1-OD-017` and `P1-OD-025`  |
 | `canonical-write-reachability.json`               | 66    | Every write operation classified reachable or deliberately absent, with a decision |
-| `ci-evidence.md`                                  | 165   | Hosted CI on PR #198                                                               |
-| `clean-room-evidence.md`                          | 218   | The clean-room build at `e14984e`                                                  |
+| `ci-evidence.md`                                  | 243   | Hosted CI, with every value classified and every hosted one naming its run         |
+| `clean-room-evidence.md`                          | 369   | The clean-room record, and the six classes every closing value is sorted into      |
 | `contract-archaeology.md`                         | 416   | What the Backend actually publishes, read before anything was built                |
-| `deliverable-manifest.md`                         | 1025  | This file                                                                          |
+| `deliverable-manifest.md`                         | 1030  | This file                                                                          |
 | `developer-guide.md`                              | 184   | `DOC-002` — the developer half                                                     |
-| `evidence/change-log.md`                          | 968   | `DOC-002` — the change-log half; its rows are scraped by a test                    |
-| `evidence/evidence-manifest.json`                 | 159   | `QA-005` — a SHA-256 digest of every document in this directory                    |
+| `evidence/change-log.md`                          | 1034  | `DOC-002` — the change-log half; its rows are scraped by a test                    |
+| `evidence/evidence-manifest.json`                 | 167   | `QA-005` — a SHA-256 digest of every document in this directory                    |
+| `evidence/closing-value-ledger.json`              | 632   | Every closing value on the two evidence pages, classified, with its authority      |
 | `evidence/lifecycle-ledger.json`                  | 79    | The closure lifecycle's observations and the state this repository declares        |
+| `evidence/local-run-ledger.json`                  | 30    | What a tier DID when it was run — written only by `record:p1-27-run`               |
 | `evidence/task-traceability.md`                   | 432   | Every task, the operations it calls, the files it produced, the named proof        |
 | `evidence/test-catalogue-traceability.md`         | 406   | `DOC-001` — the 29 canonical `TC-P1-27-*` ids bound to executable tests            |
 | `evidence/test-catalogue-traceability.json`       | 866   | Its machine-readable form, checked by `validate:p1-27-doc-counts`                  |
@@ -949,8 +952,8 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
      whose regexes read the label and the number as adjacent cells. -->
 
 <!-- derived: files apps/web/tests = 70 -->
-<!-- derived: files tests/ci = 40 -->
-<!-- derived: files scripts/ci = 45 -->
+<!-- derived: files tests/ci = 41 -->
+<!-- derived: files scripts/ci = 46 -->
 <!-- derived: files apps/web/scripts = 4 -->
 <!-- derived: files supabase/migrations = 120 -->
 <!-- derived: files tests/db = 139 -->
@@ -961,13 +964,13 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
 <!-- derived: files apps/web/src/features/vehicles = 23 -->
 <!-- derived: files p1-27-frontend-gate = 69 -->
 <!-- derived: files p1-27-frontend-gate:trees = 3 -->
-<!-- derived: tracked docs/phase-1/phase-1-27 = 38 -->
+<!-- derived: tracked docs/phase-1/phase-1-27 = 40 -->
 <!-- derived: tracked docs/phase-1/phase-1-27:md = 30 -->
 <!-- derived: tracked docs/product = 13 -->
-<!-- derived: commands registered = 149 -->
-<!-- derived: commands required = 75 -->
-<!-- derived: commands reachable = 75 -->
-<!-- derived: commands hosted-ci = 75 -->
+<!-- derived: commands registered = 151 -->
+<!-- derived: commands required = 76 -->
+<!-- derived: commands reachable = 76 -->
+<!-- derived: commands hosted-ci = 76 -->
 <!-- derived: cases vehicle-screens.dom.test.tsx = 40 -->
 <!-- derived: cases tailwind-theme-gate.test.ts = 8 -->
 <!-- derived: cases navigation.test.ts = 22 -->
@@ -978,14 +981,16 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
 <!-- derived: lines docs/phase-1/phase-1-27/blocker-remediation-plan.md = 497 -->
 <!-- derived: lines docs/phase-1/phase-1-27/canonical-plan.md = 340 -->
 <!-- derived: lines docs/phase-1/phase-1-27/canonical-write-reachability.json = 66 -->
-<!-- derived: lines docs/phase-1/phase-1-27/ci-evidence.md = 165 -->
-<!-- derived: lines docs/phase-1/phase-1-27/clean-room-evidence.md = 218 -->
+<!-- derived: lines docs/phase-1/phase-1-27/ci-evidence.md = 243 -->
+<!-- derived: lines docs/phase-1/phase-1-27/clean-room-evidence.md = 369 -->
 <!-- derived: lines docs/phase-1/phase-1-27/contract-archaeology.md = 416 -->
-<!-- derived: lines docs/phase-1/phase-1-27/deliverable-manifest.md = 1025 -->
+<!-- derived: lines docs/phase-1/phase-1-27/deliverable-manifest.md = 1030 -->
 <!-- derived: lines docs/phase-1/phase-1-27/developer-guide.md = 184 -->
-<!-- derived: lines docs/phase-1/phase-1-27/evidence/change-log.md = 968 -->
-<!-- derived: lines docs/phase-1/phase-1-27/evidence/evidence-manifest.json = 159 -->
+<!-- derived: lines docs/phase-1/phase-1-27/evidence/change-log.md = 1034 -->
+<!-- derived: lines docs/phase-1/phase-1-27/evidence/evidence-manifest.json = 167 -->
+<!-- derived: lines docs/phase-1/phase-1-27/evidence/closing-value-ledger.json = 632 -->
 <!-- derived: lines docs/phase-1/phase-1-27/evidence/lifecycle-ledger.json = 79 -->
+<!-- derived: lines docs/phase-1/phase-1-27/evidence/local-run-ledger.json = 30 -->
 <!-- derived: lines docs/phase-1/phase-1-27/evidence/task-traceability.md = 432 -->
 <!-- derived: lines docs/phase-1/phase-1-27/evidence/test-catalogue-traceability.json = 866 -->
 <!-- derived: lines docs/phase-1/phase-1-27/evidence/test-catalogue-traceability.md = 406 -->
