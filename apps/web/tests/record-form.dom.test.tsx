@@ -213,9 +213,9 @@ describe('RecordForm renders a select option that has no translation key', () =>
   });
 
   it('submits the VALUE the operator chose, not the words they read', async () => {
-    // The submitted `FormData` is captured rather than cast out of the mock's
-    // call tuple: a zero-argument mock records `calls: []`, so every assertion
-    // about the body would have to be written past the type system.
+    // The submitted `FormData` is captured rather than cast out of the spy's
+    // call tuple: a spy taking no arguments reports `calls: []`, so every
+    // assertion about the body would have to be written past the type system.
     const submitted: FormData[] = [];
     const action = vi.fn(async (previous: ActionState, form: FormData): Promise<ActionState> => {
       submitted.push(form);
