@@ -452,7 +452,15 @@ describe('P1-27-QA-005 — a stated figure is compared as a number, not as a sub
       (web as { measured: number }).measured
     );
     expect(
-      figure(CLEAN_ROOM, /\*\*The (\d+) is local\.\*\*/, 'the restated executed total'),
+      /*
+       * `local` OR `HOSTED`. This pinned the WORD rather than the number, so it
+       * could not survive QA-005 replacing the local figure with the hosted
+       * measurement of the closing candidate — the exact transition the sentence
+       * exists to describe. What this case is about is that the page does not
+       * state two different executed totals; the provenance adjective is not the
+       * subject.
+       */
+      figure(CLEAN_ROOM, /\*\*The (\d+) is (?:local|HOSTED)/, 'the restated executed total'),
       'the page states two different executed totals'
     ).toBe(executed);
     expect(executed).toBeGreaterThanOrEqual((web as { minTests: number }).minTests);

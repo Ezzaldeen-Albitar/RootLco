@@ -97,7 +97,7 @@ sit in the tree looking like coverage while running nowhere.
 
 Derived on every run by `tests/ci/p1-27-evidence-manifest.test.ts` rather than
 recorded by hand. The live web suite holds **70 web test files**, every one of
-them matched by a `vitest` project, and the current tree executes **1586** tests.
+them matched by a `vitest` project, and the current tree executes **1867** tests.
 
 That executed figure is the one a test reads. It used to read the `Web tier` row
 of the superseded table above — the block whose own preamble says a superseded
@@ -107,10 +107,18 @@ comparing a live baseline against a record of head `356f1a1e`. The superseded
 figures are left exactly as they were, because they are a true account of that
 head; what moved is which number the check consults.
 
-**The 1586 is local.** It is measured in the integration checkout, not by a named
-hosted run, and it is provisional for the same reason everything on this page is:
-`P1-27-QA-005` takes the binding measurement against the final candidate, and
-that measurement replaces this section and the baseline's `measured` together.
+**The 1867 is HOSTED, and it is the binding measurement.** `P1-27-QA-005` took
+it against the final candidate `424e5d884ed7c8f608c446408743cbf88ac80515` by
+GitHub-hosted run `31508526699`, job `93836261711` (`Web quality / web-quality`),
+which reported `Tests executed | 1867`. The local run of the same tier agrees.
+
+This figure replaced **1586**, which stood here in the present tense and was 281
+tests below the tree. Recorded rather than quietly overwritten, because of HOW it
+survived: both gates that guard this sentence compare it to
+`.github/ci-baselines/test-count-baseline.json`, never to the repository, so the
+record and the baseline agreed with each other while both disagreed with the
+tree. `validate:p1-27-doc-counts` reported `0 disagreement(s)` about a page whose
+headline number was wrong. It was found by running the tier.
 
 ## Hosted corroboration at the same head
 

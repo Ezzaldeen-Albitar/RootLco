@@ -197,11 +197,23 @@ describe('the round-five register can be read mechanically', () => {
     );
   });
 
-  it('names the two partials, because they are the phase-level ones', () => {
-    // `DO-002` and `QA-004` are the tasks the round reclassified. If either is
-    // ever closed, its row moves to FIXED and this stays honest by derivation.
+  it('keeps every partial a canonical-task finding, however many there are', () => {
+    /*
+     * The count is NOT floored, and that is the correction.
+     *
+     * This case required `PARTIAL >= 1` unconditionally, which was true while the
+     * round had partials and became a contradiction at closure:
+     * `check-p1-27-doc-counts.mjs` requires `PARTIAL = 0` once `QA-005` has
+     * executed, and QA-005 is the LAST task to close. Two committed gates then
+     * demanded opposite things and no state satisfied both — the register could
+     * not reach its own terminal condition. Reproduced in both directions before
+     * this was touched.
+     *
+     * What the case is actually about survives: a PARTIAL is only ever a
+     * canonical-task finding. Zero partials is a legitimate end state; a partial
+     * that is not CANONICAL never is.
+     */
     const partial = rows.filter((r) => r.status === 'PARTIAL').map((r) => r.id);
-    expect(partial.length, 'the register records no partial').toBeGreaterThan(0);
     for (const id of partial) {
       const row = rows.find((r) => r.id === id);
       expect(row?.area, `${id} is PARTIAL but not a canonical-task finding`).toBe('CANONICAL');

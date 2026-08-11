@@ -662,7 +662,7 @@ under-report itself by seven files.
 | `canonical-plan.md`                               | 340   | What P1-27 is scoped to build, and the disposition of `P1-OD-017` and `P1-OD-025`  |
 | `canonical-write-reachability.json`               | 66    | Every write operation classified reachable or deliberately absent, with a decision |
 | `ci-evidence.md`                                  | 165   | Hosted CI on PR #198                                                               |
-| `clean-room-evidence.md`                          | 210   | The clean-room build at `e14984e`                                                  |
+| `clean-room-evidence.md`                          | 218   | The clean-room build at `e14984e`                                                  |
 | `contract-archaeology.md`                         | 416   | What the Backend actually publishes, read before anything was built                |
 | `deliverable-manifest.md`                         | 1022  | This file                                                                          |
 | `developer-guide.md`                              | 184   | `DOC-002` — the developer half                                                     |
@@ -977,7 +977,7 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
 <!-- derived: lines docs/phase-1/phase-1-27/canonical-plan.md = 340 -->
 <!-- derived: lines docs/phase-1/phase-1-27/canonical-write-reachability.json = 66 -->
 <!-- derived: lines docs/phase-1/phase-1-27/ci-evidence.md = 165 -->
-<!-- derived: lines docs/phase-1/phase-1-27/clean-room-evidence.md = 210 -->
+<!-- derived: lines docs/phase-1/phase-1-27/clean-room-evidence.md = 218 -->
 <!-- derived: lines docs/phase-1/phase-1-27/contract-archaeology.md = 416 -->
 <!-- derived: lines docs/phase-1/phase-1-27/deliverable-manifest.md = 1022 -->
 <!-- derived: lines docs/phase-1/phase-1-27/developer-guide.md = 184 -->

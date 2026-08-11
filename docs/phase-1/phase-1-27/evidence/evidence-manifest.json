@@ -32,8 +32,8 @@
       "bytes": 9969
     },
     "docs/phase-1/phase-1-27/clean-room-evidence.md": {
-      "sha256": "8d00078456d039016bb1250241ac94437ba1d740df18e486c1139b7eaf1dab55",
-      "bytes": 12522
+      "sha256": "2c8d1407f717c2c1033c90e79f1de7b9c6613b655f6d387931bb177c33a995d7",
+      "bytes": 13043
     },
     "docs/phase-1/phase-1-27/continuation-checkpoint.md": {
       "sha256": "fbfdf7daca0f7600d12f77970da908d0f329e79d2d06f2fc9cacfb1e87b1310a",
@@ -44,7 +44,7 @@
       "bytes": 24145
     },
     "docs/phase-1/phase-1-27/deliverable-manifest.md": {
-      "sha256": "03439830ff4f93ddff752a8e888d64e25cb9d9e35836a67c505468d7e963f29c",
+      "sha256": "d4808573c3728a028c3c3bea82789449ec3c343428a0be2cc57b535f71985300",
       "bytes": 141348
     },
     "docs/phase-1/phase-1-27/developer-guide.md": {

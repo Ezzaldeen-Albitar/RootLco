@@ -389,16 +389,38 @@ describe('the floor LOOKUP is covered, because it was the only unreachable step'
     expect(web.measured).toBeGreaterThan(web.minTests);
   });
 
-  it('says plainly when the recorded measurement is local rather than hosted', () => {
+  it('says which measurement it is, and backs a hosted claim with a run', () => {
     /*
      * `measured` is provenance, and provenance that quietly changes meaning is
      * worth less than none. A figure taken in a working checkout is not the same
      * evidence as one taken by a named hosted run, so the entry has to say which
      * it is rather than letting the reader assume the stricter one.
+     *
+     * BOTH directions, because this case previously required the word LOCAL
+     * unconditionally. That was right while the figure was local and became
+     * wrong the moment QA-005 replaced it with the hosted measurement of the
+     * closing candidate — the very transition the field was written to describe.
+     * A test that can only accept the weaker state cannot witness the stronger
+     * one arriving.
+     *
+     * So: LOCAL must name what replaces it; HOSTED must name a run id and a
+     * 40-character commit, because "hosted" without a citation is the claim this
+     * whole file exists to distrust.
      */
     const provenance = (web as { measurementProvenance?: string }).measurementProvenance;
     if (provenance === undefined) return;
-    expect(provenance, 'a local measurement must say so unambiguously').toMatch(/\bLOCAL\b/);
-    expect(provenance, 'a local measurement must name what replaces it').toMatch(/QA-005|hosted/i);
+    expect(provenance, 'the provenance says neither LOCAL nor HOSTED').toMatch(
+      /\bLOCAL\b|\bHOSTED\b/
+    );
+    if (/\bLOCAL\b/.test(provenance)) {
+      expect(provenance, 'a local measurement must name what replaces it').toMatch(
+        /QA-005|hosted/i
+      );
+      return;
+    }
+    expect(provenance, 'a hosted measurement must cite the run that took it').toMatch(/\b\d{9,}\b/);
+    expect(provenance, 'a hosted measurement must cite the commit it measured').toMatch(
+      /\b[0-9a-f]{40}\b/
+    );
   });
 });
