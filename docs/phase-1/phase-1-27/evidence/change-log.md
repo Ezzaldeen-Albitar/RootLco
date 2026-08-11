@@ -320,7 +320,7 @@ green pull request still does not include it". That was true when it was written
 and is false at this head**, and it is corrected rather than deleted for the same
 reason as the sentence below it. The job body has since moved to
 `.github/workflows/_reusable-authenticated-browser.yml` and is called from two
-places — `pr-ci.yml:251-269` on every pull request whose head is a branch of this
+places — `pr-ci.yml:251-264` on every pull request whose head is a branch of this
 repository, and `protected-develop-verification.yml:191-202` on protected pushes
 and by `workflow_dispatch`. Both gates wait for it (`pr-ci.yml:355`,
 `protected-develop-verification.yml:227`) and
@@ -331,16 +331,27 @@ a hosted runner even once". That was true when it was written and is false at th
 head, and it is corrected rather than deleted because it is `H-15`.** The
 `authenticated-browser` job has since PASSED on a GitHub-hosted runner — run
 `31347643485`, **225 tests, 0 failed**, against candidate `78c4587` — by
-`workflow_dispatch` before the merge rather than on a protected push. **That run
-is now DISPUTED inside this repository and the dispute is recorded rather than
-resolved by preference:** `.github/ci-baselines/unrun-test-tiers.json`
-`hostedObservation`, rewritten on the branch that wired the gates, states that run
-`31337158296` "is the only hosted execution of this tier in the repository's
-history" and that it FAILED. Both cannot be true, a GitHub run record is not in
-this tree, and the disagreement is finding `H-24`. The same spent premise sat in
-three docblocks in `apps/web/tests/p1-27-security.test.ts`, which another branch
-of this wave owns; those were corrected there and the correction is itself now
-false in the union (`H-23`). The document half of `H-15` is closed here, in this
+`workflow_dispatch` before the merge rather than on a protected push. **That run was
+then DISPUTED inside this repository, and the dispute is now settled — against the
+run records rather than against whichever document suited the verdict.**
+`.github/ci-baselines/unrun-test-tiers.json` `hostedObservation`, rewritten on the
+branch that wired the gates, had said a different run was the single hosted attempt
+this repository had ever made and that it FAILED. Both could not be true, no GitHub
+run record is in this tree, and the disagreement was registered as `H-24` rather
+than resolved by preference. `e5f7480` fetched the records: THREE executions, the
+third of them a PASS — `31337158296` at `155a5f5` (job `93304793606`) FAILED on a
+GoTrue readiness race with zero tests collected, `31343632011` at `0c40499` (job
+`93321402511`) FAILED with 212 passed and 11 failed, and `31347643485` at
+`78c4587` (job `93332452247`) PASSED with 229 planned, 225 passed, 0 failed and
+224 executed across all 6 spec files. All three carry a RUN-level conclusion of
+`failure` because other jobs at those commits were red; the per-JOB conclusion on
+the commit is what says what this tier did, and reading the run-level one is
+exactly how this tier's record came to under-report itself. That baseline now
+records all three individually. The same spent premise sat in three docblocks in
+`apps/web/tests/p1-27-security.test.ts`, which another branch of this wave owns;
+those were corrected there, the correction was itself falsified by the union
+(`H-23`), and `2bc3b3a` re-anchored all three onto content anchors — both findings
+are FIXED at this head. The document half of `H-15` is closed here, in this
 file, in `ci-evidence.md` and in `risk-register.md` §6.4. What is still unpaid is
 narrower than the sentence that stood here — which said
 `authenticated-browser` was "absent from `protected-gate`'s `needs`" and that "no
@@ -613,14 +624,18 @@ only the register passes while being externally false. All four were verified
 against this tree and closed here.
 
 **Verifying them produced two new findings, which is why the count did not reach
-zero.** `H-23`: the three docblocks `p1-27/security-wiring` wrote to close `H-15`
-are false in the union — they say the tier "runs in no pull-request job" and cite
-six line numbers in the 294-line workflow, while `pr-ci.yml:251-269` now runs it
-on every same-repository pull request. `H-24`: this tree contradicts itself about
-whether the one hosted PASS exists at all — four phase documents record run
-`31347643485` passing, and `.github/ci-baselines/unrun-test-tiers.json`, rewritten
-on `p1-27/ci-gates`, states that a different run is the only hosted execution in
-the repository's history and that it failed. Neither is decidable from the tree.
+zero in THIS wave.** `H-23`: the three docblocks `p1-27/security-wiring` wrote to
+close `H-15` were false in the union — they said the tier "runs in no pull-request
+job" and cited six line numbers in the 294-line workflow, while
+`pr-ci.yml:251-264` runs it on every same-repository pull request. `H-24`: this
+tree contradicted itself about whether the one hosted PASS existed at all — four
+phase documents recorded run `31347643485` passing, and
+`.github/ci-baselines/unrun-test-tiers.json`, rewritten on `p1-27/ci-gates`, said
+a different run was the single hosted attempt ever made and that it failed.
+Neither was decidable from the tree, which was the correct reading and not the
+whole answer. **Both are FIXED in wave nine below**, `H-23` at `2bc3b3a` and
+`H-24` at `e5f7480`, and neither was closed on a commit message: each was
+re-adjudicated against the file or the record it names.
 
 **One reason for an outstanding reproof was DISCHARGED here.** Twenty-two
 `PROTECTED_REPROOF` cells said the tier was outstanding because
@@ -631,6 +646,97 @@ head: `protected-develop-verification.yml:227`, `pr-ci.yml:355` and
 outstanding is one thing and it is not a wiring gap — the tier has not been
 observed to execute at the closing candidate.
 
+### Closure wave nine — the record about CI, corrected against CI (`e5f7480`, `2bc3b3a`, `d4cfdba`, `854a7a9`, `0e5692b`, `711717d`, `db0b30e`, `851e3c2`; merged `6400e83`, `45932e7`, `fcea655`, `ddef5e8`)
+
+Wave eight closed four findings and opened two by checking that the four were
+real. **Wave nine closed both of those two and opened none** — the first pass in
+this phase where verifying the previous wave's fixes produced no successor
+finding. That is reported as an outcome, not as a property of the pass: the two
+were re-adjudicated against the tree here, not accepted from their own rows.
+
+**`H-24` was settled by leaving the repository.** The row said the contradiction
+was undecidable from this tree, and it was right about the tree and wrong about
+the question. A GitHub Actions run record is not committed anywhere here, so
+`e5f7480` fetched three of them. `31337158296` at `155a5f5`, job `93304793606`:
+FAILED, a GoTrue readiness race in the acceptance bootstrap, ZERO tests collected,
+failed by the zero-test guard rather than reported green. `31343632011` at
+`0c40499`, job `93321402511`: FAILED, 212 passed and 11 failed — the first results
+this tier ever produced off the Owner's machine. `31347643485` at `78c4587`, job
+`93332452247`: PASSED, 229 planned, 225 passed, 0 failed, 224 executed across all
+6 spec files. All three are now in `.github/ci-baselines/unrun-test-tiers.json`
+individually, each with its run id and its job id.
+
+**THE READING ERROR IS THE PART TO CARRY FORWARD.** All three runs carry a
+RUN-level conclusion of `failure`, because other jobs at those commits were red.
+Only the per-JOB conclusion ON THE COMMIT says what this tier did, and the third
+job's is `success`. The workflow, the gate and that baseline all already state
+that they read the per-job conclusion and never the run-level one — and reading it
+the wrong way is precisely how the tier's own record came to under-report itself.
+Nothing in this repository could have caught it, because no gate here compares a
+sentence about CI to CI.
+
+**`H-23` was settled by re-anchoring rather than by renumbering.** `2bc3b3a`
+rewrote the three docblocks in `apps/web/tests/p1-27-security.test.ts` that wave
+eight's own correction had falsified, and it did not merely move the six line
+pointers: they became CONTENT ANCHORS — a job name, a step name, a variable name —
+because an anchor that moves with its content cannot be falsified by an edit above
+it. Re-adjudicated here by phrase census rather than by reading the commit
+message: all five sentences the row named return zero hits, and so do all six
+pointers (`244-604`, `:494`, `:500`, `:502`, `:553`, `:557`). Two strings survive
+once each, at `:1640` and `:1641`, inside that docblock's own account of the
+sentences it replaced, which is a history and not a claim. The clause `H-15`
+required to survive — "QA-003 is therefore NOT closed by this file" — is intact at
+`apps/web/tests/p1-27-security.test.ts:1908`, and the reason it gives is now the
+TIER rather than the schedule.
+
+**Four further checks were repaired in the same wave, all of one class: an
+assertion that could not fail.** `d4cfdba` found the evidence seal recomputing its
+digest with the function under test — `f(x) === f(x)`, which stayed green when the
+production hash was replaced by the constant `deadbeef` shared across all 36
+documents — digesting only `.md`/`.json` by case-sensitive suffix, and holding the
+document SET to nothing stronger than `> 20`, so eight documents could be deleted
+and the manifest regenerated with every case green. `854a7a9` found "the recorded
+head is real" to be a describe title over a SHAPE test that `deadbeef` repeated
+five times satisfies, and `toContain('65 web test files')` matching "165 web test
+files", so only understatement was ever detectable. `0e5692b` bound the CodeQL
+zero, stated on two evidence pages and read by neither, to the committed ratchet.
+`711717d` found a case that demanded a sentence it could not see, because Prettier
+wrapped the paragraph exactly where its regex anchored on a literal space — `B-02`
+recurring inside a case written after `B-02` was fixed — and the paragraph it then
+read was itself false, describing `H-24` as a live dispute two commits after
+`e5f7480` had decided it.
+
+**Two accessibility defects were found by driving the running application, and
+the fix for one of them found a third nobody had reported.** `db0b30e` and
+`851e3c2`: `/en/vehicles/duplicates` carried TWO `aria-current="page"` because
+`isActive` matches by prefix and those two nav entries are SIBLINGS, and both
+duplicate queues rendered two `<h1>` against a `PageHeader` docblock that says
+there is exactly one per page. The anti-regression suite, driven over the real
+navigation config, then found a third `aria-current` occurrence on the collapsed
+64px rail at `/en/administration/organization` — a state hand-driving cannot
+reach. All of it was invisible to 225 authenticated browser tests, 1621 web tests
+and every P1-27 gate.
+
+**This entry's own wave — the convergence pass — corrected what those closures
+falsified.** The twenty-two `PROTECTED_REPROOF` cells lost the contradiction
+paragraph they carried, which described a dispute this head no longer has; the
+`authenticated-browser` job range they cited moved onto `pr-ci.yml:251-264` from
+a range that ran to line 269 — line 265 is blank, 266 to 268 are the next
+section's comment banner, and 269 is `application-build:`, a different job's key.
+The old range is written out in words rather than as a citation, because a stale
+citation inside its own correction is still a citation and no gate here can tell
+a quotation from a claim; and the "7 spec
+files" denominator became the six `*.spec.ts` that
+`apps/web/tests/e2e/authenticated/` actually holds, `auth.setup.ts` being a setup
+project rather than a spec. The register's totals and its closure state are
+re-derived from its own rows and were mutation-proved against the gate.
+
+**What did NOT move, said plainly so two closures are not read as three.** The
+protected reproof is unchanged: no run has been observed against the closing
+candidate, and every execution above predates this wave. `QA-005` is `PARTIAL`
+and stays `PARTIAL`. Seventeen findings stay `OPEN` and every one is `SEALED`.
+The phase status is unchanged.
+
 ### Where the record stands at this head
 
 Every figure in this section is **derived**, and a document that restates one
@@ -639,22 +745,25 @@ sentences above that had to be superseded — "the matrix is 40 PASS / 2 PARTIAL
 and "`DOC-001` stays `PARTIAL`" — were both typed, both true when typed, and both
 falsified two commits later by a wave this file had not yet recorded.
 
-| what                                       | at this head                                                                                                                                                                                                                                                                                                                                                         |
-| ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| The 42-task matrix                         | <!-- derived: matrix PASS = 41 --> **41** PASS · <!-- derived: matrix PARTIAL = 1 --> **1** PARTIAL · <!-- derived: matrix FAIL = 0 --> **0** FAIL. The one is `QA-005`, sealed last by design.                                                                                                                                                                      |
-| Protected reproof                          | <!-- derived: matrix OUTSTANDING = 23 --> **23** rows OUTSTANDING. The phase cannot close while this is non-zero, and it is not the same question as the column beside it.                                                                                                                                                                                           |
-| Round five, actionable                     | <!-- derived: round5 ACTIONABLE_OPEN = 2 --> **2** open, <!-- derived: round5 ACTIONABLE_PARTIAL = 0 --> **0** partial. The four that stood here closed at `3f8ef6c`; both replacements were produced by verifying them — `H-23`, a docblock correction the union falsified, and `H-24`, a contradiction between two committed records that this tree cannot decide. |
-| Round five, sealed until `QA-005` executes | <!-- derived: round5 SEALED_OPEN = 17 --> **17** open, and they may be. They measure the record of the closing candidate, which does not exist yet.                                                                                                                                                                                                                  |
-| Round five, dispositioned                  | <!-- derived: round5 DISPOSITIONED_PARTIAL = 1 --> **1** — `A42-13`, true and decided by `P1-27-OD-005`. It is not counted as a blocker and it is not marked fixed.                                                                                                                                                                                                  |
-| The eighteen-path matrix                   | <!-- derived: catalogue pathProven = 13 --> **13** PROVEN · <!-- derived: catalogue pathPartial = 3 --> **3** PARTIAL · <!-- derived: catalogue pathAbsent = 2 --> **2** ABSENT, `matrixDischarged` still `false`. `P1-27-OD-007` decided that this is not what `DOC-001` is judged on; it did not discharge it.                                                     |
+| what                                       | at this head                                                                                                                                                                                                                                                                                                                                                             |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| The 42-task matrix                         | <!-- derived: matrix PASS = 41 --> **41** PASS · <!-- derived: matrix PARTIAL = 1 --> **1** PARTIAL · <!-- derived: matrix FAIL = 0 --> **0** FAIL. The one is `QA-005`, sealed last by design.                                                                                                                                                                          |
+| Protected reproof                          | <!-- derived: matrix OUTSTANDING = 23 --> **23** rows OUTSTANDING. The phase cannot close while this is non-zero, and it is not the same question as the column beside it.                                                                                                                                                                                               |
+| Round five, actionable                     | <!-- derived: round5 ACTIONABLE_OPEN = 0 --> **0** open, <!-- derived: round5 ACTIONABLE_PARTIAL = 0 --> **0** partial. The four that stood here closed at `3f8ef6c` and the two that replaced them closed in wave nine — `H-23` at `2bc3b3a`, `H-24` at `e5f7480`. Zero actionable is NOT closeable: seventeen sealed findings are still open and `QA-005` has not run. |
+| Round five, sealed until `QA-005` executes | <!-- derived: round5 SEALED_OPEN = 17 --> **17** open, and they may be. They measure the record of the closing candidate, which does not exist yet.                                                                                                                                                                                                                      |
+| Round five, dispositioned                  | <!-- derived: round5 DISPOSITIONED_PARTIAL = 1 --> **1** — `A42-13`, true and decided by `P1-27-OD-005`. It is not counted as a blocker and it is not marked fixed.                                                                                                                                                                                                      |
+| The eighteen-path matrix                   | <!-- derived: catalogue pathProven = 13 --> **13** PROVEN · <!-- derived: catalogue pathPartial = 3 --> **3** PARTIAL · <!-- derived: catalogue pathAbsent = 2 --> **2** ABSENT, `matrixDischarged` still `false`. `P1-27-OD-007` decided that this is not what `DOC-001` is judged on; it did not discharge it.                                                         |
 
 **The phase status is unchanged by any of it: `OWNER ACCEPTANCE: FAIL`.** None of
 these numbers is an acceptance, and the row that matters most —
-<!-- derived: round5 CLOSURE_BLOCKERS = 2 --> **2** actionable blockers — is the
+<!-- derived: round5 CLOSURE_BLOCKERS = 0 --> **0** actionable blockers — is the
 
-one no automated tier reported. That number moved from four to two by closing
-four and opening two, and the two it opened were found by checking that the four
-were real. Reading the register's own rows would have reported zero.
+one no automated tier reported. That number went four, then two, then zero: four
+closed and two opened by checking that the four were real, then those two closed
+by checking them the same way. **Zero here is not a closure.** It means nothing is
+left that this wave could act on; seventeen findings remain `OPEN` and every one
+of them is `SEALED` against a closing candidate `QA-005` has not measured, which
+is why `ROUND5_CLOSURE_STATE` reads `SEALED-ONLY` and not `CLEAR`.
 
 ---
 
