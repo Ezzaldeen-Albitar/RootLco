@@ -1,12 +1,22 @@
 import { describe, it, expect } from 'vitest';
 import { execFileSync } from 'node:child_process';
-import { readFileSync, readdirSync } from 'node:fs';
+import {
+  readFileSync,
+  readdirSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   caseCount,
   checkDocument,
   deriveCounts,
   evaluate,
+  walk,
 } from '../../scripts/ci/check-p1-27-doc-counts.mjs';
 
 /**
@@ -814,5 +824,85 @@ describe('P1-27-QA-005 — the two evidence pages agree with each other and the 
     expect(new Set(named).size, `the record says ${word} and names ${named.join(', ')}`).toBe(
       WORDS[word]
     );
+  });
+});
+
+describe('the derivation walk refuses a link instead of skipping it (QA005-12)', () => {
+  /*
+   * The third walk. `QA005-12` closed this in the two evidence walkers and this
+   * one was missed, while the evidence generator's docblock claimed "every walker
+   * in this phase now applies the same policy".
+   *
+   * The mechanism is worth stating because it is silent in both directions: a
+   * Windows junction and a directory symlink both report `isDirectory() === false`
+   * from `readdir`, so the recursion did not descend; and neither ends in `.md`,
+   * `.ts` or `.sql`, so the predicate then rejected it as a file. Every count this
+   * gate derives — and therefore every number it certifies in a phase document —
+   * would have been taken over a smaller tree than the reader believes, with no
+   * line of output saying so.
+   *
+   * Driven against a REAL link on a real filesystem. A hand-made
+   * `{ isSymbolicLink: () => true }` proves the guard reads its argument; it
+   * cannot prove that a Dirent produced by `readdir` ever looks like that, which
+   * is the entire claim.
+   */
+  const linkDirectory = (target: string, path: string): 'dir' | 'junction' => {
+    try {
+      symlinkSync(target, path, 'dir');
+      return 'dir';
+    } catch {
+      symlinkSync(target, path, 'junction');
+      return 'junction';
+    }
+  };
+
+  const withTree = (run: (root: string) => void): void => {
+    const root = mkdtempSync(join(tmpdir(), 'p1-27-walk-'));
+    try {
+      mkdirSync(join(root, 'phase', 'nested'), { recursive: true });
+      mkdirSync(join(root, 'outside'), { recursive: true });
+      writeFileSync(join(root, 'phase', 'a.md'), 'a\n');
+      writeFileSync(join(root, 'phase', 'nested', 'b.md'), 'b\n');
+      writeFileSync(join(root, 'outside', 'foreign.md'), 'not part of this tree\n');
+      run(root);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  };
+
+  it('walks a link-free tree completely', () => {
+    // Without this the refusal below could be a walk that reads nothing at all.
+    withTree((root) => {
+      const found = walk(join(root, 'phase'), (p: string) => p.endsWith('.md')) as string[];
+      expect(found.length, 'the walk did not descend into the nested directory').toBe(2);
+    });
+  });
+
+  it('throws on a directory junction rather than walking past it in silence', () => {
+    withTree((root) => {
+      const kind = linkDirectory(join(root, 'outside'), join(root, 'phase', 'escape'));
+      expect(['dir', 'junction'], 'no link could be created on this machine').toContain(kind);
+      expect(() => walk(join(root, 'phase'), (p: string) => p.endsWith('.md'))).toThrow(
+        /escape is a symbolic link/
+      );
+    });
+  });
+
+  it('names the path and says why the link is not simply followed', () => {
+    // "unexpected symlink" sends a reader nowhere. The message has to identify
+    // the path and state the policy, because removing the link is a decision.
+    withTree((root) => {
+      linkDirectory(join(root, 'outside'), join(root, 'phase', 'escape'));
+      expect(() => walk(join(root, 'phase'), () => true)).toThrow(/refuses to walk symlinks/);
+    });
+  });
+
+  it('reads a live phase tree that holds no link, so its counts cover the whole tree', () => {
+    // The guarantee the refusal buys, asserted against the repository: if a link
+    // ever appears under the phase directory the gate exits 2 and names it,
+    // rather than certifying counts taken over a partial walk.
+    expect(() =>
+      walk(join(__dirname, '../..', 'docs/phase-1/phase-1-27'), (p: string) => p.endsWith('.md'))
+    ).not.toThrow();
   });
 });

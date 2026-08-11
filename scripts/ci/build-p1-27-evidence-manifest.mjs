@@ -71,8 +71,18 @@
  * the one path exempt from the dangling-citation check, for the same reason: the
  * index cites it and it is deliberately absent from its own file set.
  *
+ * ## The gate proves it can fail before it reports that it passed
+ *
+ * Every rule here is applied in exactly one function, `judge`, and `main` drives
+ * that function over a table of known-bad inputs before it looks at the tree.
+ * The reason is recorded beside the table: three separate rules were stubbed out
+ * by an adversarial pass and the validator exited 0 each time, because no test
+ * named them and the real tree is sound, so a rule that always passes and a rule
+ * that works are the same observation. See `selfCheck`.
+ *
  * Usage:  node scripts/ci/build-p1-27-evidence-manifest.mjs [--check] [--json]
- * Exit:   0 written / in sync · 1 drifted or unreachable · 2 IO error.
+ * Exit:   0 written / in sync · 1 drifted, unreachable, or self-check failed ·
+ *         2 IO error.
  */
 import { createHash } from 'node:crypto';
 import { readFileSync, readdirSync, writeFileSync, existsSync } from 'node:fs';
@@ -293,39 +303,116 @@ export function serialise(manifest) {
   return `${JSON.stringify(manifest, null, 2)}\n`;
 }
 
+/* ------------------------------------------------------------------ *
+ * Verdicts, and why they are all applied in exactly one place
+ *
+ * An adversarial pass defeated this validator three ways and it exited 0 every
+ * time:
+ *
+ *   1. `reportDigestShape(manifest)` replaced with the literal `true`;
+ *   2. `reportReachability(ROOT)` replaced with `true`, after which DELETING
+ *      `contract-archaeology.md` printed "in sync — 35 documents, every one
+ *      reachable";
+ *   3. `digest()` mutated to hash the file's PATH instead of its bytes, after
+ *      which the manifest regenerated cleanly — path digests are also 64 hex
+ *      characters and also all distinct, so the shape rule agreed with them.
+ *
+ * (1) and (2) are one defect: neither reporter was exported, no test in
+ * `tests/**` or `apps/web/tests/**` named either of them, and the real tree is
+ * sound — so a rule that always returns true and a rule that works produced
+ * identical output. Nothing anywhere ran either rule against an input it was
+ * supposed to reject. A check that has never failed is not known to be a check.
+ *
+ * So every rule is now applied in exactly one place, `judge`, and `judge` runs
+ * TWICE on every invocation: once over the real evidence tree, and once over a
+ * table of known-bad inputs it is required to reject (`selfCheck`, run first in
+ * `main`). Stub any rule and the corresponding known-bad case starts passing,
+ * which is itself the failure.
+ *
+ * (3) is a different defect and needs a different answer: an oracle that does
+ * not call the code it is checking. That is `verifyDigestBytes`.
+ * ------------------------------------------------------------------ */
+
+/**
+ * Where a verdict's complaint goes. Swapped for a collector by `selfCheck`.
+ *
+ * @type {(line: string) => void}
+ */
+const toStderr = (line) => {
+  process.stderr.write(line);
+};
+
+/**
+ * Every recorded digest, recomputed from the file's bytes WITHOUT `digest()`.
+ *
+ * `--check` compares a regenerated manifest against the committed one, so it is
+ * structurally blind to a change in the digest FUNCTION: mutate the hash and
+ * both sides mutate together, byte-for-byte in sync, and the gate reports
+ * success. The shape rule below closes half of that — it catches a digest that
+ * stopped LOOKING like SHA-256 — and it cannot close the other half, because a
+ * SHA-256 of the wrong input looks exactly like a SHA-256 of the right one.
+ * Hashing the path was reproduced against this tree: 64 hex characters, 36
+ * distinct values, manifest regenerated, gate green.
+ *
+ * Duplicating `createHash('sha256')` here is deliberate and must stay
+ * duplicated. An oracle that calls the function it is checking is `f(x) === f(x)`
+ * — which is the same mistake `tests/ci/p1-27-evidence-manifest.test.ts` records
+ * having shipped once already, under `QA005-06`.
+ */
+export function verifyDigestBytes(root, manifest) {
+  const problems = [];
+  for (const [file, entry] of Object.entries(manifest.files ?? {})) {
+    const bytes = readFileSync(join(root, file.split(posix.sep).join(sep)));
+    const expected = createHash('sha256').update(bytes).digest('hex');
+    if (entry.sha256 !== expected) {
+      problems.push(`${file}: the manifest records ${entry.sha256}; its bytes hash to ${expected}`);
+    } else if (entry.bytes !== bytes.length) {
+      problems.push(
+        `${file}: the manifest records ${entry.bytes} bytes; the file holds ${bytes.length}`
+      );
+    }
+  }
+  return problems;
+}
+
 /**
  * Report a digest set that is not SHA-256. Returns true when it is sound.
  *
- * `--check` compares the regenerated manifest with the committed one, so it is
- * structurally blind to a change in the DIGEST FUNCTION: mutate the hash and both
- * sides mutate together, byte-for-byte in sync, and the gate reports success. It
- * did — with every digest truncated to sixteen bytes, and again with all
- * thirty-six replaced by one constant.
- *
- * The shape is therefore checked directly. 64 lower-case hex characters is
- * SHA-256 and nothing else, and thirty-six distinct documents cannot share a
- * digest unless the digest is not a function of their bytes.
+ * 64 lower-case hex characters is SHA-256 and nothing else, and thirty-six
+ * distinct documents cannot share a digest unless the digest is not a function
+ * of their bytes. Truncation to sixteen bytes and a single constant across every
+ * document were both reproduced against this tree before this existed.
  */
-function reportDigestShape(manifest) {
-  const entries = Object.entries(manifest.files);
+export function reportDigestShape(manifest, write = toStderr) {
+  const entries = Object.entries(manifest.files ?? {});
   const malformed = entries.filter(([, e]) => !/^[0-9a-f]{64}$/.test(e.sha256));
   if (malformed.length > 0) {
-    process.stderr.write(
+    write(
       '::error::the manifest records digests that are not SHA-256 (64 lower-case hex characters). The digest function has been changed.\n'
     );
     for (const [file, e] of malformed.slice(0, 10)) {
-      process.stderr.write(`  ${file}: ${e.sha256.length} characters\n`);
+      write(`  ${file}: ${String(e.sha256).length} characters\n`);
     }
     return false;
   }
   const distinct = new Set(entries.map(([, e]) => e.sha256));
   if (entries.length > 1 && distinct.size !== entries.length) {
-    process.stderr.write(
+    write(
       `::error::${entries.length} documents share ${distinct.size} digests. A digest that repeats across different files is not a hash of their bytes.\n`
     );
     return false;
   }
   return true;
+}
+
+/** Report digests that are not a hash of the bytes. Returns true when sound. */
+export function reportDigestBytes(mismatches, write = toStderr) {
+  if (mismatches.length === 0) return true;
+  write(
+    '::error::a recorded digest is not the SHA-256 of the file it names. The digest function no longer hashes the bytes, or the manifest was written against a different tree.\n'
+  );
+  for (const problem of mismatches.slice(0, 10)) write(`  ${problem}\n`);
+  return false;
 }
 
 /**
@@ -335,33 +422,182 @@ function reportDigestShape(manifest) {
  * removed, so it is the moment a reader can still act; deferring the complaint to
  * `--check` would mean the first report of a deleted document arrives in CI,
  * attached to whoever pushed next.
+ *
+ * It takes the ANALYSIS rather than a root, so the same code path can be driven
+ * with a deletion that has not happened. `reachability` reads a filesystem; a
+ * rule that can only be exercised by mutating the repository is a rule nobody
+ * exercises.
  */
-function reportReachability(root) {
+export function reportReachability(analysis, write = toStderr) {
   let sound = true;
-  const { orphans, dangling, staleDeclarations } = reachability(root);
+  const { orphans, dangling, staleDeclarations } = analysis;
 
   if (dangling.length > 0) {
     sound = false;
-    process.stderr.write(
+    write(
       '::error::the P1-27 index cites evidence documents that are not in the tree. A document was deleted or renamed and the documents that name it were not updated.\n'
     );
-    for (const f of dangling) process.stderr.write(`  cited but absent: ${f}\n`);
+    for (const f of dangling) write(`  cited but absent: ${f}\n`);
   }
   if (orphans.length > 0) {
     sound = false;
-    process.stderr.write(
+    write(
       `::error::evidence documents that no index document cites. Cite each from one of ${INDEX_SET.join(', ')}, or declare it in INTENTIONALLY_UNREFERENCED with a reason.\n`
     );
-    for (const f of orphans) process.stderr.write(`  unreferenced: ${f}\n`);
+    for (const f of orphans) write(`  unreferenced: ${f}\n`);
   }
   if (staleDeclarations.length > 0) {
     sound = false;
-    process.stderr.write(
+    write(
       '::error::INTENTIONALLY_UNREFERENCED declares a file that is not in the tree. Remove the declaration with the file.\n'
     );
-    for (const f of staleDeclarations) process.stderr.write(`  stale declaration: ${f}\n`);
+    for (const f of staleDeclarations) write(`  stale declaration: ${f}\n`);
   }
   return sound;
+}
+
+/**
+ * The ONLY place a verdict is taken. Every rule fires here or nowhere.
+ *
+ * All three run before the aggregate is formed, so one failure does not hide
+ * another — a reader fixing a deleted citation should not then discover the
+ * digest function was also wrong.
+ */
+export function judge(inputs, write = toStderr) {
+  const shapeOk = reportDigestShape(inputs.manifest, write);
+  const bytesOk = reportDigestBytes(inputs.digestMismatches, write);
+  const reachableOk = reportReachability(inputs.reachability, write);
+  return { shapeOk, bytesOk, reachableOk, sound: shapeOk && bytesOk && reachableOk };
+}
+
+/* ------------------------------------------------------------------ *
+ * The self-check
+ * ------------------------------------------------------------------ */
+
+/** 64 lower-case hex characters, distinct per tag. A well-formed fake digest. */
+const wellFormed = (tag) => String(tag).padStart(64, 'a');
+
+const SOUND_REACHABILITY = { orphans: [], dangling: [], staleDeclarations: [] };
+const SOUND_MANIFEST = {
+  files: {
+    'a.md': { sha256: wellFormed(1), bytes: 1 },
+    'b.md': { sha256: wellFormed(2), bytes: 2 },
+  },
+};
+
+const inputs = (over = {}) => ({
+  manifest: SOUND_MANIFEST,
+  digestMismatches: [],
+  reachability: SOUND_REACHABILITY,
+  ...over,
+});
+
+/**
+ * Inputs `judge` is REQUIRED to reject, and one it is required to accept.
+ *
+ * Each is a defect this validator has actually shipped, expressed as data rather
+ * than as a sentence about the code. `expects` names the flag that must go
+ * false: a case that only asserted `sound` would be satisfied by any rule
+ * failing, so stubbing one rule while another fired would still look correct.
+ *
+ * `explains` is the second half. A rule that returns false and prints nothing
+ * fails CI with no way to act on it, and this repository has shipped that too.
+ */
+export const SELF_CHECK_CASES = [
+  {
+    name: 'a sound manifest, a sound set',
+    inputs: inputs(),
+    expects: { shapeOk: true, bytesOk: true, reachableOk: true, sound: true },
+    explains: false,
+  },
+  {
+    name: 'a truncated digest',
+    inputs: inputs({ manifest: { files: { 'a.md': { sha256: 'abcdef0123456789', bytes: 1 } } } }),
+    expects: { shapeOk: false, sound: false },
+    explains: true,
+  },
+  {
+    name: 'an upper-case digest',
+    inputs: inputs({
+      manifest: { files: { 'a.md': { sha256: wellFormed(1).toUpperCase(), bytes: 1 } } },
+    }),
+    expects: { shapeOk: false, sound: false },
+    explains: true,
+  },
+  {
+    name: 'one constant digest across two documents',
+    inputs: inputs({
+      manifest: {
+        files: {
+          'a.md': { sha256: wellFormed(1), bytes: 1 },
+          'b.md': { sha256: wellFormed(1), bytes: 2 },
+        },
+      },
+    }),
+    expects: { shapeOk: false, sound: false },
+    explains: true,
+  },
+  {
+    name: 'a digest that is not a hash of the bytes',
+    inputs: inputs({ digestMismatches: ['a.md: the manifest records …; its bytes hash to …'] }),
+    expects: { bytesOk: false, sound: false },
+    explains: true,
+  },
+  {
+    name: 'a cited document that was deleted',
+    inputs: inputs({
+      reachability: { ...SOUND_REACHABILITY, dangling: [`${PHASE_DIR}/contract-archaeology.md`] },
+    }),
+    expects: { reachableOk: false, sound: false },
+    explains: true,
+  },
+  {
+    name: 'a document no index cites',
+    inputs: inputs({
+      reachability: { ...SOUND_REACHABILITY, orphans: [`${PHASE_DIR}/smuggled.md`] },
+    }),
+    expects: { reachableOk: false, sound: false },
+    explains: true,
+  },
+  {
+    name: 'an exemption that outlived its file',
+    inputs: inputs({
+      reachability: { ...SOUND_REACHABILITY, staleDeclarations: [`${PHASE_DIR}/gone.md`] },
+    }),
+    expects: { reachableOk: false, sound: false },
+    explains: true,
+  },
+];
+
+/**
+ * Drive `judge` over the known-bad table. Returns the ways it failed to fail.
+ *
+ * This is what makes every rule above load-bearing. It is not a test — it runs
+ * inside the gate, on every invocation, in CI and locally, because the mutation
+ * that defeated this validator was made to the gate and the gate is what has to
+ * notice.
+ */
+export function selfCheck(cases = SELF_CHECK_CASES) {
+  const failures = [];
+  for (const kase of cases) {
+    const said = [];
+    const verdict = judge(kase.inputs, (line) => said.push(line));
+    for (const [flag, want] of Object.entries(kase.expects)) {
+      if (verdict[flag] !== want) {
+        failures.push(
+          `${kase.name}: judge() reported ${flag} = ${verdict[flag]}, expected ${want}`
+        );
+      }
+    }
+    if (said.length > 0 !== kase.explains) {
+      failures.push(
+        kase.explains
+          ? `${kase.name}: rejected and printed nothing a reader could act on`
+          : `${kase.name}: is sound and was complained about anyway`
+      );
+    }
+  }
+  return failures;
 }
 
 function main(argv) {
@@ -369,14 +605,24 @@ function main(argv) {
   const asJson = argv.includes('--json');
   const target = join(ROOT, MANIFEST_PATH.split(posix.sep).join(sep));
 
+  const selfFailures = selfCheck();
+  if (selfFailures.length > 0) {
+    process.stderr.write(
+      '::error::the P1-27 evidence validator failed its own self-check: a rule accepted an input it is required to reject. A guard that cannot fail is not a guard, and every verdict below it is worthless.\n'
+    );
+    for (const failure of selfFailures) process.stderr.write(`  ${failure}\n`);
+    return 1;
+  }
+
   let manifest;
   let sound;
   try {
     manifest = buildManifest(ROOT);
-    // Both run before either verdict is used, so one failure does not hide another.
-    const shapeOk = reportDigestShape(manifest);
-    const reachableOk = reportReachability(ROOT);
-    sound = shapeOk && reachableOk;
+    sound = judge({
+      manifest,
+      digestMismatches: verifyDigestBytes(ROOT, manifest),
+      reachability: reachability(ROOT),
+    }).sound;
   } catch (error) {
     process.stderr.write(`::error::cannot read the P1-27 evidence tree: ${error.message}\n`);
     return 2;

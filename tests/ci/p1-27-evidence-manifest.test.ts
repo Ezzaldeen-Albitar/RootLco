@@ -43,6 +43,10 @@ import {
   reachability,
   citationsFrom,
   serialise,
+  judge,
+  selfCheck,
+  verifyDigestBytes,
+  SELF_CHECK_CASES,
   INDEX_SET,
   INTENTIONALLY_UNREFERENCED,
   PHASE_DIR,
@@ -738,5 +742,148 @@ describe('P1-27-QA-005 — every non-FE canonical task is accounted for', () => 
       .map((id) => id.replace('P1-27-', ''))
       .filter((id) => disputed.has(id) && !adjudication.includes(`\`${id}\``));
     expect(missing, 'a disputed non-FE task carries no adjudicated verdict').toEqual([]);
+  });
+});
+
+describe('P1-27-QA-005 — the validator can be made to fail, so its passing means something', () => {
+  /*
+   * An adversarial pass defeated this gate three ways and it exited 0 each time:
+   * `reportDigestShape(...)` replaced with `true`; `reportReachability(...)`
+   * replaced with `true`, after which DELETING `contract-archaeology.md` printed
+   * "in sync — 35 documents, every one reachable"; and `digest()` mutated to hash
+   * the file's PATH, after which the manifest regenerated cleanly because path
+   * digests are also 64 hex characters and also all distinct.
+   *
+   * The first two were one defect: neither reporter was exported, nothing in
+   * `tests/**` or `apps/web/tests/**` named either of them, and the real tree is
+   * sound — so a rule that always returns true and a rule that works produced
+   * byte-identical output. Every rule now fires in one place, `judge`, and the
+   * gate drives that place over known-bad inputs on every run, before it looks at
+   * the tree at all.
+   */
+  /** The four flags `judge` returns. Indexed by name, so the type is a map. */
+  const FLAGS = ['shapeOk', 'bytesOk', 'reachableOk', 'sound'] as const;
+  interface KnownBad {
+    readonly name: string;
+    readonly inputs: unknown;
+    readonly expects: Record<string, boolean>;
+    readonly explains: boolean;
+  }
+  const cases = SELF_CHECK_CASES as unknown as KnownBad[];
+  const verdictOf = (inputs: unknown): Record<string, boolean> =>
+    judge(inputs, () => {}) as unknown as Record<string, boolean>;
+
+  it('rejects every known-bad input the gate carries', () => {
+    // The case the gate itself runs on every invocation. Stub a rule and the
+    // input it was supposed to reject starts passing — here and in CI.
+    expect(selfCheck(), 'a rule accepted an input it is required to reject').toEqual([]);
+  });
+
+  it('carries a known-bad input for every rule, and exactly one sound input', () => {
+    /*
+     * ANTI-VACUITY, twice over. An empty table satisfies "rejects every known-bad
+     * input" perfectly; and a table of only-bad inputs would be satisfied by a
+     * `judge` that returns false unconditionally, which fails a sound tree only
+     * after somebody has already committed it.
+     */
+    expect(cases.length, 'the known-bad table is empty').toBeGreaterThan(4);
+    const covered = new Set(cases.flatMap((k) => Object.keys(k.expects)));
+    expect(covered, 'a rule has no known-bad input').toEqual(new Set(FLAGS));
+    expect(
+      cases.filter((k) => k.expects.sound === true).length,
+      'no sound input is exercised, so an always-false judge would pass'
+    ).toBe(1);
+    expect(cases.filter((k) => k.expects.sound === false).length).toBeGreaterThan(3);
+  });
+
+  it('names which rule must fail, not merely that something must', () => {
+    /*
+     * `sound` alone is satisfied by ANY rule firing, so one rule stubbed while
+     * another fired would still look correct. Each known-bad input pins the flag.
+     */
+    for (const kase of cases) {
+      const got = verdictOf(kase.inputs);
+      const named = Object.entries(kase.expects).map(([flag, want]) => `${flag}=${want}`);
+      expect(named.length, `${kase.name} asserts no flag at all`).toBeGreaterThan(0);
+      for (const [flag, want] of Object.entries(kase.expects)) {
+        expect(got[flag], `${kase.name}: expected ${named.join(' ')}`).toBe(want);
+      }
+    }
+  });
+
+  it('detects a rule that has stopped rejecting what it must reject', () => {
+    /*
+     * `selfCheck` proved non-vacuous. It is handed a table demanding that a SOUND
+     * input be rejected — which is what a stubbed rule looks like from the other
+     * side — and it has to say so rather than return clean.
+     */
+    const sound = cases.find((k) => k.expects.sound === true) as KnownBad;
+    const impossible = [{ ...sound, expects: { sound: false }, explains: true }];
+    const failures = selfCheck(impossible as unknown as typeof SELF_CHECK_CASES) as string[];
+    expect(failures.length, 'selfCheck cannot report a failure at all').toBeGreaterThan(0);
+    expect(failures.join(' ')).toContain(sound.name);
+  });
+
+  it('explains every rejection in terms a reader can act on', () => {
+    // A rule that returns false and prints nothing fails CI with nothing to act
+    // on, which this repository has also shipped.
+    for (const kase of cases) {
+      const said: string[] = [];
+      judge(kase.inputs, (line: string) => said.push(line));
+      expect(said.length > 0, `${kase.name}: silence is not a report`).toBe(kase.explains);
+    }
+  });
+
+  it('verifies each committed digest against the bytes, without calling digest()', () => {
+    /*
+     * The third mutation. `--check` compares a regenerated manifest with the
+     * committed one, so both sides move together when the digest function moves;
+     * and the shape rule cannot help, because a SHA-256 of the wrong input is
+     * indistinguishable from a SHA-256 of the right one.
+     */
+    expect(
+      verifyDigestBytes(ROOT, manifest),
+      'a committed digest is not the hash of the file it names'
+    ).toEqual([]);
+    expect(Object.keys(manifest.files).length, 'nothing was verified').toBeGreaterThan(20);
+  });
+
+  it('catches a digest taken over the path instead of the bytes', () => {
+    // The mutation itself, driven against a fixture so the repository is never
+    // touched. A path digest is 64 lower-case hex and distinct per file, which is
+    // why the shape rule agreed with it and only an independent oracle can see it.
+    withFixture(
+      { ...indexFixture(['a.md', 'b.md']), [`${PHASE_DIR}/a.md`]: 'A', [`${PHASE_DIR}/b.md`]: 'B' },
+      (root) => {
+        const built = buildManifest(root) as unknown as Manifest;
+        expect(verifyDigestBytes(root, built), 'the intact fixture is already unsound').toEqual([]);
+
+        const target = `${PHASE_DIR}/a.md`;
+        const real = built.files[target];
+        expect(real, `${target} is not in the fixture manifest at all`).toBeDefined();
+        const overPath = createHash('sha256').update(target).digest('hex');
+        expect(overPath, 'a path digest is not 64 lower-case hex').toMatch(/^[0-9a-f]{64}$/);
+        expect(overPath, 'the fixture cannot distinguish the two digests').not.toBe(
+          (real as ManifestEntry).sha256
+        );
+        const doctored = {
+          ...built,
+          files: {
+            ...built.files,
+            [target]: { sha256: overPath, bytes: (real as ManifestEntry).bytes },
+          },
+        };
+        const problems = verifyDigestBytes(root, doctored) as string[];
+        expect(problems.length, 'the path digest passed as a hash of the bytes').toBe(1);
+        expect(problems[0]).toContain(target);
+        expect(
+          verdictOf({
+            manifest: doctored,
+            digestMismatches: problems,
+            reachability: reachability(root),
+          }).sound
+        ).toBe(false);
+      }
+    );
   });
 });

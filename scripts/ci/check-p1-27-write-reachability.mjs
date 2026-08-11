@@ -53,7 +53,7 @@
  * Usage:  node scripts/ci/check-p1-27-write-reachability.mjs [--json]
  * Exit:   0 clean · 1 a violation · 2 the check could not run.
  */
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { readFileSync, readdirSync, lstatSync, statSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import { REPOSITORY_ROOT } from '../lib/repository-paths.mjs';
 
@@ -130,6 +130,20 @@ export function normaliseRoutePath(route) {
   return route.replace(/\{[^}]*\}/g, ':p');
 }
 
+/**
+ * Every non-test source file under `dir`. A symlink is REFUSED (`QA005-12`).
+ *
+ * This walker did not share the blind spot the other three had, because
+ * `statSync` follows a link — so it FOLLOWED one rather than skipping it, and
+ * that is its own defect: a link pointing at an ancestor makes this recurse until
+ * the stack ends, and a link pointing outside `apps/web/src` makes the gate
+ * classify mutations in files that are not in the tree it claims to cover.
+ *
+ * `lstatSync` asks about the link itself rather than its target, so the refusal
+ * happens before either can occur. That makes the policy uniform across all four
+ * P1-27 walkers, which is what the docblock in
+ * `build-p1-27-evidence-manifest.mjs` has been claiming.
+ */
 function walk(dir, out = []) {
   let entries;
   try {
@@ -138,10 +152,18 @@ function walk(dir, out = []) {
     fail(`Cannot read ${dir}: ${error.message}`);
   }
   for (const entry of entries) {
+    if (SKIP_DIRS.has(entry)) continue;
     const full = join(dir, entry);
+    if (lstatSync(full).isSymbolicLink()) {
+      fail(
+        `${full} is a symbolic link. This gate refuses to walk symlinks: following one can leave ` +
+          'the tree it claims to cover, or recurse without end when it points at an ancestor. ' +
+          'Remove the link, or decide the policy deliberately.'
+      );
+    }
     const stats = statSync(full);
     if (stats.isDirectory()) {
-      if (!SKIP_DIRS.has(entry)) walk(full, out);
+      walk(full, out);
     } else if (SOURCE.test(entry) && !IS_TEST.test(entry)) {
       out.push(full);
     }
