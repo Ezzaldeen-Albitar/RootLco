@@ -103,6 +103,9 @@
     "matrix:p1-27": "node scripts/ci/build-p1-27-task-matrix.mjs",
     "validate:p1-27-matrix": "node scripts/ci/build-p1-27-task-matrix.mjs --check",
     "validate:p1-27-doc-counts": "node scripts/ci/check-p1-27-doc-counts.mjs",
+    "validate:p1-27-lifecycle": "node scripts/ci/check-p1-27-lifecycle.mjs",
+    "validate:p1-27-closing-values": "node scripts/ci/check-p1-27-closing-values.mjs",
+    "record:p1-27-run": "node scripts/ci/check-p1-27-closing-values.mjs --record",
     "validate:plain-language": "node scripts/ci/check-plain-language.mjs",
     "validate:phase-ownership": "node scripts/ci/check-phase-ownership.mjs",
     "validate:product-name": "node scripts/ci/check-product-name-authority.mjs",
@@ -125,7 +128,7 @@
     "verify:classifications": "npm run validate:crm-classification && npm run validate:veh-classification && npm run validate:aptrec-classification && npm run validate:wo-tech-dia-qms-classification && npm run validate:svc-quo-inv-classification && npm run validate:sal-wty-rpt-classification",
     "verify:contracts": "npm run validate:module-boundaries && npm run validate:authorization-coverage && npm run validate:operation-coverage && npm run validate:openapi && npm run validate:exact-money && npm run validate:p1-24-register && npm run validate:idempotent-operations",
     "verify:inventories": "npm run validate:p1-19-inventory && npm run validate:p1-20-inventory && npm run validate:p1-21-inventory && npm run validate:p1-22-inventory && npm run validate:p1-23-inventory",
-    "verify:policies": "npm run validate:encoding && npm run validate:run-block-syntax && npm run validate:command-coverage && npm run validate:web-topology && npm run validate:api-backend-only && npm run validate:generated-artifacts && npm run validate:product-name && npm run validate:plain-language && npm run validate:p1-26-frontend && npm run validate:p1-27-frontend && npm run validate:p1-27-reachability && npm run validate:p1-27-evidence && npm run validate:p1-27-matrix && npm run validate:p1-27-doc-counts",
+    "verify:policies": "npm run validate:encoding && npm run validate:run-block-syntax && npm run validate:command-coverage && npm run validate:web-topology && npm run validate:api-backend-only && npm run validate:generated-artifacts && npm run validate:product-name && npm run validate:plain-language && npm run validate:p1-26-frontend && npm run validate:p1-27-frontend && npm run validate:p1-27-reachability && npm run validate:p1-27-evidence && npm run validate:p1-27-matrix && npm run validate:p1-27-doc-counts && npm run validate:p1-27-lifecycle && npm run validate:p1-27-closing-values",
     "verify:repository": "npm run typecheck && npm run lint && npm run format:check && npm run test:unit && npm run security:all",
     "verify:web": "npm run typecheck:web && npm run lint:web && npm run style:check:web && npm run format:check:web && npm run test:web && npm run validate:web-tokens && npm run validate:web-theme && npm run validate:web-brand && npm run validate:notification-authority && npm run validate:web-boundary && npm run validate:p1-27-frontend && npm run build:web && npm run test:web-e2e",
     "verify:workspaces": "npm run verify:policies && npm run verify:repository && npm run verify:api && npm run verify:web && npm run verify:contracts && npm run verify:inventories && npm run format:check:all"

@@ -196,6 +196,45 @@ export const REGISTER = Object.freeze([
     why: 'every count a P1-27 document states about the repository is derivable',
   },
   {
+    name: 'validate:p1-27-lifecycle',
+    owner: ROOT,
+    tier: 'required',
+    // The closure lifecycle as a state machine. The phase carried a rule that
+    // could not be satisfied in any order — no merge until every row is PASS, no
+    // PASS while a reproof is outstanding, no reproof without the merge — and
+    // this refuses any declared state the tree does not support, in either
+    // direction: a blocker the ledger does not declare, and a declared blocker
+    // the tree no longer raises.
+    why: 'the declared P1-27 lifecycle state is the one the tree actually holds',
+  },
+  {
+    name: 'validate:p1-27-closing-values',
+    owner: ROOT,
+    tier: 'required',
+    // Six hosted-CI figures on the two evidence pages were falsified with every
+    // gate green, and fewer than half the values those pages state were read by
+    // anything. This classifies every value on both pages as locally derivable,
+    // git-derivable, hosted-attested, protected-only, historical or
+    // non-normative, refuses a value nothing claims, and refuses a hosted value
+    // that names no run — while saying plainly that it re-derives no hosted
+    // observation and could not.
+    why: 'every closing value on the two P1-27 evidence pages names the authority that decides it',
+  },
+  {
+    name: 'record:p1-27-run',
+    owner: ROOT,
+    // `interactive` rather than `required`: it is invoked by a person taking a
+    // measurement, and it must NOT run inside an aggregate — a gate that
+    // rewrote the record it checks would agree with itself every time.
+    tier: 'interactive',
+    // The only writer of evidence/local-run-ledger.json. It is not a gate: it
+    // runs a tier and records what the tier did, with the commit it was taken
+    // at, so an executed total can be bound to a command's output instead of to
+    // another document. `validate:p1-27-closing-values` is what refuses the
+    // record once it is stale.
+    why: 'the recorded local tier measurement is a command output, not a hand-written number',
+  },
+  {
     name: 'matrix:p1-27',
     owner: ROOT,
     tier: 'informational',

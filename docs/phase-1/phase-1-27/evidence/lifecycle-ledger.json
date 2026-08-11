@@ -1,0 +1,79 @@
+{
+  "task": "P1-27 closure lifecycle",
+  "what": "The observations the P1-27 lifecycle turns on, and the state this repository declares as a result. scripts/ci/check-p1-27-lifecycle.mjs derives the same state from the tree and fails if the two disagree.",
+  "why": "The phase carried a closure rule that could not be satisfied in any order: the branch may not merge until every task row is PASS, a row may not be PASS while its reproof is OUTSTANDING, and the reproof is a job only the merge starts. The cycle came from writing two different facts into one word. They are separated now — FINAL_VERDICT is the TASK verdict, PROTECTED_REPROOF_STATUS is a lifecycle property — and this file is where the lifecycle facts live.",
+  "authority": "docs/phase-1/phase-1-27/canonical-plan.md states P1-27-QA-005 in full as \"Regression and immutable evidence packaging\" and binds no canonical task to protected develop. The plan mentions protected change control exactly twice and both mentions route a BACKEND defect through protected remediation. So QA-005 is CANDIDATE ASSURANCE and may PASS before the merge once the exact-head evidence is complete, and a protected re-run is a property of the gate lifecycle rather than a requirement of any task.",
+  "whatThisIsNot": "This is a RECORD of observations, not the observations. A cell claiming GREEN or RED must name a run id, a job id and a 40-hex head; the gate refuses a claim carrying none of those, and refuses a head that is not the code candidate. It cannot make a false but well-formed record true, and nothing here should be read as though it could.",
+  "howToCheck": "npm run validate:p1-27-lifecycle",
+  "observations": {
+    "CODE_CANDIDATE_SHA": null,
+    "CODE_CANDIDATE_NOTE": "NOT FROZEN AT THIS HEAD, and that is the honest value. This branch changes executable files, so any run taken before it would describe a different tree. The candidate is the CODE candidate rather than the head commit on purpose: recording the result of a run changes the tree, so a literal exact-head rule is stale the moment it is satisfied. Documentation-only commits after the freeze do not supersede it, and executableChangesSince proves that by asking git which paths moved and classifying each with classify-changes.mjs, the repository's own authority for what documentation is. The previous code candidate, 03e84f1f244252903569619de72481f30238e76a, was superseded by exactly this rule: six committed executable files changed after it, so its hosted CI, CodeQL, web artefact and authenticated-browser runs are HISTORICAL ONLY and are cited nowhere as evidence about the current tree.",
+    "CANDIDATE_HOSTED_CI": {
+      "observed": null,
+      "runId": null,
+      "jobId": null,
+      "headSha": null,
+      "note": "No hosted run has been taken against the current tree. The last exact-head hosted run recorded by this phase, run 31312531302 at head 356f1a1e937e819b9db94f40a2d6f04f98f9ae39, is recorded in ci-evidence.md as SUPERSEDED and is not evidence about this tree."
+    },
+    "CANDIDATE_AUTHENTICATED_BROWSER": {
+      "observed": null,
+      "runId": null,
+      "jobId": null,
+      "headSha": null,
+      "note": "The tier is wired, governed and called by both gates: pr-ci.yml on every pull request whose head is a branch of this repository, and protected-develop-verification.yml on a protected push. It has executed three times in this repository's history — runs 31337158296, 31343632011 and 31347643485, all recorded run by run in .github/ci-baselines/unrun-test-tiers.json — and all three predate the closing wave. None is an observation of this tree. This is the condition 23 task rows carry as PENDING_CANDIDATE_OBSERVATION, and it is discharged by a PULL-REQUEST run rather than by the merge, which is why it belongs here and not under a protected-only heading."
+    },
+    "PROTECTED_MERGE": {
+      "taken": false,
+      "mergeSha": null,
+      "secondParent": null,
+      "secondParentVerified": false,
+      "note": "A protected merge is verified by its SECOND parent. The first parent of a merge commit on develop is develop, so checking the first parent proves only that develop is develop."
+    },
+    "PROTECTED_CI": {
+      "observed": null,
+      "runId": null,
+      "jobId": null,
+      "headSha": null,
+      "note": "Not reachable before the merge. protected-develop-verification.yml runs on pushes to develop and main and by workflow_dispatch."
+    },
+    "PROTECTED_AUTHENTICATED_BROWSER": {
+      "observed": null,
+      "runId": null,
+      "jobId": null,
+      "headSha": null,
+      "note": "The same tier as above, taken again from the protected caller. It is a re-run of a proof already taken at the candidate, not a different proof, and nothing at the candidate is held hostage to it."
+    },
+    "PROTECTED_ONLY_OBLIGATIONS": [
+      {
+        "id": "CODEQL_REPOSITORY_CEILING",
+        "status": "PENDING_PROTECTED_MERGE",
+        "why": "A CodeQL pull-request run is diff-informed and says so in its own output, so it cannot establish the repository-wide ceiling. Only an analysis of a protected ref can. This is a phase-level lifecycle obligation and it is deliberately NOT attached to any task row: no canonical task's requirement is proved or disproved by it."
+      },
+      {
+        "id": "PROTECTED_GATE_GO",
+        "status": "PENDING_PROTECTED_MERGE",
+        "why": "protected-gate runs only on a push to a protected branch. Nothing before the merge can produce its verdict."
+      }
+    ],
+    "OWNER_ACCEPTANCE": {
+      "result": null,
+      "note": "The Owner returned OWNER ACCEPTANCE: FAIL on 2026-08-06 against a merged application, and the phase was reopened. That verdict is history and is recorded in owner-acceptance-fail-remediation.md; it is not a standing verdict about this candidate, which the Owner has not seen. `result` is null because acceptance is the Owner's act against the running application, it is not derivable from any count in this repository, and silence is not Pass."
+    }
+  },
+  "declared": {
+    "STATE": "CANDIDATE_INCOMPLETE",
+    "MERGE_PERMITTED": false,
+    "OWNER_HANDOFF_PERMITTED": false,
+    "CLOSURE_PERMITTED": false,
+    "BLOCKERS": [
+      "QA005_CANDIDATE_EVIDENCE_UNSEALED",
+      "CANDIDATE_EVIDENCE_SEAL_PENDING",
+      "CODE_CANDIDATE_NOT_FROZEN",
+      "CANDIDATE_HOSTED_CI_NOT_OBSERVED",
+      "CANDIDATE_AUTHENTICATED_BROWSER_NOT_OBSERVED",
+      "PROTECTED_MERGE_NOT_TAKEN",
+      "OWNER_ACCEPTANCE_NOT_TAKEN"
+    ],
+    "note": "Every blocker here is an expected state of an unfinished phase, not a fault. The gate fails when this declaration and the tree disagree in EITHER direction: a new blocker that is not declared, and a declared blocker the tree no longer raises. That is what makes it a check rather than a printout."
+  }
+}

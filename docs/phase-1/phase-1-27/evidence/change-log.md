@@ -737,6 +737,138 @@ candidate, and every execution above predates this wave. `QA-005` is `PARTIAL`
 and stays `PARTIAL`. Seventeen findings stay `OPEN` and every one is `SEALED`.
 The phase status is unchanged.
 
+### Closure wave ten — the closure condition was a cycle, and is now a state machine
+
+Nothing about the product changed here. What changed is that the phase's own
+closure rule could not be satisfied in any order, and it now can be.
+
+**The cycle, stated exactly.** The branch may not merge until every task row is
+`PASS`; a row may not be `PASS` while its reproof is `OUTSTANDING`; and the
+reproof is a job only a push to a protected branch starts — which is the merge.
+Each clause is defensible on its own and the conjunction has no solution, so the
+phase could be read as blocked or as closeable from the same table depending on
+which clause a reader started at.
+
+**The clause that was never true.** `canonical-plan.md` states `P1-27-QA-005` in
+full as **"Regression and immutable evidence packaging"** and binds it to nothing
+else; the plan mentions protected change control exactly twice and both mentions
+route a **Backend** defect through protected remediation. **No canonical task
+requires proof on protected `develop`.** So `QA-005` is candidate assurance and
+may `PASS` before the merge, and a protected re-run is a property of the GATE
+LIFECYCLE rather than a requirement of any task.
+
+**What that makes executable.** `scripts/ci/check-p1-27-lifecycle.mjs` holds the
+three states — `PRE_MERGE_CANDIDATE`, `POST_MERGE_PROTECTED_REPROOF`,
+`OWNER_ACCEPTANCE` — reads its facts from the task matrix, the round-five
+register and `evidence/lifecycle-ledger.json`, and fails when the declared state
+and the tree disagree **in either direction**: a blocker the ledger does not
+declare, and a declared blocker the tree no longer raises. At this head it
+reports `CANDIDATE_INCOMPLETE`, merge blocked, 23 blockers, 0 disagreements —
+green gate, unfinished phase, and those are now two different sentences.
+
+**The candidate is a CODE candidate, not a head.** Taken literally, "exact-head
+evidence" re-creates the cycle in miniature: recording a run changes the tree, so
+the run is no longer at the head. `executableChangesSince` asks git which paths
+moved and classifies each with `classify-changes.mjs`, so documentation commits
+after the freeze do not supersede a run and an executable one does. That is the
+rule the phase already applied by hand when it called `03e84f1f` superseded.
+
+**One word was carrying two obligations, and 23 rows paid for it.** `OUTSTANDING`
+covered both "an exact-head observation nobody has taken" and "a job only the
+merge starts". Twenty-two of the 23 are the authenticated browser tier, which
+`pr-ci.yml:251-264` calls on every pull request whose head is a branch of this
+repository; the twenty-third is a coverage baseline whose provenance the first
+hosted run replaces. All 23 now read `PENDING_CANDIDATE_OBSERVATION`, derived
+from the opening words of the cell by `build-p1-27-task-matrix.mjs`, which
+throws on a cell declaring no kind. **Nothing was discharged by the relabelling**
+— the observation is still unpaid and still blocks the merge.
+
+**The register can now tell a DEFECT from a PENDING EVENT.** Four derived counts
+were added: `ROUND5_DEFECT_OPEN`, `ROUND5_DEFECT_PARTIAL`,
+`ROUND5_PENDING_PROTECTED_EVENT` and `ROUND5_CANDIDATE_DEFECTS`. All eighteen
+unresolved rows were re-adjudicated against that distinction and **none moved**:
+seventeen are attacks on evidence-page guards, which `QA-005` seals against the
+candidate, and one is disposed of by `P1-27-OD-005`. `PENDING_PROTECTED_EVENT`
+has zero members, which is a result rather than an omission — and
+`checkRoundFive` refuses a row in that class whose reason names no protected
+push, branch, merge or `develop`, so it cannot become a place to put a finding
+somebody does not want to fix.
+
+**Eight negative proofs, each restored by file copy and verified by SHA-256.** An
+implementation task set `PARTIAL`; a finding reclassified `ACTIONABLE` and left
+`OPEN`; a hosted-CI observation set `RED`; an authenticated-browser observation
+set `RED`; a `PENDING_PROTECTED_MERGE` field added; a protected reproof set
+`RED`; the `OWNER_ACCEPTANCE_NOT_TAKEN` blocker deleted from the ledger. Seven
+exited 1 and named the blocker. The eighth — the pending protected field —
+exited **0** with a blocker set byte-identical to the baseline, which is the
+proof that it is a legitimate pre-merge state and not a defect. The green
+protected reproof was driven with synthetic facts, because no run can be made
+green to order; that is stated rather than implied, and it is how
+`evaluate-ci-gate.mjs` has always been tested.
+
+**What did NOT move.** No task verdict changed. No finding closed. `QA-005` is
+`PARTIAL` and stays `PARTIAL`, for a reason that is now a named blocker rather
+than a paragraph. The phase status is unchanged: `OWNER ACCEPTANCE: FAIL`.
+
+### Closure wave eleven — every closing value on the evidence pages now names an authority
+
+An adversarial pass falsified six hosted-CI figures on `ci-evidence.md` and
+`clean-room-evidence.md` with every gate green, and measured that fewer than half
+the values those two pages state were read by anything at all. The two pages are
+the phase's record of what was verified. A number on them that no check consults
+is a decoration standing where evidence is supposed to be, and the checked
+numbers beside it lend it credibility it has not earned.
+
+Correcting six figures produces six figures that will be wrong again. What was
+missing was the rule.
+
+**`scripts/ci/check-p1-27-closing-values.mjs`** (`validate:p1-27-closing-values`,
+registered `required`, in `verify:policies`) classifies every value on both pages
+as exactly one of six classes and resolves the authority each names:
+`DERIVABLE_LOCAL` runs the command, `DERIVABLE_GIT` asks the object database,
+`HOSTED_ARTIFACT_ATTESTED` must name a run, a job or artefact and the exact head,
+`PROTECTED_POST_MERGE_ONLY` may carry no figure before the merge, and
+`HISTORICAL_SUPERSEDED` and `NON_NORMATIVE_EXAMPLE` are kept, banner-marked and
+excluded from the current seal.
+
+**The pages are TILED, not annotated.** A classifier that only inspects values a
+document opts into reports zero problems about a document that opts nothing in —
+the vacuity this repository has now shipped in four scanners. Both pages are
+covered edge to edge by seal regions with no gaps, and every value token inside a
+`current` region must be claimed. A `narrative` region is a positive claim that
+it holds no values; a figure appearing in one is reported with its line.
+
+**It re-derives no hosted observation, and says so.** For a hosted value the gate
+proves internal consistency only. The observation is collected from the GitHub
+API during exact-head CI by a reader of the run. Pretending a local validator
+reproduces a hosted figure would be a worse defect than the one being fixed.
+
+**Two circular bindings were cut.** `tests/ci/p1-27-doc-counts.test.ts` and
+`tests/ci/p1-27-evidence-manifest.test.ts` both compared the executed web total
+on the page to `measured` in `.github/ci-baselines/test-count-baseline.json`.
+Both of those are documents; the record and the baseline agreed with each other
+while both disagreed with the repository, which is how a total 281 tests below
+the tree survived a wave under two gates. Executed totals are now bound to
+`evidence/local-run-ledger.json`, written only by `record:p1-27-run` from the
+JSON a `vitest` run emits, carrying the commit it was taken at, refused once any
+executable path changes, and cross-checked against a walk of the tree — the
+comparison that would have caught the stale total the day it was written.
+
+**Three misrepresentations found and corrected.** `Hosted corroboration at the
+same head` described run `31312531302` at a head the branch had left behind, in a
+section nothing marked as history. `| Root unit tier | **1762** tests |` — a row
+inside the block headed SUPERSEDED — was being read by a live check as the root
+tier's current total, four lines under a sentence saying a superseded block must
+never be the thing a test reads. And both pages stated the CodeQL figure as
+`repository-wide` when it came from a pull-request analysis, which is
+diff-informed and cannot establish a repository ceiling; that ceiling is now a
+`PROTECTED_POST_MERGE_ONLY` entry carrying no figure.
+
+**What did NOT move.** No task verdict changed. No finding closed. No hosted run
+was taken, so the pages state no current hosted value at all — every hosted
+record is `HISTORICAL` with full provenance or `PENDING_CANDIDATE_OBSERVATION`
+with none. The phase status is unchanged: `OWNER ACCEPTANCE: FAIL`.
+
 ### Where the record stands at this head
 
 Every figure in this section is **derived**, and a document that restates one
@@ -748,7 +880,7 @@ falsified two commits later by a wave this file had not yet recorded.
 | what                                       | at this head                                                                                                                                                                                                                                                                                                                                                             |
 | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | The 42-task matrix                         | <!-- derived: matrix PASS = 41 --> **41** PASS · <!-- derived: matrix PARTIAL = 1 --> **1** PARTIAL · <!-- derived: matrix FAIL = 0 --> **0** FAIL. The one is `QA-005`, sealed last by design.                                                                                                                                                                          |
-| Protected reproof                          | <!-- derived: matrix OUTSTANDING = 23 --> **23** rows OUTSTANDING. The phase cannot close while this is non-zero, and it is not the same question as the column beside it.                                                                                                                                                                                               |
+| Reproof debt, by kind                      | <!-- derived: matrix PENDING_CANDIDATE_OBSERVATION = 23 --> **23** rows await an exact-head CANDIDATE observation, which a pull-request run takes; <!-- derived: matrix PENDING_PROTECTED_MERGE = 0 --> **0** await a job only a protected push starts. The phase cannot close while the first is non-zero, and it is not the same question as the column beside it.     |
 | Round five, actionable                     | <!-- derived: round5 ACTIONABLE_OPEN = 0 --> **0** open, <!-- derived: round5 ACTIONABLE_PARTIAL = 0 --> **0** partial. The four that stood here closed at `3f8ef6c` and the two that replaced them closed in wave nine — `H-23` at `2bc3b3a`, `H-24` at `e5f7480`. Zero actionable is NOT closeable: seventeen sealed findings are still open and `QA-005` has not run. |
 | Round five, sealed until `QA-005` executes | <!-- derived: round5 SEALED_OPEN = 17 --> **17** open, and they may be. They measure the record of the closing candidate, which does not exist yet.                                                                                                                                                                                                                      |
 | Round five, dispositioned                  | <!-- derived: round5 DISPOSITIONED_PARTIAL = 1 --> **1** — `A42-13`, true and decided by `P1-27-OD-005`. It is not counted as a blocker and it is not marked fixed.                                                                                                                                                                                                      |
@@ -791,7 +923,7 @@ Three things changed, and only one of them is a document.
 
 **A digest over the evidence.** `evidence/evidence-manifest.json` carries SHA-256
 over the _bytes_ of every `.md` and `.json` file in the phase directory, walked
-rather than listed — <!-- derived: manifest fileCount = 36 --> **36** of them at
+rather than listed — <!-- derived: manifest fileCount = 39 --> **36** of them at
 this head. That number was written here as "29" and stayed there while the phase
 directory grew by seven documents: a sentence about a walk, holding a figure
 nothing read. It is derived now, so the next document that joins the tree fails
@@ -882,9 +1014,16 @@ any byte of difference, and `tests/ci/p1-27-task-matrix.test.ts` requires
 with it; a pointer cannot.
 
 Read alongside it: `totals.PASS` is the verdict on the FEATURE, and
-`protectedReproof.OUTSTANDING` is the count of rows whose evidence includes a job
-only a protected push starts. The phase cannot close while the second is
-non-zero, and neither number can substitute for the other.
+`protectedReproof` counts the rows whose evidence includes a job this tree has
+not yet run. **That sentence used to name `protectedReproof.OUTSTANDING`, a key
+the matrix no longer has** — closure wave ten split it, because 22 of the 23 were
+the authenticated browser tier, which `pr-ci.yml` calls on every pull request
+from this repository and which is therefore discharged by a candidate run rather
+than by the merge. The key is now `PENDING_CANDIDATE_OBSERVATION` or
+`PENDING_PROTECTED_MERGE`, and this paragraph named neither for a whole wave: a
+document restating a field name it does not read is the same defect as a document
+restating a count it does not derive. The phase cannot close while either is
+non-zero, and no one of these numbers can substitute for another.
 
 The first row and the last describe the same universe. They are not the same
 claim: the first was asserted, the last is derived and re-derived on every run.

@@ -626,6 +626,44 @@ describe('P1-27-QA-005 — the recorded counts are reconciled against the reposi
     return entry as Floor;
   };
 
+  /**
+   * What a tier DID, from the run record rather than from another document.
+   *
+   * `evidence/local-run-ledger.json` is written only by
+   * `scripts/ci/check-p1-27-closing-values.mjs --record`, from the JSON a vitest
+   * run emits, and that gate refuses the record once an executable path has
+   * changed since it was taken. It is the one authority here that is a command's
+   * output rather than a file somebody edited.
+   *
+   * ## Why FRESHNESS is not asserted here
+   *
+   * These cases execute INSIDE the run that produces the next record, and the
+   * record is written after the run ends. So a case asserting "the recorded run
+   * was green" reads the PREVIOUS record and, if that one was red, fails — which
+   * makes the new record red, which fails the next run, for ever. The first
+   * spelling of this deadlocked exactly that way.
+   *
+   * Freshness and greenness therefore belong to the gate, which runs outside any
+   * tier: `judgeRunLedger` in `check-p1-27-closing-values.mjs` refuses a record
+   * carrying failures, a record predating an executable change, and a record
+   * whose file count is not the tree's. What is asserted here is the part that
+   * is stable under its own execution — that the page states the figure the
+   * record holds.
+   */
+  interface Run {
+    readonly tests: number;
+    readonly files: number;
+    readonly failed: number;
+  }
+  const runs = JSON.parse(readRepo(`${PHASE_DIR}/evidence/local-run-ledger.json`)) as {
+    tiers: Record<string, Run | undefined>;
+  };
+  const recordedRun = (tier: string): Run => {
+    const entry = runs.tiers[tier];
+    expect(entry, `no recorded local run for the ${tier} tier`).toBeDefined();
+    return entry as Run;
+  };
+
   it('states the number of web test files the repository actually holds', () => {
     /*
      * The exact defect: "still pins ... 763/38 while the tree is ... 5 test
@@ -668,19 +706,55 @@ describe('P1-27-QA-005 — the recorded counts are reconciled against the reposi
      */
     const total = /current tree executes \*\*(\d+)\*\* tests/.exec(cleanRoom)?.[1];
     expect(total, `${CLEAN_ROOM} records no CURRENT web tier total`).toBeDefined();
-    expect(Number(total)).toBe(floor('web').measured);
+    /*
+     * REBOUND, for the same reason the floor comparison below is kept.
+     *
+     * This asserted the page equals `measured` in the committed baseline. Both
+     * are documents, and when a page and a baseline are compared only to each
+     * other they can agree perfectly while both disagree with the repository —
+     * which is precisely what happened, for a whole wave, under two gates.
+     *
+     * The measurement now comes from `evidence/local-run-ledger.json`, written
+     * by a command from a vitest report and expiring on any executable change.
+     * The FLOOR still comes from the baseline: that is what a baseline is.
+     */
+    expect(Number(total)).toBe(recordedRun('web').tests);
     expect(Number(total)).toBeGreaterThanOrEqual(floor('web').minTests);
 
     // And the superseded block must not be mistaken for it. If the two ever
     // agree by coincidence the check above still reads the live one.
     const superseded = /\|\s*Web tier\s*\|\s*\*\*(\d+)\*\* tests/.exec(cleanRoom)?.[1];
     expect(superseded, 'the superseded record was removed rather than kept').toBeDefined();
+    expect(Number(superseded), 'the current and superseded totals are the same figure').not.toBe(
+      Number(total)
+    );
   });
 
-  it('states a root unit tier total that clears the committed floor', () => {
-    const total = /\|\s*Root unit tier\s*\|\s*\*\*(\d+)\*\* tests/.exec(cleanRoom)?.[1];
-    expect(total, `${CLEAN_ROOM} records no root unit tier total`).toBeDefined();
-    expect(Number(total)).toBeGreaterThanOrEqual(floor('unit').minTests);
+  it('states a CURRENT root unit tier total that clears the committed floor', () => {
+    /*
+     * This used to read `| Root unit tier | **1762** tests |` — a row inside the
+     * block headed SUPERSEDED, four lines under a sentence saying a superseded
+     * block must never be the thing a test reads. The page said the rule and
+     * this case broke it: a figure describing a head the branch had left behind
+     * was being compared to the live committed floor and reported as the root
+     * tier clearing it.
+     *
+     * It now reads the CURRENT row, and requires the superseded one to still be
+     * present and to be a different number, so the two cannot be confused again.
+     */
+    const current = /\|\s*Root unit tier — tests executed\s*\|\s*(\d+)\s*\|/.exec(cleanRoom)?.[1];
+    expect(current, `${CLEAN_ROOM} records no CURRENT root unit tier total`).toBeDefined();
+    expect(Number(current)).toBe(recordedRun('unit').tests);
+    expect(Number(current)).toBeGreaterThanOrEqual(floor('unit').minTests);
+
+    const superseded = /\|\s*Root unit tier\s*\|\s*\*\*(\d+)\*\* tests/.exec(cleanRoom)?.[1];
+    expect(
+      superseded,
+      'the superseded root unit record was removed rather than kept'
+    ).toBeDefined();
+    expect(Number(superseded), 'the current and superseded totals are the same figure').not.toBe(
+      Number(current)
+    );
   });
 });
 

@@ -1,13 +1,47 @@
+<!-- seal: narrative masthead -->
+
 # Phase 1-27 — continuous-integration evidence
 
 **CURRENT PHASE STATUS: OWNER ACCEPTANCE: FAIL.** The phase is not closed, `P1-G27` is not written, `main` is untouched, and P1-28 has not begun. Acceptance is the Product Owner's act against the running application; it is not derivable from any count in this repository and cannot be inferred from silence.
 
 **Classification:** Confidential — Commercial Product and Pilot Planning
 
-Hosted CI on PR #198, then on PR #214. Recorded because a local green run and a
-hosted green run prove different things, and neither is a superset of the other.
+Hosted CI on the pull requests this phase has run through. Recorded because a
+local green run and a hosted green run prove different things, and neither is a
+superset of the other.
 
----
+Every value on this page is classified in
+[`evidence/closing-value-ledger.json`](evidence/closing-value-ledger.json) and
+the classes are explained on `clean-room-evidence.md`. A hosted figure is
+`HOSTED_ARTIFACT_ATTESTED`: no command in this repository re-derives it, so the
+record must name the run, the job or artefact, and the head it describes. The
+gate proves that much and says plainly that it proves no more — the observation
+itself is collected from the GitHub API during exact-head CI, by a reader of the
+run.
+
+<!-- seal: end masthead -->
+<!-- seal: current pending-observation -->
+
+## What is still to be collected
+
+**No hosted run has been taken against the current tree**, so this page states no
+current hosted value. The candidate is not frozen — this branch is still changing
+executable files — and until it is, a hosted figure here would describe a
+different tree. That is the whole of `P1-27-QA-005` in one sentence.
+
+`PROTECTED_GATE_GO` — PENDING PROTECTED MERGE. `protected-gate` runs only on a
+push to a protected branch.
+
+`CODEQL_REPOSITORY_CEILING` — PENDING PROTECTED MERGE. A CodeQL pull-request
+analysis is diff-informed and reports against the pull-request ref, so it cannot
+establish a repository-wide ceiling. The figure in the table below is what the
+analysed refs carried at a superseded head, and it is recorded as that.
+
+<!-- seal: end pending-observation -->
+<!-- seal: historical superseded-run -->
+
+> **SUPERSEDED** — an exact-head run, at a head that is no longer the candidate.
+> Every figure in this section is excluded from the current seal.
 
 ## SUPERSEDED — an exact-head run, at a head that is no longer the candidate
 
@@ -28,7 +62,7 @@ would reproduce that defect in a fresher form.
 | Workflow run       | `31312531302`                                                                        |
 | Required checks    | **20 completed · 0 failed · 0 pending**                                              |
 | `ci-gate`          | **Go** — 13 governed jobs, every one `accepted: yes`                                 |
-| CodeQL open alerts | **0**, repository-wide, not merely on this ref                                       |
+| CodeQL open alerts | **0** on the branch, pull-request head and merge refs that analysis covered          |
 | Dependency policy  | pass — 0 production advisories, 0 development, 0 prohibited packages                 |
 | Secret scan        | pass                                                                                 |
 | Container image    | `sha256:a8d1c7af634328f14b03cbfe3b1eea2debfc8001a0974f9276545c47d88e50d4`, 197.2 MiB |
@@ -40,9 +74,20 @@ about a number.
 **The web tier's floor was established from this run**, not from a local one.
 Until `356f1a1e` the tier had no `minTests` entry, and every hosted run printed
 `no minimum test count is recorded for tier \`web\`, so a shrinking suite would
-not be detected`as an annotation that nothing was required to read. The floor is
-now 1180 against a measured 1216 — see`.github/ci-baselines/test-count-baseline.json`
-for why the headroom is 36 rather than 0 or 66.
+not be detected`as an annotation that nothing was required to read.
+
+The floor was set to 1180 against a measured 1216.
+
+Why the headroom is 36 rather than 0 or 66 is recorded in
+`.github/ci-baselines/test-count-baseline.json`.
+
+Both of those figures belong to that head and to no other. The floor the
+repository carries TODAY, and the total the tree runs today, are on
+`clean-room-evidence.md` under `DERIVABLE_LOCAL`, where a command decides them
+and this gate refuses a disagreement.
+
+<!-- seal: end superseded-run -->
+<!-- seal: narrative what-each-tier-adds -->
 
 ## What hosted CI adds that local verification cannot
 
@@ -66,8 +111,8 @@ That was false and is corrected rather than deleted — it is the `H-15` premise
 the evidence document.** A hosted runner has Docker and the Supabase CLI is a
 devDependency of this repository. The `authenticated-browser` job — whose body is
 `.github/workflows/_reusable-authenticated-browser.yml` — starts the stack,
-bootstraps the real operator and a second tenant, sets `ROOTLCO_E2E_AUTH`, runs
-the tier, and fails on a run that collected nothing.
+bootstraps the real operator and a second tenant, sets the authenticated-tier
+environment flag, runs the tier, and fails on a run that collected nothing.
 
 **A second sentence here has since become false and is corrected rather than
 deleted, for the same reason as the first.** This section said "no job the
@@ -83,9 +128,16 @@ What is still true, and is the reason this section exists at all: **a pull reque
 from a FORK does not get it.** Standing a Supabase stack, a production API and a
 real operator account up on a runner is privileged execution, and untrusted code
 is refused it — stated to the gate explicitly, so the skip is recorded as an
-ineligibility rather than accepted as a pass. `ROOTLCO_E2E_AUTH=1` still gates the
-tier and the five anonymous Playwright projects still carry `testIgnore` for that
-directory, so any run that has not stood the stack up covers none of it.
+ineligibility rather than accepted as a pass. The authenticated-tier environment
+flag still gates the tier and the five anonymous Playwright projects still carry
+`testIgnore` for that directory, so any run that has not stood the stack up
+covers none of it.
+
+<!-- seal: end what-each-tier-adds -->
+<!-- seal: historical authenticated-tier-history -->
+
+> **HISTORICAL** — three executions of the authenticated tier, all of them before
+> the closing wave. None is an observation of the current tree.
 
 **This tier has passed on a GitHub-hosted runner** — run `31347643485`, 225 tests, 0 failed, against candidate `78c4587`.
 The disagreement recorded here as `H-24` is settled, and settled against the
@@ -104,12 +156,28 @@ What is still not claimed: **no run has been observed against the closing
 candidate.** Every execution above predates the merge of the remediation
 branches, so none of them is evidence about the commit this phase closes on.
 
+<!-- seal: end authenticated-tier-history -->
+<!-- seal: narrative neither-is-a-superset -->
+
 Neither tier is a superset. A change that passes one and is never run through the
 other has been half-measured.
+
+<!-- seal: end neither-is-a-superset -->
+<!-- seal: historical codeql-findings -->
+
+> **HISTORICAL** — three CodeQL findings from PR #198. They are lessons about
+> where a finding hides, not statements about the current tree.
 
 ## The CodeQL findings, and why each was nearly missed
 
 Three separate lessons in one pull request.
+
+<!-- seal: end codeql-findings -->
+<!-- seal: example codeql-ref-illustration -->
+
+> **NON-NORMATIVE** — the refs below are spelled out to show which query surfaces
+> a diff-informed alert. They illustrate the behaviour of an API. They measure
+> nothing about any tree and are excluded from every seal.
 
 **A high-severity alert invisible from the branch ref.**
 `js/remote-property-injection` in `normalizeCriteria`. Querying
@@ -117,6 +185,11 @@ Three separate lessons in one pull request.
 query against `refs/pull/198/head` returned the finding. A CodeQL pull-request
 analysis is diff-informed and reports against the pull-request ref, so the
 obvious ref to query is the one that reports clean.
+
+<!-- seal: end codeql-ref-illustration -->
+<!-- seal: historical codeql-remaining-findings -->
+
+> **HISTORICAL** — two further findings from PR #198.
 
 **A high-severity alert raised against the phase's own new gate.**
 `js/incomplete-url-substring-sanitization` in `check-p1-27-frontend.mjs` —
@@ -136,6 +209,9 @@ The finding was readable only by downloading the run's SARIF artifact and the
 policy JSON beside it. An investigation that trusted the alerts API would have
 concluded the tree was clean while the gate said otherwise — which is precisely
 the failure mode the baseline's own note describes.
+
+<!-- seal: end codeql-remaining-findings -->
+<!-- seal: narrative reading-a-red-gate -->
 
 ## A red `ci-gate` that means nothing
 
@@ -163,3 +239,5 @@ what merges.
 
 `gh` is not installed on this machine. `git credential fill` yields the same
 token the CLI would use; it is held in process memory and never printed.
+
+<!-- seal: end reading-a-red-gate -->

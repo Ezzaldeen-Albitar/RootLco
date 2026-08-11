@@ -1292,7 +1292,33 @@ function paths(plan) {
  * record, closable without a candidate. A prefix rule and an area rule are both
  * refuted by that one row, which is why the classification is enumerated.
  */
-const CLASSES = ['ACTIONABLE', 'SEALED', 'DISPOSITIONED'];
+/**
+ * A DEFECT and a PENDING EVENT are different things, and the class says which.
+ *
+ * The register could express "this is broken" and "this has not been re-run
+ * yet" only as the same word, `OPEN`, so the count of open findings answered
+ * neither question. The classes below separate them, and the two derived counts
+ * that follow give each its own number:
+ *
+ *   `ACTIONABLE` + OPEN     -> an OPEN DEFECT.    Blocks the candidate merge.
+ *   `ACTIONABLE` + PARTIAL  -> a PARTIAL DEFECT.  Blocks the candidate merge.
+ *   `SEALED`                -> a candidate-evidence obligation, discharged by
+ *                              `QA-005` against the candidate. Not a defect, and
+ *                              not free: `check-p1-27-lifecycle.mjs` raises
+ *                              `CANDIDATE_EVIDENCE_SEAL_PENDING` for it.
+ *   `PENDING_PROTECTED_EVENT` -> waits on a job that only a push to a protected
+ *                              branch starts. **Does not block the candidate
+ *                              merge, and is not a defect.** It blocks the OWNER
+ *                              HANDOFF instead, one state later.
+ *   `DISPOSITIONED`         -> true, and settled by a numbered decision.
+ *
+ * `PENDING_PROTECTED_EVENT` is deliberately hard to reach: `checkRoundFive`
+ * refuses one whose stated reason does not name a protected push, branch, merge
+ * or `develop`. It is a class for an obligation nobody can pay before the merge,
+ * not a place to move a finding somebody does not want to fix, and this
+ * repository has watched an escape hatch become a habit before.
+ */
+const CLASSES = ['ACTIONABLE', 'SEALED', 'PENDING_PROTECTED_EVENT', 'DISPOSITIONED'];
 const REGISTER_STATUSES = ['FIXED', 'OPEN', 'PARTIAL', 'REFUTED'];
 
 /** `| \`id\` | area | severity | status | finding |` — the register's one row shape. */
@@ -1385,7 +1411,18 @@ export function deriveRoundFive(root = ROOT) {
     SEALED_PARTIAL: inClass('SEALED', 'PARTIAL'),
     DISPOSITIONED_OPEN: inClass('DISPOSITIONED', 'OPEN'),
     DISPOSITIONED_PARTIAL: inClass('DISPOSITIONED', 'PARTIAL'),
+    /*
+     * The DEFECT / PENDING EVENT split, counted rather than described. These are
+     * the numbers the candidate merge turns on, and they are deliberately named
+     * so that neither can be read as the other: `DEFECT_*` blocks the merge,
+     * `PENDING_PROTECTED_EVENT` does not and is not a defect.
+     */
+    DEFECT_OPEN: inClass('ACTIONABLE', 'OPEN'),
+    DEFECT_PARTIAL: inClass('ACTIONABLE', 'PARTIAL'),
+    PENDING_PROTECTED_EVENT:
+      inClass('PENDING_PROTECTED_EVENT', 'OPEN') + inClass('PENDING_PROTECTED_EVENT', 'PARTIAL'),
   };
+  counts.CANDIDATE_DEFECTS = counts.DEFECT_OPEN + counts.DEFECT_PARTIAL;
   const executed = qa005Executed(root);
   counts.CLOSURE_BLOCKERS = executed
     ? counts.OPEN + counts.PARTIAL
@@ -1484,6 +1521,20 @@ export function checkRoundFive(root = ROOT) {
       );
       continue;
     }
+    if (
+      entry.klass === 'PENDING_PROTECTED_EVENT' &&
+      !/protected (?:push|branch|merge|develop)/i.test(entry.why)
+    ) {
+      problems.push(
+        `${REGISTER_PATH}: \`${id}\` is PENDING_PROTECTED_EVENT and its reason names no ` +
+          'protected push, branch, merge or `develop` — this class is for an obligation nobody ' +
+          'can pay before the merge, not a place to put a finding somebody does not want to fix. ' +
+          'STATED LIMITATION: this rule reads the reason, so it can refuse a class applied with ' +
+          'no protected story at all; it cannot judge whether a protected story that IS told is ' +
+          'true. The lifecycle gate is what refuses to advance on it.'
+      );
+      continue;
+    }
     if (entry.klass === 'DISPOSITIONED') {
       const named = [...entry.why.matchAll(/(P1-27-OD-\d+)/g)].map((m) => m[1]);
       if (named.length === 0) {
@@ -1522,6 +1573,13 @@ export function checkRoundFive(root = ROOT) {
     'SEALED_OPEN',
     'DISPOSITIONED_PARTIAL',
     'CLOSURE_BLOCKERS',
+    // The DEFECT / PENDING EVENT split. Declared as well as derived, so the
+    // register cannot state the distinction in prose while carrying rows that
+    // contradict it — which is how every count in this phase went wrong.
+    'DEFECT_OPEN',
+    'DEFECT_PARTIAL',
+    'PENDING_PROTECTED_EVENT',
+    'CANDIDATE_DEFECTS',
   ];
   for (const name of DECLARED) {
     const stated = declaredNumber(source, name);

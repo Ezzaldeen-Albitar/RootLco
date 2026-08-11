@@ -1,0 +1,30 @@
+{
+  "task": "P1-27 local tier measurements",
+  "what": "What a tier DID when it was run, written only by `check-p1-27-closing-values.mjs --record`.",
+  "why": "An executed test total is not derivable by reading files, and binding it to another document is the circle that let 1586 stand beside a tree of 1867. This is a command’s output, carrying the commit it was taken at, and it expires when any executable path changes.",
+  "howToTake": "node scripts/ci/check-p1-27-closing-values.mjs --record <tier>",
+  "tiers": {
+    "unit": {
+      "command": "npx vitest run --reporter=json",
+      "tests": 2148,
+      "passed": 2148,
+      "failed": 0,
+      "skipped": 0,
+      "files": 91,
+      "measuredAtCommit": "9fe4c41a15d25b6402bad2c99b750277a7d3b650",
+      "dirtyExecutablePaths": [],
+      "measuredAt": "2026-08-11T21:34:16.788Z"
+    },
+    "web": {
+      "command": "npm run test --workspace @rootlco/web -- --reporter=json",
+      "tests": 1867,
+      "passed": 1867,
+      "failed": 0,
+      "skipped": 0,
+      "files": 70,
+      "measuredAtCommit": "9fe4c41a15d25b6402bad2c99b750277a7d3b650",
+      "dirtyExecutablePaths": [],
+      "measuredAt": "2026-08-11T21:35:27.309Z"
+    }
+  }
+}

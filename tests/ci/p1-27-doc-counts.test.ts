@@ -448,19 +448,45 @@ describe('P1-27-QA-005 — a stated figure is compared as a number, not as a sub
      * a test and the other was a decoration beside it, which is exactly how a
      * page comes to disagree with itself.
      */
+    /*
+     * REBOUND. This case used to compare the page to `measured` in the committed
+     * baseline, and both of those are documents. The record and the baseline
+     * agreed with each other while both disagreed with the tree, which is how a
+     * total 281 tests below the repository survived a whole wave under two
+     * gates. A cycle of mutually-confirming files is not evidence, however many
+     * members it has.
+     *
+     * The authority is now `evidence/local-run-ledger.json`, which is not a
+     * document: it is written only by
+     * `check-p1-27-closing-values.mjs --record`, from the JSON a vitest run
+     * emits, and that gate refuses it once any executable path has changed since
+     * it was taken. The FLOOR is still read from the baseline, because a floor
+     * is what a baseline is for; only the MEASUREMENT moved.
+     */
     const baseline = JSON.parse(readRepo('.github/ci-baselines/test-count-baseline.json')) as {
-      tiers: Record<string, { minTests: number; measured: number } | undefined>;
+      tiers: Record<string, { minTests: number } | undefined>;
     };
     const web = baseline.tiers.web;
     expect(web, 'no committed floor for the web tier').toBeDefined();
+    const runs = JSON.parse(readRepo(`${PHASE}/evidence/local-run-ledger.json`)) as {
+      tiers: Record<string, { tests: number; files: number } | undefined>;
+    };
+    const webRun = runs.tiers.web;
+    expect(webRun, 'no recorded local run for the web tier').toBeDefined();
     const executed = figure(
       CLEAN_ROOM,
       /current tree executes \*\*(\d+)\*\* tests/,
       'the current executed total'
     );
-    expect(executed, 'the record and the baseline disagree').toBe(
-      (web as { measured: number }).measured
+    expect(executed, 'the record and the recorded run disagree').toBe(
+      (webRun as { tests: number }).tests
     );
+    // And the run that produced it counted the files this tree holds. A total
+    // recorded when the suite was smaller is exactly the defect above.
+    expect(
+      (webRun as { files: number }).files,
+      'the recorded run measured a different set of files from the tree'
+    ).toBe(liveWebTestFiles().length);
     expect(
       /*
        * `local` OR `HOSTED`. This pinned the WORD rather than the number, so it
@@ -795,7 +821,17 @@ describe('P1-27-QA-005 — the two evidence pages agree with each other and the 
      * is checkable without a time machine is that the page is consistent with
      * itself and with the measurement it names elsewhere.
      */
-    const established = /floor is\s*\n?now (\d+) against a measured (\d+)/.exec(CI_EVIDENCE);
+    /*
+     * `is now` OR `was set to`. The page said "the floor is now 1180" in the
+     * present tense while the repository's committed floor was 1793, so a
+     * historical figure was being read as a current one — a HISTORICAL value
+     * counted as current, which is the class of defect the closing-value ledger
+     * beside it exists to prevent. The tense moved; the arithmetic below is
+     * unchanged, and the figures still describe the head that established them.
+     */
+    const established = /floor (?:is\s*\n?now|was\s*\n?set to) (\d+) against a measured (\d+)/.exec(
+      CI_EVIDENCE
+    );
     expect(established, 'the CI record states no established floor').not.toBeNull();
     const floor = group(established as RegExpExecArray, 1);
     const measured = group(established as RegExpExecArray, 2);
