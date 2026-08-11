@@ -4,6 +4,12 @@ import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
+import {
+  controlNameFor,
+  violationMessageKey,
+  VIOLATION_FALLBACK_KEY,
+  VIOLATION_KEY_PREFIX,
+} from '@/lib/api/client';
 import { fieldErrorsFrom } from '@/features/crm/customers/action-support';
 import { MAX_PERSON_NAME } from '@/features/crm/customers/creation-contract';
 import {
@@ -198,5 +204,111 @@ describe('the fallback keys exist in both catalogues', () => {
         (ar as Record<string, string>)[key]
       );
     }
+  });
+});
+
+/**
+ * A refusal the operator can read (`P1-27-FE-031`).
+ *
+ * ## The defect
+ *
+ * `violationMessageKey` derives `form.violation.${rule}` and keeps it only if
+ * the English catalogue carries it, falling back to `form.violation.invalid`
+ * otherwise. The fallback is right in general — the API emits more than eighty
+ * rule tokens and an exhaustive catalogue would be wrong within a week — but it
+ * is wrong for a rule a shipped form can actually produce.
+ *
+ * `below_current_odometer` was one of those. Recording a reading lower than the
+ * vehicle's current one answers `422 ERR-VAL-001` with
+ * `violations: [{ path: 'body.value', rule: 'below_current_odometer' }]`, the
+ * catalogue had no such key, and the operator was told only "This value is not
+ * accepted here." — under a field they had just typed a number into, with no
+ * indication that the number was compared against anything.
+ *
+ * ## Scope, stated because the copy is deliberately incomplete
+ *
+ * The server's full remedy is a CORRECTION: the route accepts `correctionOf`
+ * and `correctionReason` and requires the reason when the reference is present.
+ * The web form offers neither control, and building one is a new capability with
+ * a dynamic option list, not a copy fix. So the message names what is wrong and
+ * stops there. It must NOT tell an operator to record a correction instead,
+ * because there is nothing on the screen with which to do that — a message that
+ * describes an absent control is a worse failure than a vague one.
+ */
+describe('a violation rule a shipped form can produce is catalogued', () => {
+  const violationKeys = Object.keys(en).filter((key) => key.startsWith(VIOLATION_KEY_PREFIX));
+
+  it('found the violation namespace at all, so the sweep is not vacuous', () => {
+    expect(violationKeys.length).toBeGreaterThan(10);
+    expect(violationKeys).toContain(VIOLATION_FALLBACK_KEY);
+  });
+
+  it.each(violationKeys)('%s resolves in BOTH catalogues', (key) => {
+    // A key in one catalogue and not the other reaches an Arabic operator as
+    // an English sentence, or as the raw key. `violationMessageKey` reads
+    // membership out of `en` alone, so `ar` cannot be checked by that path.
+    expect(resolvesEverywhere(key), `${key} is missing from a catalogue`).toBe(true);
+    for (const [locale, catalogue] of Object.entries(CATALOGUES)) {
+      expect(
+        (catalogue as Record<string, string>)[key]?.trim(),
+        `${key} in ${locale} is empty`
+      ).toBeTruthy();
+    }
+  });
+
+  it('resolves the odometer refusal to its own message, not to the generic one', () => {
+    const key = violationMessageKey('below_current_odometer');
+    expect(key).toBe('form.violation.below_current_odometer');
+    expect(key, 'the operator is still being told only that the value is invalid').not.toBe(
+      VIOLATION_FALLBACK_KEY
+    );
+    expect((en as Record<string, string>)[key]).not.toBe(
+      (en as Record<string, string>)[VIOLATION_FALLBACK_KEY]
+    );
+    expect((ar as Record<string, string>)[key]).not.toBe(
+      (ar as Record<string, string>)[VIOLATION_FALLBACK_KEY]
+    );
+    expect((en as Record<string, string>)[key]).not.toBe((ar as Record<string, string>)[key]);
+  });
+
+  it('lands on the control the API names, so the message appears under the field', () => {
+    // `body.value` is the reading box on the odometer form. A violation whose
+    // path resolved to no control would surface at form level instead, which is
+    // where `empty_patch` belongs and this does not.
+    expect(controlNameFor('body.value')).toBe('value');
+  });
+
+  it('promises no control the odometer form does not have', () => {
+    // The server suggests submitting a correction. The form has no
+    // `correctionOf` or `correctionReason` input, so the copy must not send an
+    // operator looking for one. This is the capability gap, asserted rather than
+    // described, so that building the control is what unblocks changing the copy.
+    const source = readFileSync(
+      join(
+        process.cwd(),
+        'src',
+        'features',
+        'vehicles',
+        'components',
+        'VehicleHistorySections.tsx'
+      ),
+      'utf8'
+    );
+    expect(source).not.toMatch(/name:\s*'correction(Of|Reason)'/);
+    for (const catalogue of Object.values(CATALOGUES)) {
+      const message = (catalogue as Record<string, string>)[
+        'form.violation.below_current_odometer'
+      ];
+      expect(message, 'the key is missing').toBeTruthy();
+      expect(message).not.toMatch(/correction|تصحيح/i);
+    }
+  });
+
+  it('still falls back for a rule no form can produce', () => {
+    // The fallback is not a bug to be catalogued away. `not_earlier` is emitted
+    // only for a correction, which this build cannot submit, so it stays generic
+    // on purpose — and an invented token must never render as itself.
+    expect(violationMessageKey('not_earlier')).toBe(VIOLATION_FALLBACK_KEY);
+    expect(violationMessageKey('unregistered_aggregate')).toBe(VIOLATION_FALLBACK_KEY);
   });
 });

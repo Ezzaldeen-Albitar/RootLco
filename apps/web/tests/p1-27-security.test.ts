@@ -247,6 +247,19 @@ const MODULE_DISPOSITION = {
   'lib/api': 'platform-transport',
   'lib/customers': 'in-surface',
   'lib/duplicates': 'in-surface',
+  /**
+   * `format.ts` — the product's locale mapping and every displayed date, time
+   * and number.
+   *
+   * Newly imported by five feature components at `P1-27-FE-030`, which is how it
+   * arrived here: those components used to call `Intl.DateTimeFormat` themselves
+   * with the bare `Locale`, so the module that owns the `en → en-GB` and
+   * `ar → ar-JO-u-nu-latn` mapping was imported by none of them and this
+   * derivation could not see it. Folding it in rather than excluding it, because
+   * it renders operator-visible text on every P1-27 screen and there is no
+   * transport reason to keep it out.
+   */
+  'lib/format': 'in-surface',
   /** `action-result` and `field-errors` — what a refused write becomes. */
   'lib/forms': 'in-surface',
   'lib/page-metadata': 'in-surface',
@@ -377,7 +390,7 @@ describe('P1-27-SEC-001 — permission and resolved scope', () => {
     // Anti-vacuity: the derivation really read something. A regex that matched
     // nothing would make the equality below a comparison of two empty sets.
     expect(imported.length, 'no module imports were discovered — the derivation is broken').toBe(
-      12
+      13
     );
     expect(imported, 'a module the CRM/vehicle trees import has no recorded disposition').toEqual(
       Object.keys(MODULE_DISPOSITION).sort()

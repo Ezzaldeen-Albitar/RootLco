@@ -7,6 +7,7 @@ import { useServerTable } from '@/components/data-table/use-server-table';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { Locale } from '@/i18n/config';
+import { formatDateTime } from '@/lib/format';
 import { listAttributeHistory } from '../duplicates-api';
 import { changeShape, type VehicleHistoryEntry } from '../duplicates-contract';
 
@@ -60,9 +61,7 @@ export function VehicleAttributeHistorySection({ locale, messages, vehicleId }: 
         headerKey: 'vehicles.history.when',
         cell: (row) => (
           <time dateTime={row.occurredAt} dir="ltr">
-            {new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' }).format(
-              new Date(row.occurredAt)
-            )}
+            {formatDateTime(row.occurredAt, locale)}
           </time>
         ),
       },

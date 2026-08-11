@@ -7,6 +7,7 @@ import { useServerTable } from '@/components/data-table/use-server-table';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { Locale } from '@/i18n/config';
+import { formatDateTime } from '@/lib/format';
 import { RecordForm } from '@/components/forms/RecordForm';
 import { PartyLabel } from '@/components/party/PartyLabel';
 import { CustomerSelector, type SelectedCustomer } from '@/components/party/CustomerSelector';
@@ -414,9 +415,7 @@ export function OdometerSection({
         headerKey: 'vehicles.odometer.observedAt',
         cell: (row) => (
           <time dateTime={row.observedAt} dir="ltr">
-            {new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' }).format(
-              new Date(row.observedAt)
-            )}
+            {formatDateTime(row.observedAt, locale)}
           </time>
         ),
       },

@@ -283,10 +283,20 @@ describe('FE-021 — ownership transfer is reachable', () => {
     await user.click(screen.getByRole('button', { name: en['vehicles.ownership.transfer'] }));
 
     await waitFor(() => expect(transferOwnershipAction).toHaveBeenCalled());
+    /*
+     * The correlation reference is awaited, because being CALLED is not being
+     * RENDERED.
+     *
+     * The `waitFor` above resolves when the action has been invoked; the conflict
+     * state it returns reaches the DOM one React update later. A synchronous
+     * `getByText` therefore raced that update and intermittently read the screen
+     * before it carried the reference. Same latent defect as
+     * `crm-customer-create.dom.test.tsx`, exposed the same way.
+     */
+    expect(await screen.findByText('corr-quotable')).toBeInTheDocument();
     // Re-choosing a customer after a conflict that was not the operator's fault
     // is exactly the retyping `RecordForm` exists to prevent.
     expect(screen.getByRole('button', { name: en['customerSelector.change'] })).toBeInTheDocument();
-    expect(screen.getByText('corr-quotable')).toBeInTheDocument();
   });
 });
 

@@ -7,6 +7,7 @@ import { useServerTable } from '@/components/data-table/use-server-table';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { Locale } from '@/i18n/config';
+import { formatDate, formatDateTime } from '@/lib/format';
 import { listDuplicates } from '../identity-api';
 import {
   DUPLICATE_STATUSES,
@@ -123,9 +124,7 @@ export function DuplicateReviewScreen({ locale, messages }: Props) {
         headerKey: 'crm.duplicates.detectedAt',
         cell: (row) => (
           <time dateTime={row.detectedAt} dir="ltr">
-            {new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' }).format(
-              new Date(row.detectedAt)
-            )}
+            {formatDateTime(row.detectedAt, locale)}
           </time>
         ),
       },
@@ -148,9 +147,7 @@ export function DuplicateReviewScreen({ locale, messages }: Props) {
             <span className="text-caption text-text-muted">
               {row.reviewedAt ? (
                 <time dateTime={row.reviewedAt} dir="ltr">
-                  {new Intl.DateTimeFormat(locale, { dateStyle: 'medium' }).format(
-                    new Date(row.reviewedAt)
-                  )}
+                  {formatDate(row.reviewedAt, locale)}
                 </time>
               ) : (
                 '—'

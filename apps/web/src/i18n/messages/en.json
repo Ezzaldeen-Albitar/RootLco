@@ -467,6 +467,7 @@
   "form.submit": "Save",
   "form.unsavedBody": "This form has changes that have not been saved.",
   "form.unsavedTitle": "Discard your changes?",
+  "form.violation.below_current_odometer": "This reading is lower than the one already recorded for this vehicle. An odometer only counts upwards, so a lower reading is not stored.",
   "form.violation.branch_company_mismatch": "This branch does not belong to the company chosen.",
   "form.violation.custom": "This value is not accepted here.",
   "form.violation.empty_patch": "Nothing was changed, so there is nothing to save.",
