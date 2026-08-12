@@ -1,8 +1,18 @@
 # Reception read surface — implementation plan
 
 **Classification:** Confidential — Commercial Product and Pilot Planning ·
-**Status:** PLANNED, NOT EXECUTED · **Read at:** `develop` `85151130` ·
-**Recorded:** 2026-08-08
+**Status:** EXECUTED — branch `remediation/p1-18-reception-appointment-read-surface`,
+commit `83c055d` (2026-08-12): the six arms shipped as reception `GET`s (list, detail,
+party-roles, authorizations, condition-evidence, history) with `rec.reception.read`
+seeded. One deliberate narrowing against arm E as drafted: the condition-evidence
+read pages the eight non-restricted evidence relations only — signatures and
+non-authorization refusals stay write-only because they carry their own
+acknowledgement authority, and the restricted narratives stay behind
+`iam.sensitive.view` (so `INT-017` closes as **partial**, recorded in
+`finding-phase-disposition.md`). The same commit also delivers what this plan
+scoped out: the appointment reads (`INT-019`), seven intake catalogue reads
+(`INT-018`) and the two terminal close commands (`INT-014`) ·
+**Read at:** `develop` `85151130` · **Recorded:** 2026-08-08
 
 Closes `P1-27-INT-010`, `-011`, `-015`, `-016`, `-017` and `-021`: the reception
 domain publishes eight operations and every one is a `POST`. There is not one

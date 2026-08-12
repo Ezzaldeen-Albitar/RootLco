@@ -51,12 +51,14 @@ import {
   approvalPath,
   assertApprovable,
   assertAuthorizingRoleHeld,
+  assertClosable,
   assertEvidenceRecordable,
   assertStandingAuthorization,
   toReceptionCreatePlan,
   type AuthorizationChannel,
   type AuthorizationDecision,
   type AuthorizingRole,
+  type CloseOutcome,
   type ReceptionCreateInput,
   type ReceptionCreatePlan,
   type ReceptionPartyRole,
@@ -117,6 +119,12 @@ export interface ReceptionApproved {
   readonly receptionStatus: 'authorized';
   /** The legal edges this request applied, in order. */
   readonly appliedTransitions: readonly ReceptionStatus[];
+  readonly recordVersion: number;
+}
+
+export interface ReceptionClosed {
+  readonly receptionVisitId: string;
+  readonly receptionStatus: CloseOutcome;
   readonly recordVersion: number;
 }
 
@@ -436,6 +444,107 @@ export class ReceptionService extends ApplicationService {
       appliedTransitions: path,
       recordVersion,
     };
+  }
+
+  /**
+   * Closes the visit without work, or records its refusal (`P1-27-INT-014`).
+   *
+   * The two terminal outcomes are one use case with one parameter, exactly as
+   * the frozen graph treats them: every non-terminal state has an edge into
+   * both, and both release `uq_reception_visits_open_vehicle` — the partial
+   * unique index's status list names only `opened/inspecting/authorized/
+   * converted`, so a closed or refused visit stops occupying its vehicle and a
+   * returning customer can be received again. Before this command existed the
+   * two states were unreachable (only approve and convert called `setStatus`),
+   * so an abandoned visit held its vehicle forever — the INT-013 sibling.
+   *
+   * The reason is mandatory and travels into the append-only status ledger via
+   * the `app.status_reason` GUC (see `setStatusWithReason`). It is bounded
+   * TEXT, not a catalogue id: `rec.refusal_reasons` ships zero rows and has no
+   * management operation, so a mandatory reference would make the exit dead on
+   * arrival — the very defect this command closes.
+   *
+   * Custody is deliberately NOT released here. `custody_released_at` is
+   * evidence of a recorded handover (`rec.custody_history` release row, written
+   * by the delivery path), and closing a visit is not proof the vehicle has
+   * physically left. The index stops matching on status alone, so the vehicle
+   * is free either way; the handover record stays a separate fact.
+   *
+   * No outbox event: the approved event catalog defines no entry for this fact
+   * (the conversion precedent), and the durable record is the status ledger
+   * plus the audit row this transaction writes.
+   */
+  async close(
+    db: DbHandle,
+    receptionVisitId: string,
+    outcome: CloseOutcome,
+    reason: string,
+    expectedVersion: number,
+    authorizeScope: ScopeAuthorizer
+  ): Promise<ReceptionClosed> {
+    const visit = await this.requireVisit(db, receptionVisitId, authorizeScope);
+    assertClosable(visit.receptionStatus);
+
+    // The caller's `If-Match` is asserted against the version the FOR UPDATE
+    // read observed, the same way approval does it: the row lock makes the
+    // single comparison exactly as authoritative as a predicate would be.
+    if (visit.recordVersion !== expectedVersion) {
+      throw new AppFailure('ERR-CON-001', {
+        message: 'The reception changed while this request was in flight; retry',
+      });
+    }
+
+    let changed: number;
+    try {
+      changed = await this.receptions.setStatusWithReason(db, receptionVisitId, outcome, reason);
+    } catch (error) {
+      throw this.mapClosureFailure(error);
+    }
+    if (changed === 0) {
+      throw new AppFailure('ERR-IAM-001', {
+        message: `Closing the reception as ${outcome} was refused by policy`,
+      });
+    }
+    const recordVersion = visit.recordVersion + 1;
+
+    await appendAudit(db, {
+      action:
+        outcome === 'closed_without_work'
+          ? 'rec.reception.closed_without_work'
+          : 'rec.reception.refused',
+      entityType: 'rec.reception_visit',
+      entityId: receptionVisitId,
+      companyId: visit.companyId,
+      branchId: visit.branchId,
+      details: [
+        {
+          field: 'reception_status',
+          classification: 'public',
+          previousValue: visit.receptionStatus,
+          value: outcome,
+        },
+        // The operator's words about a customer's visit: internal, not public.
+        { field: 'reason', classification: 'internal', value: reason },
+        { field: 'vehicle_id', classification: 'internal', value: visit.vehicleId },
+      ],
+    });
+
+    return { receptionVisitId, receptionStatus: outcome, recordVersion };
+  }
+
+  /** Maps the frozen transition-guard SQLSTATE for a closure; re-throws the rest. */
+  private mapClosureFailure(error: unknown): AppFailure | unknown {
+    const denied = this.scopeDenial(error, 'reception');
+    if (denied) return denied;
+    if (isSqlState(error, SQLSTATE.checkViolation)) {
+      // `rec.guard_reception_transition` — the domain already refused terminal
+      // states, so what reaches here is a concurrent transition this
+      // transaction lost to, or the ledger's own coherence guard.
+      return new AppFailure('ERR-TRN-001', {
+        message: 'The reception cannot be closed from its current state',
+      });
+    }
+    return error;
   }
 
   /**

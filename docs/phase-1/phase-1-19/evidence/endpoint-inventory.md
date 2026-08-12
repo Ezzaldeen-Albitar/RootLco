@@ -5,7 +5,7 @@ registry. Do not hand-edit.** Every column is read out of the
 `defineOperation` literal that guards the route, so this table cannot
 describe a surface the code does not expose, and cannot omit one it does.
 
-Operations in the registry: **243**. Delivered by P1-19: **58**.
+Operations in the registry: **260**. Delivered by P1-19: **58**.
 
 ## The surface
 

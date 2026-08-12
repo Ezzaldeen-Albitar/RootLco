@@ -15,7 +15,12 @@
 import { z } from 'zod';
 import { defineOperation } from '@/server/auth/operation-registry';
 import { handleOperation } from '@/server/http/route-handler';
-import { parseJsonBody, parseOrFail, schemas } from '@/server/http/validation';
+import {
+  parseJsonBody,
+  parseOrFail,
+  schemas,
+  searchParamsToObject,
+} from '@/server/http/validation';
 import { RECEPTION_PARTY_ROLES, receptionModule } from '@/modules/reception';
 
 export const runtime = 'nodejs';
@@ -77,5 +82,61 @@ export async function POST(
       ),
     }),
     { params, body }
+  );
+}
+
+// ---------------------------------------------------------------------------
+// GET — the dated party roles of one visit (P1-27 remediation executed by
+// P1-18, `P1-27-INT-015`). Read-back of who is present and in what role, with
+// `validTo IS NULL` marking the active interval; without it a resumed visit
+// could not tell whose instruction the workshop may act on.
+// ---------------------------------------------------------------------------
+
+const ListQuery = z
+  .object({
+    status: z.enum(['active', 'ended']).optional(),
+    cursor: schemas.cursor.optional(),
+    limit: schemas.limit.optional(),
+  })
+  .strict();
+
+export const RECEPTION_PARTY_ROLE_LIST_OPERATION = defineOperation({
+  id: 'rec.reception-party-role-list',
+  module: 'reception',
+  method: 'GET',
+  path: '/receptions/{receptionId}/party-roles',
+  summary: 'List the dated party roles recorded on a reception visit.',
+  permissions: ['rec.reception.read'],
+  scope: 'branch',
+  auditClass: 'none',
+  rateLimitPolicy: 'expensive-read',
+  cacheCategory: 'never',
+});
+
+export async function GET(
+  request: Request,
+  route: { params: Promise<{ receptionId: string }> }
+): Promise<Response> {
+  const raw = await route.params;
+  return handleOperation(
+    RECEPTION_PARTY_ROLE_LIST_OPERATION,
+    request,
+    async ({ db, request: req, authorizeScope }) => {
+      const path = parseOrFail(Params, raw, 'path');
+      const query = parseOrFail(
+        ListQuery,
+        searchParamsToObject(new URL(req.url).searchParams),
+        'query'
+      );
+      return {
+        body: await receptionModule().receptionRead.listPartyRoles(
+          db,
+          path.receptionId,
+          query,
+          authorizeScope
+        ),
+      };
+    },
+    { params: raw }
   );
 }

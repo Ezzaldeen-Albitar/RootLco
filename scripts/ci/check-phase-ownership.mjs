@@ -35,6 +35,15 @@ import { pathToFileURL } from 'node:url';
  * `apps/api/src/app/api/**` case is stated before the general `apps/api/**`.
  */
 export const CLASSIFIERS = [
+  // Before 'web': the ONE file in apps/web a Backend branch may legitimately
+  // carry — generator output kept in sync by the Backend's own register, and
+  // validated by validate:generated-artifacts + validate:idempotent-operations.
+  // A bucket of its own so a Backend profile can allow it without opening the
+  // handwritten web tree (the hole every Backend profile exists to close).
+  {
+    bucket: 'webGenerated',
+    test: (p) => p === 'apps/web/src/lib/api/idempotent-operations.ts',
+  },
   { bucket: 'web', test: (p) => p.startsWith('apps/web/') },
   { bucket: 'apiSource', test: (p) => p.startsWith('apps/api/src/') },
   { bucket: 'apiConfig', test: (p) => p.startsWith('apps/api/') },
@@ -79,6 +88,28 @@ export const PROFILES = {
       apiConfig: 'a Frontend phase must not change API workspace configuration',
       migrations: 'a Frontend phase must not change a migration',
       supabase: 'a Frontend phase must not change the database',
+    },
+  },
+  'p1-18-read-surface': {
+    why:
+      'the P1-18 appointment/reception read-surface remediation (P1-28 gaps G-APT-READ, G-REC-READ, ' +
+      'G-CAT-*, G-REC-CLOSE): new GET routes, close commands, permission seeds, new migrations and tests',
+    allowed: [
+      'apiSource',
+      'apiConfig',
+      'docs',
+      'tooling',
+      'tests',
+      'rootConfig',
+      'migrations',
+      'supabase',
+      'webGenerated',
+    ],
+    forbidden: {
+      web:
+        'Backend-only — the handwritten Frontend half is a separate change. The generated ' +
+        'idempotent-operations.ts travels under its own webGenerated bucket, matching the P1-24 ' +
+        'backend-merge precedent (#212/#213)',
     },
   },
   'p1-27-backend-partner-identity': {
