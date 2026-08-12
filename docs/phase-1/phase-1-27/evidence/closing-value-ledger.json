@@ -240,36 +240,72 @@
     {
       "id": "CR-D-PROTECTED-GATE",
       "class": "PROTECTED_POST_MERGE_ONLY",
-      "standing": "PENDING_PROTECTED_MERGE",
+      "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
-      "value": null,
-      "pendingPhrase": "`PROTECTED_GATE_GO` — PENDING PROTECTED MERGE.",
-      "why": "protected-gate runs only on a push to a protected branch. The lifecycle ledger records the merge as not taken, and while that is so this entry may not carry a figure."
+      "value": "Go",
+      "why": "protected-gate runs only on a push to a protected branch. The lifecycle ledger records the merge as not taken, and while that is so this entry may not carry a figure.",
+      "locator": "| `PROTECTED_GATE_GO` | **Go** | taken on the protected merge push itself — the run, both job ids and the merge head are recorded and validated in `evidence/lifecycle-ledger.json`, whose gate refuses a GREEN without them |",
+      "provenance": {
+        "source": "HOSTED_ARTIFACT",
+        "runId": "31590615278",
+        "job": "94097982319",
+        "headSha": "46d4e482dd6dc8dc4c613df17824b93a5236a928",
+        "artifact": "protected-gate job summary",
+        "field": "decision"
+      },
+      "pendingPhrase": "were PENDING PROTECTED MERGE until the merge existed"
     },
     {
       "id": "CR-D-CODEQL-CEILING",
       "class": "PROTECTED_POST_MERGE_ONLY",
-      "standing": "PENDING_PROTECTED_MERGE",
+      "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
-      "value": null,
-      "pendingPhrase": "`CODEQL_REPOSITORY_CEILING` — PENDING PROTECTED MERGE.",
-      "why": "Both pages used to state the CodeQL figure as `repository-wide`. It came from a pull-request analysis, which is diff-informed and cannot establish a repository ceiling — the phase's own CodeQL remediation record says so in those words. The figure is kept as what the analysed refs carried; the ceiling is pending."
+      "value": "0",
+      "why": "Both pages used to state the CodeQL figure as `repository-wide`. It came from a pull-request analysis, which is diff-informed and cannot establish a repository ceiling — the phase's own CodeQL remediation record says so in those words. The figure is kept as what the analysed refs carried; the ceiling is pending.",
+      "locator": "| `CODEQL_REPOSITORY_CEILING` | **0** | open alerts repository-wide, read from the code-scanning API after the merge — the only reader that can state a repository ceiling; a pull-request analysis is diff-informed and never could |",
+      "provenance": {
+        "source": "HOSTED_ARTIFACT",
+        "runId": "31590615278",
+        "job": "code-scanning API, post-merge",
+        "headSha": "46d4e482dd6dc8dc4c613df17824b93a5236a928",
+        "artifact": "GET /code-scanning/alerts?state=open",
+        "field": "length"
+      },
+      "pendingPhrase": "were PENDING PROTECTED MERGE until the merge existed"
     },
     {
       "id": "CI-D-PROTECTED-GATE",
       "class": "PROTECTED_POST_MERGE_ONLY",
-      "standing": "PENDING_PROTECTED_MERGE",
+      "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/ci-evidence.md",
-      "value": null,
-      "pendingPhrase": "`PROTECTED_GATE_GO` — PENDING PROTECTED MERGE."
+      "value": "Go",
+      "locator": "| `PROTECTED_GATE_GO`         | **Go**  | taken on the protected merge push itself — the run, both job ids and the merge head are recorded and validated in `evidence/lifecycle-ledger.json`, whose gate refuses a GREEN without them  |",
+      "provenance": {
+        "source": "HOSTED_ARTIFACT",
+        "runId": "31590615278",
+        "job": "94097982319",
+        "headSha": "46d4e482dd6dc8dc4c613df17824b93a5236a928",
+        "artifact": "protected-gate job summary",
+        "field": "decision"
+      },
+      "pendingPhrase": "were PENDING PROTECTED MERGE until the merge existed"
     },
     {
       "id": "CI-D-CODEQL-CEILING",
       "class": "PROTECTED_POST_MERGE_ONLY",
-      "standing": "PENDING_PROTECTED_MERGE",
+      "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/ci-evidence.md",
-      "value": null,
-      "pendingPhrase": "`CODEQL_REPOSITORY_CEILING` — PENDING PROTECTED MERGE."
+      "value": "0",
+      "locator": "| `CODEQL_REPOSITORY_CEILING` | **0**   | open alerts repository-wide, read from the code-scanning API after the merge — the only reader that can state a repository ceiling; a pull-request analysis is diff-informed and never could |",
+      "provenance": {
+        "source": "HOSTED_ARTIFACT",
+        "runId": "31590615278",
+        "job": "code-scanning API, post-merge",
+        "headSha": "46d4e482dd6dc8dc4c613df17824b93a5236a928",
+        "artifact": "GET /code-scanning/alerts?state=open",
+        "field": "length"
+      },
+      "pendingPhrase": "were PENDING PROTECTED MERGE until the merge existed"
     },
     {
       "id": "CR-C-HIST-RUN-ID",

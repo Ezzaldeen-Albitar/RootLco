@@ -216,14 +216,14 @@ did.
 
 ### `PROTECTED_POST_MERGE_ONLY` — it cannot exist before the merge
 
-`PROTECTED_GATE_GO` — PENDING PROTECTED MERGE. `protected-gate` runs only on a
-push to a protected branch, so nothing before the merge can produce its verdict.
+Both values below were PENDING PROTECTED MERGE until the merge existed, and
+could not honestly carry a figure before it. The merge exists now; both are
+attested from the protected push itself.
 
-`CODEQL_REPOSITORY_CEILING` — PENDING PROTECTED MERGE. A CodeQL pull-request
-analysis is diff-informed and says so in its own output, so it cannot establish a
-repository-wide ceiling. The figure recorded below is what the analysed refs
-carried at a superseded head; it is not the ceiling and this page does not
-present it as one.
+| obligation | verdict | detail |
+| --- | --- | --- |
+| `PROTECTED_GATE_GO` | **Go** | taken on the protected merge push itself — the run, both job ids and the merge head are recorded and validated in `evidence/lifecycle-ledger.json`, whose gate refuses a GREEN without them |
+| `CODEQL_REPOSITORY_CEILING` | **0** | open alerts repository-wide, read from the code-scanning API after the merge — the only reader that can state a repository ceiling; a pull-request analysis is diff-informed and never could |
 
 <!-- seal: end tree-derived -->
 <!-- seal: historical hosted-corroboration -->
