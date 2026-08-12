@@ -417,6 +417,35 @@ describe('mutations', () => {
     const [, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
     expect(init.credentials).toBe('include');
   });
+
+  it('passes an idempotent replay (200, no ETag) through untouched', async () => {
+    // A replayed idempotent POST answers 200 — not the 201 the first attempt
+    // got — and with NO ETag header, even for a create whose first answer
+    // carried one (P1-28: `route-handler.ts` replays the recorded body and
+    // status only). This client never reads an ETag at all: a record version
+    // travels in the BODY when an operation publishes one, and the success
+    // shape is closed. Pinned so a future convenience cannot quietly synthesise
+    // a `recordVersion` from a header that is not there, which would hand a
+    // guarded command an invented `If-Match`. The other half — that replay
+    // responses STAY ETag-free on the wire — is the backend's to assert, and
+    // is a future Backend-branch item, deliberately not asserted from here.
+    const fetchImpl = vi.fn(async () => respond(200, { id: 'r-1', state: 'recorded' }));
+    const result = await clientWith(fetchImpl as never).send<{
+      id: string;
+      state: string;
+      recordVersion?: number;
+    }>('POST', '/x', { a: 1 });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.status).toBe(200);
+    // The body, verbatim — nothing merged in from headers, nothing invented.
+    expect(result.data).toEqual({ id: 'r-1', state: 'recorded' });
+    expect(result.data.recordVersion).toBeUndefined();
+    // The success shape is exactly these four fields; a fifth would be the
+    // fabrication this pin exists to refuse.
+    expect(Object.keys(result).sort()).toEqual(['correlationId', 'data', 'ok', 'status']);
+  });
 });
 
 describe('what a user may be told', () => {

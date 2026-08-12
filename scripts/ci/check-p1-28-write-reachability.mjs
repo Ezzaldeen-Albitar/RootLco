@@ -43,12 +43,23 @@
  *
  * ## What counts as a production call site
  *
- * A *mutation* call site: an `/api/v1/...` path literal preceded by an HTTP
- * write-method literal (`'POST'` — the whole apt/rec surface — or
- * `'PUT'`/`'PATCH'`). Matching a bare path is not enough: reads and writes
- * share paths (`rec.reception-authorization` POST and `-list` GET live on one
- * route), so a path-only check would report a write reachable after its call
- * site was deleted.
+ * A *mutation* call site: an `/api/v1/...` path literal whose IMMEDIATELY
+ * preceding argument is an HTTP write-method literal (`'POST'` — the whole
+ * apt/rec surface — or `'PUT'`/`'PATCH'`), with nothing but a comma and
+ * whitespace between the two. Matching a bare path is not enough: reads and
+ * writes share paths (`rec.reception-authorization` POST and `-list` GET live
+ * on one route), so a path-only check would report a write reachable after its
+ * call site was deleted. And a method literal merely NEARBY is not enough
+ * either: the first version of this matcher accepted any write-method literal
+ * within a 2000-character look-behind window, and a `client.get(...)` READ
+ * sitting after a genuine write in the same file borrowed that write's method
+ * and was reported as a mutation site — a false REACHABLE that would survive
+ * the real call site's deletion. The live tree contained exactly that shape
+ * (`features/vehicles/profile-api.ts`: the VIN-uniqueness probe read, 40 lines
+ * below a PATCH). Adjacency is what every real call shape in this codebase
+ * provides — `client.send('POST', path, …)` and the CRM-style
+ * `write(previous, parse, 'POST', path, …)` both pass the method as the
+ * argument directly before the path — so adjacency is what is required.
  *
  * The P1-27 gate additionally recognises `writeVehicle(...)`, a method-less
  * helper. No apt/rec equivalent exists yet. If the contract layer introduces
@@ -192,13 +203,19 @@ function walk(dir, out = []) {
 /**
  * Every mutation call site in one file, as `{ method, path }`.
  *
- * Found by locating each API path literal and looking BACKWARD for the nearest
- * write-method literal. The direction matters: the method precedes the path in
- * every call shape this codebase uses — `client.send('POST', path, …)` and the
- * CRM-style `write(previous, parse, 'POST', path, …)` helper both carry the
- * method as a string literal before the path. A path with no write marker
- * behind it is a READ and is ignored, which is what keeps a list GET from
- * vouching for the POST that shares its route.
+ * Found by locating each API path literal and requiring the write-method
+ * literal to stand as the argument IMMEDIATELY before it — only a comma and
+ * whitespace may separate the two. Every call shape this codebase uses
+ * provides that adjacency: `client.send('POST', path, …)` and the CRM-style
+ * `write(previous, parse, 'POST', path, …)` helper both pass the method as
+ * the argument directly before the path (the parse closure sits BEFORE the
+ * method, so it never intervenes). A path with no adjacent write marker is a
+ * READ and is ignored — which is what keeps a list GET from vouching for the
+ * POST that shares its route, and what keeps a read from BORROWING the method
+ * of an unrelated write elsewhere in the file: the previous any-marker-within-
+ * 2000-characters window did exactly that to `client.get(...)` calls placed
+ * after a genuine write, and `tests/ci/p1-28-write-reachability.test.ts`
+ * holds the borrowed-read fixture that refuses the regression.
  */
 export function mutationCallSites(source) {
   const text = normaliseSourcePaths(stripComments(source));
@@ -207,10 +224,12 @@ export function mutationCallSites(source) {
 
   let match;
   while ((match = pathPattern.exec(text)) !== null) {
-    // Bounded look-behind: long enough to clear a parse closure passed to a
-    // write helper, short enough not to borrow a method from another call.
-    const window = text.slice(Math.max(0, match.index - 2000), match.index);
-    const method = /.*['"](POST|PUT|PATCH)['"]/s.exec(window);
+    // Adjacency, not proximity: the method literal must end the text directly
+    // before the path literal, save for the argument comma and whitespace.
+    // The slice is only as long as a method literal plus formatting needs;
+    // the `$` anchor is what carries the rule.
+    const window = text.slice(Math.max(0, match.index - 200), match.index);
+    const method = /['"](POST|PUT|PATCH)['"]\s*,\s*$/.exec(window);
     if (!method) continue;
 
     sites.push({ method: method[1], path: match[1] });

@@ -25,24 +25,19 @@
   ],
   "operations": {
     "apt.appointment-create": {
-      "classification": "NOT_YET_WIRED",
-      "reason": "P1-28-FE-002 (appointment booking form) has not landed; no appointment screen exists yet."
+      "classification": "REACHABLE"
     },
     "apt.appointment-reschedule": {
-      "classification": "NOT_YET_WIRED",
-      "reason": "P1-28-FE-003 (appointment reschedule and confirmation) has not landed."
+      "classification": "REACHABLE"
     },
     "apt.appointment-cancel": {
-      "classification": "NOT_YET_WIRED",
-      "reason": "P1-28-FE-004 (appointment cancellation) has not landed."
+      "classification": "REACHABLE"
     },
     "apt.appointment-no-show": {
-      "classification": "NOT_YET_WIRED",
-      "reason": "P1-28-FE-005 (appointment no-show recording) has not landed."
+      "classification": "REACHABLE"
     },
     "rec.reception-create": {
-      "classification": "NOT_YET_WIRED",
-      "reason": "P1-28-FE-007 (reception check-in wizard) has not landed; FE-014 adds the fuel/EV fields of the same command."
+      "classification": "REACHABLE"
     },
     "rec.reception-party-role": {
       "classification": "NOT_YET_WIRED",

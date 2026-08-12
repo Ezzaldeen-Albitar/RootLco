@@ -171,8 +171,22 @@ export function branchTargetQuery(
   params: Record<string, string | number | undefined | null> = {}
 ): string {
   const search = new URLSearchParams();
-  search.set('companyId', target.companyId);
-  search.set('branchId', target.branchId);
+  for (const half of ['companyId', 'branchId'] as const) {
+    const value = target?.[half];
+    // Refused, not defaulted and not dropped — the same posture `query()`
+    // takes toward a scope key. The types demand both halves, but a value
+    // that is undefined at runtime would be serialised by URLSearchParams as
+    // the literal string "undefined" and travel to the backend looking like
+    // an assertion; a blank one would 422 far from the mistake. Both are
+    // coding errors, so both are said at the call site.
+    if (typeof value !== 'string' || value.trim().length === 0) {
+      throw new Error(
+        `${half} is mandatory on a branch-target read. The route schema names both halves; ` +
+          'a missing or blank one is a coding error, not a request to send.'
+      );
+    }
+    search.set(half, value);
+  }
   for (const [key, value] of Object.entries(params)) {
     if (SCOPE_KEYS.has(key)) {
       // Includes `companyId`/`branchId` themselves: the target parameter is the

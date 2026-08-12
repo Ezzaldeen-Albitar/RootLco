@@ -164,6 +164,18 @@ describe('the gate is green on the CURRENT tree', () => {
     expect(escaped, 'an allow-list entry outside the day-one high-water mark').toEqual([]);
     expect(parked.length).toBeLessThanOrEqual(DAY_ONE_NOT_YET_WIRED.length);
   });
+
+  it('pins the live DELIBERATELY_ABSENT count at exactly zero', () => {
+    // The gate's shape check accepts ANY non-empty decisionRef — a fabricated
+    // reference reads exactly like an approved one, so reclassifying an
+    // operation to DELIBERATELY_ABSENT is a sideways exit from the allow-list
+    // that nothing structural reviews. This pin closes that exit: the same
+    // diff that reclassifies an operation must move this number, which puts
+    // the claimed decision reference in front of a reviewer instead of letting
+    // it slide through as a manifest-only edit. No operation carries the
+    // classification today, and none may without being seen.
+    expect(live.counts.DELIBERATELY_ABSENT ?? 0).toBe(0);
+  });
 });
 
 describe('the frozen day-one list itself', () => {
@@ -395,6 +407,43 @@ describe('what does NOT count as a call site', () => {
       ],
     });
     expect(report.violations.join('\n')).toContain('rec.synthetic-approve');
+  });
+
+  it('refuses to let a READ borrow a nearby write-method literal', () => {
+    // The refuter's window-borrowing scenario, kept as the regression fixture.
+    // The first matcher accepted any write-method literal within a
+    // 2000-character look-behind, so a `client.get(...)` READ placed after a
+    // genuine write in the same file was credited with that write's method and
+    // reported as a mutation site — the live tree carried exactly this shape
+    // (a VIN-uniqueness probe read forty lines below a PATCH). Only a method
+    // literal standing as the argument IMMEDIATELY before the path counts.
+    const BORROWED_READ = `
+export async function recordSyntheticThing(previous, form) {
+  const w = await client.send('POST', '/api/v1/synthetic-other-things', parsed.data);
+  return w;
+}
+export async function probeSyntheticSeal(id) {
+  const r = await client.get(\`/api/v1/synthetic-receptions/\${encodeURIComponent(id)}/seal\`);
+  return r;
+}
+`;
+    // The unit half: the genuine write is the ONLY site; the read's path,
+    // although the 'POST' literal sits well inside the old window, is not one.
+    expect(mutationCallSites(BORROWED_READ)).toEqual([
+      { method: 'POST', path: '/api/v1/synthetic-other-things' },
+    ]);
+
+    // The whole-judgement half: the allow-listed seal write must NOT be
+    // reported as called on the borrowed read's evidence. Under the old
+    // matcher this fixture produced the "IS called from" violation; under the
+    // adjacency rule the tree stays green.
+    const report = judge({
+      sources: [
+        ...sources,
+        ['apps/web/src/features/synthetic-receptions/probe.ts', BORROWED_READ] as const,
+      ],
+    });
+    expect(report.violations).toEqual([]);
   });
 });
 
