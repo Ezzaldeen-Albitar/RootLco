@@ -23,25 +23,26 @@
       "note": "GREEN at the candidate. Job 94085356606 of run 31587707846 concluded success on the commit — the per-job conclusion, which is the only one this record ever reads: 229 planned, 225 passed, 0 failed, 4 skipped (each skip a runtime-guarded no-data case), 224 executed across all 6 authenticated spec files, with the zero-test refusal live. The head is the same documentation-only successor of the code candidate as above, and executableChangesSince proves the equivalence. This is the observation 23 task rows carried as PENDING_CANDIDATE_OBSERVATION; it was discharged by this PULL-REQUEST run, not by any merge, which is why it lives here and not under a protected-only heading. The three earlier executions — runs 31337158296, 31343632011 and 31347643485, recorded run by run in .github/ci-baselines/unrun-test-tiers.json — remain history about other heads."
     },
     "PROTECTED_MERGE": {
-      "taken": false,
-      "mergeSha": null,
-      "secondParent": null,
-      "secondParentVerified": false,
-      "note": "A protected merge is verified by its SECOND parent. The first parent of a merge commit on develop is develop, so checking the first parent proves only that develop is develop."
+      "taken": true,
+      "mergeSha": "46d4e482dd6dc8dc4c613df17824b93a5236a928",
+      "secondParent": "a6b1e0300c84d3b2d2bbaa8a01ee9d5e65df982f",
+      "note": "PR #214 merged to protected develop as a TRUE MERGE COMMIT — exactly two parents. Verified by the SECOND parent, which is the reviewed candidate a6b1e030; the first parent is develop itself (61d8deda) and proves nothing. The merge tree 98bd0264 is byte-identical to the reviewed tree, and origin/main is untouched at f085d820.",
+      "secondParentVerified": true,
+      "verification": "git cat-file -p 46d4e482 shows exactly two parent lines; rev-parse 46d4e482^2 = a6b1e0300c84d3b2d2bbaa8a01ee9d5e65df982f (the reviewed candidate); the merge tree 98bd0264fcaa7a824e07eaa3546b08dedf782039 equals the reviewed tree byte-for-byte. Verified before being recorded, not asserted."
     },
     "PROTECTED_CI": {
-      "observed": null,
-      "runId": null,
-      "jobId": null,
-      "headSha": null,
-      "note": "Not reachable before the merge. protected-develop-verification.yml runs on pushes to develop and main and by workflow_dispatch."
+      "observed": "GREEN",
+      "runId": "31590615278",
+      "jobId": "94097982319",
+      "headSha": "46d4e482dd6dc8dc4c613df17824b93a5236a928",
+      "note": "protected-develop-verification on the merge push: 19/19 jobs success, protected-gate GO (job 94097982319). This is the reproof only a protected push can start, taken at the merge SHA itself."
     },
     "PROTECTED_AUTHENTICATED_BROWSER": {
-      "observed": null,
-      "runId": null,
-      "jobId": null,
-      "headSha": null,
-      "note": "The same tier as above, taken again from the protected caller. It is a re-run of a proof already taken at the candidate, not a different proof, and nothing at the candidate is held hostage to it."
+      "observed": "GREEN",
+      "runId": "31590615278",
+      "jobId": "94094472258",
+      "headSha": "46d4e482dd6dc8dc4c613df17824b93a5236a928",
+      "note": "229 planned, 224 passed, 0 failed, 5 runtime-guarded skips, 223 executed across all 6 spec files on the protected runner at the merge SHA. The per-JOB conclusion on the commit is what this cell reads. One more spec-level skip than the PR run (5 vs 4): a runtime-guarded no-data case, stated by the suite itself, not a lost test — 0 failed is the load-bearing figure."
     },
     "PROTECTED_ONLY_OBLIGATIONS": [
       {
@@ -61,11 +62,11 @@
     }
   },
   "declared": {
-    "STATE": "PRE_MERGE_CANDIDATE",
+    "STATE": "POST_MERGE_PROTECTED_REPROOF",
     "MERGE_PERMITTED": true,
-    "OWNER_HANDOFF_PERMITTED": false,
+    "OWNER_HANDOFF_PERMITTED": true,
     "CLOSURE_PERMITTED": false,
-    "BLOCKERS": ["PROTECTED_MERGE_NOT_TAKEN", "OWNER_ACCEPTANCE_NOT_TAKEN"],
-    "note": "PRE_MERGE_CANDIDATE, and the state word is doing its job: every candidate condition is discharged — the code candidate is frozen, both exact-head observations are GREEN, QA-005 is sealed, the register carries no OPEN or PARTIAL row — so the candidate MAY merge, and the phase is NOT closed. The two blockers left are the two later phases: the protected merge has not been taken, and Owner acceptance is the Owner's act against the running application, not derivable from any count here, and silence is never Pass. The gate still fails when this declaration and the tree disagree in EITHER direction: a new blocker that is not declared, and a declared blocker the tree no longer raises. That is what makes it a check rather than a printout."
+    "BLOCKERS": ["OWNER_ACCEPTANCE_NOT_TAKEN"],
+    "note": "POST_MERGE_PROTECTED_REPROOF: the merge was taken as a true merge commit and verified by its SECOND parent; protected CI and the protected authenticated browser are both GREEN at the merge SHA (run 31590615278, protected-gate GO). Every technical phase is discharged. The one blocker is the one that must remain: Owner acceptance is the Owner’s act against the running application, not derivable from any count in this repository, and silence is never Pass. The gate still fails when this declaration and the tree disagree in EITHER direction."
   }
 }
