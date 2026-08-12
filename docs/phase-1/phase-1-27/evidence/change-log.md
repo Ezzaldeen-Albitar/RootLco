@@ -869,6 +869,59 @@ was taken, so the pages state no current hosted value at all — every hosted
 record is `HISTORICAL` with full provenance or `PENDING_CANDIDATE_OBSERVATION`
 with none. The phase status is unchanged: `OWNER ACCEPTANCE: FAIL`.
 
+### Closure wave twelve — the candidate measured, the register sealed (docs-only, candidate `501f5f0d`)
+
+Everything this wave changed is documentation, and that is checkable rather than
+promised: the code candidate froze at `501f5f0d` — its own commit message calls
+it the final executable change before the freeze — and
+`executableChangesSince(501f5f0d)` has returned the empty list on every gate run
+since, with `classify-changes.mjs` judging each path.
+
+**The two candidate observations were taken, on the pull request itself.**
+Hosted run `31587707846` at `f0804b2`, a documentation-only successor of the
+candidate: 21 required checks completed, 0 failed, 0 pending; `ci-gate` job
+`94088792169` at Go; `hosted-clean-room` job `94051099413`, `Web quality` job
+`94051099309` and authenticated-browser job `94085356606` all success on their
+own per-job conclusions — the authenticated tier at 225 passed, 0 failed, 224
+executed across all 6 spec files; CodeQL green on both legs with 0 open alerts.
+Both observations are recorded with run id, job id and head in
+`evidence/lifecycle-ledger.json`, and the lifecycle gate now derives
+`PRE_MERGE_CANDIDATE` with the merge permitted — and Owner handoff and closure
+still blocked.
+
+**The 23 reproof rows flipped to `TAKEN_GREEN`, and the lifecycle forces the
+flip:** once both observations stand GREEN, a row still reading
+`PENDING_CANDIDATE_OBSERVATION` is a named blocker, so a stale pending row fails
+the build rather than waiting politely.
+
+**`QA-005` sealed, and the register followed.** Its `NEGATIVE_OR_MUTATION_PROOF`
+cell now records the five machinery attacks and their refusals, the
+`RUN_RECORD_STALE` catch that fired in production at the freeze — hosted CI
+refusing this phase's own stale run ledger until both tiers were re-taken at the
+candidate — and the closing-value classification with all five counters at 0.
+The seventeen `SEALED` findings and `A42-13` closed INDIVIDUALLY, each row
+stating its claim, the executable authority guarding it at this head, why this
+candidate's measurement is the seal event it waited for, and its terminal
+status; two guard suites were re-run at the seal as named spot checks
+(`tests/ci/p1-27-evidence-manifest.test.ts` and
+`apps/web/tests/p1-27-doc-reconciliation.test.ts`) rather than all seventeen.
+`A42-13` closed `FIXED` by DISPOSITION — the finding still holds and
+`P1-27-OD-005` (Decided) still disposes of it — because after the closing
+measurement nothing may remain `OPEN` or `PARTIAL`, and `REFUTED` would claim
+the finding is false.
+
+**The evidence pages now carry a current seal.** The pending-observation
+sections retired; the hosted attestation names run `31587707846` per job at the
+documentation-only successor head; the candidate is pinned as
+`CODE_CANDIDATE_SHA` on both pages; and the docs-only equivalence is a derived
+value on the page — `EXECUTABLE_DIFF_COUNT` exactly zero — not an adjective.
+
+**What did NOT move in wave twelve.** The protected merge is not taken; the
+protected reproof and the CodeQL repository ceiling remain
+`PENDING_PROTECTED_MERGE`; and the phase status is unchanged:
+`OWNER ACCEPTANCE: FAIL` until the Owner explicitly returns a Pass against the
+running application.
+
 ### Where the record stands at this head
 
 Every figure in this section is **derived**, and a document that restates one
@@ -877,25 +930,27 @@ sentences above that had to be superseded — "the matrix is 40 PASS / 2 PARTIAL
 and "`DOC-001` stays `PARTIAL`" — were both typed, both true when typed, and both
 falsified two commits later by a wave this file had not yet recorded.
 
-| what                                       | at this head                                                                                                                                                                                                                                                                                                                                                             |
-| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| The 42-task matrix                         | <!-- derived: matrix PASS = 41 --> **41** PASS · <!-- derived: matrix PARTIAL = 1 --> **1** PARTIAL · <!-- derived: matrix FAIL = 0 --> **0** FAIL. The one is `QA-005`, sealed last by design.                                                                                                                                                                          |
-| Reproof debt, by kind                      | <!-- derived: matrix PENDING_CANDIDATE_OBSERVATION = 23 --> **23** rows await an exact-head CANDIDATE observation, which a pull-request run takes; <!-- derived: matrix PENDING_PROTECTED_MERGE = 0 --> **0** await a job only a protected push starts. The phase cannot close while the first is non-zero, and it is not the same question as the column beside it.     |
-| Round five, actionable                     | <!-- derived: round5 ACTIONABLE_OPEN = 0 --> **0** open, <!-- derived: round5 ACTIONABLE_PARTIAL = 0 --> **0** partial. The four that stood here closed at `3f8ef6c` and the two that replaced them closed in wave nine — `H-23` at `2bc3b3a`, `H-24` at `e5f7480`. Zero actionable is NOT closeable: seventeen sealed findings are still open and `QA-005` has not run. |
-| Round five, sealed until `QA-005` executes | <!-- derived: round5 SEALED_OPEN = 17 --> **17** open, and they may be. They measure the record of the closing candidate, which does not exist yet.                                                                                                                                                                                                                      |
-| Round five, dispositioned                  | <!-- derived: round5 DISPOSITIONED_PARTIAL = 1 --> **1** — `A42-13`, true and decided by `P1-27-OD-005`. It is not counted as a blocker and it is not marked fixed.                                                                                                                                                                                                      |
-| The eighteen-path matrix                   | <!-- derived: catalogue pathProven = 13 --> **13** PROVEN · <!-- derived: catalogue pathPartial = 3 --> **3** PARTIAL · <!-- derived: catalogue pathAbsent = 2 --> **2** ABSENT, `matrixDischarged` still `false`. `P1-27-OD-007` decided that this is not what `DOC-001` is judged on; it did not discharge it.                                                         |
+| what                                       | at this head                                                                                                                                                                                                                                                                                                                                                                                        |
+| ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| The 42-task matrix                         | <!-- derived: matrix PASS = 42 --> **42** PASS · <!-- derived: matrix PARTIAL = 0 --> **0** PARTIAL · <!-- derived: matrix FAIL = 0 --> **0** FAIL. The last to move was `QA-005`, sealed last by design, on the candidate measurement.                                                                                                                                                             |
+| Reproof debt, by kind                      | <!-- derived: matrix TAKEN_GREEN = 23 --> **23** rows carry `TAKEN_GREEN` from the candidate run; <!-- derived: matrix PENDING_CANDIDATE_OBSERVATION = 0 --> **0** still await a candidate observation; <!-- derived: matrix PENDING_PROTECTED_MERGE = 0 --> **0** await a job only a protected push starts. A pending row while both observations stand GREEN is itself a lifecycle blocker.       |
+| Round five, actionable                     | <!-- derived: round5 ACTIONABLE_OPEN = 0 --> **0** open, <!-- derived: round5 ACTIONABLE_PARTIAL = 0 --> **0** partial. The four that stood here closed at `3f8ef6c` and the two that replaced them closed in wave nine — `H-23` at `2bc3b3a`, `H-24` at `e5f7480`. Zero actionable stopped being a partial statement at the seal: the sealed seventeen have closed against the measured candidate. |
+| Round five, sealed until `QA-005` executes | <!-- derived: round5 SEALED_OPEN = 0 --> **0** open — the seventeen closed at the seal, individually, in their own rows, against the measured candidate.                                                                                                                                                                                                                                            |
+| Round five, dispositioned                  | <!-- derived: round5 DISPOSITIONED_PARTIAL = 0 --> **0** — `A42-13` closed `FIXED` by disposition at the seal; the finding still holds and `P1-27-OD-005` still disposes of it.                                                                                                                                                                                                                     |
+| The eighteen-path matrix                   | <!-- derived: catalogue pathProven = 13 --> **13** PROVEN · <!-- derived: catalogue pathPartial = 3 --> **3** PARTIAL · <!-- derived: catalogue pathAbsent = 2 --> **2** ABSENT, `matrixDischarged` still `false`. `P1-27-OD-007` decided that this is not what `DOC-001` is judged on; it did not discharge it.                                                                                    |
 
 **The phase status is unchanged by any of it: `OWNER ACCEPTANCE: FAIL`.** None of
 these numbers is an acceptance, and the row that matters most —
-<!-- derived: round5 CLOSURE_BLOCKERS = 0 --> **0** actionable blockers — is the
+<!-- derived: round5 CLOSURE_BLOCKERS = 0 --> **0** closure blockers — is the
 
-one no automated tier reported. That number went four, then two, then zero: four
-closed and two opened by checking that the four were real, then those two closed
-by checking them the same way. **Zero here is not a closure.** It means nothing is
-left that this wave could act on; seventeen findings remain `OPEN` and every one
-of them is `SEALED` against a closing candidate `QA-005` has not measured, which
-is why `ROUND5_CLOSURE_STATE` reads `SEALED-ONLY` and not `CLEAR`.
+one no automated tier reported. That number went four, then two, then zero for
+the actionable class — four closed and two opened by checking that the four were
+real, then those two closed by checking them the same way — and at the seal the
+sealed seventeen and the dispositioned one followed, so `ROUND5_CLOSURE_STATE`
+now derives `CLEAR`. **Zero here is still not a closure.** It means the REGISTER
+holds nothing left to act on; the lifecycle still holds the protected merge (not
+taken) and the Owner's acceptance (not given), and neither is derivable from
+this file.
 
 ---
 
@@ -923,7 +978,7 @@ Three things changed, and only one of them is a document.
 
 **A digest over the evidence.** `evidence/evidence-manifest.json` carries SHA-256
 over the _bytes_ of every `.md` and `.json` file in the phase directory, walked
-rather than listed — <!-- derived: manifest fileCount = 39 --> **36** of them at
+rather than listed — <!-- derived: manifest fileCount = 39 --> **39** of them at
 this head. That number was written here as "29" and stayed there while the phase
 directory grew by seven documents: a sentence about a walk, holding a figure
 nothing read. It is derived now, so the next document that joins the tree fails

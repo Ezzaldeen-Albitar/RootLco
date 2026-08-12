@@ -8,8 +8,8 @@
   "fileCount": 39,
   "files": {
     "docs/phase-1/phase-1-27/adversarial-round-five.md": {
-      "sha256": "976de915ab39918ee299e5adf43f7a172e6dcbf9cbc4bcf85077064a0e29d6b9",
-      "bytes": 545102
+      "sha256": "3ab7178ed36211347a8eac757c720be00352983520533d35348552ded9f49566",
+      "bytes": 548843
     },
     "docs/phase-1/phase-1-27/adversarial-round-four.md": {
       "sha256": "94ec35bfa05c2b112a2dbd780bf157338d20a2c73dc8bfff598f27ddbb0e94a7",
@@ -28,12 +28,12 @@
       "bytes": 3902
     },
     "docs/phase-1/phase-1-27/ci-evidence.md": {
-      "sha256": "2aa035cc91f6236e2748d18a4236f494521fc7bf99aec24335623279cb9e15ff",
-      "bytes": 13155
+      "sha256": "a1573031770d0ae75d23bc06ed234eee2890a368884bdd4b3dd21e936c7469c9",
+      "bytes": 15997
     },
     "docs/phase-1/phase-1-27/clean-room-evidence.md": {
-      "sha256": "aeda33a5c7d63eb38fbc6ce251147909b2ab662f2f8814e577e9f7e73c6caa5e",
-      "bytes": 22949
+      "sha256": "6c415a4f8ee7e3b93639ee12ea96c8cdbf66b13ea2398ec147a2b4b48f96a04c",
+      "bytes": 23029
     },
     "docs/phase-1/phase-1-27/continuation-checkpoint.md": {
       "sha256": "fbfdf7daca0f7600d12f77970da908d0f329e79d2d06f2fc9cacfb1e87b1310a",
@@ -44,7 +44,7 @@
       "bytes": 24145
     },
     "docs/phase-1/phase-1-27/deliverable-manifest.md": {
-      "sha256": "f6be89328fdef63173db0ccae06846063c2b33b88ad2c1f32deb0dcd0cac813c",
+      "sha256": "2c39a7e1416af824fcbd19b6038d903caaf63c34f7a95bf1cc75177107ee8354",
       "bytes": 143227
     },
     "docs/phase-1/phase-1-27/developer-guide.md": {
@@ -52,16 +52,16 @@
       "bytes": 10332
     },
     "docs/phase-1/phase-1-27/evidence/change-log.md": {
-      "sha256": "3f8ddb53d930854c5b460d4cf3aab4a480c33f3e0d94fa228ced54008de0dab8",
-      "bytes": 74994
+      "sha256": "cf7357376c374dc45ae2e1fcdd35fef04ffd37dd2eb6804fcb0c6fedf1c8c6e2",
+      "bytes": 78542
     },
     "docs/phase-1/phase-1-27/evidence/closing-value-ledger.json": {
-      "sha256": "4fc63a30d69eac992af7fc224389f624e1ad5cc5bb14e596d5a005965006039d",
-      "bytes": 30792
+      "sha256": "dc611712cb44cda97fb32c0987ab317e00f7c921815a45f34dcf157368d44cc4",
+      "bytes": 46482
     },
     "docs/phase-1/phase-1-27/evidence/lifecycle-ledger.json": {
-      "sha256": "e5bbbba99f8f83bf994eb6413ad08df690d2c03708747003bb3618366780016e",
-      "bytes": 6801
+      "sha256": "157785d9db86d320a7e5f6e03a8cdde2c844f9eef35ad02b72230a4cbbe1572b",
+      "bytes": 8109
     },
     "docs/phase-1/phase-1-27/evidence/local-run-ledger.json": {
       "sha256": "c19ba4553d771421915eb4de66c1979849e6e19aff2a05354c99b52e7d9aefee",
@@ -88,8 +88,8 @@
       "bytes": 27435
     },
     "docs/phase-1/phase-1-27/final-task-adjudication.md": {
-      "sha256": "a2abb980245000f50ce278c9065ba789f1e405779892746e9d1f0da6ca39a1dd",
-      "bytes": 76023
+      "sha256": "8f7bd2ac3e7fd75f3b09975930bc64f966a67951acad0f61773342a6bd4387ce",
+      "bytes": 76109
     },
     "docs/phase-1/phase-1-27/finding-phase-disposition.md": {
       "sha256": "1636f04e7a7448e6f56f4702d7f06c9d5a413c442b4f66394e1a6dc3593b0aa2",
@@ -152,12 +152,12 @@
       "bytes": 184434
     },
     "docs/phase-1/phase-1-27/task-matrix-verdicts.json": {
-      "sha256": "b5fb5397016cf2c95362f84d9f26e181f2c5b9f9dea0046a22c0409c2b0f74c1",
-      "bytes": 374233
+      "sha256": "9aaf88c8dbe6204ce66b9591d85123f1e7cc308fbeb621d922953063b276b905",
+      "bytes": 262562
     },
     "docs/phase-1/phase-1-27/task-matrix.json": {
-      "sha256": "0e17b9092b914ca92cd48b392abf3c1525d001ad0e794422229506dd2968818e",
-      "bytes": 394048
+      "sha256": "345b8ccfa107ab20e81816e4f68a51340de4ebbe332fb78f1bcc56d37eddb591",
+      "bytes": 281963
     },
     "docs/phase-1/phase-1-27/task-register.md": {
       "sha256": "f3bc7d8c07f5b852c5794ca53555f3369fe10a0ce25d424f40161a001fbee5fe",

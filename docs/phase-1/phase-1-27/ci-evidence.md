@@ -20,24 +20,54 @@ itself is collected from the GitHub API during exact-head CI, by a reader of the
 run.
 
 <!-- seal: end masthead -->
-<!-- seal: current pending-observation -->
+<!-- seal: current candidate-seal -->
 
-## What is still to be collected
+## The current seal — the candidate measurement exists
 
-**No hosted run has been taken against the current tree**, so this page states no
-current hosted value. The candidate is not frozen — this branch is still changing
-executable files — and until it is, a hosted figure here would describe a
-different tree. That is the whole of `P1-27-QA-005` in one sentence.
+The section that stood here was headed "What is still to be collected" and said
+no hosted run had been taken against the current tree. That was true until the
+code candidate froze; the observation has now been taken, on the pull request
+itself, and this table is it. The run head is a DOCUMENTATION-ONLY successor of
+the candidate: recording a run changes the tree, so the honest unit is the code
+candidate, and the equivalence is a derived value in this table — re-derived on
+every gate run — rather than an adjective.
+
+| property                                     | value                                                                         |
+| -------------------------------------------- | ----------------------------------------------------------------------------- |
+| `CODE_CANDIDATE_SHA`                         | `501f5f0d48d7b8cafc12dad51f6c501534b66a18`                                    |
+| Run head — a documentation-only successor    | `f0804b2c7ad31e08f033f76096d49c5394d69c81`                                    |
+| Executable paths changed since the candidate | **0** — derived on every gate run, over the whole span including the run head |
+| Workflow run                                 | `31587707846`                                                                 |
+| Required checks                              | **21 completed · 0 failed · 0 pending**                                       |
+| `ci-gate` decision                           | **Go**                                                                        |
+| `ci-gate` job                                | `94088792169`                                                                 |
+| `hosted-clean-room` job                      | `94085356719` — success, on its own per-job conclusion                        |
+| `Web quality` job                            | `94085356574` — success                                                       |
+| `authenticated-browser` job                  | `94085356606` — success                                                       |
+| Authenticated tier                           | 229 planned · 225 passed · 0 failed · 4 skipped · 224 executed · 6 spec files |
+| CodeQL                                       | **none open** on the analysed refs — both legs completed                      |
+| Dependency policy                            | passing — the `dependency-security` check succeeded                           |
+
+The four skips are runtime-guarded no-data cases the suite itself states, and
+the per-JOB conclusion on the commit is what every cell above reads — never the
+run-level one, which is the mistake this page's own history records. The same
+observation, with the same run id, job ids and head, is what
+`evidence/lifecycle-ledger.json` carries under `CANDIDATE_HOSTED_CI` and
+`CANDIDATE_AUTHENTICATED_BROWSER`, and the lifecycle gate refuses either record
+without the other.
+
+What remains genuinely uncollectable before the merge:
 
 `PROTECTED_GATE_GO` — PENDING PROTECTED MERGE. `protected-gate` runs only on a
 push to a protected branch.
 
 `CODEQL_REPOSITORY_CEILING` — PENDING PROTECTED MERGE. A CodeQL pull-request
 analysis is diff-informed and reports against the pull-request ref, so it cannot
-establish a repository-wide ceiling. The figure in the table below is what the
-analysed refs carried at a superseded head, and it is recorded as that.
+establish a repository-wide ceiling. The open-alert statements on this page —
+the current run's above and the superseded run's below — are what the analysed
+refs carried, and neither is presented as the ceiling.
 
-<!-- seal: end pending-observation -->
+<!-- seal: end candidate-seal -->
 <!-- seal: historical superseded-run -->
 
 > **SUPERSEDED** — an exact-head run, at a head that is no longer the candidate.
@@ -152,9 +182,10 @@ and the job conclusion is read on the commit rather than the run conclusion —
 every one of these runs carries a run-level `failure` because other jobs at those
 commits were red.
 
-What is still not claimed: **no run has been observed against the closing
-candidate.** Every execution above predates the merge of the remediation
-branches, so none of them is evidence about the commit this phase closes on.
+What this section could not claim when it was written — a run observed against
+the closing candidate — has since been taken and is recorded in the current seal
+above. Every execution in THIS section predates the closing wave, so none of
+them is that evidence, and none is cited as it.
 
 <!-- seal: end authenticated-tier-history -->
 <!-- seal: narrative neither-is-a-superset -->

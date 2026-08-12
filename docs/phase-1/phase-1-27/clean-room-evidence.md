@@ -48,7 +48,7 @@ which expires the moment an executable path changes.
 > excluded from the current seal and must not be quoted as this phase's
 > clean-room result.
 
-## SUPERSEDED — this record awaits the final candidate
+## Superseded — the record that awaited the final candidate
 
 **Everything under "What was measured" describes head
 `356f1a1e937e819b9db94f40a2d6f04f98f9ae39` and is no longer current.** It is kept
@@ -85,16 +85,19 @@ EXECUTABLE_DIFF_COUNT  git diff --name-only CODE_CANDIDATE_SHA..EVIDENCE_RECORD_
 `EXECUTABLE_DIFF_COUNT` is exactly zero. It is not a phrase to be written on a
 page; it is a number produced by that command.
 
-### Why there is no current measurement
+### Why there was no current measurement then
 
-The branch is still receiving code. Round five refuted the previous candidate —
+The branch was still receiving code. Round five refuted the previous candidate —
 three product defects, a form-reset inventory that could not see the files
 containing them, and a web test-count floor satisfied by a suite in which nothing
-executed — so the head described below is not a candidate for anything.
+executed — so the head described below was not a candidate for anything.
 
 A clean room recorded against a moving branch is stale on arrival, which is the
 defect `P1-27-QA-005` was raised about. The measurement is taken ONCE, against
-the true final candidate, and **`QA-005` is OPEN until that candidate exists.**
+the true final candidate, and `QA-005` stayed OPEN until that candidate existed.
+It has since been frozen and measured; the current sections of this page and the
+seal table on `ci-evidence.md` are that record, and nothing in THIS section is
+part of it.
 
 ## What was measured
 
@@ -179,35 +182,37 @@ the tree was running.
 | Tracked files under `docs/phase-1/phase-1-27`        | 40                                          |
 | Tracked `.md` files under the same directory         | 30                                          |
 | Migrations tracked by git at `HEAD`                  | 120                                         |
-| The CODE candidate this branch descends from         | `bbcffa08851d919d5705dd2810bd4c614e83f826`  |
+| `CODE_CANDIDATE_SHA`                                 | `501f5f0d48d7b8cafc12dad51f6c501534b66a18`  |
+| Executable paths changed since the candidate         | 0                                           |
 
 The migration count appears twice on purpose. The first is a walk of the
 filesystem and the second is `git ls-tree` at `HEAD`; a disagreement between them
 is an untracked migration, which is a thing that can happen and which neither
 answer detects alone.
 
-### `HOSTED_ARTIFACT_ATTESTED` — pending, and collected externally
+The candidate row and the zero beneath it are one claim read together: the
+frozen code candidate resolves as a commit in this repository, and no executable
+path has changed since it — the derivation the documentation-only seal stands
+on, recomputed by the gate on every run rather than asserted by this sentence.
 
-No hosted run has been taken against this tree, so this page states no current
-hosted value. The fields below are declared with no figure. Each is collected
-from the GitHub API during exact-head CI, by a reader of the run rather than by
-any command in this repository, and recorded in the ledger with its run id, its
-job id and the head it describes. A local validator cannot reproduce them and
-this record does not pretend that it can; what the gate proves about them is that
-nothing claims hosted provenance without naming a run, and nothing claims local
-provenance for a hosted fact.
+### `HOSTED_ARTIFACT_ATTESTED` — taken at the candidate, and recorded once
 
-| field awaiting collection             | where it comes from                                     |
-| ------------------------------------- | -------------------------------------------------------- |
-| `ci-gate` decision                    | the `ci-gate` job's summary on the candidate's run       |
-| Required-check completion             | `/commits/{sha}/check-runs` for the candidate            |
-| Coverage — lines and branches         | the `Web quality` job's coverage artefact                |
-| Hosted clean-room schema hash         | the `hosted-clean-room` job's replay output              |
-| Application tables before migration   | the same job, against a database no local machine has    |
-| RLS matrix cells                      | the `integration-tests` job's matrix artefact            |
-| Container image digest and size       | the `Docker build validation` job                        |
-| `npm audit` production and development | the dependency-policy step                              |
-| Authenticated browser tier            | the `authenticated-browser` job                          |
+The candidate hosted observation exists and is recorded ONCE, in the current
+seal table on `ci-evidence.md`: the workflow run, the required-check completion,
+the `ci-gate` decision, and per-job ids for the hosted clean-room, web quality
+and authenticated-browser jobs, each classified in the ledger with full
+provenance — run id, job id, and the head it describes, which is the frozen
+code candidate measured through its documentation-only successor. Every field
+the previous revision of this section listed as awaiting collection now names
+its job there. Recording the figures on one page and pointing from the other is
+the same no-drift rule the per-tier totals already follow in the opposite
+direction, and it is why this section states no figure of its own. What the
+gate proves about a hosted value is unchanged and worth restating: internal
+consistency — provenance named, nothing hosted claiming local derivation,
+nothing describing another head presented as current. The observation itself
+was collected from the GitHub API during exact-head CI, by a reader of the run,
+and a local validator that claimed to reproduce it would be lying about what it
+did.
 
 ### `PROTECTED_POST_MERGE_ONLY` — it cannot exist before the merge
 
