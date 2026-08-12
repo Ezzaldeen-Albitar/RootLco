@@ -28,16 +28,26 @@ with the uuid deleted, and the two headers read "Owner" and "Customer" exactly a
 §2.3 specified; §2.6's rate-limit ceiling is moot.
 **D3 resolved against §3.2's recommendation, by §3.2's own second reason**:
 instead of relabelling to a staff reference, the actor **name** now ships on the
-history projections (`remediation/p1-14-actor-display-identity`, PR #212
+vehicle history projection (`remediation/p1-14-actor-display-identity`, PR #212
 `61d8ded` — owned by P1-14 exactly as `VHM-13` assigns), so
-`vehicles.history.actor` stays "Changed by" and `crm.customers.timeline.actor`
-stays "Recorded by", each over a name with a "User unavailable" fallback and the
-system-event null branch kept.
+`vehicles.history.actor` stays "Changed by" over a name with a "User
+unavailable" fallback. `crm.customers.timeline.actor` also stays "Recorded by",
+but **only the header was kept, not the name**: `crm.customer-timeline` still
+returns `actor_id` alone and `actorName` occurs nowhere under
+`apps/api/src/modules/crm/`, so that column reads the fallback for every human
+row and the system-event null branch beside it stays a genuinely distinct case
+(`apps/web/src/features/crm/customers/identity-contract.ts:81-102`). An earlier
+revision of this stamp said both columns sat over a name; only the vehicle one
+does. `FE-029` is closed by a producer, `FE-015` by suppression.
 **§3.3's ordered correction of the record is now executed** (2026-08-13): the
 false `iam.user.read` premise no longer stands at `finding-phase-disposition.md`
-§5 D3. That entry now carries the §3.1 correction, the three surviving costs —
-N+1, the tenant-wide Restricted email set, the feature-boundary breach — and the
-fact that PR #212 overtook the relabel.
+§5 D3. That entry now carries the §3.1 correction and the three surviving costs
+— N+1, the tenant-wide Restricted email set, and the feature-boundary breach,
+the last restated there as the first import _into_ Administration rather than
+the first cross-feature import of any kind, which is false (`features/administration`
+already imports from `features/authentication` in fourteen places). It also
+records that PR #212 overtook the relabel **on the vehicle side only**, with the
+CRM half suppressed rather than named, as the D3 stamp above now states.
 **Still not executed**: §3.4's audit-log recommendation — `AuditLogScreen.tsx:78`
 still renders a raw uuid under "Who", with no `actorKind` fallback in the table ·
 **Read at:** `develop` `131f9664` · **Recorded:** 2026-08-08
