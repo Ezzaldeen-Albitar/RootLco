@@ -1,10 +1,10 @@
 {
   "generatedFrom": "scripts/check-operation-test-coverage.mjs",
   "counts": {
-    "registered": 260,
-    "publicApi": 260,
+    "registered": 261,
+    "publicApi": 261,
     "internal": 0,
-    "withRequiredEvidence": 260,
+    "withRequiredEvidence": 261,
     "invocationOnly": 0,
     "p1_15": {
       "registered": 26,
@@ -17,9 +17,9 @@
       "metadataOnly": 0
     },
     "p1_16": {
-      "registered": 28,
-      "publicApi": 28,
-      "operationDepth": 28,
+      "registered": 29,
+      "publicApi": 29,
+      "operationDepth": 29,
       "invocationOnly": 0,
       "pending": 0,
       "unitOnly": 0,
@@ -845,6 +845,22 @@
       "path": "/customers/{customerId}/timeline",
       "public": false,
       "files": ["tests/backend/p1-16-customer-identity.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "cross-tenant"],
+      "declared": ["success", "denial", "cross-tenant"],
+      "required": ["route", "service", "success", "authorization", "cross-tenant", "denial"],
+      "provided": ["authorization", "cross-tenant", "denial", "route", "service", "success"],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "crm.customer-vehicle-list",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/customers/{customerId}/vehicles",
+      "public": false,
+      "files": ["tests/backend/p1-16-customer-vehicle-list.test.ts"],
       "referenced": true,
       "derived": ["route", "service", "success", "authorization", "cross-tenant"],
       "declared": ["success", "denial", "cross-tenant"],

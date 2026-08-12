@@ -9,10 +9,10 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 
 | Measure                  | Value |
 | ------------------------ | ----- |
-| Public operations        | 260   |
+| Public operations        | 261   |
 | Domains (modules)        | 19    |
 | OpenAPI paths            | 215   |
-| OpenAPI operations       | 260   |
+| OpenAPI operations       | 261   |
 | OpenAPI schemas          | 3     |
 | OpenAPI security schemes | 1     |
 | Permission codes seeded  | 107   |
@@ -24,7 +24,7 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 
 | Classification    | Operations |
 | ----------------- | ---------- |
-| Covered           | 260        |
+| Covered           | 261        |
 | Partially covered | 0          |
 | Uncovered         | 0          |
 | Not applicable    | 0          |
@@ -35,7 +35,7 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 | Domain          | Operations | Covered | Writes | Audited | Idempotent | Version-guarded |
 | --------------- | ---------- | ------- | ------ | ------- | ---------- | --------------- |
 | billing         | 8          | 8       | 5      | 5       | 5          | 2               |
-| crm             | 28         | 28      | 15     | 15      | 15         | 0               |
+| crm             | 29         | 29      | 15     | 15      | 15         | 0               |
 | delivery        | 6          | 6       | 5      | 5       | 5          | 1               |
 | diagnostics     | 13         | 13      | 10     | 10      | 10         | 2               |
 | iam             | 38         | 38      | 24     | 22      | 10         | 6               |
@@ -82,6 +82,7 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 | `crm.customer-search`                    | GET    | `/api/v1/customers`                                                           | tenant  | `crm.customer.read`                                                  | —                                      | —    | —   | authorization cross-tenant denial route service success                                                                       | Covered |
 | `crm.customer-status-set`                | PUT    | `/api/v1/customers/{customerId}/status`                                       | tenant  | `crm.customer.governance.manage`                                     | crm.customer.status_changed            | yes  | —   | audit authorization concurrency cross-tenant denial idempotency route service success                                         | Covered |
 | `crm.customer-timeline`                  | GET    | `/api/v1/customers/{customerId}/timeline`                                     | tenant  | `crm.customer.read`                                                  | —                                      | —    | —   | authorization cross-tenant denial route service success                                                                       | Covered |
+| `crm.customer-vehicle-list`              | GET    | `/api/v1/customers/{customerId}/vehicles`                                     | tenant  | `crm.customer.read`                                                  | —                                      | —    | —   | authorization cross-tenant denial route service success                                                                       | Covered |
 | `crm.duplicate-list`                     | GET    | `/api/v1/customer-duplicates`                                                 | tenant  | `crm.customer.duplicate.review`                                      | —                                      | —    | —   | authorization cross-tenant denial route service success                                                                       | Covered |
 | `crm.duplicate-review`                   | POST   | `/api/v1/customer-duplicates/{candidateId}/review`                            | tenant  | `crm.customer.duplicate.review`                                      | crm.customer.duplicate_reviewed        | yes  | —   | audit authorization concurrency cross-tenant denial idempotency route service success                                         | Covered |
 | `crm.duplicate-scan`                     | POST   | `/api/v1/customers/{customerId}/duplicate-scans`                              | tenant  | `crm.customer.duplicate.review`                                      | crm.customer.duplicates_scanned        | yes  | —   | audit authorization cross-tenant denial idempotency route service success                                                     | Covered |
