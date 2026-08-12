@@ -77,7 +77,7 @@ cannot, that is said instead of guessed.
 | 4   | `170 file(s) checked`                  | `179 file(s) checked`                  | re-run; the colour count is unchanged at 54                         |
 | 5   | `195 / 0`, `197 / 0`, `170 / 0`        | `204 / 0`, `206 / 0`, `179 / 0`        | re-run; all three still report zero                                 |
 | 6   | `143 registered · 71 required · 71/71` | `151 registered · 76 required · 76/76` | derived — §7.1                                                      |
-| 8   | `39 files, 803 passed`                 | `72` files; case total NOT restated    | the file half derived — §3 and §6.1; the case half is `E-03`        |
+| 8   | `39 files, 803 passed`                 | `74` files; case total NOT restated    | the file half derived — §3 and §6.1; the case half is `E-03`        |
 | 9   | `77 files, 1680 passed`                | `86 files, 1821 passed`                | recorded, not derived — §6.4 says why                               |
 | 10  | `31 files, 638 passed`                 | `36 files, 715 passed`                 | the file half derived — §6.4                                        |
 | 11  | `150 tests in 2 files`                 | **not re-measured**                    | needs a browser install; unchanged as far as any record here states |
@@ -159,10 +159,10 @@ fact in words did not, which is the gap this revision closes.
 
 | category                                                               | artefacts                                                          | how counted                                                                |
 | ---------------------------------------------------------------------- | ------------------------------------------------------------------ | -------------------------------------------------------------------------- |
-| Source files under the P1-27 ownership gate                            | **69** (43 feature source + 26 route)                              | derived from the gate's own scan roots                                     |
+| Source files under the P1-27 ownership gate                            | **70** (43 feature source + 27 route)                              | derived from the gate's own scan roots                                     |
 | Router pages (CRM and Vehicle)                                         | **8**                                                              | command 1                                                                  |
 | Shared-foundation source files changed by the phase or its remediation | **13** named in §5.5                                               | command 1, cross-read against the task register and the remediation record |
-| Web unit and component test files                                      | **72**                                                             | derived                                                                    |
+| Web unit and component test files                                      | **74**                                                             | derived                                                                    |
 | Playwright specification files                                         | **9** (2 anonymous, 7 authenticated)                               | commands 11 and 12 — **not re-measured**, §1.1.1                           |
 | Root CI-contract test files                                            | **36**                                                             | derived                                                                    |
 | CI gate scripts under `scripts/ci`                                     | **48** in the directory, **8** introduced or changed by this phase | derived; the eight are the `scripts/ci` rows of §7.1                       |
@@ -226,7 +226,7 @@ every advance of local `develop` in the sequence above was a fast-forward from
 
 ### 5.1 The three trees the P1-27 ownership gate owns — 69 files
 
-`validate:p1-27-frontend` reports **69 files across 3 trees, 0 failures**. Of
+`validate:p1-27-frontend` reports **70 files across 3 trees, 0 failures**. Of
 those, **43** are §5.2 and §5.3 together — the two feature trees — and both
 halves are derived from the trees the gate itself names, so the count follows the
 gate rather than a reader's memory of it. The remaining **26** are the third
@@ -367,7 +367,7 @@ are on P1-27's own call list: `crm.preference-set`, `veh.vehicle-update` and
 
 Eight rules, each enforced by `check-p1-27-frontend.mjs` and each pinned by a
 planted violation. This heading named §5.2 and §5.3 only; the gate now scans
-§5.4's tree as well — all **69** files, not the 43 of the two feature trees — so
+§5.4's tree as well — all **70** files, not the 43 of the two feature trees — so
 every rule below is refused across the route pages too.
 
 It said **six** until `SEC-002`'s export and media conjuncts were moved into the
@@ -397,7 +397,7 @@ records.
 
 ## 6. Test files
 
-### 6.1 Web unit and component — `apps/web/tests` (72 files, and no case total — `E-03`)
+### 6.1 Web unit and component — `apps/web/tests` (74 files, and no case total — `E-03`)
 
 **`E-03` is closed by DELETING the number, not by correcting it.** The heading
 used to read `(70 files, 1493 cases, 0 failed)`, and before that `(66 files, 1231
@@ -407,14 +407,14 @@ and borrowing its credibility. It drifted exactly as the finding predicted: the
 paragraphs below this heading still said `66` and `1231` while the heading beside
 them said `70` and `1493` — `E-02` returning, in the section written to close it.
 
-`72` is recomputed from the tree on every run, here and in §3, and
+`74` is recomputed from the tree on every run, here and in §3, and
 `p1-27-doc-reconciliation.test.ts` fails if either statement of it disagrees with
 `apps/web/tests`.
 
 **No tier-wide case total is stated anywhere in this document, because none can
 be derived.** A case count is derived by counting `it(` / `test(` call sites in
 comment-stripped source, and that number is only right for a file whose cases are
-all written down. **Twenty of the seventy-two files build theirs at runtime** (and the two
+all written down. **Twenty of the seventy-four files build theirs at runtime** (and the two
 P1-28 contract-mirror suites added later do as well) —
 `it.each` over a table, or an `it(` inside a `for` or an iteration callback — so
 `scripts/ci/check-p1-27-doc-counts.mjs` refuses them rather than certify a
@@ -428,7 +428,7 @@ plausible wrong number: `api-client.test.ts`, `crm-customer-search.test.ts`,
 `server-vocabularies.test.ts`, `stylelint-policy.test.ts`,
 `vehicle-api.test.ts`, `vehicle-documents.test.ts`,
 `vehicle-duplicates.test.ts`, `vehicle-party-identity.dom.test.tsx` and
-`write-permission-gating.dom.test.tsx`. A total over 72 files that is unknowable
+`write-permission-gating.dom.test.tsx`. A total over 74 files that is unknowable
 for 20 of them is not a measurement, it is an estimate with a decimal point.
 
 **The derivable half is 50 files, and it is derived per file rather than summed.**
@@ -822,7 +822,7 @@ editing whichever number is nearer to hand.
 
 | #   | the repository says                                                                                                                                                                                                            | a document says                                                                                      | disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | The web suite was **803** cases in 39 files when this row was written, and the tier is **72 files** now                                                                                                                        | `owner-acceptance-fail-remediation.md` records **801**                                               | The 801/803 difference was `p1-27-owner-acceptance.dom.test.tsx`: 34 declarations, 36 executed cases, because two are `it.each` over two locale directions. **Every case figure in this row is superseded and this document no longer states a current one** — the file half is derived in §3 and §6.1, and §6.1 says why no tier-wide case total is derivable and where the executed total is actually held (`E-03`)                                                                                                               |
+| 1   | The web suite was **803** cases in 39 files when this row was written, and the tier is **74 files** now                                                                                                                        | `owner-acceptance-fail-remediation.md` records **801**                                               | The 801/803 difference was `p1-27-owner-acceptance.dom.test.tsx`: 34 declarations, 36 executed cases, because two are `it.each` over two locale directions. **Every case figure in this row is superseded and this document no longer states a current one** — the file half is derived in §3 and §6.1, and §6.1 says why no tier-wide case total is derivable and where the executed total is actually held (`E-03`)                                                                                                               |
 | 2   | `hostile-mutations.mjs` holds **20** `M-OA` identifiers                                                                                                                                                                        | The verification table records **19 / 19 caught**                                                    | `M-OA-06c`, the tablet-drawer mutation, is not in that table. Whether the matrix currently runs 20 / 20 is **not established** here — §13                                                                                                                                                                                                                                                                                                                                                                                           |
 | 3   | `findings.md` puts the remaining `P1-27-INT-006` cursor sites at **10**                                                                                                                                                        | `findings/p1-27-int-006-cursor-precision.md` and `canonical-plan.md` §4.1 both say **16**            | 10 is current. The six vehicle-module sites were closed by `P1-27-INT-008`; the two subordinate documents pre-date that closure                                                                                                                                                                                                                                                                                                                                                                                                     |
 | 4   | `crm.duplicate-scan` is not called by any file in `apps/web/src`; the duplicate warning is delivered on the **creation response**                                                                                              | `canonical-plan.md` §7 says `FE-003`'s warning "uses `crm.duplicate-list`"                           | The plan is stale. `task-register.md` and `findings.md` are correct. The gate's allow-list entry for `creation-actions.ts` under `no-duplicate-scan-on-a-queue` is currently **vacuous** — nothing there matches                                                                                                                                                                                                                                                                                                                    |
@@ -956,7 +956,7 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
      an earlier revision put them in the label column and broke two other gates
      whose regexes read the label and the number as adjacent cells. -->
 
-<!-- derived: files apps/web/tests = 72 -->
+<!-- derived: files apps/web/tests = 74 -->
 <!-- derived: files tests/ci = 43 -->
 <!-- derived: files scripts/ci = 48 -->
 <!-- derived: files apps/web/scripts = 4 -->
@@ -967,7 +967,7 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
 <!-- derived: files tests/backend:all = 90 -->
 <!-- derived: files apps/web/src/features/crm = 20 -->
 <!-- derived: files apps/web/src/features/vehicles = 23 -->
-<!-- derived: files p1-27-frontend-gate = 69 -->
+<!-- derived: files p1-27-frontend-gate = 70 -->
 <!-- derived: files p1-27-frontend-gate:trees = 3 -->
 <!-- derived: tracked docs/phase-1/phase-1-27 = 41 -->
 <!-- derived: tracked docs/phase-1/phase-1-27:md = 31 -->
