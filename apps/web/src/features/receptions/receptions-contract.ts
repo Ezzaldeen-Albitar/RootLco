@@ -1,0 +1,890 @@
+/**
+ * The reception contract (P1-28, Wave A) — every `rec.*` operation the backend
+ * publishes, typed from the route source that owns each shape.
+ *
+ * Read out of `apps/api/src/app/api/v1/receptions/**` and
+ * `reception-catalogue/**`, the domain rules in
+ * `apps/api/src/modules/reception/domain/reception.ts` and
+ * `reception-evidence.ts`, and the read repository row shapes in
+ * `reception-read-repository.ts`. `tests/receptions-contract.test.ts` holds
+ * each row of `RECEPTION_OPERATIONS` against the generated operation manifest
+ * and the published OpenAPI document so drift fails a test, not a reviewer.
+ *
+ * | operation                              | method | path                                            | permission                            |
+ * | -------------------------------------- | ------ | ----------------------------------------------- | ------------------------------------- |
+ * | `rec.reception-list`                   | GET    | `/receptions`                                   | `rec.reception.read`                  |
+ * | `rec.reception-detail`                 | GET    | `/receptions/{receptionId}`                     | `rec.reception.read`                  |
+ * | `rec.reception-party-role-list`        | GET    | `/receptions/{receptionId}/party-roles`         | `rec.reception.read`                  |
+ * | `rec.reception-authorization-list`     | GET    | `/receptions/{receptionId}/authorizations`      | `rec.reception.read`                  |
+ * | `rec.reception-condition-evidence-list`| GET    | `/receptions/{receptionId}/condition-evidence`  | `rec.reception.read`                  |
+ * | `rec.reception-history`                | GET    | `/receptions/{receptionId}/history`             | `rec.reception.read`                  |
+ * | `rec.reception-create`                 | POST   | `/receptions`                                   | `rec.reception.manage`                |
+ * | `rec.reception-party-role`             | POST   | `/receptions/{receptionId}/party-roles`         | `rec.reception.party.manage`          |
+ * | `rec.reception-authorization`          | POST   | `/receptions/{receptionId}/authorizations`      | `rec.reception.authorization.verify`  |
+ * | `rec.reception-condition-evidence`     | POST   | `/receptions/{receptionId}/condition-evidence`  | `rec.reception.evidence.manage`       |
+ * | `rec.reception-signature`              | POST   | `/receptions/{receptionId}/signatures`          | `rec.reception.signature.manage`      |
+ * | `rec.reception-refusal`                | POST   | `/receptions/{receptionId}/refusals`            | `rec.reception.signature.manage`      |
+ * | `rec.reception-approve`                | POST   | `/receptions/{receptionId}/approve`             | `rec.reception.approve`               |
+ * | `rec.reception-convert-to-work-order`  | POST   | `/receptions/{receptionId}/convert-to-work-order`| `rec.reception.convert`              |
+ * | `rec.reception-close-without-work`     | POST   | `/receptions/{receptionId}/close-without-work`  | `rec.reception.close`                 |
+ * | `rec.reception-refuse`                 | POST   | `/receptions/{receptionId}/refuse`              | `rec.reception.close`                 |
+ * | `rec.catalogue-visit-reason-list`      | GET    | `/reception-catalogue/visit-reasons`            | `rec.reception.read`                  |
+ * | `rec.catalogue-fuel-level-list`        | GET    | `/reception-catalogue/fuel-levels`              | `rec.reception.read`                  |
+ * | `rec.catalogue-warning-light-code-list`| GET    | `/reception-catalogue/warning-light-codes`      | `rec.reception.read`                  |
+ * | `rec.catalogue-refusal-reason-list`    | GET    | `/reception-catalogue/refusal-reasons`          | `rec.reception.read`                  |
+ *
+ * ## `refusal` and `refuse` are two different operations
+ *
+ * `POST .../refusals` APPENDS a refusal EVIDENCE record — a party declined a
+ * step — and never changes `receptionStatus`. `POST .../refuse` ENDS the visit:
+ * it moves the status to the terminal `refused` and releases the vehicle from
+ * `uq_reception_visits_open_vehicle`. One is a fact about a step; the other is
+ * the exit. A screen that conflates them either loses evidence or closes visits
+ * by accident.
+ *
+ * ## The contract facts every write screen must encode
+ *
+ * - **`Idempotency-Key` mandatory on every POST here** (all eleven register
+ *   `idempotent: true`). Replay with the same key returns the STORED body at
+ *   **200 — even create, whose first answer was 201 — with NO ETag**; reuse
+ *   with a different payload is 409 `ERR-INT-001` (`route-handler.ts:369-401`).
+ * - **`If-Match` is mandatory on approve, convert-to-work-order,
+ *   close-without-work and refuse** (`versionGuarded: true`); missing is 428
+ *   `ERR-CON-002`, stale 409 `ERR-CON-001`. The other seven writes are NOT
+ *   guarded and take no version.
+ * - **Approve can apply TWO edges in one transaction** (`opened` →
+ *   `['inspecting','authorized']`), so the returned `recordVersion` is not
+ *   always sent+1 — the response's version is the truth. **Re-running approve
+ *   on an authorized visit with a NEW key is 409 `ERR-TRN-001`**, and
+ *   re-reading does not cure it: the state itself refuses the command.
+ * - **Re-running convert on a converted visit is 200 with
+ *   `alreadyConverted: true` — success**, never an error. The convert response
+ *   carries NO ETag and its `state` is an opaque catalogue code, not an enum.
+ * - Creation: an appointment origin's `companyId`/`branchId`/`vehicleId` MUST
+ *   equal the appointment's own (422 `incoherent_reference`); only a
+ *   `confirmed` appointment checks in (409 `ERR-TRN-001`); one open visit per
+ *   vehicle and one consumption per origin both answer the SAME 409
+ *   `ERR-RES-002`.
+ * - An `authorization`-type refusal REQUIRES `refusingPartnerId` (422) and the
+ *   partner must hold an active authorizing role (409 `ERR-TRN-001`) — it then
+ *   stands as that party's decision and blocks approve/convert until the same
+ *   party approves later. The role-not-held refusal is the same non-disclosing
+ *   409 `ERR-TRN-001` as the authority guard, deliberately (anti-probing).
+ *
+ * ## The list is a branch board, and the branch is part of the request
+ *
+ * `companyId` and `branchId` are REQUIRED query parameters on
+ * `GET /receptions` — resource selectors carried as the authorization target
+ * (`P1-18-A-01`) — so the adapter builds them through `branchTargetQuery`.
+ * Ordering is fixed: most recently received first. No sort, no total.
+ */
+
+/** One `rec.*` operation row, mirrored by the QA-001 harness. */
+export interface ReceptionOperationRow {
+  readonly operationId: string;
+  readonly method: 'GET' | 'POST';
+  /** Path template WITHOUT the `/api/v1` prefix, exactly as published. */
+  readonly template: string;
+  /** True when the backend refuses the request without an `Idempotency-Key`. */
+  readonly idempotent: boolean;
+  /** True when the backend refuses the request without `If-Match` (428). */
+  readonly versionGuarded: boolean;
+  /** The one permission code the operation registers. */
+  readonly permission: string;
+  /** The published `x-audit-class`. */
+  readonly auditClass: string;
+}
+
+export const RECEPTION_PERMISSIONS = {
+  /** Every read, including the four catalogue pickers. */
+  read: 'rec.reception.read',
+  /** Opening a visit and taking custody. */
+  manage: 'rec.reception.manage',
+  /** Who is present, in what role. */
+  partyManage: 'rec.reception.party.manage',
+  /** Recording an authorizing party's decision — approval audit class. */
+  authorizationVerify: 'rec.reception.authorization.verify',
+  /** Pre-service condition evidence, all eight kinds. */
+  evidenceManage: 'rec.reception.evidence.manage',
+  /** Signatures AND refusal evidence — what a person put their name to. */
+  signatureManage: 'rec.reception.signature.manage',
+  /** The decision that lets work begin. */
+  approve: 'rec.reception.approve',
+  /** Turning an authorized visit into one minimal work order. */
+  convert: 'rec.reception.convert',
+  /** Both terminal exits: close-without-work and refuse. */
+  close: 'rec.reception.close',
+} as const;
+
+/**
+ * Every `rec.*` operation the platform publishes — the mirror test asserts
+ * this set equals the manifest's `rec.` slice in BOTH directions.
+ */
+export const RECEPTION_OPERATIONS: readonly ReceptionOperationRow[] = Object.freeze([
+  {
+    operationId: 'rec.reception-list',
+    method: 'GET',
+    template: '/receptions',
+    idempotent: false,
+    versionGuarded: false,
+    permission: RECEPTION_PERMISSIONS.read,
+    auditClass: 'none',
+  },
+  {
+    operationId: 'rec.reception-detail',
+    method: 'GET',
+    template: '/receptions/{receptionId}',
+    idempotent: false,
+    versionGuarded: false,
+    permission: RECEPTION_PERMISSIONS.read,
+    auditClass: 'none',
+  },
+  {
+    operationId: 'rec.reception-party-role-list',
+    method: 'GET',
+    template: '/receptions/{receptionId}/party-roles',
+    idempotent: false,
+    versionGuarded: false,
+    permission: RECEPTION_PERMISSIONS.read,
+    auditClass: 'none',
+  },
+  {
+    operationId: 'rec.reception-authorization-list',
+    method: 'GET',
+    template: '/receptions/{receptionId}/authorizations',
+    idempotent: false,
+    versionGuarded: false,
+    permission: RECEPTION_PERMISSIONS.read,
+    auditClass: 'none',
+  },
+  {
+    operationId: 'rec.reception-condition-evidence-list',
+    method: 'GET',
+    template: '/receptions/{receptionId}/condition-evidence',
+    idempotent: false,
+    versionGuarded: false,
+    permission: RECEPTION_PERMISSIONS.read,
+    auditClass: 'none',
+  },
+  {
+    operationId: 'rec.reception-history',
+    method: 'GET',
+    template: '/receptions/{receptionId}/history',
+    idempotent: false,
+    versionGuarded: false,
+    permission: RECEPTION_PERMISSIONS.read,
+    auditClass: 'none',
+  },
+  {
+    operationId: 'rec.reception-create',
+    method: 'POST',
+    template: '/receptions',
+    idempotent: true,
+    versionGuarded: false,
+    permission: RECEPTION_PERMISSIONS.manage,
+    auditClass: 'privileged',
+  },
+  {
+    operationId: 'rec.reception-party-role',
+    method: 'POST',
+    template: '/receptions/{receptionId}/party-roles',
+    idempotent: true,
+    versionGuarded: false,
+    permission: RECEPTION_PERMISSIONS.partyManage,
+    auditClass: 'privileged',
+  },
+  {
+    operationId: 'rec.reception-authorization',
+    method: 'POST',
+    template: '/receptions/{receptionId}/authorizations',
+    idempotent: true,
+    versionGuarded: false,
+    permission: RECEPTION_PERMISSIONS.authorizationVerify,
+    auditClass: 'approval',
+  },
+  {
+    operationId: 'rec.reception-condition-evidence',
+    method: 'POST',
+    template: '/receptions/{receptionId}/condition-evidence',
+    idempotent: true,
+    versionGuarded: false,
+    permission: RECEPTION_PERMISSIONS.evidenceManage,
+    auditClass: 'privileged',
+  },
+  {
+    operationId: 'rec.reception-signature',
+    method: 'POST',
+    template: '/receptions/{receptionId}/signatures',
+    idempotent: true,
+    versionGuarded: false,
+    permission: RECEPTION_PERMISSIONS.signatureManage,
+    auditClass: 'privileged',
+  },
+  {
+    operationId: 'rec.reception-refusal',
+    method: 'POST',
+    template: '/receptions/{receptionId}/refusals',
+    idempotent: true,
+    versionGuarded: false,
+    permission: RECEPTION_PERMISSIONS.signatureManage,
+    auditClass: 'privileged',
+  },
+  {
+    operationId: 'rec.reception-approve',
+    method: 'POST',
+    template: '/receptions/{receptionId}/approve',
+    idempotent: true,
+    versionGuarded: true,
+    permission: RECEPTION_PERMISSIONS.approve,
+    auditClass: 'approval',
+  },
+  {
+    operationId: 'rec.reception-convert-to-work-order',
+    method: 'POST',
+    template: '/receptions/{receptionId}/convert-to-work-order',
+    idempotent: true,
+    versionGuarded: true,
+    permission: RECEPTION_PERMISSIONS.convert,
+    auditClass: 'privileged',
+  },
+  {
+    operationId: 'rec.reception-close-without-work',
+    method: 'POST',
+    template: '/receptions/{receptionId}/close-without-work',
+    idempotent: true,
+    versionGuarded: true,
+    permission: RECEPTION_PERMISSIONS.close,
+    auditClass: 'privileged',
+  },
+  {
+    operationId: 'rec.reception-refuse',
+    method: 'POST',
+    template: '/receptions/{receptionId}/refuse',
+    idempotent: true,
+    versionGuarded: true,
+    permission: RECEPTION_PERMISSIONS.close,
+    auditClass: 'privileged',
+  },
+  {
+    operationId: 'rec.catalogue-visit-reason-list',
+    method: 'GET',
+    template: '/reception-catalogue/visit-reasons',
+    idempotent: false,
+    versionGuarded: false,
+    permission: RECEPTION_PERMISSIONS.read,
+    auditClass: 'none',
+  },
+  {
+    operationId: 'rec.catalogue-fuel-level-list',
+    method: 'GET',
+    template: '/reception-catalogue/fuel-levels',
+    idempotent: false,
+    versionGuarded: false,
+    permission: RECEPTION_PERMISSIONS.read,
+    auditClass: 'none',
+  },
+  {
+    operationId: 'rec.catalogue-warning-light-code-list',
+    method: 'GET',
+    template: '/reception-catalogue/warning-light-codes',
+    idempotent: false,
+    versionGuarded: false,
+    permission: RECEPTION_PERMISSIONS.read,
+    auditClass: 'none',
+  },
+  {
+    operationId: 'rec.catalogue-refusal-reason-list',
+    method: 'GET',
+    template: '/reception-catalogue/refusal-reasons',
+    idempotent: false,
+    versionGuarded: false,
+    permission: RECEPTION_PERMISSIONS.read,
+    auditClass: 'none',
+  },
+]);
+
+/* ------------------------------------------------------------------ *
+ * Lifecycle — frozen `ck_reception_visits_status` and the
+ * `rec.guard_reception_transition` graph, mirrored
+ * ------------------------------------------------------------------ */
+
+export const RECEPTION_STATUSES = [
+  'opened',
+  'inspecting',
+  'authorized',
+  'converted',
+  'closed_without_work',
+  'refused',
+] as const;
+export type ReceptionStatus = (typeof RECEPTION_STATUSES)[number];
+
+export const RECEPTION_TRANSITIONS: Readonly<Record<string, readonly ReceptionStatus[]>> =
+  Object.freeze({
+    opened: ['inspecting', 'closed_without_work', 'refused'],
+    inspecting: ['authorized', 'closed_without_work', 'refused'],
+    authorized: ['converted', 'closed_without_work', 'refused'],
+    converted: [],
+    closed_without_work: [],
+    refused: [],
+  });
+
+export const TERMINAL_RECEPTION_STATUSES: readonly ReceptionStatus[] = [
+  'converted',
+  'closed_without_work',
+  'refused',
+];
+
+/**
+ * Approve targets `authorized`, walking through `inspecting` when needed —
+ * legal from `opened` (two edges, one transaction) and from `inspecting` (one).
+ * From `authorized` itself the answer is 409 `ERR-TRN-001`, which is why this
+ * is NOT `!terminal`: re-approving an approved visit is refused, not absorbed.
+ */
+export function canApprove(status: ReceptionStatus): boolean {
+  return status === 'opened' || status === 'inspecting';
+}
+
+/** Conversion is legal from `authorized` only. A replay answers 200. */
+export function canConvert(status: ReceptionStatus): boolean {
+  return (RECEPTION_TRANSITIONS[status] ?? []).includes('converted');
+}
+
+/** Both terminal exits are legal from any non-terminal state (frozen graph). */
+export function canClose(status: ReceptionStatus): boolean {
+  return !TERMINAL_RECEPTION_STATUSES.includes(status);
+}
+
+/* ------------------------------------------------------------------ *
+ * Vocabularies — every one a mirror of a frozen CHECK, via the module
+ * constants the routes themselves parse with
+ * ------------------------------------------------------------------ */
+
+/** Frozen `ck_reception_party_roles_role` (7 roles). */
+export const RECEPTION_PARTY_ROLES = [
+  'service_requester',
+  'vehicle_owner',
+  'vehicle_user',
+  'payer',
+  'billing_party',
+  'approving_party',
+  'authorized_receiver',
+] as const;
+export type ReceptionPartyRole = (typeof RECEPTION_PARTY_ROLES)[number];
+
+/**
+ * Frozen `ck_authorizations_role` — the SUBSET of party roles that may
+ * authorize work. `vehicle_user` and `payer` are deliberately absent: driving
+ * a vehicle or paying for it is not authority to approve work on it.
+ */
+export const AUTHORIZING_ROLES = [
+  'approving_party',
+  'service_requester',
+  'vehicle_owner',
+  'authorized_receiver',
+] as const;
+export type AuthorizingRole = (typeof AUTHORIZING_ROLES)[number];
+
+export const AUTHORIZATION_DECISIONS = ['approved', 'declined'] as const;
+export type AuthorizationDecision = (typeof AUTHORIZATION_DECISIONS)[number];
+
+export const AUTHORIZATION_CHANNELS = ['in_person', 'phone', 'email', 'portal', 'other'] as const;
+export type AuthorizationChannel = (typeof AUTHORIZATION_CHANNELS)[number];
+
+/**
+ * The eight kinds one `condition-evidence` POST accepts, as a discriminated
+ * union. Signature and refusal are deliberately NOT members — they carry their
+ * own permission and must never be reachable with evidence-capture authority.
+ */
+export const EVIDENCE_KINDS = [
+  'complaint',
+  'inspection',
+  'condition_item',
+  'damage_map',
+  'damage_mark',
+  'contents',
+  'warning_light',
+  'leak',
+] as const;
+export type EvidenceKind = (typeof EVIDENCE_KINDS)[number];
+
+export const COMPLAINT_CATEGORIES = [
+  'mechanical',
+  'electrical',
+  'body',
+  'noise',
+  'performance',
+  'other',
+] as const;
+export type ComplaintCategory = (typeof COMPLAINT_CATEGORIES)[number];
+
+export const COMPLAINT_SEVERITIES = ['low', 'medium', 'high', 'critical'] as const;
+export type ComplaintSeverity = (typeof COMPLAINT_SEVERITIES)[number];
+
+export const FINDING_CATEGORIES = [
+  'scratch',
+  'dent',
+  'crack',
+  'wear',
+  'missing_part',
+  'malfunction',
+  'other',
+] as const;
+export type FindingCategory = (typeof FINDING_CATEGORIES)[number];
+
+export const FINDING_SEVERITIES = ['minor', 'moderate', 'major', 'critical'] as const;
+export type FindingSeverity = (typeof FINDING_SEVERITIES)[number];
+
+export const DAMAGE_MARK_TYPES = [
+  'scratch',
+  'dent',
+  'crack',
+  'chip',
+  'rust',
+  'missing',
+  'other',
+] as const;
+export type DamageMarkType = (typeof DAMAGE_MARK_TYPES)[number];
+
+/** Leak severity shares the finding vocabulary (frozen CHECK). */
+export const LEAK_SEVERITIES = FINDING_SEVERITIES;
+
+/**
+ * `map_type`, `perspective`, `observed_state` and `leak_type` are BOUNDED
+ * STRINGS on the wire, not enums: the routes deliberately leave membership to
+ * the database CHECK, because a second hand-typed copy could rot without
+ * anything failing. This layer does the same — a select rendered from an
+ * invented list would offer values the database refuses.
+ */
+export const MAX_MAP_TYPE = 40;
+
+export const SIGNER_ROLES = [
+  'service_requester',
+  'vehicle_owner',
+  'authorized_receiver',
+  'payer',
+  'approving_party',
+  'receiving_employee',
+  'other',
+] as const;
+export type SignerRole = (typeof SIGNER_ROLES)[number];
+
+export const SIGNATURE_CAPTURE_METHODS = ['drawn', 'typed', 'uploaded', 'biometric'] as const;
+export type SignatureCaptureMethod = (typeof SIGNATURE_CAPTURE_METHODS)[number];
+
+export const SIGNATURE_PURPOSES = [
+  'reception_acknowledgement',
+  'custody_acceptance',
+  'authorization',
+  'refusal_witness',
+  'condition_agreement',
+  'other',
+] as const;
+export type SignaturePurpose = (typeof SIGNATURE_PURPOSES)[number];
+
+export const REFUSAL_TYPES = [
+  'inspection_item',
+  'signature',
+  'intake_step',
+  'authorization',
+  'other',
+] as const;
+export type RefusalType = (typeof REFUSAL_TYPES)[number];
+
+/**
+ * An `authorization` refusal must name the party who refused — it becomes that
+ * party's STANDING decision, and only that party can supersede it with a later
+ * approval. Mirrored so the form refuses locally with a named field instead of
+ * surfacing the module's 422.
+ */
+export function refusalRequiresPartner(refusalType: RefusalType): boolean {
+  return refusalType === 'authorization';
+}
+
+/* ------------------------------------------------------------------ *
+ * Bounds — each one the route's or the module's, never a stricter guess
+ * ------------------------------------------------------------------ */
+
+export const MIN_SOC_PERCENT = 0;
+export const MAX_SOC_PERCENT = 100;
+export const MAX_WALK_IN_NOTE = 500;
+/** The mandatory close/refuse reason: bounded TEXT, deliberately not a catalogue id. */
+export const MAX_CLOSURE_REASON = 500;
+/** Route-level bound on the provenance label ("front desk", "portal"). */
+export const MAX_ASSIGNMENT_SOURCE = 120;
+/** Route-level splash guard; the module owns the real 64-hex rule. */
+export const MAX_SIGNATURE_HASH_INPUT = 256;
+export const MAX_NOTE = 2000;
+export const MAX_ZONE = 64;
+export const MAX_LOCATION = 120;
+export const MAX_ITEM_DESCRIPTION = 500;
+export const MAX_COMPLAINT_TEXT = 4000;
+/** Damage-mark coordinates are FRACTIONS of the map, so marks survive resizing. */
+export const MIN_COORD = 0;
+export const MAX_COORD = 1;
+export const MAX_CONTENT_QUANTITY = 2_147_483_647;
+export const MAX_DECLARED_VALUE = 999_999_999_999.99;
+
+/* ------------------------------------------------------------------ *
+ * Requests, exactly as the routes parse them
+ * ------------------------------------------------------------------ */
+
+/** Exactly one origin, mirroring `ck_reception_visits_one_origin`'s XOR. */
+export type ReceptionOriginInput =
+  | { readonly kind: 'appointment'; readonly appointmentId: string }
+  | {
+      readonly kind: 'walk_in';
+      readonly requesterPartnerId?: string | null;
+      readonly note?: string | null;
+    };
+
+/**
+ * What `POST /receptions` accepts (`.strict()`). `companyId`/`branchId` are
+ * the authorization target for this branch-scoped create (`P1-18-A-01`); for
+ * an appointment origin they MUST equal the appointment's own scope, and the
+ * vehicle must be the appointment's vehicle (422 `incoherent_reference`).
+ * `evSocPercent` is `numeric(5,2)` — a fractional charge level is meaningful
+ * and sent as a NUMBER.
+ */
+export interface ReceptionCreateInput {
+  readonly companyId: string;
+  readonly branchId: string;
+  readonly vehicleId: string;
+  readonly receivingEmployeeId: string;
+  readonly serviceRequesterPartnerId: string;
+  readonly origin: ReceptionOriginInput;
+  readonly odometerReadingId?: string | null;
+  readonly fuelLevelId?: string | null;
+  readonly evSocPercent?: number | null;
+}
+
+/**
+ * `supersede` closes a prior open interval in the same role first — asked for
+ * EXPLICITLY, because doing it implicitly would silently re-date history
+ * whenever a caller repeated an assignment by accident.
+ */
+export interface PartyRoleInput {
+  readonly partnerId: string;
+  readonly relationshipRole: ReceptionPartyRole;
+  readonly assignmentSource?: string | null;
+  readonly supersede?: boolean;
+}
+
+export interface AuthorizationInput {
+  readonly authorizingRole: AuthorizingRole;
+  readonly partnerId: string;
+  readonly decision: AuthorizationDecision;
+  readonly channel?: AuthorizationChannel;
+  /** `ck_authorizations_scope_object`: a JSON object or nothing at all. */
+  readonly authorizedScope?: Record<string, unknown> | null;
+  readonly evidenceDocumentId?: string | null;
+}
+
+/** What the customer reported, in their own words. Stored `restricted`. */
+export interface ComplaintEvidenceInput {
+  readonly kind: 'complaint';
+  readonly category: ComplaintCategory;
+  readonly severity?: ComplaintSeverity;
+  readonly complaintText: string;
+  readonly reportedByPartnerId?: string | null;
+  readonly evidenceDocumentId?: string | null;
+}
+
+/** Opens an inspection header; findings hang off it. */
+export interface InspectionEvidenceInput {
+  readonly kind: 'inspection';
+  readonly inspectorId: string;
+}
+
+/** What staff observed — a separate fact from a complaint, never promoted into one. */
+export interface ConditionItemEvidenceInput {
+  readonly kind: 'condition_item';
+  readonly inspectionId: string;
+  readonly findingCategory: FindingCategory;
+  readonly vehicleZone: string;
+  readonly severity?: FindingSeverity;
+  readonly findingNote?: string | null;
+  readonly evidenceDocumentId?: string | null;
+}
+
+/** Binds the visit to a map template and the EXACT version it was drawn on. */
+export interface DamageMapEvidenceInput {
+  readonly kind: 'damage_map';
+  readonly documentId: string;
+  readonly documentVersionId: string;
+  /** Bounded string; membership belongs to the database CHECK. */
+  readonly mapType: string;
+  readonly perspective?: string | null;
+}
+
+export interface DamageMarkEvidenceInput {
+  readonly kind: 'damage_mark';
+  readonly damageMapId: string;
+  readonly markType: DamageMarkType;
+  readonly vehicleZone: string;
+  /** Fractions of the map, `0..1` inclusive. */
+  readonly coordX: number;
+  readonly coordY: number;
+  readonly note?: string | null;
+  readonly evidenceDocumentId?: string | null;
+}
+
+/**
+ * What the customer left in the vehicle. `declaredCurrency` is only meaningful
+ * WITH a value — `ck_vehicle_content_details_currency` refuses a currency
+ * without one.
+ */
+export interface ContentsEvidenceInput {
+  readonly kind: 'contents';
+  readonly itemDescription: string;
+  readonly quantity?: number;
+  readonly location?: string | null;
+  readonly declaredValue?: number | null;
+  readonly declaredCurrency?: string | null;
+  readonly declaredByPartnerId?: string | null;
+  readonly witnessedByEmployeeId?: string | null;
+  readonly evidenceDocumentId?: string | null;
+}
+
+/** One dashboard lamp. The same code is observed once per visit, not stacked. */
+export interface WarningLightEvidenceInput {
+  readonly kind: 'warning_light';
+  readonly warningLightCodeId: string;
+  /** Bounded string; membership belongs to the database CHECK. */
+  readonly observedState?: string;
+  readonly note?: string | null;
+  readonly evidenceDocumentId?: string | null;
+}
+
+/** One visible leak, as observed. No cause and no fault is asserted. */
+export interface LeakEvidenceInput {
+  readonly kind: 'leak';
+  /** Bounded string; membership belongs to the database CHECK. */
+  readonly leakType: string;
+  readonly vehicleZone: string;
+  readonly severity?: FindingSeverity;
+  readonly note?: string | null;
+  readonly evidenceDocumentId?: string | null;
+}
+
+/** The discriminated union `POST .../condition-evidence` parses. */
+export type ConditionEvidenceInput =
+  | ComplaintEvidenceInput
+  | InspectionEvidenceInput
+  | ConditionItemEvidenceInput
+  | DamageMapEvidenceInput
+  | DamageMarkEvidenceInput
+  | ContentsEvidenceInput
+  | WarningLightEvidenceInput
+  | LeakEvidenceInput;
+
+/**
+ * Only the document REFERENCE travels — the media contract keeps deciding who
+ * may open the signature image, and `rec` stores no drawn bytes.
+ */
+export interface SignatureInput {
+  readonly signerRole: SignerRole;
+  readonly signerPartnerId?: string | null;
+  readonly signatureDocumentId: string;
+  readonly signatureDocumentVersionId: string;
+  readonly captureMethod: SignatureCaptureMethod;
+  readonly purpose: SignaturePurpose;
+  readonly signatureHash?: string | null;
+}
+
+export interface RefusalInput {
+  readonly refusalType: RefusalType;
+  readonly refusalReasonId?: string | null;
+  readonly refusingPartnerId?: string | null;
+  readonly witnessEmployeeId?: string | null;
+  readonly evidenceDocumentId?: string | null;
+}
+
+/** Both terminal exits carry one mandatory bounded-text reason. */
+export interface CloseReceptionInput {
+  readonly reason: string;
+}
+
+/** The `.strict()` list query, minus the mandatory branch target. */
+export interface ReceptionListCriteria {
+  readonly status?: ReceptionStatus;
+  readonly vehicleId?: string;
+}
+
+/* ------------------------------------------------------------------ *
+ * Responses, exactly as the services publish them
+ * ------------------------------------------------------------------ */
+
+export interface ReceptionCreated {
+  readonly receptionVisitId: string;
+  /** `null` when the tenant has not provisioned a reception-number sequence. */
+  readonly displayNumber: string | null;
+  readonly receptionStatus: ReceptionStatus;
+  readonly origin: 'appointment' | 'walk_in';
+  readonly recordVersion: number;
+}
+
+export interface PartyRoleAssigned {
+  readonly receptionVisitId: string;
+  readonly partyRoleId: string;
+  readonly relationshipRole: ReceptionPartyRole;
+  /** True when a prior open interval in the same role was closed first. */
+  readonly superseded: boolean;
+}
+
+export interface AuthorizationRecorded {
+  readonly receptionVisitId: string;
+  readonly authorizationId: string;
+  readonly decision: AuthorizationDecision;
+}
+
+export interface ConditionEvidenceRecorded {
+  readonly receptionVisitId: string;
+  readonly kind: EvidenceKind;
+  readonly evidenceId: string;
+}
+
+export interface SignatureRecorded {
+  readonly receptionVisitId: string;
+  readonly signatureId: string;
+  readonly purpose: SignaturePurpose;
+}
+
+export interface RefusalRecorded {
+  readonly receptionVisitId: string;
+  readonly refusalId: string;
+  readonly refusalType: RefusalType;
+}
+
+export interface ReceptionApproved {
+  readonly receptionVisitId: string;
+  readonly receptionStatus: 'authorized';
+  /** The legal edges this request applied, in order — one or two of them. */
+  readonly appliedTransitions: readonly ReceptionStatus[];
+  readonly recordVersion: number;
+}
+
+/** Conversion's answer. NO ETag accompanies it, first run or replay. */
+export interface ReceptionConverted {
+  readonly receptionVisitId: string;
+  readonly workOrderId: string;
+  /** `null` when the tenant has not provisioned a work-order-number sequence. */
+  readonly displayNumber: string | null;
+  /** An OPAQUE work-order state code from the catalogue, not an enum. */
+  readonly state: string;
+  /** True when this request found the conversion already done — still success. */
+  readonly alreadyConverted: boolean;
+}
+
+export interface ReceptionClosed {
+  readonly receptionVisitId: string;
+  readonly receptionStatus: 'closed_without_work' | 'refused';
+  readonly recordVersion: number;
+}
+
+/** One row of the branch reception board, most recently received first. */
+export interface ReceptionListEntry {
+  readonly id: string;
+  readonly displayNumber: string | null;
+  readonly receptionStatus: ReceptionStatus;
+  readonly origin: 'appointment' | 'walk_in';
+  readonly vehicleId: string;
+  readonly vehicleDisplayNumber: string | null;
+  readonly custodyAcceptedAt: string;
+  /** `null` means the workshop still holds the vehicle. */
+  readonly custodyReleasedAt: string | null;
+  readonly recordVersion: number;
+}
+
+/** The full detail row. The `recordVersion` is the `If-Match` the guarded commands demand. */
+export interface ReceptionDetail {
+  readonly id: string;
+  readonly displayNumber: string | null;
+  readonly receptionStatus: ReceptionStatus;
+  readonly origin: 'appointment' | 'walk_in';
+  readonly appointmentId: string | null;
+  readonly walkInId: string | null;
+  readonly companyId: string;
+  readonly branchId: string;
+  readonly vehicleId: string;
+  readonly vehicleDisplayNumber: string | null;
+  readonly odometerReadingId: string | null;
+  readonly fuelLevelId: string | null;
+  readonly fuelLevelName: string | null;
+  /** `numeric(5,2)` — a STRING on the wire, never a JS float. */
+  readonly evSocPercent: string | null;
+  /** Bare id — the column has no FK, so no label can be joined honestly (G-EMP). */
+  readonly receivingEmployeeId: string;
+  readonly custodyAcceptedAt: string;
+  readonly custodyReleasedAt: string | null;
+  readonly recordVersion: number;
+  readonly createdAt: string;
+  readonly updatedAt: string | null;
+}
+
+export interface PartyRoleEntry {
+  readonly id: string;
+  readonly partnerId: string;
+  readonly partnerDisplayName: string | null;
+  readonly partnerDisplayNumber: string | null;
+  readonly relationshipRole: string;
+  readonly validFrom: string;
+  /** `null` = still active — the role the workshop may act on. */
+  readonly validTo: string | null;
+  readonly assignmentSource: string | null;
+  readonly recordVersion: number;
+}
+
+/**
+ * One row of the two-table authorization UNION. Reading only approvals would
+ * report a withdrawn consent as standing — an `authorization`-type refusal is
+ * a second, cheaper way to say no, so both tables are one list and
+ * `isStanding` marks each partner's CURRENT decision across both.
+ */
+export interface AuthorizationEntry {
+  readonly kind: 'authorization' | 'refusal';
+  readonly id: string;
+  readonly partnerId: string;
+  readonly partnerDisplayName: string | null;
+  /** `null` for a refusal row. */
+  readonly authorizingRole: string | null;
+  /** A refusal projects the literal `'declined'`. */
+  readonly decision: AuthorizationDecision;
+  /** `null` for a refusal row. */
+  readonly channel: string | null;
+  readonly authorizedScope: Record<string, unknown> | null;
+  readonly evidenceDocumentId: string | null;
+  readonly occurredAt: string;
+  readonly isStanding: boolean;
+}
+
+/**
+ * One evidence row: the common envelope plus the per-kind payload FLATTENED
+ * into it. The restricted narrative tables (complaint text, contents detail)
+ * are never selected by this read.
+ */
+export interface ConditionEvidenceEntry {
+  readonly kind: string;
+  readonly id: string;
+  readonly recordedAt: string;
+  readonly evidenceDocumentId: string | null;
+  readonly [field: string]: unknown;
+}
+
+/** One row of the status/custody ledger UNION, newest first. */
+export interface ReceptionHistoryEntry {
+  readonly kind: 'status' | 'custody';
+  readonly id: string;
+  readonly fromState: string | null;
+  readonly toState: string;
+  readonly reason: string | null;
+  readonly actorId: string;
+  readonly occurredAt: string;
+  /** `bigint` — a STRING, surviving values beyond MAX_SAFE_INTEGER. */
+  readonly seq: string;
+  readonly correlationId: string | null;
+  readonly receivingPartnerId: string | null;
+  readonly receivingPartnerDisplayName: string | null;
+  readonly releasingPartnerId: string | null;
+  readonly releasingPartnerDisplayName: string | null;
+  readonly evidenceDocumentId: string | null;
+}

@@ -133,6 +133,64 @@ const SCOPE_KEYS = new Set([
 ]);
 
 /**
+ * The branch a branch-calendar read is ABOUT — a resource selector pair, not a
+ * scope assertion (P1-28, Wave A).
+ *
+ * `GET /appointments` and `GET /receptions` REQUIRE `companyId` and `branchId`
+ * in the query: their `.strict()` schemas name both as mandatory, and the pair
+ * travels as the `authorizationTarget` so `iam.has_permission_in_scope` decides
+ * against the branch actually read rather than against the permission-blind
+ * union of every grant the caller holds (P1-18-A-01,
+ * `apps/api/src/app/api/v1/appointments/route.ts:112-124` and
+ * `receptions/route.ts:117-126`). Omitting either is a 422 for the whole
+ * request — there is no "my branch" default, because the server deliberately
+ * refuses to guess which of a multi-grant caller's branches a calendar is for.
+ */
+export interface BranchTarget {
+  readonly companyId: string;
+  readonly branchId: string;
+}
+
+/**
+ * A query string for an operation addressed to ONE branch's calendar or board.
+ *
+ * The same distinction `companyFilterQuery` records, one resource wider:
+ *
+ * - "I am in branch Y" — a claim about the caller. Never sent; the server
+ *   resolves scope from the session, and `query()` throws on the names.
+ * - "show me branch Y's appointments" — a claim about the RESOURCE, demanded
+ *   by the route schema and authorized server-side against exactly that pair.
+ *
+ * The target arrives through a dedicated parameter rather than through `params`,
+ * so a caller cannot smuggle the pair in among ordinary filters — `params` is
+ * still refused the scope names, tenant above all: no operation anywhere accepts
+ * a client-supplied tenant, and this helper is not the place that changes.
+ */
+export function branchTargetQuery(
+  target: BranchTarget,
+  params: Record<string, string | number | undefined | null> = {}
+): string {
+  const search = new URLSearchParams();
+  search.set('companyId', target.companyId);
+  search.set('branchId', target.branchId);
+  for (const [key, value] of Object.entries(params)) {
+    if (SCOPE_KEYS.has(key)) {
+      // Includes `companyId`/`branchId` themselves: the target parameter is the
+      // only door, so a duplicate among the filters is a coding error worth
+      // hearing about, not a value to silently prefer one of.
+      throw new Error(
+        `${key} must arrive through the BranchTarget parameter, never among the filters.`
+      );
+    }
+    if (value === undefined || value === null) continue;
+    const text = String(value);
+    if (text.length === 0) continue;
+    search.set(key, text);
+  }
+  return `?${search.toString()}`;
+}
+
+/**
  * A query string for an operation whose `companyId` is a **resource selector**,
  * not a scope assertion.
  *
