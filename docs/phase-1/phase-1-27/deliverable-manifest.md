@@ -165,7 +165,7 @@ fact in words did not, which is the gap this revision closes.
 | Web unit and component test files                                      | **70**                                                             | derived                                                                    |
 | Playwright specification files                                         | **9** (2 anonymous, 7 authenticated)                               | commands 11 and 12 — **not re-measured**, §1.1.1                           |
 | Root CI-contract test files                                            | **36**                                                             | derived                                                                    |
-| CI gate scripts under `scripts/ci`                                     | **46** in the directory, **8** introduced or changed by this phase | derived; the eight are the `scripts/ci` rows of §7.1                       |
+| CI gate scripts under `scripts/ci`                                     | **47** in the directory, **8** introduced or changed by this phase | derived; the eight are the `scripts/ci` rows of §7.1                       |
 | Web gate scripts under `apps/web/scripts`                              | **4** in the directory, **1** introduced by this phase             | derived                                                                    |
 | Phase documentation under `docs/phase-1/phase-1-27`                    | **38** tracked, of which **30** are `.md`                          | derived from `git ls-files` — see §9.1                                     |
 | Product planning documentation under `docs/product`                    | **13** tracked                                                     | derived from `git ls-files` — see §9.2                                     |
@@ -956,8 +956,8 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
      whose regexes read the label and the number as adjacent cells. -->
 
 <!-- derived: files apps/web/tests = 70 -->
-<!-- derived: files tests/ci = 41 -->
-<!-- derived: files scripts/ci = 46 -->
+<!-- derived: files tests/ci = 42 -->
+<!-- derived: files scripts/ci = 47 -->
 <!-- derived: files apps/web/scripts = 4 -->
 <!-- derived: files supabase/migrations = 120 -->
 <!-- derived: files tests/db = 139 -->
@@ -971,10 +971,10 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
 <!-- derived: tracked docs/phase-1/phase-1-27 = 41 -->
 <!-- derived: tracked docs/phase-1/phase-1-27:md = 31 -->
 <!-- derived: tracked docs/product = 13 -->
-<!-- derived: commands registered = 151 -->
-<!-- derived: commands required = 76 -->
-<!-- derived: commands reachable = 76 -->
-<!-- derived: commands hosted-ci = 76 -->
+<!-- derived: commands registered = 153 -->
+<!-- derived: commands required = 77 -->
+<!-- derived: commands reachable = 77 -->
+<!-- derived: commands hosted-ci = 77 -->
 <!-- derived: cases vehicle-screens.dom.test.tsx = 40 -->
 <!-- derived: cases tailwind-theme-gate.test.ts = 8 -->
 <!-- derived: cases navigation.test.ts = 22 -->

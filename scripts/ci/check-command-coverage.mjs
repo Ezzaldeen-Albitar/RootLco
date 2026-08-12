@@ -243,6 +243,25 @@ export const REGISTER = Object.freeze([
     why: 'regenerates the canonical P1-27 task matrix',
   },
   {
+    name: 'validate:p1-28-matrix',
+    owner: ROOT,
+    tier: 'required',
+    // The P1-28 sibling of `validate:p1-27-matrix`, registered on DAY ONE of the
+    // phase rather than mid-phase: P1-27 built this authority only after 33
+    // adjudicated items had been counted as 42 canonical tasks. The universe is
+    // derived from `docs/phase-1/phase-1-28/canonical-plan.md` and this refuses
+    // any drift between the plan, the recorded verdicts and the committed matrix.
+    why: 'the 35-task P1-28 matrix still matches the canonical plan and the recorded verdicts',
+  },
+  {
+    name: 'matrix:p1-28',
+    owner: ROOT,
+    tier: 'informational',
+    // The writer, for the same reason `matrix:p1-27` is not required: a CI job
+    // that regenerated the matrix would repair the drift the check reports.
+    why: 'regenerates the canonical P1-28 task matrix',
+  },
+  {
     name: 'evidence:p1-27',
     owner: ROOT,
     // `informational`, not `optional`. `optional` is not one of the four tiers
