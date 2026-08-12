@@ -1,11 +1,12 @@
 /**
  * CRM customer READ service (P1-16 remediation, `P1-27-INT-001`).
  *
- * Nine reads: the customer itself and its eight components. Every one of them
- * makes the same opening move as the write services — resolve the customer under
- * the caller's tenant, or `ERR-RES-001` — so an id belonging to another tenant, a
- * soft-deleted customer, a merged-away customer, and an id that never existed all
- * produce the identical 404.
+ * Ten reads: the customer itself, its eight profile components, and the
+ * vehicle-relationship list added by the `P1-27-INT-012` remediation. Every one
+ * of them makes the same opening move as the write services — resolve the
+ * customer under the caller's tenant, or `ERR-RES-001` — so an id belonging to
+ * another tenant, a soft-deleted customer, a merged-away customer, and an id
+ * that never existed all produce the identical 404.
  *
  * ## Why the parent lookup is not skipped for the component lists
  *
@@ -25,7 +26,7 @@
  * `auditClass: 'none'`, matching every other CRM read. The platform audits
  * `security`-class reads only where the data itself is gated behind
  * `iam.sensitive.view` and *who looked* is the fact worth keeping — the `wo`
- * additional-work description is the precedent. None of these nine reads is that:
+ * additional-work description is the precedent. None of these ten reads is that:
  * the CRM tables carry plain tenant-scoped SELECT policies. `shared.notes` is the
  * one exception and it protects itself in the policy rather than needing a read
  * record here.
@@ -39,6 +40,7 @@ import {
   ALERT_ORDERING,
   CONSENT_ORDERING,
   CONTACT_ORDERING,
+  CUSTOMER_VEHICLE_ORDERING,
   NOTE_ORDERING,
   PREFERENCE_ORDERING,
   RESTRICTION_ORDERING,
@@ -50,6 +52,7 @@ import {
   type CustomerDetailRow,
   type CustomerDisplayIdentity,
   type CustomerReadRepository,
+  type CustomerVehicleEntry,
   type NoteEntry,
   type PreferenceEntry,
   type RestrictionEntry,
@@ -195,6 +198,24 @@ export class CustomerReadService extends ApplicationService {
   ): Promise<Page<RestrictionEntry>> {
     await this.requireCustomer(db, customerId);
     return this.reads.listRestrictions(db, customerId, pageRequest(RESTRICTION_ORDERING, query));
+  }
+
+  /**
+   * The customer's vehicle relationships (`P1-27-INT-012`).
+   *
+   * Same opening move as the eight component lists — resolve the customer
+   * under the caller's tenant or `ERR-RES-001` — so an empty page means "this
+   * customer has no vehicles" and never "this id resolves to nothing you may
+   * see". The tenth read of this service, closing the write-only
+   * Customer→Vehicle direction `crm.vehicle-link` opened.
+   */
+  async listVehicles(
+    db: DbHandle,
+    customerId: string,
+    query: ListQuery
+  ): Promise<Page<CustomerVehicleEntry>> {
+    await this.requireCustomer(db, customerId);
+    return this.reads.listVehicles(db, customerId, pageRequest(CUSTOMER_VEHICLE_ORDERING, query));
   }
 
   /** 404 for absent, deleted, merged, and other-tenant alike. */

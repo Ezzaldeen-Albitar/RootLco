@@ -1,9 +1,9 @@
 {
   "generatedBy": "scripts/p1-24-operation-register.mjs",
   "totals": {
-    "operations": 260,
+    "operations": 261,
     "openapiPaths": 215,
-    "openapiOperations": 260,
+    "openapiOperations": 261,
     "openapiSchemas": 3,
     "events": 50,
     "eventsProduced": 47,
@@ -14,7 +14,7 @@
     "auditActions": 155
   },
   "counts": {
-    "Covered": 260
+    "Covered": 261
   },
   "operations": [
     {
@@ -932,6 +932,45 @@
       "file": "apps/api/src/app/api/v1/customers/[customerId]/timeline/route.ts"
     },
     {
+      "id": "crm.customer-vehicle-list",
+      "domain": "crm",
+      "method": "GET",
+      "route": "/api/v1/customers/{customerId}/vehicles",
+      "permissions": ["crm.customer.read"],
+      "public": false,
+      "scope": "tenant",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/customers/{customerId}/vehicles",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "denial"
+      ],
+      "providedEvidence": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": [
+        "tests/backend/p1-16-customer-vehicle-list.test.ts",
+        "tests/ci/repository-paths.test.ts"
+      ],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/customers/[customerId]/vehicles/route.ts"
+    },
+    {
       "id": "crm.duplicate-list",
       "domain": "crm",
       "method": "GET",
@@ -1435,7 +1474,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-16-customer-identity.test.ts"],
+      "tests": [
+        "tests/backend/p1-16-customer-identity.test.ts",
+        "tests/backend/p1-16-customer-vehicle-list.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/customers/[customerId]/vehicles/route.ts"
     },
@@ -9037,7 +9079,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-17-vehicle-relations.test.ts"],
+      "tests": [
+        "tests/backend/p1-16-customer-vehicle-list.test.ts",
+        "tests/backend/p1-17-vehicle-relations.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/vehicles/[vehicleId]/relationships/route.ts"
     },

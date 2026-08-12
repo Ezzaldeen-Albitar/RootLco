@@ -164,7 +164,7 @@ describe('the API application lives in the workspace', () => {
     }
   });
 
-  it('discovers the same 260 operations from the root, apps/api and apps/web', () => {
+  it('discovers the same 261 operations from the root, apps/api and apps/web', () => {
     // The decisive cwd proof, run against a REAL validator rather than the
     // helper alone: `check-authorization-coverage.mjs` derived the repository
     // from `process.cwd()` until this migration, so its answer used to depend on
@@ -177,7 +177,10 @@ describe('the API application lives in the workspace', () => {
 
     expect(new Set(results).size, 'discovery must not depend on cwd').toBe(1);
     const report = JSON.parse(results[0] ?? '{}');
-    expect(report.operations).toHaveLength(260);
+    // 261: the P1-16 customer-vehicle read (`crm.customer-vehicle-list`,
+    // P1-27-INT-012) is a GET on the existing vehicles route module, so the
+    // route-module count above does not move while the operation count does.
+    expect(report.operations).toHaveLength(261);
 
     // ~1 s per process by construction, not by slowness. The budget is stated
     // here rather than raised globally, so it cannot quietly cover a different

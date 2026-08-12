@@ -114,6 +114,20 @@ export const RESTRICTION_ORDERING: OrderingContract = {
   key: 'crm.customer_restrictions:effective_from_desc',
   direction: 'desc',
 };
+/**
+ * The customer→vehicle list (P1-16 remediation, `P1-27-INT-012`).
+ *
+ * Deliberately NOT `veh.vehicle_relationships:created_at_desc`, although that is
+ * the relation and the sort: the vehicle module's vehicle-centric list
+ * (`veh.vehicle-relationship-list`) already paginates the same table under that
+ * key, and two lists sharing a key would ACCEPT each other's cursors — the same
+ * relation filtered by a different parent, which is precisely the "plausible
+ * wrong page" the key comparison exists to refuse.
+ */
+export const CUSTOMER_VEHICLE_ORDERING: OrderingContract = {
+  key: 'veh.vehicle_relationships:partner_created_at_desc',
+  direction: 'desc',
+};
 
 /** A customer, as much of one as a profile screen needs. */
 /**
@@ -268,6 +282,43 @@ export interface RestrictionEntry {
   readonly effectiveFrom: string;
   readonly effectiveTo: string | null;
   readonly imposedBy: string;
+}
+
+/**
+ * One customer→vehicle relationship, with as much vehicle identity as
+ * `veh.vehicles` itself carries (`P1-27-INT-012`).
+ *
+ * The vehicle fields are nullable as a group: the relationship row outlives a
+ * soft-deleted vehicle (`fk_vehicle_relationships_vehicle` is RESTRICT, but the
+ * delete is a tombstone), and when the join finds no live vehicle the honest
+ * answer is the bare `vehicleId` beside nulls — never a resurrected identity.
+ *
+ * `makeId`/`modelId` are published as BARE ids on purpose. Their names live in
+ * the `veh` reference catalogs, which have their own published reads
+ * (`/vehicle-catalogue/**`); resolving them here would put the first
+ * CRM-authored join over `veh.makes`/`veh.models` into the codebase inside a
+ * remediation, the precedent `resolveDisplayIdentities` refuses in the other
+ * direction. Plates live in `veh.plate_history`, not on `veh.vehicles`, and are
+ * reachable through `GET /vehicles/{vehicleId}/plates` — same rule, no join.
+ */
+export interface CustomerVehicleEntry {
+  readonly id: string;
+  readonly vehicleId: string;
+  readonly relationshipRole: string;
+  /** `date` columns, read `::text` so a day is never shifted by a timezone. */
+  readonly validFrom: string;
+  readonly validTo: string | null;
+  /** `valid_to IS NULL` — the open interval is the live relationship. */
+  readonly active: boolean;
+  readonly createdAt: string;
+  readonly vehicleDisplayNumber: string | null;
+  /** The generated, normalised VIN — never `vin_raw`, matching every veh read. */
+  readonly vin: string | null;
+  readonly makeId: string | null;
+  readonly modelId: string | null;
+  readonly modelYear: number | null;
+  readonly color: string | null;
+  readonly vehicleLifecycleStatus: string | null;
 }
 
 /** `Date | null` to an ISO string or null, once, rather than at nine call sites. */
@@ -945,5 +996,103 @@ export class CustomerReadRepository extends Repository {
       sortValue: row.effectiveFrom,
       id: row.id,
     }));
+  }
+
+  /**
+   * The customer's vehicle relationships, newest first (`P1-27-INT-012`).
+   *
+   * Reads the SAME `veh.vehicle_relationships` table `crm.vehicle-link` writes
+   * — the single source of truth the vehicle module reads vehicle-centrically
+   * through `veh.vehicle-relationship-list`. This is the partner-centric
+   * direction, which had no read of any kind: the POST published no GET.
+   *
+   * The join to `veh.vehicles` carries `v.deleted_at IS NULL` so a tombstoned
+   * vehicle never lends its identity to a live-looking row; the relationship
+   * itself still appears, as the bare `vehicleId` it honestly is. History rows
+   * (`valid_to` set) are returned with `active: false` rather than filtered:
+   * who was linked to which vehicle is a dated business fact, and the screen
+   * ranks by `active` the same way the contact list ranks by `isPrimary`.
+   *
+   * The visibility matrix permits the vehicle identity columns to any
+   * authenticated same-tenant session (`veh-ownership-visibility-matrix.md` —
+   * intra-tenant veh reads are differentiated only by `iam.sensitive.view`,
+   * which gates the restricted identifiers this projection never touches), so
+   * a `crm.customer.read` caller gains nothing the matrix reserves. The
+   * reception list's `vehicle_display_number` join is the precedent.
+   */
+  async listVehicles(
+    db: DbHandle,
+    customerId: string,
+    page: PageRequest
+  ): Promise<Page<CustomerVehicleEntry>> {
+    const context = this.assertContext(db);
+    const values: unknown[] = [context.principal.tenantId, customerId];
+    const keyset = keysetFragment(
+      page,
+      { sort: 'r.created_at', id: 'r.id' },
+      CUSTOMER_VEHICLE_ORDERING,
+      3
+    );
+    values.push(...keyset.values);
+
+    const result = await this.run<{
+      id: string;
+      vehicle_id: string;
+      relationship_role: string;
+      valid_from: string;
+      valid_to: string | null;
+      created_at: Date;
+      created_at_cursor: string;
+      vehicle_display_number: string | null;
+      vin_normalized: string | null;
+      make_id: string | null;
+      model_id: string | null;
+      model_year: number | null;
+      color: string | null;
+      vehicle_lifecycle_status: string | null;
+    }>(
+      db,
+      // `valid_from`/`valid_to` are `date` and are read `::text` so a day is
+      // never shifted by a timezone; the cursor is a `timestamptz` and needs
+      // the opposite treatment — full microsecond precision (`P1-27-INT-008`).
+      `SELECT r.id, r.vehicle_id, r.relationship_role,
+              r.valid_from::text AS valid_from,
+              r.valid_to::text AS valid_to,
+              r.created_at,
+              ${cursorTimestamp('r.created_at')} AS created_at_cursor,
+              v.display_number AS vehicle_display_number,
+              v.vin_normalized,
+              v.make_id, v.model_id, v.model_year, v.color,
+              v.lifecycle_status AS vehicle_lifecycle_status
+         FROM veh.vehicle_relationships r
+         LEFT JOIN veh.vehicles v
+                ON v.tenant_id = r.tenant_id AND v.id = r.vehicle_id
+               AND v.deleted_at IS NULL
+        WHERE r.tenant_id = $1 AND r.partner_id = $2 ${keyset.predicate}
+        ${keyset.order}
+        ${keyset.limitClause}`,
+      values
+    );
+    const rows = result.rows.map((row) => ({
+      item: {
+        id: row.id,
+        vehicleId: row.vehicle_id,
+        relationshipRole: row.relationship_role,
+        validFrom: row.valid_from,
+        validTo: row.valid_to,
+        active: row.valid_to === null,
+        createdAt: row.created_at.toISOString(),
+        vehicleDisplayNumber: row.vehicle_display_number,
+        vin: row.vin_normalized,
+        makeId: row.make_id,
+        modelId: row.model_id,
+        modelYear: row.model_year,
+        color: row.color,
+        vehicleLifecycleStatus: row.vehicle_lifecycle_status,
+      },
+      sortValue: row.created_at_cursor,
+      id: row.id,
+    }));
+    return buildPageWithCursors(rows, page, CUSTOMER_VEHICLE_ORDERING);
   }
 }

@@ -1197,6 +1197,12 @@ export const MANIFEST = {
     required: ['success', 'denial', 'cross-tenant'],
     note: 'requires only crm.customer.read, not the manage permission the POST carries: imposing a refusal to serve and knowing about one are different authorities, and a restriction nobody at the counter can see does not restrict anything',
   },
+  // P1-27 read-surface remediation executed by P1-16, the tenth CRM read.
+  'crm.customer-vehicle-list': {
+    files: ['tests/backend/p1-16-customer-vehicle-list.test.ts'],
+    required: ['success', 'denial', 'cross-tenant'],
+    note: 'P1-27-INT-012. The Customer→Vehicle direction was write-only: crm.vehicle-link inserted into veh.vehicle_relationships and no read listed a customer’s vehicles (the vehicle-centric veh.vehicle-relationship-list has existed since P1-17). Partner-centric keyset page over the same single source of truth, joined to veh.vehicles under v.deleted_at IS NULL so a tombstoned vehicle yields the bare vehicleId and never a resurrected identity; its ordering key differs from the vehicle-centric list’s so the two lists refuse each other’s cursors (ERR-PAG-001) instead of producing a plausible wrong page; reads reuse crm.customer.read like the nine sibling reads, and the write-only principal proves reads are not implied by writes',
+  },
   // --- Profile components: the re-parenting and IDOR surface. --------------
   'crm.contact-add': {
     files: ['tests/backend/p1-16-customer-profile.test.ts'],
