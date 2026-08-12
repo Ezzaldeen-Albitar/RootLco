@@ -286,7 +286,25 @@ function subjectlessHistory(relative, regions) {
  * values: `#` and a backtick are not identifier characters.
  */
 export const VALUE_TOKEN =
-  /(?<![A-Za-z0-9_.\-])(?:[0-9a-f]{7,64}|\d+(?:[.,]\d+)*%?)(?![A-Za-z0-9_\-])/g;
+  /(?<![A-Za-z0-9_.\-])(?<!Phase )(?:\d+-\d+(?!-?\d)|[0-9a-f]{7,64}|\d+(?:[.,]\d+)*%?)(?![A-Za-z0-9_\-])/g;
+
+/*
+ * The first alternative is a hyphenated RANGE, and it was missing.
+ *
+ * The identifier guards deliberately exclude a hyphen on either side, so that
+ * `P1-27`, `phase-1-27` and `QA-005` produce no value. The cost was that a
+ * range produced none either: a false current sentence containing
+ * "lines 244-604" or "1180-1216" was invisible, and the gate reported
+ * `UNCLASSIFIED_CURRENT_VALUES=0` while sitting on it. An adversarial pass
+ * demonstrated exactly that.
+ *
+ * A range is matched WHOLE, before the bare-integer alternative, so the pair is
+ * one value rather than two unrelated ones. `(?!-?\d)` is what keeps a date
+ * out: on `2026-08-11` the attempt at `2026-08` sees `-1` and rejects, and the
+ * attempt at `08-11` is refused by the leading guard because a hyphen precedes
+ * it — so the date yields nothing, which is the behaviour the guards were added
+ * for in the first place.
+ */
 
 /**
  * A verdict stated as a table cell — `Go`, `pass`, `clean`, `identical`.

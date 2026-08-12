@@ -325,6 +325,27 @@ export function judge(facts) {
     add(candidate, 'CANDIDATE_AUTHENTICATED_BROWSER_RED');
   }
 
+  /*
+   * The obligation that makes `PENDING_CANDIDATE_OBSERVATION` mean something.
+   *
+   * Without this the label was decorative: 23 rows could sit in it forever, and
+   * `TAKEN_GREEN` was a state nothing could ever reach. Once BOTH exact-head
+   * observations are green there is nothing left to wait for, so a row still
+   * claiming to be waiting is a record that has not been updated — and that is a
+   * blocker, not a pending event.
+   *
+   * Deliberately gated on both being GREEN rather than merely observed: a red
+   * run is already a blocker above, and reporting a stale-pending row as well
+   * would bury the real failure under bookkeeping.
+   */
+  if (obs.hostedCi === 'GREEN' && obs.authenticatedBrowser === 'GREEN') {
+    for (const task of facts.tasks ?? []) {
+      if (task.reproof === 'PENDING_CANDIDATE_OBSERVATION') {
+        add(candidate, 'CANDIDATE_OBSERVATION_TAKEN_BUT_FIELD_STILL_PENDING', task.id);
+      }
+    }
+  }
+
   /* ---- protected: only reachable once the candidate is clean ----- */
   const prot = facts.protectedMerge ?? {};
   if (!prot.taken) {
