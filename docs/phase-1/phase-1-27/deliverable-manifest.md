@@ -664,7 +664,7 @@ under-report itself by seven files.
 | `adversarial-round-five.md`                       | 857   | The live finding register; its totals are derived from its own rows                |
 | `closure-record.md`                               | 114   | The closure — `OWNER ACCEPTANCE: PASS`, 2026-08-12; what it does and does not do   |
 | `adversarial-round-four.md`                       | 147   | The previous round, superseded by round five                                       |
-| `blocker-remediation-plan.md`                     | 497   | What blocked the phase, and how each blocker was cleared                           |
+| `blocker-remediation-plan.md`                     | 532   | What blocked the phase, and how each blocker was cleared                           |
 | `canonical-plan.md`                               | 340   | What P1-27 is scoped to build, and the disposition of `P1-OD-017` and `P1-OD-025`  |
 | `canonical-write-reachability.json`               | 66    | Every write operation classified reachable or deliberately absent, with a decision |
 | `ci-evidence.md`                                  | 275   | Hosted CI, with every value classified and every hosted one naming its run         |
@@ -982,7 +982,7 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
 
 <!-- derived: lines docs/phase-1/phase-1-27/adversarial-round-five.md = 857 -->
 <!-- derived: lines docs/phase-1/phase-1-27/adversarial-round-four.md = 147 -->
-<!-- derived: lines docs/phase-1/phase-1-27/blocker-remediation-plan.md = 497 -->
+<!-- derived: lines docs/phase-1/phase-1-27/blocker-remediation-plan.md = 532 -->
 <!-- derived: lines docs/phase-1/phase-1-27/canonical-plan.md = 340 -->
 <!-- derived: lines docs/phase-1/phase-1-27/canonical-write-reachability.json = 66 -->
 <!-- derived: lines docs/phase-1/phase-1-27/ci-evidence.md = 275 -->

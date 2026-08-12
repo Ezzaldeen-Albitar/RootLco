@@ -16,8 +16,8 @@
       "bytes": 12457
     },
     "docs/phase-1/phase-1-27/blocker-remediation-plan.md": {
-      "sha256": "a63af94fcda3f9e62033aa162e3a34f2fcfa947f2d41e1dd6ab9aeb693ba5ae5",
-      "bytes": 77406
+      "sha256": "6c192cf27b62a07dd1180a2f46490f9cf7933d1c3c5e559931284b89a0e76549",
+      "bytes": 80099
     },
     "docs/phase-1/phase-1-27/canonical-plan.md": {
       "sha256": "fc06c4c125ea951b50169181398ddaf0353f255abe739534560cd580ee32786f",
@@ -48,7 +48,7 @@
       "bytes": 24145
     },
     "docs/phase-1/phase-1-27/deliverable-manifest.md": {
-      "sha256": "d27d2f6890670fc6234b1d8cc7d1d9f31cdb6ed156df15be202a28970fc88e7b",
+      "sha256": "9f7af8fe7e0802ac0d7fac76797f0b48694398fb921008de0e13b4d512c795f4",
       "bytes": 143705
     },
     "docs/phase-1/phase-1-27/developer-guide.md": {
