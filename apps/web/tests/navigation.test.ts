@@ -60,6 +60,9 @@ describe('the navigation model', () => {
       'administration.permissions',
       'administration.roles',
       'administration.users',
+      // Built in P1-28 (`P1-28-FE-001`): the branch calendar at
+      // `/appointments`, flipped in the same change that landed the screen.
+      'appointments',
       // Both duplicate queues are in the sidebar, each behind its OWN
       // `*.duplicate.review` code. They had screens and no route into them —
       // a page nobody can reach is not delivered.
@@ -88,11 +91,10 @@ describe('the navigation model', () => {
     // The business modules P1-27 and later deliver. If one of these ever turns
     // `available` without a screen, the sidebar starts producing 404s.
     expect(planned.sort()).toEqual([
-      'appointments',
       'billing',
       'catalog',
-      // `customers` and `vehicles` both left this list in P1-27, when the
-      // screens they point at were built.
+      // `customers` and `vehicles` left this list in P1-27, and `appointments`
+      // in P1-28, when the screens they point at were built.
       'delivery',
       'documents',
       'inventory',

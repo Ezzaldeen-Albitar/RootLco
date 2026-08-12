@@ -123,11 +123,6 @@ export const NAVIGATION: readonly NavigationGroup[] = Object.freeze([
        * who cannot search customers cannot use anything after it. Gating it
        * on a code no operation behind it requires is the defect `P1-26-F-011`
        * and `P1-26-F-029` both recorded.
-       *
-       * The Reception CHECK-IN entry is still absent, deliberately: the
-       * check-in wizard (`P1-28-FE-007`) has no screen yet, and its entry
-       * lands WITH that screen, gated on `rec.reception.read` — which is
-       * seeded (P1-18 remediation R2, PR #220) but has no screen to point at.
        */
       {
         key: 'walk-in',
@@ -139,16 +134,14 @@ export const NAVIGATION: readonly NavigationGroup[] = Object.freeze([
         scope: 'branch',
       },
       /*
-       * P1-28 state, verified 2026-08-13: `apt.appointment.read` IS seeded now
-       * (P1-18 remediation R2, PR #220) — the permission is no longer what
-       * keeps this entry `planned`. What keeps it `planned` is that no screen
-       * exists at `/appointments`: `status: 'available'` is a claim that a
-       * screen exists, and a nav entry pointing at a 404 is a lie of a
-       * different kind than an unseeded permission. This entry flips to
-       * `available` in the SAME change that lands the first appointment
-       * screen (`P1-28-FE-001`, the calendar and scheduling view) — and
-       * `navigation.test.ts` pins the planned/available sets, so the flip
-       * edits both together.
+       * Built in P1-28 (`P1-28-FE-001`): the branch calendar lives at
+       * `/appointments`, with booking and the per-appointment lifecycle
+       * commands beneath it. The entry flipped to `available` in the SAME
+       * change that landed the screen — `navigation.test.ts` pins the
+       * planned/available sets so the flip edits both together — and it is
+       * gated on `apt.appointment.read`, the code `apt.appointment-list`
+       * and `-detail` actually register (seeded by P1-18 remediation R2,
+       * PR #220).
        */
       {
         key: 'appointments',
@@ -156,7 +149,7 @@ export const NAVIGATION: readonly NavigationGroup[] = Object.freeze([
         icon: 'appointments',
         href: '/appointments',
         permission: 'apt.appointment.read',
-        status: 'planned',
+        status: 'available',
         scope: 'branch',
       },
       {
