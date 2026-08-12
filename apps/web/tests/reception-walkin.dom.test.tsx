@@ -523,12 +523,19 @@ describe('the truthful handoff', () => {
     renderLtr(<WalkInIntakeScreen {...props({ checkInAvailable: true })} />);
     await completeQuickest(user);
 
-    expect(
-      screen.getByRole('link', { name: en['receptions.intake.done.continue'] })
-    ).toHaveAttribute(
-      'href',
-      checkInWizardHref('en', { customerId: CUSTOMER_ID, vehicleId: VEHICLE_ID })
-    );
+    const href = screen
+      .getByRole('link', { name: en['receptions.intake.done.continue'] })
+      .getAttribute('href');
+    expect(href).toBe(checkInWizardHref('en', { customerId: CUSTOMER_ID, vehicleId: VEHICLE_ID }));
+    /*
+     * And the LITERAL address, spelled out. Comparing the rendered link only to
+     * the builder that produced it agrees with itself no matter what the
+     * builder says — which is exactly how `/reception/check-in` (singular) sat
+     * in `CHECK_IN_WIZARD_PATH` while the wizard was mounted at
+     * `/receptions/check-in`. `reception-walkin-handoff.test.ts` pins the same
+     * segment to the directory that exists on disk.
+     */
+    expect(href).toBe(`/en/receptions/check-in?customerId=${CUSTOMER_ID}&vehicleId=${VEHICLE_ID}`);
     expect(screen.queryByText(en['receptions.intake.done.wizardPending'])).not.toBeInTheDocument();
   });
 

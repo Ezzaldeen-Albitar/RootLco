@@ -61,12 +61,40 @@
  * `write(previous, parse, 'POST', path, …)` both pass the method as the
  * argument directly before the path — so adjacency is what is required.
  *
- * The P1-27 gate additionally recognises `writeVehicle(...)`, a method-less
- * helper. No apt/rec equivalent exists yet. If the contract layer introduces
- * one, its call sites are INVISIBLE to this gate until it is taught here —
- * which fails closed: the `REACHABLE` classification goes red and whoever
- * flips it extends the gate. The same holds for a base-building path helper:
- * only inline `/api/v1/...` template literals are normalised.
+ * A path may also be built by a PATH HELPER rather than written inline. The
+ * reception adapters send `client.send('POST', visitPath(id, '/party-roles'), …)`,
+ * and an inline-literal scanner sees no path there at all — which is how two
+ * demonstrably wired writes sat allow-listed with a reason blaming the scanner.
+ * `pathHelpers` resolves them, by SHAPE and not by name: a function whose whole
+ * body is `return` of one template literal beginning `/api/v1/`. Its
+ * interpolations are read against its own parameter list — a bare `${param}` is
+ * a slot the call site fills, anything else (`${encodeURIComponent(id)}`) is an
+ * opaque value and normalises to `:p` — so `visitPath(id, '/party-roles')`
+ * resolves to `/api/v1/receptions/:p/party-roles` while `visitPath(id, tail)`
+ * with a variable tail resolves to `/api/v1/receptions/:p/:p` and matches
+ * nothing. A helper this rule cannot read stays invisible, which fails closed:
+ * the `REACHABLE` claim goes red and whoever flips it extends this gate.
+ *
+ * ## A call site nobody can reach is not reachability
+ *
+ * An adapter that sends a write is not a screen that invokes it — and this
+ * phase proved the difference the hard way. Wave A landed the whole reception
+ * adapter surface AHEAD of the screens, so seven `rec.*` writes acquired a
+ * genuine `client.send('POST', …)` call site while only two of them could be
+ * reached by an operator. Counting the adapter alone would have flipped all
+ * seven to `REACHABLE` and emptied the allow-list of everything it exists to
+ * hold: INT-113 blessed by the gate built to catch it.
+ *
+ * So a call site must be CONSUMED. Each one is attributed to the exported
+ * function that encloses it, and that name must be mentioned by another
+ * production module (comments stripped, so a docblock naming an adapter is not
+ * evidence anybody calls it). A site inside no exported function — a top-level
+ * statement — is counted as it always was, because there is no export whose
+ * consumption could be asked about. The attribution is textual: a site inside an
+ * INTERNAL helper is credited to the exported function declared above it, which
+ * is right for this codebase's flat adapter modules and is conservative
+ * elsewhere — an unconsumed attribution drops the site, so a wrong guess turns a
+ * `REACHABLE` claim red rather than passing one silently.
  *
  * These do NOT count, excluded structurally rather than by naming convention:
  *
@@ -200,40 +228,208 @@ function walk(dir, out = []) {
   return out;
 }
 
+/** A parameter list, as names and their string defaults. `x = ''` → `''`. */
+function helperParameters(list) {
+  return list
+    .split(',')
+    .map((part) => part.trim())
+    .filter((part) => part !== '')
+    .map((part) => {
+      const name = /^([A-Za-z_$][\w$]*)/.exec(part);
+      const fallback = /=\s*(['"])((?:(?!\1).)*)\1\s*$/.exec(part);
+      return { name: name ? name[1] : '', default: fallback ? fallback[2] : null };
+    })
+    .filter((param) => param.name !== '');
+}
+
 /**
- * Every mutation call site in one file, as `{ method, path }`.
+ * The path helpers a file declares, by SHAPE rather than by name.
  *
- * Found by locating each API path literal and requiring the write-method
- * literal to stand as the argument IMMEDIATELY before it — only a comma and
- * whitespace may separate the two. Every call shape this codebase uses
- * provides that adjacency: `client.send('POST', path, …)` and the CRM-style
- * `write(previous, parse, 'POST', path, …)` helper both pass the method as
- * the argument directly before the path (the parse closure sits BEFORE the
- * method, so it never intervenes). A path with no adjacent write marker is a
- * READ and is ignored — which is what keeps a list GET from vouching for the
- * POST that shares its route, and what keeps a read from BORROWING the method
- * of an unrelated write elsewhere in the file: the previous any-marker-within-
- * 2000-characters window did exactly that to `client.get(...)` calls placed
- * after a genuine write, and `tests/ci/p1-28-write-reachability.test.ts`
- * holds the borrowed-read fixture that refuses the regression.
+ * A helper qualifies when its whole body is `return` of a single template
+ * literal that begins with the API prefix. The template is split into literal
+ * text and interpolations, and each interpolation is read against the helper's
+ * own parameters: `${tail}` names one and becomes a slot the call site fills;
+ * `${encodeURIComponent(receptionId)}` names none and is an opaque value, which
+ * is exactly what `:p` means everywhere else in this gate.
+ *
+ * Deliberately not a list of known helper names — the P1-27 gate hard-codes two
+ * (`base`, `vehicleBase`) and a third helper would be invisible to it.
  */
-export function mutationCallSites(source) {
-  const text = normaliseSourcePaths(stripComments(source));
-  const sites = [];
-  const pathPattern = /['"`](\/api\/v1\/[^'"`\s]*)['"`]/g;
+export function pathHelpers(strippedSource) {
+  const helpers = new Map();
+  const declaration =
+    /\bfunction\s+([A-Za-z_$][\w$]*)\s*\(([^()]*)\)\s*(?::\s*string\s*)?\{\s*return\s+`([^`]*)`\s*;?\s*\}/g;
 
   let match;
-  while ((match = pathPattern.exec(text)) !== null) {
-    // Adjacency, not proximity: the method literal must end the text directly
-    // before the path literal, save for the argument comma and whitespace.
-    // The slice is only as long as a method literal plus formatting needs;
-    // the `$` anchor is what carries the rule.
-    const window = text.slice(Math.max(0, match.index - 200), match.index);
-    const method = /['"](POST|PUT|PATCH)['"]\s*,\s*$/.exec(window);
-    if (!method) continue;
+  while ((match = declaration.exec(strippedSource)) !== null) {
+    const [, name, list, template] = match;
+    if (!template.startsWith('/api/v1/')) continue;
 
-    sites.push({ method: method[1], path: match[1] });
+    const params = helperParameters(list);
+    const segments = [];
+    let cursor = 0;
+    const interpolation = /\$\{([^}]*)\}/g;
+    let hole;
+    while ((hole = interpolation.exec(template)) !== null) {
+      segments.push({ kind: 'literal', text: template.slice(cursor, hole.index) });
+      const slot = params.findIndex((param) => param.name === hole[1].trim());
+      segments.push(slot === -1 ? { kind: 'opaque' } : { kind: 'slot', index: slot });
+      cursor = hole.index + hole[0].length;
+    }
+    segments.push({ kind: 'literal', text: template.slice(cursor) });
+    helpers.set(name, { params, segments });
   }
+  return helpers;
+}
+
+/** The argument list starting at `open` (the `(`), split on top-level commas. */
+function argumentsAt(text, open) {
+  let depth = 0;
+  let quote = null;
+  let start = open + 1;
+  const args = [];
+  for (let i = open; i < text.length; i += 1) {
+    const character = text[i];
+    if (quote !== null) {
+      if (character === '\\') i += 1;
+      else if (character === quote) quote = null;
+      continue;
+    }
+    if (character === "'" || character === '"' || character === '`') {
+      quote = character;
+      continue;
+    }
+    if (character === '(' || character === '[' || character === '{') {
+      depth += 1;
+      continue;
+    }
+    if (character === ')' || character === ']' || character === '}') {
+      depth -= 1;
+      if (depth === 0) {
+        args.push(text.slice(start, i));
+        return args;
+      }
+      continue;
+    }
+    if (character === ',' && depth === 1) {
+      args.push(text.slice(start, i));
+      start = i + 1;
+    }
+  }
+  return null;
+}
+
+/** A bare string literal's value, or `null` for anything a call site computes. */
+function literalValue(argument) {
+  const trimmed = argument.trim();
+  const literal = /^(['"`])((?:(?!\1)[^\\])*)\1$/.exec(trimmed);
+  return literal ? literal[2] : null;
+}
+
+/** The path a helper call builds, with everything unknown collapsed to `:p`. */
+function resolveHelperCall(helper, args) {
+  let path = '';
+  for (const segment of helper.segments) {
+    if (segment.kind === 'literal') {
+      path += segment.text;
+    } else if (segment.kind === 'opaque') {
+      path += ':p';
+    } else {
+      const supplied = args[segment.index];
+      const value =
+        supplied === undefined
+          ? (helper.params[segment.index]?.default ?? null)
+          : literalValue(supplied);
+      path += value === null ? ':p' : value;
+    }
+  }
+  return path;
+}
+
+/** Exported function declarations, in source order, as `{ index, name }`. */
+function exportedFunctions(text) {
+  const declaration =
+    /\bexport\s+(?:default\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)\s*[(<]/g;
+  const found = [];
+  let match;
+  while ((match = declaration.exec(text)) !== null) {
+    found.push({ index: match.index, name: match[1] });
+  }
+  return found;
+}
+
+/**
+ * Every mutation call site in one file, as `{ method, path, owner }`.
+ *
+ * Found by locating each API path — an inline literal, or a call to one of the
+ * file's own path helpers — and requiring the write-method literal to stand as
+ * the argument IMMEDIATELY before it: only a comma and whitespace may separate
+ * the two. Every call shape this codebase uses provides that adjacency:
+ * `client.send('POST', path, …)` and the CRM-style
+ * `write(previous, parse, 'POST', path, …)` helper both pass the method as the
+ * argument directly before the path (the parse closure sits BEFORE the method,
+ * so it never intervenes). A path with no adjacent write marker is a READ and
+ * is ignored — which is what keeps a list GET from vouching for the POST that
+ * shares its route, and what keeps a read from BORROWING the method of an
+ * unrelated write elsewhere in the file: the previous any-marker-within-2000-
+ * characters window did exactly that to `client.get(...)` calls placed after a
+ * genuine write, and `tests/ci/p1-28-write-reachability.test.ts` holds the
+ * borrowed-read fixture that refuses the regression.
+ *
+ * `owner` is the exported function the site sits inside, or `null` for a
+ * top-level statement. `run` uses it to ask whether anything consumes that
+ * export; see the file docblock for why an unconsumed adapter is not reach.
+ */
+export function mutationCallSites(source) {
+  const stripped = stripComments(source);
+  const helpers = pathHelpers(stripped);
+  const text = normaliseSourcePaths(stripped);
+  const owners = exportedFunctions(text);
+  const sites = [];
+
+  const ownerAt = (index) => {
+    let owner = null;
+    for (const candidate of owners) {
+      if (candidate.index > index) break;
+      owner = candidate.name;
+    }
+    return owner;
+  };
+
+  // Adjacency, not proximity: the method literal must end the text directly
+  // before the path, save for the argument comma and whitespace. The slice is
+  // only as long as a method literal plus formatting needs; the `$` anchor is
+  // what carries the rule.
+  const adjacentMethod = (index) => {
+    const window = text.slice(Math.max(0, index - 200), index);
+    const method = /['"](POST|PUT|PATCH)['"]\s*,\s*$/.exec(window);
+    return method ? method[1] : null;
+  };
+
+  const pathPattern = /['"`](\/api\/v1\/[^'"`\s]*)['"`]/g;
+  let match;
+  while ((match = pathPattern.exec(text)) !== null) {
+    const method = adjacentMethod(match.index);
+    if (method) sites.push({ method, path: match[1], owner: ownerAt(match.index) });
+  }
+
+  if (helpers.size > 0) {
+    const names = [...helpers.keys()].map((name) => name.replace(/[$]/g, '\\$&'));
+    const helperCall = new RegExp(`\\b(${names.join('|')})\\s*\\(`, 'g');
+    let call;
+    while ((call = helperCall.exec(text)) !== null) {
+      const method = adjacentMethod(call.index);
+      if (!method) continue;
+      const args = argumentsAt(text, call.index + call[0].length - 1);
+      if (args === null) continue;
+      sites.push({
+        method,
+        path: resolveHelperCall(helpers.get(call[1]), args),
+        owner: ownerAt(call.index),
+      });
+    }
+  }
+
   return sites;
 }
 
@@ -283,10 +479,35 @@ export function run(injected = {}) {
     ([path]) => !NOT_A_CALL_SITE.some((excluded) => path.endsWith(excluded.split(sep).join('/')))
   );
 
-  const sites = [];
+  const found = [];
   for (const [path, content] of scanned) {
-    for (const site of mutationCallSites(content)) sites.push({ ...site, file: path });
+    for (const site of mutationCallSites(content)) found.push({ ...site, file: path });
   }
+
+  /*
+   * Consumption. A site is evidence only if something outside its own module
+   * names the export that holds it — an adapter nobody imports is a write
+   * nobody can invoke, which is INT-113 itself. Comments are stripped first:
+   * this repository's docblocks name adapters constantly, and a sentence about
+   * a function is not a call to it. A site with no enclosing export is kept as
+   * it always was; there is no export whose consumption could be asked about.
+   */
+  const code = new Map(scanned.map(([path, content]) => [path, stripComments(content)]));
+  const consumption = new Map();
+  const consumed = (owner, file) => {
+    if (owner === null) return true;
+    const key = `${file} ${owner}`;
+    if (!consumption.has(key)) {
+      const named = new RegExp(`\\b${owner}\\b`);
+      consumption.set(
+        key,
+        [...code].some(([path, content]) => path !== file && named.test(content))
+      );
+    }
+    return consumption.get(key);
+  };
+
+  const sites = found.filter((site) => consumed(site.owner, site.file));
 
   // The register's `route` field ALREADY carries the `/api/v1` prefix — read
   // from a live entry, not assumed (the P1-27 gate double-prefixed it once and
@@ -308,7 +529,7 @@ export function run(injected = {}) {
   if (scanned.length === 0) violations.push('no files were scanned');
   if (canonical.length === 0)
     violations.push('no canonical operations were derived from the register');
-  if (sites.length === 0)
+  if (found.length === 0)
     violations.push('no mutation call site was found anywhere in apps/web/src');
 
   for (const id of Object.keys(classified)) {
@@ -396,7 +617,17 @@ export function run(injected = {}) {
     return acc;
   }, {});
 
-  return { counts, results, violations, scanned: scanned.length, sites: sites.length, canonical };
+  return {
+    counts,
+    results,
+    violations,
+    scanned: scanned.length,
+    sites: sites.length,
+    // Before the consumption filter — what the SCANNER saw. Reported separately
+    // so "the scanner works" and "somebody can reach it" stay distinguishable.
+    found: found.length,
+    canonical,
+  };
 }
 
 // Executed only when invoked as a script, never on import.
@@ -407,7 +638,8 @@ if (process.argv[1] && process.argv[1].endsWith('check-p1-28-write-reachability.
   } else {
     console.log(
       `P1-28 write reachability: ${report.canonical.length} canonical write(s), ` +
-        `${report.scanned} production file(s), ${report.sites} mutation call site(s).`
+        `${report.scanned} production file(s), ${report.found} mutation call site(s), ` +
+        `${report.sites} of them consumed.`
     );
     for (const key of [...CLASSIFICATIONS, 'UNWIRED', 'MALFORMED']) {
       if (report.counts[key]) console.log(`  ${key} = ${report.counts[key]}`);

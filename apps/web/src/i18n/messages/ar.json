@@ -1286,6 +1286,8 @@
   "receptions.checkIn.vehicleLinkEnded": "انتهى الارتباط",
   "receptions.checkIn.vehicleChosen": "مختارة",
   "receptions.checkIn.noCustomerVehicles": "لا توجد مركبات مسجّلة لهذا العميل. اربط المركبة بالعميل من شاشة المركبات أولاً.",
+  "receptions.checkIn.handoffApplied": "متابعة من استقبال الحضور المباشر. تم اختيار العميل والمركبة المسجّلين هناك مسبقًا — تحقّق منهما قبل فتح الزيارة.",
+  "receptions.checkIn.handoffVehicleMissing": "متابعة من استقبال الحضور المباشر، لكن تلك المركبة ليست ضمن قائمة هذا العميل. اختر المركبة أدناه.",
   "receptions.checkIn.walkInNote": "ملاحظة الحضور المباشر",
   "receptions.checkIn.openVisitTitle": "لهذه المركبة زيارة مفتوحة بالفعل",
   "receptions.checkIn.resume": "متابعة الزيارة المفتوحة",

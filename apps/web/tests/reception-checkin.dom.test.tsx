@@ -326,6 +326,175 @@ describe('the start screen — origin XOR', () => {
   });
 });
 
+/* --- the walk-in handoff arriving here (FE-006 → FE-007) -------------------- */
+
+/**
+ * The consuming end of the seam.
+ *
+ * The intake ends holding a `(customer, vehicle)` pair and links here carrying
+ * it. For three waves nothing read that link: `parseWalkInHandoff` had zero
+ * consumers outside the module declaring it, and the address it pointed at did
+ * not exist. These cases are the round trip's second half — the first half is
+ * `reception-walkin.dom.test.tsx` ("links to the wizard with the exact handoff
+ * pair") and `reception-walkin-handoff.test.ts` (the address itself).
+ */
+describe('the start screen — the walk-in handoff', () => {
+  const HANDED_OVER_VEHICLE = {
+    id: 'link-9',
+    vehicleId: 'veh-9',
+    relationshipRole: 'owner',
+    validFrom: '2026-08-01',
+    validTo: null,
+    active: true,
+    createdAt: '2026-08-01T00:00:00.000Z',
+    vehicleDisplayNumber: 'V-9',
+    vin: null,
+    makeId: null,
+    modelId: null,
+    modelYear: null,
+    color: null,
+    vehicleLifecycleStatus: 'active',
+  };
+
+  const OTHER_VEHICLE = {
+    ...HANDED_OVER_VEHICLE,
+    id: 'link-8',
+    vehicleId: 'veh-8',
+    vehicleDisplayNumber: 'V-8',
+  };
+
+  const handoff = {
+    requester: {
+      id: 'partner-1',
+      displayName: 'Layla Haddad',
+      displayNumber: 'C-0001',
+      partyType: 'individual',
+    },
+    vehicleId: 'veh-9',
+  };
+
+  /** Every row of the vehicle picker, once it has rendered. */
+  async function vehicleChoices() {
+    const group = await screen.findByRole('group', {
+      name: EN['receptions.checkIn.vehicleLabel']!,
+    });
+    return within(group).getAllByRole('button');
+  }
+
+  const pressed = (buttons: readonly HTMLElement[]) =>
+    buttons.filter((button) => button.getAttribute('aria-pressed') === 'true');
+
+  /**
+   * The chosen row, waited for.
+   *
+   * The pre-selection cannot happen before the vehicle list answers — the form
+   * submits a ROW, not the identifier the handoff carried — so the picker
+   * renders one tick before anything in it is pressed. Reading the rows and
+   * asserting immediately passes alone and fails under a loaded suite, which is
+   * a latent flake rather than a check.
+   */
+  async function chosenVehicles(): Promise<readonly HTMLElement[]> {
+    let chosen: readonly HTMLElement[] = [];
+    await waitFor(async () => {
+      chosen = pressed(await vehicleChoices());
+      expect(chosen).toHaveLength(1);
+    });
+    return chosen;
+  }
+
+  it('pre-selects the customer and the vehicle the intake just recorded', async () => {
+    listCustomerVehicles.mockResolvedValue(page([OTHER_VEHICLE, HANDED_OVER_VEHICLE]));
+    renderLtr(<CheckInStartScreen {...startProps({ walkInHandoff: handoff })} />);
+
+    // The customer is already chosen — by NAME, never by identifier — so the
+    // search controls are not what the operator is looking at.
+    expect(screen.getByText('Layla Haddad')).toBeInTheDocument();
+    expect(screen.getByTestId('customer-selector-value')).toHaveValue('partner-1');
+    expect(screen.queryByText(EN['customerSelector.idle']!)).not.toBeInTheDocument();
+
+    // The vehicle list is read for THAT customer, and the handed-over row is
+    // the chosen one — not merely present in the list.
+    await waitFor(() => expect(listCustomerVehicles).toHaveBeenCalled());
+    expect(listCustomerVehicles.mock.calls.at(-1)![0]).toBe('partner-1');
+
+    expect(await vehicleChoices()).toHaveLength(2);
+    const chosen = await chosenVehicles();
+    expect(within(chosen[0]!).getByText('V-9')).toBeInTheDocument();
+    expect(
+      within(chosen[0]!).getByText(EN['receptions.checkIn.vehicleChosen']!)
+    ).toBeInTheDocument();
+
+    // And the screen says why the form arrived filled in.
+    expect(screen.getByTestId('walk-in-handoff-notice')).toHaveTextContent(
+      EN['receptions.checkIn.handoffApplied']!
+    );
+  });
+
+  it('submits the handed-over pair without the operator touching either control', async () => {
+    listCustomerVehicles.mockResolvedValue(page([HANDED_OVER_VEHICLE]));
+    createReception.mockResolvedValue({ status: 'success', correlationId: 'c', attempt: 1 });
+    const user = userEvent.setup();
+    renderLtr(<CheckInStartScreen {...startProps({ walkInHandoff: handoff })} />);
+
+    await chosenVehicles();
+    await user.click(screen.getByRole('button', { name: EN['receptions.checkIn.submit']! }));
+
+    await waitFor(() => expect(createReception).toHaveBeenCalled());
+    const [input] = createReception.mock.calls.at(-1)!;
+    expect(input).toMatchObject({
+      vehicleId: 'veh-9',
+      serviceRequesterPartnerId: 'partner-1',
+      origin: { kind: 'walk_in' },
+    });
+  });
+
+  it('states it when the handed-over vehicle is not on that customer list', async () => {
+    listCustomerVehicles.mockResolvedValue(page([OTHER_VEHICLE]));
+    renderLtr(<CheckInStartScreen {...startProps({ walkInHandoff: handoff })} />);
+
+    await waitFor(() =>
+      expect(screen.getByTestId('walk-in-handoff-notice')).toHaveTextContent(
+        EN['receptions.checkIn.handoffVehicleMissing']!
+      )
+    );
+    // Nothing is pre-selected on a guess: the operator chooses.
+    expect(pressed(await vehicleChoices())).toHaveLength(0);
+  });
+
+  it('starts empty when the page passes no handoff', () => {
+    renderLtr(<CheckInStartScreen {...startProps()} />);
+    expect(screen.queryByTestId('walk-in-handoff-notice')).not.toBeInTheDocument();
+    expect(screen.getByText(EN['customerSelector.idle']!)).toBeInTheDocument();
+  });
+
+  it('is consumed once — switching origin drops it and switching back does not restore it', async () => {
+    listCustomerVehicles.mockResolvedValue(page([HANDED_OVER_VEHICLE]));
+    const user = userEvent.setup();
+    renderLtr(<CheckInStartScreen {...startProps({ walkInHandoff: handoff })} />);
+    await chosenVehicles();
+
+    await user.click(screen.getByRole('radio', { name: /Appointment/ }));
+    await user.click(screen.getByRole('radio', { name: /Walk-in/ }));
+
+    // A pre-selection that comes back after the operator moved away from it is
+    // the XOR being circumvented in state — the same rule the appointment side
+    // already obeys. The requester itself survives an origin switch, as it
+    // always has; what must not survive is the VEHICLE nobody re-chose.
+    expect(screen.queryByTestId('walk-in-handoff-notice')).not.toBeInTheDocument();
+    expect(pressed(await vehicleChoices())).toHaveLength(0);
+  });
+
+  it('renders the handoff notice in Arabic too', async () => {
+    listCustomerVehicles.mockResolvedValue(page([HANDED_OVER_VEHICLE]));
+    renderRtl(
+      <CheckInStartScreen {...startProps({ messages: ar as typeof en, walkInHandoff: handoff })} />
+    );
+    expect(await screen.findByTestId('walk-in-handoff-notice')).toHaveTextContent(
+      AR['receptions.checkIn.handoffApplied']!
+    );
+  });
+});
+
 /* --- the shell and its typed step interface -------------------------------- */
 
 describe('the wizard shell', () => {

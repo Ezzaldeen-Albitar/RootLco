@@ -73,13 +73,14 @@ export default async function WalkInIntakePage({
           canCreateVehicle={holds(session.permissions, VEHICLE_PERMISSIONS.vehicleManage)}
           canLinkVehicle={holds(session.permissions, CRM_PERMISSIONS.vehicleManage)}
           /*
-           * Wave-D coordination point (`P1-28-FE-007`): flip to `true` in the
-           * SAME change that lands the check-in wizard route at
-           * `CHECK_IN_WIZARD_PATH` (`features/receptions/intake/intake-handoff.ts`).
-           * While false, the completed intake states that check-in is not
-           * available yet instead of linking to a route that answers 404.
+           * The check-in wizard (`P1-28-FE-007`) is mounted, so the completed
+           * intake links to it. Its address comes from `CHECK_IN_WIZARD_PATH`
+           * (`features/receptions/intake/intake-handoff.ts`), which now names
+           * the directory that exists — `receptions/check-in`, plural. While
+           * this was false the constant was WRONG and nothing could tell,
+           * because the only code that reads it never rendered.
            */
-          checkInAvailable={false}
+          checkInAvailable={true}
         />
       </PageBody>
     </>

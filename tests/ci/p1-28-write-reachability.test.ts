@@ -5,6 +5,7 @@ import {
   mutationCallSites,
   normaliseRoutePath,
   normaliseSourcePaths,
+  pathHelpers,
   run,
   stripComments,
 } from '../../scripts/ci/check-p1-28-write-reachability.mjs';
@@ -51,6 +52,51 @@ export async function approveSyntheticAction(id, previous, form) {
     \`/api/v1/synthetic-receptions/\${encodeURIComponent(id)}/approve\`,
     'k'
   );
+}
+`;
+
+/**
+ * The screen that consumes both adapters.
+ *
+ * Without it neither adapter is reachable, which is the point: Wave A landed
+ * the whole reception adapter surface before its screens, so "a module sends
+ * the write" and "somebody can invoke it" came apart in the live tree. Every
+ * fixture that expects REACHABLE has to name its consumer, exactly as the real
+ * tree does.
+ */
+const SCREEN = `
+'use client';
+import { bookSyntheticAction } from '../booking-actions';
+import { approveSyntheticAction } from '../../synthetic-receptions/approve-actions';
+export function SyntheticDeskScreen() {
+  return [bookSyntheticAction, approveSyntheticAction];
+}
+`;
+
+/**
+ * The helper shape the reception adapters really use: one template over the
+ * API prefix, an opaque interpolation for the identifier and a tail the call
+ * site supplies. The READ through the same helper must stay invisible.
+ */
+const HELPER_CALLER = `
+'use server';
+function synthPath(receptionId: string, tail = ''): string {
+  return \`/api/v1/synthetic-receptions/\${encodeURIComponent(receptionId)}\${tail}\`;
+}
+export async function sealSyntheticVisit(receptionId, input) {
+  return client.send('POST', synthPath(receptionId, '/seal'), input);
+}
+export async function readSyntheticVisit(receptionId) {
+  return client.get(synthPath(receptionId));
+}
+`;
+
+/** The screen that reaches the helper-built write. */
+const SEAL_SCREEN = `
+'use client';
+import { sealSyntheticVisit } from '../seal-actions';
+export function SyntheticSealScreen() {
+  return sealSyntheticVisit;
 }
 `;
 
@@ -108,6 +154,7 @@ const highWater = ['rec.synthetic-seal'];
 const sources: readonly (readonly [string, string])[] = [
   ['apps/web/src/features/synthetic-appointments/booking-actions.ts', BOOKING_CALLER],
   ['apps/web/src/features/synthetic-receptions/approve-actions.ts', APPROVE_CALLER],
+  ['apps/web/src/features/synthetic-appointments/components/SyntheticDeskScreen.tsx', SCREEN],
 ];
 
 /** Runs the gate over synthetic inputs, with optional per-case overrides. */
@@ -430,7 +477,11 @@ export async function probeSyntheticSeal(id) {
     // The unit half: the genuine write is the ONLY site; the read's path,
     // although the 'POST' literal sits well inside the old window, is not one.
     expect(mutationCallSites(BORROWED_READ)).toEqual([
-      { method: 'POST', path: '/api/v1/synthetic-other-things' },
+      {
+        method: 'POST',
+        path: '/api/v1/synthetic-other-things',
+        owner: 'recordSyntheticThing',
+      },
     ]);
 
     // The whole-judgement half: the allow-listed seal write must NOT be
@@ -444,6 +495,143 @@ export async function probeSyntheticSeal(id) {
       ],
     });
     expect(report.violations).toEqual([]);
+  });
+});
+
+describe('a path built by a helper is still a call site', () => {
+  /*
+   * The defect this section closes. Two reception writes were wired by their
+   * screen and still sat allow-listed, because the adapter builds the path with
+   * a `visitPath(id, tail)` helper and the scanner only ever read inline
+   * literals. An allow-list entry whose reason blames the gate is the gate
+   * declining to answer its own question.
+   *
+   * Their real identifiers are deliberately absent — see the file docblock: the
+   * register credits a test file to every operation it NAMES, so writing them
+   * here would report this suite as coverage for operations it never exercises.
+   */
+  it('resolves a helper call to the path it builds, and ignores the READ through it', () => {
+    expect(mutationCallSites(HELPER_CALLER)).toEqual([
+      {
+        method: 'POST',
+        path: '/api/v1/synthetic-receptions/:p/seal',
+        owner: 'sealSyntheticVisit',
+      },
+    ]);
+  });
+
+  it('reads the helper by shape — parameters, defaults and opaque interpolations', () => {
+    const helper = pathHelpers(HELPER_CALLER).get('synthPath');
+    expect(helper).toBeDefined();
+    expect(helper.params.map((p: { name: string }) => p.name)).toEqual(['receptionId', 'tail']);
+    // The tail's default is what makes `synthPath(id)` a bare visit path
+    // rather than a path with an unknown segment glued to its end.
+    expect(helper.params[1].default).toBe('');
+    // `${encodeURIComponent(receptionId)}` names no parameter, so it is a
+    // value, not a slot — which is what makes the resolved path comparable to
+    // the register's `{receptionId}`.
+    expect(helper.segments.map((s: { kind: string }) => s.kind)).toEqual([
+      'literal',
+      'opaque',
+      'literal',
+      'slot',
+      'literal',
+    ]);
+  });
+
+  it('refuses to vouch for a path the call site does not spell out', () => {
+    // A variable tail builds an unknown segment. The gate must not guess which
+    // terminal command it is: the tail is glued straight onto the identifier,
+    // so the resolved `:p:p` matches no registered route and every operation it
+    // could have been stays unreached. This is `closeVisit` in the real
+    // reception adapter, whose tail is `/close-without-work` or `/refuse`
+    // depending on its caller.
+    const VARIABLE_TAIL = `
+function synthPath(receptionId, tail = '') {
+  return \`/api/v1/synthetic-receptions/\${encodeURIComponent(receptionId)}\${tail}\`;
+}
+export async function closeSyntheticVisit(receptionId, tail) {
+  return client.send('POST', synthPath(receptionId, tail), {});
+}
+`;
+    expect(mutationCallSites(VARIABLE_TAIL)).toEqual([
+      {
+        method: 'POST',
+        path: '/api/v1/synthetic-receptions/:p:p',
+        owner: 'closeSyntheticVisit',
+      },
+    ]);
+    expect(normaliseRoutePath('/api/v1/synthetic-receptions/{receptionId}/seal')).not.toBe(
+      '/api/v1/synthetic-receptions/:p:p'
+    );
+  });
+
+  it('flips an allow-listed write once its helper-built call site is consumed', () => {
+    const report = judge({
+      manifest: withEntry('rec.synthetic-seal', { classification: 'REACHABLE' }),
+      sources: [
+        ...sources,
+        ['apps/web/src/features/synthetic-receptions/seal-actions.ts', HELPER_CALLER] as const,
+        [
+          'apps/web/src/features/synthetic-receptions/components/SyntheticSealScreen.tsx',
+          SEAL_SCREEN,
+        ] as const,
+      ],
+    });
+    expect(report.violations).toEqual([]);
+    const seal = report.results.find((r) => r.id === 'rec.synthetic-seal');
+    expect(seal?.callSite).toBe('apps/web/src/features/synthetic-receptions/seal-actions.ts');
+  });
+});
+
+describe('an adapter nobody consumes is not reachability', () => {
+  /*
+   * The falsifiability proof, in the shape this phase actually produced: Wave A
+   * landed every reception adapter before the screens, so a write can have a
+   * real `client.send('POST', …)` call site and still be invocable by nobody.
+   * If teaching the gate the helper had stopped at "a path was found", five
+   * screenless writes would have flipped to REACHABLE and the allow-list would
+   * have emptied itself — INT-113 certified by the gate built to catch it.
+   */
+  const UNCONSUMED = [
+    'apps/web/src/features/synthetic-receptions/seal-actions.ts',
+    HELPER_CALLER,
+  ] as const;
+
+  it('fails a REACHABLE claim backed only by the adapter that declares it', () => {
+    const report = judge({
+      manifest: withEntry('rec.synthetic-seal', { classification: 'REACHABLE' }),
+      sources: [...sources, UNCONSUMED],
+    });
+    expect(report.violations.join('\n')).toContain('rec.synthetic-seal');
+    expect(report.violations.join('\n')).toContain('no production call site');
+  });
+
+  it('leaves the same write honestly allow-listed, with no violation', () => {
+    const report = judge({ sources: [...sources, UNCONSUMED] });
+    expect(report.violations).toEqual([]);
+    expect(report.results.find((r) => r.id === 'rec.synthetic-seal')?.classification).toBe(
+      'NOT_YET_WIRED'
+    );
+  });
+
+  it('does not accept a docblock naming the adapter as consumption', () => {
+    // A sentence about a function is not a call to it. This repository's
+    // docblocks name adapters constantly, so an unstripped scan would have made
+    // every write reachable by prose — the scanner-reads-prose defect this
+    // phase has now shipped seven times.
+    const report = judge({
+      manifest: withEntry('rec.synthetic-seal', { classification: 'REACHABLE' }),
+      sources: [
+        ...sources,
+        UNCONSUMED,
+        [
+          'apps/web/src/features/synthetic-receptions/notes.ts',
+          '/** sealSyntheticVisit will be reached by the sealing screen. */\nexport const x = 1;',
+        ] as const,
+      ],
+    });
+    expect(report.violations.join('\n')).toContain('no production call site');
   });
 });
 

@@ -1286,6 +1286,8 @@
   "receptions.checkIn.vehicleLinkEnded": "link ended",
   "receptions.checkIn.vehicleChosen": "Chosen",
   "receptions.checkIn.noCustomerVehicles": "This customer has no recorded vehicles. Link the vehicle to the customer from the vehicle screen first.",
+  "receptions.checkIn.handoffApplied": "Continued from walk-in intake. The customer and vehicle recorded there are already selected — check them before opening the visit.",
+  "receptions.checkIn.handoffVehicleMissing": "Continued from walk-in intake, but that vehicle is not in this customer's list. Choose the vehicle below.",
   "receptions.checkIn.walkInNote": "Walk-in note",
   "receptions.checkIn.openVisitTitle": "This vehicle already has an open visit",
   "receptions.checkIn.resume": "Resume the open visit",

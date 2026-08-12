@@ -6,8 +6,13 @@ import { PERMISSIONS as ADMIN_PERMISSIONS } from '@/features/administration/shar
 import { APPOINTMENT_PERMISSIONS } from '@/features/appointments/appointments-contract';
 import { CRM_PERMISSIONS, holds } from '@/features/crm/permissions';
 import { listFuelLevels, type IntakeCatalogueResult } from '@/features/receptions/catalogue-api';
-import { CheckInStartScreen } from '@/features/receptions/components/CheckInStartScreen';
+import {
+  CheckInStartScreen,
+  type WalkInHandoffStart,
+} from '@/features/receptions/components/CheckInStartScreen';
+import { walkInHandoffFromQuery } from '@/features/receptions/intake/intake-handoff';
 import { RECEPTION_PERMISSIONS } from '@/features/receptions/receptions-contract';
+import { readCustomerSummary } from '@/features/receptions/support-api';
 import { isLocale } from '@/i18n/config';
 import { getMessages } from '@/i18n/get-messages';
 import { pageMetadata } from '@/lib/page-metadata';
@@ -32,11 +37,24 @@ import { pageMetadata } from '@/lib/page-metadata';
  * The fuel-level catalogue is read on the server so the first paint has a
  * usable picker — and only when the operator can actually create, so a
  * read-only visitor never spends the read discovering a form they cannot use.
+ *
+ * ## The walk-in handoff arrives here, in the query
+ *
+ * The walk-in intake (`P1-28-FE-006`) ends holding the customer and the vehicle
+ * and links here carrying both. This page is where that link is READ:
+ * `walkInHandoffFromQuery` delegates to `parseWalkInHandoff`, which refuses a
+ * half or malformed pair, and the customer's NAME is resolved server-side
+ * (`crm.customer-read`) because the screen renders names and never identifiers.
+ * Anything that does not resolve to a nameable customer is not a handoff — the
+ * screen receives `null` and starts empty, which is the same state as arriving
+ * from the navigation. See `resolveWalkInHandoff` below.
  */
 export default async function CheckInStartPage({
   params,
+  searchParams,
 }: {
   readonly params: Promise<{ locale: string }>;
+  readonly searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const { locale } = await params;
   if (!isLocale(locale)) notFound();
@@ -66,6 +84,7 @@ export default async function CheckInStartPage({
   }
 
   const canCreate = holds(session.permissions, RECEPTION_PERMISSIONS.manage);
+  const canSearchCustomers = holds(session.permissions, CRM_PERMISSIONS.customerRead);
 
   const EMPTY_CATALOGUE: IntakeCatalogueResult = {
     status: 'ok',
@@ -74,6 +93,10 @@ export default async function CheckInStartPage({
     correlationId: null,
   };
   const fuelLevels = canCreate ? await listFuelLevels() : EMPTY_CATALOGUE;
+  const walkInHandoff = await resolveWalkInHandoff(
+    await searchParams,
+    canCreate && canSearchCustomers
+  );
 
   return (
     <>
@@ -95,12 +118,53 @@ export default async function CheckInStartPage({
           canCreate={canCreate}
           canListAppointments={holds(session.permissions, APPOINTMENT_PERMISSIONS.read)}
           canPickEmployee={holds(session.permissions, ADMIN_PERMISSIONS.userRead)}
-          canSearchCustomers={holds(session.permissions, CRM_PERMISSIONS.customerRead)}
+          canSearchCustomers={canSearchCustomers}
           fuelLevels={fuelLevels}
+          walkInHandoff={walkInHandoff}
         />
       </PageBody>
     </>
   );
+}
+
+/**
+ * The handed-over pair, turned into something the screen can render.
+ *
+ * Three refusals, all of them "start empty" rather than an error state, because
+ * an operator who navigated here directly is in exactly the same position:
+ *
+ *   - `allowed` is false — the pre-selection would fill a form this operator
+ *     cannot submit, or name a customer they may not read. No request is spent
+ *     discovering that.
+ *   - the query is not a complete, well-formed pair (`parseWalkInHandoff`).
+ *   - the customer does not read back. A pre-selected customer is displayed by
+ *     NAME; a failed read leaves only a uuid, and this screen renders none.
+ *
+ * The vehicle identifier travels on as an identifier: what the form submits is
+ * a row from that customer's own vehicle list, so the screen matches it there
+ * rather than reading the vehicle a second time.
+ */
+async function resolveWalkInHandoff(
+  searchParams: Readonly<Record<string, string | string[] | undefined>>,
+  allowed: boolean
+): Promise<WalkInHandoffStart | null> {
+  if (!allowed) return null;
+
+  const handoff = walkInHandoffFromQuery(searchParams);
+  if (handoff === null) return null;
+
+  const customer = await readCustomerSummary(handoff.customerId);
+  if (customer.status !== 'ok') return null;
+
+  return {
+    requester: {
+      id: customer.data.id,
+      displayName: customer.data.displayName,
+      displayNumber: customer.data.displayNumber,
+      partyType: customer.data.partyType,
+    },
+    vehicleId: handoff.vehicleId,
+  };
 }
 
 export const generateMetadata = pageMetadata('receptions.checkIn.title');

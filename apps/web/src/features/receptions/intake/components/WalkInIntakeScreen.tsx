@@ -48,9 +48,12 @@ import { IntakeVehicleStep, type ChosenVehicle } from './IntakeVehicleStep';
  *
  * ## The handoff is truthful about the wizard's existence
  *
- * Until Wave D lands the check-in route, `checkInAvailable` is false and the
- * final step states that check-in is not available yet — it never renders a
- * link that would 404. The pair is still fully usable: the customer and
+ * `checkInAvailable` says whether the check-in route is mounted. It is TRUE
+ * today — `P1-28-FE-007` landed — so the final step links to the wizard,
+ * carrying the pair, and the wizard pre-selects both rather than asking the
+ * operator to search again for what they just recorded. When the prop is false
+ * the step states that check-in is not available instead of rendering a link
+ * that would 404; the pair is still fully usable, because the customer and
  * vehicle pages it links to are real.
  */
 
@@ -87,9 +90,9 @@ export interface WalkInIntakeScreenProps {
   /** `crm.customer.vehicle.manage` — gates recording the relationship. */
   readonly canLinkVehicle: boolean;
   /**
-   * Whether the check-in wizard route exists. `false` until Wave D lands
-   * `P1-28-FE-007` at `CHECK_IN_WIZARD_PATH`; the page flips it in the same
-   * change that lands the route, so this screen never links to a 404.
+   * Whether the check-in wizard route is mounted at `CHECK_IN_WIZARD_PATH`.
+   * True since `P1-28-FE-007` landed; the false branch keeps the screen honest
+   * for any surface that renders it without the route, and never links to a 404.
    */
   readonly checkInAvailable: boolean;
 }
@@ -522,8 +525,8 @@ function DoneStep({
           </Link>
         </div>
       ) : (
-        // The wizard is Wave D (`P1-28-FE-007`). Stating its absence is the
-        // honest alternative to a link that answers 404.
+        // Stating the wizard's absence is the honest alternative to a link
+        // that answers 404.
         <p
           role="note"
           className="rounded-md border border-border bg-surface-subtle p-3 text-body text-text-secondary"

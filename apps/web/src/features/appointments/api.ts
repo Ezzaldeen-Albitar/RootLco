@@ -15,7 +15,6 @@ import {
   type ReadState,
 } from '@/lib/api/read-operation';
 import {
-  APPOINTMENT_STATUSES,
   MAX_INSTANT_LENGTH,
   hasExplicitUtcOffset,
   type AppointmentCancelInput,
@@ -264,12 +263,4 @@ export async function recordAppointmentNoShow(
   if (!result.ok) return fromFailure(result, attempt);
 
   return { status: 'success', correlationId: result.correlationId, attempt, changed: result.data };
-}
-
-/**
- * The status filter's own vocabulary, exported for the screen that builds the
- * filter control — the `.strict()` query refuses anything outside it.
- */
-export async function appointmentStatusFilterValues(): Promise<readonly string[]> {
-  return APPOINTMENT_STATUSES;
 }

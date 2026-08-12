@@ -8,9 +8,13 @@
     "GET. An operation present in the register and absent here fails as UNWIRED —",
     "that is INT-113, P1-27's dominant defect class, recurring.",
     "",
-    "REACHABLE requires a real production mutation call site in apps/web/src.",
-    "Tests, comments, docblocks and the generated lib/api/idempotent-operations.ts",
-    "do not count and are excluded by the checker.",
+    "REACHABLE requires a real production mutation call site in apps/web/src that",
+    "something outside its own module CONSUMES. An adapter nobody imports is a",
+    "write nobody can invoke — Wave A landed the whole reception adapter surface",
+    "ahead of its screens, so the difference is not theoretical. Tests, comments,",
+    "docblocks and the generated lib/api/idempotent-operations.ts do not count and",
+    "are excluded by the checker. A path built by a helper (visitPath) counts: the",
+    "checker resolves such a helper by shape, not by name.",
     "",
     "NOT_YET_WIRED is the day-one allow-list: the phase's frontend waves have not",
     "landed and no screen exists yet. Every entry requires a reason naming the",
@@ -44,12 +48,12 @@
       "classification": "REACHABLE"
     },
     "rec.reception-party-role": {
-      "classification": "NOT_YET_WIRED",
-      "reason": "P1-28-FE-009 landed (Wave D: PartiesStep -> assignPartyRole), but the call site travels through the contract adapter's visitPath() helper, which this gate's inline-literal scanner cannot see; flipping to REACHABLE requires teaching the gate the helper (a scripts/ci change outside Wave D's remit). The gate's own docblock names this fail-closed case."
+      "classification": "REACHABLE",
+      "reason": "P1-28-FE-009: the parties step of the check-in wizard (apps/web/src/features/receptions/components/steps/PartiesStep.tsx) submits through assignPartyRole in apps/web/src/features/receptions/api.ts, which sends POST visitPath(receptionId, '/party-roles'). The gate resolves that helper by shape since the integration wave."
     },
     "rec.reception-authorization": {
-      "classification": "NOT_YET_WIRED",
-      "reason": "P1-28-FE-009 landed (Wave D: PartiesStep -> recordAuthorization), but the call site travels through the contract adapter's visitPath() helper, which this gate's inline-literal scanner cannot see; flipping to REACHABLE requires teaching the gate the helper (a scripts/ci change outside Wave D's remit)."
+      "classification": "REACHABLE",
+      "reason": "P1-28-FE-009: the authorization panel of the same parties step (apps/web/src/features/receptions/components/steps/PartiesStep.tsx) submits through recordAuthorization in apps/web/src/features/receptions/api.ts, which sends POST visitPath(receptionId, '/authorizations')."
     },
     "rec.reception-condition-evidence": {
       "classification": "NOT_YET_WIRED",

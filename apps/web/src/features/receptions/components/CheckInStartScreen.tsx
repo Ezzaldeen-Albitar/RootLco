@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useState, useTransition } from 'react';
+import { useCallback, useEffect, useState, useTransition } from 'react';
 import { INITIAL_REQUEST, type TableRequest } from '@/components/data-table/table-state';
 import { useServerTable, type ServerPage } from '@/components/data-table/use-server-table';
 import { RadioGroupField, SelectField, TextAreaField, TextField } from '@/components/forms/Field';
@@ -68,6 +68,19 @@ import {
  * operator who is receiving on a colleague's behalf. The disposition is stated
  * beside the control rather than hidden: the platform records an identifier,
  * not an employee-register entry.
+ *
+ * ## The walk-in handoff (`P1-28-FE-006` → this screen)
+ *
+ * An operator arriving from the walk-in intake has just found or created the
+ * customer and the vehicle. Making them search for both again is the seam
+ * failing quietly, so `walkInHandoff` — resolved by the PAGE, which parses the
+ * query with `parseWalkInHandoff` and reads the customer's name so a uuid is
+ * never rendered — pre-selects the pair on the walk-in origin path. The
+ * pre-selection is CONSUMED ONCE: switching origin or changing the customer
+ * drops it, because re-applying it would resurrect a choice the operator had
+ * deliberately cleared. A vehicle the customer's list does not hold is said so
+ * rather than silently ignored, and a half or malformed pair never gets here
+ * at all — `parseWalkInHandoff` refuses it and the page passes `null`.
  */
 
 const IDLE: ActionState = { status: 'idle' };
@@ -79,6 +92,25 @@ const UNASKED = {
   hasMore: false,
   correlationId: null,
 } as const;
+
+/**
+ * The pair the walk-in intake handed over, with the customer already named.
+ *
+ * The wire form is two identifiers (`WalkInHandoff`); this is what the page
+ * turns them into after `crm.customer-read` resolves the name. The screen never
+ * renders a uuid, so a customer it cannot name is not a pre-selection — the
+ * page passes `null` and the operator starts from the ordinary empty form.
+ */
+export interface WalkInHandoffStart {
+  readonly requester: SelectedCustomer;
+  readonly vehicleId: string;
+}
+
+/** How far the handed-over vehicle got. `pending` until the list answers. */
+type HandoffState = {
+  readonly vehicleId: string;
+  readonly vehicle: 'pending' | 'selected' | 'not-listed';
+} | null;
 
 interface Props {
   readonly locale: Locale;
@@ -98,6 +130,12 @@ interface Props {
   readonly canSearchCustomers: boolean;
   /** Read on the server so the first paint has a usable picker. */
   readonly fuelLevels: IntakeCatalogueResult;
+  /**
+   * The walk-in intake's `(customer, vehicle)` pair, resolved by the page.
+   * `null` whenever there is no handoff, the pair was malformed, or the
+   * customer could not be read — every one of which starts an empty form.
+   */
+  readonly walkInHandoff?: WalkInHandoffStart | null;
 }
 
 export function CheckInStartScreen({
@@ -112,6 +150,7 @@ export function CheckInStartScreen({
   canPickEmployee,
   canSearchCustomers,
   fuelLevels,
+  walkInHandoff = null,
 }: Props) {
   /* --- the branch the visit is FOR --------------------------------------- */
 
@@ -125,8 +164,19 @@ export function CheckInStartScreen({
   const [appointment, setAppointment] = useState<
     (ChosenAppointment & { readonly label: string }) | null
   >(null);
-  const [requester, setRequester] = useState<SelectedCustomer | null>(null);
+  const [requester, setRequester] = useState<SelectedCustomer | null>(
+    walkInHandoff?.requester ?? null
+  );
   const [walkInVehicle, setWalkInVehicle] = useState<CustomerVehicleEntry | null>(null);
+
+  /*
+   * The handoff, held as state so it can be CONSUMED. Once the operator moves
+   * away from the pair — another origin, another customer — it is gone, and the
+   * note explaining the pre-selection goes with it.
+   */
+  const [handoff, setHandoff] = useState<HandoffState>(
+    walkInHandoff === null ? null : { vehicleId: walkInHandoff.vehicleId, vehicle: 'pending' }
+  );
 
   const switchOrigin = (kind: 'walk_in' | 'appointment') => {
     setOrigin((current) => switchOriginKind(current, kind));
@@ -134,6 +184,7 @@ export function CheckInStartScreen({
     // by switching back is the XOR being circumvented in state.
     setAppointment(null);
     setWalkInVehicle(null);
+    setHandoff(null);
   };
 
   /* --- confirmed appointments, on demand ---------------------------------- */
@@ -168,6 +219,23 @@ export function CheckInStartScreen({
     initial: { ...INITIAL_REQUEST, pageSize: 25 },
     loadKey: requesterId ?? 'none',
   });
+
+  /*
+   * Applying the handed-over vehicle. It arrives as an identifier, and what the
+   * form submits is a ROW off this customer's own list — so the pre-selection
+   * can only be made once that list has answered. `pending` is what makes this
+   * run exactly once: the first loaded page settles it either way, and a
+   * `not-listed` verdict is stated on screen rather than left as an empty
+   * control the operator has no reason to distrust.
+   */
+  const vehicleRows = vehicles.response?.rows ?? null;
+  const vehiclesLoaded = vehicles.status === 'idle' && vehicleRows !== null;
+  useEffect(() => {
+    if (handoff === null || handoff.vehicle !== 'pending' || !vehiclesLoaded) return;
+    const match = (vehicleRows ?? []).find((row) => row.vehicleId === handoff.vehicleId) ?? null;
+    if (match !== null) setWalkInVehicle(match);
+    setHandoff({ ...handoff, vehicle: match === null ? 'not-listed' : 'selected' });
+  }, [handoff, vehiclesLoaded, vehicleRows]);
 
   /* --- the open-visit lookup (resume) -------------------------------------- */
 
@@ -415,6 +483,27 @@ export function CheckInStartScreen({
           </div>
         ) : (
           <div className="mt-3 flex flex-col gap-3">
+            {handoff !== null ? (
+              /*
+               * Why this form arrived filled in. An operator who did not put
+               * these values here is owed the sentence that says who did — and
+               * when the vehicle could not be matched, the sentence says that
+               * instead of implying a selection that is not there.
+               */
+              <p
+                role="status"
+                data-testid="walk-in-handoff-notice"
+                lang={locale}
+                className="rounded-md border border-border bg-surface-subtle p-3 text-caption text-text-secondary"
+              >
+                {translate(
+                  messages,
+                  handoff.vehicle === 'not-listed'
+                    ? 'receptions.checkIn.handoffVehicleMissing'
+                    : 'receptions.checkIn.handoffApplied'
+                )}
+              </p>
+            ) : null}
             {!canSearchCustomers ? (
               <p className="text-caption text-text-muted" lang={locale}>
                 {translate(messages, 'receptions.checkIn.customersDenied')}
@@ -430,6 +519,8 @@ export function CheckInStartScreen({
                   onChange={(next) => {
                     setRequester(next);
                     setWalkInVehicle(null);
+                    // The handoff belonged to the customer it named.
+                    setHandoff(null);
                   }}
                   required
                   attempt={state.attempt ?? 0}
