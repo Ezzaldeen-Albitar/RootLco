@@ -137,8 +137,8 @@ sit in the tree looking like coverage while running nowhere.
 
 ## Current tree
 
-The live web suite holds **72 web test files**, every one matched by a `vitest`
-project, and the current tree executes **1943** tests. Both are derived on every
+The live web suite holds **81 web test files**, every one matched by a `vitest`
+project, and the current tree executes **2128** tests. Both are derived on every
 run of `npm run validate:p1-27-closing-values` rather than recorded by hand.
 
 That executed figure is the one a test reads. It used to read the `Web tier` row
@@ -149,7 +149,7 @@ comparing a live baseline against a record of a head the branch had left behind.
 The superseded figures are left exactly as they were, because they are a true
 account of that head; what moved is which number the check consults.
 
-**The 1943 is local, and it is the binding measurement.** It is the output of
+**The 2128 is local, and it is the binding measurement.** It is the output of
 `node scripts/ci/check-p1-27-closing-values.mjs --record web` against this tree,
 recorded in `evidence/local-run-ledger.json` with the commit it was taken at. A
 hosted run at a superseded head agreed with it, and that agreement is recorded
@@ -160,10 +160,10 @@ different tree is not evidence about this one.
 
 | measure                                    | value | the command that decides it                                       |
 | ------------------------------------------ | ----- | ------------------------------------------------------------------ |
-| Web test files under `apps/web/tests`       | 72    | a walk of the tree                                                 |
-| Web tier — tests executed                   | 1943  | `--record web`, from the `vitest` JSON report                      |
-| Web tier — files the run reported           | 72    | the same report, cross-checked against the walk above              |
-| Root unit tier — tests executed             | 2227  | `--record unit`, from the `vitest` JSON report                     |
+| Web test files under `apps/web/tests`       | 81    | a walk of the tree                                                 |
+| Web tier — tests executed                   | 2128  | `--record web`, from the `vitest` JSON report                      |
+| Web tier — files the run reported           | 81    | the same report, cross-checked against the walk above              |
+| Root unit tier — tests executed             | 2234  | `--record unit`, from the `vitest` JSON report                     |
 | Root unit tier — files the run reported     | 93    | the same report, cross-checked against the tier's include rule      |
 | Committed web floor (`minTests`)            | 1793  | `.github/ci-baselines/test-count-baseline.json`                    |
 | Committed unit floor (`minTests`)           | 1050  | the same baseline                                                  |

@@ -642,7 +642,7 @@
     "ACCESSIBILITY_EVIDENCE": "`fieldset`/`legend` for the scope `:343-349`, `role=\"alert\"` field errors. No axe on the profile route — `H-01`.",
     "PRODUCTION_REACHABILITY": "Reachable and gated.",
     "PRODUCTION_TEST_EVIDENCE": "`vehicle-relationship-writes.dom.test.tsx:140` — 18 cases on the real section incl. the FormData payload, six-actions-no-seventh, retire-only-on-an-open-scoped-row.",
-    "NEGATIVE_OR_MUTATION_PROOF": "`F-02` FIXED: `defaultChecked` + `key={action-attempt}` `:373-379`, and `RecordForm` increments `attempt` even on a client guard rejection so the remount fires. `F-03` FIXED: all three `CustomerSelector` call sites pass `attempt`, enforced by `form-reset-class.test.ts:414-444`.",
+    "NEGATIVE_OR_MUTATION_PROOF": "`F-02` FIXED: `defaultChecked` + `key={action-attempt}` `:373-379`, and `RecordForm` increments `attempt` even on a client guard rejection so the remount fires. `F-03` FIXED: all three `CustomerSelector` call sites of this phase pass `attempt`, enforced by `form-reset-class.test.ts:419-448` — a scan of every call site in the tree, so the P1-28 screens are held to the same rule without this verdict being restated.",
     "ROUND5_FINDING_IDS": "`F-02` FIXED, `F-03` FIXED; raises `H-13`.",
     "DOCUMENTATION_EVIDENCE": "canonical-plan §5.2; round-five register.",
     "FINAL_VERDICT": "PASS",
