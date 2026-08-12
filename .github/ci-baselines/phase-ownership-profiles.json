@@ -30,6 +30,11 @@
       "why": "a P1-27 documentation branch changes docs, which the Frontend profile permits, and must not change API source or the database any more than the phase itself may"
     },
     {
+      "branchPrefix": "tooling/p1-27-",
+      "profile": "p1-27-frontend",
+      "why": "a branch that corrects a P1-27 GATE rather than the product — scripts/ci and its suite, which the Frontend profile already permits as `tooling` and `tests`. It is declared separately from `docs/p1-27-` because the two change different things and a branch that may edit an executable gate should say so, not inherit the permission from a documentation rule"
+    },
+    {
       "branchPrefix": "feature/p1-26-",
       "profile": "p1-26-frontend",
       "why": "the P1-26 Frontend branch"

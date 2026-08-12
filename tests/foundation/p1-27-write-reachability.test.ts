@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   CLASSIFICATIONS,
+  enclosingCallee,
   mutationCallSites,
   normaliseRoutePath,
   normaliseSourcePaths,
@@ -347,6 +348,104 @@ describe('what does NOT count as a call site', () => {
     const report = judge({ sources: readOnly });
     expect(report.violations.join('\n')).toContain('veh.synthetic-ev-set');
   });
+
+  it('refuses to let a READ borrow a nearby write-method literal', () => {
+    /*
+     * The window-borrowing regression, kept as a fixture.
+     *
+     * The first matcher accepted any write-method literal within a
+     * 2000-character look-behind, so a `client.get(...)` READ placed after a
+     * genuine write in the same file was credited with that write's method and
+     * counted as a mutation site. The live tree carried exactly this shape —
+     * a VIN-uniqueness probe reading forty lines below a PATCH. Only a method
+     * literal standing as the argument IMMEDIATELY before the path counts.
+     */
+    const BORROWED_READ = `
+export async function setSyntheticEvAction(id, previous, form) {
+  const w = await client.send('POST', \`/api/v1/vehicles/\${encodeURIComponent(id)}/synthetic-ev\`, b);
+  return w;
+}
+export async function probeSyntheticMerge(id) {
+  const r = await client.get(\`/api/v1/customers/\${encodeURIComponent(id)}/synthetic-merge\`, {
+    retries: 0,
+  });
+  return r;
+}
+`;
+    // The unit half: the genuine write is the ONLY site. The read's path sits
+    // well inside the old window of that 'POST', and is not one.
+    expect(mutationCallSites(BORROWED_READ)).toEqual([
+      { method: 'POST', path: '/api/v1/vehicles/:p/synthetic-ev' },
+    ]);
+
+    // The whole-judgement half: the merge operation is DELIBERATELY_ABSENT, so
+    // under the old matcher this fixture produced the "IS called from"
+    // violation on the borrowed read's evidence alone. Under adjacency the
+    // tree stays green.
+    const report = judge({
+      sources: [
+        ...sources,
+        ['apps/web/src/features/vehicles/synthetic-probe.ts', BORROWED_READ] as const,
+      ],
+    });
+    expect(report.violations).toEqual([]);
+  });
+
+  it('refuses to let a READ borrow the vehicle helper marker', () => {
+    /*
+     * The same defect through the other half of the same window. The helper
+     * marker was matched by the identical 2000-character look-behind, so any
+     * path literal downstream of a `writeVehicle(` call was credited POST.
+     * Containment — the path must be an ARGUMENT of that call — refuses it.
+     */
+    const BORROWED_HELPER = `
+export async function assignSyntheticPlateAction(vehicleId, previous, form) {
+  return writeVehicle(
+    previous,
+    () => {
+      const parsed = plateSchema.safeParse({ countryCode: String(form.get('countryCode') ?? '') });
+      return parsed.success ? { ok: true, body: parsed.data } : { ok: false, errors: {} };
+    },
+    \`\${vehicleBase(vehicleId)}/synthetic-plates\`,
+    'vehicles.plate.assigned'
+  );
+}
+export async function probeSyntheticMerge(id) {
+  const r = await client.get(\`/api/v1/customers/\${encodeURIComponent(id)}/synthetic-merge\`);
+  return r;
+}
+`;
+    expect(mutationCallSites(BORROWED_HELPER)).toEqual([
+      { method: 'POST', path: '/api/v1/vehicles/:p/synthetic-plates' },
+    ]);
+
+    const report = judge({
+      sources: [
+        ...without('apps/web/src/features/vehicles/history-api.ts'),
+        ['apps/web/src/features/vehicles/history-api.ts', BORROWED_HELPER] as const,
+      ],
+    });
+    expect(report.violations).toEqual([]);
+  });
+
+  it('does not relabel a DELETE as a POST by reaching past its own method', () => {
+    /*
+     * Three live sites had this shape: the scan walked straight past the
+     * call's own adjacent `'DELETE'` literal — which is not in the write list,
+     * because no canonical P1-27 mutation is a DELETE — to borrow a POST
+     * further back, and reported a delete as a create.
+     */
+    const DELETE_AFTER_POST = `
+  const a = await client.send('POST', '/api/v1/customers/synthetic-a', body);
+  const d = await client.send(
+    'DELETE',
+    \`/api/v1/customers/\${encodeURIComponent(id)}/synthetic-merge\`
+  );
+`;
+    expect(mutationCallSites(DELETE_AFTER_POST)).toEqual([
+      { method: 'POST', path: '/api/v1/customers/synthetic-a' },
+    ]);
+  });
 });
 
 describe('the helpers this gate is built on', () => {
@@ -376,6 +475,27 @@ describe('the helpers this gate is built on', () => {
     const source = normaliseSourcePaths('function f() { return { ok: true }; }');
     expect(source).toContain('{ ok: true }');
     expect(mutationCallSites(PLATE_CALLER)).toHaveLength(1);
+  });
+
+  it('resolves the call an argument belongs to, across a closure', () => {
+    // What the helper rule rests on: the path in `writeVehicle(previous, () =>
+    // { … }, path, key)` belongs to `writeVehicle` even though a whole closure
+    // stands between them, and the balanced braces inside that closure must
+    // not be mistaken for the end of the argument list.
+    const text = normaliseSourcePaths(PLATE_CALLER);
+    expect(enclosingCallee(text, text.indexOf('`/api/v1/vehicles/:p/synthetic-plates`'))).toBe(
+      'writeVehicle'
+    );
+  });
+
+  it('resolves a read to its own call, not to a write above it', () => {
+    const text = `const w = writeVehicle(p, f, '/api/v1/a', 'k');\nconst r = client.get('/api/v1/b');`;
+    expect(enclosingCallee(text, text.indexOf(`'/api/v1/b'`))).toBe('get');
+  });
+
+  it('resolves to nothing for a literal that is not a call argument', () => {
+    const text = `const PATHS = ['/api/v1/a'];`;
+    expect(enclosingCallee(text, text.indexOf(`'/api/v1/a'`))).toBeNull();
   });
 
   it('publishes exactly the four classifications the phase admits', () => {

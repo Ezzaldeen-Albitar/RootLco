@@ -24,12 +24,22 @@
  *
  * ## What counts as a production call site
  *
- * A *mutation* call site: an API path literal preceded by an HTTP write method
- * or by the vehicle write helper. Matching a bare path is not enough, because a
- * read and a write share one path in several places — `veh.vehicle-ev-profile-set`
- * (POST) and `-read` (GET) live in the same file on the same path, so a
- * path-only check would report the write reachable after its call site was
- * deleted.
+ * A *mutation* call site: an API path literal that an HTTP write method stands
+ * IMMEDIATELY before, or that the vehicle write helper's argument list
+ * CONTAINS. Matching a bare path is not enough, because a read and a write
+ * share one path in several places — `veh.vehicle-ev-profile-set` (POST) and
+ * `-read` (GET) live in the same file on the same path, so a path-only check
+ * would report the write reachable after its call site was deleted.
+ *
+ * Nor is *proximity* enough. The first version accepted any write marker
+ * within a 2000-character look-behind, which let a read BORROW the method of an
+ * unrelated write earlier in the same file; the live tree carried exactly that
+ * shape — the VIN-uniqueness probe in `features/vehicles/profile-api.ts` is a
+ * `client.get`, and it was credited with the `PATCH` of the status write forty
+ * lines above it. Three `DELETE` calls were mis-reported as `POST` the same
+ * way, the scan having walked straight past their own adjacent `'DELETE'`
+ * literal to find a POST further back. `mutationCallSites` below carries the
+ * adjacency and containment rules that refuse all four.
  *
  * These do NOT count, and are excluded structurally rather than by naming
  * convention:
@@ -172,17 +182,69 @@ function walk(dir, out = []) {
 }
 
 /**
+ * The identifier of the call whose argument list encloses `index`, or `null`.
+ *
+ * Adjacency cannot decide the vehicle helper. `writeVehicle(previous, parse,
+ * path, key)` puts the parse CLOSURE between the marker and the path, so
+ * `writeVehicle(` is never the token directly before the literal. Containment
+ * decides it instead: the path must sit inside the argument list that
+ * `writeVehicle(` opened, which a read placed anywhere after that call does
+ * not.
+ *
+ * Scanned backward with one depth counter — a closing bracket deepens, its
+ * opener unwinds, and the first `(` to unwind past zero opened the call this
+ * literal is an argument of. A `{` or `[` reaching zero first means the literal
+ * sits in an object or array rather than an argument list, and resolves to
+ * nothing.
+ *
+ * Interpolations are already gone by the time this runs (`normaliseSourcePaths`
+ * folds every `${…}` to `:p`), so a template literal cannot unbalance the
+ * count.
+ */
+export function enclosingCallee(text, index) {
+  let depth = 0;
+  for (let i = index - 1; i >= 0; i -= 1) {
+    const char = text[i];
+    if (char === ')' || char === '}' || char === ']') {
+      depth += 1;
+    } else if (char === '{' || char === '[') {
+      if (depth === 0) return null;
+      depth -= 1;
+    } else if (char === '(') {
+      if (depth > 0) {
+        depth -= 1;
+        continue;
+      }
+      // A generic argument list (`client.get<{ … }>(`) leaves `>` here rather
+      // than an identifier, and resolves to nothing — which is correct: the
+      // helper is never called with one.
+      return /([A-Za-z_$][\w$]*)\s*$/.exec(text.slice(Math.max(0, i - 100), i))?.[1] ?? null;
+    }
+  }
+  return null;
+}
+
+/**
  * Every mutation call site in one file, as `{ method, path }`.
  *
- * Found by locating each API path literal and looking BACKWARD for the nearest
- * write-method literal or `writeVehicle(`. That direction matters: the method
- * always precedes the path in all three call shapes this codebase uses —
- * `client.send('POST', path, …)`, the CRM `write(previous, parse, 'POST', path,
- * …)` helper, and the vehicle `writeVehicle(previous, parse, path, …)` helper,
- * which takes no method because it is always POST.
+ * Found by locating each API path literal and asking one of two questions of
+ * the text around it, never "is a write marker somewhere nearby":
  *
- * A path with no write marker behind it is a READ and is ignored, which is what
- * keeps `veh.vehicle-ev-profile-read` from vouching for `-set`.
+ *   - ADJACENCY, for the two shapes that pass a method — `client.send('POST',
+ *     path, …)` and the CRM `write(previous, parse, 'POST', path, …)` helper.
+ *     Both put the method in the argument DIRECTLY before the path (the parse
+ *     closure sits before the method, so it never intervenes), so the literal
+ *     must end the text immediately preceding the path, save for the argument
+ *     comma and whitespace.
+ *   - CONTAINMENT, for `writeVehicle(previous, parse, path, key)`, which takes
+ *     no method because it is always POST and whose closure stands between the
+ *     marker and the path. `enclosingCallee` above supplies the rule.
+ *
+ * A path meeting neither is a READ and is ignored. That is what keeps
+ * `veh.vehicle-ev-profile-read` from vouching for `-set`, and what keeps a read
+ * from BORROWING the method of an unrelated write elsewhere in the same file —
+ * the defect the 2000-character look-behind had, whose live instances and
+ * regression fixtures are named in `tests/foundation/p1-27-write-reachability.test.ts`.
  */
 export function mutationCallSites(source) {
   const text = normaliseSourcePaths(stripComments(source));
@@ -191,20 +253,18 @@ export function mutationCallSites(source) {
 
   let match;
   while ((match = pathPattern.exec(text)) !== null) {
-    // Bounded look-behind. Long enough to clear a parse closure passed to the
-    // write helpers, short enough not to borrow a method from another call.
-    const window = text.slice(Math.max(0, match.index - 2000), match.index);
-    const method = /.*['"](POST|PUT|PATCH)['"]/s.exec(window);
-    const helper = /.*\bwriteVehicle\s*\(/s.exec(window);
+    // The slice is only as long as a method literal plus formatting needs; the
+    // `$` anchor, not the length, is what carries the rule.
+    const window = text.slice(Math.max(0, match.index - 200), match.index);
+    const method = /['"](POST|PUT|PATCH)['"]\s*,\s*$/.exec(window);
+    if (method) {
+      sites.push({ method: method[1], path: match[1] });
+      continue;
+    }
 
-    const methodAt = method ? method[0].length : -1;
-    const helperAt = helper ? helper[0].length : -1;
-    if (methodAt < 0 && helperAt < 0) continue;
-
-    sites.push({
-      method: methodAt > helperAt ? method[1] : 'POST',
-      path: match[1],
-    });
+    if (enclosingCallee(text, match.index) === 'writeVehicle') {
+      sites.push({ method: 'POST', path: match[1] });
+    }
   }
   return sites;
 }
