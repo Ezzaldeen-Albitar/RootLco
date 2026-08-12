@@ -136,8 +136,14 @@ describe('the API application lives in the workspace', () => {
     // 199 after the three read-contract remediations. They added three route
     // MODULES that never existed — `customers/[customerId]`,
     // `customer-duplicates` and `vehicle-duplicates` — while every other read
-    // they added was a GET on a route file that was already here.
-    expect(routeFiles.length).toBe(204);
+    // they added was a GET on a route file that was already here. 204 through
+    // the P1-27 vehicle-catalogue remediation. The apt/rec read-surface
+    // remediation takes it to 216: twelve new route MODULES —
+    // `appointments/[appointmentId]`, `receptions/[receptionId]`,
+    // `receptions/[receptionId]/history`, the seven intake-catalogue reads,
+    // and the two closure commands (`close-without-work`, `refuse`) — while the
+    // five other reads it added are GETs on route files that were already here.
+    expect(routeFiles.length).toBe(216);
 
     // Non-vacuity. A discovery assertion that only checks a count would pass
     // against a set with one route swapped for another, so the comparison that
@@ -158,7 +164,7 @@ describe('the API application lives in the workspace', () => {
     }
   });
 
-  it('discovers the same 243 operations from the root, apps/api and apps/web', () => {
+  it('discovers the same 261 operations from the root, apps/api and apps/web', () => {
     // The decisive cwd proof, run against a REAL validator rather than the
     // helper alone: `check-authorization-coverage.mjs` derived the repository
     // from `process.cwd()` until this migration, so its answer used to depend on
@@ -171,7 +177,10 @@ describe('the API application lives in the workspace', () => {
 
     expect(new Set(results).size, 'discovery must not depend on cwd').toBe(1);
     const report = JSON.parse(results[0] ?? '{}');
-    expect(report.operations).toHaveLength(243);
+    // 261: the P1-16 customer-vehicle read (`crm.customer-vehicle-list`,
+    // P1-27-INT-012) is a GET on the existing vehicles route module, so the
+    // route-module count above does not move while the operation count does.
+    expect(report.operations).toHaveLength(261);
 
     // ~1 s per process by construction, not by slowness. The budget is stated
     // here rather than raised globally, so it cannot quietly cover a different

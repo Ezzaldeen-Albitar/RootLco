@@ -623,6 +623,20 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
       'An authorized reception visit was converted into exactly one work order, which opens in its configured initial state. The reception becomes terminal (converted), which is what makes a second conversion impossible.',
   },
   {
+    code: 'rec.reception.closed_without_work',
+    class: 'privileged',
+    entityType: 'rec.reception_visit',
+    description:
+      'A reception visit was closed without work — the terminal exit for a visit that will not become a work order. The mandatory reason is copied into the append-only status ledger, and the vehicle stops occupying the one-open-visit index so it can be received again.',
+  },
+  {
+    code: 'rec.reception.refused',
+    class: 'privileged',
+    entityType: 'rec.reception_visit',
+    description:
+      'A reception visit was refused — the terminal exit that ends the visit without work being authorized. The mandatory reason is copied into the append-only status ledger, and the vehicle stops occupying the one-open-visit index so it can be received again.',
+  },
+  {
     code: 'wo.work_order.state_changed',
     class: 'privileged',
     entityType: 'wo.work_order',

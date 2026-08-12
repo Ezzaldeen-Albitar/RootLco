@@ -10,7 +10,7 @@
  * The backend requires an `Idempotency-Key` header on every operation it
  * registers as idempotent, and answers `400 ERR-INT-002` without one — before
  * authorization is evaluated. That set is NOT "the POST operations": it is
- * currently 120 operations (PATCH 3, POST 111, PUT 6).
+ * currently 122 operations (PATCH 3, POST 113, PUT 6).
  *
  * The client used to infer the answer from the HTTP method, which was wrong for
  * every non-POST member of that set. This table is the contract instead of a
@@ -24,7 +24,7 @@
  * thirteen of them stating which class a write declares, none of them checkable
  * — because the Web tier held no data from which one could be derived.
  *
- * Currently approval 13, export 1, financial 13, none 90, privileged 113, security 13.
+ * Currently approval 13, export 1, financial 13, none 106, privileged 115, security 13.
  *
  * `(absent)` above would mean an operation the document publishes with NO audit
  * class. It is emitted as the empty string rather than defaulted to `none`,
@@ -49,7 +49,7 @@ export interface PublishedOperation {
   readonly auditClass: string;
 }
 
-/** Every operation the contract publishes. 243 of them. */
+/** Every operation the contract publishes. 261 of them. */
 export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze([
   {
     template: '/additional-work/{requestId}/approval',
@@ -94,11 +94,46 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     auditClass: 'privileged',
   },
   {
+    template: '/appointment-catalogue/appointment-types',
+    method: 'GET',
+    operationId: 'apt.catalogue-appointment-type-list',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/appointment-catalogue/cancellation-reasons',
+    method: 'GET',
+    operationId: 'apt.catalogue-cancellation-reason-list',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/appointment-catalogue/source-channels',
+    method: 'GET',
+    operationId: 'apt.catalogue-source-channel-list',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/appointments',
+    method: 'GET',
+    operationId: 'apt.appointment-list',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
     template: '/appointments',
     method: 'POST',
     operationId: 'apt.appointment-create',
     idempotent: true,
     auditClass: 'privileged',
+  },
+  {
+    template: '/appointments/{appointmentId}',
+    method: 'GET',
+    operationId: 'apt.appointment-detail',
+    idempotent: false,
+    auditClass: 'none',
   },
   {
     template: '/appointments/{appointmentId}/cancel',
@@ -419,6 +454,13 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     template: '/customers/{customerId}/timeline',
     method: 'GET',
     operationId: 'crm.customer-timeline',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/customers/{customerId}/vehicles',
+    method: 'GET',
+    operationId: 'crm.customer-vehicle-list',
     idempotent: false,
     auditClass: 'none',
   },
@@ -1200,11 +1242,53 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     auditClass: 'financial',
   },
   {
+    template: '/reception-catalogue/fuel-levels',
+    method: 'GET',
+    operationId: 'rec.catalogue-fuel-level-list',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/reception-catalogue/refusal-reasons',
+    method: 'GET',
+    operationId: 'rec.catalogue-refusal-reason-list',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/reception-catalogue/visit-reasons',
+    method: 'GET',
+    operationId: 'rec.catalogue-visit-reason-list',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/reception-catalogue/warning-light-codes',
+    method: 'GET',
+    operationId: 'rec.catalogue-warning-light-code-list',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/receptions',
+    method: 'GET',
+    operationId: 'rec.reception-list',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
     template: '/receptions',
     method: 'POST',
     operationId: 'rec.reception-create',
     idempotent: true,
     auditClass: 'privileged',
+  },
+  {
+    template: '/receptions/{receptionId}',
+    method: 'GET',
+    operationId: 'rec.reception-detail',
+    idempotent: false,
+    auditClass: 'none',
   },
   {
     template: '/receptions/{receptionId}/approve',
@@ -1215,10 +1299,31 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
   },
   {
     template: '/receptions/{receptionId}/authorizations',
+    method: 'GET',
+    operationId: 'rec.reception-authorization-list',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/receptions/{receptionId}/authorizations',
     method: 'POST',
     operationId: 'rec.reception-authorization',
     idempotent: true,
     auditClass: 'approval',
+  },
+  {
+    template: '/receptions/{receptionId}/close-without-work',
+    method: 'POST',
+    operationId: 'rec.reception-close-without-work',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/receptions/{receptionId}/condition-evidence',
+    method: 'GET',
+    operationId: 'rec.reception-condition-evidence-list',
+    idempotent: false,
+    auditClass: 'none',
   },
   {
     template: '/receptions/{receptionId}/condition-evidence',
@@ -1235,6 +1340,20 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     auditClass: 'privileged',
   },
   {
+    template: '/receptions/{receptionId}/history',
+    method: 'GET',
+    operationId: 'rec.reception-history',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/receptions/{receptionId}/party-roles',
+    method: 'GET',
+    operationId: 'rec.reception-party-role-list',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
     template: '/receptions/{receptionId}/party-roles',
     method: 'POST',
     operationId: 'rec.reception-party-role',
@@ -1245,6 +1364,13 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     template: '/receptions/{receptionId}/refusals',
     method: 'POST',
     operationId: 'rec.reception-refusal',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/receptions/{receptionId}/refuse',
+    method: 'POST',
+    operationId: 'rec.reception-refuse',
     idempotent: true,
     auditClass: 'privileged',
   },

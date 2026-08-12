@@ -35,6 +35,26 @@
       "why": "the P1-26 Frontend branch"
     },
     {
+      "branchPrefix": "remediation/p1-18-",
+      "profile": "p1-18-read-surface",
+      "why": "P1-18 Backend read-surface remediation branches — the P1-28 unblocking reads and close commands"
+    },
+    {
+      "branchPrefix": "remediation/p1-16-",
+      "profile": "p1-18-read-surface",
+      "why": "P1-16 Backend read-surface remediation branches — the customer-vehicle read (P1-27-INT-012, the [MISSING R4] dependency of P1-28-FE-008), judged under the same Backend read-surface profile as its P1-18 siblings"
+    },
+    {
+      "branchPrefix": "feature/p1-28-",
+      "profile": "p1-27-frontend",
+      "why": "the P1-28 Frontend integration branch — the same Frontend surface rules as P1-27: apps/web, docs, tooling, tests and root config only"
+    },
+    {
+      "branchPrefix": "p1-28/",
+      "profile": "p1-27-frontend",
+      "why": "the P1-28 Frontend working branches, same declaration as the integration branch"
+    },
+    {
       "branchPrefix": "closure/p1-27-",
       "profile": "p1-27-frontend",
       "why": "the P1-27 closure branch records the Owner acceptance — docs plus the guard files the closure was designed to lift, all inside the Frontend profile, exactly as closure/p1-26- declared for its phase"

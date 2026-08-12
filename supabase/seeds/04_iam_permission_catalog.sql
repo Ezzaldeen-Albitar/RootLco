@@ -132,14 +132,20 @@ INSERT INTO iam.permissions (permission_code, domain, description, risk_level, c
   ('veh.vehicle.status.manage','veh','Change vehicle lifecycle and workshop status','medium','00000000-0000-4000-8000-000000000001'),
   -- Phase 1-18 (apt) - Appointment Backend. Booking an appointment and moving its
   -- confirmed window are one authority: both answer "when is this vehicle expected".
-  -- No read code is registered because P1-18 exposes no appointment read operation;
-  -- an unused permission is configuration that cannot be tested.
   ('apt.appointment.manage',   'apt', 'Create and reschedule appointments in the caller scope','medium','00000000-0000-4000-8000-000000000001'),
   -- Terminal lifecycle outcomes are separated from booking, mirroring the
   -- veh.vehicle.status.manage split: scheduling a visit must not carry the power to
   -- close one against the customer. Cancellation and no-show are distinct business
   -- facts but one authority, because both end the appointment.
   ('apt.appointment.lifecycle.manage','apt','Cancel an appointment or record a no-show','medium','00000000-0000-4000-8000-000000000001'),
+  -- Reading the calendar and an appointment's detail is separated from every
+  -- appointment write, mirroring the wo.work_order.read split: the desk, the board
+  -- and the service advisor all need to see when a vehicle is expected — and the
+  -- record version the three guarded lifecycle commands demand as If-Match — with
+  -- no authority to book, move or end anything. Seeded by the P1-27 read-surface
+  -- remediation (P1-27-INT-019); the catalogue pickers the booking and cancel
+  -- forms populate from are gated by this same code.
+  ('apt.appointment.read',     'apt', 'Read appointments, the branch calendar and the appointment catalogues','low','00000000-0000-4000-8000-000000000001'),
   -- Phase 1-18 (rec) - Vehicle Reception Backend. Opening a reception accepts
   -- physical custody of a customer's vehicle, so it is its own capability and never
   -- implied by a catalog or read permission.
@@ -166,6 +172,24 @@ INSERT INTO iam.permissions (permission_code, domain, description, risk_level, c
   -- Conversion creates the work order that all downstream cost attaches to. Its own
   -- high-risk code, never implied by approval.
   ('rec.reception.convert',    'rec', 'Convert an approved reception into a work order','high',  '00000000-0000-4000-8000-000000000001'),
+  -- Reading a reception is separated from every reception write, mirroring the
+  -- wo.work_order.read split below: the board, the service advisor and the
+  -- cashier all need to see a visit, who is present on it, what was authorized,
+  -- what condition it arrived in and where custody has been, with no authority to
+  -- accept custody, capture evidence, approve or convert. The two RESTRICTED
+  -- narrative tables (rec.complaint_details, rec.vehicle_content_details) stay
+  -- gated at the row by the existing iam.sensitive.view and are not published by
+  -- this code. Seeded by the P1-27 read-surface remediation (P1-27-INT-010/-011/
+  -- -015/-016/-017/-018/-021).
+  ('rec.reception.read',       'rec', 'Read reception visits, parties, authorizations, condition evidence and custody history', 'low', '00000000-0000-4000-8000-000000000001'),
+  -- Ending a visit without work — closed_without_work or refused — is a terminal
+  -- decision about a customer's vehicle and its custody, so it is its own code,
+  -- mirroring the apt.appointment.lifecycle.manage split from booking: opening a
+  -- visit must not carry the power to close one against the customer. The two
+  -- outcomes are distinct business facts but one authority, because both end the
+  -- visit and both release the one-open-visit-per-vehicle index
+  -- (P1-27-INT-014, the INT-013 sibling).
+  ('rec.reception.close',      'rec', 'Close a reception visit without work or refuse it', 'high', '00000000-0000-4000-8000-000000000001'),
   -- Phase 1-19 (wo) - Work Order Backend. Reading a work order is separated from
   -- changing one because the board, the customer-facing status and the reception
   -- desk all need to see an order without any authority to move it.

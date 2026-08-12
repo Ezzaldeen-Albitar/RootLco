@@ -23,11 +23,18 @@
 import { z } from 'zod';
 import { defineOperation } from '@/server/auth/operation-registry';
 import { handleOperation } from '@/server/http/route-handler';
-import { parseJsonBody, schemas, scopeTargetOption } from '@/server/http/validation';
+import {
+  parseJsonBody,
+  parseOrFail,
+  schemas,
+  scopeTargetOption,
+  searchParamsToObject,
+} from '@/server/http/validation';
 import {
   MAX_SOC_PERCENT,
   MAX_WALK_IN_NOTE,
   MIN_SOC_PERCENT,
+  RECEPTION_STATUSES,
   receptionModule,
 } from '@/modules/reception';
 
@@ -94,5 +101,59 @@ export async function POST(request: Request): Promise<Response> {
     // reachable in a branch where the caller only reads. The target makes the
     // permission evaluate against the grant that actually covers this branch.
     { body, ...scopeTargetOption(body) }
+  );
+}
+
+// ---------------------------------------------------------------------------
+// GET /api/v1/receptions — the branch reception board (P1-27 remediation
+// executed by P1-18, `P1-27-INT-011`). Most recently received first, with
+// `recordVersion` on every row because the guarded writes are addressed from
+// the list. Company and branch are REQUIRED for authorization rather than
+// convenience: RLS narrows to the permission-blind union of every grant, so the
+// pair travels as the `authorizationTarget` and `iam.has_permission_in_scope`
+// decides against the branch actually read (P1-18-A-01).
+// ---------------------------------------------------------------------------
+
+const ListQuery = z
+  .object({
+    companyId: schemas.uuid,
+    branchId: schemas.uuid,
+    status: z.enum(RECEPTION_STATUSES).optional(),
+    vehicleId: schemas.uuid.optional(),
+    cursor: schemas.cursor.optional(),
+    limit: schemas.limit.optional(),
+  })
+  .strict();
+
+export const RECEPTION_LIST_OPERATION = defineOperation({
+  id: 'rec.reception-list',
+  module: 'reception',
+  method: 'GET',
+  path: '/receptions',
+  summary: 'List the reception visits of one branch, most recently received first.',
+  permissions: ['rec.reception.read'],
+  scope: 'branch',
+  auditClass: 'none',
+  rateLimitPolicy: 'expensive-read',
+  cacheCategory: 'never',
+});
+
+export async function GET(request: Request): Promise<Response> {
+  const raw = searchParamsToObject(new URL(request.url).searchParams);
+  return handleOperation(
+    RECEPTION_LIST_OPERATION,
+    request,
+    async ({ db }) => ({
+      // Parsed INSIDE the handler so a malformed query is rendered as the
+      // shared problem document rather than an unhandled 500.
+      body: await receptionModule().receptionRead.listReceptions(
+        db,
+        parseOrFail(ListQuery, raw, 'query')
+      ),
+    }),
+    // `scopeTargetOption` can only make authorization STRICTER: a malformed or
+    // absent pair yields no target and the schema above then refuses. Tenant is
+    // never accepted from the client; it comes from the resolved principal.
+    scopeTargetOption(raw)
   );
 }

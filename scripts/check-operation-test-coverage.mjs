@@ -571,6 +571,111 @@ export const MANIFEST = {
     ],
     note: 'exactly-once is guarded twice — the application locks the reception and answers a replay with the existing work order, and uq_work_orders_ordinary_origin (a PARTIAL UNIQUE INDEX, which is why an audit that enumerated pg_constraint alone did not see it) is the database backstop — so the proof is behavioural: two forced-concurrent conversions of one reception produce exactly ONE work-order row (concurrency), a replay returns that same row rather than a second (idempotency), and an unapproved reception is refused (denial); an injected failure leaves no work order, no linkage and no audit (rollback); emits no event, because the approved catalog defines none for this fact',
   },
+  // P1-27 read-surface remediation, executed by P1-18. Reads fold into this
+  // block for the same reason the P1-27 vehicle reads folded into the veh/P1-17
+  // rows: a prefix with no operations behind it would report a vacuous 0/0
+  // block, and these ARE apt./rec. operations.
+  'rec.reception-detail': {
+    files: ['tests/backend/p1-27-reception-reads.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation'],
+    note: 'P1-27-INT-010. The reception had no read of any kind: rec.reception-approve and rec.reception-convert-to-work-order both demand If-Match and the only source of recordVersion was the response of a write the caller had just performed, so a visit was reachable in one unbroken session and in no other circumstance. This publishes recordVersion as an ETag, proven by round-tripping the published header into a guarded write.',
+  },
+  'rec.reception-list': {
+    files: ['tests/backend/p1-27-reception-reads.test.ts'],
+    required: ['success', 'denial', 'isolation'],
+    note: 'P1-27-INT-011. No branch board and no per-vehicle visit list existed. Company and branch are required and travel as the authorization target so the scope-blind pre-handler evaluation never decides alone (P1-18-A-01); recordVersion travels per row because the guarded writes are addressed from the list.',
+  },
+  'rec.reception-party-role-list': {
+    files: ['tests/backend/p1-27-reception-reads.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation'],
+    note: 'P1-27-INT-015. No read of a visit party roles existed, so a resumed visit could not tell whose instruction the workshop may act on. valid_to IS NULL marks the active interval; cursor precision proven against same-microsecond fixtures (P1-27-INT-006).',
+  },
+  'rec.reception-authorization-list': {
+    files: ['tests/backend/p1-27-reception-reads.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation'],
+    note: 'P1-27-INT-016. Standing authorization state was discoverable only by attempting approve and reading the 409. The two-table UNION with rec.refusals (refusal_type = authorization) is mandatory and isStanding is computed over the whole union, so a withdrawn approval is visible as withdrawn — refusal is never read as consent.',
+  },
+  'rec.reception-condition-evidence-list': {
+    files: ['tests/backend/p1-27-reception-reads.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation'],
+    note: 'P1-27-INT-017. All eight evidence kinds were write-only. One paginated union with an optional kind filter; the restricted narrative tables (rec.complaint_details, rec.vehicle_content_details) are never selected, proven by a forbidden-substring scan of the raw response text.',
+  },
+  'rec.reception-history': {
+    files: ['tests/backend/p1-27-reception-reads.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation'],
+    note: 'P1-27-INT-021. First read path rec.custody_history has ever had, and custody is load-bearing for the INT-013 fix. seq travels as a string (bigint); the cursor tie-break is the uuid id per P1-15-SR-013.',
+  },
+  'apt.appointment-list': {
+    files: ['tests/backend/p1-18-appointment-reads.test.ts'],
+    required: ['success', 'denial', 'isolation'],
+    note: 'P1-27-INT-019. All four apt. operations were writes; no calendar existed. The date filter and ordering run over the CONFIRMED window falling back to requested (COALESCE), per the P1-8 boundary record; recordVersion travels per row for the three guarded lifecycle commands.',
+  },
+  'apt.appointment-detail': {
+    files: ['tests/backend/p1-18-appointment-reads.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation'],
+    note: 'P1-27-INT-019. An operator arriving by URL could load nothing; the If-Match the guarded lifecycle commands demand existed only in a prior write response. Publishes recordVersion as an ETag, proven by round-tripping the published header into apt.appointment-reschedule.',
+  },
+  'apt.catalogue-appointment-type-list': {
+    files: ['tests/backend/p1-18-intake-catalogues.test.ts'],
+    required: ['success', 'denial'],
+    note: 'P1-27-INT-018. apt.appointment-create requires appointmentTypeId and nothing published the types, so a booking form could not populate its own mandatory picker. Active rows only; RLS owns the platform-or-tenant union; empty is the no-fake-data policy working.',
+  },
+  'apt.catalogue-source-channel-list': {
+    files: ['tests/backend/p1-18-intake-catalogues.test.ts'],
+    required: ['success', 'denial'],
+    note: 'P1-27-INT-018. The optional sourceChannelId on booking had no published options. Same catalogue contract as the appointment types.',
+  },
+  'apt.catalogue-cancellation-reason-list': {
+    files: ['tests/backend/p1-18-intake-catalogues.test.ts'],
+    required: ['success', 'denial'],
+    note: 'P1-27-INT-018. apt.appointment-cancel demands a mandatory catalogued cancellationReasonId and no read existed, which made the cancel dialog unbuildable absolutely. Same catalogue contract.',
+  },
+  'rec.catalogue-visit-reason-list': {
+    files: ['tests/backend/p1-18-intake-catalogues.test.ts'],
+    required: ['success', 'denial'],
+    note: 'P1-27-INT-018. rec.visit_reasons existed with zero operations. Same catalogue contract.',
+  },
+  'rec.catalogue-fuel-level-list': {
+    files: ['tests/backend/p1-18-intake-catalogues.test.ts'],
+    required: ['success', 'denial'],
+    note: 'P1-27-INT-018. Check-in accepts fuelLevelId and the picker had nothing to show. Same catalogue contract.',
+  },
+  'rec.catalogue-warning-light-code-list': {
+    files: ['tests/backend/p1-18-intake-catalogues.test.ts'],
+    required: ['success', 'denial'],
+    note: 'P1-27-INT-018 / RMC-11. The warning_light evidence kind demands a code id and the catalogue had no read, no rows and no management operation; this ships the read — population remains a separately recorded provisioning decision.',
+  },
+  'rec.catalogue-refusal-reason-list': {
+    files: ['tests/backend/p1-18-intake-catalogues.test.ts'],
+    required: ['success', 'denial'],
+    note: 'P1-27-INT-018. The refusal record could not offer its optional catalogued reason. Same catalogue contract.',
+  },
+  'rec.reception-close-without-work': {
+    files: ['tests/backend/p1-18-reception-closure.test.ts'],
+    required: [
+      'success',
+      'denial',
+      'cross-tenant',
+      'isolation',
+      'audit',
+      'stale-version',
+      'idempotency',
+    ],
+    note: 'P1-27-INT-014, the INT-013 sibling. closed_without_work was unreachable (only approve and convert called setStatus), so an abandoned visit occupied its vehicle forever through uq_reception_visits_open_vehicle. The suite proves the release: after closing, a second check-in of the SAME vehicle succeeds, because the partial index predicate names only opened/inspecting/authorized/converted. The mandatory reason lands in the append-only status ledger via the app.status_reason GUC.',
+  },
+  'rec.reception-refuse': {
+    files: ['tests/backend/p1-18-reception-closure.test.ts'],
+    required: [
+      'success',
+      'denial',
+      'cross-tenant',
+      'isolation',
+      'audit',
+      'stale-version',
+      'idempotency',
+    ],
+    note: 'P1-27-INT-014. The refused terminal state had no route. Distinct from rec.reception-refusal, which appends a refusal evidence record and never changes receptionStatus; this ends the visit and releases the one-open-visit index, proven by re-receiving the same vehicle. Legal from any non-terminal state, exactly as the frozen graph says; terminal states are refused with the state named.',
+  },
   // ========================================================================
   // Phase 1-19 (wo. / tech. / dia. / qms.) — Work Order, Diagnostics and
   // Technician Backend. Same derived-evidence model, and the same strict
@@ -1091,6 +1196,12 @@ export const MANIFEST = {
     files: ['tests/backend/p1-16-customer-read.test.ts'],
     required: ['success', 'denial', 'cross-tenant'],
     note: 'requires only crm.customer.read, not the manage permission the POST carries: imposing a refusal to serve and knowing about one are different authorities, and a restriction nobody at the counter can see does not restrict anything',
+  },
+  // P1-27 read-surface remediation executed by P1-16, the tenth CRM read.
+  'crm.customer-vehicle-list': {
+    files: ['tests/backend/p1-16-customer-vehicle-list.test.ts'],
+    required: ['success', 'denial', 'cross-tenant'],
+    note: 'P1-27-INT-012. The Customer→Vehicle direction was write-only: crm.vehicle-link inserted into veh.vehicle_relationships and no read listed a customer’s vehicles (the vehicle-centric veh.vehicle-relationship-list has existed since P1-17). Partner-centric keyset page over the same single source of truth, joined to veh.vehicles under v.deleted_at IS NULL so a tombstoned vehicle yields the bare vehicleId and never a resurrected identity; its ordering key differs from the vehicle-centric list’s so the two lists refuse each other’s cursors (ERR-PAG-001) instead of producing a plausible wrong page; reads reuse crm.customer.read like the nine sibling reads, and the write-only principal proves reads are not implied by writes',
   },
   // --- Profile components: the re-parenting and IDOR surface. --------------
   'crm.contact-add': {

@@ -29,6 +29,7 @@ export type {
   ConsentEntry,
   ContactPointEntry,
   CustomerDetailRow,
+  CustomerVehicleEntry,
   NoteEntry,
   PreferenceEntry,
   RestrictionEntry,

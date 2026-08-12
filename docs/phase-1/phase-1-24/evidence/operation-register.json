@@ -1,20 +1,20 @@
 {
   "generatedBy": "scripts/p1-24-operation-register.mjs",
   "totals": {
-    "operations": 243,
-    "openapiPaths": 203,
-    "openapiOperations": 243,
+    "operations": 261,
+    "openapiPaths": 215,
+    "openapiOperations": 261,
     "openapiSchemas": 3,
     "events": 50,
     "eventsProduced": 47,
     "eventsDeliveryTested": 50,
     "outboxForeignWriters": 0,
     "errorCodes": 28,
-    "permissionCodes": 104,
-    "auditActions": 153
+    "permissionCodes": 107,
+    "auditActions": 155
   },
   "counts": {
-    "Covered": 243
+    "Covered": 261
   },
   "operations": [
     {
@@ -117,6 +117,69 @@
       "file": "apps/api/src/app/api/v1/appointments/route.ts"
     },
     {
+      "id": "apt.appointment-detail",
+      "domain": "reception",
+      "method": "GET",
+      "route": "/api/v1/appointments/{appointmentId}",
+      "permissions": ["apt.appointment.read"],
+      "public": false,
+      "scope": "branch",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/appointments/{appointmentId}",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "isolation",
+        "denial"
+      ],
+      "providedEvidence": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": [
+        "tests/backend/p1-18-appointment-reads.test.ts",
+        "tests/foundation/p1-18-scoped-authorization.test.ts"
+      ],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/appointments/[appointmentId]/route.ts"
+    },
+    {
+      "id": "apt.appointment-list",
+      "domain": "reception",
+      "method": "GET",
+      "route": "/api/v1/appointments",
+      "permissions": ["apt.appointment.read"],
+      "public": false,
+      "scope": "branch",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/appointments",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": ["route", "service", "success", "authorization", "isolation", "denial"],
+      "providedEvidence": ["authorization", "denial", "isolation", "route", "service", "success"],
+      "missingEvidence": [],
+      "tests": ["tests/backend/p1-18-appointment-reads.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/appointments/route.ts"
+    },
+    {
       "id": "apt.appointment-no-show",
       "domain": "reception",
       "method": "POST",
@@ -212,12 +275,79 @@
       "missingEvidence": [],
       "tests": [
         "tests/backend/p1-18-appointment-lifecycle.test.ts",
+        "tests/backend/p1-18-appointment-reads.test.ts",
         "tests/backend/p1-18-reception-create.test.ts",
         "tests/backend/p1-18-scope-containment.test.ts",
         "tests/foundation/p1-18-scoped-authorization.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/appointments/[appointmentId]/reschedule/route.ts"
+    },
+    {
+      "id": "apt.catalogue-appointment-type-list",
+      "domain": "reception",
+      "method": "GET",
+      "route": "/api/v1/appointment-catalogue/appointment-types",
+      "permissions": ["apt.appointment.read"],
+      "public": false,
+      "scope": "tenant",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/appointment-catalogue/appointment-types",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": ["route", "service", "success", "authorization", "denial"],
+      "providedEvidence": ["authorization", "denial", "route", "service", "success"],
+      "missingEvidence": [],
+      "tests": ["tests/backend/p1-18-intake-catalogues.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/appointment-catalogue/appointment-types/route.ts"
+    },
+    {
+      "id": "apt.catalogue-cancellation-reason-list",
+      "domain": "reception",
+      "method": "GET",
+      "route": "/api/v1/appointment-catalogue/cancellation-reasons",
+      "permissions": ["apt.appointment.read"],
+      "public": false,
+      "scope": "tenant",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/appointment-catalogue/cancellation-reasons",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": ["route", "service", "success", "authorization", "denial"],
+      "providedEvidence": ["authorization", "denial", "route", "service", "success"],
+      "missingEvidence": [],
+      "tests": ["tests/backend/p1-18-intake-catalogues.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/appointment-catalogue/cancellation-reasons/route.ts"
+    },
+    {
+      "id": "apt.catalogue-source-channel-list",
+      "domain": "reception",
+      "method": "GET",
+      "route": "/api/v1/appointment-catalogue/source-channels",
+      "permissions": ["apt.appointment.read"],
+      "public": false,
+      "scope": "tenant",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/appointment-catalogue/source-channels",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": ["route", "service", "success", "authorization", "denial"],
+      "providedEvidence": ["authorization", "denial", "route", "service", "success"],
+      "missingEvidence": [],
+      "tests": ["tests/backend/p1-18-intake-catalogues.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/appointment-catalogue/source-channels/route.ts"
     },
     {
       "id": "crm.address-add",
@@ -802,6 +932,45 @@
       "file": "apps/api/src/app/api/v1/customers/[customerId]/timeline/route.ts"
     },
     {
+      "id": "crm.customer-vehicle-list",
+      "domain": "crm",
+      "method": "GET",
+      "route": "/api/v1/customers/{customerId}/vehicles",
+      "permissions": ["crm.customer.read"],
+      "public": false,
+      "scope": "tenant",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/customers/{customerId}/vehicles",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "denial"
+      ],
+      "providedEvidence": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": [
+        "tests/backend/p1-16-customer-vehicle-list.test.ts",
+        "tests/ci/repository-paths.test.ts"
+      ],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/customers/[customerId]/vehicles/route.ts"
+    },
+    {
       "id": "crm.duplicate-list",
       "domain": "crm",
       "method": "GET",
@@ -1305,7 +1474,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-16-customer-identity.test.ts"],
+      "tests": [
+        "tests/backend/p1-16-customer-identity.test.ts",
+        "tests/backend/p1-16-customer-vehicle-list.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/customers/[customerId]/vehicles/route.ts"
     },
@@ -4621,6 +4793,94 @@
       "file": "apps/api/src/app/api/v1/quotation-revisions/[revisionId]/decisions/route.ts"
     },
     {
+      "id": "rec.catalogue-fuel-level-list",
+      "domain": "reception",
+      "method": "GET",
+      "route": "/api/v1/reception-catalogue/fuel-levels",
+      "permissions": ["rec.reception.read"],
+      "public": false,
+      "scope": "tenant",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/reception-catalogue/fuel-levels",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": ["route", "service", "success", "authorization", "denial"],
+      "providedEvidence": ["authorization", "denial", "route", "service", "success"],
+      "missingEvidence": [],
+      "tests": ["tests/backend/p1-18-intake-catalogues.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/reception-catalogue/fuel-levels/route.ts"
+    },
+    {
+      "id": "rec.catalogue-refusal-reason-list",
+      "domain": "reception",
+      "method": "GET",
+      "route": "/api/v1/reception-catalogue/refusal-reasons",
+      "permissions": ["rec.reception.read"],
+      "public": false,
+      "scope": "tenant",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/reception-catalogue/refusal-reasons",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": ["route", "service", "success", "authorization", "denial"],
+      "providedEvidence": ["authorization", "denial", "route", "service", "success"],
+      "missingEvidence": [],
+      "tests": ["tests/backend/p1-18-intake-catalogues.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/reception-catalogue/refusal-reasons/route.ts"
+    },
+    {
+      "id": "rec.catalogue-visit-reason-list",
+      "domain": "reception",
+      "method": "GET",
+      "route": "/api/v1/reception-catalogue/visit-reasons",
+      "permissions": ["rec.reception.read"],
+      "public": false,
+      "scope": "tenant",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/reception-catalogue/visit-reasons",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": ["route", "service", "success", "authorization", "denial"],
+      "providedEvidence": ["authorization", "denial", "route", "service", "success"],
+      "missingEvidence": [],
+      "tests": ["tests/backend/p1-18-intake-catalogues.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/reception-catalogue/visit-reasons/route.ts"
+    },
+    {
+      "id": "rec.catalogue-warning-light-code-list",
+      "domain": "reception",
+      "method": "GET",
+      "route": "/api/v1/reception-catalogue/warning-light-codes",
+      "permissions": ["rec.reception.read"],
+      "public": false,
+      "scope": "tenant",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/reception-catalogue/warning-light-codes",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": ["route", "service", "success", "authorization", "denial"],
+      "providedEvidence": ["authorization", "denial", "route", "service", "success"],
+      "missingEvidence": [],
+      "tests": ["tests/backend/p1-18-intake-catalogues.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/reception-catalogue/warning-light-codes/route.ts"
+    },
+    {
       "id": "rec.reception-approve",
       "domain": "reception",
       "method": "POST",
@@ -4667,6 +4927,7 @@
       "tests": [
         "tests/backend/p1-18-reception-approval.test.ts",
         "tests/backend/p1-18-scope-containment.test.ts",
+        "tests/backend/p1-27-reception-reads.test.ts",
         "tests/foundation/p1-18-scoped-authorization.test.ts"
       ],
       "classification": "Covered",
@@ -4714,10 +4975,99 @@
         "tests/backend/p1-18-reception-approval.test.ts",
         "tests/backend/p1-18-reception-parties.test.ts",
         "tests/backend/p1-18-scope-containment.test.ts",
+        "tests/backend/p1-27-reception-reads.test.ts",
         "tests/foundation/p1-18-scoped-authorization.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/receptions/[receptionId]/authorizations/route.ts"
+    },
+    {
+      "id": "rec.reception-authorization-list",
+      "domain": "reception",
+      "method": "GET",
+      "route": "/api/v1/receptions/{receptionId}/authorizations",
+      "permissions": ["rec.reception.read"],
+      "public": false,
+      "scope": "branch",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/receptions/{receptionId}/authorizations",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "isolation",
+        "denial"
+      ],
+      "providedEvidence": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": [
+        "tests/backend/p1-27-reception-reads.test.ts",
+        "tests/foundation/p1-18-scoped-authorization.test.ts"
+      ],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/receptions/[receptionId]/authorizations/route.ts"
+    },
+    {
+      "id": "rec.reception-close-without-work",
+      "domain": "reception",
+      "method": "POST",
+      "route": "/api/v1/receptions/{receptionId}/close-without-work",
+      "permissions": ["rec.reception.close"],
+      "public": false,
+      "scope": "branch",
+      "transaction": "transactional write",
+      "auditClass": "privileged",
+      "auditAction": "rec.reception.closed_without_work",
+      "idempotent": true,
+      "versionGuarded": true,
+      "openapi": "POST /api/v1/receptions/{receptionId}/close-without-work",
+      "documentedResponses": ["200", "401", "403", "409", "422", "428", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "stale-version",
+        "audit",
+        "isolation",
+        "denial"
+      ],
+      "providedEvidence": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "isolation",
+        "route",
+        "service",
+        "stale-version",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": [
+        "tests/backend/p1-18-reception-closure.test.ts",
+        "tests/foundation/p1-18-scoped-authorization.test.ts"
+      ],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/receptions/[receptionId]/close-without-work/route.ts"
     },
     {
       "id": "rec.reception-condition-evidence",
@@ -4762,6 +5112,48 @@
       "tests": [
         "tests/backend/p1-18-reception-evidence.test.ts",
         "tests/backend/p1-18-scope-containment.test.ts",
+        "tests/backend/p1-27-reception-reads.test.ts",
+        "tests/foundation/p1-18-scoped-authorization.test.ts"
+      ],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/receptions/[receptionId]/condition-evidence/route.ts"
+    },
+    {
+      "id": "rec.reception-condition-evidence-list",
+      "domain": "reception",
+      "method": "GET",
+      "route": "/api/v1/receptions/{receptionId}/condition-evidence",
+      "permissions": ["rec.reception.read"],
+      "public": false,
+      "scope": "branch",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/receptions/{receptionId}/condition-evidence",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "isolation",
+        "denial"
+      ],
+      "providedEvidence": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": [
+        "tests/backend/p1-27-reception-reads.test.ts",
         "tests/foundation/p1-18-scoped-authorization.test.ts"
       ],
       "classification": "Covered",
@@ -4872,6 +5264,110 @@
       "file": "apps/api/src/app/api/v1/receptions/route.ts"
     },
     {
+      "id": "rec.reception-detail",
+      "domain": "reception",
+      "method": "GET",
+      "route": "/api/v1/receptions/{receptionId}",
+      "permissions": ["rec.reception.read"],
+      "public": false,
+      "scope": "branch",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/receptions/{receptionId}",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "isolation",
+        "denial"
+      ],
+      "providedEvidence": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": [
+        "tests/backend/p1-27-reception-reads.test.ts",
+        "tests/foundation/p1-18-scoped-authorization.test.ts"
+      ],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/receptions/[receptionId]/route.ts"
+    },
+    {
+      "id": "rec.reception-history",
+      "domain": "reception",
+      "method": "GET",
+      "route": "/api/v1/receptions/{receptionId}/history",
+      "permissions": ["rec.reception.read"],
+      "public": false,
+      "scope": "branch",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/receptions/{receptionId}/history",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "isolation",
+        "denial"
+      ],
+      "providedEvidence": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": [
+        "tests/backend/p1-27-reception-reads.test.ts",
+        "tests/foundation/p1-18-scoped-authorization.test.ts"
+      ],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/receptions/[receptionId]/history/route.ts"
+    },
+    {
+      "id": "rec.reception-list",
+      "domain": "reception",
+      "method": "GET",
+      "route": "/api/v1/receptions",
+      "permissions": ["rec.reception.read"],
+      "public": false,
+      "scope": "branch",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/receptions",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": ["route", "service", "success", "authorization", "isolation", "denial"],
+      "providedEvidence": ["authorization", "denial", "isolation", "route", "service", "success"],
+      "missingEvidence": [],
+      "tests": ["tests/backend/p1-27-reception-reads.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/receptions/route.ts"
+    },
+    {
       "id": "rec.reception-party-role",
       "domain": "reception",
       "method": "POST",
@@ -4912,6 +5408,48 @@
       "tests": [
         "tests/backend/p1-18-reception-parties.test.ts",
         "tests/backend/p1-18-scope-containment.test.ts",
+        "tests/backend/p1-27-reception-reads.test.ts",
+        "tests/foundation/p1-18-scoped-authorization.test.ts"
+      ],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/receptions/[receptionId]/party-roles/route.ts"
+    },
+    {
+      "id": "rec.reception-party-role-list",
+      "domain": "reception",
+      "method": "GET",
+      "route": "/api/v1/receptions/{receptionId}/party-roles",
+      "permissions": ["rec.reception.read"],
+      "public": false,
+      "scope": "branch",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/receptions/{receptionId}/party-roles",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "isolation",
+        "denial"
+      ],
+      "providedEvidence": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": [
+        "tests/backend/p1-27-reception-reads.test.ts",
         "tests/foundation/p1-18-scoped-authorization.test.ts"
       ],
       "classification": "Covered",
@@ -4962,6 +5500,53 @@
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/receptions/[receptionId]/refusals/route.ts"
+    },
+    {
+      "id": "rec.reception-refuse",
+      "domain": "reception",
+      "method": "POST",
+      "route": "/api/v1/receptions/{receptionId}/refuse",
+      "permissions": ["rec.reception.close"],
+      "public": false,
+      "scope": "branch",
+      "transaction": "transactional write",
+      "auditClass": "privileged",
+      "auditAction": "rec.reception.refused",
+      "idempotent": true,
+      "versionGuarded": true,
+      "openapi": "POST /api/v1/receptions/{receptionId}/refuse",
+      "documentedResponses": ["200", "401", "403", "409", "422", "428", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "stale-version",
+        "audit",
+        "isolation",
+        "denial"
+      ],
+      "providedEvidence": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "isolation",
+        "route",
+        "service",
+        "stale-version",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": [
+        "tests/backend/p1-18-reception-closure.test.ts",
+        "tests/foundation/p1-18-scoped-authorization.test.ts"
+      ],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/receptions/[receptionId]/refuse/route.ts"
     },
     {
       "id": "rec.reception-signature",
@@ -8494,7 +9079,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-17-vehicle-relations.test.ts"],
+      "tests": [
+        "tests/backend/p1-16-customer-vehicle-list.test.ts",
+        "tests/backend/p1-17-vehicle-relations.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/vehicles/[vehicleId]/relationships/route.ts"
     },

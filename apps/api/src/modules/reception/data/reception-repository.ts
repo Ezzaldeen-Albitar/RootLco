@@ -201,6 +201,49 @@ export class ReceptionRepository extends Repository {
     return result.rowCount ?? 0;
   }
 
+  /**
+   * Moves the visit to a terminal closure state, carrying the mandatory reason.
+   *
+   * ## The reason travels through a GUC, not a column
+   *
+   * `rec.reception_visits` has no reason column.
+   * `rec.emit_reception_status_history` reads
+   * `NULLIF(btrim(current_setting('app.status_reason', true)), '')` and copies
+   * it into the append-only ledger row — the same mechanism
+   * `wo.work_order_status_history` uses. A reason validated in TypeScript but
+   * never published here would leave every closure ledger row with
+   * `reason = NULL`, which for a terminal decision about a customer's vehicle
+   * is an unattributable record.
+   *
+   * Set transaction-locally (`set_config(..., true)`) and cleared right after,
+   * so a later state change in the same request cannot inherit it. No clear is
+   * attempted on the failure path: a raising statement aborts the surrounding
+   * transaction, so nothing it set can survive.
+   *
+   * No version predicate: the caller holds the `FOR UPDATE` lock and has
+   * already compared the caller's `If-Match` against the locked row, exactly
+   * as approval does — nothing can move the row between that read and this
+   * write. Returns rows changed.
+   */
+  async setStatusWithReason(
+    db: DbHandle,
+    receptionVisitId: string,
+    nextStatus: ReceptionStatus,
+    reason: string
+  ): Promise<number> {
+    const context = this.assertContext(db);
+    await this.run(db, 'SELECT set_config($1, $2, true)', ['app.status_reason', reason]);
+    const result = await this.run(
+      db,
+      `UPDATE rec.reception_visits
+          SET reception_status = $3
+        WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL`,
+      [context.principal.tenantId, receptionVisitId, nextStatus]
+    );
+    await this.run(db, 'SELECT set_config($1, $2, true)', ['app.status_reason', '']);
+    return result.rowCount ?? 0;
+  }
+
   /** Assigns a dated party role on the visit. Returns the id. */
   async insertPartyRole(
     db: DbHandle,

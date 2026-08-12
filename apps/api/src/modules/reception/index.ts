@@ -22,13 +22,19 @@
 import { composeModule } from '@/server/layering';
 import { sharedServicesModule } from '@/modules/shared-services';
 import { AppointmentRepository } from './data/appointment-repository';
+import { AppointmentReadRepository } from './data/appointment-read-repository';
+import { IntakeCatalogueRepository } from './data/intake-catalogue-repository';
 import { ReceptionRepository } from './data/reception-repository';
 import { ReceptionEvidenceRepository } from './data/reception-evidence-repository';
 import { ReceptionConversionRepository } from './data/reception-conversion-repository';
+import { ReceptionReadRepository } from './data/reception-read-repository';
 import { AppointmentService } from './application/appointment-service';
+import { AppointmentReadService } from './application/appointment-read-service';
+import { IntakeCatalogueService } from './application/intake-catalogue-service';
 import { ReceptionService } from './application/reception-service';
 import { ReceptionEvidenceService } from './application/reception-evidence-service';
 import { ReceptionConversionService } from './application/reception-conversion-service';
+import { ReceptionReadService } from './application/reception-read-service';
 
 export type {
   AppointmentChangeKind,
@@ -41,8 +47,23 @@ export type {
   PartyRoleAssigned,
   PartyRoleInput,
   ReceptionApproved,
+  ReceptionClosed,
   ReceptionCreated,
 } from './application/reception-service';
+// Read-surface row types (never the repositories themselves — ADR-001).
+export type {
+  AuthorizationEntry,
+  ConditionEvidenceEntry,
+  PartyRoleEntry,
+  ReceptionDetailRow,
+  ReceptionHistoryEntry,
+  ReceptionListEntry,
+} from './data/reception-read-repository';
+export type {
+  AppointmentDetailRow,
+  AppointmentListEntry,
+} from './data/appointment-read-repository';
+export type { IntakeCatalogueEntry } from './data/intake-catalogue-repository';
 export type {
   ComplaintEvidence,
   ConditionEvidenceInput,
@@ -74,6 +95,8 @@ export {
   AUTHORIZATION_CHANNELS,
   AUTHORIZATION_DECISIONS,
   AUTHORIZING_ROLES,
+  CLOSE_OUTCOMES,
+  MAX_CLOSURE_REASON,
   MAX_SOC_PERCENT,
   MAX_WALK_IN_NOTE,
   MIN_SOC_PERCENT,
@@ -84,6 +107,7 @@ export {
   type AuthorizationChannel,
   type AuthorizationDecision,
   type AuthorizingRole,
+  type CloseOutcome,
   type ReceptionCreateInput,
   type ReceptionOrigin,
   type ReceptionPartyRole,
@@ -138,7 +162,9 @@ export const receptionModule = composeModule({
     const numbers = sharedServicesModule().numbers;
     return {
       appointments: new AppointmentService(appointments, numbers),
+      appointmentRead: new AppointmentReadService(new AppointmentReadRepository()),
       receptions: new ReceptionService(receptions, appointments, numbers),
+      receptionRead: new ReceptionReadService(new ReceptionReadRepository()),
       receptionEvidence: new ReceptionEvidenceService(
         new ReceptionEvidenceRepository(),
         receptions
@@ -148,6 +174,7 @@ export const receptionModule = composeModule({
         receptions,
         numbers
       ),
+      intakeCatalogues: new IntakeCatalogueService(new IntakeCatalogueRepository()),
     };
   },
 });
