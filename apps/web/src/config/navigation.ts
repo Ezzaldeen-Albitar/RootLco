@@ -82,6 +82,8 @@ export type IconName =
    */
   | 'duplicate-review'
   | 'appointments'
+  /** A clipboard with a check: a vehicle received and recorded. */
+  | 'receptions'
   | 'work-orders'
   | 'technicians'
   | 'catalog'
@@ -142,6 +144,12 @@ export const NAVIGATION: readonly NavigationGroup[] = Object.freeze([
        * gated on `apt.appointment.read`, the code `apt.appointment-list`
        * and `-detail` actually register (seeded by P1-18 remediation R2,
        * PR #220).
+       *
+       * The Reception entry below landed WITH its first screen — the P1-28
+       * Wave D check-in wizard (`P1-28-FE-007`) at `/receptions/check-in` —
+       * gated on `rec.reception.read` because the resume path is a read and
+       * the create form states its own `rec.reception.manage` denial inside
+       * the page.
        */
       {
         key: 'appointments',
@@ -149,6 +157,19 @@ export const NAVIGATION: readonly NavigationGroup[] = Object.freeze([
         icon: 'appointments',
         href: '/appointments',
         permission: 'apt.appointment.read',
+        status: 'available',
+        scope: 'branch',
+      },
+      {
+        key: 'receptions',
+        labelKey: 'nav.receptions',
+        icon: 'receptions',
+        // The check-in wizard is the module's first — and so far only —
+        // screen, so the entry points at it directly rather than at a board
+        // route that does not exist yet. When the reception board lands, this
+        // href moves to `/receptions` in the same change.
+        href: '/receptions/check-in',
+        permission: 'rec.reception.read',
         status: 'available',
         scope: 'branch',
       },

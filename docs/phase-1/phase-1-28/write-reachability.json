@@ -45,11 +45,11 @@
     },
     "rec.reception-party-role": {
       "classification": "NOT_YET_WIRED",
-      "reason": "P1-28-FE-009 (reception party roles and authorization) has not landed."
+      "reason": "P1-28-FE-009 landed (Wave D: PartiesStep -> assignPartyRole), but the call site travels through the contract adapter's visitPath() helper, which this gate's inline-literal scanner cannot see; flipping to REACHABLE requires teaching the gate the helper (a scripts/ci change outside Wave D's remit). The gate's own docblock names this fail-closed case."
     },
     "rec.reception-authorization": {
       "classification": "NOT_YET_WIRED",
-      "reason": "P1-28-FE-009 (reception party roles and authorization) has not landed."
+      "reason": "P1-28-FE-009 landed (Wave D: PartiesStep -> recordAuthorization), but the call site travels through the contract adapter's visitPath() helper, which this gate's inline-literal scanner cannot see; flipping to REACHABLE requires teaching the gate the helper (a scripts/ci change outside Wave D's remit)."
     },
     "rec.reception-condition-evidence": {
       "classification": "NOT_YET_WIRED",
