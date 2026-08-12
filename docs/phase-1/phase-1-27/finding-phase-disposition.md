@@ -93,6 +93,8 @@ operations. The information existed; nothing was asked to act on it.
 
 **33 of the 42 canonical tasks meet their Definition of Done.** All 13 governance tasks (Security 4, QA 5, DevOps 2, Documentation 2) pass — `DOC-001`/`DOC-002` were checked directly against both canonical guides and neither repeats the one documentation error found. The nine failures are FE-001, FE-002, FE-015, FE-021, FE-022, FE-023, FE-024, FE-025, FE-029.
 
+_Reconciled 2026-08-13: these counts are as recorded 2026-08-08 and are deliberately **not** re-derived here. At least FE-029 has since closed — D3's vehicle half, by PR #212 — and FE-015's uuid is gone while its name is still owed; see §5 D3. The phase's current, derived answer is `task-matrix.json`, which `validate:p1-27-matrix` recomputes, not this sentence._
+
 Every one of the four defects is fixable inside `apps/web` except D4, which is one repository call site on a P1-16 branch. **None of them requires Reception, Work Order, technician, parts, quotation, billing, QA or delivery work.**
 
 ---
@@ -373,11 +375,28 @@ _(id `P1-27-INT-025`)_ — prevents **FE-021 (Vehicles 5, ownership)** and **FE-
 
 **Smallest correct fix:** resolve the handful of distinct `partnerId` values per vehicle through the existing `GET /api/v1/customers/{id}` (`profile-api.ts:48` already calls it; both acceptance roles hold `crm.customer.read`). If that is judged too costly, relabel to a technical reference and de-emphasise. What must not ship is the current state while `owner-workflow-requirements.md:111-113` claims the profile shows human-readable customer information. **Not Backend-blocked** — calling it so would be the wrong error.
 
-### D3 — An actor UUID under "Recorded by" / "Changed by"
+### D3 — An actor UUID under "Recorded by" / "Changed by" _(vehicle half closed by PR #212; CRM half suppressed, not named)_
 
-_(ids `P1-27-INT-109`, `HIST-NEW-01`)_ — prevents **FE-015 (CRM 15, timeline)** and **FE-029 (Vehicles 13, history)**.
+_(ids `P1-27-INT-109`, `HIST-NEW-01`)_ — prevented **FE-015 (CRM 15, timeline)** and **FE-029 (Vehicles 13, history)**. The two are no longer in the same state; see the reconciliation below.
 
-**Smallest correct fix:** stop presenting the identifier as a person. Relabel both columns as a technical reference and de-emphasise — exactly the wording the two vehicle relationship/ownership sections already use, and exactly what `VehicleAttributeHistorySection.tsx:123-124` already reasons in a comment while its own header contradicts it. A batch actor-name read (`VHM-13`, P1-14) is the better long-term answer and is **not** required to close this. A client-side N+1 through `iam.user-detail` is the wrong fix: a CRM or Vehicle operator need not hold `iam.user.read`, so it would produce a denial, not a name.
+**Smallest correct fix (as recorded 2026-08-08, and since overtaken):** stop presenting the identifier as a person. Relabel both columns as a technical reference and de-emphasise — at the time, the wording the two vehicle relationship/ownership sections themselves used ("Owner reference", "Customer reference"), and the reasoning `VehicleAttributeHistorySection.tsx` then carried in its comment at `:122`. **Neither model still exists:** PR #213 renamed those two headers to "Owner" and "Customer" (`en.json:982`, `:1031`) and replaced the uuid cells with the shared `PartyLabel` (`VehicleHistorySections.tsx:207`, `VehicleRelationsSections.tsx:613`), and PR #212 rewrote that comment to reason the opposite way (now `:122-145`). A batch actor-name read (`VHM-13`, P1-14) is the better long-term answer and was **not** required to close this.
+
+A client-side N+1 through `iam.user-detail` was still the wrong fix, and this paragraph originally gave the wrong reason for it. It said "a CRM or Vehicle operator need not hold `iam.user.read`, so it would produce a denial, not a name". **That premise is false as the product is built**, and the correction is `blocker-remediation-plan.md` §3.1: `iam.auth-session` itself declares `permissions: ['iam.user.read']` (`apps/api/src/app/api/v1/auth/session/route.ts:31`), and `requireSession()` — defined at `apps/web/src/features/authentication/api/session.ts:101-108` and described at `:81-82` as "the only entry point protected pages use, so no page can accidentally render without one" — is what every protected page render passes through, the `(dashboard)` layout calling it at `layout.tsx:43` and each page repeating it. So every operator who can _see_ these two columns already holds the permission. `scripts/dev/owner-acceptance/context.mjs:111-112` states the consequence outright: without `iam.user.read` "every screen renders as though the caller were signed out". The objections that do survive are costs, not authority:
+
+1. **An N+1 is still an N+1** — `iam.user-detail` is one request per distinct actor on the page.
+2. **`iam.user-list` would leak far more than a name.** `UserView.email` (`apps/api/src/modules/iam/application/user-administration-service.ts:40`) publishes an address for every user in the tenant, and that column is commented "Restricted classification" (`supabase/migrations/20260718090000_iam_user_accounts_and_profiles.sql:102`). Resolving names that way pulls the tenant's whole email list into a render that needs only names.
+3. **It would breach the feature boundary.** The adapters exist — `listUsers` (`apps/web/src/features/administration/users/api.ts:49`) and, for the per-actor read cost 1 prices, `readUser` at `:119` — but both live under `features/administration`, so reaching either from `features/crm` or `features/vehicles` would be the first import _into_ Administration from another feature. Not the first cross-feature import of any kind, which the earlier revision of this line claimed: `features/administration` already imports from `features/authentication` in fourteen places (`users/components/UsersScreen.tsx:19-20` among them).
+
+**Reconciled 2026-08-13 — the relabel was overtaken on the vehicle side, and the two halves are no longer in the same state.** `remediation/p1-14-actor-display-identity` (**PR #212**, merge commit `61d8ded`) landed the answer `VHM-13` prescribes and assigns to P1-14: `nameActors` (`apps/api/src/modules/vehicle/application/actor-identity.ts:74-90`) resolves the actor name server-side and narrows rather than widens — a caller without `iam.user.read` gets `actorName: null`, not a directory.
+
+**Running the two halves together is the error this entry must not repeat**, and an earlier revision of this paragraph did exactly that by saying both columns now sit over a name:
+
+- **FE-029, the vehicle half, is closed by a producer.** `vehicles.history.actor` stays **"Changed by"** over a real name, with `vehicles.history.actorUnavailable` ("User unavailable", `en.json:940`) as the fallback, and the cell never reads `actorId` (`VehicleAttributeHistorySection.tsx:138-153`).
+- **FE-015, the CRM half, is not.** `crm.customer-timeline` still returns `actor_id` alone — `actorName` occurs nowhere under `apps/api/src/modules/crm/` — so the name branch at `CustomerProfileScreen.tsx:1691` is unreachable and **"Recorded by"** reads `crm.customers.timeline.actorUnavailable` for every human row (`en.json:328`). The uuid is gone, which is what D3 demanded; the name is owed by a CRM-side producer that has not shipped. `identity-contract.ts:81-102` records precisely this, together with the system-event null branch (`CustomerProfileScreen.tsx:1684-1690`) that is deliberately kept and is a genuinely different case from an unresolvable name.
+
+The three costs were relocated rather than avoided: none was paid in `apps/web`, and the boundary cost recurred on the API side and was answered deliberately — the vehicle module composes the IAM module's public surface, "the only cross-module import in the whole vehicle module", and composes `iamDirectory()` rather than `iamModule()` to keep the read off `clientEnv()` (`actor-identity.ts:8-30`).
+
+**So D3's uuid is gone from both screens, but only one half was closed by a producer.** The CRM half is closed by suppression and the name stays owed.
 
 ### D4 — Keyset cursor precision on `crm.customer-search`
 
@@ -407,7 +426,7 @@ Against that programme, "0 of 23" is a true and useful number. Against P1-27 it 
 
 _(Caveat on reproducibility: the wave labels are cited to `owner-acceptance-fail-journey.md`, which at least one reviewer could not locate on `develop`. The "0 of 23" figure is therefore not independently reproducible from the tree, which is itself a reason not to gate on it.)_
 
-**The correct P1-27 statement:**
+**The correct P1-27 statement** _(as recorded 2026-08-08; the task-level figures below were overtaken — see the reconciliation at §1 and §5 D3, and prefer `task-matrix.json`, which is derived)_**:**
 
 > Of the 160 unique findings, **6 block P1-G27**, resolving to **4 distinct defects** that prevent **9 of the 42 canonical tasks** from meeting their Definition of Done: FE-001, FE-002, FE-015, FE-021, FE-022, FE-023, FE-024, FE-025, FE-029. **33 of 42 tasks pass**, including all 13 Security/QA/DevOps/Documentation tasks. Three findings are already closed (#204, `df6e452`, #206). The remaining **151 findings are owned by P1-28 (34), P1-29 (30), P1-30 (37), P1-31 (9), global/foundation (17) and future/unallocated (24)** — none of them holds the P1-27 gate open.
 >
