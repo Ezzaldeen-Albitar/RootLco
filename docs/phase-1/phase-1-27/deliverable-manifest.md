@@ -683,7 +683,7 @@ under-report itself by seven files.
 | `execution-checkpoint.md`                         | 290   | Base SHAs, surface baselines, the wave log                                         |
 | `final-canonical-remediation.md`                  | 451   | The canonical remediation wave                                                     |
 | `final-task-adjudication.md`                      | 959   | The 33 adjudicated audit items, and the retraction of `42 / 42`                    |
-| `finding-phase-disposition.md`                    | 452   | Which phase owns each finding                                                      |
+| `finding-phase-disposition.md`                    | 511   | Which phase owns each finding                                                      |
 | `finding-task-map.json`                           | 536   | Findings to tasks, machine-readable                                                |
 | `findings.md`                                     | 889   | The live `P1-27-INT-###` register                                                  |
 | `findings/p1-27-int-006-cursor-precision.md`      | 166   | The cursor-precision finding in full                                               |
@@ -1002,7 +1002,7 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
 <!-- derived: lines docs/phase-1/phase-1-27/execution-checkpoint.md = 290 -->
 <!-- derived: lines docs/phase-1/phase-1-27/final-canonical-remediation.md = 451 -->
 <!-- derived: lines docs/phase-1/phase-1-27/final-task-adjudication.md = 959 -->
-<!-- derived: lines docs/phase-1/phase-1-27/finding-phase-disposition.md = 452 -->
+<!-- derived: lines docs/phase-1/phase-1-27/finding-phase-disposition.md = 511 -->
 <!-- derived: lines docs/phase-1/phase-1-27/finding-task-map.json = 536 -->
 <!-- derived: lines docs/phase-1/phase-1-27/findings.md = 889 -->
 <!-- derived: lines docs/phase-1/phase-1-27/findings/p1-27-int-006-cursor-precision.md = 166 -->
