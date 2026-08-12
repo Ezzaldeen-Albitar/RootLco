@@ -116,6 +116,24 @@ export const NAVIGATION: readonly NavigationGroup[] = Object.freeze([
         status: 'available',
         scope: 'branch',
       },
+      /*
+       * P1-28 state, verified 2026-08-13: `apt.appointment.read` IS seeded now
+       * (P1-18 remediation R2, PR #220) — the permission is no longer what
+       * keeps this entry `planned`. What keeps it `planned` is that no screen
+       * exists at `/appointments`: `status: 'available'` is a claim that a
+       * screen exists, and a nav entry pointing at a 404 is a lie of a
+       * different kind than an unseeded permission. This entry flips to
+       * `available` in the SAME change that lands the first appointment
+       * screen (`P1-28-FE-001`, the calendar and scheduling view) — and
+       * `navigation.test.ts` pins the planned/available sets, so the flip
+       * edits both together.
+       *
+       * The Reception module has NO entry here yet, deliberately: its
+       * permission (`rec.reception.read`, seeded by the same remediation) has
+       * no screen either, and unlike this entry it was never part of the
+       * P1-25 shell. Its entry lands WITH its first screen
+       * (`P1-28-FE-007`, the check-in wizard), gated on `rec.reception.read`.
+       */
       {
         key: 'appointments',
         labelKey: 'nav.appointments',

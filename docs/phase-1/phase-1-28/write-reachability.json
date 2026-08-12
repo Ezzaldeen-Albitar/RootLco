@@ -1,0 +1,84 @@
+{
+  "$comment": [
+    "P1-28 write-reachability classification (SEC-004), checked by",
+    "scripts/ci/check-p1-28-write-reachability.mjs (validate:p1-28-write-reachability).",
+    "",
+    "The OPERATION LIST is not held here. It is derived at check time from the",
+    "P1-24 operation register: every apt.* / rec.* operation whose method is not",
+    "GET. An operation present in the register and absent here fails as UNWIRED —",
+    "that is INT-113, P1-27's dominant defect class, recurring.",
+    "",
+    "REACHABLE requires a real production mutation call site in apps/web/src.",
+    "Tests, comments, docblocks and the generated lib/api/idempotent-operations.ts",
+    "do not count and are excluded by the checker.",
+    "",
+    "NOT_YET_WIRED is the day-one allow-list: the phase's frontend waves have not",
+    "landed and no screen exists yet. Every entry requires a reason naming the",
+    "canonical-plan task that will wire it. The list only SHRINKS: the checker",
+    "refuses any NOT_YET_WIRED id that is not on its frozen day-one list, and",
+    "refuses an allow-listed operation that IS called — the wave that lands a",
+    "screen must flip the entry to REACHABLE in the same change.",
+    "",
+    "DELIBERATELY_ABSENT requires a decisionRef naming an approved decision.",
+    "No operation carries it today; the vocabulary exists so a future Owner",
+    "decision can be recorded as a decision rather than parked as not-yet-wired."
+  ],
+  "operations": {
+    "apt.appointment-create": {
+      "classification": "NOT_YET_WIRED",
+      "reason": "P1-28-FE-002 (appointment booking form) has not landed; no appointment screen exists yet."
+    },
+    "apt.appointment-reschedule": {
+      "classification": "NOT_YET_WIRED",
+      "reason": "P1-28-FE-003 (appointment reschedule and confirmation) has not landed."
+    },
+    "apt.appointment-cancel": {
+      "classification": "NOT_YET_WIRED",
+      "reason": "P1-28-FE-004 (appointment cancellation) has not landed."
+    },
+    "apt.appointment-no-show": {
+      "classification": "NOT_YET_WIRED",
+      "reason": "P1-28-FE-005 (appointment no-show recording) has not landed."
+    },
+    "rec.reception-create": {
+      "classification": "NOT_YET_WIRED",
+      "reason": "P1-28-FE-007 (reception check-in wizard) has not landed; FE-014 adds the fuel/EV fields of the same command."
+    },
+    "rec.reception-party-role": {
+      "classification": "NOT_YET_WIRED",
+      "reason": "P1-28-FE-009 (reception party roles and authorization) has not landed."
+    },
+    "rec.reception-authorization": {
+      "classification": "NOT_YET_WIRED",
+      "reason": "P1-28-FE-009 (reception party roles and authorization) has not landed."
+    },
+    "rec.reception-condition-evidence": {
+      "classification": "NOT_YET_WIRED",
+      "reason": "The evidence-kind tasks P1-28-FE-010/011/012/015/016 (complaint, inspection, damage map, warning lights, contents) have not landed; the first of them to ship a screen flips this entry."
+    },
+    "rec.reception-signature": {
+      "classification": "NOT_YET_WIRED",
+      "reason": "P1-28-FE-018 (reception signature capture) has not landed."
+    },
+    "rec.reception-refusal": {
+      "classification": "NOT_YET_WIRED",
+      "reason": "P1-28-FE-019 (reception refusal workflow) has not landed."
+    },
+    "rec.reception-approve": {
+      "classification": "NOT_YET_WIRED",
+      "reason": "P1-28-FE-020 (reception summary and approval) has not landed."
+    },
+    "rec.reception-convert-to-work-order": {
+      "classification": "NOT_YET_WIRED",
+      "reason": "P1-28-FE-022 (reception conversion to work order) has not landed."
+    },
+    "rec.reception-close-without-work": {
+      "classification": "NOT_YET_WIRED",
+      "reason": "Terminal-close command added by P1-18 remediation R5 (PR #220) after the plan's task table was derived; no plan task binds it yet. Consumed by the reception summary / terminal-close surface (nearest task P1-28-FE-020) when it lands."
+    },
+    "rec.reception-refuse": {
+      "classification": "NOT_YET_WIRED",
+      "reason": "Terminal-close command added by P1-18 remediation R5 (PR #220) after the plan's task table was derived; no plan task binds it yet. Consumed by the reception refusal workflow (nearest task P1-28-FE-019) when it lands."
+    }
+  }
+}
