@@ -117,6 +117,28 @@ export const NAVIGATION: readonly NavigationGroup[] = Object.freeze([
         scope: 'branch',
       },
       /*
+       * Walk-in intake — landed with `P1-28-FE-006`. Gated on
+       * `crm.customer.read` because every operation the screen calls is a CRM
+       * or Vehicle one: its first step is a customer search, and an operator
+       * who cannot search customers cannot use anything after it. Gating it
+       * on a code no operation behind it requires is the defect `P1-26-F-011`
+       * and `P1-26-F-029` both recorded.
+       *
+       * The Reception CHECK-IN entry is still absent, deliberately: the
+       * check-in wizard (`P1-28-FE-007`) has no screen yet, and its entry
+       * lands WITH that screen, gated on `rec.reception.read` — which is
+       * seeded (P1-18 remediation R2, PR #220) but has no screen to point at.
+       */
+      {
+        key: 'walk-in',
+        labelKey: 'nav.walkIn',
+        icon: 'customers',
+        href: '/reception/walk-in',
+        permission: 'crm.customer.read',
+        status: 'available',
+        scope: 'branch',
+      },
+      /*
        * P1-28 state, verified 2026-08-13: `apt.appointment.read` IS seeded now
        * (P1-18 remediation R2, PR #220) — the permission is no longer what
        * keeps this entry `planned`. What keeps it `planned` is that no screen
@@ -127,12 +149,6 @@ export const NAVIGATION: readonly NavigationGroup[] = Object.freeze([
        * screen (`P1-28-FE-001`, the calendar and scheduling view) — and
        * `navigation.test.ts` pins the planned/available sets, so the flip
        * edits both together.
-       *
-       * The Reception module has NO entry here yet, deliberately: its
-       * permission (`rec.reception.read`, seeded by the same remediation) has
-       * no screen either, and unlike this entry it was never part of the
-       * P1-25 shell. Its entry lands WITH its first screen
-       * (`P1-28-FE-007`, the check-in wizard), gated on `rec.reception.read`.
        */
       {
         key: 'appointments',

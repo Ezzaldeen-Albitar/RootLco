@@ -44,9 +44,10 @@ describe('the navigation model', () => {
   it('marks every module whose screens do not exist yet as planned', () => {
     // `available` is a claim that a screen exists. P1-25 built the frame, the
     // overview and the gallery; P1-26 built authentication and administration;
-    // P1-27 built the CRM and Vehicle screens. Everything else is still a route
-    // definition for a later phase and must render as visibly unavailable
-    // rather than as a link that 404s.
+    // P1-27 built the CRM and Vehicle screens; P1-28 is landing the
+    // appointment and reception screens wave by wave. Everything else is still
+    // a route definition for a later phase and must render as visibly
+    // unavailable rather than as a link that 404s.
     const available = ALL.filter((entry) => entry.status === 'available').map((e) => e.key);
     expect(available.sort()).toEqual([
       'administration',
@@ -75,6 +76,10 @@ describe('the navigation model', () => {
       'settings.taxes',
       'vehicle-duplicates',
       'vehicles',
+      // The walk-in intake screen landed with P1-28-FE-006 at
+      // /reception/walk-in, gated on the permission its first operation
+      // (customer search) requires.
+      'walk-in',
     ]);
   });
 
@@ -228,6 +233,8 @@ describe('permission filtering — unknown means denied', () => {
     const keys = visibleNavigation(NAVIGATION, capabilities).flatMap((group) =>
       group.items.map((entry) => entry.key)
     );
-    expect(keys.sort()).toEqual(['customers', 'gallery', 'overview', 'vehicles']);
+    // `walk-in` appears with `crm.customer.read` because that is the code its
+    // first operation (customer search) requires.
+    expect(keys.sort()).toEqual(['customers', 'gallery', 'overview', 'vehicles', 'walk-in']);
   });
 });
