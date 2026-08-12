@@ -1,8 +1,43 @@
 # P1-27 blocker remediation plan — D1, D2, D3
 
 **Classification:** Confidential — Commercial Product and Pilot Planning ·
-**Status:** PLANNED, NOT EXECUTED · **Read at:** `develop` `131f9664` ·
-**Recorded:** 2026-08-08
+**Status:** EXECUTED WITH DEVIATIONS — reconciled 2026-08-13 against the merged
+tree of PR #214 (`46d4e482`, branch `remediation/p1-27-final-canonical-blockers`,
+merged 2026-08-12; P1-27 closed the same day on `OWNER ACCEPTANCE: PASS`).
+**D1 (§1) executed as planned**: `RecordForm` relocated to `components/forms/`
+with the re-export shim, per-instance `useId`, the `HistorySection` form slot
+gated on `table.response` with permission and `frozen` threaded, and all six
+writes wired — plate, ownership, odometer, EV profile, authorized-party add and
+retire — plus the seventh §1.7 raised: `crm.vehicle-link` shipped as
+`linkCustomerAction`, offered from the vehicle profile because the customer side
+had no read (`P1-27-INT-012`). §6.1/§6.2 were thereby resolved by wiring; §6.8 by
+exposing the plate `effectiveDate` as a `date` field; §6.9 by offering the
+correction fields; §6.10 by requiring the operator to supply `observedAt`.
+Deviations inside D1: `FieldKind` gained `number` and `date` but **no
+`checkbox-group`** — the authorized-party scope is uncontrolled checkboxes in a
+`RecordForm` `prelude` with a `guard` running `validateScope` client-side — and a
+search-driven `CustomerSelector` replaced the planned raw partner-UUID input.
+**D2 (§2.3) was not built**: no `customer-names.ts`, no client-side per-id
+resolution, no `nameUnavailable` fallback. The Backend projection carried as
+decision §6.3/§6.4 — the shape `VHM-13` prescribes — was chosen instead and rode
+its own branch per §4.3 (`remediation/p1-27-backend-partner-identity`, PR #213
+`1045c15`): `partnerName` is on the wire, resolved permission-aware after
+`275129a` corrected the visibility widening §2.2 predicted
+(`final-canonical-remediation.md` C-2). The cells render the shared `PartyLabel`
+with the uuid deleted, and the two headers read "Owner" and "Customer" exactly as
+§2.3 specified; §2.6's rate-limit ceiling is moot.
+**D3 resolved against §3.2's recommendation, by §3.2's own second reason**:
+instead of relabelling to a staff reference, the actor **name** now ships on the
+history projections (`remediation/p1-14-actor-display-identity`, PR #212
+`61d8ded` — owned by P1-14 exactly as `VHM-13` assigns), so
+`vehicles.history.actor` stays "Changed by" and `crm.customers.timeline.actor`
+stays "Recorded by", each over a name with a "User unavailable" fallback and the
+system-event null branch kept.
+**Not executed**: §3.3's ordered correction of the false `iam.user.read` premise
+in `finding-phase-disposition.md` — the sentence still stands at its §5 D3 entry —
+and §3.4's audit-log recommendation: `AuditLogScreen.tsx:78` still renders a raw
+uuid under "Who", with no `actorKind` fallback in the table ·
+**Read at:** `develop` `131f9664` · **Recorded:** 2026-08-08
 
 Three of the four Class A P1-27 blockers. The fourth — a customer-search cursor
 that lost rows at a page boundary inside one millisecond — is closed and merged
