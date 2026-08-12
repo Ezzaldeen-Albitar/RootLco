@@ -184,8 +184,8 @@
       "class": "DERIVABLE_GIT",
       "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
-      "locator": "| Tracked files under `docs/phase-1/phase-1-27`        | 40                                          |",
-      "value": "40",
+      "locator": "| Tracked files under `docs/phase-1/phase-1-27`        | 41                                          |",
+      "value": "41",
       "binding": {
         "kind": "git",
         "op": "trackedFiles",
@@ -198,8 +198,8 @@
       "class": "DERIVABLE_GIT",
       "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
-      "locator": "| Tracked `.md` files under the same directory         | 30                                          |",
-      "value": "30",
+      "locator": "| Tracked `.md` files under the same directory         | 31                                          |",
+      "value": "31",
       "binding": {
         "kind": "git",
         "op": "trackedFiles",
@@ -597,21 +597,22 @@
       "class": "DERIVABLE_GIT",
       "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
-      "locator": "| Executable paths changed since the candidate         | 0                                           |",
+      "locator": "| Executable paths changed, candidate to accepted `develop` | 0                                      |",
       "value": "0",
       "binding": {
         "kind": "git",
         "op": "executableDiffCount",
-        "since": "501f5f0d48d7b8cafc12dad51f6c501534b66a18"
+        "since": "501f5f0d48d7b8cafc12dad51f6c501534b66a18",
+        "until": "aa78a6627bff0400621ec13d10777e44ff2cf9a3"
       },
-      "why": "The documentation-only claim as a NUMBER a command produces — the rule this page states in its own superseded section after asserting the sentence once and being wrong. Zero is the only value at which DOCUMENTATION_ONLY_RECORDING may be claimed, and the binding recomputes it on every gate run."
+      "why": "The documentation-only claim as a NUMBER a command produces — the rule this page states in its own superseded section after asserting the sentence once and being wrong. Zero is the only value at which DOCUMENTATION_ONLY_RECORDING may be claimed, and the binding recomputes it on every gate run. Both ends are pinned since the closure: a one-sided candidate..HEAD span answers a different question on every post-closure commit — the first being the acceptance wave, whose guard lifts are executable by design — while candidate..accepted-develop is the equivalence the Owner acceptance actually relied on, and its answer cannot move."
     },
     {
       "id": "CI-B-CODE-CANDIDATE",
       "class": "DERIVABLE_GIT",
       "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/ci-evidence.md",
-      "locator": "| `CODE_CANDIDATE_SHA`                         | `501f5f0d48d7b8cafc12dad51f6c501534b66a18`                                    |",
+      "locator": "| `CODE_CANDIDATE_SHA`                                      | `501f5f0d48d7b8cafc12dad51f6c501534b66a18`                                                                                  |",
       "value": "501f5f0d48d7b8cafc12dad51f6c501534b66a18",
       "binding": {
         "kind": "git",
@@ -625,7 +626,7 @@
       "class": "DERIVABLE_GIT",
       "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/ci-evidence.md",
-      "locator": "| Run head — a documentation-only successor    | `f0804b2c7ad31e08f033f76096d49c5394d69c81`                                    |",
+      "locator": "| Run head — a documentation-only successor                 | `f0804b2c7ad31e08f033f76096d49c5394d69c81`                                                                                  |",
       "value": "f0804b2c7ad31e08f033f76096d49c5394d69c81",
       "binding": {
         "kind": "git",
@@ -639,21 +640,22 @@
       "class": "DERIVABLE_GIT",
       "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/ci-evidence.md",
-      "locator": "| Executable paths changed since the candidate | **0** — derived on every gate run, over the whole span including the run head |",
+      "locator": "| Executable paths changed, candidate to accepted `develop` | **0** — derived on every gate run; both ends pinned, so the span covers the run head and cannot move with post-closure work |",
       "value": "0",
       "binding": {
         "kind": "git",
         "op": "executableDiffCount",
-        "since": "501f5f0d48d7b8cafc12dad51f6c501534b66a18"
+        "since": "501f5f0d48d7b8cafc12dad51f6c501534b66a18",
+        "until": "aa78a6627bff0400621ec13d10777e44ff2cf9a3"
       },
-      "why": "The equivalence between the candidate and the run head, as a derivation. A non-zero answer here means the candidate is superseded and every hosted value on this page stops describing it — which is exactly the failure this page must make loud."
+      "why": "The equivalence between the candidate and the run head, as a derivation. The run head is an ancestor of the accepted develop state, so a zero over candidate..accepted-develop covers it; a non-zero answer here would mean the hosted values stopped describing the candidate BEFORE the acceptance, which is exactly the failure this page must make loud. Pinned on both ends since the closure, so post-closure work cannot move a recorded equivalence."
     },
     {
       "id": "CI-C-RUN-ID",
       "class": "HOSTED_ARTIFACT_ATTESTED",
       "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/ci-evidence.md",
-      "locator": "| Workflow run                                 | `31587707846`                                                                 |",
+      "locator": "| Workflow run                                              | `31587707846`                                                                                                               |",
       "value": "31587707846",
       "provenance": {
         "source": "HOSTED_ARTIFACT",
@@ -671,7 +673,7 @@
       "class": "HOSTED_ARTIFACT_ATTESTED",
       "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/ci-evidence.md",
-      "locator": "| Required checks                              | **21 completed · 0 failed · 0 pending**                                       |",
+      "locator": "| Required checks                                           | **21 completed · 0 failed · 0 pending**                                                                                     |",
       "value": "21",
       "provenance": {
         "source": "HOSTED_ARTIFACT",
@@ -689,7 +691,7 @@
       "class": "HOSTED_ARTIFACT_ATTESTED",
       "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/ci-evidence.md",
-      "locator": "| Required checks                              | **21 completed · 0 failed · 0 pending**                                       |",
+      "locator": "| Required checks                                           | **21 completed · 0 failed · 0 pending**                                                                                     |",
       "value": "0",
       "occurrences": 2,
       "provenance": {
@@ -708,7 +710,7 @@
       "class": "HOSTED_ARTIFACT_ATTESTED",
       "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/ci-evidence.md",
-      "locator": "| `ci-gate` decision                           | **Go**                                                                        |",
+      "locator": "| `ci-gate` decision                                        | **Go**                                                                                                                      |",
       "value": "Go",
       "provenance": {
         "source": "HOSTED_ARTIFACT",
@@ -726,7 +728,7 @@
       "class": "HOSTED_ARTIFACT_ATTESTED",
       "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/ci-evidence.md",
-      "locator": "| `ci-gate` job                                | `94088792169`                                                                 |",
+      "locator": "| `ci-gate` job                                             | `94088792169`                                                                                                               |",
       "value": "94088792169",
       "provenance": {
         "source": "HOSTED_ARTIFACT",
@@ -744,7 +746,7 @@
       "class": "HOSTED_ARTIFACT_ATTESTED",
       "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/ci-evidence.md",
-      "locator": "| `hosted-clean-room` job                      | `94085356719` — success, on its own per-job conclusion                        |",
+      "locator": "| `hosted-clean-room` job                                   | `94085356719` — success, on its own per-job conclusion                                                                      |",
       "value": "94085356719",
       "provenance": {
         "source": "HOSTED_ARTIFACT",
@@ -762,7 +764,7 @@
       "class": "HOSTED_ARTIFACT_ATTESTED",
       "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/ci-evidence.md",
-      "locator": "| `Web quality` job                            | `94085356574` — success                                                       |",
+      "locator": "| `Web quality` job                                         | `94085356574` — success                                                                                                     |",
       "value": "94085356574",
       "provenance": {
         "source": "HOSTED_ARTIFACT",
@@ -780,7 +782,7 @@
       "class": "HOSTED_ARTIFACT_ATTESTED",
       "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/ci-evidence.md",
-      "locator": "| `authenticated-browser` job                  | `94085356606` — success                                                       |",
+      "locator": "| `authenticated-browser` job                               | `94085356606` — success                                                                                                     |",
       "value": "94085356606",
       "provenance": {
         "source": "HOSTED_ARTIFACT",
@@ -798,7 +800,7 @@
       "class": "HOSTED_ARTIFACT_ATTESTED",
       "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/ci-evidence.md",
-      "locator": "| Authenticated tier                           | 229 planned · 225 passed · 0 failed · 4 skipped · 224 executed · 6 spec files |",
+      "locator": "| Authenticated tier                                        | 229 planned · 225 passed · 0 failed · 4 skipped · 224 executed · 6 spec files                                               |",
       "value": "229",
       "provenance": {
         "source": "HOSTED_ARTIFACT",
@@ -816,7 +818,7 @@
       "class": "HOSTED_ARTIFACT_ATTESTED",
       "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/ci-evidence.md",
-      "locator": "| Authenticated tier                           | 229 planned · 225 passed · 0 failed · 4 skipped · 224 executed · 6 spec files |",
+      "locator": "| Authenticated tier                                        | 229 planned · 225 passed · 0 failed · 4 skipped · 224 executed · 6 spec files                                               |",
       "value": "225",
       "provenance": {
         "source": "HOSTED_ARTIFACT",
@@ -834,7 +836,7 @@
       "class": "HOSTED_ARTIFACT_ATTESTED",
       "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/ci-evidence.md",
-      "locator": "| Authenticated tier                           | 229 planned · 225 passed · 0 failed · 4 skipped · 224 executed · 6 spec files |",
+      "locator": "| Authenticated tier                                        | 229 planned · 225 passed · 0 failed · 4 skipped · 224 executed · 6 spec files                                               |",
       "value": "0",
       "provenance": {
         "source": "HOSTED_ARTIFACT",
@@ -852,7 +854,7 @@
       "class": "HOSTED_ARTIFACT_ATTESTED",
       "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/ci-evidence.md",
-      "locator": "| Authenticated tier                           | 229 planned · 225 passed · 0 failed · 4 skipped · 224 executed · 6 spec files |",
+      "locator": "| Authenticated tier                                        | 229 planned · 225 passed · 0 failed · 4 skipped · 224 executed · 6 spec files                                               |",
       "value": "4",
       "provenance": {
         "source": "HOSTED_ARTIFACT",
@@ -870,7 +872,7 @@
       "class": "HOSTED_ARTIFACT_ATTESTED",
       "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/ci-evidence.md",
-      "locator": "| Authenticated tier                           | 229 planned · 225 passed · 0 failed · 4 skipped · 224 executed · 6 spec files |",
+      "locator": "| Authenticated tier                                        | 229 planned · 225 passed · 0 failed · 4 skipped · 224 executed · 6 spec files                                               |",
       "value": "224",
       "provenance": {
         "source": "HOSTED_ARTIFACT",
@@ -888,7 +890,7 @@
       "class": "HOSTED_ARTIFACT_ATTESTED",
       "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/ci-evidence.md",
-      "locator": "| Authenticated tier                           | 229 planned · 225 passed · 0 failed · 4 skipped · 224 executed · 6 spec files |",
+      "locator": "| Authenticated tier                                        | 229 planned · 225 passed · 0 failed · 4 skipped · 224 executed · 6 spec files                                               |",
       "value": "6",
       "provenance": {
         "source": "HOSTED_ARTIFACT",

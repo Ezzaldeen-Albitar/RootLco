@@ -255,9 +255,13 @@ reopened; that is why this sentence is here.
 ## Owner-acceptance remediation — `OA-01` … `OA-09`
 
 The Owner tested the merged application on 2026-08-06 and returned
-`OWNER ACCEPTANCE: FAIL` with eleven confirmed defects. **P1-27 is reopened.**
+`OWNER ACCEPTANCE: FAIL` with eleven confirmed defects. **P1-27 was reopened.**
 The result and the disposition of every defect are in
 [`owner-acceptance-fail-remediation.md`](owner-acceptance-fail-remediation.md).
+The phase stayed open until the Owner, after the remediation and against the
+running application, returned `OWNER ACCEPTANCE: PASS` on 2026-08-12; the
+closure is recorded in [`closure-record.md`](closure-record.md). `main` is not
+promoted and P1-28 has not begun.
 
 The implementation total above is unchanged and is now beside the point: 42 / 42
 tasks were complete, every automated tier was green, and the product was still

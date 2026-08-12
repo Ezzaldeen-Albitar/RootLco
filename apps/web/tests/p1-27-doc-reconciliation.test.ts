@@ -53,12 +53,20 @@ function read(...parts: string[]): string {
  * The one canonical, greppable statement of where the phase stands.
  *
  * Every guarded document must carry this exact line. A document that merely
- * MENTIONS `OWNER ACCEPTANCE: FAIL` somewhere in a narrative does not state a
- * status — `evidence/task-traceability.md` mentioned it only in a past-tense
- * sentence about a superseded event, which would have kept the guard green while
- * the surrounding prose announced a Pass.
+ * MENTIONS a verdict somewhere in a narrative does not state a status —
+ * `evidence/task-traceability.md` once mentioned `OWNER ACCEPTANCE: FAIL` only
+ * in a past-tense sentence about a superseded event, which would have kept the
+ * guard green while the surrounding prose announced a Pass.
+ *
+ * LIFTED on the Owner's verdict, by this deliberate edit, on 2026-08-12: the
+ * Product Owner tested the running application after the final technical
+ * handoff and returned `OWNER ACCEPTANCE: PASS`, verbatim. The line therefore
+ * carries the verdict AND its date — a status line that could be flipped
+ * without a date would let a later claim inherit this acceptance, and refusing
+ * that is the guard's job now (see the transformed ban below).
  */
-const CURRENT_STATUS_LINE = 'CURRENT PHASE STATUS: OWNER ACCEPTANCE: FAIL';
+const RECORDED_VERDICT_DATE = '2026-08-12';
+const CURRENT_STATUS_LINE = `CURRENT PHASE STATUS: OWNER ACCEPTANCE: PASS (${RECORDED_VERDICT_DATE})`;
 
 /**
  * One paragraph, whitespace-normalised.
@@ -350,7 +358,7 @@ describe('DOC-002 — the change log the task names actually exists', () => {
 });
 
 /**
- * The Owner-acceptance guard.
+ * The Owner-acceptance guard — TRANSFORMED at the acceptance, not deleted.
  *
  * Separated from the task-count guard on purpose, because conflating them is
  * what broke it. "Are the tasks resolved?" is derived from a table and changes
@@ -358,20 +366,27 @@ describe('DOC-002 — the change log the task names actually exists', () => {
  * derivable from anything in this repository, and does not become true because
  * a count reached its maximum.
  *
- * The previous version nested the Owner check inside `if (open + blocked > 0)`,
- * so it evaporated on the commit that closed the last task — the exact moment a
- * premature closure claim becomes both likely and dangerous. An adversarial
- * review then found three further holes: `OWNER ACCEPTANCE: PASS` was banned
- * nowhere; the banned spelling (`PASS=42`) is one no document in this phase
- * uses, while five unbanned spellings of the identical claim were already on the
- * page; and `P1-27 CLOSED GO` — *this repository's actual closure vocabulary,
- * used by every earlier phase* — was not covered at all.
+ * For the whole remediation this describe banned every spelling of an Owner
+ * acceptance, UNCONDITIONALLY, and its docblock said lifting it requires the
+ * Owner's verdict and a deliberate edit here. Both happened: on 2026-08-12,
+ * after the final technical handoff left the application running against
+ * protected `develop` content, the Product Owner returned `OWNER ACCEPTANCE:
+ * PASS`, verbatim. This edit is the deliberate lift the docblock promised — a
+ * reviewable diff, made against the recorded verdict in `closure-record.md`
+ * and `evidence/lifecycle-ledger.json`, not a silent arithmetic side effect.
  *
- * So this describe is UNCONDITIONAL. Lifting it requires the Owner's verdict and
- * a deliberate edit here, which is a reviewable diff rather than a silent
- * arithmetic side effect.
+ * The guard's job TRANSFORMS rather than ends, because each half of the old ban
+ * resolves differently:
+ *
+ *   - a claim of acceptance is now TRUE — so the guard requires any such claim
+ *     to match the RECORDED verdict and date. An acceptance claim carrying a
+ *     different date, or none, is a claim to some OTHER acceptance nobody gave,
+ *     and is refused exactly as the old ban refused the first spelling;
+ *   - a claim of promotion to `main`, of P1-28 having begun, or of a `P1-G27`
+ *     gate-record Go remains FALSE — so those stay banned outright. The
+ *     closure did not promote anything and started nothing.
  */
-describe('no phase document may claim an acceptance the Owner has not given', () => {
+describe('no phase document may claim more than the acceptance the Owner gave', () => {
   const GUARDED = [
     'final-task-adjudication.md',
     'evidence/task-traceability.md',
@@ -382,13 +397,24 @@ describe('no phase document may claim an acceptance the Owner has not given', ()
   ];
 
   /**
-   * Closure vocabulary, in the forms this repository actually writes.
+   * The claims that are STILL false after the acceptance, in the forms this
+   * repository actually writes. Whitespace-insensitive and case-insensitive:
+   * `PASS = 42` evades a substring ban on `PASS=42`, and the document's own
+   * fenced blocks are spaced.
    *
-   * Whitespace-insensitive and case-insensitive: `PASS = 42` evades a substring
-   * ban on `PASS=42`, and the document's own fenced blocks are spaced.
+   * The banner spellings of closure stay banned even though the phase is now
+   * closed: the recorded form is the canonical status line plus
+   * `closure-record.md`, and a second spelling of the same fact is how two
+   * statements of one status drift apart — the defect half this file exists
+   * for.
    */
-  const CLOSURE_CLAIMS: readonly { pattern: RegExp; what: string }[] = [
-    { pattern: /OWNER\s+ACCEPTANCE:\s*PASS/i, what: 'an Owner acceptance' },
+  const OVERSTATEMENTS: readonly { pattern: RegExp; what: string }[] = [
+    { pattern: /\bpromoted\s+to\s+`?main`?\b/i, what: 'a promotion to main' },
+    { pattern: /\bP1-27\s+(?:is|was|has\s+been)\s+promoted\b/i, what: 'a promotion' },
+    {
+      pattern: /\bP1-28\s+(?:has\s+)?(?:begun|began|started|starts|is\s+under\s*way)\b/i,
+      what: 'a P1-28 start',
+    },
     { pattern: /PHASE\s+1-27\s+OFFICIALLY\s+CLOSED/i, what: 'official closure' },
     { pattern: /P1-27\s+CANONICAL\s+SCOPE\s+VERIFIED/i, what: 'canonical scope verified' },
     { pattern: /P1-27\s+CLOSED(\s+GO)?\b/i, what: "this repository's own closure banner" },
@@ -396,6 +422,20 @@ describe('no phase document may claim an acceptance the Owner has not given', ()
     { pattern: /\bP1-G27\b.*\bGO\b/i, what: 'a gate-record Go' },
     { pattern: /\b100\s*\/\s*100\s+VERIFIED/i, what: 'a verification banner' },
   ];
+
+  /**
+   * An acceptance claim, and the ONE definition of when it is refused.
+   *
+   * Shared by the sweep over the live documents and by the driver beneath —
+   * the `B-01` arrangement — so the sweep cannot be weakened while the driver
+   * goes on passing against a private copy. A paragraph claiming
+   * `OWNER ACCEPTANCE: PASS` without the recorded date is claiming an
+   * acceptance nobody gave; the one the Owner gave has a date, and the record
+   * states it.
+   */
+  const ACCEPTANCE_CLAIM = /OWNER\s+ACCEPTANCE:\s*PASS/i;
+  const claimsUnrecordedAcceptance = (paragraph: string) =>
+    ACCEPTANCE_CLAIM.test(paragraph) && !paragraph.includes(RECORDED_VERDICT_DATE);
 
   /**
    * A line states the RULE or the HISTORY rather than making the claim.
@@ -430,7 +470,7 @@ describe('no phase document may claim an acceptance the Owner has not given', ()
     }
   });
 
-  it('makes no closure claim anywhere, whatever the task count says', () => {
+  it('makes no overstated claim anywhere, and no acceptance claim off the record', () => {
     /*
      * PARAGRAPH scope, not line scope.
      *
@@ -452,16 +492,21 @@ describe('no phase document may claim an acceptance the Owner has not given', ()
         const start = line;
         line += paragraph.split('\n').length + 1;
         if (RULE_OR_HISTORY.test(paragraph)) continue;
-        for (const claim of CLOSURE_CLAIMS) {
+        for (const claim of OVERSTATEMENTS) {
           const hit = claim.pattern.exec(paragraph);
           if (hit) violations.push(`${doc}:~${start} asserts ${claim.what} — "${hit[0]}"`);
         }
+        if (claimsUnrecordedAcceptance(paragraph)) {
+          violations.push(
+            `${doc}:~${start} claims an Owner acceptance without the recorded date ` +
+              `${RECORDED_VERDICT_DATE} — the only acceptance on record carries it`
+          );
+        }
       }
     }
-    expect(
-      violations,
-      'a phase document claims an acceptance or closure the Owner has not given'
-    ).toEqual([]);
+    expect(violations, 'a phase document claims more than the acceptance the Owner gave').toEqual(
+      []
+    );
   });
 
   it('is not vacuous — it can see the strings it bans', () => {
@@ -475,18 +520,55 @@ describe('no phase document may claim an acceptance the Owner has not given', ()
     }
     const sample = 'The gate record reads P1-27 CLOSED GO and the phase is done.';
     expect(RULE_OR_HISTORY.test(sample), 'the exemption swallows a plain claim').toBe(false);
-    expect(CLOSURE_CLAIMS.some((c) => c.pattern.test(sample))).toBe(true);
+    expect(OVERSTATEMENTS.some((c) => c.pattern.test(sample))).toBe(true);
+
+    const promoted = 'P1-27 was promoted to `main` this morning.';
+    expect(RULE_OR_HISTORY.test(promoted), 'the exemption swallows a promotion claim').toBe(false);
+    expect(
+      OVERSTATEMENTS.some((c) => c.pattern.test(promoted)),
+      'a promotion claim must still be refused after the acceptance'
+    ).toBe(true);
+
+    const p28 = 'P1-28 has begun and the first tasks are assigned.';
+    expect(
+      OVERSTATEMENTS.some((c) => c.pattern.test(p28)),
+      'a P1-28 start claim'
+    ).toBe(true);
+    const p28Denied = 'P1-28 has not begun.';
+    expect(
+      OVERSTATEMENTS.some((c) => c.pattern.test(p28Denied)),
+      'the denial the records actually write must stay permitted'
+    ).toBe(false);
 
     const ruled = 'The phase closes only when the Owner returns OWNER ACCEPTANCE: PASS.';
     expect(RULE_OR_HISTORY.test(ruled), 'the rule sentence must stay permitted').toBe(true);
   });
 
-  it('bans the spaced and cased spellings, not one literal', () => {
-    // `PASS=42` was the banned form; the documents write `RESOLVED / 42 = 42`,
-    // "42 of 42" and `PASS = 42`. A ban on a spelling nobody uses is decoration.
-    for (const text of ['OWNER ACCEPTANCE:   pass', 'Phase 1-27 Officially Closed']) {
-      expect(CLOSURE_CLAIMS.some((c) => c.pattern.test(text))).toBe(true);
-    }
+  it('refuses an acceptance claim that does not match the recorded verdict/date', () => {
+    /*
+     * Drives `claimsUnrecordedAcceptance` ITSELF — the same predicate the sweep
+     * filters on, not a copy — so weakening the sweep fails here (`B-01`).
+     */
+    expect(
+      claimsUnrecordedAcceptance('OWNER ACCEPTANCE: PASS was returned on 2026-08-06.'),
+      'a PASS claim carrying the WRONG date is a claim to an acceptance nobody gave'
+    ).toBe(true);
+    expect(
+      claimsUnrecordedAcceptance('The Owner returned OWNER ACCEPTANCE: PASS.'),
+      'a PASS claim carrying NO date inherits nothing'
+    ).toBe(true);
+    expect(
+      claimsUnrecordedAcceptance('owner  acceptance:pass, spaced and cased'),
+      'the spaced and cased spellings are still read as the claim'
+    ).toBe(true);
+    expect(
+      claimsUnrecordedAcceptance(CURRENT_STATUS_LINE),
+      'the recorded form itself must pass'
+    ).toBe(false);
+    expect(
+      claimsUnrecordedAcceptance('The register totals moved to 42 of 42.'),
+      'a sentence with no acceptance claim is not read as one'
+    ).toBe(false);
   });
 });
 
@@ -599,18 +681,21 @@ describe('QA-005 — the evidence records point at this branch', () => {
        *
        * Forty-two tasks passing is a statement about tasks. Acceptance is the
        * Owner's, is not derivable from any count, and cannot be inferred from
-       * silence.
+       * silence. The Owner GAVE it, verbatim, on 2026-08-12 — so the status
+       * these records must state unconditionally is now the recorded PASS line
+       * with its date, and nothing weaker.
        */
-      expect(text, `${doc} does not state the current Owner status`).toContain(
-        'OWNER ACCEPTANCE: FAIL'
-      );
+      expect(text, `${doc} does not state the current Owner status`).toContain(CURRENT_STATUS_LINE);
 
-      // Phase-closure banners are never permissible ahead of an Owner Pass, no
-      // matter what the task rows say.
+      // Phase-closure banner spellings stay refused even now that the Owner
+      // Pass is on record: the recorded form is the canonical status line plus
+      // `closure-record.md`, and a second spelling of one status is how two
+      // statements of one fact drift apart.
       for (const phrase of ['PHASE 1-27 OFFICIALLY CLOSED', 'P1-27 CANONICAL SCOPE VERIFIED']) {
-        expect(text, `${doc} declares the phase closed without an Owner Pass`).not.toContain(
-          phrase
-        );
+        expect(
+          text,
+          `${doc} restates the closure in a banner the record does not use`
+        ).not.toContain(phrase);
       }
     }
 

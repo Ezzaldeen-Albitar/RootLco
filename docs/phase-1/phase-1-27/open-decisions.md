@@ -5,19 +5,24 @@
 Decisions this phase could not make for itself, and engineering decisions it did
 make that the Owner should ratify.
 
-> **P1-27 is OPEN.** The Product Owner manually tested the merged application —
+> **P1-27 is CLOSED — `OWNER ACCEPTANCE: PASS`, 2026-08-12**
+> ([`closure-record.md`](closure-record.md)). The road there is preserved: the
+> Product Owner manually tested the merged application —
 > `develop` `8b9be4bc92a6349a6cb99d15ee282f5f463c63a5`, which
 > [`deliverable-manifest.md`](deliverable-manifest.md) §4.1 records as the state
 > after PR #199 — and returned `OWNER ACCEPTANCE: FAIL` with eleven confirmed
-> defects, recorded on 2026-08-06. Remediation has since merged through protected
+> defects, recorded on 2026-08-06. Remediation then merged through protected
 > change control: `owner-acceptance-fail-remediation.md` records PR #200 →
 > `11c07b1d` and PR #201 → `44e053ad`, both two-parent merge commits, and the
 > manifest §4 records a third merge, **PR #202** — branch
 > `docs/p1-27-installed-chrome-review`, head `4de51d9c`, `develop` afterwards
-> `19f370b9` — whose scope §4.1 gives as **documentation only**. `P1-G27` is not
-> written, the phase is not closed, and P1-28 has not started. **P1-27 closes only
-> when the Product Owner manually tests the application again and returns an
-> explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
+> `19f370b9` — whose scope §4.1 gives as **documentation only**. The rule
+> **"P1-27 closes only when the Product Owner manually tests the application
+> again and returns an explicit `OWNER ACCEPTANCE: PASS`; silence is not Pass"**
+> was applied without exception, and on 2026-08-12 the Owner answered with
+> exactly those words. `main` is not promoted and P1-28 has not started. The
+> business decisions below are NOT closed by the phase closure: `P1-OD-017` and
+> `P1-OD-025` remain open, exactly as recorded.
 >
 > The result and the disposition of each defect are in
 > [`owner-acceptance-fail-remediation.md`](owner-acceptance-fail-remediation.md).

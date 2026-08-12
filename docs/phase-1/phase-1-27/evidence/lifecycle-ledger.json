@@ -57,16 +57,16 @@
       }
     ],
     "OWNER_ACCEPTANCE": {
-      "result": null,
-      "note": "The Owner returned OWNER ACCEPTANCE: FAIL on 2026-08-06 against a merged application, and the phase was reopened. That verdict is history and is recorded in owner-acceptance-fail-remediation.md; it is not a standing verdict about this candidate, which the Owner has not seen. `result` is null because acceptance is the Owner's act against the running application, it is not derivable from any count in this repository, and silence is not Pass."
+      "result": "PASS",
+      "note": "The Product Owner returned OWNER ACCEPTANCE: PASS, verbatim, on 2026-08-12, after the final technical handoff — the application running (API localhost:3000, Web localhost:3100), the Owner administrator, read-only and Tenant B accounts provisioned and verified live (sign-in 200, session 200, 30 permissions resolved, wrong password 401), against protected develop content (aa78a6627bff0400621ec13d10777e44ff2cf9a3). The verdict is the Owner's act, not a derivation: no count in this repository produced it, and silence was never treated as Pass. The earlier OWNER ACCEPTANCE: FAIL of 2026-08-06 is history, recorded in owner-acceptance-fail-remediation.md; the closure is recorded in closure-record.md."
     }
   },
   "declared": {
-    "STATE": "POST_MERGE_PROTECTED_REPROOF",
+    "STATE": "OWNER_ACCEPTANCE",
     "MERGE_PERMITTED": true,
     "OWNER_HANDOFF_PERMITTED": true,
-    "CLOSURE_PERMITTED": false,
-    "BLOCKERS": ["OWNER_ACCEPTANCE_NOT_TAKEN"],
-    "note": "POST_MERGE_PROTECTED_REPROOF: the merge was taken as a true merge commit and verified by its SECOND parent; protected CI and the protected authenticated browser are both GREEN at the merge SHA (run 31590615278, protected-gate GO). Every technical phase is discharged. The one blocker is the one that must remain: Owner acceptance is the Owner’s act against the running application, not derivable from any count in this repository, and silence is never Pass. The gate still fails when this declaration and the tree disagree in EITHER direction."
+    "CLOSURE_PERMITTED": true,
+    "BLOCKERS": [],
+    "note": "OWNER_ACCEPTANCE — the terminal state, derived by the gate from the tree and declared here in the same commit that records the verdict. The merge was taken as a true merge commit and verified by its SECOND parent; protected CI and the protected authenticated browser are both GREEN at the merge SHA (run 31590615278, protected-gate GO); and the Product Owner returned OWNER ACCEPTANCE: PASS, verbatim, on 2026-08-12 after the final handoff. The blocker OWNER_ACCEPTANCE_NOT_TAKEN is removed in the same commit that discharges it, which is the gate's own rule. CLOSURE_PERMITTED is a lifecycle flag, not a promotion: main is untouched and P1-28 has not begun. The gate still fails when this declaration and the tree disagree in EITHER direction."
   }
 }

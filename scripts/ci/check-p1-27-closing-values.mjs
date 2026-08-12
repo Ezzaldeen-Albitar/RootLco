@@ -354,7 +354,12 @@ const lineOf = (source, index) => source.slice(0, index).split('\n').length;
 export function gitKey(binding) {
   const { op } = binding;
   if (op === 'revParse') return `revParse:${binding.ref}`;
-  if (op === 'executableDiffCount') return `executableDiffCount:${binding.since}`;
+  // `until` defaults to HEAD for compatibility, but a one-sided span MOVES with
+  // every commit — post-closure it answers a different question on every push.
+  // A durable equivalence pins both sides (the P1-24 lesson), and the key must
+  // carry both so two spans never share a cache cell.
+  if (op === 'executableDiffCount')
+    return `executableDiffCount:${binding.since}..${binding.until ?? 'HEAD'}`;
   if (op === 'trackedFiles') return `trackedFiles:${binding.dir}:${binding.match ?? ''}`;
   if (op === 'lsTree') return `lsTree:${binding.sha}:${binding.pathspec}:${binding.match ?? ''}`;
   if (op === 'revListCount') return `revListCount:${binding.from}..${binding.to}`;
@@ -1265,7 +1270,8 @@ function resolveGit(binding, root) {
       case 'revParse':
         return git(['rev-parse', binding.ref], root).trim();
       case 'executableDiffCount':
-        return executableChangesSince(binding.since, root).length;
+        return executableChangesSince(binding.since, root, undefined, binding.until ?? 'HEAD')
+          .length;
       case 'trackedFiles': {
         const files = git(['ls-files', '--', binding.dir], root).split('\n').filter(Boolean);
         const re = binding.match ? new RegExp(binding.match) : null;

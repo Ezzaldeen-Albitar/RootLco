@@ -1,7 +1,10 @@
 # P1-27 — final canonical remediation checkpoint
 
-**Status: NOT CLOSED. `OWNER ACCEPTANCE: FAIL` stands until the Product Owner
-returns an explicit Pass.**
+**Status: SUPERSEDED — P1-27 closed on `OWNER ACCEPTANCE: PASS`, 2026-08-12
+(`closure-record.md`).** This checkpoint was written while
+`OWNER ACCEPTANCE: FAIL` stood, and its standing sentences below — "remains
+`OWNER ACCEPTANCE: FAIL`", "no gate record exists" — were true on every day they
+stood. They are superseded by the Owner's verdict, not rewritten.
 
 This record is written from repository truth at the SHAs named below, not from
 the preceding status files. Where an earlier document or report was wrong, the

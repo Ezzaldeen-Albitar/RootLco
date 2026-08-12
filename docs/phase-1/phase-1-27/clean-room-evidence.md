@@ -2,7 +2,7 @@
 
 # Phase 1-27 — clean-room evidence
 
-**CURRENT PHASE STATUS: OWNER ACCEPTANCE: FAIL.** The phase is not closed, `P1-G27` is not written, `main` is untouched, and P1-28 has not begun. Acceptance is the Product Owner's act against the running application; it is not derivable from any count in this repository and cannot be inferred from silence.
+**CURRENT PHASE STATUS: OWNER ACCEPTANCE: PASS (2026-08-12).** The Product Owner tested the running application and returned `OWNER ACCEPTANCE: PASS`, verbatim, on 2026-08-12; the phase is closed, and the phase's `closure-record.md` is the closure record. `main` is untouched, P1-27 is not promoted, and P1-28 has not begun. Acceptance was the Product Owner's act against the running application; it was never derived from any count in this repository and silence was never treated as Pass.
 
 **Classification:** Confidential — Commercial Product and Pilot Planning
 
@@ -179,11 +179,11 @@ the tree was running.
 
 | measure                                             | value                                      |
 | --------------------------------------------------- | ------------------------------------------- |
-| Tracked files under `docs/phase-1/phase-1-27`        | 40                                          |
-| Tracked `.md` files under the same directory         | 30                                          |
+| Tracked files under `docs/phase-1/phase-1-27`        | 41                                          |
+| Tracked `.md` files under the same directory         | 31                                          |
 | Migrations tracked by git at `HEAD`                  | 120                                         |
 | `CODE_CANDIDATE_SHA`                                 | `501f5f0d48d7b8cafc12dad51f6c501534b66a18`  |
-| Executable paths changed since the candidate         | 0                                           |
+| Executable paths changed, candidate to accepted `develop` | 0                                      |
 
 The migration count appears twice on purpose. The first is a walk of the
 filesystem and the second is `git ls-tree` at `HEAD`; a disagreement between them
@@ -368,7 +368,10 @@ diffs against a base, it silently was not.
 
 ---
 
-**P1-27 remains `OWNER ACCEPTANCE: FAIL`.** A verifying tree is not an accepted
-phase, and this document does not claim otherwise.
+**P1-27 closed on `OWNER ACCEPTANCE: PASS` (2026-08-12)** — the Owner's verdict
+against the running application, recorded in the phase's `closure-record.md`. A
+verifying tree is not an accepted phase, and this document never claimed
+otherwise: nothing on this page closed anything, and the acceptance did not come
+from it.
 
 <!-- seal: end closing -->

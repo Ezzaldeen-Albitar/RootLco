@@ -1620,9 +1620,13 @@ export function checkRoundFive(root = ROOT) {
  * as "a ratified decision" and "a ratified disposition". Both entries state
  * their own type as **"engineering decision, ratification requested"**, and
  * `open-decisions.md` opens by saying these are calls "the Owner should ratify".
- * No ratification is recorded anywhere in this repository, and the phase stands
- * at `OWNER ACCEPTANCE: FAIL` — so four documents asserted an Owner act that did
- * not happen, in a phase that has already been closed once on unverified claims.
+ * No ratification is recorded anywhere in this repository, and when this ban
+ * was added the phase stood at `OWNER ACCEPTANCE: FAIL` — so four documents
+ * asserted an Owner act that did not happen, in a phase that has already been
+ * closed once on unverified claims. The phase has since closed on the Owner's
+ * `OWNER ACCEPTANCE: PASS` of 2026-08-12, and the ban is UNCHANGED by that:
+ * accepting the phase and ratifying a named decision are different Owner acts,
+ * and the entries still record ratification as requested, not granted.
  *
  * The ban is derived, not fixed: an entry whose status records a ratification
  * leaves the unratified set and the word becomes legal for it. Negated forms are

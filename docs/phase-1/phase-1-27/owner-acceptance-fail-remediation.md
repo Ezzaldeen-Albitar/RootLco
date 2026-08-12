@@ -1,7 +1,12 @@
 # Phase 1-27 — Owner acceptance result and remediation
 
 **Classification:** Confidential — Commercial Product and Pilot Planning ·
-**Status:** P1-27 REOPENED · **Recorded:** 2026-08-06
+
+> **SUPERSEDED — `closure-record.md` is the current record.** The Owner
+> returned `OWNER ACCEPTANCE: PASS` on 2026-08-12; this document records the
+> 2026-08-06 refusal and the remediation it forced, and is kept as history.
+
+**Status at the time of writing:** P1-27 REOPENED · **Recorded:** 2026-08-06
 
 ---
 

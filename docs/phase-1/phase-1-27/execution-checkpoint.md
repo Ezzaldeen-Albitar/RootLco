@@ -2,9 +2,10 @@
 
 **Classification:** Confidential — Commercial Product and Pilot Planning
 
-**Status: OPEN. Not closed, not promoted.** P1-27 closes only on an explicit
-`OWNER ACCEPTANCE: PASS` after the Product Owner manually tests the running
-application in installed Chrome. Silence is not Pass.
+**Status: CLOSED — `OWNER ACCEPTANCE: PASS`, 2026-08-12. Not promoted.** P1-27
+closes only on an explicit `OWNER ACCEPTANCE: PASS` after the Product Owner
+manually tests the running application; that rule was satisfied on 2026-08-12
+and the closure is recorded in `closure-record.md`. Silence was never Pass.
 
 ---
 

@@ -1,6 +1,6 @@
 # P1-27 — change log
 
-**CURRENT PHASE STATUS: OWNER ACCEPTANCE: FAIL.** The phase is not closed, `P1-G27` is not written, `main` is untouched, and P1-28 has not begun. Acceptance is the Product Owner's act against the running application; it is not derivable from any count in this repository and cannot be inferred from silence.
+**CURRENT PHASE STATUS: OWNER ACCEPTANCE: PASS (2026-08-12).** The Product Owner tested the running application and returned `OWNER ACCEPTANCE: PASS`, verbatim, on 2026-08-12; the phase is closed, and the phase's `closure-record.md` is the closure record. `main` is untouched, P1-27 is not promoted, and P1-28 has not begun. Acceptance was the Product Owner's act against the running application; it was never derived from any count in this repository and silence was never treated as Pass.
 
 The artefact `P1-27-DOC-002` names and P1-27 did not ship.
 
@@ -24,8 +24,8 @@ was also missing `FE-003` entirely — a live gate hole the adjudication records
 as fixed on this branch — which is exactly what a derived row set catches and a
 hand-written one does not.
 
-**Status: `OWNER ACCEPTANCE: FAIL`.** The phase is not closed, `P1-G27` is not
-written, `main` is untouched, and P1-28 has not begun.
+**Status: `OWNER ACCEPTANCE: PASS`, 2026-08-12.** The phase is closed
+(`closure-record.md`); `main` is untouched, and P1-28 has not begun.
 
 ---
 
@@ -922,6 +922,50 @@ protected reproof and the CodeQL repository ceiling remain
 `OWNER ACCEPTANCE: FAIL` until the Owner explicitly returns a Pass against the
 running application.
 
+### Closure wave thirteen — the merge, the reproof, and the Owner's verdict
+
+The three acts wave twelve left outstanding were taken, in order, and each is
+recorded where it happened rather than re-derived here.
+
+**The protected merge was taken as a true merge commit.** PR #214 merged to
+protected `develop` as `46d4e482dd6dc8dc4c613df17824b93a5236a928` — verified by
+its SECOND parent, `a6b1e030`, the reviewed candidate; the merge tree `98bd0264`
+is byte-identical to the reviewed tree. The protected reproof ran at the merge
+SHA itself: run `31590615278`, 19/19 jobs, protected-gate GO (job `94097982319`),
+protected authenticated browser 224 passed / 0 failed (job `94094472258`), CodeQL
+0 open alerts repository-wide. The evidence record merged as PR #218, leaving
+protected `develop` at `aa78a6627bff0400621ec13d10777e44ff2cf9a3` — the state the
+lifecycle declared `POST_MERGE_PROTECTED_REPROOF` with the sole blocker
+`OWNER_ACCEPTANCE_NOT_TAKEN`.
+
+**The Owner was handed the running application and answered.** The final
+technical handoff left the API at `localhost:3000` and the Web at
+`localhost:3100`, with the Owner administrator, read-only and Tenant B accounts
+provisioned and verified live — sign-in 200, session 200, 30 permissions
+resolved, wrong password 401 — against protected `develop` content. On
+2026-08-12, after that handoff, the Product Owner returned, verbatim:
+`OWNER ACCEPTANCE: PASS`. The phase is closed on that verdict and on nothing
+else; `closure-record.md` is the closure record, and the P1-26 permanent rule —
+application running, Owner signed in, real API, explicit Pass — was applied
+without exception. This phase asked, and the Owner answered; silence was never
+treated as Pass.
+
+**The guards built to be lifted were lifted by deliberate edit, not by drift.**
+`p1-27-doc-reconciliation.test.ts` now requires the PASS status line with its
+date in every guarded record and refuses any acceptance claim that does not
+match the recorded verdict and date; its unconditional ban did not evaporate —
+it transformed, and it still refuses the claims that remain false. The
+lifecycle ledger records `OWNER_ACCEPTANCE.result = "PASS"` and the gate derives
+its terminal state with zero blockers; setting the result back to null regresses
+the gate to `POST_MERGE_PROTECTED_REPROOF`, and that regression is proved by
+mutation in this wave, before its commit — not asserted.
+
+**What did NOT happen in the closing wave.** No promotion: `main` remains
+`f085d820`, and promotion is a separate governance act that has not been
+requested. No P1-28: the successor phase is not started, scoped or scheduled.
+No new technical evidence: this wave records an acceptance that was given; it
+proves nothing the reproof had not already proved.
+
 ### Where the record stands at this head
 
 Every figure in this section is **derived**, and a document that restates one
@@ -939,18 +983,20 @@ falsified two commits later by a wave this file had not yet recorded.
 | Round five, dispositioned                  | <!-- derived: round5 DISPOSITIONED_PARTIAL = 0 --> **0** — `A42-13` closed `FIXED` by disposition at the seal; the finding still holds and `P1-27-OD-005` still disposes of it.                                                                                                                                                                                                                     |
 | The eighteen-path matrix                   | <!-- derived: catalogue pathProven = 13 --> **13** PROVEN · <!-- derived: catalogue pathPartial = 3 --> **3** PARTIAL · <!-- derived: catalogue pathAbsent = 2 --> **2** ABSENT, `matrixDischarged` still `false`. `P1-27-OD-007` decided that this is not what `DOC-001` is judged on; it did not discharge it.                                                                                    |
 
-**The phase status is unchanged by any of it: `OWNER ACCEPTANCE: FAIL`.** None of
-these numbers is an acceptance, and the row that matters most —
+**None of these numbers is an acceptance**, and the row that matters most —
 <!-- derived: round5 CLOSURE_BLOCKERS = 0 --> **0** closure blockers — is the
 
 one no automated tier reported. That number went four, then two, then zero for
 the actionable class — four closed and two opened by checking that the four were
 real, then those two closed by checking them the same way — and at the seal the
 sealed seventeen and the dispositioned one followed, so `ROUND5_CLOSURE_STATE`
-now derives `CLEAR`. **Zero here is still not a closure.** It means the REGISTER
-holds nothing left to act on; the lifecycle still holds the protected merge (not
-taken) and the Owner's acceptance (not given), and neither is derivable from
-this file.
+now derives `CLEAR`. **Zero here was still not a closure.** It meant the REGISTER
+held nothing left to act on; the lifecycle still held the protected merge (then
+not yet taken) and the Owner's acceptance (then not yet given), and neither was
+derivable from this file. Both have since been discharged — the merge and its
+protected reproof in the closing waves below, and the acceptance by the Owner's
+own verdict on 2026-08-12 — and neither discharge came from a number on this
+page.
 
 ---
 
@@ -978,7 +1024,7 @@ Three things changed, and only one of them is a document.
 
 **A digest over the evidence.** `evidence/evidence-manifest.json` carries SHA-256
 over the _bytes_ of every `.md` and `.json` file in the phase directory, walked
-rather than listed — <!-- derived: manifest fileCount = 39 --> **39** of them at
+rather than listed — <!-- derived: manifest fileCount = 40 --> **40** of them at
 this head. That number was written here as "29" and stayed there while the phase
 directory grew by seven documents: a sentence about a walk, holding a figure
 nothing read. It is derived now, so the next document that joins the tree fails

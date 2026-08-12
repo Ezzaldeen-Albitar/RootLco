@@ -300,11 +300,28 @@ export function judge(facts) {
     // whole content of the distinction, and it is one line so it can be read.
   }
 
-  /* ---- candidate: the frozen code candidate ---------------------- */
+  /* ---- candidate: the frozen code candidate ---------------------- *
+   * The freshness rule is CLOSURE-AWARE, and the boundary is the Owner's PASS.
+   *
+   * The freeze exists so the runs, the merge and the handoff all describe one
+   * executable tree; every one of those acts is gated above and behind it.
+   * Once the Owner has accepted — the terminal act, which nothing after it can
+   * gate — an executable commit is post-closure work, and re-deriving
+   * "changed since the candidate" against a HEAD that has moved past the
+   * closed phase would hold the repository red forever: the first such commit
+   * is the closure wave itself, whose guard lifts are executable BY DESIGN
+   * (their docblocks promised a reviewable edit on acceptance). So supersession
+   * blocks while the phase is open and is silenced only by an explicit PASS —
+   * never by the count reaching zero, never by the merge alone: a post-merge,
+   * pre-acceptance executable change still blocks, because the Owner must be
+   * handed the merged content and nothing newer. The self-check drives both
+   * directions.
+   */
+  const closed = facts.ownerAcceptance === 'PASS';
   const code = facts.codeCandidate ?? {};
   if (!code.frozen) {
     add(candidate, 'CODE_CANDIDATE_NOT_FROZEN', 'the ledger records no code candidate');
-  } else if ((code.superseded ?? []).length > 0) {
+  } else if (!closed && (code.superseded ?? []).length > 0) {
     add(
       candidate,
       'CODE_CANDIDATE_SUPERSEDED',
@@ -590,6 +607,40 @@ export const SELF_CHECK_CASES = Object.freeze([
     raises: ['CODE_CANDIDATE_SUPERSEDED'],
   },
   {
+    /*
+     * The closure boundary of the freshness rule, in both directions.
+     *
+     * After the Owner's explicit PASS, an executable commit is post-closure
+     * work — the first one is the acceptance wave's own guard lifts — and must
+     * not regress a closed phase to CANDIDATE_INCOMPLETE, or the repository
+     * holds red forever on every commit after the closure.
+     */
+    name: 'post-closure executable changes do not reopen a phase the Owner accepted',
+    facts: facts({
+      codeCandidate: { frozen: true, superseded: ['scripts/ci/a.mjs'] },
+      protectedMerge: MERGED_GREEN,
+      ownerAcceptance: 'PASS',
+    }),
+    expects: { STATE: 'OWNER_ACCEPTANCE', MERGE_PERMITTED: true, CLOSURE_PERMITTED: true },
+    raises: [],
+    forbids: ['CODE_CANDIDATE_SUPERSEDED'],
+  },
+  {
+    /*
+     * The other direction: the merge alone does NOT relax the freeze. Between
+     * the merge and the acceptance the Owner must be handed the merged
+     * content, so a post-merge executable change still blocks until the PASS.
+     */
+    name: 'a post-merge, pre-acceptance executable change still blocks the handoff chain',
+    facts: facts({
+      codeCandidate: { frozen: true, superseded: ['scripts/ci/a.mjs'] },
+      protectedMerge: MERGED_GREEN,
+      ownerAcceptance: null,
+    }),
+    expects: { STATE: 'CANDIDATE_INCOMPLETE', MERGE_PERMITTED: false },
+    raises: ['CODE_CANDIDATE_SUPERSEDED'],
+  },
+  {
     name: 'an unfrozen code candidate blocks the merge',
     facts: facts({ codeCandidate: { frozen: false, superseded: [] } }),
     expects: { STATE: 'CANDIDATE_INCOMPLETE', MERGE_PERMITTED: false },
@@ -661,15 +712,23 @@ export function selfCheck(cases = SELF_CHECK_CASES) {
  * ------------------------------------------------------------------ */
 
 /**
- * The non-documentation paths that changed between a commit and `HEAD`.
+ * The non-documentation paths that changed between a commit and `until`
+ * (default `HEAD`).
  *
  * `runGit` is injectable so the rule can be exercised without a repository, and
  * `classify-changes.mjs` decides what documentation is — reimplementing that
  * judgement here would give the repository two answers to one question, which is
  * how `docs/**` came to be treated three different ways in three scanners.
+ *
+ * `until` exists because a diff with only one side pinned MOVES with every
+ * commit: "changed since the candidate" was the right question while the
+ * candidate gated a merge, and becomes a different question the moment the
+ * phase closes and work continues. A record that must stay true forever pins
+ * both sides — the P1-24 lesson, applied here when the closure record needed
+ * the candidate↔run-head equivalence to survive post-closure commits.
  */
-export function executableChangesSince(sha, root = ROOT, runGit = defaultGit) {
-  const raw = runGit(['diff', '--name-only', `${sha}..HEAD`], root);
+export function executableChangesSince(sha, root = ROOT, runGit = defaultGit, until = 'HEAD') {
+  const raw = runGit(['diff', '--name-only', `${sha}..${until}`], root);
   const files = raw
     .split(/\r?\n/)
     .map((line) => line.trim())

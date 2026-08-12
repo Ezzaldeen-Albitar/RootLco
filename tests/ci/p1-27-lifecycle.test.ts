@@ -521,9 +521,24 @@ describe('the ledger must declare what the tree holds', () => {
   });
 
   it('fails when the tree raises a blocker the ledger does not declare', () => {
+    /*
+     * REBOUND at the acceptance, the same correction as the derived-lie probe
+     * below. It used to strip the declared BLOCKERS and rely on the LIVE tree
+     * raising one — true for as long as `OWNER_ACCEPTANCE_NOT_TAKEN` stood, and
+     * vacuous the moment the Owner's PASS took the derived blocker set to
+     * empty: stripping `[]` to `[]` disagrees with nothing, and the probe would
+     * have died asserting the phase could never reach its own terminal state.
+     * So the undeclared blocker is now injected into a COPY of the live
+     * verdict, which drives the same `compareDeclaration` direction in every
+     * lifecycle state.
+     */
     const stripped = { ...ledger, declared: { ...ledger.declared, BLOCKERS: [] } };
     const { verdict } = evaluate(ROOT);
-    const problems = compareDeclaration(stripped, verdict);
+    const raising = {
+      ...verdict,
+      blockers: [...verdict.blockers, 'OWNER_ACCEPTANCE_NOT_TAKEN: injected for this probe'],
+    };
+    const problems = compareDeclaration(stripped, raising);
     expect(problems.length).toBeGreaterThan(0);
     expect(problems.join(' ')).toContain('which the ledger does not declare');
   });

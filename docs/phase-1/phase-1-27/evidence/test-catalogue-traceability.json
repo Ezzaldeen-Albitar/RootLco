@@ -1,6 +1,6 @@
 {
   "record": "P1-27-DOC-001 — canonical test-catalogue traceability",
-  "status": "CURRENT PHASE STATUS: OWNER ACCEPTANCE: FAIL",
+  "status": "CURRENT PHASE STATUS: OWNER ACCEPTANCE: PASS (2026-08-12)",
   "checkedBy": "scripts/ci/check-p1-27-doc-counts.mjs (npm run validate:p1-27-doc-counts)",
   "declared": 29,
   "covered": 29,
