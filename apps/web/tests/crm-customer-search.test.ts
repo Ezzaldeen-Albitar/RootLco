@@ -102,12 +102,42 @@ describe('isEmptyCriteria', () => {
 });
 
 describe('what the adapter must never send', () => {
+  /*
+   * The adapter MOVED in the P1-27 D1 remediation.
+   *
+   * `features/vehicles` needs the same customer search to let an operator choose
+   * a customer for ownership transfer and party authorisation, and no feature
+   * may import another feature — so the implementation went to
+   * `lib/customers/directory.ts` and `features/crm/customers/api.ts` became a
+   * thin wrapper. These assertions must follow the request construction, not the
+   * old path: pointed at the wrapper they would scan a file containing no
+   * `query({` at all and pass by finding nothing, which is the vacuity the
+   * stripper check below exists to prevent.
+   */
   const adapter = code(
-    readFileSync(join(ROOT, 'apps', 'web', 'src', 'features', 'crm', 'customers', 'api.ts'), 'utf8')
+    readFileSync(join(ROOT, 'apps', 'web', 'src', 'lib', 'customers', 'directory.ts'), 'utf8')
   );
 
   it('the comment stripper left the code, so these are not vacuous', () => {
-    expect(adapter).toContain('searchCustomers');
+    expect(adapter).toContain('searchCustomerDirectory');
+    // The subject of every assertion below. Without it `indexOf` returns -1 and
+    // `slice(-1, -1)` is the empty string, which satisfies every `not.toContain`.
+    expect(adapter).toContain('query({');
+  });
+
+  it('the CRM wrapper still exists and holds no second authority', () => {
+    const wrapper = code(
+      readFileSync(
+        join(ROOT, 'apps', 'web', 'src', 'features', 'crm', 'customers', 'api.ts'),
+        'utf8'
+      )
+    );
+    expect(wrapper).toContain('searchCustomers');
+    expect(wrapper).toContain('searchCustomerDirectory');
+    // No request building of its own — one customer-search authority, two
+    // callers.
+    expect(wrapper).not.toContain('query({');
+    expect(wrapper).not.toContain('/api/v1/customers');
   });
 
   it('sends no sort parameter, because the operation publishes none', () => {

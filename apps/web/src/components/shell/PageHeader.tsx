@@ -14,7 +14,16 @@ import { translate } from '@/i18n/get-messages';
 
 export interface Crumb {
   readonly labelKey: string;
-  /** Absolute href. The LAST crumb has none — it is the current page. */
+  /**
+   * Absolute href. The LAST crumb has none — it is the current page.
+   *
+   * Every crumb BEFORE the last should carry one: it names an ancestor the
+   * operator expects to click. That cannot be said in the type without making
+   * `crumbs` a tuple (`[...LinkedCrumb[], CurrentCrumb]`), which every
+   * `const crumbs = [...]` call site in Administration would then fail to
+   * satisfy, so `Breadcrumbs` decides the case at runtime instead and
+   * `shell.dom.test.tsx` measures that no trail in this product produces one.
+   */
   readonly href?: string;
 }
 
@@ -44,17 +53,35 @@ export function Breadcrumbs({
                   /
                 </span>
               ) : null}
-              {last || !crumb.href ? (
+              {/*
+                Three cases, because there are three — the original wrote
+                `last || !crumb.href`, one branch answering two different
+                questions, and "this crumb has no href" is not "this crumb is
+                the current page". Three routes passed a parent with no href on
+                their success branch, so index 0 and index 1 BOTH carried
+                `aria-current="page"` inside one breadcrumb landmark, which
+                tells a screen-reader user there are two current pages. It is
+                the same conflation `currentPageKey` untangled for the sidebar
+                one landmark over.
+              */}
+              {last ? (
                 <span aria-current="page" className="text-text-secondary">
                   {label}
                 </span>
-              ) : (
+              ) : crumb.href ? (
                 <Link
                   href={crumb.href}
                   className="rounded-sm hover:text-text-primary hover:underline"
                 >
                   {label}
                 </Link>
+              ) : (
+                // An ancestor with no route of its own. Rendered as plain muted
+                // text: not a link, because there is nowhere to go, and never
+                // `aria-current`, because it is not the page. Marking it would
+                // be the defect above; dropping it would silently shorten the
+                // trail and leave the operator's position unstated.
+                <span>{label}</span>
               )}
             </li>
           );

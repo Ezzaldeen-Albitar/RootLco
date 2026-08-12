@@ -1,10 +1,12 @@
 'use client';
 
 import { useActionState, useEffect, useId, useState, useTransition } from 'react';
+import Link from 'next/link';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { Locale } from '@/i18n/config';
 import { createVehicleAction, type VehicleCreationState } from '../api';
+import { VinField } from './VinField';
 import {
   listModels,
   listTrims,
@@ -91,7 +93,34 @@ export function VehicleCreateScreen({
       const errors = validateVehicleCreate(values);
       if (Object.keys(errors).length > 0) {
         setClientErrors(errors);
-        return { ...previous, status: 'invalid' as const, fieldErrors: errors };
+        /*
+         * `attempt` MUST advance here, and this was the one failure branch in
+         * the phase that did not advance it.
+         *
+         * Every catalogue `<select>` on this screen is keyed on
+         * `state.attempt ?? 0` so that a failed submit remounts it — React never
+         * re-syncs an uncontrolled select's DOM default after mount, and
+         * `form.reset()` runs after the action, so without a remount the
+         * operator's choice is restored to the placeholder.
+         *
+         * `{ ...previous }` carried `attempt` through unchanged. On the FIRST
+         * client-validation failure `previous` is `EMPTY`, so `attempt` stayed
+         * undefined, the key stayed `0`, and no select remounted. The five
+         * catalogue selects and the powertrain category reverted to their
+         * placeholders while `values` still held the chosen ids — so
+         * `validateVehicleCreate(values)` passed on the retry while
+         * `createVehicleAction` read an empty FormData for each of them. Every
+         * one of those fields is optional server-side, so the retry SUCCEEDED
+         * and created a vehicle with no make, no model and no body type.
+         *
+         * A silent wrong write, reachable by mistyping a year and correcting it.
+         */
+        return {
+          ...previous,
+          status: 'invalid' as const,
+          fieldErrors: errors,
+          attempt: (previous.attempt ?? 0) + 1,
+        };
       }
       setClientErrors({});
       const result = await createVehicleAction(previous, form);
@@ -169,17 +198,37 @@ export function VehicleCreateScreen({
           {translate(messages, 'vehicles.create.identity')}
         </legend>
         <div className="grid gap-3 sm:grid-cols-2">
-          <TextField
+          {/* The canonical VIN control, not a plain text box (`P1-27-FE-020`).
+
+              The create path used a bare `TextField` while `VinField` — which
+              already implements the four verdicts the canonical plan calls for —
+              was mounted only on the UPDATE panel. So an operator creating a
+              vehicle got no format feedback and no uniqueness preview, and the
+              server's `409 ERR-RES-002` on a VIN that already exists arrived as
+              the generic "Someone else changed this", which is not what
+              happened and not something they could act on.
+
+              That third leg is only PARTLY closed, and two earlier versions of
+              this comment overclaimed it. `createVehicleAction` now replaces the
+              generic conflict copy with a sentence about this create — but it
+              does NOT say which value collided, and must not: `veh.vehicles`
+              has two tenant-scoped unique indexes (VIN and reference number)
+              and the server maps both to one `ERR-RES-002` without reading the
+              constraint name. Naming the VIN would accuse the wrong field
+              whenever the reference number is the duplicate. Distinguishing
+              them is a Backend change (`P1-27-INT-027`, owned by P1-17).
+
+              `excludeVehicleId` is null because there is no vehicle yet: every
+              existing match is a real conflict, and there is no own-VIN to
+              exclude. */}
+          <VinField
             messages={messages}
             id={`${formId}-vin`}
-            name="vin"
-            labelKey="vehicles.create.vin"
-            hintKey="vehicles.create.vinHint"
             value={values.vin ?? ''}
-            onChange={set}
+            onChange={(next) => set('vin', next)}
             maxLength={MAX_VIN_INPUT}
+            excludeVehicleId={null}
             error={errorFor('vin')}
-            dir="ltr"
           />
           <TextField
             messages={messages}
@@ -202,6 +251,7 @@ export function VehicleCreateScreen({
         </legend>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <CatalogueSelect
+            attempt={state.attempt ?? 0}
             messages={messages}
             id={`${formId}-make`}
             name="makeId"
@@ -212,6 +262,7 @@ export function VehicleCreateScreen({
             error={errorFor('makeId')}
           />
           <CatalogueSelect
+            attempt={state.attempt ?? 0}
             messages={messages}
             id={`${formId}-model`}
             name="modelId"
@@ -226,6 +277,7 @@ export function VehicleCreateScreen({
             loading={loadingChildren}
           />
           <CatalogueSelect
+            attempt={state.attempt ?? 0}
             messages={messages}
             id={`${formId}-trim`}
             name="trimId"
@@ -238,6 +290,7 @@ export function VehicleCreateScreen({
             loading={loadingChildren}
           />
           <CatalogueSelect
+            attempt={state.attempt ?? 0}
             messages={messages}
             id={`${formId}-body`}
             name="bodyTypeId"
@@ -248,6 +301,7 @@ export function VehicleCreateScreen({
             error={errorFor('bodyTypeId')}
           />
           <CatalogueSelect
+            attempt={state.attempt ?? 0}
             messages={messages}
             id={`${formId}-powertrain-type`}
             name="powertrainTypeId"
@@ -298,9 +352,10 @@ export function VehicleCreateScreen({
               {translate(messages, 'vehicles.column.powertrain')}
             </label>
             <select
+              key={`powertrainCategory-${state.attempt ?? 0}`}
               id={`${formId}-category`}
               name="powertrainCategory"
-              value={values.powertrainCategory ?? ''}
+              defaultValue={values.powertrainCategory ?? ''}
               onChange={(event) => set('powertrainCategory', event.target.value)}
               className="mt-1 w-full rounded-md border border-border bg-surface px-2 py-1.5 text-body text-text-primary"
             >
@@ -370,6 +425,7 @@ function CatalogueSelect({
   error,
   disabledReasonKey,
   loading,
+  attempt,
 }: {
   readonly messages: Messages;
   readonly id: string;
@@ -381,6 +437,16 @@ function CatalogueSelect({
   readonly error?: string | undefined;
   readonly disabledReasonKey?: string | undefined;
   readonly loading?: boolean | undefined;
+  /**
+   * The submit-attempt counter, used to remount the select after a failure.
+   *
+   * `NEW-FE-01`, second site. A controlled `value=` inside `<form action={…}>`
+   * does not survive the reset React performs once the action settles — the prop
+   * is unchanged between renders, so the reconciler writes nothing and the reset
+   * wins. That was measured on the customer form and recorded at
+   * `CustomerCreateScreen.tsx:197-207`; every select here had the same shape.
+   */
+  readonly attempt: number;
 }) {
   const options: readonly CatalogueOption[] = result?.status === 'ok' ? result.options : [];
   const failed = result !== null && result.status !== 'ok';
@@ -392,9 +458,10 @@ function CatalogueSelect({
         {translateDynamic(messages, labelKey)}
       </label>
       <select
+        key={`${name}-${attempt}`}
         id={id}
         name={name}
-        value={value}
+        defaultValue={value}
         disabled={disabled}
         onChange={(event) => onChange(name, event.target.value)}
         aria-invalid={error ? true : undefined}
@@ -505,7 +572,31 @@ function CreationOutcome({
         {translate(messages, 'vehicles.create.draftFollowUp')}
       </p>
 
-      <div>
+      {/* The vehicle that was just created is where the operator wants to go,
+          and until now this screen threw its id away (`P1-27-FE-018`).
+
+          `created.vehicleId` was already in hand — the action returns it and
+          this component receives it — and the only exit offered was "Add
+          another vehicle", which reloads the page. So the create journey ended
+          in a dead end: to reach the record you had just made you had to leave,
+          open Vehicles, and search for it.
+
+          The same class of defect as `FE-019` on the search leg, on the other
+          leg of the same journey, and the sibling customer screen has offered
+          both of these links since it shipped. */}
+      <div className="flex flex-wrap items-center gap-3">
+        <Link
+          href={`/${locale}/vehicles/${created.vehicleId}`}
+          className="rounded-md bg-primary px-4 py-2 text-body font-medium text-text-inverse"
+        >
+          {translate(messages, 'vehicles.create.openCreated')}
+        </Link>
+        <Link
+          href={`/${locale}/vehicles`}
+          className="rounded-md border border-border px-4 py-2 text-body text-text-primary"
+        >
+          {translate(messages, 'vehicles.create.backToSearch')}
+        </Link>
         <button
           type="button"
           onClick={onAnother}

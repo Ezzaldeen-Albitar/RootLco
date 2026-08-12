@@ -36,14 +36,24 @@
  * docblock is explicit that this is advisory and that "the customer *was*
  * created".
  *
- * So the warning this phase can honestly deliver has two halves, and both are
- * real:
+ * So the warning this phase delivers has ONE half, not two, and that is a
+ * change from how this contract was originally written.
  *
- *  1. **Before** — the search screen is the duplicate check. The create action
- *     is offered only after a search returned nothing, so an operator reaches
- *     the form having already looked.
- *  2. **After** — the creation result names the customers that share the name,
- *     with links, and says plainly that the record was created anyway.
+ *  - **After** — the creation result names the customers that share the name,
+ *    with links, and says plainly that the record was created anyway.
+ *
+ * The list previously opened with a "**Before**" item: "the search screen is the
+ * duplicate check. The create action is offered only after a search returned
+ * nothing, so an operator reaches the form having already looked." That held
+ * until the Owner-acceptance remediation, which closed the defect "Customer
+ * Search has no clear Add Customer action" by rendering `CustomerCreateActions`
+ * in the page header unconditionally
+ * (`app/[locale]/(dashboard)/crm/customers/page.tsx:72-79`). An operator can now
+ * reach the form without having searched, so the upstream half is gone and the
+ * post-hoc warning is the whole of it.
+ *
+ * That was the right trade — a create action nobody could find was the worse
+ * defect — but the contract must describe the flow that exists.
  *
  * What must NOT happen is a form that appears to check for duplicates before
  * submitting and silently does not.
@@ -78,46 +88,19 @@ export interface CreatedCustomer {
   readonly possibleDuplicates: readonly DuplicateNameMatch[];
 }
 
-export interface IndividualDraft {
-  readonly givenName: string;
-  readonly familyName: string;
-  readonly preferredLocale: string | null;
-  readonly lifecycleStatus: CreatableLifecycleStatus;
-}
-
-export interface CompanyDraft {
-  readonly legalName: string;
-  readonly tradeName: string | null;
-  readonly lifecycleStatus: CreatableLifecycleStatus;
-}
-
-/** A field-level complaint, keyed by the field it belongs to. */
-export type FieldErrors = Readonly<Record<string, string>>;
-
-/**
- * Validates an individual draft at the edge.
+/*
+ * `validateIndividual`, `validateCompany` and their draft types are gone, for
+ * the reason given at the foot of `governance-contract.ts` (`P1-27-FE-013`).
  *
- * The server validates too, and its answer is the one that matters. This exists
- * so an operator learns which field is wrong from the field, rather than from a
- * banner that names none — which is what a 422 renders as when nothing maps it.
+ * Their docstring claimed they exist "so an operator learns which field is wrong
+ * from the field, rather than from a banner that names none". Nothing called
+ * them, so no operator ever got that — and the create form already gets exactly
+ * what the docstring wanted, from the server: `createIndividualAction` returns
+ * per-field catalogue keys through `fieldErrorsFrom`, and `CustomerCreateScreen`
+ * renders each one beside its own field.
+ *
+ * They also disagreed with the server they mirrored. They emitted
+ * `crm.customers.create.tooLong` where the action emits `field.tooLong`, so had
+ * anything ever wired them up, the same overlong name would have produced two
+ * different messages depending on which layer noticed first.
  */
-export function validateIndividual(draft: IndividualDraft): FieldErrors {
-  const errors: Record<string, string> = {};
-  if (!draft.givenName.trim()) errors['givenName'] = 'field.required';
-  else if (draft.givenName.trim().length > MAX_PERSON_NAME)
-    errors['givenName'] = 'crm.customers.create.tooLong';
-  if (!draft.familyName.trim()) errors['familyName'] = 'field.required';
-  else if (draft.familyName.trim().length > MAX_PERSON_NAME)
-    errors['familyName'] = 'crm.customers.create.tooLong';
-  return errors;
-}
-
-export function validateCompany(draft: CompanyDraft): FieldErrors {
-  const errors: Record<string, string> = {};
-  if (!draft.legalName.trim()) errors['legalName'] = 'field.required';
-  else if (draft.legalName.trim().length > MAX_COMPANY_NAME)
-    errors['legalName'] = 'crm.customers.create.tooLong';
-  if (draft.tradeName && draft.tradeName.trim().length > MAX_COMPANY_NAME)
-    errors['tradeName'] = 'crm.customers.create.tooLong';
-  return errors;
-}

@@ -28,27 +28,34 @@ const TENANT_B_NAME = 'CRM Isolation Tenant B';
 const API = E2E_API_ORIGIN;
 const HANDOFF = join(resolve(process.cwd(), '..', '..'), '.local', 'owner-acceptance-account.json');
 
-/** Signs in as the Tenant A owner and returns a real bearer token. */
-async function bearerForTenantA(request: APIRequestContext): Promise<string> {
+interface Credentials {
+  readonly tenantId: string;
+  readonly email: string;
+  readonly password: string;
+}
+
+/** The Tenant A owner's own credentials, from the environment or the handoff. */
+function credentialsForTenantA(): Credentials {
   const fromEnv = {
     tenantId: process.env.ROOTLCO_E2E_TENANT_ID,
     email: process.env.ROOTLCO_E2E_EMAIL,
     password: process.env.ROOTLCO_E2E_PASSWORD,
   };
-  const credentials =
-    fromEnv.tenantId && fromEnv.email && fromEnv.password
-      ? fromEnv
-      : (() => {
-          if (!existsSync(HANDOFF)) {
-            throw new Error('No credentials. Run: npm run acceptance:create-owner');
-          }
-          const handoff = JSON.parse(readFileSync(HANDOFF, 'utf8'));
-          return {
-            tenantId: handoff.tenantId,
-            email: handoff.login.email,
-            password: handoff.login.password,
-          };
-        })();
+  if (fromEnv.tenantId && fromEnv.email && fromEnv.password) return fromEnv as Credentials;
+  if (!existsSync(HANDOFF)) {
+    throw new Error('No credentials. Run: npm run acceptance:create-owner');
+  }
+  const handoff = JSON.parse(readFileSync(HANDOFF, 'utf8'));
+  return {
+    tenantId: handoff.tenantId,
+    email: handoff.login.email,
+    password: handoff.login.password,
+  };
+}
+
+/** Signs in as the Tenant A owner and returns a real bearer token. */
+async function bearerForTenantA(request: APIRequestContext): Promise<string> {
+  const credentials = credentialsForTenantA();
 
   const login = await request.post(`${API}/api/v1/auth/login`, {
     data: credentials,
@@ -61,36 +68,151 @@ async function bearerForTenantA(request: APIRequestContext): Promise<string> {
   return token as string;
 }
 
+/**
+ * Loads a route, proves it really rendered for Tenant A, and returns its text.
+ *
+ * ## Why every browser case in this file needs this
+ *
+ * The two cases below were `expect(body).not.toContain(…)` and nothing else. A
+ * blank page, a redirect to sign-in, the dashboard error boundary and a 404 all
+ * satisfy that assertion perfectly — so did a route that had been renamed. Only
+ * the API case had a control, and the whole point of a control is that a
+ * negative assertion is worthless without one.
+ *
+ * Three things are established before any leak assertion runs:
+ *
+ * - the session is Tenant A's, because the shell prints the signed-in address
+ *   of the account this file logged in with (`AccountMenu` renders it on every
+ *   dashboard page). A redirect to sign-in loses it.
+ * - the route rendered its own content, not the error or not-found boundary,
+ *   both of which render inside the same shell and would otherwise pass.
+ * - `main` holds a real amount of text, so an empty shell is not mistaken for a
+ *   screen that legitimately shows nothing of Tenant B.
+ */
+async function renderedForTenantA(
+  page: import('@playwright/test').Page,
+  route: string
+): Promise<string> {
+  const { email } = credentialsForTenantA();
+  await page.goto(route);
+  const main = page.getByRole('main');
+  await expect(main, `${route} rendered no main landmark`).toBeVisible();
+
+  /*
+   * WAIT FOR THE SEGMENT, then read the body. The order is the point.
+   *
+   * `page.goto` resolves at `load`. Every screen here is an async server
+   * component, so Next streams `(dashboard)/loading.tsx` into `main` first —
+   * and that fallback's entire text is the `sr-only` `state.loading`, "Loading",
+   * seven characters. `main` belongs to the LAYOUT, so `toBeVisible()` above is
+   * satisfied by the skeleton and says nothing about the segment.
+   *
+   * The length check used to sit below the body assertions and read exactly
+   * those seven characters on the first hosted run of this tier. That was the
+   * visible half of the defect.
+   *
+   * The half that matters more: `body` was captured before anything guaranteed
+   * the segment had streamed, so on a PASSING route the `not.toContain` checks
+   * for Tenant B could have been evaluated against a page whose main was still a
+   * skeleton — an isolation proof that passed by looking at nothing. Polling
+   * here, above the capture, closes both.
+   *
+   * `expect.poll` keeps the control's full strength: a genuinely blank main
+   * still fails, at the configured expect timeout. Retries stay at 0 — the
+   * config pins them there deliberately.
+   */
+  await expect
+    .poll(async () => (await main.innerText()).trim().length, {
+      message: `${route} never rendered past the loading skeleton`,
+    })
+    .toBeGreaterThan(40);
+
+  const body = (await page.locator('body').innerText()).toLowerCase();
+  expect(body, `${route} does not show the signed-in Tenant A account`).toContain(
+    email.toLowerCase()
+  );
+  expect(body, `${route} rendered the error boundary`).not.toContain('something went wrong');
+  expect(body, `${route} rendered the not-found boundary`).not.toContain('not found');
+
+  return body;
+}
+
+/**
+ * Every P1-27 screen, plus the administration screens this file already had.
+ *
+ * The CRM and vehicle routes were absent: all four routes named here were
+ * `/en/administration/*`, so the phase under acceptance had no web-tier tenant
+ * isolation evidence of any kind. These are the screens that read customer and
+ * vehicle records — the ones where a cross-tenant read would matter most.
+ */
+const SCREENS = [
+  '/en/administration/organization',
+  '/en/administration/users',
+  '/en/administration/roles',
+  '/en/administration/audit-log',
+  '/en/crm/customers',
+  '/en/crm/customer-duplicates',
+  '/en/crm/customers/new',
+  '/en/vehicles',
+  '/en/vehicles/duplicates',
+  '/en/vehicles/new',
+];
+
 test.describe('cross-tenant isolation', () => {
-  test('Tenant B never appears in any Tenant A screen', async ({ page }) => {
-    const routes = [
-      '/en/administration/organization',
-      '/en/administration/users',
-      '/en/administration/roles',
-      '/en/administration/audit-log',
-    ];
-    for (const route of routes) {
-      await page.goto(route);
-      const body = (await page.locator('body').innerText()).toLowerCase();
+  for (const route of SCREENS) {
+    test(`Tenant B never appears on ${route}`, async ({ page }) => {
+      const body = await renderedForTenantA(page, route);
       expect(body, `${route} must not disclose Tenant B`).not.toContain(
         TENANT_B_NAME.toLowerCase()
       );
       expect(body, `${route} must not disclose a Tenant B identifier`).not.toContain(TENANT_B);
-    }
-  });
+      expect(body, `${route} must not name the Tenant B company`).not.toContain(
+        'isolation company b'
+      );
+      expect(body, `${route} must not name the Tenant B branch`).not.toContain(
+        'isolation branch b'
+      );
+    });
+  }
 
-  test('a Tenant B identifier in the URL does not widen the session', async ({ page }) => {
-    // Scope is resolved by the Backend from the bearer token on every request.
-    // A query parameter is a request, not a decision.
-    await page.goto(`/en/administration/organization?companyId=${COMPANY_B}`);
-    const body = (await page.locator('body').innerText()).toLowerCase();
+  /*
+   * Scope is resolved by the Backend from the bearer token on every request. A
+   * query parameter is a request, not a decision — and each of these screens
+   * reads a different module, so each is a separate attempt.
+   */
+  for (const [route, parameter] of [
+    ['/en/administration/organization', `companyId=${COMPANY_B}`],
+    ['/en/crm/customers', `companyId=${COMPANY_B}`],
+    ['/en/vehicles', `branchId=${BRANCH_B}`],
+    ['/en/crm/customer-duplicates', `tenantId=${TENANT_B}`],
+  ] as const) {
+    test(`a Tenant B identifier in the URL does not widen ${route}`, async ({ page }) => {
+      const body = await renderedForTenantA(page, `${route}?${parameter}`);
 
-    // The parameter reaches the server — this is a real attempt, not a
-    // no-op — and none of Tenant B's content comes back.
-    expect(page.url(), 'the query parameter must actually have been sent').toContain(COMPANY_B);
-    expect(body, 'Tenant B must not be named').not.toContain(TENANT_B_NAME.toLowerCase());
-    expect(body, 'Tenant B company must not be named').not.toContain('isolation company b');
-    expect(body, 'Tenant B branch must not be named').not.toContain('isolation branch b');
+      // The parameter reaches the server — this is a real attempt, not a no-op.
+      expect(page.url(), 'the query parameter must actually have been sent').toContain(
+        parameter.split('=')[1] as string
+      );
+      expect(body, 'Tenant B must not be named').not.toContain(TENANT_B_NAME.toLowerCase());
+      expect(body, 'Tenant B company must not be named').not.toContain('isolation company b');
+      expect(body, 'Tenant B branch must not be named').not.toContain('isolation branch b');
+    });
+  }
+
+  test('the control itself can fail — a missing account marker is not tolerated', async ({
+    page,
+  }) => {
+    /*
+     * The positive control for the positive control.
+     *
+     * `renderedForTenantA` is the only thing standing between these cases and
+     * the vacuous pass they used to be, so it must be demonstrably capable of
+     * failing. Signed out, the same route redirects to the sign-in screen: the
+     * shell and the account address are gone, and every `not.toContain`
+     * assertion above would still hold on that page.
+     */
+    await page.context().clearCookies();
+    await expect(renderedForTenantA(page, '/en/crm/customers')).rejects.toThrow();
   });
 
   test('the API refuses Tenant B records to a Tenant A bearer token', async ({ request }) => {
@@ -153,6 +275,18 @@ test.describe('cross-tenant isolation', () => {
       failOnStatusCode: false,
     });
     expect(own.status(), 'the Tenant A token must be able to list its own users').toBe(200);
+
+    // The two modules this phase ships, so the control covers the surface the
+    // screens above actually read. Without these, the CRM and vehicle screens
+    // would be asserted against an API that had never been shown to answer them
+    // at all — which is the same hole, one layer down.
+    for (const path of ['/api/v1/customers?limit=1', '/api/v1/vehicles?limit=1']) {
+      const response = await request.get(`${API}${path}`, {
+        headers: { Authorization: `Bearer ${token}` },
+        failOnStatusCode: false,
+      });
+      expect(response.status(), `the Tenant A token must be able to read ${path}`).toBe(200);
+    }
   });
 
   test('no token at all is refused too', async ({ request }) => {

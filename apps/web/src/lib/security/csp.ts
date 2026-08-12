@@ -39,6 +39,38 @@
  * Plain `'self'` plus the nonce is the working shape and loses nothing here:
  * there is no CDN and no third-party script origin, so a host allowlist of
  * exactly one origin is as tight as `'strict-dynamic'` would have been.
+ *
+ * ## `connect-src` and the client-diagnostics sink (`P1-27-DO-002`)
+ *
+ * This module is the ONLY place `connect-src` is assembled. `next.config.ts`
+ * does have a `headers()` block, and it deliberately carries no CSP — it says
+ * so, and a static header would be overwritten by the proxy in any case — so
+ * this is also the only place an outbound destination can be admitted.
+ *
+ * `installConfiguredMonitoringAdapter` delivers with `navigator.sendBeacon`,
+ * which the browser governs by `connect-src`. Until this option existed, the
+ * policy named `'self'` and the API origin and nothing else, so a deployment
+ * that set `NEXT_PUBLIC_CLIENT_MONITORING_URL` to a cross-origin sink got a
+ * beacon the browser refused — and both docblocks that described the switch
+ * instructed the reader to add the origin to "`connect-src` in `src/proxy.ts`",
+ * a file that holds no such value and cannot: `contentSecurityPolicy` took no
+ * parameter for it. The documented way to switch the feature on did not work.
+ *
+ * The remedy is (a) of the two on offer: make it work, rather than write the
+ * limitation down. It is available because the sink URL reaches this builder by
+ * exactly the mechanism the API origin already uses — `process.env` read in
+ * `src/proxy.ts` and passed in — so nothing new has to be true for it to hold.
+ * Three constraints on it, each asserted in `tests/security.test.ts`:
+ *
+ *   - **Origin only.** A `connect-src` source is scheme/host/port; a path is
+ *     meaningless there and a sink URL has one (`https://sink.test/events`), so
+ *     the path is discarded rather than emitted as a source nothing matches.
+ *   - **Validated, and fails closed.** Anything that is not an `http(s)` URL is
+ *     dropped, not interpolated. A value that reached the header unchecked
+ *     would let a mis-set variable widen the policy, which is the opposite of
+ *     what a policy is for.
+ *   - **Unset changes nothing.** With no sink configured the header is byte
+ *     identical to what it was before this option existed.
  */
 
 export interface CspOptions {
@@ -55,10 +87,53 @@ export interface CspOptions {
    * carries it — a production page cannot receive it.
    */
   readonly dev?: boolean | undefined;
+  /**
+   * The client-diagnostics sink, as the FULL URL a deployment configured in
+   * `NEXT_PUBLIC_CLIENT_MONITORING_URL` — the same value `client-log.ts` beacons
+   * to. Only its ORIGIN is used; see `connectSourceOrigin`. Omitted or invalid
+   * leaves `connect-src` exactly as it would have been.
+   */
+  readonly monitoringUrl?: string | undefined;
 }
 
-export function contentSecurityPolicy({ nonce, apiOrigin, dev }: CspOptions = {}): string {
-  const connect = ["'self'", apiOrigin].filter(Boolean).join(' ');
+/**
+ * The `connect-src` source for a configured URL, or `null` if there is none.
+ *
+ * Returns the origin — scheme, host, port — and discards the path, because that
+ * is what a source expression matches; `https://sink.test/events` as a source
+ * would match nothing.
+ *
+ * `null` for anything that is not an absolute `http`/`https` URL. That covers
+ * an unset variable, a typo, and the case worth naming: a `javascript:` or
+ * `data:` value, whose `URL.origin` is the string `"null"` and which must never
+ * be pasted into a policy. Dropping rather than throwing is deliberate — this
+ * runs in the proxy on every request, and a throw there is a blank site, so a
+ * misconfigured sink degrades to "no beacon" rather than "no application".
+ */
+export function connectSourceOrigin(value: string | undefined): string | null {
+  if (!value) return null;
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return null;
+  return parsed.origin;
+}
+
+export function contentSecurityPolicy({
+  nonce,
+  apiOrigin,
+  dev,
+  monitoringUrl,
+}: CspOptions = {}): string {
+  // The sink origin joins the API origin here and nowhere else. De-duplicated,
+  // because a deployment whose sink is its own API would otherwise name the
+  // same origin twice in one directive.
+  const connect = [
+    ...new Set(["'self'", apiOrigin, connectSourceOrigin(monitoringUrl)].filter(Boolean)),
+  ].join(' ');
   // NO 'strict-dynamic'. It disables host allowlisting, which would require
   // every <script src> chunk to carry its own nonce — and Next stamps the nonce
   // on inline scripts only. With plain 'self', same-origin chunks load because

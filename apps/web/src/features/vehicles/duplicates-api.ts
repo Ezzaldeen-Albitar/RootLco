@@ -13,6 +13,7 @@ import {
   type VehicleDuplicateCandidate,
   type VehicleHistoryEntry,
 } from './duplicates-contract';
+import { fieldErrorsFrom } from '@/lib/forms/field-errors';
 
 /**
  * Vehicle duplicate review (`FE-028`) and history (`FE-029`).
@@ -113,12 +114,7 @@ export async function reviewVehicleDuplicateAction(
     reason: String(form.get('reason') ?? ''),
   });
   if (!parsed.success) {
-    const errors: Record<string, string> = {};
-    for (const issue of parsed.error.issues) {
-      const key = issue.path[0];
-      if (typeof key === 'string' && !errors[key]) errors[key] = issue.message;
-    }
-    return invalid(errors, attempt);
+    return invalid(fieldErrorsFrom(parsed.error), attempt);
   }
 
   const client = await authorizedClient();

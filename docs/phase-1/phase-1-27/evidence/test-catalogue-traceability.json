@@ -1,0 +1,866 @@
+{
+  "record": "P1-27-DOC-001 — canonical test-catalogue traceability",
+  "status": "CURRENT PHASE STATUS: OWNER ACCEPTANCE: FAIL",
+  "checkedBy": "scripts/ci/check-p1-27-doc-counts.mjs (npm run validate:p1-27-doc-counts)",
+  "declared": 29,
+  "covered": 29,
+  "uncovered": 0,
+  "matrixDischarged": false,
+  "cases": {
+    "TC-P1-27-CRM-001": {
+      "task": "P1-27-FE-001",
+      "name": "CRM customer search",
+      "provenBy": [
+        {
+          "file": "apps/web/tests/crm-customer-search.test.ts",
+          "cases": [
+            "sends only the six parameters the contract accepts",
+            "sends no sort parameter, because the operation publishes none",
+            "disables the client retry, because the operation is rate-limited"
+          ]
+        },
+        {
+          "file": "apps/web/tests/crm-customer-search.dom.test.tsx",
+          "cases": [
+            "calls the backend zero times and explains how to search",
+            "issues no request while the operator types"
+          ]
+        }
+      ]
+    },
+    "TC-P1-27-CRM-002": {
+      "task": "P1-27-FE-002",
+      "name": "CRM customer search results",
+      "provenBy": [
+        {
+          "file": "apps/web/tests/crm-customer-search.test.ts",
+          "cases": ["publishes no total, so the table cannot render a range it made up"]
+        },
+        {
+          "file": "apps/web/tests/crm-customer-search.dom.test.tsx",
+          "cases": [
+            "renders the result row",
+            "shows the second search, not the first that resolved late",
+            "renders a denial instead of an empty list"
+          ]
+        }
+      ]
+    },
+    "TC-P1-27-CRM-003": {
+      "task": "P1-27-FE-003",
+      "name": "CRM duplicate warning",
+      "provenBy": [
+        {
+          "file": "apps/web/tests/crm-customer-create.dom.test.tsx",
+          "cases": [
+            "calls nothing while the operator types a name",
+            "states the record WAS created, then lists the look-alikes",
+            "shows no duplicate section when there are none",
+            "calls only the two creation operations"
+          ]
+        }
+      ]
+    },
+    "TC-P1-27-CRM-004": {
+      "task": "P1-27-FE-004",
+      "name": "CRM individual-customer form",
+      "provenBy": [
+        {
+          "file": "apps/web/tests/crm-customer-create.dom.test.tsx",
+          "cases": [
+            "renders the individual fields and not the company ones",
+            "offers exactly two initial statuses",
+            "announces a field error against its field",
+            "shows the correlation reference and keeps the form usable"
+          ]
+        },
+        {
+          "file": "apps/web/tests/write-adapters-driven.test.ts",
+          "cases": [
+            "sends the operation the contract publishes, with the trimmed names",
+            "refuses a name past the route ceiling",
+            "accepts a name at exactly the ceiling",
+            "hands the created customer back to the form"
+          ]
+        }
+      ]
+    },
+    "TC-P1-27-CRM-005": {
+      "task": "P1-27-FE-005",
+      "name": "CRM company-customer form",
+      "provenBy": [
+        {
+          "file": "apps/web/tests/crm-customer-create.dom.test.tsx",
+          "cases": [
+            "renders the company fields and not the individual ones",
+            "marks the trading name optional, because the contract does",
+            "renders the company form right to left"
+          ]
+        },
+        {
+          "file": "apps/web/tests/write-adapters-driven.test.ts",
+          "cases": [
+            "sends the company operation, not the individual one",
+            "omits a blank trade name and sends a trimmed one",
+            "refuses a blank legal name and a name past the company ceiling",
+            "defaults the lifecycle status to prospect when the form omits it"
+          ]
+        }
+      ]
+    },
+    "TC-P1-27-CRM-006": {
+      "task": "P1-27-FE-006",
+      "name": "CRM customer profile",
+      "provenBy": [
+        {
+          "file": "apps/web/tests/crm-customer-profile.dom.test.tsx",
+          "cases": [
+            "shows the name and the customer reference",
+            "never shows the uuid where a reference belongs",
+            "keeps the header and the other sections reachable"
+          ]
+        },
+        {
+          "file": "apps/web/tests/profile-accessibility.dom.test.tsx",
+          "cases": [
+            "scans the profile in Arabic, right to left",
+            "scans the read-only profile, which renders a different screen"
+          ]
+        },
+        {
+          "file": "apps/web/tests/p1-27-permission-route-binding.dom.test.tsx",
+          "cases": [
+            "enumerates all nine surfaces and finds five distinct capabilities behind them",
+            "offers nothing at all to a session holding only the read code",
+            "renders no profile at all without the read code"
+          ]
+        }
+      ]
+    },
+    "TC-P1-27-CRM-007": {
+      "task": "P1-27-FE-007",
+      "name": "CRM customer contacts",
+      "provenBy": [
+        {
+          "file": "apps/web/tests/crm-customer-profile.dom.test.tsx",
+          "cases": [
+            "shows the value the operator typed, not the normalised lookup key",
+            "falls back to the normalised value when only that was kept",
+            "states that removed channels are not listed",
+            "renders a denial instead of an empty list"
+          ]
+        }
+      ]
+    },
+    "TC-P1-27-CRM-008": {
+      "task": "P1-27-FE-008",
+      "name": "CRM customer addresses",
+      "provenBy": [
+        {
+          "file": "apps/web/tests/crm-customer-profile.dom.test.tsx",
+          "cases": [
+            "survives a NULL country code",
+            "drops empty parts rather than leaving blank lines",
+            "includes line3, which the column carries and the POST cannot set",
+            "renders a formatted address with a null country code"
+          ]
+        }
+      ]
+    },
+    "TC-P1-27-CRM-009": {
+      "task": "P1-27-FE-009",
+      "name": "CRM customer preferences",
+      "provenBy": [
+        {
+          "file": "apps/web/tests/crm-governance-writes.test.ts",
+          "cases": [
+            "requires a key for the PUT, which is the whole point of P1-27-INT-003",
+            "does not require a key on the reads at the same paths"
+          ]
+        },
+        {
+          "file": "apps/web/tests/crm-customer-components.dom.test.tsx",
+          "cases": [
+            "renders a recorded \"no\" as a word, not as an empty cell",
+            "says that quiet hours cannot be edited here"
+          ]
+        }
+      ]
+    },
+    "TC-P1-27-CRM-010": {
+      "task": "P1-27-FE-010",
+      "name": "CRM customer consents",
+      "provenBy": [
+        {
+          "file": "apps/web/tests/crm-governance-writes.test.ts",
+          "cases": ["excludes expired"]
+        },
+        {
+          "file": "apps/web/tests/crm-customer-components.dom.test.tsx",
+          "cases": [
+            "states that the history is append-only",
+            "renders an unconstrained source exactly as stored"
+          ]
+        },
+        {
+          "file": "apps/web/tests/governance-write-validation.test.ts",
+          "cases": [
+            "refuses a consent status a client may not record",
+            "accepts the two statuses a client may record"
+          ]
+        }
+      ]
+    },
+    "TC-P1-27-CRM-011": {
+      "task": "P1-27-FE-011",
+      "name": "CRM customer notes",
+      "provenBy": [
+        {
+          "file": "apps/web/tests/crm-profile-api.test.ts",
+          "cases": [
+            "treats a MISSING flag as \"you are not seeing everything\"",
+            "does not claim completeness when the read failed"
+          ]
+        },
+        {
+          "file": "apps/web/tests/crm-customer-components.dom.test.tsx",
+          "cases": [
+            "states that restricted notes are hidden when the caller cannot see them",
+            "claims nothing at all when the read failed"
+          ]
+        }
+      ]
+    },
+    "TC-P1-27-CRM-012": {
+      "task": "P1-27-FE-012",
+      "name": "CRM customer alerts",
+      "provenBy": [
+        {
+          "file": "apps/web/tests/crm-governance-writes.test.ts",
+          "cases": ["offers exactly the alert types and severities the constraint admits"]
+        },
+        {
+          "file": "apps/web/tests/crm-customer-components.dom.test.tsx",
+          "cases": [
+            "ranks critical above warning above info",
+            "disagrees with alphabetical order, which is the whole point",
+            "does not shift an alert date by a timezone"
+          ]
+        }
+      ]
+    },
+    "TC-P1-27-CRM-013": {
+      "task": "P1-27-FE-013",
+      "name": "CRM customer tags",
+      "provenBy": [
+        {
+          "file": "apps/web/tests/governance-write-validation.test.ts",
+          "cases": [
+            "requires a segment code of at least two characters",
+            "accepts a two-character code and treats the display name as optional"
+          ]
+        },
+        {
+          "file": "apps/web/tests/crm-customer-components.dom.test.tsx",
+          "cases": ["shows the tenant-configured segment name without translating it"]
+        }
+      ]
+    },
+    "TC-P1-27-CRM-014": {
+      "task": "P1-27-FE-014",
+      "name": "CRM customer restrictions",
+      "provenBy": [
+        {
+          "file": "apps/web/tests/crm-governance-writes.test.ts",
+          "cases": ["offers exactly the restriction types the constraint admits"]
+        },
+        {
+          "file": "apps/web/tests/crm-customer-components.dom.test.tsx",
+          "cases": [
+            "reveals nothing about restrictions when the read is denied",
+            "does not offer the write form when the read was denied"
+          ]
+        },
+        {
+          "file": "apps/web/tests/governance-write-validation.test.ts",
+          "cases": ["refuses a restriction type outside the CHECK constraint"]
+        }
+      ]
+    },
+    "TC-P1-27-CRM-015": {
+      "task": "P1-27-FE-015",
+      "name": "CRM customer timeline",
+      "provenBy": [
+        {
+          "file": "apps/web/tests/crm-duplicate-review.test.ts",
+          "cases": [
+            "covers the timeline event types the CHECK constraint admits",
+            "has exactly the eight event types the constraint lists"
+          ]
+        },
+        {
+          "file": "apps/web/tests/crm-customer-components.dom.test.tsx",
+          "cases": ["does not mark timeline planned, now that Wave 6 built it"]
+        }
+      ]
+    },
+    "TC-P1-27-XD-001": {
+      "task": "P1-27-FE-016",
+      "name": "CRM customer merge review",
+      "provenBy": [
+        {
+          "file": "apps/web/tests/crm-duplicate-review.test.ts",
+          "cases": [
+            "exports no merge validator from the contract",
+            "exports no merge action from the adapter",
+            "rounds a half-boundary the way decimal arithmetic does, not the way a float does",
+            "is ten characters, the same value the route requires"
+          ]
+        }
+      ]
+    },
+    "TC-P1-27-VEH-001": {
+      "task": "P1-27-FE-017",
+      "name": "Vehicle search",
+      "provenBy": [
+        {
+          "file": "apps/web/tests/vehicle-api.test.ts",
+          "cases": [
+            "sends NOTHING for empty criteria",
+            "never sends a sort, page, offset or total parameter",
+            "never retries — search is expensive-read at 30/min",
+            "preserves mergedIntoId so a merged vehicle is distinguishable"
+          ]
+        },
+        {
+          "file": "apps/web/tests/vehicle-screens.dom.test.tsx",
+          "cases": [
+            "calls the backend zero times on mount",
+            "issues no request while the operator types a VIN"
+          ]
+        }
+      ]
+    },
+    "TC-P1-27-VEH-002": {
+      "task": "P1-27-FE-018",
+      "name": "Vehicle creation",
+      "provenBy": [
+        {
+          "file": "apps/web/tests/vehicle-contract.test.ts",
+          "cases": [
+            "reads with veh.vehicle.read and writes with veh.vehicle.manage",
+            "resolves the five catalogue reads and requires no key for any of them",
+            "enforces the model-year bounds the CHECK constraint sets"
+          ]
+        },
+        {
+          "file": "apps/web/tests/vehicle-api.test.ts",
+          "cases": [
+            "converts the model year to a NUMBER",
+            "stops at the bound and SAYS the list is incomplete",
+            "surfaces a 409 rather than reinterpreting it"
+          ]
+        }
+      ]
+    },
+    "TC-P1-27-VEH-003": {
+      "task": "P1-27-FE-019",
+      "name": "Vehicle profile",
+      "provenBy": [
+        {
+          "file": "apps/web/tests/vehicle-profile.test.ts",
+          "cases": [
+            "gates editing and status changes on different permissions",
+            "requires an idempotency key on both",
+            "sends an explicit null to CLEAR a field",
+            "does NOT send an If-Match header argument"
+          ]
+        },
+        {
+          "file": "apps/web/tests/p1-27-permission-route-binding.dom.test.tsx",
+          "cases": [
+            "found six distinct codes to pair against",
+            "renders no vehicle at all without the read code",
+            "gates the documents list on a MANAGE code from another module, both ways"
+          ]
+        }
+      ]
+    },
+    "TC-P1-27-VEH-004": {
+      "task": "P1-27-FE-020",
+      "name": "Vehicle VIN validation",
+      "provenBy": [
+        {
+          "file": "apps/web/tests/vehicle-profile.test.ts",
+          "cases": [
+            "reports UNAVAILABLE on a transport failure, never available",
+            "ACCEPTS a VIN that is not 17 characters",
+            "does not treat the vehicle being edited as its own duplicate",
+            "asks the same normalised question the unique index answers"
+          ]
+        },
+        {
+          "file": "apps/web/tests/vehicle-contract.test.ts",
+          "cases": ["PRESERVES I, O and Q"]
+        }
+      ]
+    },
+    "TC-P1-27-VEH-005": {
+      "task": "P1-27-FE-021",
+      "name": "Vehicle ownership",
+      "provenBy": [
+        {
+          "file": "apps/web/tests/vehicle-history.test.ts",
+          "cases": [
+            "resolves all three history reads",
+            "reports a future-dated open interval as SCHEDULED, not in force",
+            "reports a closed interval as ended, even though active is false"
+          ]
+        }
+      ]
+    },
+    "TC-P1-27-VEH-006": {
+      "task": "P1-27-FE-022",
+      "name": "Vehicle plate history",
+      "provenBy": [
+        {
+          "file": "apps/web/tests/vehicle-history.test.ts",
+          "cases": [
+            "compares ISO days as strings, which is exactly chronological order",
+            "builds each path from a fixed segment with the id encoded",
+            "publishes no total on any of the three"
+          ]
+        },
+        {
+          "file": "apps/web/tests/vehicle-plate-section.dom.test.tsx",
+          "cases": [
+            "asks the plate operation for this vehicle and prints every row it answers",
+            "sends the country code uppercased and the plate exactly as typed",
+            "refuses a one-letter country against that field, without spending a request",
+            "re-reads the list after a successful assignment"
+          ]
+        },
+        {
+          "file": "apps/web/tests/write-adapters-driven.test.ts",
+          "cases": [
+            "uppercases the country code and posts the raw plate as typed",
+            "refuses a country code of one character and of four",
+            "accepts a three-character country code",
+            "refuses an effective date that is not exactly ten characters"
+          ]
+        }
+      ]
+    },
+    "TC-P1-27-VEH-007": {
+      "task": "P1-27-FE-023",
+      "name": "Vehicle odometer history",
+      "provenBy": [
+        {
+          "file": "apps/web/tests/vehicle-history.test.ts",
+          "cases": [
+            "preserves a precision no float could hold",
+            "never yields a number",
+            "reports a NULL canonical value rather than computing one",
+            "recognises a correction by either signal"
+          ]
+        }
+      ]
+    },
+    "TC-P1-27-VEH-008": {
+      "task": "P1-27-FE-024",
+      "name": "Vehicle EV/hybrid information",
+      "provenBy": [
+        {
+          "file": "apps/web/tests/vehicle-relations.test.ts",
+          "cases": ["reports \"none\" rather than a failure"]
+        }
+      ]
+    },
+    "TC-P1-27-XD-002": {
+      "task": "P1-27-FE-025",
+      "name": "Vehicle-customer relationships",
+      "provenBy": [
+        {
+          "file": "apps/web/tests/vehicle-relations.test.ts",
+          "cases": [
+            "separates relationship management from vehicle management",
+            "reports not-applicable for every role but authorized_person",
+            "flags an authorized person with no scope as unexpected, not as ordinary",
+            "refuses an action outside the six"
+          ]
+        },
+        {
+          "file": "apps/web/tests/write-adapters-driven.test.ts",
+          "cases": [
+            "addresses the CUSTOMER, with the vehicle in the body",
+            "refuses the one role that may carry an authorization scope",
+            "accepts every linkable role",
+            "posts the scope to the vehicle authorized-parties collection",
+            "refuses an empty scope, which the constraint forbids"
+          ]
+        }
+      ]
+    },
+    "TC-P1-27-VEH-009": {
+      "task": "P1-27-FE-026",
+      "name": "Vehicle documents",
+      "provenBy": [
+        {
+          "file": "apps/web/tests/vehicle-duplicates.test.ts",
+          "cases": ["gates the document list on shared.document.manage, not veh.vehicle.read"]
+        }
+      ]
+    },
+    "TC-P1-27-VEH-010": {
+      "task": "P1-27-FE-027",
+      "name": "Vehicle media",
+      "provenBy": [
+        {
+          "file": "apps/web/tests/vehicle-duplicates.test.ts",
+          "cases": [
+            "records media as blocked on the open decision rather than as a feature flag",
+            "exposes no upload helper of any kind"
+          ]
+        }
+      ]
+    },
+    "TC-P1-27-XD-003": {
+      "task": "P1-27-FE-028",
+      "name": "Vehicle duplicate review",
+      "provenBy": [
+        {
+          "file": "apps/web/tests/vehicle-duplicates.test.ts",
+          "cases": [
+            "never exports a duplicate-scan caller",
+            "never exports a vehicle-merge caller",
+            "never gates a duplicate queue on the merge permission"
+          ]
+        },
+        {
+          "file": "apps/web/tests/vehicle-screens.dom.test.tsx",
+          "cases": [
+            "renders NO merge control anywhere, and states why",
+            "offers no rescan control, and says the queue is not refreshed by scanning"
+          ]
+        }
+      ]
+    },
+    "TC-P1-27-VEH-011": {
+      "task": "P1-27-FE-029",
+      "name": "Vehicle timeline",
+      "provenBy": [
+        {
+          "file": "apps/web/tests/vehicle-duplicates.test.ts",
+          "cases": [
+            "distinguishes set, cleared, changed and empty",
+            "never produces a literal \"null\" for a reader to see"
+          ]
+        },
+        {
+          "file": "apps/web/tests/vehicle-screens.dom.test.tsx",
+          "cases": [
+            "says this is the vehicle’s own details, not a unified timeline",
+            "reads a creation as \"set to\", not as a change from nothing"
+          ]
+        }
+      ]
+    }
+  },
+  "pathMatrix": [
+    {
+      "path": "normal",
+      "status": "PROVEN",
+      "provenBy": [
+        {
+          "file": "apps/web/tests/crm-customer-search.dom.test.tsx",
+          "cases": ["renders the result row"]
+        },
+        {
+          "file": "apps/web/tests/crm-customer-profile.dom.test.tsx",
+          "cases": ["shows the name and the customer reference"]
+        }
+      ]
+    },
+    {
+      "path": "alternative",
+      "status": "PROVEN",
+      "provenBy": [
+        {
+          "file": "apps/web/tests/crm-customer-create.dom.test.tsx",
+          "cases": [
+            "renders the individual fields and not the company ones",
+            "renders the company fields and not the individual ones"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "validation",
+      "status": "PROVEN",
+      "provenBy": [
+        {
+          "file": "apps/web/tests/governance-write-validation.test.ts",
+          "cases": ["requires a segment code of at least two characters"]
+        },
+        {
+          "file": "apps/web/tests/vehicle-contract.test.ts",
+          "cases": ["enforces the model-year bounds the CHECK constraint sets"]
+        }
+      ]
+    },
+    {
+      "path": "authentication",
+      "status": "PROVEN",
+      "provenBy": [
+        {
+          "file": "apps/web/tests/authentication.test.ts",
+          "cases": ["maps a 401 to expired and a 403 to denied"]
+        }
+      ]
+    },
+    {
+      "path": "permission denial",
+      "status": "PROVEN",
+      "provenBy": [
+        {
+          "file": "apps/web/tests/crm-customer-components.dom.test.tsx",
+          "cases": ["does not offer the write form when the read was denied"]
+        },
+        {
+          "file": "apps/web/tests/p1-27-security.test.ts",
+          "cases": ["gates every CRM and vehicle route on a permission before it reads"]
+        }
+      ]
+    },
+    {
+      "path": "scope denial",
+      "status": "PARTIAL",
+      "reason": "The Frontend proves it never ASSERTS a scope, which is the obligation it owns. A server-side scope denial arrives as an ordinary 403 and is indistinguishable on the wire from a permission denial, so no P1-27 case exercises it as its own path.",
+      "provenBy": [
+        {
+          "file": "apps/web/tests/p1-27-security.test.ts",
+          "cases": [
+            "never sends a tenant, company or branch from the client",
+            "throws if a caller ever passes a scope key to the API query builder"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "empty",
+      "status": "PROVEN",
+      "provenBy": [
+        {
+          "file": "apps/web/tests/search-empty-states.dom.test.tsx",
+          "cases": [
+            "does NOT claim the tenant has no customers after a search that matched none",
+            "does NOT claim the tenant has no vehicles after a search that matched none"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "error",
+      "status": "PROVEN",
+      "provenBy": [
+        {
+          "file": "apps/web/tests/crm-customer-create.dom.test.tsx",
+          "cases": ["shows the correlation reference and keeps the form usable"]
+        }
+      ]
+    },
+    {
+      "path": "retry",
+      "status": "PROVEN",
+      "provenBy": [
+        {
+          "file": "apps/web/tests/api-client.test.ts",
+          "cases": [
+            "retries an idempotent read once on a transport failure",
+            "NEVER retries a mutation"
+          ]
+        },
+        {
+          "file": "apps/web/tests/customer-selector.dom.test.tsx",
+          "cases": ["offers no Retry on an expired session, because retrying cannot work"]
+        }
+      ]
+    },
+    {
+      "path": "conflict",
+      "status": "PROVEN",
+      "provenBy": [
+        {
+          "file": "apps/web/tests/vehicle-api.test.ts",
+          "cases": ["surfaces a 409 rather than reinterpreting it"]
+        },
+        {
+          "file": "apps/web/tests/vin-create-validation.dom.test.tsx",
+          "cases": ["CONFLICT names a conflict, not a generic failure"]
+        }
+      ]
+    },
+    {
+      "path": "duplicate",
+      "status": "PROVEN",
+      "provenBy": [
+        {
+          "file": "apps/web/tests/crm-customer-create.dom.test.tsx",
+          "cases": ["states the record WAS created, then lists the look-alikes"]
+        }
+      ]
+    },
+    {
+      "path": "stale version",
+      "status": "ABSENT",
+      "reason": "DECIDED, not merely open. `P1-27-OD-005` (`open-decisions.md:795-978`, recorded by `c060b93`) ships last-writer-wins on every CRM and Vehicle write: no route under `customers/`, `customer-duplicates/`, `vehicles/` or `vehicle-duplicates/` declares `versionGuarded: true`, and none reads `expectedVersion`, so an `If-Match` sent from here would be parsed and discarded. There is no stale-version path to exercise, and the plan's §4 forbids creating one from this branch. The decision names the Backend remediation that would create it, and six executable checks in `api-client.test.ts:1242-1337` fail the day it lands — which is what stops this row ageing into a lie. The status stays `ABSENT` because a path that cannot be exercised is not a path that has been proved; what changed is that the absence is now a recorded engineering decision rather than unacknowledged. The case cited records the absence.",
+      "provenBy": [
+        {
+          "file": "apps/web/tests/vehicle-profile.test.ts",
+          "cases": ["does NOT send an If-Match header argument"]
+        }
+      ]
+    },
+    {
+      "path": "concurrent update",
+      "status": "ABSENT",
+      "reason": "The same recorded engineering decision, `P1-27-OD-005`. Concurrent edits are last-writer-wins from a client position — the `ERR-CON-001` the services do raise guards a version the service itself read inside its own transaction (`vehicle-write-service.ts:115` to `:132`), so it catches a writer landing inside the server's SELECT-to-UPDATE window and cannot catch a lost update across an operator's read-edit-submit cycle. `A42-13` records the finding and it still holds; `P1-27-OD-005` disposes of it. `ABSENT` for the same reason as the row above.",
+      "provenBy": [
+        {
+          "file": "apps/web/tests/vehicle-profile.test.ts",
+          "cases": ["does NOT send an If-Match header argument"]
+        }
+      ]
+    },
+    {
+      "path": "idempotent replay",
+      "status": "PARTIAL",
+      "reason": "Stronger again, and still not the whole path. The replay itself is now ISSUED: a real P1-27 write (`createVehicleAction` -> `veh.vehicle-create`) goes through the real `ApiClient` over a transport that arbitrates by key as `route-handler.ts` and `withIdempotency` do, and three DELTAS are counted around it per the `p1-14-idempotency-replay.test.ts` precedent — requests issued +1, distinct keys on the wire +0, vehicles created +0 — with a fresh-key control that creates a second vehicle so the zeros discriminate. Mutation-proved: a generated key overwriting the caller's fails 5 (3 of them these), and a `send` that issues twice fails the requests delta. TWO THINGS STILL BLOCK IT, and neither is rounded up. FIRST, the side-effect counter is the test's own fixture: `createdVehicles` is an array in the test file, and that a replay writes no second row, no second audit record and no outbox event is a property of `veh.vehicle-create` in PostgreSQL that nothing at this tier can observe. `tests/backend/p1-14-idempotency-replay.test.ts` counts those durable consequences against a real database for ten IAM operations, and NO equivalent exists for any CRM or Vehicle operation. SECOND, no production path replays: `grep idempotencyKey apps/web/src/` resolves to `lib/api/client.ts` and nothing else, so no shipped adapter can re-present a key — `createVehicleAction` mints a fresh one per invocation, which is correct and which makes a double submit two attempts rather than a replay. The replay proved here is a capability of the client that no screen uses.",
+      "provenBy": [
+        {
+          "file": "apps/web/tests/p1-27-security.test.ts",
+          "cases": ["sends an idempotency key on every write and on no read"]
+        },
+        {
+          "file": "apps/web/tests/vehicle-api.test.ts",
+          "cases": [
+            "the adapter reaches the wire with a key at all, or nothing below means anything",
+            "re-presenting the SAME key issues one more request and creates NO second vehicle",
+            "a second ATTEMPT is not a replay: a new key, and a second vehicle",
+            "the same key with a DIFFERENT payload is refused, and executes neither version",
+            "the fixture really refuses a keyless request, so its arbitration is not decoration"
+          ]
+        },
+        {
+          "file": "apps/web/tests/api-client.test.ts",
+          "cases": [
+            "puts an idempotency-key on the wire for a request a real adapter produced",
+            "puts no idempotency-key on a read a real adapter produced"
+          ]
+        },
+        {
+          "file": "tests/backend/idempotency.test.ts",
+          "cases": [
+            "returns the stored response without executing the command again",
+            "commits exactly one execution and stores exactly one row"
+          ]
+        },
+        {
+          "file": "apps/web/tests/operation-contract.test.ts",
+          "cases": ["is true for an idempotent PUT"]
+        }
+      ]
+    },
+    {
+      "path": "backend unavailable",
+      "status": "PROVEN",
+      "provenBy": [
+        {
+          "file": "apps/web/tests/api-readiness.test.ts",
+          "cases": ["maps every transport failure to unavailable"]
+        },
+        {
+          "file": "apps/web/tests/crm-customer-search.dom.test.tsx",
+          "cases": ["reports a rate limit as unavailable, not as a fault"]
+        }
+      ]
+    },
+    {
+      "path": "timeout",
+      "status": "PROVEN",
+      "provenBy": [
+        {
+          "file": "apps/web/tests/api-client.test.ts",
+          "cases": ["reports our own timeout as a timeout"]
+        },
+        {
+          "file": "apps/web/tests/vehicle-screens.dom.test.tsx",
+          "cases": [
+            "shows a TIMEOUT as \"service unavailable\", with the reference to quote",
+            "tells the two apart, which is the only thing that makes either case mean anything"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "cancellation",
+      "status": "PARTIAL",
+      "reason": "NARROWED, not closed. The half that was missing is now closed: the `cancelled` classification is proved to survive to a RENDERED screen, through the production adapter and the production client, and to put NO service-unavailable state there — mutation-proved, `const isAbort = false` fails that case (6 failed / 1608 passed). What remains absent is the operator's half. No P1-27 screen offers a control that cancels an in-flight request — `form.cancel` is a `Link` back and `admin.cancel` closes a confirm block, neither touches the request — and no P1-27 adapter accepts an `AbortSignal` (`grep AbortSignal apps/web/src/features/` is empty), so the only production cause of this path is navigating away, which UNMOUNTS the very screen the assertion is made against. This is the shape the record already refuses to round up for `stale version`: a capability that is deliberately absent is not a path that has been proved. It is PARTIAL rather than ABSENT because, unlike that row, the reachable half is genuinely exercised end to end.",
+      "provenBy": [
+        {
+          "file": "apps/web/tests/api-client.test.ts",
+          "cases": ["reports a caller cancellation as cancelled"]
+        },
+        {
+          "file": "apps/web/tests/vehicle-screens.dom.test.tsx",
+          "cases": ["does NOT report a CANCELLED request as a backend outage"]
+        }
+      ]
+    },
+    {
+      "path": "recovery",
+      "status": "PROVEN",
+      "provenBy": [
+        {
+          "file": "apps/web/tests/vehicle-screens.dom.test.tsx",
+          "cases": ["RECOVERS when Retry is pressed: it re-reads, and the rows arrive"]
+        }
+      ]
+    }
+  ],
+  "weakCitations": {
+    "what": "Citations that resolve to an executable case which does not prove the behaviour the id names.",
+    "why": "Five of the twenty-nine were spot-checked by an independent reader and two of them resolved to an assertion that two CONSTANTS differ. That is a real case and it is not a proof: it would pass against a screen that ignored both constants. \"29 resolve\" is therefore not \"29 proved\", and this block exists so the headline cannot be read as the stronger claim. Each entry keeps the weak citation rather than deleting it — deleting evidence to improve a record is the defect one level up — and names the case that now carries the obligation.",
+    "checkedBy": "scripts/ci/check-p1-27-doc-counts.mjs (checkCatalogue): every entry must name a recorded id, a file that exists, a case title present in that file, a stated weakness, and a strengthening proof whose titles resolve too.",
+    "entries": [
+      {
+        "id": "TC-P1-27-VEH-003",
+        "file": "apps/web/tests/vehicle-profile.test.ts",
+        "case": "gates editing and status changes on different permissions",
+        "weakness": "Asserts that VEHICLE_PERMISSIONS.vehicleManage and VEHICLE_PERMISSIONS.statusManage hold different strings. Nothing in it reaches the vehicle profile, so it passes unchanged against a screen that renders both panels to a session holding neither code.",
+        "strengthenedBy": {
+          "file": "apps/web/tests/p1-27-permission-route-binding.dom.test.tsx",
+          "cases": [
+            "found six distinct codes to pair against",
+            "renders no vehicle at all without the read code"
+          ],
+          "how": "Invokes the real vehicle profile route with a synthesised session and RENDERS what it returns, asserting each of the eight write surfaces in both directions — offered to its own code, withheld from a session holding all five others."
+        }
+      },
+      {
+        "id": "TC-P1-27-XD-002",
+        "file": "apps/web/tests/vehicle-relations.test.ts",
+        "case": "separates relationship management from vehicle management",
+        "weakness": "The same shape: relationshipManage is asserted to be the literal veh.vehicle.relationship.manage and not to equal vehicleManage. It is a statement about two constants and says nothing about what any screen does with them.",
+        "strengthenedBy": {
+          "file": "apps/web/tests/write-adapters-driven.test.ts",
+          "cases": [
+            "posts the scope to the vehicle authorized-parties collection",
+            "refuses the one role that may carry an authorization scope"
+          ],
+          "how": "Executes the real relationship write adapters with only the transport mocked and asserts the request that came out, so the schema, the body assembly and the refusals are exercised rather than the constant."
+        }
+      }
+    ]
+  }
+}

@@ -11,6 +11,7 @@ import { vehicleMatchReasons } from '@/lib/duplicates/explanations';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { Locale } from '@/i18n/config';
+import { formatDate, formatDateTime } from '@/lib/format';
 import { listVehicleDuplicates, reviewVehicleDuplicateAction } from '../duplicates-api';
 import {
   MAX_REVIEW_REASON,
@@ -18,6 +19,7 @@ import {
   VEHICLE_CONFIDENCE_BANDS,
   VEHICLE_DUPLICATE_STATUSES,
   formatMatchScore,
+  vehiclePairMembers,
   isActionable,
   type VehicleDuplicateCandidate,
 } from '../duplicates-contract';
@@ -39,14 +41,26 @@ import {
  * the plan requires the affordance to be *absent* rather than disabled, and the
  * screen says so in a sentence instead of showing a control that cannot work.
  *
- * ## The pair is two identifiers, and that is all the operation returns
+ * ## Each side is named by its own reference
  *
- * `veh.vehicle-duplicate-list` returns `vehicleIdA` and `vehicleIdB`, not plates
- * or VINs. Rather than fetch two vehicles per row — N+1 reads against a
- * rate-limited surface, on a screen whose whole job is triage — each side links
- * to its own profile, where the reviewer sees the real record.
+ * `veh.vehicle-duplicate-list` publishes `displayNumberA` and `displayNumberB`
+ * alongside the two ids, so no second read is needed to name the pair. This
+ * docblock previously argued the opposite — that the operation returned ids only
+ * and that naming them would mean N+1 reads — and that stopped being true at
+ * #194 while the sentence stayed. The screen then showed "First record" and
+ * "Second record" on the one surface whose entire job is telling two vehicles
+ * apart.
  *
- * A and B are the order the detector recorded. Neither is "the duplicate".
+ * Neither a VIN nor a plate is shown here: the reference is the business key an
+ * operator already uses, and a VIN is `internal`-classified. Each side still
+ * links to its own profile, where the full record is.
+ *
+ * A and B are the order the detector recorded. Neither is "the duplicate", so the
+ * ordinal is kept — but ALONGSIDE the reference, not instead of it. An
+ * `aria-label` would have replaced the accessible name outright, which is
+ * WCAG 2.5.3 Label in Name (Level A): a speech-input user saying "click V-0001"
+ * would have matched nothing, and a screen reader would have announced "First
+ * record" on the screen whose entire job is telling two vehicles apart.
  */
 
 interface Props {
@@ -63,26 +77,79 @@ export function VehicleDuplicateReviewScreen({ locale, messages }: Props) {
       listVehicleDuplicates(status, request, cursor),
     [status]
   );
-  const table = useServerTable<VehicleDuplicateCandidate>(load, { initial: INITIAL_REQUEST });
+  /*
+   * `loadKey: status` is what makes the status filter a control rather than
+   * decoration, and its absence made it decoration.
+   *
+   * `useServerTable`'s read effect keys on
+   * `${ordering}#${loadKey}#${page}#${generation}` and deliberately EXCLUDES
+   * `load` from its dependencies (`use-server-table.ts:110-113`), because
+   * including it would re-run on every cursor write. `ordering` is derived from
+   * `TableRequest` alone (`use-cursor-pages.ts:42-51`), and `status` is not a
+   * `TableRequest` field — so changing it rebuilt `load` and moved nothing the
+   * effect watches. The select set the state, the state reached no request, and
+   * two of its three options were unreachable: picking "dismissed" or "merged"
+   * re-rendered the same open pairs.
+   *
+   * This is the failure the hook's own docblock names at `use-server-table.ts:70-83`
+   * (`P1-26-F-019`, "the operator changed the dates and watched the same rows sit
+   * there"), reappearing in the one place the mechanism built to prevent it was
+   * not used. Only `AuditLogScreen` and `CustomerSelector` passed a `loadKey`.
+   *
+   * The two search screens escape it differently — `key={JSON.stringify(...)}`
+   * remounts their results — which is why they are not affected and why this
+   * queue was the exception rather than the rule.
+   */
+  const table = useServerTable<VehicleDuplicateCandidate>(load, {
+    initial: INITIAL_REQUEST,
+    loadKey: status,
+  });
 
   const columns = useMemo<readonly Column<VehicleDuplicateCandidate>[]>(
     () => [
       {
         id: 'pair',
         headerKey: 'vehicles.duplicates.pair',
+        /*
+         * Each side named by its own reference, not by its position in the pair
+         * (`P1-27-FE-028`).
+         *
+         * This column rendered "First record" and "Second record" — labels that
+         * tell a reviewer nothing about which two vehicles they are being asked
+         * to compare, on the screen whose entire job is that comparison. The
+         * operation publishes `displayNumberA` / `displayNumberB` and has since
+         * #194; the frontend TYPE omitted them, so TypeScript could not see the
+         * omission and the fixture inherited it.
+         *
+         * The ordinal survives, because two links whose visible text is a
+         * reference still need to be distinguishable when the reference is
+         * missing — but as a visually-hidden SUFFIX inside the link, not as an
+         * `aria-label`. `aria-label` wins the accessible-name computation
+         * outright, so the first fix left the announced name as "First record"
+         * while the screen showed `V-0001`: the visible label was not contained
+         * in the accessible name, which is a WCAG 2.5.3 failure at Level A.
+         *
+         * Visible reference FIRST, so a speech-input user's "click V-0001"
+         * matches from the start of the name. The uuid is never shown — the same
+         * rule as the customer queue beside it.
+         */
         cell: (row) => (
           <div className="flex flex-col gap-0.5">
-            {[row.vehicleIdA, row.vehicleIdB].map((id, index) => (
+            {vehiclePairMembers(row).map((member, index) => (
               <Link
-                key={id}
-                href={`/${locale}/vehicles/${id}`}
+                key={member.id}
+                href={`/${locale}/vehicles/${member.id}`}
                 className="text-caption text-primary underline"
                 dir="ltr"
               >
-                {translate(
-                  messages,
-                  index === 0 ? 'vehicles.duplicates.memberA' : 'vehicles.duplicates.memberB'
-                )}
+                {member.number ?? translate(messages, 'vehicles.duplicates.numberUnavailable')}
+                <span className="sr-only">
+                  {' '}
+                  {translate(
+                    messages,
+                    index === 0 ? 'vehicles.duplicates.memberA' : 'vehicles.duplicates.memberB'
+                  )}
+                </span>
               </Link>
             ))}
           </div>
@@ -115,9 +182,7 @@ export function VehicleDuplicateReviewScreen({ locale, messages }: Props) {
         headerKey: 'crm.duplicates.detectedAt',
         cell: (row) => (
           <time dateTime={row.detectedAt} dir="ltr">
-            {new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' }).format(
-              new Date(row.detectedAt)
-            )}
+            {formatDateTime(row.detectedAt, locale)}
           </time>
         ),
       },
@@ -137,9 +202,7 @@ export function VehicleDuplicateReviewScreen({ locale, messages }: Props) {
             <span className="text-caption text-text-muted">
               {row.reviewedAt ? (
                 <time dateTime={row.reviewedAt} dir="ltr">
-                  {new Intl.DateTimeFormat(locale, { dateStyle: 'medium' }).format(
-                    new Date(row.reviewedAt)
-                  )}
+                  {formatDate(row.reviewedAt, locale)}
                 </time>
               ) : (
                 '—'
@@ -153,14 +216,17 @@ export function VehicleDuplicateReviewScreen({ locale, messages }: Props) {
 
   return (
     <div className="flex min-h-0 flex-col gap-4">
-      <header>
-        <h1 className="text-page-title font-semibold text-text-primary">
-          {translate(messages, 'vehicles.duplicates.title')}
-        </h1>
-        <p className="mt-1 text-body text-text-secondary">
-          {translate(messages, 'vehicles.duplicates.intro')}
-        </p>
-      </header>
+      {/*
+        No heading here — same reason as the CRM twin.
+
+        `vehicles/duplicates/page.tsx` renders `PageHeader` with this exact
+        `vehicles.duplicates.title`, and that is the page's one `<h1>`. This
+        screen repeated it, so the queue shipped `h1 count: 2` with the title
+        printed twice. Reproduced by hand on `/en/vehicles/duplicates`.
+      */}
+      <p className="text-body text-text-secondary">
+        {translate(messages, 'vehicles.duplicates.intro')}
+      </p>
 
       <div className="flex flex-wrap items-end gap-3">
         <label className="flex flex-col gap-1">
@@ -279,8 +345,12 @@ function VehicleDuplicateDecisionPanel({
             {score ?? candidate.matchScore}
           </dd>
         </div>
-        {[candidate.vehicleIdA, candidate.vehicleIdB].map((id, index) => (
-          <div key={id}>
+        {/* The ordinal stays the TERM, because A and B carry no meaning and the
+            reviewer needs to tell the two apart. The reference is the DEFINITION
+            — the thing that identifies which vehicle this side actually is,
+            which the panel did not say at all. */}
+        {vehiclePairMembers(candidate).map((member, index) => (
+          <div key={member.id}>
             <dt className="text-caption text-text-secondary">
               {translate(
                 messages,
@@ -288,7 +358,14 @@ function VehicleDuplicateDecisionPanel({
               )}
             </dt>
             <dd className="text-body">
-              <Link href={`/${locale}/vehicles/${id}`} className="text-primary underline" dir="ltr">
+              <span className="block text-text-primary" dir="ltr">
+                {member.number ?? translate(messages, 'vehicles.duplicates.numberUnavailable')}
+              </span>
+              <Link
+                href={`/${locale}/vehicles/${member.id}`}
+                className="text-primary underline"
+                dir="ltr"
+              >
                 {translate(messages, 'vehicles.duplicates.openProfile')}
               </Link>
             </dd>

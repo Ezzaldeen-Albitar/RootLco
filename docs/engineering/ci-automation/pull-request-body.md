@@ -40,7 +40,7 @@ shaped the design:
 │                                    performance, dependency and idempotency baselines
 ├── dependabot.yml                   npm · docker · github-actions
 └── workflows/
-    ├── pr-ci.yml                    12 governed jobs + one stable ci-gate
+    ├── pr-ci.yml                    14 governed jobs + one stable ci-gate
     ├── protected-develop-verification.yml   never cancels
     ├── nightly-assurance.yml        11 jobs + nightly-gate
     ├── release-verification.yml     build once, SBOM, provenance
@@ -59,14 +59,21 @@ shaped the design:
 
 Counted precisely, because these numbers drifted once already and are now
 reconciled against the filesystem by `tests/ci/documented-counts.test.ts`:
-**9 reusable workflows**, **7 top-level workflows** (the six above plus the
-retained `ci.yml`), **1 composite action**, **40 scripts in `scripts/ci`**,
-**11 baselines**, **25 documents** under `docs/engineering/ci-automation`, and
+**10 reusable workflows**, **7 top-level workflows** (the six above plus the
+retained `ci.yml`), **1 composite action**, **46 scripts in `scripts/ci`**,
+**14 baselines**, **25 documents** under `docs/engineering/ci-automation`, and
 **14 workflow-security rules**.
+
+The baseline count moved from 13 to 14 in `P1-27-QA-001`, which added
+`coverage-baseline.web.json` — the first coverage baseline the web tier has ever
+had. Until then `apps/web/vitest.config.ts` declared two projects and no
+`coverage` block at all, the repository-root config's `include` list was entirely
+`apps/api/src`, and neither committed coverage baseline mentioned `apps/web`, so
+"Unit and component coverage" was a task with nothing measuring either half.
 
 The `scripts/ci` count moved from 27 to 28 in the Main Branch Governance and
 Ruleset Alignment gate, which added `check-promotion-source.mjs` — the gate that
-enforces ADR-006 §45 and §47, previously prose only. It moved from 29 to 30 in the P1-25 topology remediation, which added `check-web-topology.mjs` — one App Router root under `src`, the proxy convention, no nested lockfile, no tracked artefacts. It moved from 35 to 36 in P1-26, which added `check-p1-26-frontend.mjs` — no token in browser storage, no floating-point money, no redirect parameter in the authentication flow, one session-cookie authority, and only async exports from a `'use server'` module. It moved from 36 to 37 in the P1-26 shared-UX acceptance remediation, which added `check-notification-authority.mjs` — exactly one `ToastRegion`, rendered by the notification host, mounted once in the locale layout, with no competing notification library installed. It moved from 37 to 38 in P1-27, which added `generate-idempotent-operations.mjs` — the generator that derives the Web client's idempotency table from the published contract instead of guessing it from the HTTP method (`P1-27-INT-003`), and, run with `--check`, the gate that fails the build when the table and the contract disagree. A branch ruleset cannot
+enforces ADR-006 §45 and §47, previously prose only. It moved from 29 to 30 in the P1-25 topology remediation, which added `check-web-topology.mjs` — one App Router root under `src`, the proxy convention, no nested lockfile, no tracked artefacts. It moved from 35 to 36 in P1-26, which added `check-p1-26-frontend.mjs` — no token in browser storage, no floating-point money, no redirect parameter in the authentication flow, one session-cookie authority, and only async exports from a `'use server'` module. It moved from 36 to 37 in the P1-26 shared-UX acceptance remediation, which added `check-notification-authority.mjs` — exactly one `ToastRegion`, rendered by the notification host, mounted once in the locale layout, with no competing notification library installed. It moved from 37 to 38 in P1-27, which added `generate-idempotent-operations.mjs` — the generator that derives the Web client's idempotency table from the published contract instead of guessing it from the HTTP method (`P1-27-INT-003`), and, run with `--check`, the gate that fails the build when the table and the contract disagree. It moved from 40 to 41 in the P1-27 final canonical remediation, which added `check-p1-27-write-reachability.mjs` — the gate that asks whether a person can reach a mutation, not merely whether the operation is correct. Ten canonical P1-27 writes had shipped with a route, a permission, an audit class, an idempotency entry, an OpenAPI path and a register row, and no screen from which anybody could invoke them, while every automated tier stayed green. A branch ruleset cannot
 express it, because rulesets constrain the TARGET ref and not where a pull
 request came from, so until that script existed a feature branch could open a
 pull request straight into `main` and every check would pass.
@@ -78,11 +85,25 @@ The count is stated here rather than left to drift because
 `tests/ci/documented-counts.test.ts` reconciles it against the filesystem, and it
 failed on exactly this discrepancy rather than being noticed in review.
 
-`pr-ci.yml` declares **13 governed jobs plus `ci-gate` = 14**, which appear as
-**15 checks** on a pull request because `code-security` is a two-language matrix
+`pr-ci.yml` declares **14 governed jobs plus `ci-gate` = 15**, which appear as
+**16 checks** on a pull request because `code-security` is a two-language matrix
 (`javascript-typescript` and `actions`). All three numbers are correct and they
-are not interchangeable — `ci-gate` governs 13, the file declares 14, and 15
+are not interchangeable — `ci-gate` governs 14, the file declares 15, and 16
 report.
+
+The reusable-workflow count moved from 9 to 10, and the governed-job count from
+13 to 14, when `authenticated-browser` was put under both gates.
+`apps/web/tests/e2e/authenticated/**` is the repository's only end-to-end
+tenant-isolation proof and its only route-level accessibility proof; it ran on no
+pull request at all, and the protected job that did run it was outside
+`protected-gate`'s `needs`, so BOTH gates could report Go while it was red. The
+body now lives in `_reusable-authenticated-browser.yml` — a tenth reusable
+workflow, called from `pr-ci.yml` and `protected-develop-verification.yml`,
+because `DECLARED_JOBS` is shared by the two gates and GitHub has no
+cross-workflow `needs`. On a FORK pull request the job does not run, and the gate
+is told so explicitly: the state is recorded as
+`NOT_ELIGIBLE_FOR_SECURITY_REASON`, never as a pass, and a skip with no such
+statement fails the gate closed.
 
 `ci.yml` is retained and still runs. Its four job names are the current required
 checks, and §24 requires them to stay until `ci-gate` is proven on a real pull

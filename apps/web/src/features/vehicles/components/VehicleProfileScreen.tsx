@@ -1,19 +1,21 @@
 'use client';
 
-import { useActionState, useId, useState } from 'react';
+import { useActionState, useCallback, useId, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { Locale } from '@/i18n/config';
 import type { ActionState } from '@/lib/forms/action-result';
 import { changeVehicleStatusAction, updateVehicleAction } from '../profile-api';
+import { MAX_COLOR, MAX_DISPLAY_NUMBER, MAX_VIN_INPUT } from '../contract';
 import {
-  MAX_COLOR,
-  MAX_DISPLAY_NUMBER,
-  MAX_VIN_INPUT,
-  VEHICLE_LIFECYCLE_STATUSES,
-  WORKSHOP_STATUSES,
-} from '../contract';
-import { isFrozen, labelFor, type VehicleDetail } from '../profile-contract';
+  allowedLifecycleTargets,
+  allowedWorkshopTargets,
+  isFrozen,
+  isTerminal,
+  labelFor,
+  type VehicleDetail,
+} from '../profile-contract';
 import { localToday } from '../history-contract';
 import type { EvProfileState } from '../relations-api';
 import { EvProfileSection, RelationshipsSection } from './VehicleRelationsSections';
@@ -55,6 +57,17 @@ interface Props {
   readonly canChangeStatus: boolean;
   /** `veh.vehicle.relationship.manage` — a third, separate capability. */
   readonly canManageRelationships: boolean;
+  /** `crm.customer.vehicle.manage` — a CRM capability, held independently. */
+  readonly canLinkCustomer: boolean;
+  /**
+   * `veh.vehicle.odometer.record` — its own code, implied by none of the others.
+   *
+   * A technician reading a dashboard at check-in records mileage without being
+   * able to edit the vehicle, which is why the platform kept it separate. The
+   * odometer form asked for none of this and rendered for every reader
+   * (`P1-27-SEC-001`).
+   */
+  readonly canRecordOdometer: boolean;
   /** Read on the server, because a 404 here is an ordinary state, not an error. */
   readonly evProfile: EvProfileState;
   /** `shared.document.manage` — a manage capability from a DIFFERENT module. */
@@ -94,12 +107,26 @@ export function VehicleProfileScreen({
   canEdit,
   canChangeStatus,
   canManageRelationships,
+  canLinkCustomer,
+  canRecordOdometer,
   evProfile,
   canListDocuments,
   documents,
 }: Props) {
+  // TWO predicates, because the server has two rules. `frozen` (merged) refuses
+  // every write; `terminal` (merged or scrapped) refuses the four that ADD to a
+  // vehicle's registration or equipment. See `profile-contract.ts` for the
+  // writer-by-writer table this was read from.
   const frozen = isFrozen(vehicle);
+  const terminal = isTerminal(vehicle);
   const [section, setSection] = useState<Section>('overview');
+
+  // The EV profile and the documents list are read on the SERVER and handed to
+  // this component as props, so a save cannot be reflected by re-running a
+  // client fetch — there is none. `router.refresh()` re-runs the page's own read,
+  // which is the only thing that can show what was just stored.
+  const router = useRouter();
+  const refresh = useCallback(() => router.refresh(), [router]);
 
   // Resolved ONCE, from the operator's own clock, and threaded into every
   // section. Each section computing its own would let a page open before
@@ -149,15 +176,46 @@ export function VehicleProfileScreen({
           messages={messages}
           vehicleId={vehicle.id}
           today={today}
+          // `terminal` as well as the capability: `requireWritableVehicle`
+          // (`vehicle-registration-service.ts:194`) refuses a merged OR SCRAPPED
+          // vehicle with a 409, so offering the transfer form on one is offering
+          // an action that can only fail.
+          canManageRelationships={canManageRelationships && !terminal}
         />
       ) : null}
       {section === 'plates' ? (
-        <PlateSection locale={locale} messages={messages} vehicleId={vehicle.id} today={today} />
+        <PlateSection
+          locale={locale}
+          messages={messages}
+          vehicleId={vehicle.id}
+          today={today}
+          // `veh.vehicle.manage`, and `terminal` for the same reason ownership
+          // carries it — the same `requireWritableVehicle` call: a merged or
+          // scrapped vehicle answers 409.
+          canEdit={canEdit && !terminal}
+        />
       ) : null}
       {section === 'odometer' ? (
         // No `today`: odometer readings are timestamped observations, not dated
         // intervals, so there is nothing here to be "in force".
-        <OdometerSection locale={locale} messages={messages} vehicleId={vehicle.id} />
+        // `frozen`, NOT `terminal` — and this one is a PRODUCT DECISION, not a
+        // server mirror. An earlier comment here said the refusal was "the merge
+        // freeze at the database"; there is no such refusal.
+        // `vehicle-odometer-service.ts` has no lifecycle guard, and
+        // `tg_vehicles_merge_guard` is `BEFORE UPDATE ON veh.vehicles`, so it
+        // cannot fire for an INSERT into `veh.odometer_readings` — the server
+        // accepts a reading against a merged vehicle.
+        //
+        // It is withheld anyway: a merged vehicle is a duplicate folded into a
+        // survivor, and a reading recorded against the tombstone is a reading
+        // nobody will find. A scrapped vehicle's FINAL reading is different, and
+        // stays available. Owner policy, stated as policy.
+        <OdometerSection
+          locale={locale}
+          messages={messages}
+          vehicleId={vehicle.id}
+          canRecord={canRecordOdometer && !frozen}
+        />
       ) : null}
       {section === 'ev' ? (
         <EvProfileSection
@@ -165,7 +223,18 @@ export function VehicleProfileScreen({
           messages={messages}
           state={evProfile}
           powertrainCategory={vehicle.powertrainCategory}
-          canEdit={canEdit}
+          // `terminal` as well as the capability, like plates and ownership
+          // beside it. Verified against the server rather than assumed by
+          // analogy: `vehicle-lifecycle-service.ts:68-74` throws `ERR-RES-002`
+          // for a merged OR SCRAPPED vehicle, so the form could only ever fail
+          // there. This docblock said exactly that while the gate it described
+          // tested `merged` alone — the fix is the gate, not the sentence.
+          canEdit={canEdit && !terminal}
+          vehicleId={vehicle.id}
+          // The profile is read on the SERVER, so a save cannot be reflected by
+          // re-running a client fetch. A router refresh re-runs the page's own
+          // read, which is the only thing that can show the saved value.
+          onSaved={refresh}
         />
       ) : null}
       {section === 'relationships' ? (
@@ -174,7 +243,21 @@ export function VehicleProfileScreen({
           messages={messages}
           vehicleId={vehicle.id}
           today={today}
-          canManage={canManageRelationships}
+          // THREE different answers, because the three writers behind this one
+          // section have three different lifecycle rules:
+          //
+          //   ADD an authorised party — `vehicle-relations-service.ts:171` calls
+          //     `requireWritableVehicle`, so merged and scrapped both 409.
+          //   RETIRE one — `retireAuthorizedParty` (:104-152) calls it NOWHERE,
+          //     and `veh.vehicle_relationships` carries no lifecycle trigger, so
+          //     the server accepts it on a scrapped vehicle. Taking a driver off
+          //     a written-off car is legitimate cleanup and stays available.
+          //   LINK a customer — `customer-identity-service.ts:302` has no
+          //     lifecycle guard either. `!frozen` here is a PRODUCT decision
+          //     about a merged duplicate, not a server mirror; see below.
+          canManage={canManageRelationships && !terminal}
+          canRetire={canManageRelationships}
+          canLinkCustomer={canLinkCustomer && !frozen}
         />
       ) : null}
       {section === 'documents' ? (
@@ -204,6 +287,7 @@ export function VehicleProfileScreen({
           messages={messages}
           vehicle={vehicle}
           frozen={frozen}
+          terminal={terminal}
           canEdit={canEdit}
           canChangeStatus={canChangeStatus}
         />
@@ -217,6 +301,7 @@ function VehicleOverviewSection({
   messages,
   vehicle,
   frozen,
+  terminal,
   canEdit,
   canChangeStatus,
 }: {
@@ -224,6 +309,7 @@ function VehicleOverviewSection({
   readonly messages: Messages;
   readonly vehicle: VehicleDetail;
   readonly frozen: boolean;
+  readonly terminal: boolean;
   readonly canEdit: boolean;
   readonly canChangeStatus: boolean;
 }) {
@@ -242,8 +328,35 @@ function VehicleOverviewSection({
         </p>
       ) : (
         <>
+          {/*
+            A SCRAPPED vehicle is not frozen. Its details can still be corrected
+            — `vehicle-write-service.ts:119` guards `merged` alone — so the edit
+            panel stays. Its STATUS cannot move: `LIFECYCLE_TRANSITIONS.scrapped`
+            is `[]`, and a terminal vehicle's workshop axis is pinned to `none`
+            by `ck_vehicles_terminal_workshop`, so every control on the status
+            panel would answer 409. It is withdrawn, with the reason said once.
+          */}
           {canEdit ? <EditPanel locale={locale} messages={messages} vehicle={vehicle} /> : null}
-          {canChangeStatus ? <StatusPanel messages={messages} vehicle={vehicle} /> : null}
+          {canChangeStatus && !terminal ? (
+            <StatusPanel messages={messages} vehicle={vehicle} />
+          ) : null}
+          {/*
+            UNGATED, like the frozen note above it. This carried a
+            `canChangeStatus &&` conjunct, which is a permission governing NONE
+            of the four surfaces it explains — so an operator holding
+            `veh.vehicle.manage` and `veh.vehicle.relationship.manage` but not
+            status-manage lost the plate form, the transfer, the authorise form
+            and the electric-drive save with no explanation anywhere. That is
+            the silence the note exists to prevent.
+          */}
+          {terminal ? (
+            <p
+              role="status"
+              className="rounded-lg border border-border bg-surface p-4 text-body text-text-secondary"
+            >
+              {translate(messages, 'vehicles.profile.terminalNote')}
+            </p>
+          ) : null}
         </>
       )}
     </div>
@@ -409,6 +522,22 @@ function EditPanel({
   readonly vehicle: VehicleDetail;
 }) {
   const formId = useId();
+  /*
+   * `FE-019`. The one writer on this screen that never re-read what it wrote.
+   *
+   * `vehicle` is a prop, read on the SERVER by the page. A successful PATCH
+   * changes the stored row and nothing else: `ProfileHeader` keeps printing the
+   * pre-edit title, model year and reference, and `Overview` keeps printing the
+   * pre-edit colour and VIN. The operator saw "Saved" beside values that had not
+   * moved, which reads as a save that did not happen — and the next edit is then
+   * computed against `original` values that are stale, so a field they had just
+   * corrected is offered back as unchanged.
+   *
+   * There is no client fetch to re-run, so `router.refresh()` is the only thing
+   * that can bring the new row back. `EvProfileSection` and `StatusPanel` both
+   * already do exactly this; this panel was the omission.
+   */
+  const router = useRouter();
   const [values, setValues] = useState<Record<string, string>>({
     vin: vehicle.vin ?? '',
     color: vehicle.color ?? '',
@@ -445,13 +574,38 @@ function EditPanel({
         }
       }
 
-      return updateVehicleAction(vehicle.id, changed, previous);
+      const result = await updateVehicleAction(vehicle.id, changed, previous);
+      // Only on success. Refreshing after a rejection would re-render the same
+      // stale values and discard nothing, but it would also spend a server
+      // round trip on an edit that did not land.
+      if (result.status === 'success') router.refresh();
+      return result;
     },
     { status: 'idle' } as ActionState
   );
 
   const set = (name: string, value: string) =>
     setValues((current) => ({ ...current, [name]: value }));
+
+  /*
+   * The last hop of the 422 path (`P1-27-INT-028`).
+   *
+   * `fromFailure` maps the backend's `violations` onto `state.fieldErrors`,
+   * keyed by control name, and this panel rendered NONE of them: `Outcome`
+   * showed the banner key and nothing else, the text controls took no `error`,
+   * and `VinField` was mounted here without the `error` prop the create screen
+   * already passes it. So a 422 that named `body.color` — the one thing the
+   * server says that an operator can act on — arrived as "The form could not be
+   * saved." beside four fields, none of them marked.
+   *
+   * The keys match the control names because `controlNameFor` takes the leaf of
+   * the violation path: `body.color` → `color`, which is the `name` this form
+   * submits and the key `values` holds. One vocabulary, not a mapping table.
+   *
+   * A value here is always a catalogue KEY, never server prose — see
+   * `action-result.ts` — so every render site translates.
+   */
+  const errorFor = (field: string): string | undefined => state.fieldErrors?.[field];
 
   return (
     <form action={submit} className="rounded-lg border border-border bg-surface p-4">
@@ -467,6 +621,7 @@ function EditPanel({
           onChange={(v) => set('vin', v)}
           excludeVehicleId={vehicle.id}
           maxLength={MAX_VIN_INPUT}
+          error={errorFor('vin')}
         />
         <Text
           messages={messages}
@@ -476,6 +631,7 @@ function EditPanel({
           value={values.displayNumber ?? ''}
           onChange={set}
           maxLength={MAX_DISPLAY_NUMBER}
+          error={errorFor('displayNumber')}
         />
         <Text
           messages={messages}
@@ -485,6 +641,7 @@ function EditPanel({
           value={values.color ?? ''}
           onChange={set}
           maxLength={MAX_COLOR}
+          error={errorFor('color')}
         />
         <Text
           messages={messages}
@@ -494,6 +651,7 @@ function EditPanel({
           value={values.modelYear ?? ''}
           onChange={set}
           maxLength={4}
+          error={errorFor('modelYear')}
         />
       </div>
 
@@ -526,8 +684,44 @@ function StatusPanel({
   readonly vehicle: VehicleDetail;
 }) {
   const formId = useId();
+  const router = useRouter();
+  /*
+   * `NEW-FE-01`, fourth site. Both selects were plain `defaultValue=""` with no
+   * `onChange`, so nothing held what the operator picked: React resets the form
+   * once the action settles, the choice reverted to "leave unchanged", and a
+   * resubmit sent NOTHING — which `changeVehicleStatusAction` answers with
+   * `vehicles.profile.chooseAStatus` rather than retrying the move that failed.
+   *
+   * The operator sees "choose a status" after choosing a status.
+   *
+   * Declared before the action, which closes over both setters.
+   */
+  const [lifecycle, setLifecycle] = useState('');
+  const [workshop, setWorkshop] = useState('');
+
   const [state, submit, pending] = useActionState(
-    changeVehicleStatusAction.bind(null, vehicle.id),
+    async (previous: ActionState, form: FormData) => {
+      const result = await changeVehicleStatusAction(vehicle.id, previous, form);
+      if (result.status === 'success') {
+        /*
+         * `F4`. `FE-019` made both menus a function of the server-read `vehicle`
+         * prop and then never re-read it: after the first successful save the
+         * options were still computed from PRE-CHANGE state, so the panel went
+         * back to offering moves whose only outcome is the unreadable 422 the fix
+         * existed to remove — an `active` vehicle just moved to `inactive` was
+         * still offered `inactive`.
+         *
+         * The status lives in the page's own server-side read, so there is no
+         * client fetch to re-run; a router refresh is the only thing that can
+         * bring the new pair back. The same shape the customer status control
+         * already uses.
+         */
+        setLifecycle('');
+        setWorkshop('');
+        router.refresh();
+      }
+      return result;
+    },
     { status: 'idle' } as ActionState
   );
 
@@ -543,23 +737,70 @@ function StatusPanel({
             {translate(messages, 'crm.customers.column.status')}
           </label>
           <select
+            key={`lifecycle-${state.attempt ?? 0}`}
             id={`${formId}-lifecycle`}
             name="lifecycleStatus"
-            defaultValue=""
-            className="mt-1 w-full rounded-md border border-border bg-surface px-2 py-1.5 text-body text-text-primary"
+            defaultValue={lifecycle}
+            onChange={(event) => setLifecycle(event.target.value)}
+            aria-invalid={state.fieldErrors?.lifecycleStatus ? true : undefined}
+            aria-describedby={
+              state.fieldErrors?.lifecycleStatus ? `${formId}-lifecycle-error` : undefined
+            }
+            className={`mt-1 w-full rounded-md border bg-surface px-2 py-1.5 text-body text-text-primary ${
+              state.fieldErrors?.lifecycleStatus ? 'border-error' : 'border-border'
+            }`}
           >
             <option value="">{translate(messages, 'vehicles.profile.leaveUnchanged')}</option>
-            {VEHICLE_LIFECYCLE_STATUSES.filter(
-              // `merged` is a state a vehicle REACHES through `veh.vehicle-merge`.
-              // Offering it here would let an operator declare a merge that never
-              // happened, with no survivor for `mergedIntoId` to point at.
-              (status) => status !== 'merged'
-            ).map((status) => (
+            {/*
+              Driven by the transition GRAPH, not by the whole vocabulary.
+
+              This listed every status except `merged`, from wherever the vehicle
+              was, so `draft → inactive` and `inactive → draft` were both on the
+              menu and both refused with `invalid_transition`
+              (`vehicle-lifecycle.ts:227-233`). The `merged` filter that used to
+              live here is gone because the graph already omits `merged` from
+              every row — one statement of the rule, not two.
+
+              The refusal was also invisible, which is what made it worth fixing
+              rather than tolerating: the platform publishes field detail as
+              `violations` and the client read `errors`, a field the API has
+              never sent (`P1-27-INT-028`), so `Outcome` showed only "The form
+              could not be saved." An operator choosing a plausible-looking
+              option learned nothing.
+
+              Both halves are closed now. The client reads `violations`, and the
+              key it produces is rendered on the select below rather than
+              dropped — so a graph the menu somehow got wrong is reported ON the
+              control that offered it. The menu is still the primary fix: an
+              option that can only fail should not be offered at all.
+            */}
+            {/* Judged against what the WORKSHOP select currently holds, because
+                both axes submit in one request and the server's rule is stated
+                over the resulting pair (`F1`, `F2`). */}
+            {allowedLifecycleTargets(vehicle, workshop).map((status) => (
               <option key={status} value={status}>
                 {translateDynamic(messages, `vehicles.lifecycle.${status}`)}
               </option>
             ))}
           </select>
+          {/*
+            `body.lifecycleStatus` from the server — `not_settable`, `no_change`,
+            `invalid_transition`, all three raised by `vehicle-lifecycle.ts` as
+            `ERR-VAL-001` — and also the panel's OWN refusal, which was just as
+            invisible: submitting with neither axis chosen returns
+            `invalid({ lifecycleStatus: 'vehicles.profile.chooseAStatus' })`, and
+            with nothing rendering `fieldErrors` that sentence reached nobody
+            while the banner said only "The form could not be saved."
+          */}
+          {state.fieldErrors?.lifecycleStatus ? (
+            <p
+              id={`${formId}-lifecycle-error`}
+              role="alert"
+              className="mt-1 text-caption text-error"
+            >
+              {translateDynamic(messages, state.fieldErrors.lifecycleStatus)}
+            </p>
+          ) : null}
         </div>
 
         <div>
@@ -567,18 +808,40 @@ function StatusPanel({
             {translate(messages, 'vehicles.column.workshop')}
           </label>
           <select
+            key={`workshop-${state.attempt ?? 0}`}
             id={`${formId}-workshop`}
             name="workshopStatus"
-            defaultValue=""
-            className="mt-1 w-full rounded-md border border-border bg-surface px-2 py-1.5 text-body text-text-primary"
+            defaultValue={workshop}
+            onChange={(event) => setWorkshop(event.target.value)}
+            aria-invalid={state.fieldErrors?.workshopStatus ? true : undefined}
+            aria-describedby={
+              state.fieldErrors?.workshopStatus ? `${formId}-workshop-error` : undefined
+            }
+            className={`mt-1 w-full rounded-md border bg-surface px-2 py-1.5 text-body text-text-primary ${
+              state.fieldErrors?.workshopStatus ? 'border-error' : 'border-border'
+            }`}
           >
             <option value="">{translate(messages, 'vehicles.profile.leaveUnchanged')}</option>
-            {WORKSHOP_STATUSES.map((status) => (
+            {/* Same rule on the workshop axis (`vehicle-lifecycle.ts:68-74`),
+                and judged against the pending LIFECYCLE for the same reason. */}
+            {allowedWorkshopTargets(vehicle, lifecycle).map((status) => (
               <option key={status} value={status}>
                 {translateDynamic(messages, `vehicles.workshop.${status}`)}
               </option>
             ))}
           </select>
+          {/* `body.workshopStatus`, the second axis. Both travel in ONE request
+              and the server judges the resulting pair, so either can be the one
+              named. */}
+          {state.fieldErrors?.workshopStatus ? (
+            <p
+              id={`${formId}-workshop-error`}
+              role="alert"
+              className="mt-1 text-caption text-error"
+            >
+              {translateDynamic(messages, state.fieldErrors.workshopStatus)}
+            </p>
+          ) : null}
         </div>
       </div>
 
@@ -655,6 +918,7 @@ function Text({
   value,
   onChange,
   maxLength,
+  error,
 }: {
   readonly messages: Messages;
   readonly id: string;
@@ -663,6 +927,14 @@ function Text({
   readonly value: string;
   readonly onChange: (name: string, value: string) => void;
   readonly maxLength: number;
+  /**
+   * The SERVER's verdict on this field, as a catalogue key.
+   *
+   * The same shape `VinField`, `VehicleCreateScreen`'s `TextField` and
+   * `VehicleDuplicateReviewScreen`'s reason box already take. This control
+   * accepted none, which is why a 422 naming a field could not reach it.
+   */
+  readonly error?: string | undefined;
 }) {
   return (
     <div>
@@ -677,8 +949,23 @@ function Text({
         value={value}
         onChange={(event) => onChange(name, event.target.value)}
         maxLength={maxLength}
-        className="mt-1 w-full rounded-md border border-border bg-surface px-2 py-1.5 text-body text-text-primary"
+        // Wired, not merely rendered. A message a sighted operator can see
+        // beside a box that announces itself as valid is half a fix.
+        aria-invalid={error ? true : undefined}
+        aria-describedby={error ? `${id}-error` : undefined}
+        className={`mt-1 w-full rounded-md border bg-surface px-2 py-1.5 text-body text-text-primary ${
+          error ? 'border-error' : 'border-border'
+        }`}
       />
+      {error ? (
+        // `role="alert"` because it arrives after a submit the operator has
+        // already turned away from. Translated, because `fieldErrors` carries
+        // catalogue keys — rendering the key would put `form.violation.too_big`
+        // on screen.
+        <p id={`${id}-error`} role="alert" className="mt-1 text-caption text-error">
+          {translateDynamic(messages, error)}
+        </p>
+      ) : null}
     </div>
   );
 }

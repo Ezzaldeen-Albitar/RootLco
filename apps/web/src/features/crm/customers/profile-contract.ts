@@ -31,10 +31,13 @@
  * deliberate — it stops the endpoint being an existence oracle — so the screen
  * must say "not found" and must NOT speculate about which of the four it was.
  *
- * **`recordVersion` is published, and it is the point.** The detail read returns
- * it and the handler emits it as an `ETag`. Before `P1-27-INT-001` no operation
- * published it, so every write was a last-writer-wins race with no way for a
- * client to detect the conflict.
+ * **`recordVersion` is published, and nothing consumes it.** The detail read
+ * returns it and the handler emits it as an `ETag`; before `P1-27-INT-001` no
+ * operation published it at all. Publishing is half of optimistic concurrency
+ * and the half that was missing — but it is only half, and this paragraph used
+ * to stop at "and it is the point", which reads as though the race were closed.
+ * It is not: no route under `/customers/` is `versionGuarded`, so every customer
+ * write is still last-write-wins. See `CustomerDetail.recordVersion` below.
  *
  * **A shorter note list is not a complete one.** `sel_notes_tenant` hides
  * `restricted` and `secret` notes from a caller without `iam.sensitive.view`,
@@ -57,7 +60,25 @@ export interface CustomerDetail {
   readonly partyType: PartyType;
   readonly lifecycleStatus: string;
   readonly commercialStatus: string;
-  /** The optimistic-concurrency token. Sent as `If-Match` on a later write. */
+  /**
+   * The record's optimistic-lock counter, **published and not used**.
+   *
+   * This said "Sent as `If-Match` on a later write". Nothing sends it, and
+   * nothing could: there is no `ifMatch` anywhere in the customer feature, and
+   * not one route under `/customers/` is registered `versionGuarded` or reads
+   * an `If-Match` header — so a header sent from here would be parsed and
+   * discarded rather than honoured. The sibling claim on
+   * `Preference.recordVersion` below was retracted for exactly this reason and
+   * this one was missed.
+   *
+   * Every customer write is therefore **last-write-wins**, and the read
+   * publishing a version does not change that. The value is real — the detail
+   * read returns it and the handler emits it as an `ETag` — so it is kept in
+   * the type and a screen may legitimately show it as a record fact. Closing
+   * the race is a Backend change: the guard has to be enforced by whoever
+   * registers the operation, and a client-side check the server does not apply
+   * would be worse than the honest absence.
+   */
   readonly recordVersion: number;
   readonly createdAt: string;
   readonly updatedAt: string | null;
@@ -112,7 +133,27 @@ export interface Preference {
   readonly preferredLocale: string | null;
   /** The column carries it; the PUT cannot set it (`P1-16-A-01`). */
   readonly quietHoursNote: string | null;
-  /** What a client puts in `If-Match` on the preferences PUT. */
+  /**
+   * The row's optimistic-lock counter, **published and not used** (`FE-009`).
+   *
+   * This said "What a client puts in `If-Match` on the preferences PUT", and
+   * nothing in the product does or could. `setPreferenceAction` calls
+   * `client.send` with no options and therefore no header
+   * (`action-support.ts:73`), and the route on the other side reads no
+   * `If-Match` and is not registered `versionGuarded`
+   * (`crm.preference-set`, `preferences/route.ts:63-76`) — so a header sent here
+   * would be ignored rather than honoured.
+   *
+   * A preferences PUT is therefore **last-write-wins**: two operators editing
+   * the same channel and purpose do not collide, and the second silently
+   * replaces the first. That is stated rather than fixed. Building a concurrency
+   * check on the client alone would be a guard the server does not enforce,
+   * which is worse than the honest absence — the fix belongs to whoever
+   * registers the operation `versionGuarded`.
+   *
+   * It is kept in the type because the read really does return it, and a screen
+   * may legitimately show it.
+   */
   readonly recordVersion: number;
   readonly createdAt: string;
 }
@@ -196,9 +237,25 @@ export interface Restriction {
  *
  * `crm.customer_alerts.severity` is `text` with a CHECK — `info`, `warning`,
  * `critical` — not an enum. Sorted alphabetically that is critical, info,
- * warning, which ranks **`info` above `warning`**. The Backend already orders by
- * an explicit rank; this exists so a screen that highlights or groups by
- * severity uses the same meaning rather than re-deriving one from the label.
+ * warning, which ranks **`info` above `warning`**.
+ *
+ * **The Backend does NOT order by severity, and says so.**
+ * `crm/data/customer-read-repository.ts` reads: "`severity` is deliberately NOT
+ * the sort key … It is returned on every row and ranked by the screen." Alerts
+ * come back `effective_from DESC, id DESC` — the only ordering a keyset cursor
+ * can keep total, since `(severity_rank, id)` is not the cursor column and
+ * ranking in SQL would make the cursor skip rows.
+ *
+ * This docblock previously said the opposite — "The Backend already orders by an
+ * explicit rank" — as did three other places, all descending from one inverted
+ * sentence in `contract-archaeology.md`. Having told itself the server had
+ * handled it, the screen used this rank for EMPHASIS and for the severity
+ * select's option order, and never for row position. That is a defensible
+ * build; what was not defensible was the record claiming a server behaviour
+ * that the server explicitly disclaims.
+ *
+ * So: ranking is the screen's, and this build spends it on how loud a row looks,
+ * not on where the row sits.
  *
  * An unknown value sorts last rather than first: a severity this build has not
  * heard of must not outrank a `critical` it understands.

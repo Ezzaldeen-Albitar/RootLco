@@ -1,3 +1,5 @@
+import { readdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { defineConfig, devices } from '@playwright/test';
 import { E2E_BASE_URL, E2E_HOST, E2E_PORT, E2E_STORAGE_STATE } from './tests/e2e/origin';
 
@@ -22,18 +24,80 @@ const BASE_URL = E2E_BASE_URL;
 /**
  * The authenticated tier, added by the P1-26 Owner-acceptance remediation.
  *
- * It is OPT-IN because it needs three things a hosted runner is not given: a
- * running local Supabase, a running API, and a real account with a real
- * password. Enabled by `ROOTLCO_E2E_AUTH=1` together with the credentials the
- * acceptance bootstrap prints.
+ * It is OPT-IN because it needs three things — a running Supabase, a running
+ * API and a real account with a real password — that no run has unless
+ * something stood them up first. Enabled by `ROOTLCO_E2E_AUTH=1` together with
+ * the credentials the acceptance bootstrap prints.
+ *
+ * WHAT THIS COMMENT USED TO SAY, AND WHY IT WAS WRONG
+ *
+ * It said those three things were what "a hosted runner is not given", and that
+ * this tier therefore belonged to the Owner's machine. That was false, and it
+ * was load-bearing: it is the reason the repository's only end-to-end
+ * tenant-isolation proof went unexecuted by CI for the whole of P1-27 while the
+ * browser check reported green. A hosted runner has Docker and the Supabase CLI
+ * is a devDependency here, so the `authenticated-browser` job gives a runner all
+ * three deliberately.
+ *
+ * THREE OF THE FOUR LINE POINTERS THAT USED TO BE HERE WERE WRONG, AND THE FILE
+ * THEY NAMED IS NO LONGER THE FILE. They said `supabase start` at line 319,
+ * `acceptance:create-owner` at 383 and the API at 391 of
+ * `.github/workflows/protected-develop-verification.yml`; at the head that was
+ * written those three sat at 345, 457 and 474. The job has since moved into
+ * `.github/workflows/_reusable-authenticated-browser.yml` — called from both
+ * `pr-ci.yml` and `protected-develop-verification.yml`, because a job a gate
+ * depends on has to exist in every workflow that has a gate — so the pointers
+ * are re-read off THAT file: `supabase start` at line 183,
+ * `acceptance:create-owner` at line 295, the API started at line 312.
+ *
+ * The tier was unrun because nobody had wired it, not because it could not be
+ * wired; and it was ungoverned because no gate listed the job in `needs`, which
+ * is a separate repair and is done — `ci-gate` and `protected-gate` both wait
+ * for it now.
  *
  * The five anonymous projects below therefore carry `testIgnore` for this
  * directory. Without it Playwright's `testDir` sweep would hand every
- * authenticated spec to five projects that have no credentials, and CI would go
- * red on a capability that only exists on the Owner's machine.
+ * authenticated spec to five projects that have no credentials, and a run
+ * without the stack would go red on a capability it was never given.
  */
 const AUTHENTICATED = process.env.ROOTLCO_E2E_AUTH === '1';
 const AUTH_DIR = /authenticated[\\/]/;
+
+/**
+ * When the authenticated tier is off, SAY SO — here, in the run itself.
+ *
+ * The opt-in above is correct and the silence around it was not. For the whole
+ * of P1-27 no workflow set `ROOTLCO_E2E_AUTH`, so `npm run test:web-e2e`
+ * reported a green browser tier while `isolation.spec.ts` — the repository's
+ * only end-to-end tenant-isolation proof — and `accessibility.spec.ts` — its
+ * only route-level accessibility proof — sat unexecuted. Playwright prints the
+ * number of tests it ran; nothing printed the number it did not.
+ *
+ * One workflow sets it NOW: `.github/workflows/_reusable-authenticated-browser
+ * .yml` line 332, in the `authenticated-browser` job — and that pointer was
+ * wrong too. It read "protected-develop-verification.yml line 420"; at the head
+ * that was written the assignment was at line 494 of that file, and the job has
+ * since moved out of it entirely. So this block is no longer a statement about
+ * CI — it is a statement about THIS run, which is the only thing a config file
+ * is in a position to know. A developer running the suite locally, and any job
+ * that has not stood the stack up, still needs to be told what it is not
+ * covering, and that is what the message below does.
+ *
+ * The declaration this reads is the same one the hosted job renders into its
+ * summary and `tests/ci/e2e-tier-coverage.test.ts` holds against the real spec
+ * files, so the three cannot drift apart.
+ */
+if (!AUTHENTICATED) {
+  const specs = readdirSync(join(__dirname, 'tests', 'e2e', 'authenticated'))
+    .filter((name) => name.endsWith('.spec.ts'))
+    .sort();
+  process.stderr.write(
+    `\nROOTLCO_E2E_AUTH is not set, so the AUTHENTICATED browser tier is not running.\n` +
+      `${specs.length} spec file(s) skipped: ${specs.join(', ')}\n` +
+      'What runs them, and what a run without them does not cover, is recorded in ' +
+      '.github/ci-baselines/unrun-test-tiers.json.\n\n'
+  );
+}
 
 /**
  * The captured session lives under the REPOSITORY-ROOT `.local/`.

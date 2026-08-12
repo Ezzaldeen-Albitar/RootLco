@@ -514,3 +514,99 @@ export function containsActive(pathname: string, locale: Locale, item: Navigatio
   if (isActive(pathname, locale, item)) return true;
   return (item.children ?? []).some((child) => containsActive(pathname, locale, child));
 }
+
+/**
+ * The items rendered as real LINKS, in render order.
+ *
+ * A disclosure parent is a `<button>` and a `planned` entry is inert text.
+ * Neither is a link, neither may carry `aria-current`, and a child exists on
+ * screen only while its parent is a disclosure — so in the 64px rail, where a
+ * parent becomes a plain link to its own module route, the children are not
+ * rendered at all.
+ *
+ * The disclosure rule below is stated a second time rather than shared with
+ * `Sidebar.tsx`, and that is a decision: `scripts/ci/hostile-mutations.mjs`
+ * anchors `M-OA-04` on that line in `Sidebar.tsx` verbatim, and rewriting it
+ * into a call would leave a committed mutation searching for a string that no
+ * longer exists. The two copies are held together by a TEST instead —
+ * `shell.dom.test.tsx`, "renders exactly the links `navigationLinks` names" —
+ * which compares this list against what the component actually renders in both
+ * states, and is a stronger guarantee than a shared expression anyway.
+ */
+export function navigationLinks(
+  groups: readonly NavigationGroup[],
+  collapsed: boolean
+): readonly NavigationItem[] {
+  const out: NavigationItem[] = [];
+  const visit = (items: readonly NavigationItem[]) => {
+    for (const item of items) {
+      const disclosure = (item.children?.length ?? 0) > 0 && !collapsed;
+      if (disclosure) visit(item.children ?? []);
+      else if (item.status !== 'planned') out.push(item);
+    }
+  };
+  for (const group of groups) visit(group.items);
+  return out;
+}
+
+/**
+ * The key of the ONE navigation item that is the page, or `null` if none is.
+ *
+ * ## Why this is not `isActive`
+ *
+ * `isActive` answers a different question, deliberately: "is the operator
+ * somewhere inside this module", by prefix, so `/vehicles/new` lights up
+ * Vehicles and someone two levels deep still sees which module they are in.
+ * That is the visual treatment, and it stays prefix-based.
+ *
+ * `aria-current="page"` is not that. It names THE current page, singular, and
+ * two of them tell a screen-reader user there are two. `/vehicles` is a path
+ * prefix of `/vehicles/duplicates` while those two entries are SIBLINGS in this
+ * model rather than parent and child — so on the vehicle duplicate queue both
+ * were active, both were links, and both said they were the page. Measured on
+ * `/en/vehicles/duplicates` against a production build: two. The CRM twin
+ * escaped only through the luck of its naming — `/crm/customer-duplicates` does
+ * not sit under `/crm/customers/` — which is not a property anyone chose, and
+ * would not survive the first rename.
+ *
+ * `Sidebar.tsx` already draws this distinction one case over: a disclosure
+ * PARENT carries the active treatment and `data-active`, never `aria-current`.
+ * This is the same reasoning applied to a parent that is a link.
+ *
+ * ## The rule, and why it is a single key
+ *
+ * Among the items that are ON SCREEN AS LINKS and active, the most SPECIFIC one
+ * is the page: the longest target, which — since every active target is a prefix
+ * of the same pathname — is exactly specificity. Returning one key rather than a
+ * per-item predicate is what makes "at most one" structural instead of a
+ * property that has to be re-proved after every edit.
+ *
+ * `collapsed` is not decoration here. In the rail the children are not rendered,
+ * so on `/administration/companies` the item that IS the page is off screen and
+ * the marker belongs to Administration, the nearest ancestor that is on screen.
+ * A rule that ignored what is rendered would leave the rail with no current page
+ * at all on every child route.
+ *
+ * `groups` must be the navigation the operator can SEE: an item hidden by the
+ * permission filter cannot hold the marker either.
+ */
+export function currentPageKey(
+  pathname: string,
+  locale: Locale,
+  groups: readonly NavigationGroup[] = NAVIGATION,
+  collapsed = false
+): string | null {
+  let best: NavigationItem | null = null;
+  let bestLength = -1;
+
+  for (const item of navigationLinks(groups, collapsed)) {
+    if (!isActive(pathname, locale, item)) continue;
+    const length = hrefFor(locale, item).length;
+    if (length > bestLength) {
+      best = item;
+      bestLength = length;
+    }
+  }
+
+  return best?.key ?? null;
+}

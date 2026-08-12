@@ -7,6 +7,7 @@ import { useServerTable } from '@/components/data-table/use-server-table';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { Locale } from '@/i18n/config';
+import { formatDateTime } from '@/lib/format';
 import { listAttributeHistory } from '../duplicates-api';
 import { changeShape, type VehicleHistoryEntry } from '../duplicates-contract';
 
@@ -60,9 +61,7 @@ export function VehicleAttributeHistorySection({ locale, messages, vehicleId }: 
         headerKey: 'vehicles.history.when',
         cell: (row) => (
           <time dateTime={row.occurredAt} dir="ltr">
-            {new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' }).format(
-              new Date(row.occurredAt)
-            )}
+            {formatDateTime(row.occurredAt, locale)}
           </time>
         ),
       },
@@ -118,15 +117,40 @@ export function VehicleAttributeHistorySection({ locale, messages, vehicleId }: 
         },
       },
       {
-        id: 'actorId',
+        id: 'actor',
         headerKey: 'vehicles.history.actor',
-        // The operation publishes an actor id and no display name. Shown as an
-        // identifier rather than dressed up as a person.
-        cell: (row) => (
-          <code className="font-mono text-caption text-text-secondary" dir="ltr">
-            {row.actorId}
-          </code>
-        ),
+        // This column printed a raw actor uuid under a heading that says "who".
+        //
+        // The producer has now LANDED. `veh.vehicle-history` resolves the actor
+        // through the IAM module's provider-free directory (`P1-27-INT-026`)
+        // and publishes `actorName`, merged to `develop` as PR #212 (head
+        // `76e37f0`, merge commit `61d8ded`; `210aac2` — the SHA the earlier
+        // revision of this comment named as pending — is an ancestor of it).
+        // `P1-27-FE-029` is no longer blocked.
+        //
+        // The previous revision said "on `origin/develop` TODAY the operation
+        // publishes an `actor_id` and NO name, so this cell reads 'User
+        // unavailable' for every row". That was true when written and is not
+        // now; it is corrected rather than deleted because a comment describing
+        // a merge WINDOW is exactly the kind of claim that rots silently, and
+        // this phase has been bitten by that repeatedly.
+        //
+        // The cell is UNCHANGED by the merge, which was the point of writing it
+        // for both worlds: it never reads `actorId`, so no merge order could
+        // put a uuid back on screen.
+        //
+        // `undefined` and `null` still render identically and deliberately:
+        // absent means the API predates the identity surface, null means this
+        // caller holds `veh.vehicle.read` without `iam.user.read` and may not be
+        // told. Neither is a licence to print the identifier.
+        cell: (row) =>
+          row.actorName == null ? (
+            <span className="text-caption text-text-muted">
+              {translate(messages, 'vehicles.history.actorUnavailable')}
+            </span>
+          ) : (
+            <span className="text-body text-text-primary">{row.actorName}</span>
+          ),
       },
     ],
     [locale, messages]

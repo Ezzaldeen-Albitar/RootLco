@@ -50,9 +50,26 @@ export default async function VehicleSearchPage({
     );
   }
 
-  // A failed catalogue read is not a failed page. The Make column degrades to
-  // "unavailable" and search still works, because a vehicle search that refuses
-  // to run because a label lookup failed would be worse than one without labels.
+  // A failed catalogue read is not a failed page. Search still works, because a
+  // vehicle search that refused to run because a label lookup failed would be
+  // worse than one without labels.
+  //
+  // The OUTCOME is passed down, not the array. `listMakes()` answers five states
+  // and this line used to reduce them to `makes.status === 'ok' ? makes.options
+  // : []` — after which "the catalogue read failed", "the catalogue was
+  // truncated" and "this id is not in the catalogue" were one indistinguishable
+  // `Map` miss, and the column printed the single sentence it had: "Make not
+  // available to you".
+  //
+  // That sentence asserts a permission, and it is the one cause that cannot
+  // apply — `veh.catalogue-make-list` needs the same capability this page has
+  // already gated on. So a 429 or a timeout on the catalogue, which
+  // `read-operation.ts` deliberately classifies as `unavailable` ("try again
+  // shortly", not a fault), was reported to the operator as a denial, on every
+  // row at once.
+  //
+  // `vehicles/new/page.tsx:74` already passes the whole result for the same
+  // reason. This is that precedent, applied to the screen that lacked it.
   const makes = await listMakes();
 
   return (
@@ -69,7 +86,7 @@ export default async function VehicleSearchPage({
           locale={locale}
           messages={messages}
           canCreate={holds(session.permissions, VEHICLE_PERMISSIONS.vehicleManage)}
-          makes={makes.status === 'ok' ? makes.options : []}
+          makes={makes}
         />
       </PageBody>
     </>

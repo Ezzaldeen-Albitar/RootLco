@@ -8,8 +8,20 @@
  * | `veh.vehicle-relationship-list`      | GET    | `/vehicles/{id}/relationships`                             | `veh.vehicle.read`                |
  * | `veh.vehicle-authorized-party-add`   | POST   | `/vehicles/{id}/authorized-parties`                        | `veh.vehicle.relationship.manage` |
  * | `veh.vehicle-authorized-party-retire`| POST   | `/vehicles/{id}/authorized-parties/{relationshipId}/retirement` | `veh.vehicle.relationship.manage` |
+ * | `crm.vehicle-link`                   | POST   | `/customers/{customerId}/vehicles`                         | `crm.customer.vehicle.manage`     |
  *
- * All three writes are `idempotent: true` and `auditClass: privileged`.
+ * All four writes are `idempotent: true` and `auditClass: privileged`.
+ *
+ * ## `crm.vehicle-link` is a CRM operation on a vehicle screen
+ *
+ * Its path is customer-centric and its permission is CRM's, but it is offered
+ * from the vehicle profile because `POST /customers/{id}/vehicles` publishes no
+ * `GET`: there is no "this customer's vehicles" read anywhere on the platform
+ * (`P1-27-INT-012`, owned by P1-16 and carried to P1-28). A link made from the
+ * customer profile would be invisible the moment it was made. The CRM writer
+ * inserts into `veh.vehicle_relationships` — the table
+ * `veh.vehicle-relationship-list` reads — so on the vehicle screen the new
+ * relationship appears in the list directly above the form.
  *
  * ## A 404 on the EV profile is usually NOT an error
  *
@@ -33,9 +45,30 @@
  * says so rather than showing an empty list that looks like "there are none".
  */
 
+import type { PartyIdentity } from '@/components/party/PartyLabel';
+
 /** `veh.vehicle_ev_profiles.ev_kind`. Note: no `ice`. */
 export const EV_KINDS = ['bev', 'hybrid', 'phev'] as const;
 export type EvKind = (typeof EV_KINDS)[number];
+
+/**
+ * The charge-port length ceiling, mirroring the route schema.
+ *
+ * Restated so a form can bound its input — not a second authority. The server
+ * enforces it, and a client bound that disagreed would refuse a value the server
+ * would have accepted, with no error the operator could act on.
+ */
+export const MAX_CHARGE_PORT = 40;
+
+/**
+ * `veh.ev_profiles.usable_capacity_kwh` upper bound, mirroring
+ * `MAX_USABLE_CAPACITY_KWH` in `apps/api/src/modules/vehicle/domain/vehicle-lifecycle.ts`.
+ *
+ * Stated once here so the client bound cannot drift tighter than the server's —
+ * which it had (`P1-27-FE-024`): the client demanded a POSITIVE capacity while
+ * the route accepts zero, so it refused a value the platform stores.
+ */
+export const MAX_USABLE_CAPACITY_KWH = 99_999.99;
 
 /** `ck_vehicle_relationships_role`. */
 export const VEHICLE_RELATIONSHIP_ROLES = [
@@ -77,7 +110,33 @@ export type AuthorizedAction = (typeof AUTHORIZED_ACTIONS)[number];
  */
 export const SCOPED_ROLE: VehicleRelationshipRole = 'authorized_person';
 
-export interface VehicleRelationship {
+/**
+ * The roles `crm.vehicle-link` may create.
+ *
+ * Every role except `authorized_person`. `ck_vehicle_relationships_scope_role`
+ * makes that the only role allowed to carry an `authorization_scope`, and
+ * `crm.vehicle-link` sets none — so a link made in that role would produce a row
+ * `scopeState` classifies as `none-granted`, which this file documents as "the
+ * data is unexpected". The dedicated authorise operation exists for that role
+ * and sets the scope; offering it here would create the bad row instead.
+ *
+ * Not in `relations-api.ts` because that is a `'use server'` module and a Server
+ * Action file may export only async functions.
+ */
+export const LINKABLE_ROLES: readonly VehicleRelationshipRole[] = VEHICLE_RELATIONSHIP_ROLES.filter(
+  (role) => role !== SCOPED_ROLE
+);
+
+/**
+ * One relationship row.
+ *
+ * `partnerId` is carried because a retirement needs it; it is **never
+ * rendered**. The operation resolves the party through the CRM module and
+ * publishes the three `partner*` display fields alongside it (`P1-27-INT-025`),
+ * all of them required and nullable — `null` meaning "this caller cannot see
+ * that party", which `PartyLabel` states in words.
+ */
+export interface VehicleRelationship extends PartyIdentity {
   readonly id: string;
   readonly partnerId: string;
   readonly relationshipRole: string;

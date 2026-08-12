@@ -1,0 +1,536 @@
+{
+  "what": "Every round-five finding mapped to the canonical task(s) it bears on, with a classification.",
+  "why": "A finding that maps to no task disappears. This phase lost nine canonical tasks by counting a table plus an unlisted remainder; the same arithmetic applied to findings would lose findings. `tests/ci/p1-27-finding-map.test.ts` requires the map to cover every id in `adversarial-round-five.md` exactly once, and every task id to exist in `task-matrix.json`.",
+  "buckets": {
+    "FOUNDATION": "Cross-cutting: bears on no single canonical task. Must carry an owningConcern, and cannot be used to make a task-specific finding disappear.",
+    "note": "A finding may name both real task ids and FOUNDATION only when it genuinely does both; the test refuses FOUNDATION as a lone escape hatch for anything classified REAL_P1_27_DEFECT."
+  },
+  "classifications": [
+    "REAL_P1_27_DEFECT",
+    "TEST_OR_GATE_DEFECT",
+    "DOCUMENTATION_DEFECT",
+    "EVIDENCE_DEFECT",
+    "CANONICAL_TASK_MODEL_DEFECT",
+    "AUDIT_FALSE_NEGATIVE",
+    "DUPLICATE_FINDING",
+    "OUT_OF_SCOPE_P1_28_PLUS",
+    "GLOBAL_FOUNDATION_FINDING"
+  ],
+  "findings": {
+    "F-01": {
+      "TASK_IDS": ["FE-018"],
+      "CLASSIFICATION": "REAL_P1_27_DEFECT",
+      "WHY": "Vehicle creation. The client-validation branch did not advance `attempt`, so the retry submitted empty catalogue ids and the vehicle was created without make, model or body type."
+    },
+    "F-02": {
+      "TASK_IDS": ["FE-025"],
+      "CLASSIFICATION": "REAL_P1_27_DEFECT",
+      "WHY": "Vehicle-customer relationships. The six authorisation-scope checkboxes lost their state to the post-action form reset, and the retry sent an empty scope."
+    },
+    "F-03": {
+      "TASK_IDS": ["FE-021", "FE-025"],
+      "CLASSIFICATION": "REAL_P1_27_DEFECT",
+      "WHY": "`CustomerSelector` is rendered into the ownership-transfer form and both relationship forms. Its party-type filter reverted visually while state kept the value, so the search stayed restricted while the control said it was not."
+    },
+    "F-04": {
+      "TASK_IDS": ["QA-001"],
+      "CLASSIFICATION": "TEST_OR_GATE_DEFECT",
+      "WHY": "Unit and component coverage. The form-reset inventory reported 0 uncovered over files it never opened, which is why F-01 to F-03 shipped."
+    },
+    "WTF-01": {
+      "TASK_IDS": ["DO-001"],
+      "CLASSIFICATION": "TEST_OR_GATE_DEFECT",
+      "WHY": "CI quality gate. The baseline stated a headroom guarantee that two 36-case files falsify."
+    },
+    "WTF-02": {
+      "TASK_IDS": ["DO-001"],
+      "CLASSIFICATION": "TEST_OR_GATE_DEFECT",
+      "WHY": "CI quality gate. The only code joining the baseline to the verdict had no coverage, so a one-token rename disarmed the floor silently."
+    },
+    "WTF-03": {
+      "TASK_IDS": ["DO-001"],
+      "CLASSIFICATION": "TEST_OR_GATE_DEFECT",
+      "WHY": "CI quality gate. Skipped tests counted toward the floor, so an entirely skipped tier satisfied it."
+    },
+    "WTF-04": {
+      "TASK_IDS": ["DO-001"],
+      "CLASSIFICATION": "TEST_OR_GATE_DEFECT",
+      "WHY": "CI quality gate. An unresolvable baseline path warned and exited 0."
+    },
+    "WTF-05": {
+      "TASK_IDS": ["DO-001"],
+      "CLASSIFICATION": "TEST_OR_GATE_DEFECT",
+      "WHY": "CI quality gate. The tier derivation read one of three workflows and reported full coverage of a subset."
+    },
+    "WTF-06": {
+      "TASK_IDS": ["DO-001", "QA-005"],
+      "CLASSIFICATION": "TEST_OR_GATE_DEFECT",
+      "WHY": "`files` reported describe blocks. It is a gate defect and an evidence defect, because the wrong number was copied into the baseline and into QA-005's records."
+    },
+    "WTF-07": {
+      "TASK_IDS": ["DO-001"],
+      "CLASSIFICATION": "TEST_OR_GATE_DEFECT",
+      "WHY": "CI quality gate. The headroom bounds did not implement the criterion their own message stated."
+    },
+    "WTF-08": {
+      "TASK_IDS": ["DO-001"],
+      "CLASSIFICATION": "TEST_OR_GATE_DEFECT",
+      "WHY": "CI quality gate. Lowering the floor and its provenance together passes every committed assertion."
+    },
+    "WTF-09": {
+      "TASK_IDS": ["DO-001"],
+      "CLASSIFICATION": "TEST_OR_GATE_DEFECT",
+      "WHY": "CI quality gate. The deleted-file property is asserted against a frozen measurement and decays as the suite grows."
+    },
+    "WTF-10": {
+      "TASK_IDS": ["DO-001"],
+      "CLASSIFICATION": "TEST_OR_GATE_DEFECT",
+      "WHY": "CI quality gate. The web honesty verdict is never rendered into the job summary a reviewer reads."
+    },
+    "WTF-11": {
+      "TASK_IDS": ["DO-001"],
+      "CLASSIFICATION": "TEST_OR_GATE_DEFECT",
+      "WHY": "CI quality gate. The clean-room job runs the web tier with no summariser, so the floor is absent there."
+    },
+    "QA005-01": {
+      "TASK_IDS": ["QA-005"],
+      "CLASSIFICATION": "EVIDENCE_DEFECT",
+      "WHY": "The documents-only justification was contradicted by the diff, and the only check asserted the sentence was present."
+    },
+    "QA005-02": {
+      "TASK_IDS": ["QA-005"],
+      "CLASSIFICATION": "EVIDENCE_DEFECT",
+      "WHY": "The recorded root-unit figures were stale by exactly the file the recording commit added."
+    },
+    "QA005-03": {
+      "TASK_IDS": ["QA-005"],
+      "CLASSIFICATION": "EVIDENCE_DEFECT",
+      "WHY": "The recorded head was checked for shape, not existence."
+    },
+    "QA005-04": {
+      "TASK_IDS": ["QA-005"],
+      "CLASSIFICATION": "EVIDENCE_DEFECT",
+      "WHY": "The superseded-head list was hand-maintained beside a table that already stated the set, and missed a third head."
+    },
+    "QA005-05": {
+      "TASK_IDS": ["QA-005"],
+      "CLASSIFICATION": "EVIDENCE_DEFECT",
+      "WHY": "The derived count was matched as a substring, so it caught understatement only."
+    },
+    "QA005-06": {
+      "TASK_IDS": ["QA-005"],
+      "CLASSIFICATION": "EVIDENCE_DEFECT",
+      "WHY": "The digest was recomputed with the function under test, so truncating it left every case green."
+    },
+    "QA005-07": {
+      "TASK_IDS": ["QA-005"],
+      "CLASSIFICATION": "EVIDENCE_DEFECT",
+      "WHY": "Only two extensions were digested, case-sensitively, and the docblock's claim about the rest was false."
+    },
+    "QA005-08": {
+      "TASK_IDS": ["QA-005"],
+      "CLASSIFICATION": "EVIDENCE_DEFECT",
+      "WHY": "Eight unreferenced evidence documents could be deleted and regenerated with every case green."
+    },
+    "QA005-09": {
+      "TASK_IDS": ["QA-005"],
+      "CLASSIFICATION": "EVIDENCE_DEFECT",
+      "WHY": "Most numbers on both evidence pages are recorded from named artefacts and checked by nothing."
+    },
+    "QA005-10": {
+      "TASK_IDS": ["QA-005", "DO-001"],
+      "CLASSIFICATION": "EVIDENCE_DEFECT",
+      "WHY": "The baseline's file count contradicted its own note, and no assertion read the field."
+    },
+    "QA005-11": {
+      "TASK_IDS": ["DO-001"],
+      "CLASSIFICATION": "TEST_OR_GATE_DEFECT",
+      "WHY": "CI quality gate. A tier outside the defined vocabulary silently means `not a gate`."
+    },
+    "QA005-12": {
+      "TASK_IDS": ["QA-005"],
+      "CLASSIFICATION": "EVIDENCE_DEFECT",
+      "WHY": "Directory symlinks were invisible to both walks, including the supposedly independent one."
+    },
+    "A42-01": {
+      "TASK_IDS": ["FOUNDATION"],
+      "CLASSIFICATION": "CANONICAL_TASK_MODEL_DEFECT",
+      "WHY": "The task universe itself. 33 adjudicated items were counted as 42 canonical tasks with nine listed nowhere. It bears on every task and on none in particular, which is exactly what the FOUNDATION bucket is for.",
+      "OWNING_CONCERN": "canonical task authority — docs/phase-1/phase-1-27/task-matrix.json"
+    },
+    "A42-02": {
+      "TASK_IDS": ["DO-002"],
+      "CLASSIFICATION": "REAL_P1_27_DEFECT",
+      "WHY": "Structured logging, monitoring AND alert routing. The third conjunct is conceded unattached by the phase's own record."
+    },
+    "A42-03": {
+      "TASK_IDS": ["DO-002", "DOC-001"],
+      "CLASSIFICATION": "DOCUMENTATION_DEFECT",
+      "WHY": "The adjudication gives DO-002 two contradictory statuses and uses a verdict class its own table does not define."
+    },
+    "A42-04": {
+      "TASK_IDS": ["DOC-001"],
+      "CLASSIFICATION": "DOCUMENTATION_DEFECT",
+      "WHY": "Traceability synchronisation. The finding written to close an arithmetic gap left one: ten claimed, thirteen named."
+    },
+    "A42-05": {
+      "TASK_IDS": ["DOC-001", "DO-002"],
+      "CLASSIFICATION": "DOCUMENTATION_DEFECT",
+      "WHY": "An identifier corrected at one occurrence and left at the other, and the survivor is inside DO-002's load-bearing sentence."
+    },
+    "A42-06": {
+      "TASK_IDS": ["DOC-001", "FE-021", "FE-022"],
+      "CLASSIFICATION": "DOCUMENTATION_DEFECT",
+      "WHY": "FIXED at 711a90e on the change history the previous disposition said did not decide it. Two tasks carried different roots and different commits in the Summary of final-task-adjudication.md than in their own sections. Each section names a remedy and each remedy is in exactly one commit: 8daf8e9 is the only one of the three touching VehicleSearchScreen.tsx, where it adds the rowActions that make the vehicle profile reachable (FE-021); 915b861 is the only one touching VehicleHistorySections.tsx, where it adds the plate and odometer permission gates (FE-022); 0272e1d, credited for both in the Summary, touches neither surface and adds isTerminal to profile-contract.ts, which the same page already attributes to FE-024 in its round-one recheck table. Both attributions were true about different things: the sections carry the original adjudication and the Summary had been overwritten with the recheck commit. The two Summary rows are corrected to their sections and what they used to say is preserved in the disposition row."
+    },
+    "A42-07": {
+      "TASK_IDS": ["FE-003", "DOC-001"],
+      "CLASSIFICATION": "DOCUMENTATION_DEFECT",
+      "WHY": "The canonical plan assigns FE-003 two operations it does not use, and that stale line is the decision reference for two deliberately-absent classifications."
+    },
+    "A42-08": {
+      "TASK_IDS": ["DOC-001"],
+      "CLASSIFICATION": "DOCUMENTATION_DEFECT",
+      "WHY": "The per-task audit still states a superseded conclusion with no supersession note."
+    },
+    "A42-09": {
+      "TASK_IDS": ["DOC-001"],
+      "CLASSIFICATION": "DOCUMENTATION_DEFECT",
+      "WHY": "Four Summary rows say FIXED with no commit, against the table's own status vocabulary."
+    },
+    "A42-10": {
+      "TASK_IDS": ["FE-005", "DOC-001"],
+      "CLASSIFICATION": "DOCUMENTATION_DEFECT",
+      "WHY": "FE-005's evidence cell over-counts its own proof: four cases named, three exist, two of the names identical."
+    },
+    "A42-11": {
+      "TASK_IDS": ["FE-021", "FE-022", "FE-023", "DOC-001"],
+      "CLASSIFICATION": "DOCUMENTATION_DEFECT",
+      "WHY": "Three traceability rows list only the read half of each canonical operation pair, contradicting section 9 of the same document."
+    },
+    "A42-12": {
+      "TASK_IDS": ["QA-001", "DOC-001"],
+      "CLASSIFICATION": "TEST_OR_GATE_DEFECT",
+      "WHY": "The only automated check that all 42 exist was a substring existence check, which this phase itself rejected as the wrong proof."
+    },
+    "A42-13": {
+      "TASK_IDS": ["QA-004"],
+      "CLASSIFICATION": "REAL_P1_27_DEFECT",
+      "WHY": "Concurrency AND idempotency. The concurrency conjunct is contradicted by P1-27-INT-009."
+    },
+    "A42-14": {
+      "TASK_IDS": ["SEC-002", "DOC-001"],
+      "CLASSIFICATION": "DOCUMENTATION_DEFECT",
+      "WHY": "A five-part conjunction adjudicated on one part, on a commit-less row."
+    },
+    "A-01": {
+      "TASK_IDS": ["DOC-001", "QA-005"],
+      "CLASSIFICATION": "TEST_OR_GATE_DEFECT",
+      "WHY": "The closure-banner block became dead code once no task row was open."
+    },
+    "A-02": {
+      "TASK_IDS": ["DOC-001", "QA-005"],
+      "CLASSIFICATION": "TEST_OR_GATE_DEFECT",
+      "WHY": "The acceptance banner was banned nowhere and the required status string was satisfiable by a past-tense narrative."
+    },
+    "A-03": {
+      "TASK_IDS": ["DOC-001"],
+      "CLASSIFICATION": "TEST_OR_GATE_DEFECT",
+      "WHY": "The banned spelling was one no document uses while five unbanned spellings were already on the page."
+    },
+    "A-04": {
+      "TASK_IDS": ["DOC-001"],
+      "CLASSIFICATION": "TEST_OR_GATE_DEFECT",
+      "WHY": "This repository's own closure vocabulary was not banned."
+    },
+    "A-05": {
+      "TASK_IDS": ["QA-005"],
+      "CLASSIFICATION": "TEST_OR_GATE_DEFECT",
+      "WHY": "A describe title claims the evidence records point at this branch; its only case is an existence check."
+    },
+    "B-01": {
+      "TASK_IDS": ["DOC-001"],
+      "CLASSIFICATION": "TEST_OR_GATE_DEFECT",
+      "WHY": "A case that cannot fail: both regexes are start-anchored, so the conjunction is impossible."
+    },
+    "B-02": {
+      "TASK_IDS": ["DOC-001"],
+      "CLASSIFICATION": "TEST_OR_GATE_DEFECT",
+      "WHY": "A banned sentence is present and escapes only because a formatter wrapped it across a newline."
+    },
+    "B-03": {
+      "TASK_IDS": ["DOC-001"],
+      "CLASSIFICATION": "TEST_OR_GATE_DEFECT",
+      "WHY": "The open-total check fires on one exact phrasing and is dormant at zero."
+    },
+    "B-04": {
+      "TASK_IDS": ["DOC-001"],
+      "CLASSIFICATION": "TEST_OR_GATE_DEFECT",
+      "WHY": "Four cases are existence-only or assert nothing about this phase."
+    },
+    "B-05": {
+      "TASK_IDS": ["DOC-001"],
+      "CLASSIFICATION": "TEST_OR_GATE_DEFECT",
+      "WHY": "The citation check covers 136 of 239 quoted titles and drops whole cells."
+    },
+    "B-06": {
+      "TASK_IDS": ["DOC-001"],
+      "CLASSIFICATION": "TEST_OR_GATE_DEFECT",
+      "WHY": "The closed count matches the word FIXED anywhere in the cell, so a negation would count as closed."
+    },
+    "D-01": {
+      "TASK_IDS": ["DOC-002"],
+      "CLASSIFICATION": "TEST_OR_GATE_DEFECT",
+      "WHY": "Operator guidance. The guidance test opens one locale of two, so `quoted from the product` is proven for English only."
+    },
+    "D-02": {
+      "TASK_IDS": ["DOC-002"],
+      "CLASSIFICATION": "TEST_OR_GATE_DEFECT",
+      "WHY": "Developer guidance. The guide's feature roots are narrower than the gate's tree, so its `exhaustive` partition is not."
+    },
+    "E-01": {
+      "TASK_IDS": ["DOC-001"],
+      "CLASSIFICATION": "DOCUMENTATION_DEFECT",
+      "WHY": "The deliverable manifest stated a migration count and an absence claim that the tree contradicts."
+    },
+    "E-02": {
+      "TASK_IDS": ["DOC-001"],
+      "CLASSIFICATION": "DOCUMENTATION_DEFECT",
+      "WHY": "Section 6.1 prose reported web totals contradicting the heading four lines above it."
+    },
+    "E-03": {
+      "TASK_IDS": ["DOC-001"],
+      "CLASSIFICATION": "DOCUMENTATION_DEFECT",
+      "WHY": "FIXED at 711a90e by DELETING the number rather than correcting it. A tier-wide case count sat unchecked beside a derived file count in deliverable-manifest.md 6.1, and it drifted inside a single revision exactly as this finding predicted: the heading read 1493 while its own paragraphs read 1231. No total is derivable, because 20 of the 70 web test files build their cases at runtime (it.each over a table, or an it( inside a for or an iteration callback) and a static call-site count is not what the runner executes. 6.1 now states the derived file count, enumerates those 20 files, gives the derivable half as 50 files derived per file, and points a reader wanting the EXECUTED total at .github/ci-baselines/test-count-baseline.json and tests/ci/web-test-floor.test.ts, which read it off the runner report. The same figure in 1.1.1 row 8 and 12 row 1 is retired with it."
+    },
+    "E-04": {
+      "TASK_IDS": ["DOC-001"],
+      "CLASSIFICATION": "DOCUMENTATION_DEFECT",
+      "WHY": "Two section headings state file counts the tables beneath them do not list."
+    },
+    "E-05": {
+      "TASK_IDS": ["DOC-001"],
+      "CLASSIFICATION": "DOCUMENTATION_DEFECT",
+      "WHY": "Two stale totals survive a fix that corrected the sentence directly above the first of them."
+    },
+    "E-06": {
+      "TASK_IDS": ["DOC-001"],
+      "CLASSIFICATION": "DOCUMENTATION_DEFECT",
+      "WHY": "Eight of fifteen documentation line counts are wrong, under a row asserting all are exact."
+    },
+    "E-07": {
+      "TASK_IDS": ["DOC-001"],
+      "CLASSIFICATION": "DOCUMENTATION_DEFECT",
+      "WHY": "The tracked phase-document count is half the real one."
+    },
+    "E-08": {
+      "TASK_IDS": ["DOC-001"],
+      "CLASSIFICATION": "DOCUMENTATION_DEFECT",
+      "WHY": "One directory is stated with two different counts in one document."
+    },
+    "E-09": {
+      "TASK_IDS": ["DOC-001"],
+      "CLASSIFICATION": "DOCUMENTATION_DEFECT",
+      "WHY": "A database test-file count is off by one against the tree."
+    },
+    "E-10": {
+      "TASK_IDS": ["DOC-001"],
+      "CLASSIFICATION": "DOCUMENTATION_DEFECT",
+      "WHY": "Superseded command snapshots are presented without a superseded marker."
+    },
+    "E-11": {
+      "TASK_IDS": ["DOC-001"],
+      "CLASSIFICATION": "DOCUMENTATION_DEFECT",
+      "WHY": "Three of four measured case counts in the row that exists to correct a stale register are themselves wrong."
+    },
+    "E-12": {
+      "TASK_IDS": ["DOC-001"],
+      "CLASSIFICATION": "DOCUMENTATION_DEFECT",
+      "WHY": "One gate is reported with two different measured outputs in one document."
+    },
+    "G-06": {
+      "TASK_IDS": ["SEC-004"],
+      "CLASSIFICATION": "TEST_OR_GATE_DEFECT",
+      "WHY": "Security audit-event coverage. The gate was widened to any console method and the cited test left at a five-name list, so a wider call passes the cited proof."
+    },
+    "G-07": {
+      "TASK_IDS": ["DOC-001"],
+      "CLASSIFICATION": "DOCUMENTATION_DEFECT",
+      "WHY": "Four case counts are stated twice in the traceability record and the statements disagree."
+    },
+    "G-08": {
+      "TASK_IDS": ["DOC-001"],
+      "CLASSIFICATION": "DOCUMENTATION_DEFECT",
+      "WHY": "One suite is cited with two different case counts across two documents."
+    },
+    "G-09": {
+      "TASK_IDS": ["DO-001", "QA-001"],
+      "CLASSIFICATION": "TEST_OR_GATE_DEFECT",
+      "WHY": "The test-honesty gate computed a comment-stripped source and matched its rules against the raw one, so it fired on prose and its line numbers were wrong after any docblock."
+    },
+    "G-10": {
+      "TASK_IDS": ["DOC-001"],
+      "CLASSIFICATION": "TEST_OR_GATE_DEFECT",
+      "WHY": "The gate that makes DOC-001's counts derivable was wrong about two of them: its comment stripper read `apps/**` inside a string literal as an opening block comment and blanked an `it(` call site, and it certified a static count for a file whose cases are generated in a `for` loop. Both were found by comparing its answer for every test file against what the runner executed."
+    },
+    "G-11": {
+      "TASK_IDS": ["DOC-001"],
+      "CLASSIFICATION": "DOCUMENTATION_DEFECT",
+      "WHY": "The task-traceability record credited two case titles to a file that holds neither, and the existing citation check concatenates every test file so it could not see the direction that was wrong."
+    },
+    "H-01": {
+      "TASK_IDS": [
+        "FE-003",
+        "FE-004",
+        "FE-005",
+        "FE-006",
+        "FE-007",
+        "FE-008",
+        "FE-009",
+        "FE-010",
+        "FE-011",
+        "FE-012",
+        "FE-013",
+        "FE-014",
+        "FE-015",
+        "FE-019",
+        "FE-021",
+        "FE-022",
+        "FE-023",
+        "FE-024",
+        "FE-025",
+        "FE-029",
+        "QA-001"
+      ],
+      "CLASSIFICATION": "TEST_OR_GATE_DEFECT",
+      "WHY": "Accessibility coverage. Every task listed here recorded \"NO axe coverage\" in its ACCESSIBILITY_EVIDENCE cell — the creation routes were unlisted in the browser spec and the two profile screens were rendered by no file importing vitest-axe. QA-001 owns the component tier that now scans them."
+    },
+    "H-02": {
+      "TASK_IDS": [
+        "FE-004",
+        "FE-005",
+        "FE-006",
+        "FE-007",
+        "FE-008",
+        "FE-010",
+        "FE-011",
+        "FE-012",
+        "FE-013",
+        "FE-014",
+        "QA-004"
+      ],
+      "CLASSIFICATION": "REAL_P1_27_DEFECT",
+      "WHY": "Every CRM write rendered the concurrency sentence for every 409, so a lifecycle or uniqueness refusal told the operator somebody else had edited the record. QA-004 owns the conflict-copy contract that fixed it."
+    },
+    "H-03": {
+      "TASK_IDS": ["FE-009", "DOC-002"],
+      "CLASSIFICATION": "DOCUMENTATION_DEFECT",
+      "WHY": "The preferences contract documented an If-Match guard that neither the client nor the route implements, so a reader would have built a stale-version path against a header nothing honours. DOC-002 owns guidance accuracy."
+    },
+    "H-04": {
+      "TASK_IDS": ["FE-016", "SEC-003"],
+      "CLASSIFICATION": "DOCUMENTATION_DEFECT",
+      "WHY": "CLOSED at 3f8ef6c by 7c41760 and verified against the tree here rather than against the commit message. The customer-duplicates route docblock justified not checking crm.customer.merge by a control inside the screen, and while P1-OD-017 is open no such control exists. The docblock now spans :11-28 and gives the true reason — this phase ships no merge affordance at all, and checking a code that governs nothing here would only hide the queue from an operator entitled to dismiss false pairs. The string \"gates a control inside the screen\" occurs nowhere in apps/web, CRM_PERMISSIONS.merge still has no reader in apps/web/src, and DuplicateReviewScreen.tsx:26-32 still records the deliberate absence. SEC-003 owns that absence."
+    },
+    "H-05": {
+      "TASK_IDS": ["FE-004", "FE-005", "QA-001"],
+      "CLASSIFICATION": "TEST_OR_GATE_DEFECT",
+      "WHY": "Both customer-creation write adapters were mocked everywhere and executed nowhere, and the one path assertion about them read module source text rather than the request. QA-001 owns unit and component coverage."
+    },
+    "H-06": {
+      "TASK_IDS": ["FE-006", "QA-001"],
+      "CLASSIFICATION": "TEST_OR_GATE_DEFECT",
+      "WHY": "readCustomer is a vi.fn() in all six files that name it, so the read that decides whether the customer profile renders at all has no execution-level proof of its path, its retry setting or its failure mapping."
+    },
+    "H-07": {
+      "TASK_IDS": ["FE-019"],
+      "CLASSIFICATION": "REAL_P1_27_DEFECT",
+      "WHY": "The vehicle details edit panel did not re-read after a successful save, so the header kept pre-edit values and the next edit was computed against stale originals — an operator saw Saved beside values that had not moved."
+    },
+    "H-08": {
+      "TASK_IDS": ["FE-019", "QA-002"],
+      "CLASSIFICATION": "REAL_P1_27_DEFECT",
+      "WHY": "VehicleProfileScreen renders no state.fieldErrors, so the 422 correction stops one layer short of the operator: a rejected field on the details panel shows only the generic sentence while five sibling vehicle screens render theirs."
+    },
+    "H-09": {
+      "TASK_IDS": ["FE-019", "FE-020", "QA-004"],
+      "CLASSIFICATION": "REAL_P1_27_DEFECT",
+      "WHY": "Both vehicle PATCHes rendered the concurrency sentence for a value collision and for a merged or frozen vehicle, accusing an absent third party for four distinct server refusals."
+    },
+    "H-10": {
+      "TASK_IDS": ["FE-022", "QA-001"],
+      "CLASSIFICATION": "TEST_OR_GATE_DEFECT",
+      "WHY": "The plate-assignment write schema had no test at all: the country-code length rule, the uppercase transform and the effective-date length were exercised nowhere in the suite."
+    },
+    "H-11": {
+      "TASK_IDS": ["FE-019", "DOC-001"],
+      "CLASSIFICATION": "DOCUMENTATION_DEFECT",
+      "WHY": "WITHDRAWN at 711a90e as a bookkeeping artefact, and registered REFUTED rather than OPEN. H-11 occurs only inside FE-019 ROUND5_FINDING_IDS and names no defect. Traced to its origin ab87167, where the H-01..H-13 series was issued: that cell names four ids beside a rationale describing three defects (H-07 the missing re-read, H-08 the unrendered field errors, H-09 the 409 copy shared with FE-020), and every other id in the series is claimed by some cell in the same commit, so it is not a typo for an unclaimed neighbour either. An id that resolves to no finding cannot be closed or refuted as a defect, but it can be examined and found to name nothing, and carrying it as OPEN asserted a debt that did not exist on every re-derivation since it was registered. DOC-001 owns traceability, and the id is kept searchable rather than deleted."
+    },
+    "H-12": {
+      "TASK_IDS": ["FE-009", "DOC-002"],
+      "CLASSIFICATION": "DOCUMENTATION_DEFECT",
+      "WHY": "The retraction that closed H-03 corrected one of two copies of the same If-Match claim; profile-contract.ts line 60 still states it, and no CRM customer write sends the header."
+    },
+    "H-13": {
+      "TASK_IDS": ["FE-019", "QA-002", "DOC-002"],
+      "CLASSIFICATION": "DOCUMENTATION_DEFECT",
+      "WHY": "Two load-bearing comments state that the client reads errors while the client now reads violations, so a reader diagnosing an invisible refusal acts on a premise the code no longer has. QA-002 owns the contract that changed."
+    },
+    "H-14": {
+      "TASK_IDS": ["DO-001"],
+      "CLASSIFICATION": "TEST_OR_GATE_DEFECT",
+      "WHY": "The changed-file ownership step exits 0 with no pull-request context, so validate:phase-ownership never runs on a protected push; the compensating control is stated in the workflow and holds only while pull requests are the sole path to a protected ref."
+    },
+    "H-15": {
+      "TASK_IDS": ["QA-003", "DO-001", "DOC-002"],
+      "CLASSIFICATION": "DOCUMENTATION_DEFECT",
+      "WHY": "CLOSED at 3f8ef6c by 8355900, on its own terms, and the closure produced H-23. THREE docblocks in apps/web/tests/p1-27-security.test.ts said the authenticated isolation spec runs in no CI job; this entry once said TWO and undercounted the defect. All three now say \"no pull-request job\" instead, the concluding clause that QA-003 is not closed by that unit-tier file survives, and the document half is closed in evidence/change-log.md, ci-evidence.md and risk-register.md 6.4. What this entry could not also claim, at the head it was written against, was that the replacement text was true: another branch of the same wave wired the tier into the pull-request gate, so the corrected sentences were false in the union. That is H-23, registered separately rather than folded back, because a register in which one id absorbs its own successor stops being countable. H-23 is itself FIXED at 2bc3b3a, which re-anchored all three docblocks onto content anchors; at this head the surviving clause sits at apps/web/tests/p1-27-security.test.ts:1908 and none of the sentences either revision wrote is still in the file as a claim."
+    },
+    "H-16": {
+      "TASK_IDS": ["DO-001", "DOC-002"],
+      "CLASSIFICATION": "DOCUMENTATION_DEFECT",
+      "WHY": "apps/web/playwright.config.ts states that no workflow has ever set ROOTLCO_E2E_AUTH. One now does. The runtime warning the sentence introduces is still correct; the repository fact justifying it is not."
+    },
+    "H-17": {
+      "TASK_IDS": ["DOC-001", "QA-005"],
+      "CLASSIFICATION": "EVIDENCE_DEFECT",
+      "WHY": "checkCatalogue matched a quoted case title against raw source, so a title in a comment satisfied it, and it accepted the same title twice for one file. TC-P1-27-CRM-014 cited a title that names no case anywhere in the repository and TC-P1-27-CRM-010 cited one title as two. The catalogue is DOC-001's deliverable and the evidence guards are QA-005's."
+    },
+    "H-18": {
+      "TASK_IDS": ["QA-001", "DO-001"],
+      "CLASSIFICATION": "TEST_OR_GATE_DEFECT",
+      "WHY": "A load-dependent 5-second timeout flake in at least four web test files, measured on a tree with no change under apps/** at all. QA-001 owns the web tier, DO-001 owns what a hosted run reports; a flake that moves between files reads as a red gate nobody can reproduce."
+    },
+    "H-19": {
+      "TASK_IDS": ["DOC-001", "QA-005"],
+      "CLASSIFICATION": "EVIDENCE_DEFECT",
+      "WHY": "tests/ci/p1-27-matrix-citations.test.ts checks 135 of the 653 file:line citations in task-matrix.json and cannot see the other 518, because its pattern requires a directory separator and the matrix is written mostly without one. Fourteen of the invisible citations land on a test range holding no expect(, including one that points at a fixture table and one that points at a docblock. DOC-001 owns catalogue and traceability synchronization; QA-005 owns the evidence guards."
+    },
+    "H-20": {
+      "TASK_IDS": ["DO-001", "DOC-002"],
+      "CLASSIFICATION": "DOCUMENTATION_DEFECT",
+      "WHY": "CLOSED at 3f8ef6c by 415a869, and closed against a file that no longer has the shape this finding described. The docblock that closed H-16 in apps/web/playwright.config.ts cited four line numbers in protected-develop-verification.yml and all four were wrong: every claim it made was true and every pointer a reader would check it with was not. The same commit moved the job into _reusable-authenticated-browser.yml and re-pinned the pointers onto that file, so the repair names the new file rather than renumbering the old one. All four replacements were re-read off the tree here: supabase start at 183, acceptance:create-owner at 295, the API start at 312, ROOTLCO_E2E_AUTH at 332. The docblock also keeps the numbers it replaced, in words."
+    },
+    "H-21": {
+      "TASK_IDS": ["DOC-001", "DOC-002"],
+      "CLASSIFICATION": "DOCUMENTATION_DEFECT",
+      "WHY": "Sixteen of the thirty-six phase line counts in deliverable-manifest.md disagreed with the tree, in the document that indexes every other one, one cell away from a derived row count that was checked. Closed by a new linecolumn derived kind in check-p1-27-doc-counts.mjs and by correcting all sixteen."
+    },
+    "H-22": {
+      "TASK_IDS": ["QA-002"],
+      "CLASSIFICATION": "TEST_OR_GATE_DEFECT",
+      "WHY": "CLOSED at 3f8ef6c by 0d3f116, with the closing cases executed here rather than read. REAL_RULES in apps/web/tests/api-client.test.ts was declared to be fourteen rule tokens that appear in apps/api/src, and nothing read apps/api/src to check it: the provenance claim lived in a docblock while the assertion that existed checked the tokens against the two message catalogues a fixture author edits in the same commit. A new describe block now walks apps/api/src, extracts every token written as a rule: literal, and asserts each REAL_RULES entry is in that set, with an anti-vacuity floor on the derived corpus, three negative cases including two that a substring search would wrongly accept, and a fixture proving the extractor ignores tokens inside comments. 21 cases, 0 failed at this head. QA-002 owns the client-contract derivation this fixture is the negative proof for."
+    },
+    "H-23": {
+      "TASK_IDS": ["QA-003", "DO-001", "DOC-002"],
+      "CLASSIFICATION": "DOCUMENTATION_DEFECT",
+      "WHY": "FIXED at 2bc3b3a, and re-adjudicated against the current file rather than accepted from the commit. As raised: the three docblocks that closed H-15 were false in both halves and no gate could see it. p1-27/security-wiring corrected them against a tree where the authenticated tier ran only on protected pushes; p1-27/ci-gates then wired the tier into the pull-request gate, and in the union apps/web/tests/p1-27-security.test.ts said at :1289, :1566, :1858 and :1884 that no pull-request job ran the two-tenant proof, and at :1293 that the only setter of ROOTLCO_E2E_AUTH was a job of protected-develop-verification.yml. pr-ci.yml:251-264 runs the tier on every same-repository pull request, pr-ci.yml:355 makes ci-gate wait for it, and the only setter is _reusable-authenticated-browser.yml:332. Six line pointers in the same docblocks also cited lines past the end of a workflow that is now 294 lines. PHRASE CENSUS AT THIS HEAD: no pull request runs 0 hits, PULL-REQUEST gate 0 hits, and 244-604, :494, :500, :502, :553 and :557 0 hits each; runs in no CI job and runs in no pull-request job survive once apiece at :1640 and :1641, inside the docblock own account of what it replaced. 2bc3b3a re-pinned the pointers as CONTENT ANCHORS rather than renumbering them. Same class as H-13, H-15 and H-16, produced by a merge rather than by a commit. QA-003 owns the isolation claim, DO-001 the CI wiring, DOC-002 the developer-facing prose."
+    },
+    "H-24": {
+      "TASK_IDS": ["DO-001", "QA-005"],
+      "CLASSIFICATION": "EVIDENCE_DEFECT",
+      "WHY": "FIXED at e5f7480, from the GitHub run records rather than from this tree. As raised: this tree contradicted itself about whether the authenticated tier had ever passed on a hosted runner, between two records a closure decision would quote. Four phase documents recorded run 31347643485 as having passed with 225 tests, 0 failed, against candidate 78c4587, while .github/ci-baselines/unrun-test-tiers.json hostedObservation, rewritten on p1-27/ci-gates in the same wave, said run 31337158296 was the single hosted attempt this repository had ever made, that it FAILED in the acceptance bootstrap, and that the tier executed zero tests. Both could not be true, and neither was decidable from this repository because no run record and no artefact of either run is committed. It was registered rather than settled by preference, and then settled by fetching what the tree does not hold: THREE executions, recorded run by run in that baseline. 31337158296 at 155a5f5, job 93304793606, FAILED on a GoTrue readiness race with zero tests collected. 31343632011 at 0c40499, job 93321402511, FAILED with 212 passed and 11 failed. 31347643485 at 78c4587, job 93332452247, PASSED with 229 planned, 225 passed, 0 failed and 224 executed across all 6 spec files. THE RUN CONCLUSION IS NOT THE JOB CONCLUSION: all three carry a run-level failure caused by other jobs red at those commits, and only the per-job conclusion on the commit says what this tier did. Reading the run-level one is how the record came to under-report itself. The 229-against-225 figure is reconciled too: the hosted run planned the same 229 the local collection reported, and the 7 spec files written beside it was a miscount, because the directory holds six spec files and auth.setup.ts is a setup project. Still unclaimed, and unchanged by this closure: no run has been observed against the closing candidate. DO-001 owns what a hosted run reports; QA-005 owns the evidence record."
+    }
+  }
+}

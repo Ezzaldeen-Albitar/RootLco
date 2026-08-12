@@ -8,21 +8,14 @@
  * authority for the one thing the client derives from it — which operations are
  * `idempotent: true` — and that stays generated and drift-checked.
  *
- * ## Six writes, six DIFFERENT permissions
+ * ## Nine writes, five DIFFERENT permissions
  *
  * There is no blanket "customer write" capability. A role that may add a note
  * very often may not impose a restriction, and the interface has to reflect
- * that per section rather than showing six controls and failing five of them
- * after the operator has typed.
- *
- * | operation                | permission                        |
- * | ------------------------ | --------------------------------- |
- * | `crm.preference-set`     | `crm.customer.profile.write`      |
- * | `crm.consent-record`     | `crm.customer.consent.write`      |
- * | `crm.note-add`           | `crm.customer.note.write`         |
- * | `crm.alert-raise`        | `crm.customer.governance.manage`  |
- * | `crm.tag-assign`         | `crm.customer.governance.manage`  |
- * | `crm.restriction-impose` | `crm.customer.restriction.manage` |
+ * that per section rather than showing nine controls and failing eight of them
+ * after the operator has typed. The authoritative mapping is
+ * `WRITE_PERMISSIONS` at the foot of this file; see its own note for why it
+ * covers nine surfaces rather than the six it shipped with.
  *
  * Hiding a control the caller cannot use is a courtesy, never the enforcement.
  * The Backend authorizes every call regardless of what this file says.
@@ -34,6 +27,7 @@
  * `P1-27-INT-003`. The key comes from the shared contract-derived authority, so
  * these writes are the first real exercise of that fix.
  */
+import { CRM_PERMISSIONS, holds } from '../permissions';
 
 /** `crm.customer_alerts.alert_type`. */
 export const ALERT_TYPES = ['operational', 'financial', 'safety', 'other'] as const;
@@ -52,6 +46,53 @@ export const RESTRICTION_TYPES = [
   'other',
 ] as const;
 export type RestrictionType = (typeof RESTRICTION_TYPES)[number];
+
+/**
+ * `ck_business_partners_lifecycle_status`, minus the merge-only terminal.
+ *
+ * `merged` is absent because a merge is not a status somebody assigns: it is the
+ * outcome of the merge operation, which writes `merged_into_id` and the status
+ * together under its own permission. Offering it here would send a value the
+ * route's `.strict()` enum rejects.
+ */
+export const SETTABLE_LIFECYCLE_STATES = ['prospect', 'active', 'inactive', 'blocked'] as const;
+export type SettableLifecycleState = (typeof SETTABLE_LIFECYCLE_STATES)[number];
+
+/**
+ * Which lifecycle moves an operator may make from each state.
+ *
+ * A mirror of `LIFECYCLE_TRANSITIONS` in
+ * `apps/api/src/modules/crm/domain/customer-governance.ts` — the server is the
+ * authority and refuses an illegal move; this exists so the form offers only the
+ * moves that can succeed, rather than a full list of four and a 422 for two of
+ * them. Nothing leaves `merged`: a merged-away customer is history, and
+ * re-activating one would resurrect a duplicate the tenant deliberately retired.
+ */
+export const LIFECYCLE_TRANSITIONS: Readonly<Record<string, readonly SettableLifecycleState[]>> =
+  Object.freeze({
+    prospect: ['active', 'inactive'],
+    active: ['inactive', 'blocked'],
+    inactive: ['active', 'blocked'],
+    blocked: ['active', 'inactive'],
+    merged: [],
+  });
+
+/** The legal targets from a current state; empty for an unknown or merged one. */
+export function allowedTransitions(from: string): readonly SettableLifecycleState[] {
+  return LIFECYCLE_TRANSITIONS[from] ?? [];
+}
+
+/**
+ * Whether a move needs a confirmation step.
+ *
+ * Blocking is the one transition that stops the workshop serving a real
+ * customer, so it is the one that gets a second look. The others are ordinary
+ * bookkeeping and a confirmation on each would train an operator to click
+ * through the one that matters.
+ */
+export function isConsequentialTransition(to: string): boolean {
+  return to === 'blocked';
+}
 
 /** `shared.notes.classification`. Defaults to `internal` when unsent. */
 export const NOTE_CLASSIFICATIONS = ['public', 'internal', 'restricted', 'secret'] as const;
@@ -91,176 +132,97 @@ export const MAX_APPROVAL_REF = 120;
 export const MIN_PREFERRED_LOCALE = 2;
 export const MAX_PREFERRED_LOCALE = 10;
 
-/** The permission each write requires, exactly as the route registers it. */
+/**
+ * The permission each customer write requires, exactly as the route registers
+ * it — verified against `docs/phase-1/phase-1-24/evidence/operation-register.json`
+ * rather than against the prose above it, and asserted against the catalogue by
+ * `apps/web/tests/crm-governance-writes.test.ts`.
+ *
+ * ## This table described the truth and changed nothing
+ *
+ * It shipped covering six writes and had **no consumer outside its own test**.
+ * The profile screen rendered eight of its nine write forms unconditionally, so
+ * an operator holding only `crm.customer.read` was shown a full set of controls
+ * — add a contact, record a consent decision, impose a restriction — every one
+ * of which answered 403 after they had finished typing. The table said which
+ * permission each needed and nothing consulted it.
+ *
+ * A table of truth nobody reads is worse than no table: it makes the gate look
+ * present in review. `permittedWrites` is now the only way to produce the gate,
+ * and `WriteKind` is exhaustive, so a write surface added without a permission
+ * does not compile.
+ *
+ * `contact` and `address` are here because `crm.contact-add` and
+ * `crm.address-add` need `crm.customer.profile.write` — the same code as
+ * preferences, which is exactly why they were easy to forget. `status` is here
+ * because folding the one write that WAS gated into the same authority removes
+ * the special case rather than adding one.
+ *
+ * **Visibility only.** The Backend authorizes every call regardless of what this
+ * file says, and its denial is the one that means anything.
+ */
 export const WRITE_PERMISSIONS = {
-  preference: 'crm.customer.profile.write',
-  consent: 'crm.customer.consent.write',
-  note: 'crm.customer.note.write',
-  alert: 'crm.customer.governance.manage',
-  tag: 'crm.customer.governance.manage',
-  restriction: 'crm.customer.restriction.manage',
+  contact: CRM_PERMISSIONS.profileWrite,
+  address: CRM_PERMISSIONS.profileWrite,
+  preference: CRM_PERMISSIONS.profileWrite,
+  consent: CRM_PERMISSIONS.consentWrite,
+  note: CRM_PERMISSIONS.noteWrite,
+  alert: CRM_PERMISSIONS.governanceManage,
+  tag: CRM_PERMISSIONS.governanceManage,
+  restriction: CRM_PERMISSIONS.restrictionManage,
+  status: CRM_PERMISSIONS.governanceManage,
 } as const;
 export type WriteKind = keyof typeof WRITE_PERMISSIONS;
 
-/** One field-level complaint, keyed by the field it belongs beside. */
-export type FieldErrors = Readonly<Record<string, string>>;
+/** Which customer writes this session may attempt, by kind. */
+export type WritePermits = Readonly<Record<WriteKind, boolean>>;
 
 /**
- * Validates a bounded free-text field the same way the route's Zod schema does.
+ * Resolves the session's permissions into one verdict per write surface.
  *
- * Length is counted on the TRIMMED value, because the Backend's
- * `btrim(...) <> ''` CHECK constraints mean a field of spaces is empty there
- * however long it looks here. A client that counted the untrimmed length would
- * accept `"   "` for a required reason and be rejected by the database.
+ * Built by walking `WRITE_PERMISSIONS`, never by listing the kinds again — a
+ * second list would be the thing that drifts, and the drift would be silent in
+ * the direction of showing a control that cannot work.
  */
-export function validateText(
-  value: string,
-  { min, max, required }: { min: number; max: number; required: boolean }
-): string | null {
-  const trimmed = value.trim();
-  if (trimmed.length === 0) return required ? 'required' : null;
-  if (trimmed.length < min) return 'tooShort';
-  if (trimmed.length > max) return 'tooLong';
-  return null;
+export function permittedWrites(permissions: readonly string[]): WritePermits {
+  const entries = Object.entries(WRITE_PERMISSIONS) as readonly (readonly [WriteKind, string])[];
+  return Object.freeze(
+    Object.fromEntries(entries.map(([kind, code]) => [kind, holds(permissions, code)]))
+  ) as WritePermits;
 }
 
-/**
- * Normalises an optional free-text field to what the route accepts.
+/** Nothing permitted — the shape a caller starts from, and the safe default. */
+export const NO_WRITES: WritePermits = permittedWrites([]);
+
+/*
+ * The six client-side validators that used to live here are gone, and the
+ * `*Input` interfaces with them (`P1-27-FE-013`).
  *
- * The Zod schemas type these as `.nullable().optional()`, so an empty box means
- * "not provided" and must become `undefined` rather than `''` — a `.strict()`
- * schema with `.min(1)` rejects the empty string outright, turning a blank
- * optional field into a 422 the operator cannot act on.
+ * `validateNote`, `validateAlert`, `validateRestriction`, `validateTag`,
+ * `validatePreference` and `validateConsent` — plus the `validateText` and
+ * `optionalText` helpers underneath them — mirrored the route schemas and were
+ * called by NOTHING. A search of `apps/web/src` returned, for each of them,
+ * exactly one reference: its own definition. Their tests were the only
+ * consumers, which is why the coverage they were credited with would have
+ * passed with the write features deleted.
+ *
+ * They were not merely unused, they contradicted a decision already recorded a
+ * few files away. `components/forms/RecordForm.tsx` says of the numeric bounds
+ * it does NOT enforce: "the server is the authority and a client bound that
+ * disagreed with it would refuse a value the server would have accepted, with
+ * no error the operator could act on." That reasoning applies with equal force
+ * to a second copy of every length bound, and this file was that copy.
+ *
+ * Validation happens once, in the Zod schema each Server Action owns, and comes
+ * back as per-field catalogue keys that `RecordForm` renders beside the field.
+ * Since `P1-27-FE-004` those keys are guaranteed translatable, so the round trip
+ * costs an operator a correct message rather than an English one.
+ *
+ * Deleting rather than wiring is deliberate. Wiring would have been a behaviour
+ * change — instant client-side feedback where there has never been any — chosen
+ * at remediation time and reviewed by nobody. Deleting is behaviour-preserving:
+ * no operator sees any difference, because no operator ever reached this code.
+ *
+ * The bound CONSTANTS above stay. They are imported by `governance-actions.ts`
+ * for the real schemas, which is the one authority.
  */
-export function optionalText(value: string): string | undefined {
-  const trimmed = value.trim();
-  return trimmed.length === 0 ? undefined : trimmed;
-}
-
-export interface NoteInput {
-  readonly body: string;
-  readonly classification?: NoteClassification;
-  readonly visibility?: NoteVisibility;
-}
-
-export function validateNote(values: Record<string, string>): FieldErrors {
-  const errors: Record<string, string> = {};
-  const body = validateText(values.body ?? '', { min: 1, max: MAX_NOTE_BODY, required: true });
-  if (body) errors.body = body;
-  return errors;
-}
-
-export interface AlertInput {
-  readonly alertType: AlertType;
-  readonly severity: AlertSeverity;
-  readonly message: string;
-}
-
-export function validateAlert(values: Record<string, string>): FieldErrors {
-  const errors: Record<string, string> = {};
-  const message = validateText(values.message ?? '', {
-    min: 1,
-    max: MAX_ALERT_MESSAGE,
-    required: true,
-  });
-  if (message) errors.message = message;
-  if (!ALERT_TYPES.includes(values.alertType as AlertType)) errors.alertType = 'required';
-  if (!ALERT_SEVERITIES.includes(values.severity as AlertSeverity)) errors.severity = 'required';
-  return errors;
-}
-
-export interface RestrictionInput {
-  readonly restrictionType: RestrictionType;
-  readonly reason: string;
-  readonly approvalRef?: string;
-}
-
-export function validateRestriction(values: Record<string, string>): FieldErrors {
-  const errors: Record<string, string> = {};
-  // `MIN_REASON` is 10, not 1. A restriction stops work being done for a real
-  // customer, and "no" is not a reason anybody can act on later.
-  const reason = validateText(values.reason ?? '', {
-    min: MIN_REASON,
-    max: MAX_REASON,
-    required: true,
-  });
-  if (reason) errors.reason = reason;
-  if (!RESTRICTION_TYPES.includes(values.restrictionType as RestrictionType)) {
-    errors.restrictionType = 'required';
-  }
-  const ref = validateText(values.approvalRef ?? '', {
-    min: 1,
-    max: MAX_APPROVAL_REF,
-    required: false,
-  });
-  if (ref) errors.approvalRef = ref;
-  return errors;
-}
-
-export interface TagInput {
-  readonly segmentCode: string;
-  readonly name?: string;
-}
-
-export function validateTag(values: Record<string, string>): FieldErrors {
-  const errors: Record<string, string> = {};
-  const code = validateText(values.segmentCode ?? '', {
-    min: MIN_SEGMENT_CODE,
-    max: MAX_SEGMENT_CODE,
-    required: true,
-  });
-  if (code) errors.segmentCode = code;
-  const name = validateText(values.name ?? '', { min: 1, max: MAX_SEGMENT_NAME, required: false });
-  if (name) errors.name = name;
-  return errors;
-}
-
-export interface PreferenceInput {
-  readonly channel: string;
-  readonly purpose: CommunicationPurpose;
-  readonly preferred: boolean;
-  readonly preferredLocale?: string | null;
-}
-
-export function validatePreference(values: Record<string, string>): FieldErrors {
-  const errors: Record<string, string> = {};
-  if (!COMMUNICATION_PURPOSES.includes(values.purpose as CommunicationPurpose)) {
-    errors.purpose = 'required';
-  }
-  if (!values.channel) errors.channel = 'required';
-  const locale = validateText(values.preferredLocale ?? '', {
-    min: MIN_PREFERRED_LOCALE,
-    max: MAX_PREFERRED_LOCALE,
-    required: false,
-  });
-  if (locale) errors.preferredLocale = locale;
-  return errors;
-}
-
-export interface ConsentInput {
-  readonly consentKind: ConsentKind;
-  readonly channel: string;
-  readonly purpose: CommunicationPurpose;
-  readonly status: RecordableConsentStatus;
-  readonly source?: string;
-  readonly contactPointId?: string;
-}
-
-export function validateConsent(values: Record<string, string>): FieldErrors {
-  const errors: Record<string, string> = {};
-  if (!CONSENT_KINDS.includes(values.consentKind as ConsentKind)) errors.consentKind = 'required';
-  if (!COMMUNICATION_PURPOSES.includes(values.purpose as CommunicationPurpose)) {
-    errors.purpose = 'required';
-  }
-  if (!RECORDABLE_CONSENT_STATUSES.includes(values.status as RecordableConsentStatus)) {
-    errors.status = 'required';
-  }
-  if (!values.channel) errors.channel = 'required';
-  const source = validateText(values.source ?? '', {
-    min: 1,
-    max: MAX_CONSENT_SOURCE,
-    required: false,
-  });
-  if (source) errors.source = source;
-  return errors;
-}

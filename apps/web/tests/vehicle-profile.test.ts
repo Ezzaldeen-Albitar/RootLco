@@ -3,6 +3,7 @@ import {
   ISO_VIN_LENGTH,
   MAX_VIN_LENGTH,
   isFrozen,
+  isTerminal,
   isNonStandardLength,
   labelFor,
   validateVinFormat,
@@ -92,6 +93,47 @@ describe('a merged vehicle is frozen, not missing', () => {
   it('treats lifecycleStatus merged as frozen even without mergedIntoId', () => {
     // Belt and braces: either signal alone means every write answers 409.
     expect(isFrozen({ ...VEHICLE, lifecycleStatus: 'merged' })).toBe(true);
+  });
+
+  it('does NOT call a scrapped vehicle frozen', () => {
+    // `vehicle-write-service.ts:119` guards `merged` alone, so a scrapped
+    // vehicle's details can still be corrected. Calling it frozen would remove
+    // a control the server would have accepted — the opposite defect from the
+    // one `isTerminal` fixes, and just as real.
+    expect(isFrozen({ ...VEHICLE, lifecycleStatus: 'scrapped' })).toBe(false);
+  });
+});
+
+describe('a scrapped vehicle is terminal for registration and equipment', () => {
+  // This block exists because `isFrozen` was asserted twice for `merged` and
+  // never for `scrapped`, while three server writers refuse both. The EV form,
+  // the ownership transfer and the plate form each rendered a live Save on a
+  // scrapped vehicle whose only possible answer was 409 ERR-RES-002.
+  it('treats scrapped as terminal', () => {
+    expect(isTerminal({ ...VEHICLE, lifecycleStatus: 'scrapped' })).toBe(true);
+  });
+
+  it('treats merged as terminal by both signals', () => {
+    expect(isTerminal({ ...VEHICLE, lifecycleStatus: 'merged' })).toBe(true);
+    expect(isTerminal({ ...VEHICLE, mergedIntoId: 'v2' })).toBe(true);
+  });
+
+  it('leaves every non-terminal status writable', () => {
+    for (const status of ['draft', 'active', 'inactive'] as const) {
+      expect(isTerminal({ ...VEHICLE, lifecycleStatus: status })).toBe(false);
+    }
+  });
+
+  it('is strictly wider than isFrozen, and differs on exactly one status', () => {
+    // Pinning the RELATIONSHIP rather than the two predicates separately: if a
+    // future edit collapses them, or widens either past the server's own
+    // `TERMINAL_LIFECYCLE`, this fails.
+    const statuses = ['draft', 'active', 'inactive', 'merged', 'scrapped'] as const;
+    const differ = statuses.filter(
+      (lifecycleStatus) =>
+        isTerminal({ ...VEHICLE, lifecycleStatus }) !== isFrozen({ ...VEHICLE, lifecycleStatus })
+    );
+    expect(differ).toEqual(['scrapped']);
   });
 });
 

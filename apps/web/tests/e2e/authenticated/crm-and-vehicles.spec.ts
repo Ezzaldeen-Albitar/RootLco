@@ -121,16 +121,32 @@ test.describe('both duplicate queues are reachable from the sidebar', () => {
 
 test.describe('search asks the real backend only when asked', () => {
   test('vehicle search issues no request until a criterion is supplied', async ({ page }) => {
-    const searches: string[] = [];
+    /*
+     * Observed on the channel the browser actually uses.
+     *
+     * This test filtered on `/api/v1/vehicles?`, a URL the browser never
+     * requests — every API call is made by the Next.js server process — so the
+     * list was empty whatever happened and the assertion could not fail. The
+     * same vacuity as the two observers further down (`P1-27-QA-003`).
+     *
+     * A search on this screen is a Server Action, which reaches the network as a
+     * POST to the WEB origin. That is visible here, and it is the thing worth
+     * counting: seventeen keystrokes against a 30-per-minute budget.
+     */
+    const observed: string[] = [];
+    const posts: string[] = [];
     page.on('request', (request) => {
-      if (request.url().includes('/api/v1/vehicles?')) searches.push(request.url());
+      observed.push(request.url());
+      if (request.method() === 'POST') posts.push(request.url());
     });
 
     await page.goto('/en/vehicles');
+    const before = posts.length;
     await page.getByLabel(/VIN/i).fill('JH4KA7561PC008269');
     await page.waitForTimeout(500);
-    // Seventeen keystrokes against a 30-per-minute budget.
-    expect(searches, 'typing must not search').toHaveLength(0);
+
+    expect(observed.length, 'the listener saw no requests at all').toBeGreaterThan(0);
+    expect(posts.length - before, 'typing must not search').toBe(0);
   });
 
   test('customer search reaches the API and renders a real result state', async ({ page }) => {
@@ -168,13 +184,40 @@ test.describe('the merge affordance is absent in the running application', () =>
   }
 });
 
+/*
+ * Both observers below watch what the BROWSER does, and the browser in this
+ * architecture only ever talks to the web origin: every API call is made by the
+ * Next.js server process, on the server side of a Server Action or a page
+ * render.
+ *
+ * Both used to filter on `/api/v1/`, which the browser therefore never requests.
+ * They observed an emptiness they could not have found otherwise, and asserted
+ * it — the shape of a proof whose subject is not what it claims to observe
+ * (`P1-27-QA-003`).
+ *
+ * Two corrections, and the first is the load-bearing one:
+ *
+ *   1. A POSITIVE CONTROL. Each test now fails if the listener saw nothing at
+ *      all, so "the page made no requests" can no longer pass as "the page made
+ *      no bad requests".
+ *   2. The `/api/v1/` filter is gone. What the browser actually issues —
+ *      navigations, RSC payload fetches and Server Action POSTs to the web
+ *      origin — is what these tests can see, and it is worth seeing: a scope in
+ *      a Server Action's URL would be just as wrong there.
+ *
+ * API-wire evidence is asserted where it can be: `p1-27-qa.test.ts` drives every
+ * read adapter and three write adapters and asserts on the actual call. This
+ * tier cannot see that traffic and no longer claims to.
+ */
 test.describe('no screen fires an audited write just by being opened', () => {
-  test('opening either duplicate queue issues no POST at all', async ({ page }) => {
+  test('opening either duplicate queue issues no write beyond its own Server Action', async ({
+    page,
+  }) => {
+    const observed: string[] = [];
     const writes: string[] = [];
     page.on('request', (request) => {
-      if (request.method() !== 'GET' && request.url().includes('/api/v1/')) {
-        writes.push(`${request.method()} ${request.url()}`);
-      }
+      observed.push(request.url());
+      if (request.method() !== 'GET') writes.push(`${request.method()} ${request.url()}`);
     });
 
     await page.goto('/en/crm/customer-duplicates');
@@ -182,17 +225,44 @@ test.describe('no screen fires an audited write just by being opened', () => {
     await page.goto('/en/vehicles/duplicates');
     await page.waitForLoadState('networkidle');
 
-    // A queue that "refreshed" by scanning would write audit history every time
-    // somebody looked at it. Reads are GETs; nothing here may be anything else.
-    expect(writes, writes.join('\n')).toHaveLength(0);
+    expect(observed.length, 'the listener saw no requests at all').toBeGreaterThan(0);
+
+    /*
+     * A Server Action IS an HTTP POST to the page's own URL.
+     *
+     * This case previously demanded ZERO non-GET requests, and that is
+     * unsatisfiable by construction here. Both queues read through `'use server'`
+     * modules — `crm/customers/identity-api.ts` and `vehicles/duplicates-api.ts`
+     * — and a client component calling one issues, by the App Router's protocol,
+     * a POST to the current URL carrying a `Next-Action` header. The module then
+     * performs a GET against the API from the server, which the browser never
+     * sees at all. So the observed method carries no information about whether an
+     * audited write happened, and the assertion could only ever have passed on a
+     * screen that loaded no data.
+     *
+     * The docblock above this describe already said the `/api/v1/` filter was
+     * removed so the listener would see "Server Action POSTs to the web origin".
+     * The file asked to see them and then required there to be none.
+     *
+     * What this tier CAN prove is that no write leaves the browser for anywhere
+     * other than the page's own action endpoint. That no review screen calls
+     * `crm.duplicate-scan` or its vehicle twin is proved where it is visible —
+     * `p1-27-security.test.ts` and `vehicle-duplicates.test.ts` read the source —
+     * and the ownership gate's `no-duplicate-scan-on-a-queue` rule enforces it.
+     */
+    const foreign = writes.filter(
+      (w) => !/^POST \S+\/(en|ar)\/(crm\/customer-duplicates|vehicles\/duplicates)$/.test(w)
+    );
+    expect(foreign, foreign.join('\n')).toHaveLength(0);
   });
 });
 
 test.describe('the client asserts no scope on the wire', () => {
   test('no request carries a tenant, company or branch parameter', async ({ page }) => {
+    const observed: string[] = [];
     const scoped: string[] = [];
     page.on('request', (request) => {
-      if (!request.url().includes('/api/v1/')) return;
+      observed.push(request.url());
       if (/[?&](tenant|company|branch)[_A-Za-z]*=/i.test(request.url())) scoped.push(request.url());
     });
 
@@ -201,6 +271,7 @@ test.describe('the client asserts no scope on the wire', () => {
     await page.goto('/en/vehicles/duplicates');
     await page.waitForLoadState('networkidle');
 
+    expect(observed.length, 'the listener saw no requests at all').toBeGreaterThan(0);
     // Scope is resolved server-side from the session on every operation. A
     // client-supplied scope is at best ignored and at worst believed.
     expect(scoped, scoped.join('\n')).toHaveLength(0);

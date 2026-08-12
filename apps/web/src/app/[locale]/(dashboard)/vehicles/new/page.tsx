@@ -40,7 +40,10 @@ export default async function VehicleCreatePage({
           locale={locale}
           messages={messages}
           titleKey="vehicles.create.title"
-          crumbs={[{ labelKey: 'nav.vehicles' }, { labelKey: 'vehicles.create.title' }]}
+          crumbs={[
+            { labelKey: 'nav.vehicles', href: `/${locale}/vehicles` },
+            { labelKey: 'vehicles.create.title' },
+          ]}
         />
         <PageBody>
           <PermissionDeniedState messages={messages} />
@@ -65,7 +68,13 @@ export default async function VehicleCreatePage({
         messages={messages}
         titleKey="vehicles.create.title"
         descriptionKey="vehicles.create.description"
-        crumbs={[{ labelKey: 'nav.vehicles' }, { labelKey: 'vehicles.create.title' }]}
+        // Both branches, not only this one. The denial above rendered the same
+        // route-less parent, and a denied operator is exactly the one who needs
+        // the way back out of a form they may not submit.
+        crumbs={[
+          { labelKey: 'nav.vehicles', href: `/${locale}/vehicles` },
+          { labelKey: 'vehicles.create.title' },
+        ]}
       />
       <PageBody>
         <VehicleCreateScreen

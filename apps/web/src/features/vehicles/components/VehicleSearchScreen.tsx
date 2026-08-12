@@ -2,6 +2,7 @@
 
 import { useCallback, useId, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { DataTable, type Column } from '@/components/data-table/DataTable';
 import { INITIAL_REQUEST, type TableRequest } from '@/components/data-table/table-state';
 import { useServerTable } from '@/components/data-table/use-server-table';
@@ -10,7 +11,7 @@ import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { Locale } from '@/i18n/config';
 import { searchVehicles } from '../api';
-import type { CatalogueOption } from '../catalogue-api';
+import type { CatalogueResult } from '../catalogue-api';
 import {
   EMPTY_CRITERIA,
   POWERTRAIN_CATEGORIES,
@@ -54,7 +55,7 @@ interface Props {
   readonly messages: Messages;
   readonly canCreate: boolean;
   /** Resolved once on the server, for the make/model columns. */
-  readonly makes: readonly CatalogueOption[];
+  readonly makes: CatalogueResult;
 }
 
 export function VehicleSearchScreen({ locale, messages, canCreate, makes }: Props) {
@@ -193,6 +194,7 @@ export function VehicleSearchScreen({ locale, messages, canCreate, makes }: Prop
           key={JSON.stringify(submitted)}
           locale={locale}
           messages={messages}
+          canCreate={canCreate}
           criteria={submitted}
           makes={makes}
         />
@@ -204,21 +206,28 @@ export function VehicleSearchScreen({ locale, messages, canCreate, makes }: Prop
 function VehicleSearchResults({
   locale,
   messages,
+  canCreate,
   criteria,
   makes,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
+  /** `veh.vehicle.create` — gates the offer to create the vehicle not found. */
+  readonly canCreate: boolean;
   readonly criteria: VehicleSearchCriteria;
-  readonly makes: readonly CatalogueOption[];
+  readonly makes: CatalogueResult;
 }) {
   const load = useCallback(
     (request: TableRequest, cursor: string | null) => searchVehicles(criteria, request, cursor),
     [criteria]
   );
   const table = useServerTable<VehicleSearchHit>(load, { initial: INITIAL_REQUEST });
+  const router = useRouter();
 
-  const makeById = useMemo(() => new Map(makes.map((make) => [make.id, make.name])), [makes]);
+  const makeById = useMemo(
+    () => new Map((makes.status === 'ok' ? makes.options : []).map((m) => [m.id, m.name])),
+    [makes]
+  );
 
   const columns = useMemo<readonly Column<VehicleSearchHit>[]>(
     () => [
@@ -253,13 +262,35 @@ function VehicleSearchResults({
       {
         id: 'make',
         headerKey: 'vehicles.column.make',
-        // Search publishes `makeId` and NO name — only the detail read resolves
-        // labels. The id is matched against the catalogue this page already
-        // loaded. Three outcomes, and they are three different facts:
-        //   - no makeId          -> the vehicle has no make recorded
-        //   - makeId, resolved   -> the name
-        //   - makeId, unresolved -> a make this caller cannot see, said plainly
-        //                           rather than rendered as a raw uuid
+        /*
+         * Search publishes `makeId` and NO name — only the detail read resolves
+         * labels — so the id is matched against the catalogue this page loaded.
+         *
+         * FOUR outcomes, because an unresolved id has more than one cause and
+         * they are not interchangeable:
+         *   - no makeId                  -> the vehicle has no make recorded
+         *   - resolved                   -> the name
+         *   - unresolved, catalogue bad  -> the CATALOGUE failed or was cut short
+         *   - unresolved, catalogue good -> this id is genuinely not in it
+         *
+         * The third case is the one that was wrong. This comment used to promise
+         * three outcomes and the code delivered two, with the fallback reading
+         * "Make not available to you" — a sentence asserting a permission. That
+         * assertion cannot be true here: `veh.catalogue-make-list` requires the
+         * capability the page has already gated on, so a caller who reaches this
+         * table can always see the catalogue. What actually fails is the read —
+         * a 429 or a timeout, which `read-operation.ts` classifies as
+         * `unavailable`, "try again shortly", not a fault and certainly not a
+         * denial. And when the catalogue fails, EVERY row says it at once, so
+         * the whole column accused the operator of lacking access they hold.
+         *
+         * The two catalogue sentences are the ones FE-018 already ships and
+         * translates (`vehicles.create.catalogueUnavailable` / `…Truncated`);
+         * nothing new is invented here. No per-row retry and no per-row
+         * reference: the catalogue is read once per page, so if a reference is
+         * ever wanted it belongs once, beside the table, from
+         * `makes.correlationId`.
+         */
         cell: (row) => {
           if (row.makeId === null) {
             return (
@@ -269,13 +300,15 @@ function VehicleSearchResults({
             );
           }
           const name = makeById.get(row.makeId);
-          return (
-            name ?? (
-              <span className="text-text-muted">
-                {translate(messages, 'vehicles.column.makeUnavailable')}
-              </span>
-            )
-          );
+          if (name !== undefined) return name;
+
+          const key =
+            makes.status !== 'ok'
+              ? 'vehicles.create.catalogueUnavailable'
+              : makes.truncated
+                ? 'vehicles.create.catalogueTruncated'
+                : 'vehicles.column.makeUnrecognised';
+          return <span className="text-text-muted">{translate(messages, key)}</span>;
         },
       },
       {
@@ -301,9 +334,17 @@ function VehicleSearchResults({
               // write against it answers 409. Saying so here is what stops an
               // operator selecting it and meeting an unexplained conflict.
               //
-              // Stated, not linked: the vehicle profile route arrives in Wave 8
-              // (`FE-019`), and a link to a route that does not exist yet is a
-              // 404 dressed up as a feature.
+              // Stated, not linked — but NOT because the route is missing. That
+              // was the original reason and it stopped being true when `FE-019`
+              // added row navigation to that very route, fifty lines below, in
+              // this file. The sentence outlived the fact for a whole phase,
+              // because nothing in the repository reads comments.
+              //
+              // The real reason: search publishes only `mergedIntoId`, an opaque
+              // identifier with no readable label, so a link here would be a bare
+              // uuid — which this product does not show. The operator reaches the
+              // surviving record by searching for it, or from the duplicate queue
+              // where both sides are named.
               <span className="text-caption text-text-muted">
                 {translate(messages, 'vehicles.column.mergedInto')}
               </span>
@@ -322,10 +363,20 @@ function VehicleSearchResults({
         cell: (row) => translateDynamic(messages, `vehicles.workshop.${row.workshopStatus}`),
       },
     ],
-    // `locale` is not a dependency: the merged-into cell became a plain
-    // statement rather than a link when the profile route turned out to be a
-    // Wave 8 deliverable, and nothing in these columns builds a URL any more.
-    [makeById, messages]
+    // `locale` is not a dependency because these columns render TEXT only. The
+    // row action does build a URL and is defined outside this memo, which is why
+    // it needs no entry here.
+    //
+    // The earlier note said "nothing in these columns builds a URL any more" and
+    // attributed it to the profile route being a later deliverable. Both halves
+    // were stale: the route exists and this file routes to it.
+    // `makes.status` and `makes.truncated` are read by the Make column to tell a
+    // failed catalogue apart from an unrecognised id. They are NOT implied by
+    // `makeById`: a catalogue that fails and one that is merely missing this id
+    // both yield the same empty map, which is precisely the confusion the column
+    // exists to resolve. Omitting them would have made the column render the
+    // wrong sentence from a stale outcome.
+    [makeById, makes.status, makes.truncated, messages]
   );
 
   return (
@@ -344,7 +395,64 @@ function VehicleSearchResults({
         onRetry={table.refresh}
         correlationId={table.correlationId}
         caption={translate(messages, 'vehicles.search.caption')}
+        /*
+         * `P1-27-FE-002`, the vehicle half. Same defect and same cause as the
+         * customer search: the criteria live outside `TableRequest`, so
+         * `isNarrowed` is permanently false and a search matching nothing said
+         * "Nothing here yet" about the tenant's entire fleet.
+         *
+         * Unlike the customer search this screen had no zero-result block of its
+         * own, so one is added below rather than only suppressing the wrong one.
+         */
+        suppressEmptyState
+        /*
+         * Opening a found vehicle (`P1-27-FE-019`).
+         *
+         * This table listed vehicles and offered no way to open one. The vehicle
+         * profile route existed, and the ONLY links to it in the whole
+         * application were on the duplicate-review queue — so the profile, and
+         * with it plate assignment, odometer capture, ownership transfer, the
+         * electric-drive profile, customer relationships, documents and history,
+         * could be reached only by an operator who happened to be reviewing a
+         * suspected duplicate.
+         *
+         * The same defect shape as the unreachable writes: the screen was built,
+         * and nothing navigated to it. The CRM search has carried this row action
+         * since Wave 2; the vehicle search never gained one.
+         */
+        rowActions={(row) => (
+          <button
+            type="button"
+            onClick={() => router.push(`/${locale}/vehicles/${row.id}`)}
+            className="text-primary underline-offset-2 hover:underline focus-visible:outline focus-visible:outline-2"
+          >
+            {translate(messages, 'vehicles.search.open')}
+          </button>
+        )}
       />
+      {/*
+        A search that matched nothing is a statement about the SEARCH, not about
+        the fleet. Creating the vehicle that was not found is the actual next
+        step, and it is offered only to an operator who may create one — a
+        control whose only possible outcome is a 403 is worse than no control.
+      */}
+      {table.response && table.response.rows.length === 0 ? (
+        <div className="flex flex-col items-center gap-3 py-8 text-center">
+          <p className="text-body text-text-secondary" lang={locale}>
+            {translate(messages, 'vehicles.search.noMatch')}
+          </p>
+          {canCreate ? (
+            <Link
+              href={`/${locale}/vehicles/new`}
+              data-testid="create-vehicle-from-no-results"
+              className="inline-flex items-center rounded-md border border-border px-4 py-2 text-body font-medium text-text-primary transition-colors duration-fast ease-standard hover:bg-surface-subtle"
+            >
+              {translate(messages, 'vehicles.create.title')}
+            </Link>
+          ) : null}
+        </div>
+      ) : null}
+
       <p className="px-2 pb-2 text-caption text-text-muted" lang={locale}>
         {translate(messages, 'vehicles.search.exactMatchNote')}
       </p>

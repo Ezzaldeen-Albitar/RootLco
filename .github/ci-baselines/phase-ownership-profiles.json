@@ -1,0 +1,43 @@
+{
+  "description": "Which changed-file ownership profile a branch is judged under. `scripts/ci/check-phase-ownership.mjs` defines the profiles; this maps branches onto them, because the profile is a property of the BRANCH and a workflow input cannot be one.",
+  "whyThisFileExists": "P1-27-DO-003. `validate:phase-ownership` was invoked by no CI job: a grep of `.github/` for `phase-ownership` returned nothing and never had. The gate's own register entry recorded that fact in a PROSE comment — a command documented as unreachable, which is this phase's defect class stated in its own tooling. It found seven API source files riding inside the P1-27 Frontend branch only because somebody ran it by hand.",
+  "howItIsUsed": ".github/workflows/_reusable-node-quality.yml, task `static-quality`, resolves the head branch against `rules` in order and exports PHASE_OWNERSHIP_PROFILE. The FIRST matching prefix wins, so a longer prefix must be listed before a shorter one.",
+  "unmappedPolicy": "FAIL. A branch that matches no rule is refused, and the message says to add a rule. The alternative — a permissive default — is how `check-phase-ownership.mjs` came to judge every branch against `p1-26-frontend`, including Backend branches the profile cannot pass. Declaring what a branch is allowed to change is a one-line diff and is the whole point of the gate.",
+  "rules": [
+    {
+      "branchPrefix": "p1-27/",
+      "profile": "p1-27-frontend",
+      "why": "the P1-27 Frontend working branches — apps/web, docs, tooling, tests and root config only"
+    },
+    {
+      "branchPrefix": "feature/p1-27-",
+      "profile": "p1-27-frontend",
+      "why": "the P1-27 Frontend integration branch"
+    },
+    {
+      "branchPrefix": "remediation/p1-27-partner-identity",
+      "profile": "p1-27-backend-partner-identity",
+      "why": "the P1-27-INT-025 Backend remediation, split out of the Frontend branch precisely so a Backend gate would see it. Listed BEFORE the general `remediation/p1-27-` rule below, because the first matching prefix wins and this one is longer"
+    },
+    {
+      "branchPrefix": "remediation/p1-27-",
+      "profile": "p1-27-frontend",
+      "why": "P1-27 remediation branches are Frontend unless they declare otherwise above"
+    },
+    {
+      "branchPrefix": "docs/p1-27-",
+      "profile": "p1-27-frontend",
+      "why": "a P1-27 documentation branch changes docs, which the Frontend profile permits, and must not change API source or the database any more than the phase itself may"
+    },
+    {
+      "branchPrefix": "feature/p1-26-",
+      "profile": "p1-26-frontend",
+      "why": "the P1-26 Frontend branch"
+    },
+    {
+      "branchPrefix": "closure/p1-26-",
+      "profile": "p1-26-frontend",
+      "why": "the P1-26 closure branch carries the same Frontend declaration"
+    }
+  ]
+}

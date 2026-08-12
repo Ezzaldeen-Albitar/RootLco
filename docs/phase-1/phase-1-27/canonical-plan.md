@@ -141,7 +141,7 @@ stand alone.
 | -------------- | ---------------------------- | ------------------------------------------------ | ------------------ |
 | `P1-27-FE-001` | CRM customer search          | `crm.customer-search`                            | `TC-P1-27-CRM-001` |
 | `P1-27-FE-002` | CRM customer search results  | `crm.customer-search`                            | `TC-P1-27-CRM-002` |
-| `P1-27-FE-003` | CRM duplicate warning        | `crm.duplicate-list`, `crm.duplicate-scan`       | `TC-P1-27-CRM-003` |
+| `P1-27-FE-003` | CRM duplicate warning        | none of its own — see §7.1                       | `TC-P1-27-CRM-003` |
 | `P1-27-FE-004` | CRM individual-customer form | `crm.individual-create`                          | `TC-P1-27-CRM-004` |
 | `P1-27-FE-005` | CRM company-customer form    | `crm.company-create`                             | `TC-P1-27-CRM-005` |
 | `P1-27-FE-006` | CRM customer profile         | `crm.customer-read`                              | `TC-P1-27-CRM-006` |
@@ -265,7 +265,31 @@ They are recorded here so nobody mistakes them for decisions awaiting an answer:
 | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `FE-020` | `veh.vin_verifications` is a table **no code reads or writes**. P1-27 delivers VIN validation as _format validation at the edge plus the server's uniqueness verdict_ (the active-VIN constraint, surfaced as a conflict). A dedicated verification workflow with a check-digit algorithm, an override policy and a permission code is Backend feature work and is **out of P1-27 scope**. |
 | `FE-029` | `veh` has **no equivalent of `crm.timeline_events`**. `veh.vehicle-history` is attribute changes only. P1-27 delivers a **sectioned activity view** over the existing independently-paginated reads, and does not fabricate a unified stream. §12 forbids client-side loading of all records, so the sections page independently.                                                          |
-| `FE-003` | The duplicate _warning_ during creation uses `crm.duplicate-list`; it does not run a scan on keystroke, because a scan is a privileged write that emits an audit record.                                                                                                                                                                                                                   |
+| `FE-003` | The duplicate _warning_ during creation calls **no operation of its own** — see §7.1. It does not run a scan on keystroke, because a scan is a privileged write that emits an audit record.                                                                                                                                                                                                |
+
+### 7.1 `FE-003` — the operation assignment this plan got wrong
+
+**Superseded text, preserved rather than rewritten**, because a plan that quietly
+edits its own history is worth less than one that shows what it corrected:
+
+> §5.1 assigned `FE-003` the operations **`crm.duplicate-list`, `crm.duplicate-scan`**,
+> and the row above said the creation-time warning **"uses `crm.duplicate-list`"**.
+
+**The code uses neither.** `possibleDuplicates` arrives on the **creation
+response** of `crm.individual-create` / `crm.company-create`
+(`features/crm/customers/creation-contract.ts`), so the warning costs no extra
+request and writes no audit record. `evidence/task-traceability.md` §3.1 and
+`findings.md` have said so throughout; this plan is the document that was stale
+(`A42-07`).
+
+It matters more than a wrong cell, and that is why it has a subsection.
+`canonical-write-reachability.json` classifies both duplicate scans
+`DELIBERATELY_ABSENT` and named **this plan** as the decision behind it. So the
+record of why a privileged audited write is unreachable pointed at a sentence
+saying the screen used a different operation — a decision reference to a claim
+the code contradicts. That manifest now cites this subsection by name rather than
+a line number, because a line number moves whenever anything above it is edited,
+which is the same defect one layer down.
 
 ---
 

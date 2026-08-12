@@ -1,12 +1,14 @@
 'use client';
 
 import { useCallback, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { DataTable, type Column } from '@/components/data-table/DataTable';
 import { INITIAL_REQUEST, type TableRequest } from '@/components/data-table/table-state';
 import { useServerTable } from '@/components/data-table/use-server-table';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { Locale } from '@/i18n/config';
+import { formatDateTime } from '@/lib/format';
 import {
   listAddresses,
   listAlerts,
@@ -23,9 +25,12 @@ import {
   imposeRestrictionAction,
   raiseAlertAction,
   recordConsentAction,
+  setCustomerStatusAction,
   setPreferenceAction,
 } from '../governance-actions';
 import {
+  allowedTransitions,
+  isConsequentialTransition,
   ALERT_SEVERITIES,
   ALERT_TYPES,
   COMMUNICATION_PURPOSES,
@@ -42,13 +47,20 @@ import {
   NOTE_VISIBILITIES,
   RECORDABLE_CONSENT_STATUSES,
   RESTRICTION_TYPES,
+  NO_WRITES,
+  type WritePermits,
 } from '../governance-contract';
+import { addAddressAction, addContactAction } from '../profile-actions';
 import { listTimeline } from '../identity-api';
 import type { TimelineEntry } from '../identity-contract';
 import { RecordForm } from './RecordForm';
 import {
   addressLines,
+  ADDRESS_TYPES,
   CONTACT_CHANNELS,
+  MAX_ADDRESS_LINE,
+  MAX_CONTACT_VALUE,
+  MAX_LABEL,
   severityRank,
   type Address,
   type Alert,
@@ -105,9 +117,17 @@ type Section = (typeof SECTIONS)[number];
 /**
  * Sections with a screen today. The rest render an honest "not yet" state.
  *
- * `vehicles` is the last one outstanding and belongs to `FE-025`, which cannot
- * be built until the Vehicle waves land — it lists a customer's vehicles, and
- * there is no vehicle screen to link to yet.
+ * `vehicles` is the last one outstanding, and the reason is a MISSING READ, not
+ * a missing screen. `POST /customers/{id}/vehicles` publishes no `GET`: there is
+ * no "this customer's vehicles" operation anywhere in the platform
+ * (`P1-27-INT-012`, owned by P1-16 Backend and deferred to P1-28), so this tab
+ * has nothing to list. The link itself is offered from the VEHICLE side, where
+ * the result is visible in the table directly above the form.
+ *
+ * This block previously said the blocker was that "there is no vehicle screen to
+ * link to yet". That stopped being true at `FE-019`, which built the vehicle
+ * profile route; the sentence outlived its fact while the correct reason was
+ * already recorded in `relations-api.ts` and in `findings.md`.
  */
 const BUILT: readonly Section[] = [
   'overview',
@@ -126,14 +146,30 @@ interface Props {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly customer: CustomerDetail;
+  /**
+   * Which of the nine customer writes this session may attempt, from
+   * `permittedWrites(session.permissions)` on the server.
+   *
+   * One map rather than nine booleans, and it replaced a lone `canManageStatus`
+   * — the single write that had a gate, while the other eight rendered for
+   * anyone who could open the page (`P1-27-SEC-001`). Defaulting to `NO_WRITES`
+   * means a caller that forgets it shows a read-only profile rather than a full
+   * set of controls that 403.
+   */
+  readonly writes?: WritePermits;
 }
 
-export function CustomerProfileScreen({ locale, messages, customer }: Props) {
+export function CustomerProfileScreen({ locale, messages, customer, writes = NO_WRITES }: Props) {
   const [section, setSection] = useState<Section>('overview');
 
   return (
     <div className="flex min-h-0 flex-col gap-4">
-      <ProfileHeader messages={messages} customer={customer} />
+      <ProfileHeader
+        locale={locale}
+        messages={messages}
+        customer={customer}
+        canManageStatus={writes.status}
+      />
 
       <nav aria-label={translate(messages, 'crm.customers.profile.sections')}>
         <ul className="flex flex-wrap gap-1 border-b border-border">
@@ -169,29 +205,72 @@ export function CustomerProfileScreen({ locale, messages, customer }: Props) {
       </nav>
 
       {section === 'overview' ? <Overview messages={messages} customer={customer} /> : null}
+      {/* Each section is handed its OWN capability, never a summary. A role that
+          may add a note very often may not impose a restriction, and `writes`
+          keeps those two answers apart all the way down. */}
       {section === 'contacts' ? (
-        <ContactsSection locale={locale} messages={messages} customerId={customer.id} />
+        <ContactsSection
+          locale={locale}
+          messages={messages}
+          customerId={customer.id}
+          canWrite={writes.contact}
+        />
       ) : null}
       {section === 'addresses' ? (
-        <AddressesSection locale={locale} messages={messages} customerId={customer.id} />
+        <AddressesSection
+          locale={locale}
+          messages={messages}
+          customerId={customer.id}
+          canWrite={writes.address}
+        />
       ) : null}
       {section === 'preferences' ? (
-        <PreferencesSection locale={locale} messages={messages} customerId={customer.id} />
+        <PreferencesSection
+          locale={locale}
+          messages={messages}
+          customerId={customer.id}
+          canWrite={writes.preference}
+        />
       ) : null}
       {section === 'consents' ? (
-        <ConsentsSection locale={locale} messages={messages} customerId={customer.id} />
+        <ConsentsSection
+          locale={locale}
+          messages={messages}
+          customerId={customer.id}
+          canWrite={writes.consent}
+        />
       ) : null}
       {section === 'notes' ? (
-        <NotesSection locale={locale} messages={messages} customerId={customer.id} />
+        <NotesSection
+          locale={locale}
+          messages={messages}
+          customerId={customer.id}
+          canWrite={writes.note}
+        />
       ) : null}
       {section === 'alerts' ? (
-        <AlertsSection locale={locale} messages={messages} customerId={customer.id} />
+        <AlertsSection
+          locale={locale}
+          messages={messages}
+          customerId={customer.id}
+          canWrite={writes.alert}
+        />
       ) : null}
       {section === 'tags' ? (
-        <TagsSection locale={locale} messages={messages} customerId={customer.id} />
+        <TagsSection
+          locale={locale}
+          messages={messages}
+          customerId={customer.id}
+          canWrite={writes.tag}
+        />
       ) : null}
       {section === 'restrictions' ? (
-        <RestrictionsSection locale={locale} messages={messages} customerId={customer.id} />
+        <RestrictionsSection
+          locale={locale}
+          messages={messages}
+          customerId={customer.id}
+          canWrite={writes.restriction}
+        />
       ) : null}
       {section === 'timeline' ? (
         <TimelineSection locale={locale} messages={messages} customerId={customer.id} />
@@ -205,17 +284,188 @@ export function CustomerProfileScreen({ locale, messages, customer }: Props) {
   );
 }
 
-function ProfileHeader({
+/**
+ * Change the customer's lifecycle status.
+ *
+ * The header has shown `lifecycleStatus` since the profile shipped and offered
+ * no way to change it, while `crm.customer-status-set` sat registered,
+ * permission-covered and called from nowhere. The phase's own traceability
+ * recorded it as attributed to "CRM profile surface — Not called", and no
+ * approved decision anywhere says direct status editing should not exist: the
+ * two operations that ARE deliberately absent carry a decision reference
+ * (`P1-OD-017` for both merges). This was an omission.
+ *
+ * ## Only the moves that can succeed
+ *
+ * The target list comes from `allowedTransitions(current)`, mirroring the
+ * server's `LIFECYCLE_TRANSITIONS`. Offering all four and letting two of them
+ * 422 would show an operator a control that fails for reasons the error cannot
+ * explain. `merged` appears in no list at all — a merge is not a status somebody
+ * assigns.
+ *
+ * ## Blocking asks twice
+ *
+ * `isConsequentialTransition` singles out `blocked`, because it is the one move
+ * that stops the workshop serving a real customer. Confirming every transition
+ * would train an operator to click through the one that matters.
+ */
+function StatusChangeForm({
+  locale,
   messages,
   customer,
 }: {
+  readonly locale: Locale;
   readonly messages: Messages;
   readonly customer: CustomerDetail;
+}) {
+  const router = useRouter();
+  const [target, setTarget] = useState('');
+  const [confirmed, setConfirmed] = useState(false);
+  const targets = allowedTransitions(customer.lifecycleStatus);
+
+  if (targets.length === 0) {
+    // A merged customer, or a state the server does not let anyone leave.
+    // Saying so beats an empty select nobody can use.
+    return (
+      <p className="mt-3 text-caption text-text-muted" lang={locale}>
+        {translate(messages, 'crm.customers.status.terminal')}
+      </p>
+    );
+  }
+
+  const needsConfirmation = isConsequentialTransition(target);
+
+  return (
+    <div className="mt-4">
+      <RecordForm
+        messages={messages}
+        titleKey="crm.customers.status.change"
+        submitKey="crm.customers.status.change"
+        action={setCustomerStatusAction.bind(null, customer.id)}
+        onRecorded={() => {
+          setTarget('');
+          setConfirmed(false);
+          // The status lives in the page's own server-side read, so there is no
+          // client fetch to re-run. A router refresh is the only thing that can
+          // show the new value in the header above.
+          router.refresh();
+        }}
+        guard={() =>
+          needsConfirmation && !confirmed
+            ? { lifecycleStatus: 'crm.customers.status.confirmRequired' }
+            : null
+        }
+        prelude={(state) => (
+          <div className="flex flex-col gap-2">
+            <label className="flex flex-col gap-1 text-caption text-text-secondary">
+              {translate(messages, 'crm.customers.status.newStatus')}
+              {/*
+               * `key` + `defaultValue`, the same three-part shape `RecordForm`
+               * uses for its own fields — `NEW-FE-01`, third site.
+               *
+               * A `prelude` renders INSIDE `RecordForm`'s `<form action={…}>`, so
+               * it inherits the reset React performs once the action settles and
+               * gains none of the protection `RecordForm` gives the fields it
+               * owns. A controlled `value` unchanged between renders is not
+               * re-written by the reconciler, so the reset wins.
+               *
+               * Here that was worse than a lost choice. After a failure the
+               * screen showed "Select…" and an UN-TICKED confirmation while
+               * `target` was still `blocked` and `confirmed` still `true`, so the
+               * `guard` above would have passed a resubmit that showed the
+               * operator no confirmation at all — on the control that blocks a
+               * customer.
+               */}
+              <select
+                key={`status-${state.attempt ?? 0}`}
+                name="lifecycleStatus"
+                required
+                defaultValue={target}
+                onChange={(event) => {
+                  setTarget(event.target.value);
+                  // A changed target un-confirms: agreeing to block somebody and
+                  // then switching to "inactive" must not carry the tick over.
+                  setConfirmed(false);
+                }}
+                className="rounded-md border border-border bg-surface px-2 py-1.5 text-body text-text-primary"
+              >
+                <option value="">{translate(messages, 'form.select.placeholder')}</option>
+                {targets.map((value) => (
+                  <option key={value} value={value}>
+                    {translateDynamic(messages, `crm.lifecycle.${value}`)}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            {needsConfirmation ? (
+              <label className="flex items-start gap-2 text-body text-text-primary">
+                <input
+                  // Same reason as the select above, and the direction that
+                  // makes it dangerous: the reset un-ticks the box while
+                  // `confirmed` stays true, so the guard sees a confirmation the
+                  // operator can no longer see.
+                  key={`confirm-${state.attempt ?? 0}`}
+                  type="checkbox"
+                  defaultChecked={confirmed}
+                  onChange={(event) => setConfirmed(event.target.checked)}
+                  className="mt-1 size-4 accent-primary"
+                />
+                <span>{translate(messages, 'crm.customers.status.confirmBlock')}</span>
+              </label>
+            ) : null}
+
+            {state.fieldErrors?.lifecycleStatus ? (
+              <p role="alert" className="text-caption text-error">
+                {translateDynamic(messages, state.fieldErrors.lifecycleStatus)}
+              </p>
+            ) : null}
+          </div>
+        )}
+        fields={[
+          {
+            name: 'reason',
+            kind: 'textarea',
+            labelKey: 'crm.customers.restrictions.reason',
+            required: true,
+            maxLength: MAX_REASON,
+            hintKey: 'crm.customers.status.reasonHint',
+          },
+        ]}
+      />
+    </div>
+  );
+}
+
+function ProfileHeader({
+  locale,
+  messages,
+  customer,
+  canManageStatus,
+}: {
+  readonly locale: Locale;
+  readonly messages: Messages;
+  readonly customer: CustomerDetail;
+  readonly canManageStatus: boolean;
 }) {
   return (
     <header className="rounded-lg border border-border bg-surface p-4">
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-        <h1 className="text-page-title font-semibold text-text-primary">{customer.displayName}</h1>
+        {/*
+          `h2`, not `h1`, and DEMOTED rather than dropped.
+
+          `crm/customers/[customerId]/page.tsx` renders `PageHeader` with
+          `crm.customers.profile.title` — that is the page's `<h1>`, and this was
+          a second one. But unlike the two duplicate queues, this heading is not
+          the page title said twice: it is the customer's own name, which the
+          header does not carry, so deleting it would delete information.
+
+          So it becomes the section heading it always was in meaning: h1 "Customer
+          profile", h2 the customer. The class is unchanged, so the name is the
+          same size on screen as before — the level is a fact about the outline,
+          not about the type scale.
+        */}
+        <h2 className="text-page-title font-semibold text-text-primary">{customer.displayName}</h2>
         {customer.displayNumber ? (
           <code className="font-mono text-caption text-text-secondary">
             {customer.displayNumber}
@@ -245,6 +495,10 @@ function ProfileHeader({
           value={translateDynamic(messages, `crm.commercial.${customer.commercialStatus}`)}
         />
       </dl>
+
+      {canManageStatus ? (
+        <StatusChangeForm locale={locale} messages={messages} customer={customer} />
+      ) : null}
     </header>
   );
 }
@@ -311,17 +565,17 @@ function ContactsSection({
   locale,
   messages,
   customerId,
+  canWrite,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly customerId: string;
+  readonly canWrite: boolean;
 }) {
   const load = useCallback(
     (request: TableRequest, cursor: string | null) => listContacts(customerId, request, cursor),
     [customerId]
   );
-  const table = useServerTable<ContactPoint>(load, { initial: INITIAL_REQUEST });
-
   const columns = useMemo<readonly Column<ContactPoint>[]>(
     () => [
       {
@@ -357,27 +611,58 @@ function ContactsSection({
     [messages]
   );
 
+  // Uses `ComponentSection` for the same reason the six governance sections do:
+  // it owns the one correct form gate. Before `FE-007`'s write was wired this
+  // section had its own `<section>` + `DataTable`, because it had no form to gate.
   return (
-    <section aria-labelledby="crm-contacts-heading" className="flex min-h-0 flex-col">
-      <h2 id="crm-contacts-heading" className="sr-only">
-        {translate(messages, 'crm.customers.profile.section.contacts')}
-      </h2>
-      <DataTable<ContactPoint>
-        messages={messages}
-        columns={columns}
-        rowId={(row) => row.id}
-        request={table.request}
-        response={table.response}
-        status={table.status}
-        onRequestChange={table.setRequest}
-        onRetry={table.refresh}
-        correlationId={table.correlationId}
-        caption={translate(messages, 'crm.customers.contacts.caption')}
-      />
-      <p className="px-2 pb-2 text-caption text-text-muted" lang={locale}>
-        {translate(messages, 'crm.customers.contacts.softDeleteNote')}
-      </p>
-    </section>
+    <ComponentSection<ContactPoint>
+      id="crm-contacts"
+      canWrite={canWrite}
+      locale={locale}
+      messages={messages}
+      titleKey="crm.customers.profile.section.contacts"
+      captionKey="crm.customers.contacts.caption"
+      footnote={translate(messages, 'crm.customers.contacts.softDeleteNote')}
+      load={load}
+      columns={columns}
+      form={(onRecorded) => (
+        <RecordForm
+          messages={messages}
+          titleKey="crm.customers.contacts.add"
+          submitKey="crm.customers.contacts.add"
+          onRecorded={onRecorded}
+          action={addContactAction.bind(null, customerId)}
+          fields={[
+            {
+              name: 'channel',
+              kind: 'select',
+              labelKey: 'crm.customers.contacts.channel',
+              required: true,
+              options: CONTACT_CHANNELS,
+              optionKeyPrefix: 'crm.channel.',
+            },
+            {
+              name: 'value',
+              kind: 'text',
+              labelKey: 'crm.customers.contacts.value',
+              required: true,
+              maxLength: MAX_CONTACT_VALUE,
+            },
+            {
+              name: 'label',
+              kind: 'text',
+              labelKey: 'crm.customers.contacts.label',
+              maxLength: MAX_LABEL,
+            },
+            {
+              name: 'isPrimary',
+              kind: 'checkbox',
+              labelKey: 'crm.customers.contacts.primary',
+            },
+          ]}
+        />
+      )}
+    />
   );
 }
 
@@ -385,17 +670,17 @@ function AddressesSection({
   locale,
   messages,
   customerId,
+  canWrite,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly customerId: string;
+  readonly canWrite: boolean;
 }) {
   const load = useCallback(
     (request: TableRequest, cursor: string | null) => listAddresses(customerId, request, cursor),
     [customerId]
   );
-  const table = useServerTable<Address>(load, { initial: INITIAL_REQUEST });
-
   const columns = useMemo<readonly Column<Address>[]>(
     () => [
       {
@@ -429,26 +714,83 @@ function AddressesSection({
   );
 
   return (
-    <section aria-labelledby="crm-addresses-heading" className="flex min-h-0 flex-col">
-      <h2 id="crm-addresses-heading" className="sr-only">
-        {translate(messages, 'crm.customers.profile.section.addresses')}
-      </h2>
-      <DataTable<Address>
-        messages={messages}
-        columns={columns}
-        rowId={(row) => row.id}
-        request={table.request}
-        response={table.response}
-        status={table.status}
-        onRequestChange={table.setRequest}
-        onRetry={table.refresh}
-        correlationId={table.correlationId}
-        caption={translate(messages, 'crm.customers.addresses.caption')}
-      />
-      <p className="px-2 pb-2 text-caption text-text-muted" lang={locale}>
-        {translate(messages, 'crm.customers.addresses.softDeleteNote')}
-      </p>
-    </section>
+    <ComponentSection<Address>
+      id="crm-addresses"
+      canWrite={canWrite}
+      locale={locale}
+      messages={messages}
+      titleKey="crm.customers.profile.section.addresses"
+      captionKey="crm.customers.addresses.caption"
+      footnote={translate(messages, 'crm.customers.addresses.softDeleteNote')}
+      load={load}
+      columns={columns}
+      form={(onRecorded) => (
+        <RecordForm
+          messages={messages}
+          titleKey="crm.customers.addresses.add"
+          submitKey="crm.customers.addresses.add"
+          onRecorded={onRecorded}
+          action={addAddressAction.bind(null, customerId)}
+          fields={[
+            {
+              name: 'addressType',
+              kind: 'select',
+              labelKey: 'crm.customers.addresses.type',
+              required: true,
+              options: ADDRESS_TYPES,
+              optionKeyPrefix: 'crm.addressType.',
+            },
+            {
+              name: 'line1',
+              kind: 'text',
+              labelKey: 'crm.customers.addresses.line1',
+              required: true,
+              maxLength: MAX_ADDRESS_LINE,
+            },
+            {
+              name: 'line2',
+              kind: 'text',
+              labelKey: 'crm.customers.addresses.line2',
+              maxLength: MAX_ADDRESS_LINE,
+            },
+            {
+              name: 'city',
+              kind: 'text',
+              labelKey: 'crm.customers.addresses.city',
+              maxLength: MAX_ADDRESS_LINE,
+            },
+            {
+              name: 'region',
+              kind: 'text',
+              labelKey: 'crm.customers.addresses.region',
+              maxLength: MAX_ADDRESS_LINE,
+            },
+            {
+              name: 'postalCode',
+              kind: 'text',
+              labelKey: 'crm.customers.addresses.postalCode',
+              maxLength: 20,
+            },
+            {
+              // Two letters, and no country is defaulted. An address with no
+              // country recorded is a state the contract permits, and guessing
+              // one from the tenant would silently attribute a foreign address
+              // to it.
+              name: 'countryCode',
+              kind: 'text',
+              labelKey: 'crm.customers.addresses.country',
+              maxLength: 2,
+              hintKey: 'crm.customers.addresses.countryHint',
+            },
+            {
+              name: 'isPrimary',
+              kind: 'checkbox',
+              labelKey: 'crm.customers.contacts.primary',
+            },
+          ]}
+        />
+      )}
+    />
   );
 }
 
@@ -469,6 +811,7 @@ function ComponentSection<Row>({
   footnote,
   load,
   columns,
+  canWrite,
   form,
 }: {
   readonly id: string;
@@ -479,6 +822,13 @@ function ComponentSection<Row>({
   readonly footnote: React.ReactNode;
   readonly load: (request: TableRequest, cursor: string | null) => Promise<unknown>;
   readonly columns: readonly Column<Row>[];
+  /**
+   * Whether this session holds the capability THIS section's write needs, from
+   * `permittedWrites`. Required rather than optional on purpose: a defaulted
+   * `canWrite` would let a new section be added without deciding, which is
+   * precisely how eight of these forms came to be ungated.
+   */
+  readonly canWrite: boolean;
   /** The write form, handed a callback that re-reads the list after a success. */
   readonly form?: (onRecorded: () => void) => React.ReactNode;
 }) {
@@ -506,8 +856,9 @@ function ComponentSection<Row>({
       <p className="px-2 text-caption text-text-muted" lang={locale}>
         {footnote}
       </p>
-      {/* The form appears only when the READ succeeded, and that is a security
-          property rather than a tidiness one.
+      {/* The form appears only when the READ succeeded AND this session holds
+          the write capability. Both are security properties rather than tidiness
+          ones, and for a while only the first was here.
 
           Every one of these sections needs `crm.customer.read` to list and a
           STRONGER capability to write. So a caller who was denied the list
@@ -517,6 +868,20 @@ function ComponentSection<Row>({
           `contact_restriction` in its options whether or not a row was ever
           returned. This was caught by the fail-closed test, which started
           failing the moment the form was wired in.
+
+          The read gate alone was NOT enough, and the reasoning above says why
+          without following it through: "a stronger capability to write" means
+          a caller who passed the read gate may still hold none of the eight
+          write capabilities. `crm.customer.read` is exactly the permission the
+          profile page already requires, so before `canWrite` every operator who
+          could open a customer was offered every write form on it — including
+          the restrictions form and its vocabulary. The one section that had a
+          real gate was lifecycle status, and it sat in the header rather than
+          here (`P1-27-SEC-001`).
+
+          Both conditions live at this single point deliberately. Eight sections
+          each deciding for themselves is eight chances to decide wrong, and the
+          evidence is that eight of nine did.
 
           The list is RE-READ after a write rather than patched locally: the row
           the backend stored is the one to show, and a locally appended row would
@@ -530,7 +895,7 @@ function ComponentSection<Row>({
           the first version of this line, and only the inverse test ("does offer
           the form when the read succeeded") could tell the difference.
           `response` is non-null iff the page came back `ok`. */}
-      {table.response ? form?.(table.refresh) : null}
+      {table.response && canWrite ? form?.(table.refresh) : null}
     </section>
   );
 }
@@ -540,10 +905,12 @@ function PreferencesSection({
   locale,
   messages,
   customerId,
+  canWrite,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly customerId: string;
+  readonly canWrite: boolean;
 }) {
   const load = useCallback(
     (request: TableRequest, cursor: string | null) => listPreferences(customerId, request, cursor),
@@ -591,6 +958,7 @@ function PreferencesSection({
   return (
     <ComponentSection<Preference>
       id="crm-preferences"
+      canWrite={canWrite}
       locale={locale}
       messages={messages}
       titleKey="crm.customers.profile.section.preferences"
@@ -649,10 +1017,12 @@ function ConsentsSection({
   locale,
   messages,
   customerId,
+  canWrite,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly customerId: string;
+  readonly canWrite: boolean;
 }) {
   const load = useCallback(
     (request: TableRequest, cursor: string | null) => listConsents(customerId, request, cursor),
@@ -702,6 +1072,7 @@ function ConsentsSection({
   return (
     <ComponentSection<Consent>
       id="crm-consents"
+      canWrite={canWrite}
       locale={locale}
       messages={messages}
       titleKey="crm.customers.profile.section.consents"
@@ -774,10 +1145,12 @@ function NotesSection({
   locale,
   messages,
   customerId,
+  canWrite,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly customerId: string;
+  readonly canWrite: boolean;
 }) {
   // The one component read whose response carries more than a page. The flag
   // is held here rather than inside `useServerTable` because it is about the
@@ -828,6 +1201,7 @@ function NotesSection({
   return (
     <ComponentSection<Note>
       id="crm-notes"
+      canWrite={canWrite}
       locale={locale}
       messages={messages}
       titleKey="crm.customers.profile.section.notes"
@@ -895,10 +1269,12 @@ function AlertsSection({
   locale,
   messages,
   customerId,
+  canWrite,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly customerId: string;
+  readonly canWrite: boolean;
 }) {
   const load = useCallback(
     (request: TableRequest, cursor: string | null) => listAlerts(customerId, request, cursor),
@@ -911,9 +1287,14 @@ function AlertsSection({
         id: 'severity',
         headerKey: 'crm.customers.alerts.severity',
         // Ranked by meaning, never by label. `severity` is `text` with a CHECK,
-        // so an alphabetical sort ranks `info` above `warning`. The backend
-        // orders by explicit rank; this only decides how loud each row looks,
-        // using the same ranking so the two cannot disagree.
+        // so an alphabetical sort ranks `info` above `warning`.
+        //
+        // This decides how LOUD a row looks, not where it sits. The rows arrive
+        // `effective_from DESC` and the Backend states that `severity` is
+        // deliberately not its sort key — an earlier version of this comment
+        // said the opposite ("the backend orders by explicit rank"), which is
+        // the claim `contract-archaeology.md:99-101` inverted and three files
+        // copied. See `profile-contract.ts` for the full correction.
         cell: (row) => (
           <span
             className={
@@ -964,6 +1345,7 @@ function AlertsSection({
   return (
     <ComponentSection<Alert>
       id="crm-alerts"
+      canWrite={canWrite}
       locale={locale}
       messages={messages}
       titleKey="crm.customers.profile.section.alerts"
@@ -1020,10 +1402,12 @@ function TagsSection({
   locale,
   messages,
   customerId,
+  canWrite,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly customerId: string;
+  readonly canWrite: boolean;
 }) {
   const load = useCallback(
     (request: TableRequest, cursor: string | null) => listTags(customerId, request, cursor),
@@ -1073,6 +1457,7 @@ function TagsSection({
   return (
     <ComponentSection<Tag>
       id="crm-tags"
+      canWrite={canWrite}
       locale={locale}
       messages={messages}
       titleKey="crm.customers.profile.section.tags"
@@ -1124,10 +1509,12 @@ function RestrictionsSection({
   locale,
   messages,
   customerId,
+  canWrite,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly customerId: string;
+  readonly canWrite: boolean;
 }) {
   const load = useCallback(
     (request: TableRequest, cursor: string | null) => listRestrictions(customerId, request, cursor),
@@ -1182,6 +1569,7 @@ function RestrictionsSection({
   return (
     <ComponentSection<Restriction>
       id="crm-restrictions"
+      canWrite={canWrite}
       locale={locale}
       messages={messages}
       titleKey="crm.customers.profile.section.restrictions"
@@ -1271,16 +1659,43 @@ function TimelineSection({
         cell: (row) => <span className="break-words">{row.title}</span>,
       },
       {
-        id: 'actorId',
+        id: 'actor',
         headerKey: 'crm.customers.timeline.actor',
-        // A system-caused event has no actor, and that is a real distinction:
-        // "the system expired this consent" is not "somebody withdrew it".
-        cell: (row) =>
-          row.actorId ?? (
+        /*
+         * Three states, and the middle one used to be a uuid.
+         *
+         * This cell rendered `row.actorId` directly — a raw identifier under a
+         * column headed "Recorded by", which names nobody and is exactly the
+         * defect `P1-27-INT-026` fixed on the vehicle attribute ledger. That
+         * remediation was scoped to the finding that raised it rather than to
+         * the property it established, so the customer timeline — same shape,
+         * same header, same backend publishing an id and no name — was never
+         * swept.
+         *
+         *   actorId == null   a SYSTEM event. A real distinction worth keeping:
+         *                     "the system expired this consent" is not
+         *                     "somebody withdrew it".
+         *   actorName present the person, named.
+         *   otherwise         a phrase. `undefined` means the API predates the
+         *                     identity surface and `null` means this caller may
+         *                     not be told; neither is a licence to print the id.
+         */
+        cell: (row) => {
+          if (row.actorId == null) {
+            return (
+              <span className="text-text-muted">
+                {translate(messages, 'crm.customers.timeline.system')}
+              </span>
+            );
+          }
+          return typeof row.actorName === 'string' && row.actorName.trim().length > 0 ? (
+            row.actorName
+          ) : (
             <span className="text-text-muted">
-              {translate(messages, 'crm.customers.timeline.system')}
+              {translate(messages, 'crm.customers.timeline.actorUnavailable')}
             </span>
-          ),
+          );
+        },
       },
     ],
     [locale, messages]
@@ -1289,6 +1704,10 @@ function TimelineSection({
   return (
     <ComponentSection<TimelineEntry>
       id="crm-timeline"
+      // The timeline is a read. It passes no `form`, so this only makes the
+      // absence deliberate rather than accidental — `canWrite` is required
+      // precisely so a section cannot skip the question.
+      canWrite={false}
       locale={locale}
       messages={messages}
       titleKey="crm.customers.profile.section.timeline"
@@ -1310,6 +1729,13 @@ function TimelineSection({
  * cursor carries microseconds and a millisecond value silently skips rows. That
  * is `P1-27-INT-006`, and it is why nothing here ever feeds a formatted instant
  * back into a request.
+ *
+ * Formatted through `formatDateTime`, never through `Intl` directly. A `Locale`
+ * is `'en' | 'ar'`, and those are not the tags this product formats in:
+ * `intlLocale` maps `en` to `en-GB` and `ar` to `ar-JO-u-nu-latn`. Passing the
+ * bare `'en'` to `Intl` asks for US convention, so this cell printed
+ * "Mar 4, 2026, 12:14 PM" while the audit log two screens away printed
+ * "4 Mar 2026, 12:14" for the same instant.
  */
 function FormattedInstant({ locale, value }: { readonly locale: Locale; readonly value: string }) {
   const parsed = new Date(value);
@@ -1319,7 +1745,7 @@ function FormattedInstant({ locale, value }: { readonly locale: Locale; readonly
   }
   return (
     <time dateTime={value} dir="ltr">
-      {new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' }).format(parsed)}
+      {formatDateTime(parsed, locale)}
     </time>
   );
 }

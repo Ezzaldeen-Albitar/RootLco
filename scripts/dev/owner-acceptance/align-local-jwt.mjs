@@ -135,13 +135,75 @@ export function alignLocalJwtSigning({ project, log = () => {} }) {
   return { changed: true, reason: 'recreated with HS256 shared-secret signing' };
 }
 
-/** Confirms the provider now mints a token the Backend's verifier can read. */
+/**
+ * How long to let a just-recreated provider come up, and how often to ask.
+ *
+ * `recreateGoTrue` above is `docker rm -f` followed by `docker run -d`. Both
+ * return as soon as the daemon has accepted the instruction, not when the
+ * process inside the container is serving — so the first token request after it
+ * races the container's own start-up.
+ *
+ * It lost that race on a hosted runner: the recreate returned at 21:38:21.029 and
+ * the single probe got a 502 ten milliseconds later, which this function then
+ * reported as "the token endpoint answered 502". That reads as an authentication
+ * refusal and it was a readiness gap — the run failed and the whole authenticated
+ * browser tier collected zero tests behind it.
+ *
+ * Thirty seconds is well past a cold GoTrue start and still short enough that a
+ * genuinely broken provider fails the job rather than hanging it.
+ */
+const READINESS_TIMEOUT_MS = 30_000;
+const READINESS_INTERVAL_MS = 500;
+
+/** A 502/503/504 is the proxy saying "not yet", not the provider saying "no". */
+function isNotReadyYet(status) {
+  return status === 502 || status === 503 || status === 504;
+}
+
+/**
+ * Confirms the provider now mints a token the Backend's verifier can read.
+ *
+ * Retries only while the answer is a gateway status or the connection is
+ * refused. A 400 or a 401 is a real answer — a wrong password stays wrong — and
+ * is returned immediately rather than waited out.
+ */
 export async function assertHs256(apiUrl, anonKey, { email, password }) {
-  const response = await fetch(`${apiUrl}/auth/v1/token?grant_type=password`, {
-    method: 'POST',
-    headers: { apikey: anonKey, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password }),
-  });
+  const deadline = Date.now() + READINESS_TIMEOUT_MS;
+  let response;
+  /*
+   * Declared without a value on purpose.
+   *
+   * Every path through the loop below assigns it before the deadline check can
+   * read it, so an initialiser here would be dead — and `js/useless-assignment-
+   * to-local` says so, at very-high precision. It caught the first version of
+   * this function, whose placeholder string could never reach a caller.
+   */
+  let lastDetail;
+
+  for (;;) {
+    try {
+      response = await fetch(`${apiUrl}/auth/v1/token?grant_type=password`, {
+        method: 'POST',
+        headers: { apikey: anonKey, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
+      if (response.ok || !isNotReadyYet(response.status)) break;
+      lastDetail = `token endpoint answered ${response.status}`;
+    } catch (error) {
+      // ECONNREFUSED while the container is still binding its port.
+      response = undefined;
+      lastDetail = `token endpoint unreachable: ${error instanceof Error ? error.message : String(error)}`;
+    }
+    if (Date.now() >= deadline) {
+      return {
+        ok: false,
+        algorithm: null,
+        detail: `${lastDetail} — still not ready ${READINESS_TIMEOUT_MS / 1000}s after the identity provider was recreated`,
+      };
+    }
+    await new Promise((resolve) => setTimeout(resolve, READINESS_INTERVAL_MS));
+  }
+
   if (!response.ok) {
     return { ok: false, algorithm: null, detail: `token endpoint answered ${response.status}` };
   }

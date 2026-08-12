@@ -20,9 +20,27 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { evaluate, DECLARED_JOBS, toMarkdown } from '../../scripts/ci/evaluate-ci-gate.mjs';
+import {
+  evaluate,
+  DECLARED_JOBS,
+  toMarkdown,
+  acceptableResults,
+  STATE,
+} from '../../scripts/ci/evaluate-ci-gate.mjs';
 
 type JobResult = 'success' | 'failure' | 'cancelled' | 'skipped';
+
+/**
+ * A figure in rendered markdown, matched as a figure rather than as a substring.
+ *
+ * `QA005-05`: a number compared with `toContain` is bounded by nothing, so
+ * `toContain('926')` passes on `1926` and on `9261`. Refusing a digit or a
+ * decimal point on either side makes the assertion two-sided.
+ */
+const exactly = (value: string | number): RegExp =>
+  new RegExp(
+    String.raw`(?<![\d.])${String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\d.])`
+  );
 
 /** A `needs` context in which every declared job succeeded. */
 function allSucceeded(
@@ -212,10 +230,22 @@ describe('ci-gate', () => {
       }
     );
     expect(markdown).toContain('**Go**');
-    expect(markdown).toContain('91.06%');
-    expect(markdown).toContain('926');
-    expect(markdown).toContain('119');
-    expect(markdown).toContain('a677eb05');
+    /*
+     * `QA005-05`. These were `toContain('926')` and friends — a substring match
+     * on a number, which is satisfied by `1926` and by `9261` alike. A renderer
+     * that concatenated two totals, or dropped a separator, would have passed
+     * every one of them; only the digits going MISSING was ever detectable.
+     *
+     * `exactly()` refuses an adjacent digit or decimal point on either side, so
+     * the rendered token has to be the figure itself rather than a substring of
+     * something larger.
+     */
+    expect(markdown).toMatch(exactly('91.06%'));
+    expect(markdown).toMatch(exactly(926));
+    expect(markdown).toMatch(exactly(119));
+    // The schema hash is hex, so the boundary that matters is a hex character
+    // rather than a digit: `a677eb05a` must not satisfy `a677eb05`.
+    expect(markdown).toMatch(/(?<![0-9a-f])a677eb05(?![0-9a-f])/);
     for (const job of DECLARED_JOBS as Array<{ id: string }>) {
       expect(markdown).toContain(job.id);
     }
@@ -269,6 +299,10 @@ describe('ci-gate', () => {
 
     expect(governed).toEqual([
       'application-build',
+      // The AUTHENTICATED browser tier. Its absence from this list is what let
+      // both gates report Go while the repository's only end-to-end
+      // tenant-isolation proof was red.
+      'authenticated-browser',
       'change-detection',
       'code-security',
       'container-security',
@@ -284,11 +318,203 @@ describe('ci-gate', () => {
       // commands, so the web application's own lint had never run.
       'web-quality',
     ]);
+    expect(governed, 'the authenticated browser tier is not governed').toContain(
+      'authenticated-browser'
+    );
     const unconditional = (DECLARED_JOBS as Array<{ id: string; alwaysRequired: boolean }>)
       .filter((j) => j.alwaysRequired)
       .map((j) => j.id);
     expect(unconditional).toContain('hosted-clean-room');
     expect(unconditional).toContain('secret-scan');
     expect(unconditional).toContain('change-detection');
+    expect(unconditional).toContain('authenticated-browser');
+  });
+
+  it('the PROTECTED gate depends on every governed job it can, read from the workflow', () => {
+    /*
+     * The other half of the reconciliation above, and it had no test at all —
+     * which is how `authenticated-browser` came to run in this workflow for a
+     * whole phase while `protected-gate` did not wait for it.
+     *
+     * `change-detection` is the one exception and it is a real one: it exists
+     * only on the pull-request workflow, and `protected-classification.mjs`
+     * records it as satisfied by construction because a protected run performs
+     * no change detection and permits no skip.
+     */
+    const workflow = readFileSync(
+      join(__dirname, '../../.github/workflows/protected-develop-verification.yml'),
+      'utf8'
+    );
+    const jobsBlock = workflow.slice(workflow.indexOf('\njobs:'));
+    const declaredInYaml = [...jobsBlock.matchAll(/^ {2}([a-z][a-z0-9-]*):$/gm)].map((m) => m[1]);
+
+    const needsBlock = /^ {2}protected-gate:$[\s\S]*?^ {4}needs:$\n((?:^ {6}- .+$\n)+)/m.exec(
+      workflow
+    );
+    expect(needsBlock, 'protected-gate must declare an explicit needs list').not.toBeNull();
+    const gateNeeds = [...(needsBlock?.[1] ?? '').matchAll(/^ {6}- (.+)$/gm)]
+      .map((m) => m[1]?.trim())
+      .filter((id): id is string => Boolean(id));
+
+    const inYaml = declaredInYaml.filter((id) => id !== 'protected-gate').sort();
+    expect(inYaml, 'protected-develop-verification.yml jobs vs protected-gate needs').toEqual(
+      [...gateNeeds].sort()
+    );
+
+    const governed = (DECLARED_JOBS as Array<{ id: string }>)
+      .map((j) => j.id)
+      .filter((id) => id !== 'change-detection')
+      .sort();
+    expect(governed, 'DECLARED_JOBS vs the protected workflow').toEqual(inYaml);
+    expect(
+      gateNeeds,
+      'protected-gate does not wait for the authenticated browser tier, so it can report Go ' +
+        'while that check is red — the exact hole this job was moved under a gate to close'
+    ).toContain('authenticated-browser');
+  });
+});
+
+/**
+ * The security-gated job: three states, and only one of them is a pass.
+ *
+ * `authenticated-browser` stands a full Supabase stack, a production API and a
+ * real operator account up on the runner, so a FORK pull request is deliberately
+ * refused it. That refusal is the one circumstance in which a job the gate calls
+ * unconditionally required may be absent — and it is recognised only when the
+ * caller SAYS SO. Everything else about a missing result is a failure.
+ *
+ * These four cases are the mutation proofs for that arrangement, written as
+ * tests rather than as a one-off experiment so they keep proving it.
+ */
+describe('the authenticated browser tier is gate authority', () => {
+  const JOB = 'authenticated-browser';
+  const stateOf = (result: ReturnType<typeof evaluate>, id: string) =>
+    (result.jobs as Array<{ id: string; state?: string }>).find((j) => j.id === id)?.state;
+
+  it('A — a failing authenticated-browser cannot produce a Go', () => {
+    const result = evaluate(
+      allSucceeded({ [JOB]: 'failure' }),
+      classificationRequiringEverything(),
+      {},
+      { trustedContext: true }
+    );
+    expect(result.decision).toBe('No-Go');
+    expect(result.failures.join('\n')).toContain(JOB);
+    expect(stateOf(result, JOB)).toBe(STATE.FAILED);
+  });
+
+  it('C — a required-but-skipped run fails closed in a trusted context', () => {
+    const result = evaluate(
+      allSucceeded({ [JOB]: 'skipped' }),
+      classificationRequiringEverything(),
+      {},
+      { trustedContext: true }
+    );
+    expect(result.decision).toBe('No-Go');
+    expect(result.failures.join('\n')).toMatch(/skipped although this run IS a trusted context/);
+    expect(stateOf(result, JOB)).toBe(STATE.FAILED);
+  });
+
+  it('C — a skip with NO eligibility statement also fails closed', () => {
+    /*
+     * The dangerous middle. An `if:` that failed to resolve, an unset variable,
+     * a caller that simply forgot — all of them produce "no statement", and the
+     * tempting reading of "no statement" is the permissive one. It is the
+     * failing one here: silence is not a security refusal.
+     */
+    const result = evaluate(
+      allSucceeded({ [JOB]: 'skipped' }),
+      classificationRequiringEverything(),
+      {},
+      {}
+    );
+    expect(result.decision).toBe('No-Go');
+    expect(result.failures.join('\n')).toMatch(/no\s+`?--trusted-context`?\s+statement/);
+    expect(stateOf(result, JOB)).toBe(STATE.FAILED);
+  });
+
+  it('D — an untrusted fork is NOT_ELIGIBLE_FOR_SECURITY_REASON, not a silent pass', () => {
+    const result = evaluate(
+      allSucceeded({ [JOB]: 'skipped' }),
+      classificationRequiringEverything(),
+      {},
+      { trustedContext: false }
+    );
+    expect(result.decision).toBe('Go');
+    expect(stateOf(result, JOB)).toBe(STATE.NOT_ELIGIBLE);
+    // The state is PUBLISHED, not merely computed: a reader of a Go must be able
+    // to tell "this was proved" from "this run was not allowed to prove it".
+    expect(result.notes.join('\n')).toContain(STATE.NOT_ELIGIBLE);
+    expect(result.notes.join('\n')).toMatch(/UNPROVEN/);
+    expect(result.trustedContext).toBe(false);
+    expect(result.securityGated).toEqual([
+      { id: JOB, requires: expect.any(String), state: STATE.NOT_ELIGIBLE },
+    ]);
+  });
+
+  it('the security excuse is not available to any other job', () => {
+    /*
+     * The way this arrangement would rot: `--trusted-context false` becoming a
+     * blanket amnesty. It applies to the jobs that DECLARE an eligibility and to
+     * nothing else, so an untrusted fork still cannot skip the clean room.
+     */
+    const result = evaluate(
+      allSucceeded({ 'hosted-clean-room': 'skipped' }),
+      classificationRequiringEverything(),
+      {},
+      { trustedContext: false }
+    );
+    expect(result.decision).toBe('No-Go');
+    expect(result.failures.join('\n')).toMatch(/unconditionally required/);
+  });
+
+  it('an eligible run still has to actually pass', () => {
+    const result = evaluate(
+      allSucceeded(),
+      classificationRequiringEverything(),
+      {},
+      { trustedContext: false }
+    );
+    expect(result.decision).toBe('Go');
+    expect(stateOf(result, JOB)).toBe(STATE.PASSED);
+  });
+
+  it('`skipped` is not an acceptable RESULT for a required or security-gated job', () => {
+    /*
+     * The replaced constant, and why it was replaced. `ACCEPTABLE_RESULTS` was a
+     * module-level `Set(['success', 'skipped'])` — exported, imported by nothing,
+     * read by nothing, and stating a policy that was never the policy for an
+     * unconditionally required job. It is derived per job now, and it is
+     * consulted, which is the difference between a rule and a comment.
+     */
+    const declared = DECLARED_JOBS as Array<{
+      id: string;
+      alwaysRequired: boolean;
+      securityEligibility?: string;
+    }>;
+    for (const job of declared) {
+      const acceptable = acceptableResults(job);
+      expect(acceptable.has('success'), `${job.id} cannot pass at all`).toBe(true);
+      expect(
+        acceptable.has('skipped'),
+        `${job.id} may be skipped, which contradicts its own declaration`
+      ).toBe(!job.alwaysRequired && !job.securityEligibility);
+    }
+  });
+
+  it('the summary says WHICH state, so a Go is readable', () => {
+    const markdown = toMarkdown(
+      evaluate(
+        allSucceeded({ [JOB]: 'skipped' }),
+        classificationRequiringEverything(),
+        { actualSha: 'e'.repeat(40) },
+        { trustedContext: false }
+      ),
+      classificationRequiringEverything(),
+      {}
+    );
+    expect(markdown).toContain('### Security-gated assurance');
+    expect(markdown).toContain(STATE.NOT_ELIGIBLE);
+    expect(markdown).toContain('Trusted context: `false`');
   });
 });

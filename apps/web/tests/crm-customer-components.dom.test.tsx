@@ -5,6 +5,11 @@ import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
 import { renderLtr } from './render';
 import { severityRank, SEVERITY_RANK } from '@/features/crm/customers/profile-contract';
+import {
+  NO_WRITES,
+  permittedWrites,
+  WRITE_PERMISSIONS,
+} from '@/features/crm/customers/governance-contract';
 import type { CustomerDetail } from '@/features/crm/customers/profile-contract';
 
 /**
@@ -43,7 +48,6 @@ vi.mock('@/features/crm/customers/profile-api', () => ({
 // `authorizedClient` and calls `cookies()` outside a request scope.
 vi.mock('@/features/crm/customers/identity-api', () => ({
   listTimeline: async () => page([]),
-  listHistory: async () => page([]),
   listDuplicates: async () => page([]),
   reviewDuplicateAction: vi.fn(),
 }));
@@ -79,10 +83,19 @@ const CUSTOMER: CustomerDetail = {
   tradeName: null,
 };
 
-/** Opens one section by its tab label and waits for the first read. */
-async function open(section: RegExp) {
+/**
+ * Opens one section by its tab label and waits for the first read.
+ *
+ * `writes` defaults to nothing, which is what these fail-closed cases want. The
+ * one case that asserts a form IS offered passes the capability explicitly,
+ * because since `P1-27-SEC-001` a successful read is necessary and no longer
+ * sufficient — the caller must also hold the write.
+ */
+async function open(section: RegExp, writes = NO_WRITES) {
   const user = userEvent.setup();
-  renderLtr(<CustomerProfileScreen locale="en" messages={en} customer={CUSTOMER} />);
+  renderLtr(
+    <CustomerProfileScreen locale="en" messages={en} customer={CUSTOMER} writes={writes} />
+  );
   await user.click(screen.getByRole('button', { name: section }));
 }
 
@@ -207,11 +220,13 @@ describe('restrictions fail closed', () => {
     ).toBeNull();
   });
 
-  it('does offer the write form when the read succeeded', async () => {
+  it('does offer the write form when the read succeeded and the caller may write', async () => {
     listRestrictions.mockResolvedValue(page([]));
-    await open(/Restrictions/);
+    await open(/Restrictions/, permittedWrites([WRITE_PERMISSIONS.restriction]));
     // The inverse. Without it, a screen that never rendered any form would
-    // satisfy the assertion above.
+    // satisfy the assertion above — and after `P1-27-SEC-001` added the second
+    // condition, this is the case that proves the gate did not simply close on
+    // everybody.
     expect(
       await screen.findByRole('button', { name: en['crm.customers.restrictions.impose'] })
     ).toBeInTheDocument();

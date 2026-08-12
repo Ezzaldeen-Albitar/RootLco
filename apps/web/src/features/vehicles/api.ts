@@ -19,6 +19,7 @@ import {
   type VehicleSearchCriteria,
   type VehicleSearchHit,
 } from './contract';
+import { fieldErrorsFrom } from '@/lib/forms/field-errors';
 
 /**
  * Vehicle search (`FE-017`) and creation (`FE-018`) adapters.
@@ -142,19 +143,44 @@ export async function createVehicleAction(
   });
 
   if (!parsed.success) {
-    const errors: Record<string, string> = {};
-    for (const issue of parsed.error.issues) {
-      const key = issue.path[0];
-      if (typeof key === 'string' && !errors[key]) errors[key] = issue.message;
-    }
-    return invalid(errors, attempt);
+    return invalid(fieldErrorsFrom(parsed.error), attempt);
   }
 
   const client = await authorizedClient();
   if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
 
   const result = await client.send<CreatedVehicle>('POST', '/api/v1/vehicles', parsed.data);
-  if (!result.ok) return fromFailure(result, attempt);
+  if (!result.ok) {
+    const state = fromFailure(result, attempt);
+    /*
+     * A 409 says a value on this vehicle is already in use. It does NOT say
+     * WHICH, and this action must not guess.
+     *
+     * An earlier version of this block mapped every 409 to a duplicate-VIN error
+     * against the `vin` field, on the premise that the active-VIN collision is
+     * the only 409 `POST /vehicles` raises. That premise is false. `veh.vehicles`
+     * carries TWO tenant-scoped unique indexes —
+     *
+     *   uq_vehicles_active_vin             (tenant_id, vin_normalized)
+     *   uq_vehicles_active_display_number  (tenant_id, display_number)
+     *
+     * — `insertVehicle` writes both columns, and `mapWriteConflict` branches on
+     * SQLSTATE alone and never reads the constraint name. So a duplicate
+     * operator-typed REFERENCE NUMBER raises the same `23505`, becomes the same
+     * `ERR-RES-002`, and would have been rendered as "This VIN is already used"
+     * — beside the VIN field, about a value the operator did not duplicate.
+     * A wrong specific answer is worse than a right vague one.
+     *
+     * The copy is therefore honest about what is known: something is already in
+     * use, and it is not said to be the VIN. Making this specific needs the
+     * BACKEND to distinguish the two constraints (`P1-27-INT-027`), not a guess
+     * here. Recorded in `findings.md`, owned by P1-17.
+     */
+    if (result.kind === 'conflict') {
+      return { ...state, messageKey: 'vehicles.create.conflict' };
+    }
+    return state;
+  }
 
   return {
     status: 'success',

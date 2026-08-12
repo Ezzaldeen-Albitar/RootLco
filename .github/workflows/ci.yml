@@ -47,6 +47,17 @@ jobs:
       # in docs/phase-1/phase-1-1/security-readiness.md.
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Full history, because `tests/ci/p1-27-doc-counts.test.ts` checks
+          # RECORDED MEASUREMENTS against the trees they describe: a superseded
+          # head's web test-file count, and the candidate a hosted run is cited
+          # against. Those commits are reachable in this repository and absent
+          # from a depth-1 clone, so the checks passed locally and failed here —
+          # one of them reporting that a commit which exists "is not a commit in
+          # this repository". Truncating the history does not make the evidence
+          # weaker to look at; it makes it impossible to look at, which the
+          # anti-vacuity guard then correctly reports as measuring nothing.
+          fetch-depth: 0
 
       - name: Set up Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0

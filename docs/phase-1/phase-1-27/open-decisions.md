@@ -63,14 +63,17 @@ repository.
 
 ### 0.2 The entries
 
-| id             | subject                                              | type                                           | status                                           |
-| -------------- | ---------------------------------------------------- | ---------------------------------------------- | ------------------------------------------------ |
-| `P1-OD-017`    | Duplicate and merge rules, customers and vehicles    | Business decision — external                   | **OPEN**                                         |
-| `P1-OD-025`    | Vehicle document and media file policy               | Business decision — external                   | **OPEN**                                         |
-| `P1-27-OD-001` | Vehicle reference-data source                        | Commercial decision reserved to the Owner      | **Proposed — not recorded, no number allocated** |
-| `P1-27-OD-002` | The customer-creation section model (Owner defect 6) | Scope decision with a Backend prerequisite     | **Open — partly addressed**                      |
-| `P1-27-OD-003` | A candidate count on either duplicate queue          | Engineering decision, ratification requested   | **Open — implemented decision-neutrally**        |
-| `P1-27-OD-004` | Vehicle document creation                            | Capability gap with a scope decision behind it | **Open — no create operation exists**            |
+| id             | subject                                              | type                                                     | status                                                                         |
+| -------------- | ---------------------------------------------------- | -------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| `P1-OD-017`    | Duplicate and merge rules, customers and vehicles    | Business decision — external                             | **OPEN**                                                                       |
+| `P1-OD-025`    | Vehicle document and media file policy               | Business decision — external                             | **OPEN**                                                                       |
+| `P1-27-OD-001` | Vehicle reference-data source                        | Commercial decision reserved to the Owner                | **Proposed — not recorded, no number allocated**                               |
+| `P1-27-OD-002` | The customer-creation section model (Owner defect 6) | Scope decision with a Backend prerequisite               | **Open — partly addressed**                                                    |
+| `P1-27-OD-003` | A candidate count on either duplicate queue          | Engineering decision, ratification requested             | **Open — implemented decision-neutrally**                                      |
+| `P1-27-OD-004` | Vehicle document creation                            | Capability gap with a scope decision behind it           | **Open — no create operation exists**                                          |
+| `P1-27-OD-005` | Concurrency semantics for CRM and Vehicle writes     | Engineering decision, ratification requested             | **Decided — last-writer-wins, stated and gated**                               |
+| `P1-27-OD-006` | Alert routing — what it means at the web tier        | Engineering decision, ratification requested             | **Decided — routing built, paging absent and gated**                           |
+| `P1-27-OD-007` | What `DOC-001` is judged on — §6's eighteen paths    | Reading of the canonical wording, ratification requested | **Decided — synchronization, not coverage; paths stay undischarged and gated** |
 
 ### 0.3 What every entry states
 
@@ -179,10 +182,10 @@ with in a diff rather than deleted around:
 
 | #   | where                                                               | what it refuses                                                                                                                                                                                                 |
 | --- | ------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | `scripts/ci/check-p1-27-frontend.mjs`, rule `no-merge-caller`       | Any of `customer-merge`, `vehicle-merge`, a `"/merge"` path literal or a `merge*Action` export, across the 40 files the gate owns                                                                               |
+| 1   | `scripts/ci/check-p1-27-frontend.mjs`, rule `no-merge-caller`       | Any of `customer-merge`, `vehicle-merge`, a `"/merge"` path literal or a `merge*Action` export, across the **69** files the gate owns, in all three canonical trees                                             |
 | 2   | `apps/web/tests/crm-duplicate-review.test.ts`                       | Describe block "the merge affordance is absent, not merely unused": `validateMerge`, `MergeInput` and `mergeCustomerAction` must all be absent                                                                  |
 | 3   | `apps/web/tests/vehicle-duplicates.test.ts:73`                      | No export of the vehicle duplicates adapter whose name matches `/merge/i`                                                                                                                                       |
-| 4   | `apps/web/tests/vehicle-screens.dom.test.tsx:234,236`               | Line 234 walks **every rendered button** and refuses any whose text matches `/merge/i`; line 236 refuses any button whose accessible name matches `/merge/i`                                                    |
+| 4   | `apps/web/tests/vehicle-screens.dom.test.tsx:264,236`               | Line 234 walks **every rendered button** and refuses any whose text matches `/merge/i`; line 236 refuses any button whose accessible name matches `/merge/i`                                                    |
 | 5   | `apps/web/tests/e2e/authenticated/crm-and-vehicles.spec.ts:162-163` | Against the real stack, real database and a real session: zero merge buttons, zero merge links                                                                                                                  |
 | 6   | `scripts/dev/owner-acceptance/context.mjs:184`                      | `WITHHELD_PERMISSIONS = ['crm.customer.merge', 'veh.vehicle.merge']` — the Owner-acceptance role is granted 30 codes and neither of these, so an acceptance run cannot pass while the affordance quietly exists |
 
@@ -287,10 +290,10 @@ A feature flag implies something to switch on. There is nothing behind this one.
 
 Two mechanisms keep that true rather than merely stated:
 
-| mechanism                                                    | what it refuses                                                                                                       |
-| ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------- |
-| `scripts/ci/check-p1-27-frontend.mjs`, rule `no-upload-path` | `new FormData()`, `multipart/form-data` and `type="file"` across all 40 P1-27 files                                   |
-| `apps/web/tests/vehicle-duplicates.test.ts:203`              | No export of `@/features/vehicles/documents-api` whose name matches `upload`, `media` or `attach`, case-insensitively |
+| mechanism                                                                                   | what it refuses                                                                                                                                                                                                                                                                                                                                                                                                                |
+| ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `scripts/ci/check-p1-27-frontend.mjs`, rules `no-upload-path` and `no-invented-media-limit` | Seven file-access constructs — `new FormData(` with or without an argument, `multipart/form-data`, a file input in any spelling, `FileReader`, an `input.files` list, an `onDrop=`/`onDragOver=` target and a `DataTransfer` — plus every invented limit: a `MAX_FILE_SIZE_`-style constant, byte arithmetic, an accepted-MIME list, an extension allow-list or an `accept=` attribute. Across all **69** files the gate scans |
+| `apps/web/tests/vehicle-duplicates.test.ts:203`                                             | No export of `@/features/vehicles/documents-api` whose name matches `upload`, `media` or `attach`, case-insensitively                                                                                                                                                                                                                                                                                                          |
 
 ### The decision alone does not make upload reachable, and the difference is worth stating
 
@@ -681,7 +684,7 @@ records, a fabricated number is the worst possible decoration.
 
 The refusal is enforced rather than intended: `scripts/ci/check-p1-27-frontend.mjs`
 rule `no-invented-total` refuses `total: rows`, `total: items` and
-`total: <anything>.length` across all 40 files the gate owns.
+`total: <anything>.length` across all **69** files the gate owns.
 
 ### A contrast worth keeping, because the rule is narrower than it sounds
 
@@ -791,6 +794,366 @@ worked around one would be building on a fact the platform does not hold.
 
 ---
 
+## `P1-27-OD-005` — concurrency semantics for CRM and Vehicle writes
+
+**Type:** engineering decision, ratification requested · **Status:** **Decided —
+last-writer-wins, stated and gated**
+
+**Owner:** Backend remediation, **P1-16** (customers) and **P1-17** (vehicles),
+by the `P1-27-INT-###` route in [`canonical-plan.md`](canonical-plan.md) §4.
+No Frontend phase can own it — see "Why this could not be built here".
+· **Review by:** 2026-11-30
+
+**The decision.** P1-27 ships **last-writer-wins** on every CRM and Vehicle
+write, states it where an operator can see it, and claims no detection it does
+not have. It does **not** add client-supplied optimistic concurrency, and it
+does **not** send `If-Match` from any P1-27 adapter.
+
+This follows the `P1-20-A-06` precedent ("No alert routing"): a capability is
+deliberately not delivered, the reason is that delivering it here could only
+produce an **unverifiable claim**, and the non-delivery is written down rather
+than left for a reader to discover.
+
+### The semantics, established against the API source
+
+Five facts, each checked against `apps/api` rather than inferred from a
+docblock. The first is the one a shorter summary gets wrong.
+
+| fact                                                                                                                                                                                            | where                                                                                  |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| The platform **has** a complete optimistic-concurrency mechanism — a `record_version` column, `If-Match` parsing, `ERR-CON-001` (409) and `ERR-CON-002` (428) — and **40 route modules** use it | `apps/api/src/server/db/concurrency.ts`; `route-handler.ts:323`                        |
+| **Not one** route under `customers/`, `customer-duplicates/`, `vehicles/` or `vehicle-duplicates/` declares `versionGuarded: true`                                                              | every route module under those four trees                                              |
+| **Not one** of them reads `expectedVersion` either, so an `If-Match` sent from here would be parsed by `parseIfMatch(headers, false)` and then **discarded**                                    | `route-handler.ts:323`, `:351`                                                         |
+| `ERR-CON-001` **is** genuinely raised on these writes — but the version guarding the UPDATE is one the **service itself read in the same transaction**, not one the caller supplied             | `vehicle-write-service.ts:115` → `:132`; `customer-governance-service.ts:159` → `:180` |
+| So the mechanism catches a writer landing inside the server's own SELECT→UPDATE window, and cannot catch a lost update across an operator's read → edit → submit cycle                          | the same two call paths                                                                |
+
+The fourth row is why "there is no concurrency detection at all" would be the
+wrong summary, and the fifth is why "the record is protected" would also be
+wrong. From the client's position the result is **last-writer-wins**.
+
+### Why `P1-27-INT-009` is not a blocker under the exact canonical wording
+
+`P1-27-INT-009` is correct and is not disputed. It is not a blocker because
+nothing in the canonical wording asks this phase for the thing it records as
+missing:
+
+| canonical sentence                                                                                                                 | what it asks for                                                                                                                                                                                       |
+| ---------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| §5.3 — `P1-27-QA-004` **"Concurrency and idempotency"**                                                                            | A task title. It names no mechanism. "Optimistic concurrency", "record version", "If-Match" and "ETag" appear nowhere in `canonical-plan.md` as a P1-27 deliverable                                    |
+| §10 — what every Frontend task owes: "… **conflict where applicable** …"                                                           | Conflict handling, qualified. It is applicable and it is delivered: ten catalog codes answer 409 and the client selects its sentence from `problem.code`, not from the kind                            |
+| §6 — each test id "will expand into the required path matrix (… conflict, duplicate, **stale version**, **concurrent update**, …)" | A per-task **test** path matrix. A test path cannot manufacture a server capability, and the same matrix lists `timeout` and `cancellation`, which are likewise conditions tested where they can occur |
+| §4 — "**No new Backend feature development is allowed inside the P1-27 Frontend branch.**"                                         | The prohibition that decides it. See below                                                                                                                                                             |
+
+### Why this could not be built here
+
+Registering `veh.vehicle-update` or `crm.preference-set` `versionGuarded: true`
+is a **Backend route declaration**, plus a repository predicate, plus a service
+signature that accepts a caller version, plus an OpenAPI change. None of it
+exists in `apps/web`, and §4 forbids putting it in this branch. §9 makes the
+same point structurally: `apps/api/src/**` and `supabase/**` require
+`APPS_API_EXECUTABLE_DIFF=0` at merge.
+
+A Frontend-side version check would be worse than the honest absence. The server
+does not apply it, so it would refuse saves the platform would have accepted
+while still losing every update the platform actually loses — a check that
+changes who is inconvenienced without changing what is lost.
+
+This is the method `canonical-plan.md` §7 already uses for exactly this shape of
+gap. `FE-020` is recorded there as: a dedicated VIN verification workflow "is
+Backend feature work and is **out of P1-27 scope**", with the truthful subset
+shipped instead. `P1-27-OD-005` is that ruling applied to concurrency.
+
+### What the interface does today
+
+| behaviour                           | detail                                                                                                                                                                                    |
+| ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| No `If-Match` is ever sent          | Zero CRM and zero Vehicle adapters pass `ifMatch`. The four P1-26 administration adapters that do send it call routes that **are** guarded                                                |
+| `recordVersion` is shown, not spent | The customer and vehicle detail reads publish it and the handler emits an `ETag`. It is displayed as a record fact. Both contracts say in the type that it is **published and not used**  |
+| One 409 claims a concurrent edit    | `ERR-CON-001` → "Someone else changed this", which is true when it is shown. The other nine 409 codes → "This change cannot be saved", which states the refusal without inventing a cause |
+| A bare 409 fails safe               | A conflict carrying no `code` gets the sentence that claims nothing, not the concurrency one                                                                                              |
+| Nothing promises detection          | No screen, label or help text says an edit is protected against another operator's save                                                                                                   |
+
+### The gate that stops this sentence ageing
+
+A statement about `apps/api` written in a `docs/` file is the exact shape this
+phase has repeatedly shipped as false. So this entry is **bound to executable
+checks** in `apps/web/tests/api-client.test.ts`, describe
+_"P1-27-QA-004 — the concurrency semantics are stated, not overstated"_:
+
+| the check                                                                                                          | what it would catch                                                                                 |
+| ------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------- |
+| At least 20 route modules declare `versionGuarded: true`                                                           | A platform-wide rename that would make every check below pass by finding nothing                    |
+| No route module the P1-27 adapters write to declares `versionGuarded: true`                                        | A Backend phase closing the gap — at which point **this entry becomes false and must be retracted** |
+| None of those modules reads `expectedVersion`                                                                      | A route honouring `If-Match` without declaring itself guarded                                       |
+| No CRM or Vehicle adapter passes `ifMatch`                                                                         | A Frontend edit that starts sending a header the route discards                                     |
+| Over the 409 set **derived from `catalog.ts`**, only `ERR-CON-001` reaches the concurrency copy                    | A newly defined 409 code inheriting "Someone else changed this"                                     |
+| This document carries `P1-27-OD-005`, the words `last-writer-wins`, `P1-27-INT-009`, an owner and this review date | This entry being deleted, renamed or left without a review date while the code still relies on it   |
+
+The route set those checks run over is **derived from the adapters' own source**,
+so a screen that starts writing to a fifth route tree brings that tree into the
+check without anyone remembering to add it.
+
+### What is needed to close it
+
+A Backend remediation on a **separate protected branch**, per `canonical-plan.md`
+§4. Specified so the integrator does not have to re-derive it:
+
+| step                 | exactly what                                                                                                                                                                                                                                                     |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Mechanism            | The one already in the repository. `versionGuardFragment` for the SET/WHERE, `assertVersionMatched` for the row count, `parseIfMatch` at the edge — **no new mechanism, and no new catalog code**: `ERR-CON-001` and `ERR-CON-002` already exist and are correct |
+| Routes               | `PATCH /vehicles/{vehicleId}`, `PATCH /vehicles/{vehicleId}/status`, `PUT /customers/{customerId}/status`, `PUT /customers/{customerId}/preferences` — the writes that edit a long-lived record an operator reads first                                          |
+| Not routes           | Append-only sub-resource POSTs (notes, alerts, tags, contacts, addresses, consents, restrictions, ownerships, plates, odometer readings). Appending a row has no prior version to be stale against, and guarding it would demand a version for nothing           |
+| Service signatures   | `changeLifecycle` and `VehicleWriteService.update` take the caller's `expectedVersion` and pass **it** to the repository instead of the value they just read at `vehicle-write-service.ts:115` / `customer-governance-service.ts:159`                            |
+| Backend tests        | For each route: a stale version → 409 `ERR-CON-001`; a missing header → 428 `ERR-CON-002`; a current version → success **and `record_version` incremented exactly once**; two concurrent writers with the same expected version → exactly one wins               |
+| Contract             | `versionGuarded: true` on each operation, `openapi.v1.json` regenerated — `document.ts:197` adds the `IfMatch` parameter and the 428 automatically                                                                                                               |
+| Frontend, afterwards | The detail reads already publish `recordVersion`; the edit forms carry it as a hidden field and pass `ifMatch`, exactly as the P1-26 administration forms already do. `ERR-CON-001` already maps to the correct sentence, so no copy changes                     |
+| This entry           | Retracted. The two `versionGuarded` checks above fail on the same commit, which is what forces it                                                                                                                                                                |
+
+### Three Backend docblocks that describe this differently, recorded not fixed
+
+Found while establishing the facts above. Each is in a Backend-owned file, so
+none is touched here; each overstates what the code does, and a reader trusting
+any of them would conclude the guard is already wired.
+
+| file                                              | the sentence                                                                                          | why it is wrong                                                                                                                 |
+| ------------------------------------------------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `customers/[customerId]/route.ts:11-13`           | "the write routes have always demanded `If-Match`, and no operation published the value to put in it" | True of the 40 guarded routes platform-wide; **false of every CRM write route**, none of which demands it                       |
+| `customers/[customerId]/preferences/route.ts:6-9` | "That version is what a client puts in `If-Match` on the PUT below"                                   | `crm.preference-set` is declared `idempotent: true` and **not** `versionGuarded`, and the handler never reads `expectedVersion` |
+| `customer-governance-service.ts:16`               | "The lifecycle update carries the `record_version` **the caller's read observed**"                    | It carries `current.recordVersion`, which the service read itself at `:159`. `changeLifecycle` takes no caller version          |
+
+These belong to P1-16 and should be corrected by the same remediation that
+closes this entry, or before it if that is sooner.
+
+### What changes when the Owner answers
+
+| answer                                                  | consequence                                                                                                                                                |
+| ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Ratified — last-writer-wins is acceptable for the pilot | Nothing changes in P1-27. The review date stands, so the decision is re-examined rather than forgotten                                                     |
+| Optimistic concurrency is required                      | The table above is the specification. It is Backend work on a separate protected branch; the Frontend change afterwards is a hidden field and one argument |
+| No answer                                               | The current behaviour stands and keeps saying what it is. Nothing is implied that is not there                                                             |
+
+---
+
+## `P1-27-OD-006` — alert routing, and the line between routing and paging
+
+**Type:** engineering decision, ratification requested · **Status:** **Decided —
+the routing rule is built and tested; no destination is operated and nobody is
+paged**
+
+**Owner:** Frontend, **P1-27** for the routing rule (delivered); the absent half
+— an operated collector and a recipient — belongs to whoever provisions an
+environment beyond Local, which **ADR-012** records as not existing.
+· **Review by:** 2026-11-30
+
+### The decision
+
+`P1-27-DO-002` is "structured logging, monitoring and **alert routing**". The
+first two words were delivered and proven in earlier waves. This entry records
+what was done about the third, in two halves, because only one of them was
+buildable here and saying so is the point of this document.
+
+| half                                                     | disposition                                                                                                                                                                                                  |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Which events leave the browser, and at what severity** | **BUILT.** `NEXT_PUBLIC_CLIENT_MONITORING_LEVEL` — a severity threshold, validated by `apps/web/src/lib/env.ts`, applied by `routesToSink` in `apps/web/src/lib/observability/client-log.ts`                 |
+| **Who is woken, through what channel, on what rotation** | **NOT DELIVERED**, and not deliverable here. There is no pager, no recipient, no notification channel and no operated collector. `ADR-012` records that no environment beyond Local exists to operate one in |
+
+### Why the first half was built rather than deferred
+
+The `P1-20-A-06` precedent ("No alert routing") deferred routing for one stated
+reason: "there is no provisioned destination to route them to, so a routing rule
+written now could not be tested and would be an unverifiable claim." That reason
+is **specific, and it no longer holds at this tier.** A destination mechanism
+already exists in `apps/web` and is exercised by tests: a validated env-declared
+sink URL, a `connect-src` derived from it in `src/lib/security/csp.ts`, a
+`navigator.sendBeacon` transport injectable as a `BeaconSender`, and a production
+installer that runs at module load. A threshold over that transport is decidable
+from the repository's own architecture and is observable end to end — an event
+either reaches the beacon or it does not.
+
+Deferring it would have been the unverifiable claim in the other direction: a
+sink that is configured receives **everything** the boundary sees, including a
+`debug` line every time an operator presses Cancel. A destination with no rule
+about what reaches it is a firehose, not routing.
+
+### The rule, and where each part of it lives
+
+| property                         | where, and what it is                                                                                                                                                                                                        |
+| -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| The vocabulary and its **order** | `LOG_LEVELS = ['debug', 'info', 'warn', 'error']` in `lib/env.ts` — one tuple, because the environment schema and the threshold comparison must not be two lists                                                             |
+| The comparison                   | `routesToSink(level, threshold)` — **at or above**, never merely above: "alert me on warnings" must include warnings                                                                                                         |
+| The rank                         | `levelRank` is `LOG_LEVELS.indexOf(level)`. Derived, so there is no second table to fall out of step with the enum                                                                                                           |
+| Where it is applied              | Inside `deliveringAdapter`, the one place an event leaves the device. **Not** in `report`: the console is not egress, and a deployment's remote threshold must not remove the only local diagnostic                          |
+| Unset                            | `'error'` — the **narrowest** of the four. Every event that leaves is data leaving an operator's browser, so the default is the least of it, and it is exactly the set `lib/api/client.ts` classifies as _the system failed_ |
+| Invalid                          | The deployment does not boot. `z.enum(LOG_LEVELS)` refuses it and `read()` throws naming the field and never the value                                                                                                       |
+| Threshold set, no sink           | Routes nothing. The URL is what installs an adapter at all, so the pair fails closed together                                                                                                                                |
+| Build time, not deploy time      | `NEXT_PUBLIC_*` is inlined by `next build`. Setting it on a running deployment changes nothing until the next build — the same sentence as the sink URL, for the same reason                                                 |
+
+### What is still absent, stated plainly
+
+Nothing in this repository pages anybody. No recipient, rotation, escalation
+policy, notification channel or on-call schedule exists, none is named in any
+file, and no vendor is mentioned in either module — asserted, not merely
+promised, by the case _"never claims a monitoring or notification service
+exists"_. The threshold decides what **leaves**; what happens after it arrives is
+a property of a collector this repository does not operate.
+
+This is the `P1-20-A-06` shape applied to what is genuinely still missing, rather
+than to the whole task: the buildable half was built, and the half that could
+only have been an unverifiable claim is written down with an owner and a date.
+
+### The gate that stops this entry ageing
+
+Bound to executable checks in `apps/web/tests/observability.test.ts`, describe
+_"alert routing — the threshold decides what leaves the browser"_:
+
+| the check                                                                                                                            | what it would catch                                                                               |
+| ------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------- |
+| The 4×4 level matrix, derived from `LOG_LEVELS`                                                                                      | The comparison becoming exclusive, or the tuple being reordered                                   |
+| A 500 delivers, a 403 and a cancellation do not, with no threshold configured                                                        | The default silently widening — the firehose returning                                            |
+| The dropped 403 still reaches the console                                                                                            | The filter being moved into `report`, taking the only local diagnostic with it                    |
+| At `warn` a refusal delivers; at `debug` a cancellation delivers                                                                     | The threshold being read but not applied                                                          |
+| An invalid level fails at boot, naming the field and never the value                                                                 | A typo falling back to a default, routing too much or nothing at all with nothing to say so       |
+| Widening the threshold does not weaken the redaction                                                                                 | A `debug`-level event carrying what an `error`-level one may not                                  |
+| The source declares `z.enum(LOG_LEVELS)`, reads `env.…_LEVEL ?? DEFAULT_ROUTING_LEVEL`, and documents the variable in `.env.example` | The variable being retyped as a second list, or the installer quietly ceasing to read it          |
+| This document carries `P1-27-OD-006`, `P1-20-A-06`, an owner and this review date                                                    | This entry being deleted, renamed or left without a review date while the code still relies on it |
+| Neither module names a monitoring vendor                                                                                             | A capability being asserted in prose that the code does not have                                  |
+
+### What changes when the Owner answers
+
+| answer                                                   | consequence                                                                                                                                                             |
+| -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Ratified — routing without paging is right for the pilot | Nothing changes. The review date stands, so the second half is re-examined rather than forgotten                                                                        |
+| A collector and an on-call destination are provisioned   | The threshold is already the switch: set the two variables for the build. What is then needed is the destination's own routing policy, which is not a `apps/web` change |
+| No answer                                                | The rule stands at its closed default: faults leave if a sink is configured, and nothing at all leaves if one is not                                                    |
+
+---
+
+## `P1-27-OD-007` — what `DOC-001` is judged on, and what §6's eighteen paths oblige
+
+**Type:** a reading of the canonical wording, ratification requested ·
+**Status:** **Decided — `DOC-001` is judged on synchronization; the eighteen-path
+matrix stays undischarged, gated, and owned elsewhere**
+
+**Owner:** Frontend, **P1-27** for the reading and for keeping the path record
+true; the outstanding paths themselves belong to the Frontend task ids that carry
+them and, for the two absent ones, to the Backend remediation `P1-27-OD-005`
+names. · **Review by:** 2026-11-30
+
+### The decision
+
+`P1-27-DOC-001` is judged on its canonical name — "Contract, catalogue and
+traceability **synchronization**" — and **not** on whether
+`canonical-plan.md` §6's eighteen-path matrix has been expanded for each of the
+twenty-nine Frontend test ids.
+
+**This decision changes no measurement.** `matrixDischarged` stays `false`, every
+per-path status stays exactly as measured, and the outstanding paths stay visible
+as findings. It settles which task those paths are charged to, and nothing else.
+
+### The two readings, both stated
+
+| reading                       | what it says                                                                                                                                                                                                                                                                                                          |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Per-id** — held until now   | §6's "each will expand into the required path matrix" is an obligation **per test id**. Twenty-nine ids × eighteen paths = **522** expansions. `DOC-001` cannot pass until they exist, and a surface-wide table of thirteen `PROVEN` rows is not twenty-nine expansions                                               |
+| **Synchronization** — adopted | `DOC-001`'s requirement is its name in §5.3. Its three conjuncts are contract, catalogue and traceability, and each is satisfied when the **record matches the tree**. §6 is a test-id **numbering** rule; its closing sentence is the rationale for granular ids, and the obligation it describes is not `DOC-001`'s |
+
+### Why the synchronization reading is adopted — four checks, and one that failed
+
+Recorded with the check that failed included, because an entry that only lists
+its supporting evidence is the shape this phase has repeatedly shipped as false.
+
+| check                                                        | result                                                                                                                                                                                                                                                                                                                      |
+| ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **§6's subject**                                             | **Holds.** §6 is titled "Test references — correction F". It opens on the id-numbering defect ("The previous plan alternated `TC-CRM-001` and `TC-VEH-001` **mechanically**") and its corrected rule is three bullets about which catalogue an id comes from. The eighteen-path sentence is the section's closing rationale |
+| **Whose obligation §6 states**                               | **Holds, and this is the load-bearing one.** "Each id above is **one per task**" — the ids in §6 are the **test ids of the twenty-nine Frontend tasks**. §5.3's table has two columns, id and canonical name, and assigns `DOC-001` **no test id at all**. An expansion of test ids cannot be `DOC-001`'s deliverable       |
+| **Where the plan states per-task obligations**               | **Holds.** The plan has a dedicated section for that, §10 "What every Frontend task owes", and its list is **different and shorter** — and carries the qualifier "conflict **where applicable**". The eighteen-path list is not §10                                                                                         |
+| **Any other canonical text binding the matrix to `DOC-001`** | **None.** `canonical-plan.md` names `DOC-001` exactly once, at `:192`, in §5.3's table, by name only. Every other occurrence of "path matrix" in this phase is in this phase's own derived records, which describe the judgement rather than set it                                                                         |
+| **"§6 is not written as an acceptance criterion at all"**    | **FAILED, and the reading is narrowed rather than rescued.** `P1-27-OD-005` above already reads the same sentence as asking for "a per-task **test** path matrix". §6 may well be an acceptance criterion — **for the twenty-nine Frontend test ids**. What it is not is `DOC-001`'s                                        |
+
+### The sibling precedent, which is the strongest evidence here
+
+Three closed Backend phases carry the same task under the same name, and not one
+was judged on path coverage.
+
+| phase     | what discharged its `DOC-001`                                                                                                                                                                                                                         | verdict       |
+| --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- |
+| **P1-19** | `evidence/errors-and-events.md` plus the **generated** `endpoint-inventory.md` and `task-traceability.md`. Its owner gate item 14 uses the word "synchronized"                                                                                        | **Delivered** |
+| **P1-20** | `docs/api/openapi.v1.json`, the live permission catalog, the **generated** inventories and registers. Its completeness audit's one `DOC-001` GAP was a record naming two paths that were never shipped — a record-versus-tree mismatch, rated **Low** | **PROVEN**    |
+| **P1-24** | The **generated** `evidence/operation-register.md` and `task-traceability.md`                                                                                                                                                                         | **Complete**  |
+
+And the converse: where a sibling phase did own a path-coverage obligation, it
+filed it under **QA**, not documentation — `P1-20-QA-002` is recorded against
+"§QA-002 — **error-path matrix**". In this phase the same paths are already
+charged to the tasks that name them: `stale version`, `concurrent update` and
+`idempotent replay` are `QA-004` "Concurrency and idempotency", `scope denial` is
+`QA-003` "Tenant / company / branch isolation", `timeout` and `cancellation` are
+`QA-002` "API contract and error-path coverage". Holding `DOC-001` for them
+charges the same paths twice.
+
+### The reductio, recorded as corroboration and not as the argument
+
+Under the per-id reading `DOC-001` requires 522 expansions, and **58 of them are
+forbidden by the plan that is said to require them**: `stale version` and
+`concurrent update` are `ABSENT` for every one of the twenty-nine ids because no
+route under `customers/`, `customer-duplicates/`, `vehicles/` or
+`vehicle-duplicates/` is `versionGuarded` — and §4 states "**No new Backend
+feature development is allowed inside the P1-27 Frontend branch.**" A further
+twenty-nine turn on a cancel affordance no canonical document specifies.
+
+This is corroboration, not the argument. A plan **may** contain an over-ambitious
+task, and impossibility alone would not prove a misreading. What it adds is that
+the per-id reading makes one section of the plan require what another section
+forbids, which the synchronization reading does not.
+
+### What is true of the path record, and stays true
+
+Unchanged by this decision, and stated here so the entry cannot be read as
+retiring it:
+
+| fact                                                                                                                                         | where                                                                                                                                                    |
+| -------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **13 `PROVEN` · 3 `PARTIAL` · 2 `ABSENT`**, measured across the whole CRM and Vehicle surface, not per id                                    | `evidence/test-catalogue-traceability.json` `pathMatrix`; §4 of the companion `.md`                                                                      |
+| `matrixDischarged` is **`false`**, and `check-p1-27-doc-counts.mjs` fails on any other value                                                 | `scripts/ci/check-p1-27-doc-counts.mjs`                                                                                                                  |
+| The three `PARTIAL` are `scope denial`, `idempotent replay` and `cancellation`; the two `ABSENT` are `stale version` and `concurrent update` | the same record, each with its reason, which the gate also requires                                                                                      |
+| Nothing here establishes that eighteen paths exist for twenty-nine ids, and no document claims it does                                       | `evidence/test-catalogue-traceability.md` §4: "Building them is Frontend work with its own tasks; it is not something a documentation change may assert" |
+
+`DOC-001` passing means **the records match the tree, including where the tree is
+incomplete**. It does not mean the matrix is discharged, and any reader who takes
+it that way is contradicted by the row's own figures.
+
+### The gate that stops this entry ageing
+
+A decision recorded only in prose is one edit away from being a decision nobody
+made. Bound to executable checks in
+`apps/web/tests/p1-27-doc-reconciliation.test.ts`, describe _"`P1-27-OD-007` —
+what `DOC-001` is judged on"_:
+
+| the check                                                                                                      | what it would catch                                                                                                                                                                          |
+| -------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| This entry, **sliced from its own heading to the next**, carries `P1-27-OD-007`, an owner and this review date | The entry being deleted, renamed or left undated — scoped to the entry, because a file-scoped assertion passed when OD-006's own owner line was deleted and a sibling supplied the substring |
+| The slice states **both** readings and names the check that failed                                             | The entry decaying into the conclusion alone, with the argument against it edited out                                                                                                        |
+| `matrixDischarged` is still `false` in the catalogue record                                                    | The decision being read as licence to discharge the matrix                                                                                                                                   |
+| The `pathMatrix` still measures **13 / 3 / 2**, and the five non-`PROVEN` rows are still the five named here   | The paths being quietly upgraded to make the row tidier                                                                                                                                      |
+| `DOC-001`'s matrix row cites `P1-27-OD-007` and carries the true figures                                       | A `PASS` that reads as a discharged matrix                                                                                                                                                   |
+| `canonical-plan.md` §5.3 still assigns `DOC-001` no test id                                                    | The premise of the load-bearing check changing under the decision without the decision being revisited                                                                                       |
+
+### What is needed to close it
+
+The Owner or the register owner ratifies the reading, or rejects it. If it is
+rejected, `DOC-001` returns to `PARTIAL` with the per-id reading as its binding
+reason, and the 522 expansions become scheduled Frontend work with the fifty-eight
+Backend-blocked cells routed by `P1-27-OD-005`.
+
+### What changes when the Owner answers
+
+| answer                                          | consequence                                                                                                                                                         |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Ratified — synchronization is the right reading | Nothing changes. The review date stands, so the outstanding paths are re-examined rather than forgotten, and they remain charged to `QA-002`, `QA-003` and `QA-004` |
+| Rejected — the obligation is per id             | `DOC-001` returns to `PARTIAL`. The path record does not move either way, because it was never what this decision was about                                         |
+| No answer                                       | The reading stands as recorded, held by the checks above, and the path record stays exactly as measured — `matrixDischarged` `false` and five paths not `PROVEN`    |
+
+---
+
 ## What this document does not establish
 
 | not established                                                                                                           | what would establish it                                                                                                                                                                                                                                                    |
@@ -824,3 +1187,14 @@ worked around one would be building on a fact the platform does not hold.
 
 **P1-27 closes only when the Product Owner manually tests the application and
 returns `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
+
+<!-- The gate-owned file count in this document is DERIVED. It read 40 while the
+     gate reported 43 (`E-05`), in three places, after the fix that corrected the
+     sentence directly above the first of them. `validate:p1-27-doc-counts`
+     recomputes it from the gate's own scan roots, so the day a third tree is
+     added this document follows it. The markers live here, outside every table:
+     an earlier revision put them in a label column and broke two other gates
+     whose regexes read the label and the number as adjacent cells. -->
+
+<!-- derived: files p1-27-frontend-gate = 69 -->
+<!-- derived: files p1-27-frontend-gate:trees = 3 -->

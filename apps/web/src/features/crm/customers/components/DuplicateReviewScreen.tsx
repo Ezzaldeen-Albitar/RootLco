@@ -7,6 +7,7 @@ import { useServerTable } from '@/components/data-table/use-server-table';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { Locale } from '@/i18n/config';
+import { formatDate, formatDateTime } from '@/lib/format';
 import { listDuplicates } from '../identity-api';
 import {
   DUPLICATE_STATUSES,
@@ -53,7 +54,23 @@ export function DuplicateReviewScreen({ locale, messages }: Props) {
     (request: TableRequest, cursor: string | null) => listDuplicates(status, request, cursor),
     [status]
   );
-  const table = useServerTable<DuplicateCandidate>(load, { initial: INITIAL_REQUEST });
+  /*
+   * `loadKey: status` — see the long note in the vehicle twin,
+   * `features/vehicles/components/VehicleDuplicateReviewScreen.tsx`.
+   *
+   * The same defect stood in both queues and was found in only one of them. It
+   * is fixed in both, together, because a queue whose filter silently does
+   * nothing is the same defect whichever module it sits in — and because fixing
+   * the reported one alone is how the survivor becomes the next finding.
+   *
+   * Short form: `useServerTable` keys its read on `TableRequest` plus `loadKey`
+   * and excludes `load` from the effect deps, so state the request does not
+   * carry must be declared here or it reaches no request at all.
+   */
+  const table = useServerTable<DuplicateCandidate>(load, {
+    initial: INITIAL_REQUEST,
+    loadKey: status,
+  });
 
   const columns = useMemo<readonly Column<DuplicateCandidate>[]>(
     () => [
@@ -107,9 +124,7 @@ export function DuplicateReviewScreen({ locale, messages }: Props) {
         headerKey: 'crm.duplicates.detectedAt',
         cell: (row) => (
           <time dateTime={row.detectedAt} dir="ltr">
-            {new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' }).format(
-              new Date(row.detectedAt)
-            )}
+            {formatDateTime(row.detectedAt, locale)}
           </time>
         ),
       },
@@ -132,9 +147,7 @@ export function DuplicateReviewScreen({ locale, messages }: Props) {
             <span className="text-caption text-text-muted">
               {row.reviewedAt ? (
                 <time dateTime={row.reviewedAt} dir="ltr">
-                  {new Intl.DateTimeFormat(locale, { dateStyle: 'medium' }).format(
-                    new Date(row.reviewedAt)
-                  )}
+                  {formatDate(row.reviewedAt, locale)}
                 </time>
               ) : (
                 '—'
@@ -148,14 +161,20 @@ export function DuplicateReviewScreen({ locale, messages }: Props) {
 
   return (
     <div className="flex min-h-0 flex-col gap-4">
-      <header>
-        <h1 className="text-page-title font-semibold text-text-primary">
-          {translate(messages, 'crm.duplicates.title')}
-        </h1>
-        <p className="mt-1 text-body text-text-secondary">
-          {translate(messages, 'crm.duplicates.intro')}
-        </p>
-      </header>
+      {/*
+        No heading here, and no `<header>` to hang one on.
+
+        `crm/customer-duplicates/page.tsx` already renders `PageHeader` with THIS
+        SAME `crm.duplicates.title`, and `PageHeader` is the page's `<h1>` — one
+        per page, as its own docblock states. This screen printed the identical
+        string a second time, so the queue shipped with two `<h1>`s and the title
+        visibly twice. Measured on `/en/crm/customer-duplicates`: `h1 count: 2`.
+        Dropping it here loses no text; the title is still on screen, once.
+
+        The intro stays. It is not the title said again — it explains what the
+        pairs are and that merge is not offered yet, which nothing else says.
+      */}
+      <p className="text-body text-text-secondary">{translate(messages, 'crm.duplicates.intro')}</p>
 
       <div className="flex flex-wrap items-end gap-3">
         <label className="flex flex-col gap-1">

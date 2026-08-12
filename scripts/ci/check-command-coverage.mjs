@@ -56,12 +56,43 @@ const WEB = '@rootlco/web';
  *
  *   required      — a quality gate. Must be reachable from the aggregate AND
  *                   invoked by hosted CI. This is the class that silently rotted.
+ *   ci-only       — a gate whose answer depends on the BRANCH, so the local
+ *                   repository-wide aggregate cannot run it. Must be invoked by
+ *                   hosted CI, and that half is enforced exactly as strictly as
+ *                   it is for `required`.
  *   informational — produces a report or a fix; failing it is not a verdict.
  *   interactive   — a developer convenience (watch mode, dev server, database
  *                   lifecycle). Running it in CI would hang or mutate state.
  *   environment   — needs a live database, Docker or credentials, so it runs in
  *                   its own workflow job rather than from the local aggregate.
+ *
+ * These five are the WHOLE vocabulary, and that is now enforced rather than
+ * described. `evaluate()` skips anything it does not recognise, so an
+ * unrecognised tier — a sixth word somebody invented, or `requird` — silently
+ * means "not a gate". One entry was registered `optional` and nothing noticed.
+ *
+ * `ci-only` exists because of `validate:phase-ownership`. It is a real gate, its
+ * rules are tested, and it was invoked by NO workflow — and it was registered
+ * `informational` with a paragraph EXPLAINING that no job ran it. A comment
+ * saying a check is unreachable is not a finding, it is a defect with a note
+ * attached. It could not be `required`, because it takes a per-branch profile
+ * that a repository-wide aggregate cannot supply; the honest answer was a tier
+ * that enforces the half that applies, rather than a tier that enforces neither.
  */
+export const TIERS = Object.freeze([
+  'required',
+  'ci-only',
+  'informational',
+  'interactive',
+  'environment',
+]);
+
+/** Tiers whose commands a hosted workflow must invoke. */
+export const CI_ENFORCED = Object.freeze(['required', 'ci-only']);
+
+/** Tiers whose commands `verify:workspaces` must reach. */
+export const AGGREGATE_ENFORCED = Object.freeze(['required']);
+
 export const REGISTER = Object.freeze([
   // --- root: repository-level quality gates ---------------------------------
   { name: 'lint', owner: ROOT, tier: 'required', why: 'repository tooling, tests and configs' },
@@ -118,6 +149,111 @@ export const REGISTER = Object.freeze([
     // working merge form past review, typecheck, lint and 669 tests — a test can
     // be deleted around a decision, a gate cannot.
     why: 'P1-27 CRM and Vehicle frontend decision rules',
+  },
+  {
+    name: 'validate:p1-27-reachability',
+    owner: ROOT,
+    tier: 'required',
+    // The gate above asks what the frontend must not DO. This asks whether a
+    // person can reach what the backend already offers. Ten canonical P1-27
+    // writes shipped with a route, a permission, an audit class, an idempotency
+    // entry, an OpenAPI path and a register row — and no screen from which
+    // anybody could invoke them, while every automated tier stayed green. The
+    // operation list is derived from the P1-24 register rather than written
+    // down, so a new operation is UNCLASSIFIED rather than unnoticed, and every
+    // rule is mutation-proved by tests/foundation/p1-27-write-reachability.test.ts.
+    why: 'every canonical P1-27 mutation is reachable, deliberately absent, or decision-neutral',
+  },
+  {
+    name: 'validate:p1-27-evidence',
+    owner: ROOT,
+    tier: 'required',
+    // P1-27-QA-005. The phase shipped twenty-five evidence documents and no
+    // digest over any of them, so a count could be corrected or a verdict
+    // softened without the repository being able to tell. This is the `--check`
+    // half of `evidence:p1-27`: it fails when a document has moved and the
+    // manifest has not, and it names the documents that moved rather than just
+    // reporting that the manifest is stale.
+    why: 'every P1-27 evidence document is digested, and the digests match the bytes',
+  },
+  {
+    name: 'validate:p1-27-matrix',
+    owner: ROOT,
+    tier: 'required',
+    // The canonical 42-task authority. This phase once counted 33 adjudicated
+    // items as 42 canonical tasks with nine listed nowhere, so the universe is
+    // derived from `canonical-plan.md` and this refuses any drift between the
+    // plan, the recorded verdicts and the committed matrix.
+    why: 'the 42-task matrix still matches the canonical plan and the recorded verdicts',
+  },
+  {
+    name: 'validate:p1-27-doc-counts',
+    owner: ROOT,
+    tier: 'required',
+    // Round five found thirteen stale counts in the phase records and they are
+    // one defect: a number written by hand that nothing recomputes. This makes
+    // the tree the authority and refuses any document that disagrees with it.
+    why: 'every count a P1-27 document states about the repository is derivable',
+  },
+  {
+    name: 'validate:p1-27-lifecycle',
+    owner: ROOT,
+    tier: 'required',
+    // The closure lifecycle as a state machine. The phase carried a rule that
+    // could not be satisfied in any order — no merge until every row is PASS, no
+    // PASS while a reproof is outstanding, no reproof without the merge — and
+    // this refuses any declared state the tree does not support, in either
+    // direction: a blocker the ledger does not declare, and a declared blocker
+    // the tree no longer raises.
+    why: 'the declared P1-27 lifecycle state is the one the tree actually holds',
+  },
+  {
+    name: 'validate:p1-27-closing-values',
+    owner: ROOT,
+    tier: 'required',
+    // Six hosted-CI figures on the two evidence pages were falsified with every
+    // gate green, and fewer than half the values those pages state were read by
+    // anything. This classifies every value on both pages as locally derivable,
+    // git-derivable, hosted-attested, protected-only, historical or
+    // non-normative, refuses a value nothing claims, and refuses a hosted value
+    // that names no run — while saying plainly that it re-derives no hosted
+    // observation and could not.
+    why: 'every closing value on the two P1-27 evidence pages names the authority that decides it',
+  },
+  {
+    name: 'record:p1-27-run',
+    owner: ROOT,
+    // `interactive` rather than `required`: it is invoked by a person taking a
+    // measurement, and it must NOT run inside an aggregate — a gate that
+    // rewrote the record it checks would agree with itself every time.
+    tier: 'interactive',
+    // The only writer of evidence/local-run-ledger.json. It is not a gate: it
+    // runs a tier and records what the tier did, with the commit it was taken
+    // at, so an executed total can be bound to a command's output instead of to
+    // another document. `validate:p1-27-closing-values` is what refuses the
+    // record once it is stale.
+    why: 'the recorded local tier measurement is a command output, not a hand-written number',
+  },
+  {
+    name: 'matrix:p1-27',
+    owner: ROOT,
+    tier: 'informational',
+    // The writer, for the same reason `evidence:p1-27` is not required: a CI job
+    // that regenerated the matrix would repair the drift the check reports.
+    why: 'regenerates the canonical P1-27 task matrix',
+  },
+  {
+    name: 'evidence:p1-27',
+    owner: ROOT,
+    // `informational`, not `optional`. `optional` is not one of the four tiers
+    // this register defines, and `evaluate()` treats ANY unrecognised string as
+    // "not a gate" — so a typo like `requird` would silently unenforce a real
+    // one. The vocabulary is now asserted by `tests/ci/command-coverage.test.ts`.
+    tier: 'informational',
+    // The writer. Deliberately NOT required: a CI job that ran this would repair
+    // the drift the required check exists to report, and a gate that fixes its
+    // own failure is not a gate.
+    why: 'regenerates the P1-27 evidence digest manifest',
   },
   {
     name: 'validate:web-theme',
@@ -224,23 +360,36 @@ export const REGISTER = Object.freeze([
   {
     name: 'validate:phase-ownership',
     owner: ROOT,
-    tier: 'informational',
+    tier: 'ci-only',
     // Takes a profile and a base ref, so it cannot run from the repository-wide
     // aggregate: the profile is a property of the BRANCH, not of the repository.
+    // That is why it is `ci-only` rather than `required` — and `ci-only` rather
+    // than `informational`, which is what it was.
     //
-    // This note used to say "P1-26's CI job runs it with the p1-26-frontend
-    // profile". **No CI job runs it with any profile.** A grep of `.github/`
-    // for `phase-ownership` returns nothing, and it has never returned anything.
-    // It found seven API source files riding inside the P1-27 Frontend branch
-    // because somebody ran it by hand.
+    // The note that stood here said, in prose, that NO CI job invoked it: "a
+    // grep of `.github/` for `phase-ownership` returns nothing, and it has never
+    // returned anything." It found seven API source files riding inside the
+    // P1-27 Frontend branch only because somebody ran it by hand. A register
+    // entry that DOCUMENTS a gate as unreachable is not a record of a decision;
+    // it is this phase's defect class written down in the file whose job is to
+    // catch it — `evaluate()` skipped the entry precisely because the tier said
+    // to, so the sentence was the only thing standing between the repository and
+    // an unenforced rule.
     //
-    // The selection mechanism now exists — `PHASE_OWNERSHIP_PROFILE`, so one job
-    // can pick the profile per branch. The JOB does not, and adding a
-    // repository-wide one at the end of a Frontend remediation would gate every
-    // other phase's pull requests on a rule nobody has agreed to. Recorded as
-    // `P1-27-DO-003`. Its rule table IS proven, by tests/ci/phase-ownership.test.ts
-    // in the required unit tier — the rules are tested; the invocation is not.
-    why: 'per-phase changed-file ownership; parameterised, so it is invoked per branch — and today by a human, not by CI (P1-27-DO-003)',
+    // `_reusable-node-quality.yml`, task `static-quality`, now invokes it on
+    // every pull request, resolving the profile from
+    // `.github/ci-baselines/phase-ownership-profiles.json` and REFUSING a branch
+    // that declares none. Under `ci-only` the invocation is enforced: delete
+    // that step and this gate fails instead of narrating (`P1-27-DO-003`).
+    //
+    // The first version of that step then exited 0 whenever the pull-request
+    // inputs were absent, which is every protected-branch push — the gate was
+    // wired in and still ran nowhere authoritative. `--resolve-context` decides
+    // instead: a push or dispatch on an ordinary branch resolves the profile
+    // from the pushed ref, a push on `develop` or `main` is a DECLARED skip
+    // carrying `checked: false`, and a `pull_request` run whose caller omitted
+    // the refs is refused rather than skipped.
+    why: 'per-phase changed-file ownership; the profile is a property of the branch, so hosted CI resolves it per pull request and the local aggregate cannot (P1-27-DO-003)',
   },
   {
     name: 'validate:web-topology',
@@ -487,10 +636,19 @@ export const REGISTER = Object.freeze([
     name: 'test:e2e:authenticated',
     owner: WEB,
     tier: 'interactive',
-    // Not `required`: it needs a live API, a live Supabase and a real local
-    // account, none of which a hosted runner is given. Requiring it in CI would
-    // mean requiring CI to hold a database and a credential it does not have.
-    why: 'the three authenticated projects; reached through test:web-e2e-authenticated',
+    // A hosted runner CAN be given all three — Docker is present, the Supabase
+    // CLI is a devDependency, and the acceptance bootstrap creates the account
+    // — and one now is: the `authenticated-browser` job in
+    // `protected-develop-verification.yml` runs exactly this command. The
+    // sentence that used to sit here, that none of it is available to a runner,
+    // was simply wrong and was the whole reason the tier stayed unrun.
+    //
+    // Still not `required`, because `required` means BOTH reachable from
+    // `verify:workspaces` AND invoked by CI, and the local aggregate must not
+    // drag a forty-minute Docker stack into what a developer runs before a
+    // commit. Not `ci-only` either: that tier is for gates whose answer depends
+    // on the branch, and this one is a suite, not a gate.
+    why: 'the three authenticated projects; reached through test:web-e2e-authenticated, run by the authenticated-browser job',
   },
   {
     name: 'test:ci',
@@ -610,12 +768,16 @@ export function evaluate({ scripts, workflowInvocations, register = REGISTER }) 
     const local = locallyReachable.has(entryKey);
     const ci = ciReachable.has(entryKey);
     rows.push({ ...entry, key: entryKey, aggregate: local, hostedCi: ci });
-    if (entry.tier !== 'required') continue;
-    if (!local) {
+    if (!TIERS.includes(entry.tier)) continue;
+    if (AGGREGATE_ENFORCED.includes(entry.tier) && !local) {
       failures.push(`${entryKey} is required but not reachable from \`npm run ${AGGREGATE}\``);
     }
-    if (!ci) {
-      failures.push(`${entryKey} is required but no hosted workflow invokes it`);
+    if (CI_ENFORCED.includes(entry.tier) && !ci) {
+      failures.push(
+        `${entryKey} is tier \`${entry.tier}\` but no hosted workflow invokes it. A gate no job ` +
+          'runs is a gate that has never run — wire it into a workflow, or reclassify it and say ' +
+          'why in the same diff.'
+      );
     }
   }
 
@@ -639,15 +801,25 @@ function main() {
     console.log(JSON.stringify({ aggregate: AGGREGATE, failures, commands: rows }, null, 2));
   } else {
     const required = rows.filter((r) => r.tier === 'required');
+    // `ci-only` is counted SEPARATELY and out loud. Folding it into the
+    // `required` totals would hide the one class whose whole story is that
+    // nothing was watching it.
+    const ciOnly = rows.filter((r) => r.tier === 'ci-only');
     console.log(
-      `Command coverage: ${rows.length} registered command(s), ${required.length} required`
+      `Command coverage: ${rows.length} registered command(s), ${required.length} required, ` +
+        `${ciOnly.length} ci-only`
     );
     console.log(
-      `  reachable from ${AGGREGATE}: ${required.filter((r) => r.aggregate).length}/${required.length}`
+      `  reachable from ${AGGREGATE}: ${required.filter((r) => r.aggregate).length}/${required.length} required`
     );
     console.log(
-      `  invoked by hosted CI:        ${required.filter((r) => r.hostedCi).length}/${required.length}`
+      `  invoked by hosted CI:        ${
+        [...required, ...ciOnly].filter((r) => r.hostedCi).length
+      }/${required.length + ciOnly.length} required + ci-only`
     );
+    for (const row of ciOnly) {
+      console.log(`  ci-only: ${row.key} — invoked by a workflow: ${row.hostedCi ? 'yes' : 'NO'}`);
+    }
     for (const row of rows.filter((r) => r.tier !== 'required')) {
       if (row.aggregate) continue;
       // Informational only: a non-required command outside the aggregate is the

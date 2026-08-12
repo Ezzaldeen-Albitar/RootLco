@@ -1,8 +1,11 @@
 'use server';
 
 import { z } from 'zod';
-import { authorizedClient } from '@/lib/api/server-client';
-import { fromFailure, invalid, type ActionState } from '@/lib/forms/action-result';
+import type { ActionState } from '@/lib/forms/action-result';
+// `write`, `base`, `optional` and `fieldErrorsFrom` moved to a plain module so
+// `profile-actions.ts` (FE-007, FE-008) shares one copy. A `'use server'` file
+// may export only async functions, which is why they cannot live here.
+import { base, fieldErrorsFrom, optional, write } from './action-support';
 import {
   ALERT_SEVERITIES,
   ALERT_TYPES,
@@ -23,6 +26,7 @@ import {
   NOTE_VISIBILITIES,
   RECORDABLE_CONSENT_STATUSES,
   RESTRICTION_TYPES,
+  SETTABLE_LIFECYCLE_STATES,
 } from './governance-contract';
 import { CONTACT_CHANNELS } from './profile-contract';
 
@@ -59,60 +63,6 @@ import { CONTACT_CHANNELS } from './profile-contract';
 
 const channel = z.enum(CONTACT_CHANNELS);
 const purpose = z.enum(COMMUNICATION_PURPOSES);
-
-/** `undefined` for an empty optional field, so it is omitted, not sent blank. */
-function optional(form: FormData, key: string): string | undefined {
-  const value = String(form.get(key) ?? '').trim();
-  return value.length > 0 ? value : undefined;
-}
-
-function fieldErrorsFrom(error: z.ZodError): Record<string, string> {
-  const errors: Record<string, string> = {};
-  for (const issue of error.issues) {
-    const path = issue.path[0];
-    if (typeof path === 'string' && !errors[path]) errors[path] = issue.message;
-  }
-  return errors;
-}
-
-/**
- * The shape every one of these six actions has.
- *
- * Written once because six hand-rolled copies drift, and the part that must not
- * drift is the order: validate, then check the session, then send, then map the
- * failure. An action that sent before validating would spend a rate-limit slot
- * on a request the operator could have been told about instantly.
- */
-async function write<T>(
-  previous: ActionState,
-  parse: () => { ok: true; body: unknown } | { ok: false; errors: Record<string, string> },
-  method: 'POST' | 'PUT',
-  path: string,
-  successKey: string
-): Promise<ActionState> {
-  const attempt = (previous.attempt ?? 0) + 1;
-
-  const parsed = parse();
-  if (!parsed.ok) return invalid(parsed.errors, attempt);
-
-  const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
-
-  const result = await client.send<T>(method, path, parsed.body);
-  if (!result.ok) return fromFailure(result, attempt);
-
-  return {
-    status: 'success',
-    messageKey: successKey,
-    correlationId: result.correlationId,
-    attempt,
-  };
-}
-
-/** The customer id, encoded, so it can never walk to another operation. */
-function base(customerId: string): string {
-  return `/api/v1/customers/${encodeURIComponent(customerId)}`;
-}
 
 const noteSchema = z
   .object({
@@ -214,6 +164,51 @@ export async function imposeRestrictionAction(
     'POST',
     `${base(customerId)}/restrictions`,
     'crm.customers.restrictions.imposed'
+  );
+}
+
+const statusSchema = z
+  .object({
+    lifecycleStatus: z.enum(SETTABLE_LIFECYCLE_STATES),
+    // The same ten-character floor as a restriction, and for the same reason:
+    // `crm.partner_status_history.reason` is NOT NULL with a not-blank check
+    // because a blocked customer standing at the counter is a person somebody
+    // has to be able to explain the decision to.
+    reason: z.string().trim().min(MIN_REASON, 'field.tooShort').max(MAX_REASON),
+  })
+  .strict();
+
+/**
+ * Change the customer's lifecycle status. `crm.customer.governance.manage`.
+ *
+ * A **PUT**, like `crm.preference-set` and unlike the five POSTs around it. The
+ * key comes from the contract-derived authority, so the method does not decide
+ * whether one is sent (`P1-27-INT-003`).
+ *
+ * `merged` is not offered anywhere: `SETTABLE_LIFECYCLE_STATES` excludes it
+ * because a merge is not a status somebody assigns — it is the outcome of the
+ * merge operation, which writes `merged_into_id` and the status together under
+ * its own permission (and that permission is withheld, `P1-OD-017`).
+ */
+export async function setCustomerStatusAction(
+  customerId: string,
+  previous: ActionState,
+  form: FormData
+): Promise<ActionState> {
+  return write(
+    previous,
+    () => {
+      const parsed = statusSchema.safeParse({
+        lifecycleStatus: String(form.get('lifecycleStatus') ?? ''),
+        reason: String(form.get('reason') ?? ''),
+      });
+      return parsed.success
+        ? { ok: true as const, body: parsed.data }
+        : { ok: false as const, errors: fieldErrorsFrom(parsed.error) };
+    },
+    'PUT',
+    `${base(customerId)}/status`,
+    'crm.customers.status.changed'
   );
 }
 

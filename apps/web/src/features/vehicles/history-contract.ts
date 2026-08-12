@@ -35,6 +35,8 @@
  * would be wrong for exactly the interval that matters.
  */
 
+import type { PartyIdentity } from '@/components/party/PartyLabel';
+
 /** `veh.ownership_history.ownership_kind`. */
 export const OWNERSHIP_KINDS = ['registered_owner', 'beneficial', 'fleet'] as const;
 export type OwnershipKind = (typeof OWNERSHIP_KINDS)[number];
@@ -46,16 +48,47 @@ export type OdometerUnit = (typeof ODOMETER_UNITS)[number];
 /** Non-correction capture methods. A correction carries `'correction'`. */
 export const ODOMETER_CAPTURE_METHODS = ['reception', 'delivery', 'manual'] as const;
 
-/** `veh.odometer_readings.correction_reason` — a closed, approved vocabulary. */
+/**
+ * `veh.odometer_readings.correction_reason` — a closed, approved vocabulary.
+ *
+ * The platform's own list (`vehicle-odometer.ts:28-34`) carries a FIFTH member,
+ * `'unknown'`, and the route accepts it. It is deliberately not offered here:
+ * "unknown" is what a reason is when nobody recorded one, not something an
+ * operator with the vehicle in front of them should be invited to choose, and
+ * `data_entry_correction` covers the honest "I typed it wrong" case.
+ *
+ * Being exact about the consequence, because the first version of this docblock
+ * was not: this list is BOTH the offer and the rule. `history-api.ts:290` builds
+ * `z.enum(ODOMETER_ANOMALY_REASONS)` from it, so the adapter refuses
+ * `'unknown'` — a value the route would accept. That is the one place this
+ * client is deliberately stricter than the server, and it is reachable only by
+ * calling the adapter directly, since the form offers no such choice. It is a
+ * narrower vocabulary for WRITING; the read side still renders `'unknown'` in
+ * words when a reading arrives carrying it, so nothing displayed is lost.
+ */
 export const ODOMETER_ANOMALY_REASONS = [
   'lower_than_prior',
   'possible_rollover',
   'meter_replacement',
   'data_entry_correction',
 ] as const;
+export type OdometerAnomalyReason = (typeof ODOMETER_ANOMALY_REASONS)[number];
 
 /** `ck_plate_history_country`: an ISO-style 2–3 letter code, upper-case. */
 export const COUNTRY_CODE_PATTERN = /^[A-Z]{2,3}$/;
+
+/**
+ * Length ceilings, mirroring the route schemas so a form can bound its input.
+ *
+ * These are the values the server enforces, restated — not a second authority. A
+ * client bound that disagreed with the server would refuse a value the server
+ * would have accepted, with no error the operator could act on, so the ceiling is
+ * copied exactly and never tightened.
+ */
+export const MAX_PLATE_RAW = 32;
+export const MAX_ODOMETER_VALUE = 9_999_999_999;
+/** `MAX_TRANSFER_REASON` in `veh/domain/vehicle-registration.ts`. */
+export const MAX_TRANSFER_REASON = 500;
 
 export interface PlateHistoryEntry {
   readonly id: string;
@@ -70,7 +103,16 @@ export interface PlateHistoryEntry {
   readonly createdAt: string;
 }
 
-export interface OwnershipHistoryEntry {
+/**
+ * One ownership interval.
+ *
+ * `partnerId` is carried because a write needs it; it is **never rendered**. The
+ * operation resolves the party through the CRM module and publishes the three
+ * `partner*` display fields alongside it (`P1-27-INT-025`), all of them required
+ * and nullable — `null` meaning "this caller cannot see that party", which
+ * `PartyLabel` states in words.
+ */
+export interface OwnershipHistoryEntry extends PartyIdentity {
   readonly id: string;
   readonly partnerId: string;
   readonly ownershipKind: string;
@@ -187,4 +229,56 @@ export function odometerDisplay(reading: OdometerReadingEntry): {
 /** A correction is a reading ABOUT another reading, and reads differently. */
 export function isCorrection(reading: OdometerReadingEntry): boolean {
   return reading.correctionOf !== null || reading.captureMethod === 'correction';
+}
+
+/** A prior reading, offered as something an operator can recognise. */
+export interface CorrectionChoice {
+  /** `veh.odometer_readings.id` — submitted, never rendered. */
+  readonly value: string;
+  /** What the operator reads: the reading, its unit, and when it was taken. */
+  readonly label: string;
+}
+
+/**
+ * The readings a correction may point at, turned into human choices.
+ *
+ * ## Why the id never reaches the screen
+ *
+ * `correctionOf` is a uuid. A text box for one would be a control no workshop
+ * employee could use — the same conclusion `TransferOwnershipForm` reached about
+ * `partnerId`, and the reason `veh.vehicle-ownership-transfer` stayed unwired
+ * for the whole of P1-27. So the value is carried and the LABEL is what is
+ * shown: "120000 km — 4 March 2026, 09:30".
+ *
+ * ## Derived from THIS vehicle's readings, and from nothing else
+ *
+ * The rows come from the odometer history already on screen, which is
+ * `veh.vehicle-odometer-history` for this vehicle id. A reading belonging to
+ * another vehicle is therefore not in the set and cannot be chosen; the server
+ * refuses one anyway with a foreign-key violation mapped to
+ * `body.correctionOf` / `unknown_reference`, and this is the reason an operator
+ * never has to meet that refusal.
+ *
+ * ## What it does NOT filter
+ *
+ * Not by time, and not by whether the row is itself a correction. The server's
+ * rule is "earlier or equal", checked in the database against the value being
+ * written — which is not known until the form is submitted. Pre-filtering here
+ * would be a client bound that disagrees with the server and hides a reading the
+ * server would have accepted; `form.violation.not_earlier` states that refusal
+ * instead, against the field that produced it.
+ *
+ * `formatObservedAt` is injected rather than imported so this stays a pure
+ * function of its inputs: the caller owns the locale.
+ */
+export function correctionChoices(
+  readings: readonly OdometerReadingEntry[],
+  formatObservedAt: (observedAt: string) => string
+): readonly CorrectionChoice[] {
+  return readings.map((reading) => ({
+    value: reading.id,
+    // The value keeps its own unit and is never converted — the same rule the
+    // table follows one component away.
+    label: `${odometerDisplay(reading).primary} — ${formatObservedAt(reading.observedAt)}`,
+  }));
 }

@@ -9,9 +9,13 @@ import { STATUS_BY_KIND, query, type CursorPage } from '@/lib/api/read-operation
 import {
   AUTHORIZED_ACTIONS,
   EV_KINDS,
+  MAX_CHARGE_PORT,
+  MAX_USABLE_CAPACITY_KWH,
+  LINKABLE_ROLES,
   type EvProfile,
   type VehicleRelationship,
 } from './relations-contract';
+import { fieldErrorsFrom } from '@/lib/forms/field-errors';
 
 /**
  * EV profile (`FE-024`) and vehicle-customer relationships (`FE-025`).
@@ -89,20 +93,41 @@ const evProfileSchema = z
     evKind: z.enum(EV_KINDS),
     // `numeric` on the column, a NUMBER in the request — the route's Zod schema
     // types it `z.number()`, so a form's string would be a 422.
-    usableCapacityKwh: z.number().positive().nullable().optional(),
-    chargePortType: z.string().trim().min(1).max(60).nullable().optional(),
+    /*
+     * The ROUTE's bounds, not a stricter guess (`P1-27-FE-024`).
+     *
+     * This was `.positive()` while
+     * `apps/api/src/app/api/v1/vehicles/{vehicleId}/ev-profile/route.ts:30`
+     * declares `z.number().min(0).max(MAX_USABLE_CAPACITY_KWH)`. A client bound
+     * tighter than the server's refuses a value the server would have accepted,
+     * with an error the operator cannot act on — exactly what
+     * `components/forms/RecordForm.tsx` says a client bound must never do. Zero
+     * is a real reading: a battery that has been removed, or one recorded as
+     * unknown-and-zero, and the platform stores it.
+     *
+     * The ceiling was also absent here and `60` was a literal where the domain
+     * says 40 (`vehicle-lifecycle.ts:48-49`). Both now come from named constants
+     * so the two sides cannot drift apart silently again.
+     */
+    usableCapacityKwh: z
+      .number()
+      .min(0, 'field.tooShort')
+      .max(MAX_USABLE_CAPACITY_KWH, 'field.tooLong')
+      .nullable()
+      .optional(),
+    chargePortType: z
+      .string()
+      .trim()
+      .min(1, 'field.required')
+      .max(MAX_CHARGE_PORT, 'field.tooLong')
+      .nullable()
+      .optional(),
     highVoltageWarning: z.boolean().optional(),
   })
   .strict();
 
-function fieldErrorsFrom(error: z.ZodError): Record<string, string> {
-  const errors: Record<string, string> = {};
-  for (const issue of error.issues) {
-    const key = issue.path[0];
-    if (typeof key === 'string' && !errors[key]) errors[key] = issue.message;
-  }
-  return errors;
-}
+// The private copy stored Zod's own English sentence (`P1-27-FE-004`).
+// `lib/forms/field-errors` is the one authority.
 
 /**
  * `FE-024` — set the EV profile. `veh.vehicle.manage`, idempotent.
@@ -145,6 +170,67 @@ export async function setEvProfileAction(
   return {
     status: 'success',
     messageKey: 'vehicles.ev.saved',
+    correlationId: result.correlationId,
+    attempt,
+  };
+}
+
+const linkSchema = z
+  .object({
+    // Chosen from the selector. Never typed.
+    partnerId: z.string().uuid('vehicles.ownership.error.customer'),
+    relationshipRole: z.enum(LINKABLE_ROLES as unknown as [string, ...string[]]),
+  })
+  .strict();
+
+/**
+ * `FE-025` — link a customer to this vehicle in a role.
+ *
+ * **`crm.vehicle-link`**, a CRM operation: `POST /customers/{customerId}/vehicles`
+ * with permission `crm.customer.vehicle.manage` — a different module and a
+ * different capability from the two `veh` relationship writes beside it.
+ *
+ * ## Why it is offered from the VEHICLE screen
+ *
+ * The path is customer-centric, so the obvious home is the customer profile. But
+ * `POST /customers/{id}/vehicles` publishes no `GET`: there is no "this
+ * customer's vehicles" read anywhere in the platform (`P1-27-INT-012`, deferred
+ * to P1-28 and owned by P1-16 Backend). A link made from the customer profile
+ * would therefore be invisible the moment it was made.
+ *
+ * The CRM writer inserts into `veh.vehicle_relationships` — the SAME table
+ * `veh.vehicle-relationship-list` reads. Offered here, the new relationship
+ * appears in the table directly above the form. Same operation, same permission,
+ * and a result the operator can see.
+ */
+export async function linkCustomerAction(
+  vehicleId: string,
+  previous: ActionState,
+  form: FormData
+): Promise<ActionState> {
+  const attempt = (previous.attempt ?? 0) + 1;
+
+  const parsed = linkSchema.safeParse({
+    partnerId: String(form.get('partnerId') ?? '').trim(),
+    relationshipRole: String(form.get('relationshipRole') ?? ''),
+  });
+  if (!parsed.success) return invalid(fieldErrorsFrom(parsed.error), attempt);
+
+  const client = await authorizedClient();
+  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
+
+  // The CUSTOMER is the path resource here and the vehicle is the body — the
+  // mirror of every other write on this screen.
+  const result = await client.send(
+    'POST',
+    `/api/v1/customers/${encodeURIComponent(parsed.data.partnerId)}/vehicles`,
+    { vehicleId, relationshipRole: parsed.data.relationshipRole }
+  );
+  if (!result.ok) return fromFailure(result, attempt);
+
+  return {
+    status: 'success',
+    messageKey: 'vehicles.relationships.linked',
     correlationId: result.correlationId,
     attempt,
   };

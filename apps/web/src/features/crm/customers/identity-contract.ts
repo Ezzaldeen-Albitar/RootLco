@@ -65,8 +65,51 @@ export interface TimelineEntry {
   readonly title: string;
   readonly occurredAt: string;
   readonly actorId: string | null;
+  /**
+   * The actor's display name, when an identity surface publishes one.
+   *
+   * OPTIONAL on the wire, and that is the difference that matters: `undefined`
+   * means the API predates the identity surface, `null` means this caller may
+   * not be told who it was. Neither is a licence to print `actorId`, which is a
+   * uuid and is never shown (`P1-27-INT-026`).
+   *
+   * The vehicle attribute ledger has the same shape and the same rule
+   * (`vehicles.history.actorUnavailable`). This field exists so the customer
+   * timeline reads a name the moment one is published, without a second change
+   * here.
+   *
+   * **The CUSTOMER timeline still publishes no name.** `crm.customer-timeline`
+   * returns `actor_id` alone, so this branch of the cell is unreachable and
+   * "Recorded by" reads the safe sentence for every human row. A uuid was never
+   * an option; the field is kept rather than deleted so the wiring, when it
+   * comes, is a Backend change alone.
+   *
+   * Two supporting claims here were true when written and are now corrected
+   * rather than removed, because the conclusion above survives them both and
+   * the difference is worth being able to check:
+   *
+   *   - "`actorName` occurs nowhere in `apps/api`" is FALSE since PR #212
+   *     (`76e37f0`) merged. It is published by `veh.vehicle-history`. The true
+   *     statement is narrower and is the one that matters here: it occurs
+   *     nowhere under `apps/api/src/modules/crm/`.
+   *   - "its five files" pinned a count to another branch's diff, which rots by
+   *     construction — that branch ended at nine files. The load-bearing fact is
+   *     not how many files it touched but WHERE: `iam/` and `vehicle/`, none
+   *     under `crm/`.
+   *
+   * So `FE-029` (the vehicle half) is closed, and the customer timeline is
+   * still waiting on a CRM-side producer. Those are two different things and
+   * this docblock previously ran them together.
+   */
+  readonly actorName?: string | null;
 }
 
+/**
+ * One entry from the customer HISTORY read.
+ *
+ * Retained although the adapter is gone: the operation still exists and this is
+ * the shape it publishes. A future task that wires the read starts from here.
+ */
 export interface HistoryEntry {
   readonly kind: HistoryKind;
   readonly id: string;
@@ -181,10 +224,15 @@ export function pairMembers(
  * which is where a future wave should start when the decision is resolved.
  */
 
-export function validateReviewReason(reason: string): string | null {
-  const trimmed = reason.trim();
-  if (trimmed.length === 0) return 'field.required';
-  if (trimmed.length < MIN_MERGE_REASON) return 'field.tooShort';
-  if (trimmed.length > MAX_MERGE_REASON) return 'field.tooLong';
-  return null;
-}
+/*
+ * `validateReviewReason` is gone from this file (`P1-27-FE-016` / `FE-028`).
+ *
+ * It mirrored the zod `.min(..., 'field.tooShort')` in this domain's own review
+ * adapter and had no production caller — the same defect `P1-27-FE-013` removed
+ * from the governance contracts, in the two files that sweep did not reach. Its
+ * only consumers were tests, so the coverage credited to the one decision these
+ * tasks may ship while `P1-OD-017` is open was proving an unreachable copy.
+ *
+ * The real validation runs in the adapter's schema and is driven end to end by
+ * `apps/web/tests/duplicate-review-writes.test.ts`.
+ */

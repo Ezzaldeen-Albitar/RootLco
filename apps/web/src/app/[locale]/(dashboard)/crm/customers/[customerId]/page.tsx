@@ -8,6 +8,7 @@ import {
 } from '@/components/states/States';
 import { requireSession } from '@/features/authentication/api/session';
 import { CustomerProfileScreen } from '@/features/crm/customers/components/CustomerProfileScreen';
+import { permittedWrites } from '@/features/crm/customers/governance-contract';
 import { readCustomer } from '@/features/crm/customers/profile-api';
 import { CRM_PERMISSIONS, holds } from '@/features/crm/permissions';
 import { isLocale } from '@/i18n/config';
@@ -79,7 +80,32 @@ export default async function CustomerProfilePage({
     return frame(<SessionExpiredState messages={messages} />);
   }
   if (result.status !== 'ok') {
-    return frame(<BackendUnavailableState messages={messages} />);
+    /*
+     * The reference is carried HERE too, and it was not.
+     *
+     * `PermissionDeniedState` twelve lines up already passes it, and the vehicle
+     * profile's equivalent branch passes it too — its `ErrorState` and its
+     * `PermissionDeniedState` both carry the reference. Named by content rather
+     * than by line: this sentence cited `vehicles/[vehicleId]/page.tsx:85` until
+     * that route was restructured to add its missing `expired` branch, after
+     * which line 85 was this same explanation in prose. A cross-file line number
+     * is the one citation form nothing in this repository can check.
+     *
+     * So this route had dropped it on the one outcome where an operator most
+     * needs something to quote. A denial is self-explanatory; "the service is
+     * unavailable" is not, and without a reference the only thing they can
+     * report is the time of day.
+     *
+     * `SEC-004` swept `features/**` for `correlationId` and never opened a route
+     * file, so the omission sat inside its blind spot; the prop is optional
+     * (`States.tsx:199`), so nothing else objected either.
+     */
+    return frame(
+      <BackendUnavailableState
+        messages={messages}
+        correlationId={result.correlationId ?? undefined}
+      />
+    );
   }
 
   return (
@@ -94,7 +120,21 @@ export default async function CustomerProfilePage({
         ]}
       />
       <PageBody fill>
-        <CustomerProfileScreen locale={locale} messages={messages} customer={result.data} />
+        <CustomerProfileScreen
+          locale={locale}
+          messages={messages}
+          customer={result.data}
+          // Resolved once here, on the server, from the session the Backend
+          // itself issued — never from anything the browser can state.
+          //
+          // Nine writes across this profile need five different capabilities,
+          // and NONE of them is the `crm.customer.read` that gates this page.
+          // Only `crm.customer-status-set` was ever checked; the other eight
+          // forms rendered for every operator who could open a customer
+          // (`P1-27-SEC-001`). Visibility only — the server decides, and
+          // `permittedWrites` cannot make a forged call succeed.
+          writes={permittedWrites(session.permissions)}
+        />
       </PageBody>
     </>
   );

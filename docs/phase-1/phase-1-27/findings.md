@@ -129,19 +129,32 @@ later write answer 409 with nothing on screen explaining why.
 
 ## Open, and NOT this phase's to fix
 
-| id              | owner        | subject                                                                                                                                                                                                  |
-| --------------- | ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `P1-27-INT-004` | foundation   | The OpenAPI generator publishes 200 for routes that return 201, never 400 or 404, and **no request body for any of the 152 mutation operations**                                                         |
-| `P1-27-INT-006` | other phases | **10 pre-existing cursor sites** still mint from a JS `Date` — was 16; the six in the vehicle module were closed by `P1-27-INT-008` because Waves 7–12 call all of them                                  |
-| `P1-16-A-01`    | P1-16        | `crm.addresses.line3` and `crm.communication_preferences.quiet_hours_note` are columns no write operation can set                                                                                        |
-| `P1-16-A-02`    | foundation   | Path validation runs outside `handleOperation` in all 141 route modules, so a malformed uuid throws outside the block that renders an RFC 9457 document                                                  |
-| `P1-27-INT-009` | P1-17        | **`recordVersion` is published and an ETag emitted, and no vehicle write consumes either.** Neither vehicle PATCH is `versionGuarded`, so concurrent edits are last-writer-wins from a client's position |
-| `P1-17-A-01`    | P1-17        | The `iam.sensitive.view`-gated alternate-identifier read the vehicle domain promises does not exist                                                                                                      |
-| `P1-17-A-02`    | P1-17        | `veh.vehicle_alerts` has no route at all                                                                                                                                                                 |
+| id              | owner        | subject                                                                                                                                                                                                                                                                                                        |
+| --------------- | ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `P1-27-INT-004` | foundation   | The OpenAPI generator publishes 200 for routes that return 201, never 400 or 404, and **no request body for any of the 152 mutation operations**                                                                                                                                                               |
+| `P1-27-INT-006` | other phases | **10 pre-existing cursor sites** still mint from a JS `Date` — was 16; the six in the vehicle module were closed by `P1-27-INT-008` because Waves 7–12 call all of them                                                                                                                                        |
+| `P1-16-A-01`    | P1-16        | `crm.addresses.line3` and `crm.communication_preferences.quiet_hours_note` are columns no write operation can set                                                                                                                                                                                              |
+| `P1-16-A-02`    | foundation   | Path validation runs outside `handleOperation` in all 141 route modules, so a malformed uuid throws outside the block that renders an RFC 9457 document                                                                                                                                                        |
+| `P1-27-INT-009` | P1-17        | **`recordVersion` is published and an ETag emitted, and no vehicle write consumes either.** Neither vehicle PATCH is `versionGuarded`, so concurrent edits are last-writer-wins from a client's position                                                                                                       |
+| `P1-17-A-01`    | P1-17        | The `iam.sensitive.view`-gated alternate-identifier read the vehicle domain promises does not exist                                                                                                                                                                                                            |
+| `P1-17-A-02`    | P1-17        | `veh.vehicle_alerts` has no route at all                                                                                                                                                                                                                                                                       |
+| `P1-27-INT-027` | P1-17        | **`POST /vehicles` cannot say WHICH value collided.** `veh.vehicles` carries two tenant-scoped unique indexes — `uq_vehicles_active_vin` and `uq_vehicles_active_display_number` — and `mapWriteConflict` branches on SQLSTATE alone without reading the constraint name, so both become one `ERR-RES-002`     |
+| `P1-27-INT-028` | foundation   | **The problem document the API emits and the one the Web client parses are different shapes.** `problem.ts` emits `code` and `violations: {path, rule}[]`; `lib/api/client.ts` declares `errorCode` and `errors: Record<string, string[]>`, and the word `violations` appears **zero times** in `apps/web/src` |
+| `P1-27-DO-003`  | foundation   | **`validate:phase-ownership` is invoked by no CI job.** The command registry records it `informational` "because P1-26's CI job runs it with the p1-26-frontend profile"; grep of `.github/` for `phase-ownership` returns nothing. It caught the seven riding API files only because it was run by hand       |
 
-**None of these blocks a P1-27 screen.** `INT-004` affects a generated document,
-not a runtime response. The **remaining 10** cursor sites are in operations P1-27
-does not call.
+**`INT-004`, `INT-006`, `INT-009`, `A-01` and `A-02` block no P1-27 screen.**
+`INT-004` affects a generated document, not a runtime response. The **remaining
+10** cursor sites are in operations P1-27 does not call.
+
+**The last three are different and are stated plainly rather than filed as
+harmless.** `INT-027` is why the vehicle create form says "one of the values you
+entered is already used" instead of naming the field: an earlier fix DID name the
+VIN, and would have accused the VIN whenever the reference number was the
+duplicate. `INT-028` means no server-supplied field error reaches any form on any
+status, which is a wider defect than the one that exposed it. `DO-003` means the
+gate that found seven Backend files riding inside this Frontend branch is run by
+nobody automatically — it found them because it was run by hand, and the registry
+entry says otherwise.
 
 **That sentence used to say sixteen, and it was wrong.** The original disposition
 read "the 16 cursor sites are in operations P1-27 does not call", and six of them
@@ -508,7 +521,7 @@ The gate carries the same two anti-vacuity properties as its P1-26 predecessor
 (a rule inspecting zero files fails; comments are stripped so the explanation of
 a rule is not accused of breaking it) plus a third that the earlier one lacks: a
 `selfTest()` that runs on **every invocation** and is folded into the failure
-list. A comment stripper that over-matched would turn all six rules into scans
+list. A comment stripper that over-matched would turn all eight rules into scans
 over empty strings and report clean — the one failure mode the per-rule
 anti-vacuity checks cannot see, because from their side the files are still
 there.

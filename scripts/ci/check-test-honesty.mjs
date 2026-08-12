@@ -76,23 +76,47 @@ function suppressed(line, rule) {
   return new RegExp(`test-honesty-allow:\\s*${rule}\\b`).test(line);
 }
 
-/** Strips block and line comments so a rule cannot be satisfied by a comment. */
+/**
+ * Blanks comments so a rule cannot be satisfied — or TRIPPED — by prose.
+ *
+ * Length- and line-preserving. The previous version deleted block comments
+ * outright, which collapsed the lines they spanned and made every reported line
+ * number after a docblock wrong. It is used for offsets now, so that matters.
+ */
 export function stripComments(source) {
-  return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
+  const blank = (m) => m.replace(/[^\n]/g, ' ');
+  return source
+    .replace(/\/\*[\s\S]*?\*\//g, blank)
+    .replace(/(^|[^:])\/\/.*$/gm, (m, p1) => p1 + ' '.repeat(m.length - p1.length));
 }
 
 export function lintTestFile(rel, source) {
   const findings = [];
   const lines = source.split(/\r?\n/);
   const code = stripComments(source);
+  /*
+   * The RULE lines are the stripped ones; the SUPPRESSION lookup uses the raw
+   * ones, because a suppression is itself a comment and must stay visible.
+   *
+   * `stripComments` existed, was documented as "so a rule cannot be satisfied by
+   * a comment", and the loop below iterated the RAW lines anyway — declared and
+   * not wired, which is this phase's signature defect. It fired on two docblocks
+   * that merely EXPLAIN the `it.skip` hazard:
+   *
+   *   summarise-vitest.mjs:  "`it.skip` applied to an entire tier leaves…"
+   *   web-test-floor.test.ts: "`numTotalTests` counts skipped tests…"
+   *
+   * A gate that cannot tell code from prose about code is the seventh instance
+   * of that class in this phase, and annotating the prose to appease it would
+   * have hidden the defect rather than fixed it.
+   */
+  const codeLines = code.split(/\r?\n/);
   const add = (rule, line, message, severity = 'high') =>
     findings.push({ file: rel, rule, line, message, severity });
 
-  lines.forEach((line, index) => {
-    if (
-      /\b(describe|it|test|suite|bench)\s*\.\s*only\b/.test(line) &&
-      !suppressed(line, 'TH-001')
-    ) {
+  codeLines.forEach((line, index) => {
+    const raw = lines[index] ?? '';
+    if (/\b(describe|it|test|suite|bench)\s*\.\s*only\b/.test(line) && !suppressed(raw, 'TH-001')) {
       add(
         'TH-001',
         index + 1,
@@ -102,7 +126,7 @@ export function lintTestFile(rel, source) {
     }
     const skip = /\b(describe|it|test|suite)\s*\.\s*(skip|todo|fails|skipIf|runIf)\b/.exec(line);
     if (skip) {
-      const context = `${lines[index - 1] ?? ''}\n${line}\n${lines[index + 1] ?? ''}`;
+      const context = `${lines[index - 1] ?? ''}\n${raw}\n${lines[index + 1] ?? ''}`;
       const documented = /test-honesty-allow:\s*TH-002\s*--\s*\S/.test(context);
       if (!documented) {
         add(

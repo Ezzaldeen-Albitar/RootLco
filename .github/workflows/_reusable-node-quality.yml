@@ -45,6 +45,19 @@ on:
         required: false
         type: string
         default: ''
+      head-branch:
+        description: >-
+          Pull-request head branch name. `static-quality` resolves it against
+          `.github/ci-baselines/phase-ownership-profiles.json` to pick the
+          changed-file ownership profile. Leave it empty ONLY on a `push` or
+          `workflow_dispatch`: there `check-phase-ownership.mjs
+          --resolve-context` resolves the profile from the pushed ref instead,
+          or declares a skip if that ref is protected. A caller running on
+          `pull_request` that omits this is REFUSED — an empty value used to
+          disable the gate in silence.
+        required: false
+        type: string
+        default: ''
       artifact-retention-days:
         required: false
         type: number
@@ -249,6 +262,63 @@ jobs:
           # translation keys — in either language.
           npm run validate:plain-language
 
+      # =======================================================================
+      # Changed-file ownership — P1-27-DO-003.
+      #
+      # `validate:phase-ownership` existed, was correct, and was invoked by NO CI
+      # job: a grep of `.github/` for `phase-ownership` returned nothing and
+      # never had. The register in `check-command-coverage.mjs` recorded that in
+      # a PROSE comment — a command documented as unreachable, which is the
+      # defect class this phase is made of. It found seven API source files
+      # riding inside the P1-27 Frontend branch only because a human ran it.
+      #
+      # The profile is a property of the BRANCH, so it is resolved from a
+      # committed map rather than defaulted. Defaulting is what made every
+      # branch — including Backend ones the profile cannot pass — get judged
+      # against `p1-26-frontend` for the whole of two phases.
+      #
+      # A pull request is the richest context, but it is NOT the only one this
+      # step can answer in, and the first version of it treated every other
+      # context as a reason to exit 0. `protected-develop-verification.yml`
+      # passes neither input, so on every push to `develop` and `main` the step
+      # printed a sentence and judged nothing; `pr-ci.yml` fires on
+      # `workflow_dispatch` too, where the pull-request fields are empty and the
+      # same silent 0 followed. A step that exits 0 BECAUSE IT COULD NOT RUN is
+      # this phase's defect class, reintroduced by the fix for it.
+      #
+      # `decideOwnershipRun()` in `scripts/ci/check-phase-ownership.mjs` now
+      # makes that decision, in a module `tests/ci/phase-ownership.test.ts` can
+      # call: a pull request
+      # resolves the profile from the head branch, a push or dispatch on an
+      # ORDINARY branch resolves it from the pushed ref, a push on a protected
+      # branch is a DECLARED skip written to the step summary and to
+      # `phase-ownership-context.json` in the evidence artefact, and anything
+      # else — including a `pull_request` run whose caller forgot the inputs —
+      # is refused with exit 1.
+      # =======================================================================
+      - name: Changed-file ownership
+        if: inputs.task == 'static-quality'
+        env:
+          HEAD_BRANCH: ${{ inputs.head-branch }}
+          BASE_REF: ${{ inputs.base-ref }}
+          OWNERSHIP_EVENT_NAME: ${{ github.event_name }}
+          OWNERSHIP_REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          # Exits 1 when the context is unusable, so `set -e` refuses the run
+          # rather than falling through to a skip.
+          node scripts/ci/check-phase-ownership.mjs --resolve-context \
+            --env-out ownership-context.env \
+            --json phase-ownership-context.json
+          # Every value here is validated against `^[A-Za-z0-9._/-]+$` and
+          # single-quoted by the writer; no branch name is ever emitted.
+          . ./ownership-context.env
+          if [ "${OWNERSHIP_ACTION}" = "check" ]; then
+            PHASE_OWNERSHIP_PROFILE="${OWNERSHIP_PROFILE}" \
+            PHASE_OWNERSHIP_BASE="${OWNERSHIP_BASE}" \
+              npm run validate:phase-ownership
+          fi
+
       - name: Route ↔ OpenAPI registry parity
         if: inputs.task == 'static-quality'
         run: node scripts/ci/check-route-registry-parity.mjs --json route-parity.json --markdown route-parity.md
@@ -374,8 +444,13 @@ jobs:
             fs.appendFileSync(process.env.GITHUB_OUTPUT, `total=${s.total}\n`);
           '
 
+      # Two tasks now carry a touched-file coverage floor — the unit tier and the
+      # web tier — so the list they both read has to be produced for both. A
+      # `--changed` pointing at a file that was never written makes the gate skip
+      # the touched-file rule silently, which is the shape of every hole this
+      # phase has been closing.
       - name: Changed files, for the touched-file coverage floor
-        if: inputs.task == 'unit-coverage' && !cancelled()
+        if: (inputs.task == 'unit-coverage' || inputs.task == 'web-quality') && !cancelled()
         env:
           BASE_REF: ${{ inputs.base-ref }}
         run: |
@@ -510,6 +585,10 @@ jobs:
           # No merge caller while P1-OD-017 is open, no duplicate scan from a
           # review surface, no client-asserted scope, no invented total.
           npm run validate:p1-27-frontend
+          # A registered operation is not a delivered feature. Every canonical
+          # P1-27 mutation must be reachable from a real production call site,
+          # or carry an approved decision saying why it is not.
+          npm run validate:p1-27-reachability
 
       - name: Web component tier
         if: inputs.task == 'web-quality'
@@ -518,7 +597,24 @@ jobs:
           # An explicit script, not flags forwarded through two npm layers —
           # that is where they were being dropped, leaving vitest on its default
           # reporter and the summariser with no report to read.
+          #
+          # The same lesson governs coverage. `npm run test:web -- --coverage`
+          # LOSES the `--` at the second npm layer and runs a plain `vitest run`,
+          # producing exit 0, no report and a job that measured nothing while
+          # calling itself a coverage run. So the flags live inside the workspace
+          # script and the suite is executed once for both purposes.
           npm run test:web-ci
+
+      - name: Web coverage ratchet
+        id: web-coverage
+        if: inputs.task == 'web-quality' && !cancelled()
+        run: |
+          set -euo pipefail
+          node scripts/ci/coverage-gate.mjs \
+            --summary apps/web/coverage/web/coverage-summary.json \
+            --baseline .github/ci-baselines/coverage-baseline.web.json \
+            --changed changed-files.txt \
+            --json coverage-gate-web.json --markdown coverage-web.md
 
       - name: Summarise the web tier
         id: web-tests
@@ -553,7 +649,74 @@ jobs:
           # Against a real production build. Five projects: two desktop widths,
           # a laptop width, a tablet width, and a reduced-motion context — an
           # RTL layout defect is invisible in an LTR run and vice versa.
+          #
+          # ANONYMOUS ONLY. `apps/web/playwright.config.ts` gates
+          # tests/e2e/authenticated/** behind ROOTLCO_E2E_AUTH=1, which nothing
+          # here sets — see the next step, which says so out loud.
           npm run test:web-e2e
+
+      - name: Say which browser specs did NOT run, and what that leaves unproven
+        if: inputs.task == 'web-quality' && !cancelled()
+        run: |
+          set -euo pipefail
+          # The step this exists for. `test:web-e2e` above reports green over the
+          # ANONYMOUS tier only, and for the whole of P1-27 nothing anywhere said
+          # that the repository's only tenant-isolation proof and its only
+          # route-level accessibility proof were not among the tests that ran.
+          #
+          # A green check that silently covers less than a reader assumes is the
+          # defect class this phase exists to remove, so the omission is now
+          # rendered as a warning annotation AND in the job summary, from a
+          # committed declaration that tests/ci/e2e-tier-coverage.test.ts holds
+          # against the actual spec files.
+          #
+          # The tier is no longer unrun anywhere: the `authenticated-browser` job
+          # is now a real dependency of BOTH gates, so `unrun` is empty and this
+          # step renders the repayment instead of the debt.
+          #
+          # An empty declaration used to THROW here, on the reasoning that the
+          # list is derived from real spec files and cannot be empty. That was
+          # true only while the tier was ungoverned: it made "the debt was paid"
+          # indistinguishable from "somebody deleted the file", and it would have
+          # failed every web job on the commit that closed the gap. The two states
+          # are now distinguished and both are printed.
+          #
+          # The last line used to interpolate the declaration's OLD observation
+          # field name. That field was renamed to `hostedObservation` and this
+          # line was not, so the summary rendered the literal word `undefined`
+          # where the observation status belongs — a stale reference no gate
+          # could see, because a job summary is prose.
+          node -e '
+            const fs = require("node:fs");
+            const doc = JSON.parse(fs.readFileSync(".github/ci-baselines/unrun-test-tiers.json", "utf8"));
+            const rows = doc.unrun ?? [];
+            const governed = doc.governed ?? null;
+            if (rows.length === 0 && !governed) {
+              throw new Error("the unrun-tier declaration is empty and records no governing job either; one of the two must be true");
+            }
+            const out = [];
+            if (rows.length > 0) {
+              out.push("### Browser specs NOT executed by this job", "",
+                "`npm run test:web-e2e` runs the ANONYMOUS tier. These specs did not run here, and a green pull request does not cover them:", "",
+                "| Spec | What a pull request leaves unproven | Executed instead by | Compensating control |", "| --- | --- | --- | --- |");
+              for (const row of rows) {
+                console.log(`::warning file=${row.path}::${row.id} did not run in this job. ${row.whatIsUnprovenWithoutIt} Executed by: ${row.executedBy}`);
+                out.push(`| \`${row.path}\` | ${row.whatIsUnprovenWithoutIt} | ${row.executedBy} | ${row.compensatingControl} |`);
+              }
+              out.push("", `_Declared in \`.github/ci-baselines/unrun-test-tiers.json\`. ${rows.length} spec(s)._`);
+            } else {
+              out.push("### Browser specs not executed by THIS job — and the gate that does execute them", "",
+                "`npm run test:web-e2e` runs the ANONYMOUS tier only. The authenticated tier is not run here, and it is no longer a hole: a gate-governed job runs it and both gates wait for the result.", "",
+                "| Spec | Executed and governed by |", "| --- | --- |");
+              for (const spec of governed.specs ?? []) {
+                out.push(`| \`${spec}\` | ${governed.executedBy} |`);
+              }
+              out.push("", `_Governed by: ${governed.governedBy}_`, "", `_Fork policy: ${governed.forkPolicy}_`);
+            }
+            out.push("", `_${doc.hostedObservation}_`, "");
+            fs.writeFileSync("unrun-tiers.md", out.join("\n") + "\n");
+          '
+          cat unrun-tiers.md
 
       - name: The web build output carries no credential
         if: inputs.task == 'web-quality'
@@ -577,7 +740,18 @@ jobs:
           CACHE_HIT: ${{ steps.setup.outputs.cache-hit }}
         run: |
           set -euo pipefail
-          for file in workflow-security.md route-parity.md test-honesty.md env-contract.md tests-unit.md coverage.md build.md; do
+          # EVERY markdown this job can produce, and the list is gate-checked.
+          #
+          # `tests-web.md` was written at the "Summarise the web tier" step and
+          # rendered nowhere: the web tier's honesty verdict — executed count,
+          # skipped cases, floor result — existed as an artifact file and was
+          # invisible in the one place a reviewer looks (`WTF-10`). The two build
+          # scan summaries were missing for the same reason.
+          #
+          # `tests/ci/job-summary-rendering.test.ts` derives the required list
+          # from this file's own `--markdown` arguments, so a new summariser
+          # cannot be added without appearing here.
+          for file in workflow-security.md route-parity.md test-honesty.md env-contract.md tests-unit.md coverage.md build-output-scan.md build.md tests-web.md coverage-web.md unrun-tiers.md web-build-scan.md; do
             if [ -f "${file}" ]; then
               cat "${file}" >> "${GITHUB_STEP_SUMMARY}"
               printf '\n\n' >> "${GITHUB_STEP_SUMMARY}"
@@ -595,6 +769,7 @@ jobs:
           if-no-files-found: ignore
           path: |
             workflow-security.json
+            phase-ownership-context.json
             route-parity.json
             test-honesty.json
             openapi-totals.json
@@ -611,6 +786,7 @@ jobs:
             apps/web/vitest-web.json
             apps/web/playwright-report.json
             test-totals-web.json
+            unrun-tiers.md
             web-build-scan.json
             web-build.log
             *.md

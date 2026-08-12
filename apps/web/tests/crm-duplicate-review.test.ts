@@ -7,7 +7,6 @@ import {
   TIMELINE_EVENT_TYPES,
   formatMatchScore,
   isActionable,
-  validateReviewReason,
   type DuplicateCandidate,
 } from '@/features/crm/customers/identity-contract';
 import { CRM_PERMISSIONS } from '@/features/crm/permissions';
@@ -206,18 +205,23 @@ describe('a settled candidate is not actionable', () => {
   });
 });
 
-describe('the dismissal reason is real, not paperwork', () => {
-  it('requires at least ten characters', () => {
-    expect(validateReviewReason('')).toBe('field.required');
-    expect(validateReviewReason('   ')).toBe('field.required');
-    expect(validateReviewReason('no')).toBe('field.tooShort');
-    expect(validateReviewReason('x'.repeat(MIN_MERGE_REASON))).toBeNull();
-  });
-
-  it('measures the trimmed value', () => {
-    // `btrim(reason) <> ''` on the backend. Ten spaces is not a ten-character
-    // reason there, however long it looks here.
-    expect(validateReviewReason(' '.repeat(20))).toBe('field.required');
+/*
+ * "The dismissal reason is real, not paperwork" moved to
+ * `duplicate-review-writes.test.ts`, where it drives `reviewDuplicateAction`'s
+ * own schema.
+ *
+ * It used to call `validateReviewReason` — a mirror of that schema with no
+ * production caller — so the coverage credited to the only decision `FE-016` may
+ * ship while `P1-OD-017` is open was proving an unreachable copy. Same defect as
+ * `P1-27-FE-013`, in the file that sweep did not reach.
+ *
+ * The BOUND is still asserted here, because the screen reads it for the field's
+ * `minLength`: a floor that drifted from the schema's would let an operator type
+ * a reason the form accepts and the write rejects.
+ */
+describe('the dismissal floor the screen shows matches the one the write enforces', () => {
+  it('is ten characters, the same value the route requires', () => {
+    expect(MIN_MERGE_REASON).toBe(10);
   });
 });
 

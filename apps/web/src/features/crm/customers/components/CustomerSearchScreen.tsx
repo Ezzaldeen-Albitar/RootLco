@@ -192,6 +192,22 @@ function CustomerSearchResults({
         onRetry={table.refresh}
         correlationId={table.correlationId}
         caption={translate(messages, 'crm.customers.search.tableCaption')}
+        /*
+         * `P1-27-FE-002`. This screen keeps its criteria OUTSIDE `TableRequest`
+         * — deliberately, so a customer's name never reaches the address bar —
+         * and mounts the table with `INITIAL_REQUEST`. `isNarrowed(request)` is
+         * therefore permanently false here, so the table chose "Nothing here yet
+         * · Once records exist they will be listed here": a claim about the
+         * tenant's whole customer list, on the evidence of one query that
+         * excluded everything, printed directly above the correct sentence this
+         * screen already renders below.
+         *
+         * The screen owns the zero-result state because it knows three things
+         * the table cannot: the domain wording, whether this operator may create
+         * the customer they failed to find, and that Clear filters would do
+         * nothing here.
+         */
+        suppressEmptyState
         rowActions={(row) => (
           <button
             type="button"
