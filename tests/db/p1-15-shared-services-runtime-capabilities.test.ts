@@ -376,7 +376,7 @@ describe('P1-15 / global security posture', () => {
     expect(Number(rows[0]?.n)).toBe(0);
   });
 
-  it('both new permission codes exist exactly once and the catalog totals 104', async () => {
+  it('both new permission codes exist exactly once and the catalog totals 107', async () => {
     const { rows } = await admin.query<{ permission_code: string; n: string }>(
       `SELECT permission_code, count(*)::text AS n FROM iam.permissions
         WHERE permission_code IN ('shared.document.manage','shared.notification.send')
@@ -431,6 +431,13 @@ describe('P1-15 / global security posture', () => {
     // anyone who may enqueue a notification may also read every recipient's inbox,
     // and that anyone who may configure a report may read every report.
     //
+    // The P1-27 read-surface remediation (executed by P1-18) adds three, taking
+    // the catalog to 107: apt.appointment.read and rec.reception.read — the
+    // P1-18 note above ("registers no read code, because it exposes no read
+    // operation") stopped being true the moment the read surface shipped — and
+    // rec.reception.close, because closed_without_work/refused had no route and
+    // an abandoned visit held its vehicle forever (P1-27-INT-014).
+    //
     // This pin is what turned that into a caught defect rather than a shipped one:
     // all four codes were declared by routes and missing from the catalog, and
     // every denial-based authorization test still passed, because a permission
@@ -440,7 +447,7 @@ describe('P1-15 / global security posture', () => {
     //
     // The pin moves with the seed deliberately: it is what catches an accidental
     // catalog edit.
-    expect(Number(total.rows[0]?.n)).toBe(104);
+    expect(Number(total.rows[0]?.n)).toBe(107);
   });
 
   it('the exact write-policy inventory of the whole shared schema is unchanged apart from migrations 117 and 119', async () => {

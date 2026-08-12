@@ -76,6 +76,19 @@ export const MAX_SOC_PERCENT = 100;
 export const MIN_SOC_PERCENT = 0;
 export const MAX_WALK_IN_NOTE = 500;
 export const MAX_DISPLAY_NUMBER = 64;
+/**
+ * The mandatory closure/refusal reason. Bounded text, the same ceiling as the
+ * walk-in note: `rec.reception_status_history.reason` carries only a non-blank
+ * CHECK, so the boundary is where the bound lives. Text rather than a catalogue
+ * id, deliberately — `rec.refusal_reasons` ships zero rows and has no
+ * management operation (the no-fake-data policy governs population), so a
+ * mandatory catalogue reference would make both commands dead on arrival.
+ */
+export const MAX_CLOSURE_REASON = 500;
+
+/** The two terminal outcomes a visit can be closed into without work. */
+export const CLOSE_OUTCOMES = ['closed_without_work', 'refused'] as const;
+export type CloseOutcome = (typeof CLOSE_OUTCOMES)[number];
 
 export class ReceptionRuleError extends Error {
   public override readonly name = 'ReceptionRuleError';
@@ -276,6 +289,28 @@ export function assertAuthorizingRoleHeld(claimed: string, activeRoles: readonly
   if (!activeRoles.includes(claimed)) {
     throw new AppFailure('ERR-TRN-001', {
       message: 'That party may not authorize work on this reception in the role claimed',
+    });
+  }
+}
+
+/**
+ * A visit may be closed without work, or refused, from ANY non-terminal state.
+ *
+ * That is the frozen graph verbatim: `rec.guard_reception_transition` gives
+ * `opened`, `inspecting` AND `authorized` an edge into both terminal outcomes,
+ * and this restates it rather than narrowing it — an authorized visit whose
+ * customer walks away must still have an exit. The terminal states are frozen,
+ * so closing a closed visit is refused with the state named: re-running the
+ * SAME request replays idempotently, and a NEW attempt is a real conflict.
+ *
+ * This is the exit that ends the `P1-27-INT-014` trap: with no route into
+ * `closed_without_work` or `refused`, an abandoned visit held its vehicle
+ * forever through `uq_reception_visits_open_vehicle` — the INT-013 sibling.
+ */
+export function assertClosable(current: string): void {
+  if (TERMINAL_RECEPTION_STATUSES.includes(current as ReceptionStatus)) {
+    throw new AppFailure('ERR-TRN-001', {
+      message: `A reception in state "${current}" is terminal and cannot be closed or refused`,
     });
   }
 }

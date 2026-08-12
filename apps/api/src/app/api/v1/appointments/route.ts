@@ -19,8 +19,14 @@
 import { z } from 'zod';
 import { defineOperation } from '@/server/auth/operation-registry';
 import { handleOperation } from '@/server/http/route-handler';
-import { parseJsonBody, schemas, scopeTargetOption } from '@/server/http/validation';
-import { receptionModule } from '@/modules/reception';
+import {
+  parseJsonBody,
+  parseOrFail,
+  schemas,
+  scopeTargetOption,
+  searchParamsToObject,
+} from '@/server/http/validation';
+import { APPOINTMENT_STATUSES, receptionModule } from '@/modules/reception';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -89,5 +95,75 @@ export async function POST(request: Request): Promise<Response> {
     // who omits either field gets no target and no bypass: the body schema then
     // refuses the request as 422.
     { body, ...scopeTargetOption(body) }
+  );
+}
+
+// ---------------------------------------------------------------------------
+// GET /api/v1/appointments — the branch calendar (P1-27 remediation executed by
+// P1-18, `P1-27-INT-019`). All four `apt.` operations were writes; there was no
+// appointment read and no calendar of any kind. The date filter and the
+// ordering both run over the CONFIRMED window falling back to the requested one
+// (`COALESCE(confirmed_from, requested_from)`): the confirmed window is what
+// the workshop promised, and a calendar ordered by the requested window would
+// show a rescheduled appointment on the wrong day. `recordVersion` travels per
+// row because the three guarded lifecycle commands are addressed from the list.
+// ---------------------------------------------------------------------------
+
+const ListQuery = z
+  .object({
+    companyId: schemas.uuid,
+    branchId: schemas.uuid,
+    status: z.enum(APPOINTMENT_STATUSES).optional(),
+    vehicleId: schemas.uuid.optional(),
+    /** Inclusive range bounds; the effective window must OVERLAP [from, to]. */
+    from: z.string().datetime({ offset: true }).optional(),
+    to: z.string().datetime({ offset: true }).optional(),
+    cursor: schemas.cursor.optional(),
+    limit: schemas.limit.optional(),
+  })
+  .strict()
+  .superRefine((query, context) => {
+    if (query.from !== undefined && query.to !== undefined && query.to < query.from) {
+      // An inverted range matches nothing by construction; answering it with an
+      // empty page would read as "no appointments" rather than "bad request".
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['to'],
+        message: 'to must not be earlier than from',
+      });
+    }
+  });
+
+export const APPOINTMENT_LIST_OPERATION = defineOperation({
+  id: 'apt.appointment-list',
+  module: 'reception',
+  method: 'GET',
+  path: '/appointments',
+  summary: 'List the appointments of one branch over a date range, soonest first.',
+  permissions: ['apt.appointment.read'],
+  scope: 'branch',
+  auditClass: 'none',
+  rateLimitPolicy: 'expensive-read',
+  cacheCategory: 'never',
+});
+
+export async function GET(request: Request): Promise<Response> {
+  const raw = searchParamsToObject(new URL(request.url).searchParams);
+  return handleOperation(
+    APPOINTMENT_LIST_OPERATION,
+    request,
+    async ({ db }) => ({
+      // Parsed INSIDE the handler so a malformed query is rendered as the
+      // shared problem document rather than an unhandled 500.
+      body: await receptionModule().appointmentRead.listAppointments(
+        db,
+        parseOrFail(ListQuery, raw, 'query')
+      ),
+    }),
+    // The pre-handler check must not be scope-blind, and it runs before the
+    // schema. `scopeTargetOption` reads the pair out of not-yet-validated input
+    // and yields NO target unless both are well-formed UUIDs — it can only ever
+    // make authorization stricter (P1-18-A-01).
+    scopeTargetOption(raw)
   );
 }

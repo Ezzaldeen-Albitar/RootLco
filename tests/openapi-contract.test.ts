@@ -135,10 +135,24 @@ import '@/app/api/v1/vehicles/[vehicleId]/history/route';
 import '@/app/api/v1/vehicles/[vehicleId]/documents/route';
 // --- Phase 1-18 appointment and reception backend -------------------------
 import '@/app/api/v1/appointments/route';
+import '@/app/api/v1/appointments/[appointmentId]/route';
 import '@/app/api/v1/appointments/[appointmentId]/reschedule/route';
 import '@/app/api/v1/appointments/[appointmentId]/cancel/route';
 import '@/app/api/v1/appointments/[appointmentId]/no-show/route';
+// P1-27 read-surface remediation: the intake catalogue reads (INT-018) and the
+// read/closure route modules below MUST be listed here — the committed document
+// is generated from whatever this list loaded, so an unimported route is
+// silently absent from the published contract while every gate stays green.
+import '@/app/api/v1/appointment-catalogue/appointment-types/route';
+import '@/app/api/v1/appointment-catalogue/source-channels/route';
+import '@/app/api/v1/appointment-catalogue/cancellation-reasons/route';
+import '@/app/api/v1/reception-catalogue/visit-reasons/route';
+import '@/app/api/v1/reception-catalogue/fuel-levels/route';
+import '@/app/api/v1/reception-catalogue/warning-light-codes/route';
+import '@/app/api/v1/reception-catalogue/refusal-reasons/route';
 import '@/app/api/v1/receptions/route';
+import '@/app/api/v1/receptions/[receptionId]/route';
+import '@/app/api/v1/receptions/[receptionId]/history/route';
 import '@/app/api/v1/receptions/[receptionId]/party-roles/route';
 import '@/app/api/v1/receptions/[receptionId]/authorizations/route';
 import '@/app/api/v1/receptions/[receptionId]/condition-evidence/route';
@@ -146,6 +160,8 @@ import '@/app/api/v1/receptions/[receptionId]/signatures/route';
 import '@/app/api/v1/receptions/[receptionId]/refusals/route';
 import '@/app/api/v1/receptions/[receptionId]/approve/route';
 import '@/app/api/v1/receptions/[receptionId]/convert-to-work-order/route';
+import '@/app/api/v1/receptions/[receptionId]/close-without-work/route';
+import '@/app/api/v1/receptions/[receptionId]/refuse/route';
 // --- Phase 1-19 work order, diagnostics and technician backend -------------
 // There is deliberately no `POST /work-orders`: reception's conversion above is
 // the only creation path (see the header of `work-orders/route.ts`).

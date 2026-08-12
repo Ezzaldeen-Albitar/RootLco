@@ -5,7 +5,9 @@
  * WHAT THIS FILE PROVES, AND WHAT IT DELIBERATELY DOES NOT
  * ===========================================================================
  * `tests/backend/p1-18-scope-containment.test.ts` proves the RUNTIME behaviour
- * of all ten id-addressed P1-18 commands against a real PostgreSQL: a caller
+ * of the original ten id-addressed P1-18 commands against a real PostgreSQL
+ * (the P1-27 read-surface remediation added two closure commands and six reads,
+ * proven behaviourally by their own suites): a caller
  * holding the permission in branch B1 plus any grant in B2 is refused on a B2
  * resource, and nothing it would have written survives. That file is the
  * behavioural proof and this one does not restate it.
@@ -33,8 +35,10 @@
  *   * that the decision is issued on the caller's own transaction handle and
  *     no other;
  *   * that the scope semantics are the database's and are not re-derived here;
- *   * that the ten operations, and only the ten, are wired to the locked-row
- *     path, discovered from source rather than from a list someone maintains.
+ *   * that the twelve id-addressed commands, and only the twelve, are wired to
+ *     the locked-row path — and the six id-addressed reads to the deferred
+ *     authorizer — discovered from source rather than from a list someone
+ *     maintains.
  *
  * The division matters. A unit test that asserted "a company-scoped grant is
  * allowed" would be asserting something it cannot know — that lives in
@@ -697,17 +701,23 @@ describe('F9 · creation commands keep their pre-handler resolved target', () =>
 });
 
 // ---------------------------------------------------------------------------
-// F10 — exactly the ten id-addressed P1-18 commands hold the locked-row path
+// F10 — exactly the twelve id-addressed P1-18 commands hold the locked-row
+// path, and exactly the six id-addressed reads hold the deferred-authorizer one
 // ---------------------------------------------------------------------------
 
 /**
- * The ten, discovered rather than declared.
+ * The twelve commands, discovered rather than declared.
  *
- * A hand-maintained list would pass forever after someone added an eleventh
+ * A hand-maintained list would pass forever after someone added a thirteenth
  * unprotected operation, so the set is derived from source — every `apt.`/`rec.`
  * operation that declares `scope: 'branch'` and is addressed by a path
  * parameter — and only then compared with what is expected. A new operation of
  * that shape fails this file until it is either wired or consciously excluded.
+ *
+ * The P1-27 read-surface remediation split the discovery by METHOD: the six
+ * co-located/new GETs are id-addressed too and hold the same deferred
+ * authorizer, but they lock no row, so they carry their own expected list below
+ * rather than being crowbarred into this one.
  */
 const EXPECTED_LOCKED_ROW_OPERATIONS = [
   'apt.appointment-cancel',
@@ -715,11 +725,28 @@ const EXPECTED_LOCKED_ROW_OPERATIONS = [
   'apt.appointment-reschedule',
   'rec.reception-approve',
   'rec.reception-authorization',
+  'rec.reception-close-without-work',
   'rec.reception-condition-evidence',
   'rec.reception-convert-to-work-order',
   'rec.reception-party-role',
   'rec.reception-refusal',
+  'rec.reception-refuse',
   'rec.reception-signature',
+] as const;
+
+/**
+ * The six id-addressed reads (P1-27 read-surface remediation). Same doctrine,
+ * different mechanics: a read is addressed by id, so the pre-handler check has
+ * no scope to name and the deferred `authorizeScope` against the row's own
+ * company and branch is what makes `scope: 'branch'` true (P1-18-A-01).
+ */
+const EXPECTED_ID_ADDRESSED_READS = [
+  'apt.appointment-detail',
+  'rec.reception-authorization-list',
+  'rec.reception-condition-evidence-list',
+  'rec.reception-detail',
+  'rec.reception-history',
+  'rec.reception-party-role-list',
 ] as const;
 
 /** `authorizeScope({ companyId: <row>.companyId, branchId: <row>.branchId })`. */
@@ -737,6 +764,7 @@ interface RouteOperation {
   readonly id: string;
   readonly path: string;
   readonly scope: string;
+  readonly method: string;
   /** The exported constant the declaration was assigned to. */
   readonly constant: string;
   readonly file: string;
@@ -761,11 +789,13 @@ function routeOperations(): readonly RouteOperation[] {
       const id = /id:\s*'([^']+)'/.exec(block);
       const path = /path:\s*'([^']+)'/.exec(block);
       const scope = /scope:\s*'([^']+)'/.exec(block);
+      const method = /method:\s*'([^']+)'/.exec(block);
       if (id?.[1] && path?.[1] && declaration[1]) {
         found.push({
           id: id[1],
           path: path[1],
           scope: scope?.[1] ?? 'tenant',
+          method: method?.[1] ?? '',
           constant: declaration[1],
           file,
           source,
@@ -793,19 +823,33 @@ describe('F10 · structural completeness of the locked-row path', () => {
       (candidate.id.startsWith('apt.') || candidate.id.startsWith('rec.')) &&
       candidate.path.includes('{')
   );
+  // Split by METHOD, not narrowed: the discovery stays method-blind so a new
+  // id-addressed operation of either shape lands in exactly one expected list
+  // and fails this file until it is wired. Next.js permits one `route.ts` per
+  // directory, so the read-surface GETs are co-located with the POSTs they
+  // complement — which is why "one declaration per FILE" below became "one
+  // declaration per method per file".
+  const affectedCommands = affected.filter((candidate) => candidate.method !== 'GET');
+  const affectedReads = affected.filter((candidate) => candidate.method === 'GET');
 
   it('finds the route operations at all, so the scan is not silently empty', () => {
     expect(operations.length).toBeGreaterThan(50);
   });
 
-  it('discovers exactly the ten id-addressed P1-18 commands', () => {
-    expect(affected.map((entry) => entry.id).sort()).toEqual([...EXPECTED_LOCKED_ROW_OPERATIONS]);
+  it('discovers exactly the twelve id-addressed P1-18 commands', () => {
+    expect(affectedCommands.map((entry) => entry.id).sort()).toEqual([
+      ...EXPECTED_LOCKED_ROW_OPERATIONS,
+    ]);
+  });
+
+  it('discovers exactly the six id-addressed P1-18 reads', () => {
+    expect(affectedReads.map((entry) => entry.id).sort()).toEqual([...EXPECTED_ID_ADDRESSED_READS]);
   });
 
   it.each(EXPECTED_LOCKED_ROW_OPERATIONS)('%s declares branch scope explicitly', (id) => {
     // Asserted rather than filtered on, so an omission fails here instead of
     // quietly removing the operation from every other assertion in this block.
-    const entry = affected.find((candidate) => candidate.id === id);
+    const entry = affectedCommands.find((candidate) => candidate.id === id);
     expect(entry?.scope).toBe('branch');
   });
 
@@ -818,7 +862,7 @@ describe('F10 · structural completeness of the locked-row path', () => {
     // here. Calling this "passes the deferred authorizer down", as an earlier
     // revision did, claimed a structural guarantee this assertion does not
     // provide.
-    const entry = affected.find((candidate) => candidate.id === id);
+    const entry = affectedCommands.find((candidate) => candidate.id === id);
     expect(entry).toBeDefined();
     expect(entry?.source).toContain('authorizeScope');
   });
@@ -830,15 +874,49 @@ describe('F10 · structural completeness of the locked-row path', () => {
     // a command it has no capability for. The two are indistinguishable at
     // runtime whenever a principal happens to hold both, which is why this is
     // asserted structurally rather than left to a behavioural fixture.
-    const entry = affected.find((candidate) => candidate.id === id);
+    const entry = affectedCommands.find((candidate) => candidate.id === id);
     expect(entry).toBeDefined();
     expect(entry?.source).toContain(`handleOperation(\n    ${entry?.constant},`);
   });
 
   it.each(EXPECTED_LOCKED_ROW_OPERATIONS)('%s declares exactly one operation', (id) => {
-    // Two declarations in one file would make the assertion above ambiguous.
-    const entry = affected.find((candidate) => candidate.id === id);
-    const siblings = operations.filter((candidate) => candidate.file === entry?.file);
+    // Two declarations of one METHOD in one file would make the assertion above
+    // ambiguous. Per method rather than per file, because the co-located GET the
+    // framework forces is a different declaration with its own constant — the
+    // `handleOperation(\n    CONST,` match stays unambiguous per constant.
+    const entry = affectedCommands.find((candidate) => candidate.id === id);
+    const siblings = operations.filter(
+      (candidate) => candidate.file === entry?.file && candidate.method === entry?.method
+    );
+    expect(siblings).toHaveLength(1);
+  });
+
+  it.each(EXPECTED_ID_ADDRESSED_READS)('%s declares branch scope explicitly', (id) => {
+    const entry = affectedReads.find((candidate) => candidate.id === id);
+    expect(entry?.scope).toBe('branch');
+  });
+
+  it.each(EXPECTED_ID_ADDRESSED_READS)('%s names the deferred authorizer', (id) => {
+    // Same honest wording as the commands: the read resolves the row, then
+    // authorizes against its own company and branch — RLS visibility is not
+    // authority (P1-18-A-01), and a read that skipped this would disclose
+    // another branch's visit to any caller holding the permission elsewhere.
+    const entry = affectedReads.find((candidate) => candidate.id === id);
+    expect(entry).toBeDefined();
+    expect(entry?.source).toContain('authorizeScope');
+  });
+
+  it.each(EXPECTED_ID_ADDRESSED_READS)('%s runs under its OWN declaration', (id) => {
+    const entry = affectedReads.find((candidate) => candidate.id === id);
+    expect(entry).toBeDefined();
+    expect(entry?.source).toContain(`handleOperation(\n    ${entry?.constant},`);
+  });
+
+  it.each(EXPECTED_ID_ADDRESSED_READS)('%s declares exactly one operation', (id) => {
+    const entry = affectedReads.find((candidate) => candidate.id === id);
+    const siblings = operations.filter(
+      (candidate) => candidate.file === entry?.file && candidate.method === entry?.method
+    );
     expect(siblings).toHaveLength(1);
   });
 

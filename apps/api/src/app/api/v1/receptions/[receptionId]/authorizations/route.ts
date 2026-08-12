@@ -16,7 +16,12 @@
 import { z } from 'zod';
 import { defineOperation } from '@/server/auth/operation-registry';
 import { handleOperation } from '@/server/http/route-handler';
-import { parseJsonBody, parseOrFail, schemas } from '@/server/http/validation';
+import {
+  parseJsonBody,
+  parseOrFail,
+  schemas,
+  searchParamsToObject,
+} from '@/server/http/validation';
 import {
   AUTHORIZATION_CHANNELS,
   AUTHORIZATION_DECISIONS,
@@ -79,5 +84,60 @@ export async function POST(
       ),
     }),
     { params, body }
+  );
+}
+
+// ---------------------------------------------------------------------------
+// GET — the authorization decisions AND authorization refusals of one visit
+// (P1-27 remediation executed by P1-18, `P1-27-INT-016`). The standing state
+// was previously discoverable only by attempting approve and reading the 409.
+// The two-table UNION is mandatory: an `authorization`-type refusal is a
+// second, cheaper way to say no, and reading only `rec.authorizations` would
+// report a withdrawn approval as consent. `isStanding` marks each partner's
+// CURRENT decision across both tables.
+// ---------------------------------------------------------------------------
+
+const ListQuery = z
+  .object({ cursor: schemas.cursor.optional(), limit: schemas.limit.optional() })
+  .strict();
+
+export const RECEPTION_AUTHORIZATION_LIST_OPERATION = defineOperation({
+  id: 'rec.reception-authorization-list',
+  module: 'reception',
+  method: 'GET',
+  path: '/receptions/{receptionId}/authorizations',
+  summary: 'List the authorization decisions and authorization refusals on a reception visit.',
+  permissions: ['rec.reception.read'],
+  scope: 'branch',
+  auditClass: 'none',
+  rateLimitPolicy: 'expensive-read',
+  cacheCategory: 'never',
+});
+
+export async function GET(
+  request: Request,
+  route: { params: Promise<{ receptionId: string }> }
+): Promise<Response> {
+  const raw = await route.params;
+  return handleOperation(
+    RECEPTION_AUTHORIZATION_LIST_OPERATION,
+    request,
+    async ({ db, request: req, authorizeScope }) => {
+      const path = parseOrFail(Params, raw, 'path');
+      const query = parseOrFail(
+        ListQuery,
+        searchParamsToObject(new URL(req.url).searchParams),
+        'query'
+      );
+      return {
+        body: await receptionModule().receptionRead.listAuthorizations(
+          db,
+          path.receptionId,
+          query,
+          authorizeScope
+        ),
+      };
+    },
+    { params: raw }
   );
 }

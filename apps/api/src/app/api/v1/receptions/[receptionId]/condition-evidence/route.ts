@@ -24,11 +24,17 @@
 import { z } from 'zod';
 import { defineOperation } from '@/server/auth/operation-registry';
 import { handleOperation } from '@/server/http/route-handler';
-import { parseJsonBody, parseOrFail, schemas } from '@/server/http/validation';
+import {
+  parseJsonBody,
+  parseOrFail,
+  schemas,
+  searchParamsToObject,
+} from '@/server/http/validation';
 import {
   COMPLAINT_CATEGORIES,
   COMPLAINT_SEVERITIES,
   DAMAGE_MARK_TYPES,
+  EVIDENCE_KINDS,
   FINDING_CATEGORIES,
   FINDING_SEVERITIES,
   LEAK_SEVERITIES,
@@ -205,5 +211,64 @@ export async function POST(
       ),
     }),
     { params, body }
+  );
+}
+
+// ---------------------------------------------------------------------------
+// GET — the pre-service condition evidence of one visit (P1-27 remediation
+// executed by P1-18, `P1-27-INT-017`). One keyset page over the eight
+// NON-RESTRICTED evidence relations, mirroring the POST's discriminated union,
+// with an optional `kind` filter over the same eight literals. The restricted
+// narrative tables (`rec.complaint_details`, `rec.vehicle_content_details`) are
+// never selected — they stay behind `iam.sensitive.view` at the row, and this
+// read needs no second permission code because it never touches them.
+// ---------------------------------------------------------------------------
+
+const ListQuery = z
+  .object({
+    kind: z.enum(EVIDENCE_KINDS).optional(),
+    cursor: schemas.cursor.optional(),
+    limit: schemas.limit.optional(),
+  })
+  .strict();
+
+export const RECEPTION_CONDITION_EVIDENCE_LIST_OPERATION = defineOperation({
+  id: 'rec.reception-condition-evidence-list',
+  module: 'reception',
+  method: 'GET',
+  path: '/receptions/{receptionId}/condition-evidence',
+  summary: 'List the pre-service condition evidence recorded on a reception visit.',
+  permissions: ['rec.reception.read'],
+  scope: 'branch',
+  auditClass: 'none',
+  rateLimitPolicy: 'expensive-read',
+  cacheCategory: 'never',
+});
+
+export async function GET(
+  request: Request,
+  route: { params: Promise<{ receptionId: string }> }
+): Promise<Response> {
+  const raw = await route.params;
+  return handleOperation(
+    RECEPTION_CONDITION_EVIDENCE_LIST_OPERATION,
+    request,
+    async ({ db, request: req, authorizeScope }) => {
+      const path = parseOrFail(Params, raw, 'path');
+      const query = parseOrFail(
+        ListQuery,
+        searchParamsToObject(new URL(req.url).searchParams),
+        'query'
+      );
+      return {
+        body: await receptionModule().receptionRead.listConditionEvidence(
+          db,
+          path.receptionId,
+          query,
+          authorizeScope
+        ),
+      };
+    },
+    { params: raw }
   );
 }
