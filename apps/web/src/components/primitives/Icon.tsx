@@ -43,6 +43,12 @@ const PATHS: Record<IconName, readonly string[]> = {
     'M15.5 3.5v3',
     'M8.6 14.2h3',
   ],
+  // A clipboard with a check: a vehicle received and its intake recorded.
+  receptions: [
+    'M8.8 4.6H7A1.6 1.6 0 0 0 5.4 6.2v13.2A1.6 1.6 0 0 0 7 21h10a1.6 1.6 0 0 0 1.6-1.6V6.2A1.6 1.6 0 0 0 17 4.6h-1.8',
+    'M9.4 3h5.2v3.2H9.4V3Z',
+    'm9 13.4 2.1 2.1 3.9-4.1',
+  ],
   'work-orders': [
     'M6 3.8h8.5L19 8.3v11.9A1.8 1.8 0 0 1 17.2 22H6a1.8 1.8 0 0 1-1.8-1.8V5.6A1.8 1.8 0 0 1 6 3.8Z',
     'M14.2 3.8v4.6H19',

@@ -82,6 +82,8 @@ export type IconName =
    */
   | 'duplicate-review'
   | 'appointments'
+  /** A clipboard with a check: a vehicle received and recorded. */
+  | 'receptions'
   | 'work-orders'
   | 'technicians'
   | 'catalog'
@@ -128,11 +130,11 @@ export const NAVIGATION: readonly NavigationGroup[] = Object.freeze([
        * `navigation.test.ts` pins the planned/available sets, so the flip
        * edits both together.
        *
-       * The Reception module has NO entry here yet, deliberately: its
-       * permission (`rec.reception.read`, seeded by the same remediation) has
-       * no screen either, and unlike this entry it was never part of the
-       * P1-25 shell. Its entry lands WITH its first screen
-       * (`P1-28-FE-007`, the check-in wizard), gated on `rec.reception.read`.
+       * The Reception entry below landed WITH its first screen — the P1-28
+       * Wave D check-in wizard (`P1-28-FE-007`) at `/receptions/check-in` —
+       * exactly as this comment's earlier revision said it would, gated on
+       * `rec.reception.read` because the resume path is a read and the create
+       * form states its own `rec.reception.manage` denial inside the page.
        */
       {
         key: 'appointments',
@@ -141,6 +143,19 @@ export const NAVIGATION: readonly NavigationGroup[] = Object.freeze([
         href: '/appointments',
         permission: 'apt.appointment.read',
         status: 'planned',
+        scope: 'branch',
+      },
+      {
+        key: 'receptions',
+        labelKey: 'nav.receptions',
+        icon: 'receptions',
+        // The check-in wizard is the module's first — and so far only —
+        // screen, so the entry points at it directly rather than at a board
+        // route that does not exist yet. When the reception board lands, this
+        // href moves to `/receptions` in the same change.
+        href: '/receptions/check-in',
+        permission: 'rec.reception.read',
+        status: 'available',
         scope: 'branch',
       },
       {

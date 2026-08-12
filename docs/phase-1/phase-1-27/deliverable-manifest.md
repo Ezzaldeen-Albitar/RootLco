@@ -159,10 +159,10 @@ fact in words did not, which is the gap this revision closes.
 
 | category                                                               | artefacts                                                          | how counted                                                                |
 | ---------------------------------------------------------------------- | ------------------------------------------------------------------ | -------------------------------------------------------------------------- |
-| Source files under the P1-27 ownership gate                            | **69** (43 feature source + 26 route)                              | derived from the gate's own scan roots                                     |
+| Source files under the P1-27 ownership gate                            | **71** (43 feature source + 28 route)                              | derived from the gate's own scan roots                                     |
 | Router pages (CRM and Vehicle)                                         | **8**                                                              | command 1                                                                  |
 | Shared-foundation source files changed by the phase or its remediation | **13** named in §5.5                                               | command 1, cross-read against the task register and the remediation record |
-| Web unit and component test files                                      | **72**                                                             | derived                                                                    |
+| Web unit and component test files                                      | **74**                                                             | derived                                                                    |
 | Playwright specification files                                         | **9** (2 anonymous, 7 authenticated)                               | commands 11 and 12 — **not re-measured**, §1.1.1                           |
 | Root CI-contract test files                                            | **36**                                                             | derived                                                                    |
 | CI gate scripts under `scripts/ci`                                     | **48** in the directory, **8** introduced or changed by this phase | derived; the eight are the `scripts/ci` rows of §7.1                       |
@@ -224,15 +224,15 @@ every advance of local `develop` in the sequence above was a fast-forward from
 
 ## 5. Source files
 
-### 5.1 The three trees the P1-27 ownership gate owns — 69 files
+### 5.1 The three trees the P1-27 ownership gate owns — 71 files
 
-`validate:p1-27-frontend` reports **69 files across 3 trees, 0 failures**. Of
+`validate:p1-27-frontend` reports **71 files across 3 trees, 0 failures**. Of
 those, **43** are §5.2 and §5.3 together — the two feature trees — and both
 halves are derived from the trees the gate itself names, so the count follows the
-gate rather than a reader's memory of it. The remaining **26** are the third
+gate rather than a reader's memory of it. The remaining **28** are the third
 canonical tree, `apps/web/src/app/[locale]/(dashboard)`, which this manifest
 tables nowhere: §5.4 lists the eight CRM and Vehicle route pages only, and the
-other eighteen route files belong to earlier phases. They are counted here
+other twenty route files belong to earlier phases or to P1-28 (the Wave D reception check-in routes). They are counted here
 because the gate scans them, not because this phase wrote them. The gate refuses to pass a rule that inspected zero files, and it runs its
 own `selfTest()` on **every** invocation — a comment stripper that over-matched
 would turn all eight rules into scans over empty strings and report clean, which is
@@ -397,7 +397,7 @@ records.
 
 ## 6. Test files
 
-### 6.1 Web unit and component — `apps/web/tests` (72 files, and no case total — `E-03`)
+### 6.1 Web unit and component — `apps/web/tests` (74 files, and no case total — `E-03`)
 
 **`E-03` is closed by DELETING the number, not by correcting it.** The heading
 used to read `(70 files, 1493 cases, 0 failed)`, and before that `(66 files, 1231

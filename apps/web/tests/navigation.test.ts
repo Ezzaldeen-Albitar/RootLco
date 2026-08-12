@@ -66,6 +66,9 @@ describe('the navigation model', () => {
       'customers',
       'gallery',
       'overview',
+      // P1-28 Wave D: the Reception entry landed WITH its first screen, the
+      // check-in wizard at `/receptions/check-in` (`P1-28-FE-007`).
+      'receptions',
       'settings',
       'settings.currencies',
       'settings.languages',
