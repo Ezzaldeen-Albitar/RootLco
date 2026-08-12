@@ -380,10 +380,13 @@ documentation-only successor `f0804b2`, the equivalence derived by
 `executableChangesSince` rather than asserted; `QA-005` sealed on that
 measurement; and the seventeen closed INDIVIDUALLY, each in its own row, each
 stating the executable authority that guards it at this head and why this
-candidate's measurement is the seal event it waited for. The merge is now
-PERMITTED and has not been TAKEN, and the phase is not closed:
-`check-p1-27-lifecycle.mjs` holds `PRE_MERGE_CANDIDATE` with the protected merge
-and Owner acceptance as the two remaining blockers.
+candidate's measurement is the seal event it waited for. When this was sealed
+the merge was PERMITTED and not yet TAKEN — `check-p1-27-lifecycle.mjs` held
+`PRE_MERGE_CANDIDATE` with the protected merge and Owner acceptance as the two
+remaining blockers. Both have since been discharged: the merge was taken as
+`46d4e482` and the Owner returned `OWNER ACCEPTANCE: PASS` on 2026-08-12
+(`closure-record.md`); the gate now derives `OWNER_ACCEPTANCE` with zero
+blockers.
 
 #### What the cycle was, and why it is gone
 

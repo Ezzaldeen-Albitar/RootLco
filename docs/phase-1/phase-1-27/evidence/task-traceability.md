@@ -427,7 +427,8 @@ running the file or the gate on this branch.
 
 ---
 
-**P1-27 is open.** The tables above record what was built and what proves it.
+**P1-27 is closed — `OWNER ACCEPTANCE: PASS`, 2026-08-12** (`closure-record.md`).
+The tables above record what was built and what proves it.
 They do not record acceptance, and nothing in them substitutes for it. The phase
 closes only when the Product Owner manually tests the real application against
 the real backend and explicitly returns `OWNER ACCEPTANCE: PASS`. Silence is not

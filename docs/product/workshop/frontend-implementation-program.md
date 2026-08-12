@@ -4,7 +4,7 @@
 
 **Status:** Programme plan — authorises nothing · **Owner:** Eng. Ezzaldeen
 Al-Bitar · **Recorded:** 2026-08-06 · **Phase authority:** P1-27 Owner-acceptance
-remediation · **P1-27 is OPEN**
+remediation · **P1-27 is CLOSED — `OWNER ACCEPTANCE: PASS`, 2026-08-12; not promoted**
 
 ---
 
@@ -940,5 +940,6 @@ Where this document and an owning record disagree, **the owning record is
 correct**. Where an owning record and the repository disagree, **the repository
 is correct** and the record is stale.
 
-**P1-27 is open. This program authorises nothing, schedules nothing and
+**P1-27 is closed — `OWNER ACCEPTANCE: PASS`, 2026-08-12 — and is not promoted
+to `main`. This program still authorises nothing, schedules nothing and
 implements nothing, and it does not begin P1-28.**
