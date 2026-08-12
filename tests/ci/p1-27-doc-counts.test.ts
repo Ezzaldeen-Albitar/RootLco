@@ -335,9 +335,43 @@ const DESCRIBED_HEAD = /^\*\*Everything under[\s\S]{0,120}?`([0-9a-f]{40})`/m;
 /** The head a CURRENT record pins, once the closing candidate exists. */
 const CANDIDATE_HEAD = /CODE_CANDIDATE_SHA`?\s*\|\s*`([0-9a-f]{40})`/;
 
-/** The head both pages are about, whichever of the two honest states they are in. */
-function recordedHead(): string | undefined {
-  return (CANDIDATE_HEAD.exec(CLEAN_ROOM) ?? DESCRIBED_HEAD.exec(CLEAN_ROOM))?.[1];
+/**
+ * The head the SUPERSEDED record declares FOR ITSELF.
+ *
+ * REBOUND — the cases below used to reach the superseded tables through
+ * `recordedHead()`, "the head both pages are about", which preferred
+ * `CODE_CANDIDATE_SHA` when one existed. That was the same head only while no
+ * candidate was pinned; the moment QA-005 froze one, `recordedHead()` started
+ * naming the CANDIDATE while every superseded table kept describing the head it
+ * had always named — so history was being measured against a tree it never
+ * described, and the cases died exactly when the phase reached its own terminal
+ * state (the correction `apps/web/tests/p1-27-round-five-register.test.ts`
+ * records for the web tier). The superseded head is written in the record
+ * itself, so it is read from there: the tables are history, and history does
+ * not move with the head.
+ */
+function supersededHead(): string {
+  const sha = DESCRIBED_HEAD.exec(CLEAN_ROOM)?.[1];
+  expect(sha, 'the superseded record no longer names the head it describes').toBeDefined();
+  return sha as string;
+}
+
+/**
+ * A named seal region of an evidence page.
+ *
+ * The pages are tiled edge to edge with named regions and
+ * `p1-27-closing-values.test.ts` proves the tiling, so a region name is a
+ * stable address for the table it wraps — and a HISTORICAL region keeps its
+ * name when a current seal appears elsewhere on the page. Reading a superseded
+ * figure out of its own region is what stops a first-match regex silently
+ * re-pointing at the current seal's row of the same shape.
+ */
+function sealRegion(source: string, name: string): string {
+  const match = new RegExp(
+    String.raw`<!-- seal: \w+ ${name} -->([\s\S]*?)<!-- seal: end ${name} -->`
+  ).exec(source);
+  expect(match, `no seal region named ${name}`).not.toBeNull();
+  return group(match as RegExpExecArray, 1);
 }
 
 describe('P1-27-QA-005 — a recorded head is a commit this repository holds', () => {
@@ -511,9 +545,7 @@ describe('P1-27-QA-005 — a measurement of a past head is checked against that 
      * it is a property of the tree at that commit, which is still here. So it is
      * derived from `git ls-tree` at the head the page names.
      */
-    const sha = recordedHead();
-    expect(sha, 'the record names no head at all').toBeDefined();
-    const head = sha as string;
+    const head = supersededHead();
     expect(commitExists(head), `${head} is not a commit in this repository` + shallowNote()).toBe(
       true
     );
@@ -559,7 +591,7 @@ describe('P1-27-QA-005 — a measurement of a past head is checked against that 
   });
 
   it('states the migration count the superseded head really held', () => {
-    const sha = recordedHead() as string;
+    const sha = supersededHead();
     expect(commitExists(sha), `${sha} is not a commit in this repository`).toBe(true);
     const migrations = filesAt(sha, 'supabase/migrations').filter((p) => p.endsWith('.sql')).length;
     expect(migrations, 'no migrations at that head — the comparison is vacuous').toBeGreaterThan(
@@ -576,16 +608,22 @@ describe('P1-27-QA-005 — a measurement of a past head is checked against that 
      * "**Go** — 13 governed jobs" is a claim about `DECLARED_JOBS` in
      * `evaluate-ci-gate.mjs` as it stood at the head under test, not as it
      * stands now. Read from that head, so the sentence stays true when the
-     * declaration grows and false if it was wrong when written.
+     * declaration grows and false if it was wrong when written. The row is a
+     * SUPERSEDED run's decision, so both sides bind to the superseded record:
+     * the head it declares, and the region that owns the sentence.
      */
-    const sha = recordedHead() as string;
+    const sha = supersededHead();
     expect(commitExists(sha), `${sha} is not a commit in this repository`).toBe(true);
     const governed = declaredJobsAt(sha);
     expect(governed, 'no governed jobs at that head — the comparison is vacuous').toBeGreaterThan(
       5
     );
     expect(
-      figure(CI_EVIDENCE, /\*\*Go\*\* — (\d+) governed jobs/, 'the ci-gate decision row'),
+      figure(
+        sealRegion(CI_EVIDENCE, 'superseded-run'),
+        /\*\*Go\*\* — (\d+) governed jobs/,
+        'the superseded ci-gate decision row'
+      ),
       `the gate declared ${governed} jobs at ${sha.slice(0, 8)}`
     ).toBe(governed);
   });
@@ -708,30 +746,50 @@ describe('P1-27-QA-005 — the two evidence pages agree with each other and the 
     expect(inClean, `the committed ceiling is ${ceiling}`).toBeLessThanOrEqual(ceiling as number);
   });
 
-  it('names the same head and the same hosted run in both records', () => {
+  it('names the same superseded head and the same superseded run in both records', () => {
     /*
-     * Two records that disagree about which tree they describe is the state this
-     * phase was in: each was internally consistent and they were not consistent
-     * with each other.
+     * Two records that disagree about which tree they describe is the state
+     * this phase was in: each was internally consistent and they were not
+     * consistent with each other.
+     *
+     * REBOUND — this case reached both sides through first-match on the whole
+     * page and through `recordedHead()`, which after the seal names the
+     * CANDIDATE while `Head at that time` keeps naming the head it always
+     * named, and the current seal cites the candidate's run above the
+     * superseded one. Both sides now bind to the superseded record itself: the
+     * head it declares for itself, and the run rows inside the regions that own
+     * them. The tables are history; history does not move with the head.
      */
-    const inClean = recordedHead();
+    const inClean = supersededHead();
     const inCi = /\|\s*Head at that time\s*\|\s*`([0-9a-f]{40})`/.exec(CI_EVIDENCE)?.[1];
-    expect(inClean, 'the clean-room record names no head').toBeDefined();
-    expect(inCi, 'the CI record names no head').toBe(inClean);
+    expect(inCi, 'the CI record names no superseded head, or names a different one').toBe(inClean);
 
     const run = /\|\s*Workflow run\s*\|\s*`(\d+)`/;
-    const cleanRun = run.exec(CLEAN_ROOM)?.[1];
-    expect(cleanRun, 'the clean-room record cites no workflow run').toBeDefined();
-    expect(run.exec(CI_EVIDENCE)?.[1], 'the two records cite different runs').toBe(cleanRun);
+    const cleanRun = run.exec(sealRegion(CLEAN_ROOM, 'hosted-corroboration'))?.[1];
+    expect(cleanRun, 'the clean-room record cites no superseded workflow run').toBeDefined();
+    expect(
+      run.exec(sealRegion(CI_EVIDENCE, 'superseded-run'))?.[1],
+      'the two records cite different superseded runs'
+    ).toBe(cleanRun);
   });
 
-  it('records the same check totals and the same per-tier totals in both records', () => {
+  it('records the same superseded check totals and the same per-tier totals in both records', () => {
+    /*
+     * REBOUND to the regions that own the figures. First-match on the whole
+     * page read the superseded totals only while nothing stood above them;
+     * once a current seal exists it states the CANDIDATE run's totals higher
+     * up the page, and both sentences are true about their own runs. Each
+     * figure is therefore read out of the superseded record's own region, so
+     * the comparison stays a comparison of one run with itself in every state.
+     */
+    const corroboration = sealRegion(CLEAN_ROOM, 'hosted-corroboration');
+    const supersededRun = sealRegion(CI_EVIDENCE, 'superseded-run');
     const checks =
       /Required checks\s*\|\s*\*\*(\d+) completed[\s,·]+(\d+) failed[\s,·]+(\d+) pending/;
-    const inClean = checks.exec(CLEAN_ROOM);
-    const inCi = checks.exec(CI_EVIDENCE);
-    expect(inClean, 'the clean-room record states no check totals').not.toBeNull();
-    expect(inCi, 'the CI record states no check totals').not.toBeNull();
+    const inClean = checks.exec(corroboration);
+    const inCi = checks.exec(supersededRun);
+    expect(inClean, 'the clean-room record states no superseded check totals').not.toBeNull();
+    expect(inCi, 'the CI record states no superseded check totals').not.toBeNull();
     expect(
       (inCi as RegExpExecArray).slice(1, 4),
       'the two records disagree about the checks'
@@ -740,15 +798,22 @@ describe('P1-27-QA-005 — the two evidence pages agree with each other and the 
 
     // The hosted per-tier rows and the clean-room tier rows describe the same
     // run at the same head, so they cannot differ.
+    const supersededRecord = sealRegion(CLEAN_ROOM, 'superseded-record');
     expect(
-      figure(CLEAN_ROOM, /\|\s*Web tests\s*\|\s*(\d+) passed/, 'the hosted web total'),
+      figure(corroboration, /\|\s*Web tests\s*\|\s*(\d+) passed/, 'the hosted web total'),
       'the hosted and clean-room web totals disagree'
-    ).toBe(figure(CLEAN_ROOM, /\|\s*Web tier\s*\|\s*\*\*(\d+)\*\* tests/, 'the web tier row'));
+    ).toBe(
+      figure(supersededRecord, /\|\s*Web tier\s*\|\s*\*\*(\d+)\*\* tests/, 'the web tier row')
+    );
     expect(
-      figure(CLEAN_ROOM, /\|\s*Unit tests\s*\|\s*(\d+) passed/, 'the hosted unit total'),
+      figure(corroboration, /\|\s*Unit tests\s*\|\s*(\d+) passed/, 'the hosted unit total'),
       'the hosted and clean-room unit totals disagree'
     ).toBe(
-      figure(CLEAN_ROOM, /\|\s*Root unit tier\s*\|\s*\*\*(\d+)\*\* tests/, 'the unit tier row')
+      figure(
+        supersededRecord,
+        /\|\s*Root unit tier\s*\|\s*\*\*(\d+)\*\* tests/,
+        'the unit tier row'
+      )
     );
   });
 

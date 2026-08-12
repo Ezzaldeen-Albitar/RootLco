@@ -246,21 +246,72 @@ describe('P1-27 closing values — the live pages', () => {
     expect(result.byClass.DERIVABLE_GIT, 'no value is bound to git').toBeGreaterThan(0);
   });
 
-  it('states no current hosted value while the code candidate is not frozen', () => {
+  it('carries the ledger contract on every CURRENT hosted value, and states none before a candidate observation exists', () => {
     /*
-     * The honest state of this head, asserted rather than assumed. A hosted
-     * figure presented as current would have to describe the candidate, and
-     * there is no candidate — so every hosted record here is HISTORICAL or
-     * PENDING, and this case is what stops one being quietly promoted.
+     * REBOUND — the same correction the web tier records in
+     * `apps/web/tests/p1-27-round-five-register.test.ts`. This case required
+     * the CURRENT hosted list to equal [] unconditionally, which was the honest
+     * state while no candidate existed and a contradiction the moment QA-005
+     * sealed one: the seal RECORDS hosted attestations as CURRENT, so the old
+     * rule asserted the phase could never reach its own terminal state.
+     *
+     * What the case is about survives, two-sided and state-aware:
+     *
+     *   - While the LIFECYCLE ledger records no candidate observation, a hosted
+     *     figure presented as current would describe a run nobody has taken, so
+     *     the CURRENT list must still be empty — the old rule, now conditional
+     *     on the state that made it true.
+     *   - Once a candidate observation is recorded, every CURRENT hosted value
+     *     must carry full provenance — runId, job id, 40-hex headSha, the same
+     *     contract `checkLedgerShape` enforces on the lifecycle ledger — so a
+     *     figure is promoted to CURRENT only by naming the run that makes it
+     *     so, never quietly. And at least one must exist: an observation the
+     *     pages do not cite is a record and a seal disagreeing in silence.
      */
     const ledger = JSON.parse(readRepo(`${PHASE_DIR}/evidence/closing-value-ledger.json`)) as {
-      values: { class: string; standing: string }[];
+      values: {
+        id: string;
+        class: string;
+        standing: string;
+        provenance?: { runId?: string; job?: string; headSha?: string };
+      }[];
     };
     const hosted = ledger.values.filter((v) => v.class === 'HOSTED_ARTIFACT_ATTESTED');
     expect(hosted.length, 'no hosted value is classified at all').toBeGreaterThan(5);
+
+    const lifecycle = JSON.parse(readRepo(`${PHASE_DIR}/evidence/lifecycle-ledger.json`)) as {
+      observations?: {
+        CANDIDATE_HOSTED_CI?: { observed?: string | null };
+        CANDIDATE_AUTHENTICATED_BROWSER?: { observed?: string | null };
+      };
+    };
+    const candidateObserved =
+      (lifecycle.observations?.CANDIDATE_HOSTED_CI?.observed ?? null) !== null ||
+      (lifecycle.observations?.CANDIDATE_AUTHENTICATED_BROWSER?.observed ?? null) !== null;
+
+    const current = hosted.filter((v) => v.standing === 'CURRENT');
+    if (!candidateObserved) {
+      expect(
+        current.map((v) => v.id),
+        'a hosted value is stated as current while the lifecycle ledger records no candidate observation'
+      ).toEqual([]);
+      return;
+    }
     expect(
-      hosted.filter((v) => v.standing === 'CURRENT'),
-      'a hosted value is stated as current while no run has been taken at the candidate'
+      current.length,
+      'the lifecycle ledger records a candidate observation and no hosted value cites it as CURRENT'
+    ).toBeGreaterThan(0);
+    const unproven = current
+      .filter(
+        (v) =>
+          !v.provenance?.runId ||
+          !v.provenance?.job ||
+          !/^[0-9a-f]{40}$/.test(String(v.provenance?.headSha ?? ''))
+      )
+      .map((v) => v.id);
+    expect(
+      unproven,
+      'a CURRENT hosted value names no runId, no job id or no 40-hex headSha'
     ).toEqual([]);
   });
 });

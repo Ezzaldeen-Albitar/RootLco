@@ -85,6 +85,64 @@ const merged = () => ({
   authenticatedBrowser: 'GREEN' as string | null,
 });
 
+/** The shape `judge` derives. Declared here so the contract below is typed. */
+interface DerivedVerdict {
+  STATE: string;
+  MERGE_PERMITTED: boolean;
+  OWNER_HANDOFF_PERMITTED: boolean;
+  CLOSURE_PERMITTED: boolean;
+  blockers: string[];
+  candidateBlockers: string[];
+  protectedBlockers: string[];
+  ownerBlockers: string[];
+}
+
+/**
+ * The consistency contract between a verdict's flags and its own derived facts.
+ *
+ * Merge permitted iff no candidate-phase blocker exists; Owner handoff
+ * permitted iff additionally no protected-phase blocker exists; closure
+ * permitted iff additionally no owner blocker exists — and never, in any state,
+ * without an explicit Owner PASS. This is the arithmetic `judge` claims to
+ * apply, restated independently so a verdict whose flags stop following its own
+ * blocker lists is reported in whatever lifecycle state the tree happens to
+ * hold. It takes the verdict as an argument precisely so a doctored one can be
+ * handed to it: the case below that feeds it lies is what keeps the live
+ * assertion from being a tautology.
+ */
+function consistencyProblems(verdict: DerivedVerdict, ownerAcceptance: string | null): string[] {
+  const problems: string[] = [];
+  const mergeConsistent = verdict.candidateBlockers.length === 0;
+  if (verdict.MERGE_PERMITTED !== mergeConsistent) {
+    problems.push(
+      `MERGE_PERMITTED is ${verdict.MERGE_PERMITTED} while the verdict derives ` +
+        `${verdict.candidateBlockers.length} candidate blocker(s)`
+    );
+  }
+  const handoffConsistent = mergeConsistent && verdict.protectedBlockers.length === 0;
+  if (verdict.OWNER_HANDOFF_PERMITTED !== handoffConsistent) {
+    problems.push(
+      `OWNER_HANDOFF_PERMITTED is ${verdict.OWNER_HANDOFF_PERMITTED} while the verdict derives ` +
+        `${verdict.protectedBlockers.length} protected blocker(s) beyond a ` +
+        `${mergeConsistent ? 'clean' : 'blocked'} candidate`
+    );
+  }
+  const closureConsistent = handoffConsistent && verdict.ownerBlockers.length === 0;
+  if (verdict.CLOSURE_PERMITTED !== closureConsistent) {
+    problems.push(
+      `CLOSURE_PERMITTED is ${verdict.CLOSURE_PERMITTED} while the verdict derives ` +
+        `${verdict.ownerBlockers.length} owner blocker(s)`
+    );
+  }
+  if (verdict.CLOSURE_PERMITTED && ownerAcceptance !== 'PASS') {
+    problems.push(
+      `CLOSURE_PERMITTED is true while Owner acceptance is ${ownerAcceptance ?? 'not taken'} — ` +
+        'closure is never permitted without an explicit Owner PASS, and silence is not Pass'
+    );
+  }
+  return problems;
+}
+
 describe('the lifecycle gate can fail before it reports that it passed', () => {
   it('passes its own self-check', () => {
     expect(selfCheck(), 'a rule accepted a state it is required to block').toEqual([]);
@@ -397,17 +455,69 @@ describe('the ledger must declare what the tree holds', () => {
     expect(result.problems).toEqual([]);
   });
 
-  it('reports the state honestly rather than reporting success', () => {
+  it('reports whatever state the tree holds, consistently with the facts it derived', () => {
     /*
-     * The gate is green and the phase is NOT mergeable. Those are compatible,
-     * and keeping them compatible is the point: "the phase is not finished yet"
-     * and "something is broken" are different, and the old model could say only
-     * one of them.
+     * REBOUND — the same correction the web tier records in
+     * `apps/web/tests/p1-27-round-five-register.test.ts` ("keeps every partial
+     * a canonical-task finding, however many there are"). This case pinned
+     * `MERGE_PERMITTED = false` against the live tree, which was true while the
+     * candidate was incomplete and became a contradiction at the seal:
+     * PRE_MERGE_CANDIDATE — merge permitted, phase NOT closed — is the state
+     * machine's own terminal pre-merge state, so a test hard-wiring the
+     * pre-seal answer meant the phase could never reach the state this file
+     * exists to define. Two committed checks then demanded opposite things and
+     * no tree satisfied both. Reproduced in both directions before this was
+     * touched.
+     *
+     * What the case is actually about survives, strengthened: whatever the
+     * live tree derives, the verdict must AGREE with the derived facts — merge
+     * permitted iff no candidate blocker, handoff iff additionally no
+     * protected blocker, closure never without an explicit Owner PASS. The
+     * synthetic-input cases A–H above pin every individual transition; this
+     * one holds the LIVE verdict to the same arithmetic in every state, so it
+     * can never again prefer one lifecycle state over the truth.
      */
     const { verdict } = evaluate(ROOT);
-    expect(verdict.MERGE_PERMITTED).toBe(false);
-    expect(verdict.CLOSURE_PERMITTED).toBe(false);
     expect(STATES).toContain(verdict.STATE);
+    const ownerAcceptance = (ledger.observations?.OWNER_ACCEPTANCE?.result ?? null) as
+      string | null;
+    expect(consistencyProblems(verdict as DerivedVerdict, ownerAcceptance)).toEqual([]);
+  });
+
+  it('the consistency contract refuses a verdict that contradicts its own facts', () => {
+    /*
+     * The discriminating case for the contract above, run on every invocation
+     * rather than once in a probe. A contract that accepted every verdict
+     * would make the live case a tautology in every state — so each direction
+     * is fed a lie and required to report it.
+     */
+    const honest = judge(clean()) as DerivedVerdict;
+    expect(consistencyProblems(honest, null)).toEqual([]);
+
+    const claimsMergeOverBlocker: DerivedVerdict = {
+      ...honest,
+      candidateBlockers: ['DEFECT_OPEN: F-99 is an actionable OPEN defect'],
+      MERGE_PERMITTED: true,
+    };
+    expect(
+      consistencyProblems(claimsMergeOverBlocker, null).join(' '),
+      'a merge claimed over a candidate blocker was not reported'
+    ).toContain('MERGE_PERMITTED');
+
+    const claimsHandoffOverProtectedBlocker: DerivedVerdict = {
+      ...honest,
+      OWNER_HANDOFF_PERMITTED: true,
+    };
+    expect(
+      consistencyProblems(claimsHandoffOverProtectedBlocker, null).join(' '),
+      'a handoff claimed over a protected blocker was not reported'
+    ).toContain('OWNER_HANDOFF_PERMITTED');
+
+    const claimsClosureWithoutOwnerPass: DerivedVerdict = { ...honest, CLOSURE_PERMITTED: true };
+    expect(
+      consistencyProblems(claimsClosureWithoutOwnerPass, null).join(' '),
+      'a closure claimed without an Owner PASS was not reported'
+    ).toContain('CLOSURE_PERMITTED');
   });
 
   it('fails when the tree raises a blocker the ledger does not declare', () => {
@@ -431,14 +541,31 @@ describe('the ledger must declare what the tree holds', () => {
   });
 
   it('fails when the ledger declares a state the tree does not hold', () => {
+    /*
+     * REBOUND so the probe is non-vacuous in EVERY state. It used to hard-code
+     * the lie as `PRE_MERGE_CANDIDATE` / `MERGE_PERMITTED: true`, which was a
+     * lie only while the candidate was incomplete: the moment the tree truly
+     * reached PRE_MERGE_CANDIDATE the "lying" declaration became the truth,
+     * `compareDeclaration` rightly found no disagreement, and the probe died
+     * asserting the phase could never reach its own terminal state. So the lie
+     * is now DERIVED: whatever state the tree holds, the probe declares one it
+     * does not hold — declared here, then required to fire.
+     */
+    const { verdict } = evaluate(ROOT);
+    const stateNotHeld = STATES.find((state) => state !== verdict.STATE);
+    expect(stateNotHeld, 'STATES offers no state the tree is not in').toBeDefined();
+    expect(stateNotHeld, 'the derived lie must differ from the live state').not.toBe(verdict.STATE);
     const lying = {
       ...ledger,
-      declared: { ...ledger.declared, STATE: 'PRE_MERGE_CANDIDATE', MERGE_PERMITTED: true },
+      declared: {
+        ...ledger.declared,
+        STATE: stateNotHeld,
+        MERGE_PERMITTED: !verdict.MERGE_PERMITTED,
+      },
     };
-    const { verdict } = evaluate(ROOT);
     const problems = compareDeclaration(lying, verdict);
-    expect(problems.join(' ')).toContain('declares STATE PRE_MERGE_CANDIDATE');
-    expect(problems.join(' ')).toContain('declares MERGE_PERMITTED = true');
+    expect(problems.join(' ')).toContain(`declares STATE ${stateNotHeld}`);
+    expect(problems.join(' ')).toContain(`declares MERGE_PERMITTED = ${!verdict.MERGE_PERMITTED}`);
   });
 
   it('refuses an observation that claims a result and cites no run', () => {
