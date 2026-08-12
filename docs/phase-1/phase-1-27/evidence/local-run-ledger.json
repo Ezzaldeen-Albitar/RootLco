@@ -11,9 +11,9 @@
       "failed": 0,
       "skipped": 0,
       "files": 93,
-      "measuredAtCommit": "aad9470316f0c98ceda221629b12cfabcdc7d421",
+      "measuredAtCommit": "a2d99e8e7f65a1178c73aef463127b44a4a64df9",
       "dirtyExecutablePaths": [],
-      "measuredAt": "2026-08-12T22:16:50.095Z"
+      "measuredAt": "2026-08-12T22:44:55.103Z"
     },
     "web": {
       "command": "npm run test --workspace @rootlco/web -- --reporter=json",
@@ -22,9 +22,9 @@
       "failed": 0,
       "skipped": 0,
       "files": 72,
-      "measuredAtCommit": "aad9470316f0c98ceda221629b12cfabcdc7d421",
+      "measuredAtCommit": "a2d99e8e7f65a1178c73aef463127b44a4a64df9",
       "dirtyExecutablePaths": [],
-      "measuredAt": "2026-08-12T22:10:34.917Z"
+      "measuredAt": "2026-08-12T22:46:42.408Z"
     }
   }
 }
