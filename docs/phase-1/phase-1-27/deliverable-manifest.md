@@ -664,7 +664,7 @@ under-report itself by seven files.
 | `adversarial-round-five.md`                       | 857   | The live finding register; its totals are derived from its own rows                |
 | `closure-record.md`                               | 114   | The closure — `OWNER ACCEPTANCE: PASS`, 2026-08-12; what it does and does not do   |
 | `adversarial-round-four.md`                       | 147   | The previous round, superseded by round five                                       |
-| `blocker-remediation-plan.md`                     | 532   | What blocked the phase, and how each blocker was cleared                           |
+| `blocker-remediation-plan.md`                     | 535   | What blocked the phase, and how each blocker was cleared                           |
 | `canonical-plan.md`                               | 340   | What P1-27 is scoped to build, and the disposition of `P1-OD-017` and `P1-OD-025`  |
 | `canonical-write-reachability.json`               | 66    | Every write operation classified reachable or deliberately absent, with a decision |
 | `ci-evidence.md`                                  | 275   | Hosted CI, with every value classified and every hosted one naming its run         |
@@ -683,7 +683,7 @@ under-report itself by seven files.
 | `execution-checkpoint.md`                         | 290   | Base SHAs, surface baselines, the wave log                                         |
 | `final-canonical-remediation.md`                  | 451   | The canonical remediation wave                                                     |
 | `final-task-adjudication.md`                      | 959   | The 33 adjudicated audit items, and the retraction of `42 / 42`                    |
-| `finding-phase-disposition.md`                    | 433   | Which phase owns each finding                                                      |
+| `finding-phase-disposition.md`                    | 441   | Which phase owns each finding                                                      |
 | `finding-task-map.json`                           | 536   | Findings to tasks, machine-readable                                                |
 | `findings.md`                                     | 889   | The live `P1-27-INT-###` register                                                  |
 | `findings/p1-27-int-006-cursor-precision.md`      | 166   | The cursor-precision finding in full                                               |
@@ -982,7 +982,7 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
 
 <!-- derived: lines docs/phase-1/phase-1-27/adversarial-round-five.md = 857 -->
 <!-- derived: lines docs/phase-1/phase-1-27/adversarial-round-four.md = 147 -->
-<!-- derived: lines docs/phase-1/phase-1-27/blocker-remediation-plan.md = 532 -->
+<!-- derived: lines docs/phase-1/phase-1-27/blocker-remediation-plan.md = 535 -->
 <!-- derived: lines docs/phase-1/phase-1-27/canonical-plan.md = 340 -->
 <!-- derived: lines docs/phase-1/phase-1-27/canonical-write-reachability.json = 66 -->
 <!-- derived: lines docs/phase-1/phase-1-27/ci-evidence.md = 275 -->
@@ -1002,7 +1002,7 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
 <!-- derived: lines docs/phase-1/phase-1-27/execution-checkpoint.md = 290 -->
 <!-- derived: lines docs/phase-1/phase-1-27/final-canonical-remediation.md = 451 -->
 <!-- derived: lines docs/phase-1/phase-1-27/final-task-adjudication.md = 959 -->
-<!-- derived: lines docs/phase-1/phase-1-27/finding-phase-disposition.md = 433 -->
+<!-- derived: lines docs/phase-1/phase-1-27/finding-phase-disposition.md = 441 -->
 <!-- derived: lines docs/phase-1/phase-1-27/finding-task-map.json = 536 -->
 <!-- derived: lines docs/phase-1/phase-1-27/findings.md = 889 -->
 <!-- derived: lines docs/phase-1/phase-1-27/findings/p1-27-int-006-cursor-precision.md = 166 -->

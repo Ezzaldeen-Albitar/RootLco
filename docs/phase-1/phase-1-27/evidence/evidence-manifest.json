@@ -16,8 +16,8 @@
       "bytes": 12457
     },
     "docs/phase-1/phase-1-27/blocker-remediation-plan.md": {
-      "sha256": "6c192cf27b62a07dd1180a2f46490f9cf7933d1c3c5e559931284b89a0e76549",
-      "bytes": 80099
+      "sha256": "ec2e285a7b83b8d25bda785ce34db5c07db3c32f7cfba35286d4341e9dbd8133",
+      "bytes": 80748
     },
     "docs/phase-1/phase-1-27/canonical-plan.md": {
       "sha256": "fc06c4c125ea951b50169181398ddaf0353f255abe739534560cd580ee32786f",
@@ -48,7 +48,7 @@
       "bytes": 24145
     },
     "docs/phase-1/phase-1-27/deliverable-manifest.md": {
-      "sha256": "9f7af8fe7e0802ac0d7fac76797f0b48694398fb921008de0e13b4d512c795f4",
+      "sha256": "ec3eef81348b097bbbec3da5132d195fce6a55fe6dfd428701f3d4f50fac4a14",
       "bytes": 143705
     },
     "docs/phase-1/phase-1-27/developer-guide.md": {
@@ -96,8 +96,8 @@
       "bytes": 76546
     },
     "docs/phase-1/phase-1-27/finding-phase-disposition.md": {
-      "sha256": "2c038ad47851debea4bfbb813e6d7b2f33f3401e3674b22c404ad1aa5a516883",
-      "bytes": 138511
+      "sha256": "b7a81709e6633de9e9972e6f16e6025307d899fd74ed3bf27b1a194be16906ca",
+      "bytes": 140952
     },
     "docs/phase-1/phase-1-27/finding-task-map.json": {
       "sha256": "bc3336d8650e4e9142bd8f845c0b1970317225e05e275b7d52303d2c9ab5e14a",

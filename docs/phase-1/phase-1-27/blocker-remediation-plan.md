@@ -33,10 +33,13 @@ history projections (`remediation/p1-14-actor-display-identity`, PR #212
 `vehicles.history.actor` stays "Changed by" and `crm.customers.timeline.actor`
 stays "Recorded by", each over a name with a "User unavailable" fallback and the
 system-event null branch kept.
-**Not executed**: §3.3's ordered correction of the false `iam.user.read` premise
-in `finding-phase-disposition.md` — the sentence still stands at its §5 D3 entry —
-and §3.4's audit-log recommendation: `AuditLogScreen.tsx:78` still renders a raw
-uuid under "Who", with no `actorKind` fallback in the table ·
+**§3.3's ordered correction of the record is now executed** (2026-08-13): the
+false `iam.user.read` premise no longer stands at `finding-phase-disposition.md`
+§5 D3. That entry now carries the §3.1 correction, the three surviving costs —
+N+1, the tenant-wide Restricted email set, the feature-boundary breach — and the
+fact that PR #212 overtook the relabel.
+**Still not executed**: §3.4's audit-log recommendation — `AuditLogScreen.tsx:78`
+still renders a raw uuid under "Who", with no `actorKind` fallback in the table ·
 **Read at:** `develop` `131f9664` · **Recorded:** 2026-08-08
 
 Three of the four Class A P1-27 blockers. The fourth — a customer-search cursor
@@ -352,7 +355,7 @@ No route file is touched. `veh.vehicle-ownership-history` keeps `['veh.vehicle.r
 
 ### 3.1 A name source IS reachable, and the record's stated reason for refusing it is false
 
-`finding-phase-disposition.md:374` says "a CRM or Vehicle operator need not hold `iam.user.read`, so it would produce a denial, not a name." That premise is false as the product is built: `iam.auth-session` itself declares `permissions: ['iam.user.read']` (`apps/api/src/app/api/v1/auth/session/route.ts:31`), and `requireSession()` is "the only entry point protected pages use, so no page can accidentally render without one" (`apps/web/src/features/authentication/api/session.ts:101-107`), with the 403 lockout recorded as `P1-26-F-022` at `:57-71`. `scripts/dev/owner-acceptance/context.mjs:111-112` states the consequence outright: "`iam.user.read` is not optional: `GET /api/v1/auth/session` declares it, and without it every screen renders as though the caller were signed out." So every operator who can _see_ these two columns already holds the permission. **This sentence must be corrected in the record as part of the change**, so nobody re-derives the wrong reason.
+`finding-phase-disposition.md` **§5 D3** said "a CRM or Vehicle operator need not hold `iam.user.read`, so it would produce a denial, not a name." (Corrected there on 2026-08-13 per §3.3; the sentence is quoted here in the past tense because this section is the reason it went.) That premise is false as the product is built: `iam.auth-session` itself declares `permissions: ['iam.user.read']` (`apps/api/src/app/api/v1/auth/session/route.ts:31`), and `requireSession()` is "the only entry point protected pages use, so no page can accidentally render without one" (`apps/web/src/features/authentication/api/session.ts:101-107`), with the 403 lockout recorded as `P1-26-F-022` at `:57-71`. `scripts/dev/owner-acceptance/context.mjs:111-112` states the consequence outright: "`iam.user.read` is not optional: `GET /api/v1/auth/session` declares it, and without it every screen renders as though the caller were signed out." So every operator who can _see_ these two columns already holds the permission. **This sentence must be corrected in the record as part of the change**, so nobody re-derives the wrong reason.
 
 ### 3.2 The honest resolution inside P1-27 is nevertheless to stop asserting a person
 
@@ -368,7 +371,7 @@ Three reasons, each checkable:
 
 **`apps/web/src/features/crm/customers/components/CustomerProfileScreen.tsx:1273-1284`.** Two changes, because this one is worse than the vehicle one: (a) change `en.json:320` `crm.customers.timeline.actor` from "Recorded by" to the same labelled reference, plus `ar.json:320`; (b) the non-null branch at `:1279` renders `row.actorId` as **bare text** — wrap it in the same de-emphasised `<code className="font-mono text-caption text-text-secondary" dir="ltr">`. **Keep the null branch exactly as it is** (`:1279-1283`, `crm.customers.timeline.system` at `en.json:325`): `crm.timeline_events.actor_id` is nullable and "the system expired this consent" is genuinely not "somebody withdrew it" (`:1276-1277`). `veh.vehicle_attribute_history.actor_id` is NOT NULL, so the vehicle side has no such case.
 
-**Correct the record.** Rewrite `finding-phase-disposition.md:374`'s permission premise per §3.1, keeping its cost objection (an N+1 is still an N+1) and adding the two costs it missed (tenant-wide email; the feature-boundary breach).
+**Correct the record.** Rewrite the permission premise in `finding-phase-disposition.md` **§5 D3** per §3.1, keeping its cost objection (an N+1 is still an N+1) and adding the two costs it missed (tenant-wide email; the feature-boundary breach). _(Cited by section rather than by line: the earlier `:374` pointed at the D2 paragraph, six lines above the sentence it meant, and every rewrite of that entry moves the number again.)_ **Executed 2026-08-13**, together with the reconciliation that PR #212 overtook the relabel.
 
 **Raise, do not close, `VHM-13`.** It stays open against P1-14 (`vehicle-history-model.md:995`), now with the fact that the permission is already universally held — which removes the only stated obstacle and makes it cheaper than the record implies.
 
