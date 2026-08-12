@@ -35,6 +35,11 @@
       "why": "the P1-26 Frontend branch"
     },
     {
+      "branchPrefix": "closure/p1-27-",
+      "profile": "p1-27-frontend",
+      "why": "the P1-27 closure branch records the Owner acceptance — docs plus the guard files the closure was designed to lift, all inside the Frontend profile, exactly as closure/p1-26- declared for its phase"
+    },
+    {
       "branchPrefix": "closure/p1-26-",
       "profile": "p1-26-frontend",
       "why": "the P1-26 closure branch carries the same Frontend declaration"
