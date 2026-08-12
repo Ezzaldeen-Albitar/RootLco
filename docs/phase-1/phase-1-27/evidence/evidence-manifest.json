@@ -48,7 +48,7 @@
       "bytes": 24145
     },
     "docs/phase-1/phase-1-27/deliverable-manifest.md": {
-      "sha256": "8ebde24703134c914322a7c9c4d72bbf295c988ab2243bdb028db0a8fad8892e",
+      "sha256": "593419b9724a332149eec160a7179c4267688f080f4a6d98c337e4df183660af",
       "bytes": 143705
     },
     "docs/phase-1/phase-1-27/developer-guide.md": {
@@ -96,8 +96,8 @@
       "bytes": 76546
     },
     "docs/phase-1/phase-1-27/finding-phase-disposition.md": {
-      "sha256": "1636f04e7a7448e6f56f4702d7f06c9d5a413c442b4f66394e1a6dc3593b0aa2",
-      "bytes": 125899
+      "sha256": "5c3a1c6156b8923bee607f11da40a80b8a4a584cd7cb1f5916d96e36d6e7113d",
+      "bytes": 138509
     },
     "docs/phase-1/phase-1-27/finding-task-map.json": {
       "sha256": "bc3336d8650e4e9142bd8f845c0b1970317225e05e275b7d52303d2c9ab5e14a",
@@ -148,11 +148,11 @@
       "bytes": 14797
     },
     "docs/phase-1/phase-1-27/reception-read-surface-plan.md": {
-      "sha256": "1ed657e6a5f3f0a98a2b5c24a0cbf2cf6136bda6cac7be9f330b28463cee0406",
-      "bytes": 60692
+      "sha256": "eb5e0693391c36bf8690129a44e829c22bc61e696c9ec74f9623e29138d2c68a",
+      "bytes": 61503
     },
     "docs/phase-1/phase-1-27/risk-register.md": {
-      "sha256": "c4f718aa99940fa54c9aeb6d533010bb610911b01ec180f225af28a20b25d7e4",
+      "sha256": "a438575406b4f80b78d843667f55c8d4dac75fe776b6b32fc5754d81aa3b30a7",
       "bytes": 184610
     },
     "docs/phase-1/phase-1-27/task-matrix-verdicts.json": {

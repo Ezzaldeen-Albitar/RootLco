@@ -440,6 +440,36 @@ describe('authorization', () => {
         )
       ).status
     ).toBe(422);
+
+    /*
+     * MIXED OFFSETS, both directions — the guard compares INSTANTS.
+     *
+     * A lexical comparison of offset-bearing ISO strings fails both ways:
+     * '2026-09-01T23:00:00+05:00' (= 18:00Z) sorts AFTER '2026-09-01T20:00:00Z'
+     * as a string while being chronologically BEFORE it, so a valid range
+     * would 422 falsely; and the reverse pair is inverted-in-time while
+     * ordered-as-strings, slipping past to the empty page the guard exists to
+     * prevent. Every other value in this file is Z-uniform, which is exactly
+     * why a string comparison survived 1881 green tests.
+     */
+    expect(
+      (
+        await list(
+          `?companyId=${COMPANY_A1}&branchId=${BRANCH_A1}` +
+            `&from=${encodeURIComponent('2026-09-01T20:00:00Z')}&to=${encodeURIComponent('2026-09-01T23:00:00+05:00')}`
+        )
+      ).status,
+      'a chronologically inverted range with mixed offsets must 422, not return an empty page'
+    ).toBe(422);
+    expect(
+      (
+        await list(
+          `?companyId=${COMPANY_A1}&branchId=${BRANCH_A1}` +
+            `&from=${encodeURIComponent('2026-09-01T23:00:00+05:00')}&to=${encodeURIComponent('2026-09-01T20:00:00Z')}`
+        )
+      ).status,
+      'a chronologically valid range with mixed offsets must be accepted, not 422 on string order'
+    ).toBe(200);
   });
 });
 

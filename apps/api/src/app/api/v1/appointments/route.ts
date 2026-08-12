@@ -123,9 +123,21 @@ const ListQuery = z
   })
   .strict()
   .superRefine((query, context) => {
-    if (query.from !== undefined && query.to !== undefined && query.to < query.from) {
+    if (
+      query.from !== undefined &&
+      query.to !== undefined &&
+      Date.parse(query.to) < Date.parse(query.from)
+    ) {
       // An inverted range matches nothing by construction; answering it with an
       // empty page would read as "no appointments" rather than "bad request".
+      //
+      // Compared as INSTANTS, not strings. Both values carry an explicit offset
+      // (the zod rule above), and a lexical comparison of offset-bearing ISO
+      // strings is wrong in both directions across mixed offsets: a
+      // chronologically valid range can 422 falsely, and an inverted one can
+      // slip through to the empty page this guard exists to prevent. The SQL
+      // casts ::timestamptz and the domain compares epochs; this guard now
+      // agrees with both.
       context.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['to'],
