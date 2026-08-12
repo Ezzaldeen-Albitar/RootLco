@@ -83,13 +83,13 @@ commands and zero reads**
 remediation register — what is missing, who owns it, and the smallest fix — is
 `contract-archaeology.md` §4 (R1 through R8). The two highest-leverage items:
 
-| id     | remediation                                                                                                                                                                 | owner |
-| ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- |
-| **R1** | Execute `docs/phase-1/phase-1-27/reception-read-surface-plan.md` — six GETs plus the `rec.reception.read` seed. Status at this head: "PLANNED, NOT EXECUTED" (plan line 4). | P1-18 |
-| **R2** | Appointment read surface — list, detail, and the `apt.appointment.read` seed (`p1-18-p1-28-boundaries.md:29-43`).                                                           | P1-18 |
+| id     | remediation                                                                                                                                                                                                                         | owner |
+| ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- |
+| **R1** | Execute `docs/phase-1/phase-1-27/reception-read-surface-plan.md` — six GETs plus the `rec.reception.read` seed. EXECUTED 2026-08-12 — PR #220; the plan’s own status line records the execution and the deliberate arm-E narrowing. | P1-18 |
+| **R2** | Appointment read surface — list, detail, and the `apt.appointment.read` seed (`p1-18-p1-28-boundaries.md:29-43`). EXECUTED 2026-08-12 — PR #220.                                                                                    | P1-18 |
 
 A task in §5 whose operations are marked `[MISSING Rn]` binds the operation
-that remediation will create; the binding is honest about not existing yet.
+that remediation will create; the binding is honest about not existing yet. **Re-derived 2026-08-12:** R1–R5 are EXECUTED and integrated at this branch’s head — PR #220 (P1-18 read surface, seven catalogues, terminal closes) and PR #221 (P1-16 customer-vehicle read) — and no §5 binding carries the marker any longer. R6–R8 remain open.
 
 ---
 
@@ -100,7 +100,7 @@ Documentation 2.
 
 Every title is **domain-qualified**. Operations are bound from the contract
 archaeology: a plain id (for example `apt.appointment-create`) is registered
-and routable at `develop` `d64f259`; an id marked `[MISSING Rn]` does not exist
+and routable at this branch’s head (originally recorded at `develop` `d64f259`; re-derived 2026-08-12 after R1–R5 landed); an id marked `[MISSING Rn]` did not exist
 at that head and names the operation remediation `Rn` of
 `contract-archaeology.md` §4 will create; a bracketed `[kind ...]` or
 `[fields ...]` qualifier narrows one registered operation to the part of its
@@ -117,35 +117,35 @@ tasks are cross-domain: `FE-006` (walk-in intake composes CRM and Vehicle),
 
 ### 5.1 Appointment Frontend — 5 tasks
 
-| id             | canonical name                           | primary Backend operation(s)                                                                               | test id            |
-| -------------- | ---------------------------------------- | ---------------------------------------------------------------------------------------------------------- | ------------------ |
-| `P1-28-FE-001` | Appointment calendar and scheduling view | `apt.appointment-list [MISSING R2]`, `apt.appointment-detail [MISSING R2]`                                 | `TC-P1-28-APT-001` |
-| `P1-28-FE-002` | Appointment booking form                 | `apt.appointment-create`, `apt.appointment-type-list [MISSING R3]`, `apt.source-channel-list [MISSING R3]` | `TC-P1-28-APT-002` |
-| `P1-28-FE-003` | Appointment reschedule and confirmation  | `apt.appointment-reschedule`                                                                               | `TC-P1-28-APT-003` |
-| `P1-28-FE-004` | Appointment cancellation                 | `apt.appointment-cancel`, `apt.cancellation-reason-list [MISSING R3]`                                      | `TC-P1-28-APT-004` |
-| `P1-28-FE-005` | Appointment no-show recording            | `apt.appointment-no-show`                                                                                  | `TC-P1-28-APT-005` |
+| id             | canonical name                           | primary Backend operation(s)                                                                         | test id            |
+| -------------- | ---------------------------------------- | ---------------------------------------------------------------------------------------------------- | ------------------ |
+| `P1-28-FE-001` | Appointment calendar and scheduling view | `apt.appointment-list`, `apt.appointment-detail`                                                     | `TC-P1-28-APT-001` |
+| `P1-28-FE-002` | Appointment booking form                 | `apt.appointment-create`, `apt.catalogue-appointment-type-list`, `apt.catalogue-source-channel-list` | `TC-P1-28-APT-002` |
+| `P1-28-FE-003` | Appointment reschedule and confirmation  | `apt.appointment-reschedule`                                                                         | `TC-P1-28-APT-003` |
+| `P1-28-FE-004` | Appointment cancellation                 | `apt.appointment-cancel`, `apt.catalogue-cancellation-reason-list`                                   | `TC-P1-28-APT-004` |
+| `P1-28-FE-005` | Appointment no-show recording            | `apt.appointment-no-show`                                                                            | `TC-P1-28-APT-005` |
 
 ### 5.2 Reception Frontend — 17 tasks
 
-| id             | canonical name                                  | primary Backend operation(s)                                                                                                                             | test id            |
-| -------------- | ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------ |
-| `P1-28-FE-006` | Walk-in customer and vehicle intake             | `crm.customer-search`, `crm.individual-create`, `crm.company-create`, `veh.vehicle-search`, `veh.vehicle-create`, `crm.vehicle-link`                     | `TC-P1-28-XD-001`  |
-| `P1-28-FE-007` | Reception check-in wizard                       | `rec.reception-create`, `iam.user-list`, `rec.reception-list [MISSING R1]`, `rec.reception-detail [MISSING R1]`                                          | `TC-P1-28-REC-001` |
-| `P1-28-FE-008` | Reception customer and vehicle confirmation     | `crm.customer-read`, `veh.vehicle-read`, `veh.vehicle-relationship-list`, `crm.customer-vehicle-list [MISSING R4]`                                       | `TC-P1-28-XD-002`  |
-| `P1-28-FE-009` | Reception party roles and authorization         | `rec.reception-party-role`, `rec.reception-authorization`, `rec.reception-party-role-list [MISSING R1]`, `rec.reception-authorization-list [MISSING R1]` | `TC-P1-28-REC-002` |
-| `P1-28-FE-010` | Reception customer complaint capture            | `rec.reception-condition-evidence [kind complaint]`                                                                                                      | `TC-P1-28-REC-003` |
-| `P1-28-FE-011` | Reception visual inspection and condition items | `rec.reception-condition-evidence [kinds inspection/condition_item/leak]`                                                                                | `TC-P1-28-REC-004` |
-| `P1-28-FE-012` | Reception damage map and marks                  | `rec.reception-condition-evidence [kinds damage_map/damage_mark]`, `shared.document-read`                                                                | `TC-P1-28-REC-005` |
-| `P1-28-FE-013` | Reception odometer capture                      | `veh.vehicle-odometer-record`, `veh.vehicle-odometer-history`                                                                                            | `TC-P1-28-XD-003`  |
-| `P1-28-FE-014` | Reception fuel level and EV state of charge     | `rec.reception-create [fields fuelLevelId/evSocPercent]`, `rec.fuel-level-list [MISSING R3]`                                                             | `TC-P1-28-REC-006` |
-| `P1-28-FE-015` | Reception warning lights                        | `rec.reception-condition-evidence [kind warning_light]`, `rec.warning-light-code-list [MISSING R3]`                                                      | `TC-P1-28-REC-007` |
-| `P1-28-FE-016` | Reception vehicle contents                      | `rec.reception-condition-evidence [kind contents]`                                                                                                       | `TC-P1-28-REC-008` |
-| `P1-28-FE-017` | Reception camera and media upload               | `shared.attachment-upload-authorize`, `shared.attachment-version-register`, `shared.attachment-link-create`, `shared.document-read`                      | `TC-P1-28-REC-009` |
-| `P1-28-FE-018` | Reception signature capture                     | `rec.reception-signature`                                                                                                                                | `TC-P1-28-REC-010` |
-| `P1-28-FE-019` | Reception refusal workflow                      | `rec.reception-refusal`, `rec.refusal-reason-list [MISSING R3]`                                                                                          | `TC-P1-28-REC-011` |
-| `P1-28-FE-020` | Reception summary and approval                  | `rec.reception-approve`, `rec.reception-detail [MISSING R1]`, `rec.reception-condition-evidence-list [MISSING R1]`                                       | `TC-P1-28-REC-012` |
-| `P1-28-FE-021` | Reception acknowledgement document              | `rec.reception-detail [MISSING R1]`                                                                                                                      | `TC-P1-28-REC-013` |
-| `P1-28-FE-022` | Reception conversion to work order              | `rec.reception-convert-to-work-order`, `wo.work-order-detail`                                                                                            | `TC-P1-28-XD-004`  |
+| id             | canonical name                                  | primary Backend operation(s)                                                                                                         | test id            |
+| -------------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ------------------ |
+| `P1-28-FE-006` | Walk-in customer and vehicle intake             | `crm.customer-search`, `crm.individual-create`, `crm.company-create`, `veh.vehicle-search`, `veh.vehicle-create`, `crm.vehicle-link` | `TC-P1-28-XD-001`  |
+| `P1-28-FE-007` | Reception check-in wizard                       | `rec.reception-create`, `iam.user-list`, `rec.reception-list`, `rec.reception-detail`                                                | `TC-P1-28-REC-001` |
+| `P1-28-FE-008` | Reception customer and vehicle confirmation     | `crm.customer-read`, `veh.vehicle-read`, `veh.vehicle-relationship-list`, `crm.customer-vehicle-list`                                | `TC-P1-28-XD-002`  |
+| `P1-28-FE-009` | Reception party roles and authorization         | `rec.reception-party-role`, `rec.reception-authorization`, `rec.reception-party-role-list`, `rec.reception-authorization-list`       | `TC-P1-28-REC-002` |
+| `P1-28-FE-010` | Reception customer complaint capture            | `rec.reception-condition-evidence [kind complaint]`                                                                                  | `TC-P1-28-REC-003` |
+| `P1-28-FE-011` | Reception visual inspection and condition items | `rec.reception-condition-evidence [kinds inspection/condition_item/leak]`                                                            | `TC-P1-28-REC-004` |
+| `P1-28-FE-012` | Reception damage map and marks                  | `rec.reception-condition-evidence [kinds damage_map/damage_mark]`, `shared.document-read`                                            | `TC-P1-28-REC-005` |
+| `P1-28-FE-013` | Reception odometer capture                      | `veh.vehicle-odometer-record`, `veh.vehicle-odometer-history`                                                                        | `TC-P1-28-XD-003`  |
+| `P1-28-FE-014` | Reception fuel level and EV state of charge     | `rec.reception-create [fields fuelLevelId/evSocPercent]`, `rec.catalogue-fuel-level-list`                                            | `TC-P1-28-REC-006` |
+| `P1-28-FE-015` | Reception warning lights                        | `rec.reception-condition-evidence [kind warning_light]`, `rec.catalogue-warning-light-code-list`                                     | `TC-P1-28-REC-007` |
+| `P1-28-FE-016` | Reception vehicle contents                      | `rec.reception-condition-evidence [kind contents]`                                                                                   | `TC-P1-28-REC-008` |
+| `P1-28-FE-017` | Reception camera and media upload               | `shared.attachment-upload-authorize`, `shared.attachment-version-register`, `shared.attachment-link-create`, `shared.document-read`  | `TC-P1-28-REC-009` |
+| `P1-28-FE-018` | Reception signature capture                     | `rec.reception-signature`                                                                                                            | `TC-P1-28-REC-010` |
+| `P1-28-FE-019` | Reception refusal workflow                      | `rec.reception-refusal`, `rec.catalogue-refusal-reason-list`                                                                         | `TC-P1-28-REC-011` |
+| `P1-28-FE-020` | Reception summary and approval                  | `rec.reception-approve`, `rec.reception-detail`, `rec.reception-condition-evidence-list`                                             | `TC-P1-28-REC-012` |
+| `P1-28-FE-021` | Reception acknowledgement document              | `rec.reception-detail`                                                                                                               | `TC-P1-28-REC-013` |
+| `P1-28-FE-022` | Reception conversion to work order              | `rec.reception-convert-to-work-order`, `wo.work-order-detail`                                                                        | `TC-P1-28-XD-004`  |
 
 ### 5.3 Security — 4 · QA — 5 · DevOps — 2 · Documentation — 2
 

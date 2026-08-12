@@ -30,8 +30,8 @@
       "CANONICAL_REQUIREMENT": "Appointment calendar and scheduling view",
       "CANONICAL_SOURCE": "docs/phase-1/phase-1-28/canonical-plan.md — the Frontend task table",
       "CANONICAL_BACKEND_OPERATIONS": [
-        "apt.appointment-list [MISSING R2]",
-        "apt.appointment-detail [MISSING R2]"
+        "apt.appointment-list",
+        "apt.appointment-detail"
       ],
       "CANONICAL_TEST_ID": "TC-P1-28-APT-001",
       "IMPLEMENTATION_SURFACES": "NOT YET ASSESSED",
@@ -70,8 +70,8 @@
       "CANONICAL_SOURCE": "docs/phase-1/phase-1-28/canonical-plan.md — the Frontend task table",
       "CANONICAL_BACKEND_OPERATIONS": [
         "apt.appointment-create",
-        "apt.appointment-type-list [MISSING R3]",
-        "apt.source-channel-list [MISSING R3]"
+        "apt.catalogue-appointment-type-list",
+        "apt.catalogue-source-channel-list"
       ],
       "CANONICAL_TEST_ID": "TC-P1-28-APT-002",
       "IMPLEMENTATION_SURFACES": "NOT YET ASSESSED",
@@ -114,7 +114,7 @@
       "CANONICAL_TEST_ID": "TC-P1-28-APT-003",
       "IMPLEMENTATION_SURFACES": "NOT YET ASSESSED",
       "NORMAL_NAVIGATION_ENTRY": "NOT YET ASSESSED",
-      "BACKEND_READ_CONTRACTS": "MISSING (G-APT-READ): `apt.appointment-detail [MISSING R2]` is what would display the appointment being confirmed and source its `recordVersion`. Until R2, the only RV source is a prior write response cached in-session.",
+      "BACKEND_READ_CONTRACTS": "LANDED (R2 — PR #220, 2026-08-12): `apt.appointment-detail` displays the appointment being confirmed and sources its `recordVersion` (detail returns RV + ETag); `apt.appointment-list` is the calendar/day-queue source.",
       "BACKEND_WRITE_CONTRACTS": "`apt.appointment-reschedule` — POST /api/v1/appointments/{appointmentId}/reschedule (`reschedule/route.ts:43-57`). Confirmation and reschedule are ONE operation (WF-02); `pending_confirmation` is reachable by no operation.",
       "REQUEST_SCHEMA": "Strict `{confirmedFrom, confirmedTo}` — same explicit-offset and ordering rules as create. TRAP: any window violation reports path `body.confirmedFrom` even when `confirmedTo` is the offending field (`appointment-service.ts:184`). `If-Match` REQUIRED: missing answers 428 `ERR-CON-002`, stale answers 409 `ERR-CON-001`.",
       "RESPONSE_SCHEMA": "200 `{appointmentId, changeKind:'rescheduled', lifecycleStatus:'confirmed', recordVersion+1}` + ETag.",
@@ -148,12 +148,12 @@
       "CANONICAL_SOURCE": "docs/phase-1/phase-1-28/canonical-plan.md — the Frontend task table",
       "CANONICAL_BACKEND_OPERATIONS": [
         "apt.appointment-cancel",
-        "apt.cancellation-reason-list [MISSING R3]"
+        "apt.catalogue-cancellation-reason-list"
       ],
       "CANONICAL_TEST_ID": "TC-P1-28-APT-004",
       "IMPLEMENTATION_SURFACES": "NOT YET ASSESSED",
       "NORMAL_NAVIGATION_ENTRY": "NOT YET ASSESSED",
-      "BACKEND_READ_CONTRACTS": "`apt.cancellation-reason-list [MISSING R3]` — an ABSOLUTE blocker: the reason is mandatory and catalogued (no free text), and the table has zero routes (`20260721091000:164`). Plus `apt.appointment-detail [MISSING R2]` for the RV source.",
+      "BACKEND_READ_CONTRACTS": "LANDED (R3 + R2 — PR #220, 2026-08-12): `apt.catalogue-cancellation-reason-list` serves the mandatory catalogued reason (the route exists; the table still ships zero rows — population is a provisioning decision, not a read gap). `apt.appointment-detail` is the RV source.",
       "BACKEND_WRITE_CONTRACTS": "`apt.appointment-cancel` — POST /api/v1/appointments/{appointmentId}/cancel (`cancel/route.ts:26-40`).",
       "REQUEST_SCHEMA": "Strict `{cancellationReasonId: uuid}` — mandatory; an unknown id answers 422 `unknown_reference`. `If-Match` REQUIRED. Idempotency-Key mandatory.",
       "RESPONSE_SCHEMA": "200 `{appointmentId, changeKind:'cancelled', lifecycleStatus:'cancelled', recordVersion}` + ETag. Audit `apt.appointment.cancelled` records previous status and reason in details.",
@@ -191,7 +191,7 @@
       "CANONICAL_TEST_ID": "TC-P1-28-APT-005",
       "IMPLEMENTATION_SURFACES": "NOT YET ASSESSED",
       "NORMAL_NAVIGATION_ENTRY": "NOT YET ASSESSED",
-      "BACKEND_READ_CONTRACTS": "`apt.appointment-detail [MISSING R2]` for the RV source and for displaying which appointment is being marked.",
+      "BACKEND_READ_CONTRACTS": "LANDED (R2 — PR #220, 2026-08-12): `apt.appointment-detail` for the RV source and for displaying which appointment is being marked.",
       "BACKEND_WRITE_CONTRACTS": "`apt.appointment-no-show` — POST /api/v1/appointments/{appointmentId}/no-show (`no-show/route.ts:33-47`).",
       "REQUEST_SCHEMA": "Body `{}` or null, strict. `If-Match` REQUIRED. Legal from `confirmed` ONLY — any other state answers 409 `ERR-TRN-001`. Idempotency-Key mandatory.",
       "RESPONSE_SCHEMA": "200 `{appointmentId, changeKind:'no_show_recorded', lifecycleStatus:'no_show', recordVersion}` + ETag.",
@@ -269,13 +269,13 @@
       "CANONICAL_BACKEND_OPERATIONS": [
         "rec.reception-create",
         "iam.user-list",
-        "rec.reception-list [MISSING R1]",
-        "rec.reception-detail [MISSING R1]"
+        "rec.reception-list",
+        "rec.reception-detail"
       ],
       "CANONICAL_TEST_ID": "TC-P1-28-REC-001",
       "IMPLEMENTATION_SURFACES": "NOT YET ASSESSED",
       "NORMAL_NAVIGATION_ENTRY": "NOT YET ASSESSED",
-      "BACKEND_READ_CONTRACTS": "`iam.user-list` (GET /iam/users, `iam/users/route.ts:23-42`) for the receiving-employee picker — but G-EMP: `receiving_employee_id` has NO FK and no defined referent (`20260721097000:62`). Resume path: `rec.reception-list [MISSING R1]`, `rec.reception-detail [MISSING R1]`.",
+      "BACKEND_READ_CONTRACTS": "`iam.user-list` (GET /iam/users, `iam/users/route.ts:23-42`) for the receiving-employee picker — but G-EMP: `receiving_employee_id` has NO FK and no defined referent (`20260721097000:62`). Resume path LANDED (R1 — PR #220, 2026-08-12): `rec.reception-list`, `rec.reception-detail`. G-EMP itself remains open.",
       "BACKEND_WRITE_CONTRACTS": "`rec.reception-create` — POST /api/v1/receptions (`receptions/route.ts:37-98`).",
       "REQUEST_SCHEMA": "Strict: `companyId`, `branchId`, `vehicleId`, `receivingEmployeeId`, `serviceRequesterPartnerId` uuid required; `origin` discriminated union `{kind:'appointment', appointmentId}` XOR `{kind:'walk_in', requesterPartnerId?|null, note? 1-500|null}`; `odometerReadingId?|null`, `fuelLevelId?|null`, `evSocPercent? 0-100|null` (fractional accepted). Appointment origin: body scope+vehicle MUST equal the appointment's (422 `incoherent_reference` at `body.branchId`/`body.vehicleId`); only a `confirmed` appointment checks in (409 `ERR-TRN-001`).",
       "RESPONSE_SCHEMA": "201 `{receptionVisitId, displayNumber|null, receptionStatus:'opened', origin, recordVersion:1}` + `ETag:\"1\"`. One open visit per vehicle AND one consumption per origin both answer the SAME 409 `ERR-RES-002` message. Side effect: the appointment is marked `checked_in` in the same transaction with no version predicate (`appointment-repository.ts:197-213`). Outbox `vehicle.checked-in`.",
@@ -311,12 +311,12 @@
         "crm.customer-read",
         "veh.vehicle-read",
         "veh.vehicle-relationship-list",
-        "crm.customer-vehicle-list [MISSING R4]"
+        "crm.customer-vehicle-list"
       ],
       "CANONICAL_TEST_ID": "TC-P1-28-XD-002",
       "IMPLEMENTATION_SURFACES": "NOT YET ASSESSED",
       "NORMAL_NAVIGATION_ENTRY": "NOT YET ASSESSED",
-      "BACKEND_READ_CONTRACTS": "`crm.customer-read` (detail + ETag), `veh.vehicle-read` (detail incl. `recordVersion`, `mergedIntoId` — merged is NOT 404), `veh.vehicle-relationship-list` (partner names included: `partnerName|null`, `partnerNumber|null`, `partnerType|null`). Customer-first direction MISSING: `crm.customer-vehicle-list [MISSING R4]` (G-CUST-VEH / INT-012 — write-only platform-wide).",
+      "BACKEND_READ_CONTRACTS": "`crm.customer-read` (detail + ETag), `veh.vehicle-read` (detail incl. `recordVersion`, `mergedIntoId` — merged is NOT 404), `veh.vehicle-relationship-list` (partner names included: `partnerName|null`, `partnerNumber|null`, `partnerType|null`). Customer-first direction LANDED (R4 — PR #221, 2026-08-12): `crm.customer-vehicle-list` (INT-012 closed; adversarially verified).",
       "BACKEND_WRITE_CONTRACTS": "N/A with rationale: identity confirmation is a read-and-confirm step; any correction routes to FE-006's creation/link writes.",
       "REQUEST_SCHEMA": "Path uuid for the two details; cursor/limit for the relationship list. Scope keys in query strings THROW client-side (`read-operation.ts:89-133`) — the tenant is resolved server-side.",
       "RESPONSE_SCHEMA": "Customer detail `{id, displayNumber|null, displayName, partyType, lifecycleStatus, commercialStatus, recordVersion, ...}` + ETag; vehicle detail with RV/ETag; relationship page items with partner names.",
@@ -351,13 +351,13 @@
       "CANONICAL_BACKEND_OPERATIONS": [
         "rec.reception-party-role",
         "rec.reception-authorization",
-        "rec.reception-party-role-list [MISSING R1]",
-        "rec.reception-authorization-list [MISSING R1]"
+        "rec.reception-party-role-list",
+        "rec.reception-authorization-list"
       ],
       "CANONICAL_TEST_ID": "TC-P1-28-REC-002",
       "IMPLEMENTATION_SURFACES": "NOT YET ASSESSED",
       "NORMAL_NAVIGATION_ENTRY": "NOT YET ASSESSED",
-      "BACKEND_READ_CONTRACTS": "MISSING (G-REC-READ): `rec.reception-party-role-list [MISSING R1]` and `rec.reception-authorization-list [MISSING R1]` — current roles and standing decisions cannot be read back; capture is in-session only until R1.",
+      "BACKEND_READ_CONTRACTS": "LANDED (R1 — PR #220, 2026-08-12): `rec.reception-party-role-list` and `rec.reception-authorization-list` — current roles and standing decisions (including authorization refusals via the two-table UNION) read back.",
       "BACKEND_WRITE_CONTRACTS": "`rec.reception-party-role` (POST .../party-roles), `rec.reception-authorization` (POST .../authorizations).",
       "REQUEST_SCHEMA": "Party role: `{partnerId uuid, relationshipRole enum(7: service_requester/vehicle_owner/vehicle_user/payer/billing_party/approving_party/authorized_receiver), assignmentSource? <=120|null, supersede? bool}`; superseding a same-transaction role answers 422 `out_of_range`. Authorization: `{authorizingRole enum(4: approving_party/service_requester/vehicle_owner/authorized_receiver — vehicle_user and payer EXCLUDED), partnerId, decision:'approved'|'declined', channel? default in_person, authorizedScope? JSON|null, evidenceDocumentId?|null}`.",
       "RESPONSE_SCHEMA": "201 `{receptionVisitId, partyRoleId, relationshipRole, superseded}` / 201 `{receptionVisitId, authorizationId, decision}`. Role-not-held refusal is the same non-disclosing 409 `ERR-TRN-001` as the authority guard (anti-probing, `domain/reception.ts:275-281`). A standing `declined` blocks approve AND convert until the same party approves later.",
@@ -545,12 +545,12 @@
       "CANONICAL_SOURCE": "docs/phase-1/phase-1-28/canonical-plan.md — the Frontend task table",
       "CANONICAL_BACKEND_OPERATIONS": [
         "rec.reception-create [fields fuelLevelId/evSocPercent]",
-        "rec.fuel-level-list [MISSING R3]"
+        "rec.catalogue-fuel-level-list"
       ],
       "CANONICAL_TEST_ID": "TC-P1-28-REC-006",
       "IMPLEMENTATION_SURFACES": "NOT YET ASSESSED",
       "NORMAL_NAVIGATION_ENTRY": "NOT YET ASSESSED",
-      "BACKEND_READ_CONTRACTS": "`rec.fuel-level-list [MISSING R3]` (G-CAT-REC): `rec.fuel_levels` exists with zero routes AND zero rows (`20260721095000:102`). A read alone does not fix emptiness — population needs a management contract or an Owner provisioning decision; the no-fake-data policy forbids inventing rows.",
+      "BACKEND_READ_CONTRACTS": "READ LANDED (R3 — PR #220, 2026-08-12): `rec.catalogue-fuel-level-list`. `rec.fuel_levels` still ships zero rows — a read alone does not fix emptiness; population needs a management contract or an Owner provisioning decision, and the no-fake-data policy forbids inventing rows.",
       "BACKEND_WRITE_CONTRACTS": "Fields of `rec.reception-create`: `fuelLevelId?|null` and `evSocPercent? 0-100|null` (fractional accepted). No separate operation exists.",
       "REQUEST_SCHEMA": "Both fields nullable — check-in may proceed without them, which is the shipped degradation.",
       "RESPONSE_SCHEMA": "Carried in the create response's echo of the visit; no read-back until R1.",
@@ -584,12 +584,12 @@
       "CANONICAL_SOURCE": "docs/phase-1/phase-1-28/canonical-plan.md — the Frontend task table",
       "CANONICAL_BACKEND_OPERATIONS": [
         "rec.reception-condition-evidence [kind warning_light]",
-        "rec.warning-light-code-list [MISSING R3]"
+        "rec.catalogue-warning-light-code-list"
       ],
       "CANONICAL_TEST_ID": "TC-P1-28-REC-007",
       "IMPLEMENTATION_SURFACES": "NOT YET ASSESSED",
       "NORMAL_NAVIGATION_ENTRY": "NOT YET ASSESSED",
-      "BACKEND_READ_CONTRACTS": "`rec.warning-light-code-list [MISSING R3]` — and RMC-11: the catalogue table ships ZERO rows, no seed, no management route, so the kind is unusable in practice even after a read lands.",
+      "BACKEND_READ_CONTRACTS": "READ LANDED (R3 — PR #220, 2026-08-12): `rec.catalogue-warning-light-code-list` — but RMC-11 stands: the catalogue table ships ZERO rows, no seed, no management route, so the kind stays unusable in practice until population is decided.",
       "BACKEND_WRITE_CONTRACTS": "`rec.reception-condition-evidence` with `kind:'warning_light'` — the write is accepted today; nothing legal can populate its catalogue reference.",
       "REQUEST_SCHEMA": "Per-kind schema referencing a warning-light code the platform cannot yet supply.",
       "RESPONSE_SCHEMA": "201 `{receptionVisitId, kind, evidenceId}`.",
@@ -740,12 +740,12 @@
       "CANONICAL_SOURCE": "docs/phase-1/phase-1-28/canonical-plan.md — the Frontend task table",
       "CANONICAL_BACKEND_OPERATIONS": [
         "rec.reception-refusal",
-        "rec.refusal-reason-list [MISSING R3]"
+        "rec.catalogue-refusal-reason-list"
       ],
       "CANONICAL_TEST_ID": "TC-P1-28-REC-011",
       "IMPLEMENTATION_SURFACES": "NOT YET ASSESSED",
       "NORMAL_NAVIGATION_ENTRY": "NOT YET ASSESSED",
-      "BACKEND_READ_CONTRACTS": "`rec.refusal-reason-list [MISSING R3]` (G-CAT-REC — table `20260721095000:220`, zero routes, zero rows); read-back MISSING (G-REC-READ).",
+      "BACKEND_READ_CONTRACTS": "READS LANDED (R3 + R1 — PR #220, 2026-08-12): `rec.catalogue-refusal-reason-list` (the table still ships zero rows — population undecided) and the reception read-back.",
       "BACKEND_WRITE_CONTRACTS": "`rec.reception-refusal` — POST .../refusals.",
       "REQUEST_SCHEMA": "`{refusalType enum(5), refusalReasonId? uuid, refusingPartnerId?, witnessEmployeeId?, evidenceDocumentId?}`. Type `authorization`: `refusingPartnerId` REQUIRED (422) and the partner must hold an ACTIVE authorizing role (409 `ERR-TRN-001`) — the refusal becomes a standing block on approve and convert.",
       "RESPONSE_SCHEMA": "201 `{receptionVisitId, refusalId, refusalType}`. A refusal NEVER changes `receptionStatus`.",
@@ -779,13 +779,13 @@
       "CANONICAL_SOURCE": "docs/phase-1/phase-1-28/canonical-plan.md — the Frontend task table",
       "CANONICAL_BACKEND_OPERATIONS": [
         "rec.reception-approve",
-        "rec.reception-detail [MISSING R1]",
-        "rec.reception-condition-evidence-list [MISSING R1]"
+        "rec.reception-detail",
+        "rec.reception-condition-evidence-list"
       ],
       "CANONICAL_TEST_ID": "TC-P1-28-REC-012",
       "IMPLEMENTATION_SURFACES": "NOT YET ASSESSED",
       "NORMAL_NAVIGATION_ENTRY": "NOT YET ASSESSED",
-      "BACKEND_READ_CONTRACTS": "MISSING (G-REC-READ / INT-015): `rec.reception-detail [MISSING R1]` and `rec.reception-condition-evidence-list [MISSING R1]` are what a summary reads. The item shape is already specified at `reception-read-surface-plan.md:439`.",
+      "BACKEND_READ_CONTRACTS": "LANDED (R1 — PR #220, 2026-08-12): `rec.reception-detail` and `rec.reception-condition-evidence-list` are what the summary reads (the evidence list pages the eight non-restricted kinds; restricted narratives stay behind `iam.sensitive.view`).",
       "BACKEND_WRITE_CONTRACTS": "`rec.reception-approve` — POST .../approve, empty body `{}` or null, strict.",
       "REQUEST_SCHEMA": "`If-Match` REQUIRED (428 `ERR-CON-002` missing / 409 `ERR-CON-001` stale) and the ONLY RV source until R1 is the prior write chain in-session. Idempotency-Key mandatory.",
       "RESPONSE_SCHEMA": "200 `{receptionVisitId, receptionStatus:'authorized', appliedTransitions:['inspecting','authorized']|['authorized'], recordVersion}` + ETag. From `opened` it walks TWO edges in ONE transaction so RV = sent+2. Re-run on an authorized visit with a NEW key answers 409 `ERR-TRN-001` — NOT idempotent success, and re-reading does not fix `ERR-TRN-001`.",
@@ -818,12 +818,12 @@
       "CANONICAL_REQUIREMENT": "Reception acknowledgement document",
       "CANONICAL_SOURCE": "docs/phase-1/phase-1-28/canonical-plan.md — the Frontend task table",
       "CANONICAL_BACKEND_OPERATIONS": [
-        "rec.reception-detail [MISSING R1]"
+        "rec.reception-detail"
       ],
       "CANONICAL_TEST_ID": "TC-P1-28-REC-013",
       "IMPLEMENTATION_SURFACES": "NOT YET ASSESSED",
       "NORMAL_NAVIGATION_ENTRY": "NOT YET ASSESSED",
-      "BACKEND_READ_CONTRACTS": "`rec.reception-detail [MISSING R1]` — the acknowledgement document is a rendering of the visit record, so it is fully blocked on G-REC-READ.",
+      "BACKEND_READ_CONTRACTS": "LANDED (R1 — PR #220, 2026-08-12): `rec.reception-detail` — the acknowledgement document renders the visit record; G-REC-READ is closed.",
       "BACKEND_WRITE_CONTRACTS": "N/A with rationale: printing writes nothing; the export gate bans PDF/blob/download generation — PrintDocument frame with print styling only.",
       "REQUEST_SCHEMA": "N/A with rationale: no operation of its own; consumes R1's detail read when it exists.",
       "RESPONSE_SCHEMA": "The plan-specified detail item (`reception-read-surface-plan.md:439`): `id, displayNumber, receptionStatus, origin, vehicleId, vehicleDisplayNumber, custodyAcceptedAt, custodyReleasedAt, recordVersion`.",
@@ -862,7 +862,7 @@
       "CANONICAL_TEST_ID": "TC-P1-28-XD-004",
       "IMPLEMENTATION_SURFACES": "NOT YET ASSESSED",
       "NORMAL_NAVIGATION_ENTRY": "NOT YET ASSESSED",
-      "BACKEND_READ_CONTRACTS": "`wo.work-order-detail` under `wo.work_order.read` for the result display; the If-Match source is `rec.reception-detail [MISSING R1]` until R1 (in-session RV chain before that).",
+      "BACKEND_READ_CONTRACTS": "`wo.work-order-detail` under `wo.work_order.read` for the result display; the If-Match source is `rec.reception-detail` (LANDED, R1 — PR #220, 2026-08-12).",
       "BACKEND_WRITE_CONTRACTS": "`rec.reception-convert-to-work-order` — POST .../convert-to-work-order. There is NO `POST /work-orders` anywhere in the platform; this command is the only way a work order comes to exist.",
       "REQUEST_SCHEMA": "Body `{}` or null, strict. `If-Match` REQUIRED; the visit must be `authorized` else 409 `ERR-TRN-001`; DB guard failure answers 409 'not ready to convert'; a concurrent race answers 409 `ERR-RES-002` (retryable).",
       "RESPONSE_SCHEMA": "200 `{receptionVisitId, workOrderId, displayNumber|null, state, alreadyConverted}` — `state` is an OPAQUE catalogue code, NOT an enum, and there is NO ETag (`convert-to-work-order/route.ts:73-83`). Replay on a converted visit answers 200 `alreadyConverted:true` = SUCCESS — the UI must treat it as distinct from approve's 409 replay.",
