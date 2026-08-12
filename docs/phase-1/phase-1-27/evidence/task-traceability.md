@@ -1,6 +1,6 @@
 # Phase 1-27 — task traceability
 
-**CURRENT PHASE STATUS: OWNER ACCEPTANCE: FAIL.** The phase is not closed, `P1-G27` is not written, `main` is untouched, and P1-28 has not begun. Acceptance is the Product Owner's act against the running application; it is not derivable from any count in this repository and cannot be inferred from silence.
+**CURRENT PHASE STATUS: OWNER ACCEPTANCE: PASS (2026-08-12).** The Product Owner tested the running application and returned `OWNER ACCEPTANCE: PASS`, verbatim, on 2026-08-12; the phase is closed, and the phase's `closure-record.md` is the closure record. `main` is untouched, P1-27 is not promoted, and P1-28 has not begun. Acceptance was the Product Owner's act against the running application; it was never derived from any count in this repository and silence was never treated as Pass.
 
 **Classification:** Confidential — Commercial Product and Pilot Planning
 
@@ -22,8 +22,10 @@ the whole of the phase's implementation, which is why it is still described here
 in the order it happened rather than edited into never having existed.
 
 **The Product Owner then tested the merged application by hand and returned
-`OWNER ACCEPTANCE: FAIL` with eleven confirmed defects.** P1-27 is reopened.
-`P1-G27` does not exist and is not to be written. P1-28 has not started.
+`OWNER ACCEPTANCE: FAIL` with eleven confirmed defects.** P1-27 was reopened on
+that verdict and stayed open until the Owner, after the remediation and against
+the running application, returned `OWNER ACCEPTANCE: PASS` on 2026-08-12
+(`closure-record.md`).
 
 What the automated tiers were reporting at that exact moment
 (`owner-acceptance-fail-remediation.md`):
@@ -213,7 +215,7 @@ documents" in the `QA-005` row above from Wave 14 until this pass, against a
 manifest that had grown to 36 — the same number the change log had already
 corrected without this page following. The marker holds it now.
 
-<!-- derived: manifest fileCount = 39 -->
+<!-- derived: manifest fileCount = 40 -->
 
 ---
 

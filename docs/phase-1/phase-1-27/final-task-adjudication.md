@@ -1,6 +1,6 @@
 # P1-27 — final task adjudication
 
-**CURRENT PHASE STATUS: OWNER ACCEPTANCE: FAIL.** The phase is not closed, `P1-G27` is not written, `main` is untouched, and P1-28 has not begun. Acceptance is the Product Owner's act against the running application; it is not derivable from any count in this repository and cannot be inferred from silence.
+**CURRENT PHASE STATUS: OWNER ACCEPTANCE: PASS (2026-08-12).** The Product Owner tested the running application and returned `OWNER ACCEPTANCE: PASS`, verbatim, on 2026-08-12; the phase is closed, and the phase's `closure-record.md` is the closure record. `main` is untouched, P1-27 is not promoted, and P1-28 has not begun. Acceptance was the Product Owner's act against the running application; it was never derived from any count in this repository and silence was never treated as Pass.
 
 Every task the independent audit returned as failing, adjudicated against the
 repository at branch `remediation/p1-27-final-canonical-blockers` head `915b861`.
@@ -952,5 +952,8 @@ shipped operations answering 500 to every request, and fifty-one Tailwind
 utilities that emitted no CSS at all. A green pipeline is evidence that the
 things we thought to check are true.
 
-**P1-27 remains `OWNER ACCEPTANCE: FAIL`.** No gate record is written, `main` is
-untouched, and the phase is not closed.
+This document's standing sentence read "P1-27 remains `OWNER ACCEPTANCE: FAIL`"
+until 2026-08-12, and it was true every day it stood. It is superseded by the
+Owner's own verdict, recorded in the status line at the top of this page and in
+`closure-record.md`: `OWNER ACCEPTANCE: PASS`, 2026-08-12, against the running
+application. `main` is untouched and P1-28 has not begun.

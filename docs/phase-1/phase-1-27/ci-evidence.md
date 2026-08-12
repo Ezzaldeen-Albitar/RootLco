@@ -2,7 +2,7 @@
 
 # Phase 1-27 — continuous-integration evidence
 
-**CURRENT PHASE STATUS: OWNER ACCEPTANCE: FAIL.** The phase is not closed, `P1-G27` is not written, `main` is untouched, and P1-28 has not begun. Acceptance is the Product Owner's act against the running application; it is not derivable from any count in this repository and cannot be inferred from silence.
+**CURRENT PHASE STATUS: OWNER ACCEPTANCE: PASS (2026-08-12).** The Product Owner tested the running application and returned `OWNER ACCEPTANCE: PASS`, verbatim, on 2026-08-12; the phase is closed, and the phase's `closure-record.md` is the closure record. `main` is untouched, P1-27 is not promoted, and P1-28 has not begun. Acceptance was the Product Owner's act against the running application; it was never derived from any count in this repository and silence was never treated as Pass.
 
 **Classification:** Confidential — Commercial Product and Pilot Planning
 
@@ -32,21 +32,21 @@ the candidate: recording a run changes the tree, so the honest unit is the code
 candidate, and the equivalence is a derived value in this table — re-derived on
 every gate run — rather than an adjective.
 
-| property                                     | value                                                                         |
-| -------------------------------------------- | ----------------------------------------------------------------------------- |
-| `CODE_CANDIDATE_SHA`                         | `501f5f0d48d7b8cafc12dad51f6c501534b66a18`                                    |
-| Run head — a documentation-only successor    | `f0804b2c7ad31e08f033f76096d49c5394d69c81`                                    |
-| Executable paths changed since the candidate | **0** — derived on every gate run, over the whole span including the run head |
-| Workflow run                                 | `31587707846`                                                                 |
-| Required checks                              | **21 completed · 0 failed · 0 pending**                                       |
-| `ci-gate` decision                           | **Go**                                                                        |
-| `ci-gate` job                                | `94088792169`                                                                 |
-| `hosted-clean-room` job                      | `94085356719` — success, on its own per-job conclusion                        |
-| `Web quality` job                            | `94085356574` — success                                                       |
-| `authenticated-browser` job                  | `94085356606` — success                                                       |
-| Authenticated tier                           | 229 planned · 225 passed · 0 failed · 4 skipped · 224 executed · 6 spec files |
-| CodeQL                                       | **none open** on the analysed refs — both legs completed                      |
-| Dependency policy                            | passing — the `dependency-security` check succeeded                           |
+| property                                                  | value                                                                                                                       |
+| --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `CODE_CANDIDATE_SHA`                                      | `501f5f0d48d7b8cafc12dad51f6c501534b66a18`                                                                                  |
+| Run head — a documentation-only successor                 | `f0804b2c7ad31e08f033f76096d49c5394d69c81`                                                                                  |
+| Executable paths changed, candidate to accepted `develop` | **0** — derived on every gate run; both ends pinned, so the span covers the run head and cannot move with post-closure work |
+| Workflow run                                              | `31587707846`                                                                                                               |
+| Required checks                                           | **21 completed · 0 failed · 0 pending**                                                                                     |
+| `ci-gate` decision                                        | **Go**                                                                                                                      |
+| `ci-gate` job                                             | `94088792169`                                                                                                               |
+| `hosted-clean-room` job                                   | `94085356719` — success, on its own per-job conclusion                                                                      |
+| `Web quality` job                                         | `94085356574` — success                                                                                                     |
+| `authenticated-browser` job                               | `94085356606` — success                                                                                                     |
+| Authenticated tier                                        | 229 planned · 225 passed · 0 failed · 4 skipped · 224 executed · 6 spec files                                               |
+| CodeQL                                                    | **none open** on the analysed refs — both legs completed                                                                    |
+| Dependency policy                                         | passing — the `dependency-security` check succeeded                                                                         |
 
 The four skips are runtime-guarded no-data cases the suite itself states, and
 the per-JOB conclusion on the commit is what every cell above reads — never the

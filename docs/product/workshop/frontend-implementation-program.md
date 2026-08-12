@@ -33,22 +33,23 @@ Four things follow from that, and none of them is negotiable.
 | Name the owning Frontend phase where a repository record establishes one      | Invent a phase number. Where no record names one, the entry reads **not established** and says what would establish it                                                                                                           |
 | Restate the controlled sequence that turns a finding into merged Backend work | Perform step 1 of that sequence. Promoting a `WF-`/`RMC-`/`INS-`/`DTA-`/`PROC-`/`PPD-`/`VHM-`/`VDP-`/`VCAT-`/`MVE-` finding into the live `P1-27-INT-###` register is the register owner's act, and this document does not do it |
 
-### 0.2 Phase 1-27 is open, and this document does not close it
+### 0.2 Phase 1-27 closed on the Owner's verdict, and this document did not close it
 
 The Product Owner manually tested the merged application and returned
-`OWNER ACCEPTANCE: FAIL` with eleven confirmed defects. Three remediation pull
-requests have since merged. **P1-27 remains reopened.** `P1-G27` does not exist
-and is not written by this document. P1-28 has not started.
+`OWNER ACCEPTANCE: FAIL` with eleven confirmed defects; remediation merged
+through protected change control, and on 2026-08-12 the Owner tested the
+running application again and returned `OWNER ACCEPTANCE: PASS` — recorded in
+`docs/phase-1/phase-1-27/closure-record.md`. **P1-27 is closed. It is not
+promoted to `main`, and P1-28 has not started.**
 
-`docs/phase-1/phase-1-27/owner-acceptance-fail-remediation.md` and
-`docs/phase-1/phase-1-27/risk-register.md` both end on the same sentence, and it
-governs this program too:
+The sentence that governed this program was applied without exception:
 
 > P1-27 closes only when the Product Owner manually tests the application again
 > and returns `OWNER ACCEPTANCE: PASS`. **Silence is not Pass.**
 
-No package below may be read as "P1-27 is finished, here is what comes next".
-`WFP-01` and `WFP-02` are the P1-27 surface and they are inside an open phase.
+No package below may be read as "here is what comes next, authorised". The
+closure of P1-27 authorises nothing in this program: every package remains a
+plan, and starting any of them is a separate Owner act.
 
 ### 0.3 The rules every statement here obeys
 

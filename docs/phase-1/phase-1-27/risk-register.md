@@ -1,19 +1,23 @@
 # Phase 1-27 — risk register
 
 **Classification:** Confidential — Commercial Product and Pilot Planning ·
-**Status:** P1-27 is **OPEN**, reopened on `OWNER ACCEPTANCE: FAIL`
+**Status:** P1-27 is **CLOSED** — `OWNER ACCEPTANCE: PASS`, 2026-08-12
+([`closure-record.md`](closure-record.md))
 
 ---
 
 ## 0. Standing
 
-P1-27 is open. The Product Owner manually tested the merged application and
-returned `OWNER ACCEPTANCE: FAIL` with eleven confirmed defects
-([`owner-acceptance-fail-remediation.md`](owner-acceptance-fail-remediation.md)).
-Three remediation pull requests have merged since. **`P1-G27` does not exist,
-the phase is not closed, and P1-28 has not started.** Nothing in this register
-asserts, implies or anticipates closure, and no risk below is recorded as
-"accepted" — acceptance is the Owner's act and it has not been performed.
+P1-27 is closed. It was reopened on 2026-08-06, when the Product Owner manually
+tested the merged application and returned `OWNER ACCEPTANCE: FAIL` with eleven
+confirmed defects
+([`owner-acceptance-fail-remediation.md`](owner-acceptance-fail-remediation.md)),
+and it stayed open until the Owner, after the remediation and against the
+running application, returned `OWNER ACCEPTANCE: PASS` on 2026-08-12. **`main`
+is not promoted and P1-28 has not started.** The closure changed no risk row:
+no risk below is recorded as "accepted" — risk acceptance is the Owner's act,
+row by row, and no such act is recorded for any row. The phase acceptance is
+not one.
 
 This register does not close, promote, schedule or fund anything. It records
 what is exposed and what holds it.
