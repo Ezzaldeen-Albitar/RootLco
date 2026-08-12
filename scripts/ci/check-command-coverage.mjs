@@ -262,6 +262,19 @@ export const REGISTER = Object.freeze([
     why: 'regenerates the canonical P1-28 task matrix',
   },
   {
+    name: 'validate:p1-28-write-reachability',
+    owner: ROOT,
+    tier: 'required',
+    // The P1-28 sibling of `validate:p1-27-reachability` (SEC-004), built on
+    // DAY ONE: the crm/veh gate covers crm/veh only, so the apt/rec writes this
+    // phase consumes had no reachability authority at all. The operation list
+    // is derived from the P1-24 register; a write nobody can reach is either
+    // on a frozen, shrink-only allow-list with a recorded reason, or a
+    // violation — so INT-113 (declared-but-never-wired) cannot recur silently.
+    // Mutation-proved by tests/ci/p1-28-write-reachability.test.ts.
+    why: 'every canonical P1-28 apt/rec write is reachable, allow-listed with a reason, or deliberately absent',
+  },
+  {
     name: 'evidence:p1-27',
     owner: ROOT,
     // `informational`, not `optional`. `optional` is not one of the four tiers
