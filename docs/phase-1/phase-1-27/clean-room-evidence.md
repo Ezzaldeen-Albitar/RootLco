@@ -137,8 +137,8 @@ sit in the tree looking like coverage while running nowhere.
 
 ## Current tree
 
-The live web suite holds **70 web test files**, every one matched by a `vitest`
-project, and the current tree executes **1867** tests. Both are derived on every
+The live web suite holds **72 web test files**, every one matched by a `vitest`
+project, and the current tree executes **1943** tests. Both are derived on every
 run of `npm run validate:p1-27-closing-values` rather than recorded by hand.
 
 That executed figure is the one a test reads. It used to read the `Web tier` row
@@ -149,7 +149,7 @@ comparing a live baseline against a record of a head the branch had left behind.
 The superseded figures are left exactly as they were, because they are a true
 account of that head; what moved is which number the check consults.
 
-**The 1867 is local, and it is the binding measurement.** It is the output of
+**The 1943 is local, and it is the binding measurement.** It is the output of
 `node scripts/ci/check-p1-27-closing-values.mjs --record web` against this tree,
 recorded in `evidence/local-run-ledger.json` with the commit it was taken at. A
 hosted run at a superseded head agreed with it, and that agreement is recorded
@@ -160,10 +160,10 @@ different tree is not evidence about this one.
 
 | measure                                    | value | the command that decides it                                       |
 | ------------------------------------------ | ----- | ------------------------------------------------------------------ |
-| Web test files under `apps/web/tests`       | 70    | a walk of the tree                                                 |
-| Web tier — tests executed                   | 1867  | `--record web`, from the `vitest` JSON report                      |
-| Web tier — files the run reported           | 70    | the same report, cross-checked against the walk above              |
-| Root unit tier — tests executed             | 2225  | `--record unit`, from the `vitest` JSON report                     |
+| Web test files under `apps/web/tests`       | 72    | a walk of the tree                                                 |
+| Web tier — tests executed                   | 1943  | `--record web`, from the `vitest` JSON report                      |
+| Web tier — files the run reported           | 72    | the same report, cross-checked against the walk above              |
+| Root unit tier — tests executed             | 2227  | `--record unit`, from the `vitest` JSON report                     |
 | Root unit tier — files the run reported     | 93    | the same report, cross-checked against the tier's include rule      |
 | Committed web floor (`minTests`)            | 1793  | `.github/ci-baselines/test-count-baseline.json`                    |
 | Committed unit floor (`minTests`)           | 1050  | the same baseline                                                  |
@@ -267,9 +267,11 @@ The web tier's executed total was measured again at
 `424e5d884ed7c8f608c446408743cbf88ac80515` by GitHub-hosted run `31508526699`,
 job `93836261711` (`Web quality / web-quality`), which reported
 `Tests executed | 1867`. That head is not this tree either. It is recorded
-because it agrees with the local measurement above, and agreement between two
-independent measurements is worth keeping — but the authority for the current
-figure is the local run, because it is the only one taken against these bytes.
+because it agreed with the local measurement that was current at that head —
+the branch has since grown the P1-28 suites, so the binding figure above has
+moved on — and agreement between two independent measurements is worth
+keeping; but the authority for the current figure is the local run, because it
+is the only one taken against these bytes.
 
 This is where the figure **1586** stood, in the present tense, 281 tests below
 the tree. Recorded rather than quietly overwritten, because of HOW it survived:

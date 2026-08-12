@@ -39,6 +39,14 @@ docs/phase-1/phase-1-28/task-matrix.json
 # Root orchestration runs each workspace check via format:check:all.
 apps/
 
+# The agent-session directory. Git-ignored and untracked in its entirety, but
+# Prettier does not read `.gitignore` (see `.local` above) and will walk the
+# nested worktrees under `.claude/worktrees/` — each a checkout of ANOTHER
+# branch, formatted per that branch's own state and gated in its own session.
+# The root check judging this branch by another branch's bytes fails
+# `format:check` here over files this tree does not contain.
+.claude/
+
 # Evidence the clean-room job writes into the workspace root while it runs.
 # Machine-generated, never committed, and not ours to format — checking them
 # made a passing clean room fail on the shape of its own output.
