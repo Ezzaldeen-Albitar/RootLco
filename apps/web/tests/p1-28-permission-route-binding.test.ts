@@ -20,6 +20,15 @@ import type { ReactElement } from 'react';
  * alone resolves twelve capabilities in one object literal and a single
  * copy-pasted constant there withdraws or grants a control silently.
  *
+ * "Every route" is meant literally and was not: this file covered six of the
+ * eight, and the two it omitted — the booking form and the acknowledgement
+ * document — were the two that resolve no capability prop at all, so the claim
+ * read as true for as long as nobody counted the pages. Both are here now. They
+ * contribute no capability pairing, because there is none to make; what they
+ * contribute is the gate direction, and the booking form contributes the one
+ * case the reader sweep was missing entirely — a screen a read-only operator
+ * must NOT reach.
+ *
  * ## How it is asserted
  *
  * The route module is INVOKED with a synthesised session and its returned
@@ -128,16 +137,23 @@ const receptionRead = vi.fn();
 vi.mock('@/features/appointments/api', () => ({
   readAppointment: (...args: unknown[]) => appointmentRead(...args),
 }));
+const EMPTY_CATALOGUE = {
+  status: 'ok',
+  options: [],
+  truncated: false,
+  correlationId: 'cid',
+};
 vi.mock('@/features/appointments/catalogue-api', () => ({
-  listCancellationReasons: async () => ({
-    status: 'ok',
-    options: [],
-    truncated: false,
-    correlationId: 'cid',
-  }),
+  listCancellationReasons: async () => EMPTY_CATALOGUE,
+  listAppointmentTypes: async () => EMPTY_CATALOGUE,
+  listSourceChannels: async () => EMPTY_CATALOGUE,
 }));
+const EMPTY_PAGE = { status: 'ok', rows: [], hasMore: false, correlationId: 'cid' };
 vi.mock('@/features/receptions/api', () => ({
   readReception: (...args: unknown[]) => receptionRead(...args),
+  listPartyRoles: async () => EMPTY_PAGE,
+  listAuthorizations: async () => EMPTY_PAGE,
+  listConditionEvidence: async () => EMPTY_PAGE,
 }));
 vi.mock('@/features/receptions/catalogue-api', () => ({
   listFuelLevels: async () => ({
@@ -163,6 +179,11 @@ const CheckInStartPage = (await import('@/app/[locale]/(dashboard)/receptions/ch
   .default;
 const CheckInWizardPage = (
   await import('@/app/[locale]/(dashboard)/receptions/check-in/[receptionId]/page')
+).default;
+const AppointmentBookingPage = (await import('@/app/[locale]/(dashboard)/appointments/new/page'))
+  .default;
+const AcknowledgementPage = (
+  await import('@/app/[locale]/(dashboard)/receptions/check-in/[receptionId]/acknowledgement/page')
 ).default;
 
 /* --- walking the returned tree -------------------------------------------- */
@@ -300,6 +321,36 @@ const ROUTES: readonly RouteCase[] = [
       readWorkOrders: 'wo.work_order.read',
     },
   },
+  {
+    /*
+     * A WRITE screen: its gate is `apt.appointment.manage`, the code
+     * `apt.appointment-create` registers, and it resolves no capability prop
+     * because there is no second authority on it to resolve. That is exactly why
+     * it was missing, and exactly what makes it worth having — it is the only
+     * route here a read-only operator must not reach at all, so the reader sweep
+     * below had no negative case until it arrived.
+     */
+    name: 'the booking form',
+    gate: 'apt.appointment.manage',
+    marker: 'channels',
+    invoke: () => AppointmentBookingPage({ params: LOCALE }),
+    capabilities: {},
+  },
+  {
+    /*
+     * A READ screen with one code and no capability: the acknowledgement writes
+     * nothing, it is the visit record laid out for print. The gate direction is
+     * the whole of its permission behaviour, and it is asserted like any other.
+     */
+    name: 'the acknowledgement document',
+    gate: 'rec.reception.read',
+    marker: 'sections',
+    invoke: () =>
+      AcknowledgementPage({
+        params: Promise.resolve({ locale: 'en', receptionId: RECEPTION_DETAIL.id }),
+      }),
+    capabilities: {},
+  },
 ];
 
 async function propsFor(route: RouteCase, permissions: readonly string[]): Promise<Props> {
@@ -332,9 +383,13 @@ describe('P1-28-SEC-001 — every capability comes from its OWN permission', () 
         expect(ALL_PERMISSIONS, `${code} is not in ALL_PERMISSIONS`).toContain(code);
       }
     }
-    // Anti-vacuity: the six routes together decide twenty-four capabilities.
+    // Anti-vacuity: the eight routes together decide twenty-five capabilities,
+    // and six of them decide at least one. Both halves are stated, so adding a
+    // capability-free route can never weaken the first number.
     const total = ROUTES.reduce((sum, route) => sum + Object.keys(route.capabilities).length, 0);
-    expect(total).toBeGreaterThanOrEqual(24);
+    expect(total).toBe(25);
+    expect(ROUTES.length).toBe(8);
+    expect(ROUTES.filter((route) => Object.keys(route.capabilities).length > 0)).toHaveLength(6);
   });
 
   for (const route of ROUTES) {
@@ -384,7 +439,7 @@ describe('P1-28-SEC-001 — the reader-only negative control', () => {
     'iam.user.read',
   ];
 
-  for (const route of ROUTES) {
+  for (const route of ROUTES.filter((entry) => Object.keys(entry.capabilities).length > 0)) {
     it(`${route.name} renders for a reader and offers no write`, async () => {
       const props = await propsFor(route, READER);
 
@@ -402,12 +457,32 @@ describe('P1-28-SEC-001 — the reader-only negative control', () => {
     });
   }
 
-  it('reaches every screen — a reader is not denied the pages themselves', async () => {
-    for (const route of ROUTES) {
+  it('reaches every READ screen, and is refused every write-gated one', async () => {
+    /*
+     * Both directions over all eight routes, decided by the gate rather than by
+     * a list: a route whose gate is a code this reader holds must render, and a
+     * route whose gate is not must render the denial instead. The booking form
+     * is the only route on the second side today, and it is the reason this
+     * sweep is stated as a partition rather than as "a reader reaches
+     * everything" — which was true only because the one screen it is false for
+     * was absent from `ROUTES`.
+     */
+    const reachable = ROUTES.filter((route) => READER.includes(route.gate));
+    const refused = ROUTES.filter((route) => !READER.includes(route.gate));
+    expect(reachable.length + refused.length).toBe(8);
+    expect(refused.map((route) => route.name)).toEqual(['the booking form']);
+
+    for (const route of reachable) {
       PERMISSIONS = [...READER];
       const tree = await route.invoke();
       expect(rendersComponent(tree, PermissionDeniedState), route.name).toBe(false);
       expect(findProps(tree, route.marker), route.name).not.toBeNull();
+    }
+    for (const route of refused) {
+      PERMISSIONS = [...READER];
+      const tree = await route.invoke();
+      expect(rendersComponent(tree, PermissionDeniedState), route.name).toBe(true);
+      expect(findProps(tree, route.marker), route.name).toBeNull();
     }
   });
 });

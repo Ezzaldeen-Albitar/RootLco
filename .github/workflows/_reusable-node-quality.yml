@@ -605,6 +605,23 @@ jobs:
           # developer meets forty minutes late is a gate they meet after the
           # next commit. Named here so it fails beside its sibling.
           npm run validate:p1-28-write-reachability
+          # The other two P1-28 gates, for the same reason and found the same
+          # way. `tests/ci/p1-28-devops-gate.test.ts` used to hold a HAND LIST of
+          # two gates and assert that each was named by a hosted job; the command
+          # register meanwhile carried FOUR `validate:p1-28-*` entries at tier
+          # `required`, and the two the list omitted rode `verify:workspaces` in
+          # the clean room and nothing else. A hand list cannot fail because
+          # something was never added to it, which is the failure that happened.
+          # That test now derives its set from the register by phase prefix, so
+          # these two are named here rather than being invisible to it.
+          #
+          # Least privilege, resolved scope and scope hygiene over the same
+          # trees (P1-28-SEC-001/003).
+          npm run validate:p1-28-access
+          # Every version-guarded command sources its If-Match from a read or a
+          # command response, never from arithmetic or a cached guess
+          # (P1-28-QA-004).
+          npm run validate:p1-28-version-sourcing
 
       - name: Web component tier
         if: inputs.task == 'web-quality'

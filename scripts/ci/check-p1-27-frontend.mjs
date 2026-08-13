@@ -130,16 +130,37 @@ export const PLAN_ROOTS = [
  */
 export const ADOPTED_ROOTS = Object.freeze([
   /*
+   * `P1-28-DO-001` and `P1-28-SEC-003`, which found the SAME omission
+   * independently and each added an entry for it.
+   *
    * P1-28's plan §9 names THREE trees — `features/appointments`,
    * `features/receptions` and `app/[locale]/(dashboard)` — and this constant
    * recorded one of them. The dashboard tree is already a `PLAN_ROOT`, so the
-   * omission was `features/appointments` alone: nine files holding the booking,
-   * calendar and detail screens, collected by no root, while the docblock above
-   * described the adoption as complete. That is the same shape the third
-   * `PLAN_ROOT` was added to fix — a gate contradicting its own authority — and
-   * `tests/ci/p1-28-devops-gate.test.ts` now derives the expected adopted set
-   * from the P1-28 plan's §9 sentence so a fourth tree cannot be forgotten the
-   * same way (`P1-28-DO-001`).
+   * omission was `features/appointments` alone.
+   *
+   * Measured at the head that carried it: nine `.ts`/`.tsx` files — the whole
+   * appointment surface, including the two screens that build a branch-target
+   * query and the booking form that posts a company and a branch in its body —
+   * were collected by no root. Seven rules reported clean over a tree they had
+   * never opened, and the eighth (`no-client-asserted-scope`) was the only one
+   * whose premise genuinely does not hold there. That is the same shape the
+   * third `PLAN_ROOT` was added to fix — a gate contradicting its own authority
+   * — and it is fixed the same way: by citation, not by opinion.
+   *
+   * ## Why this is ONE entry and briefly was two
+   *
+   * The two waves ran on separate branches and were merged without the whole
+   * battery being re-run over the union, so `features/appointments` was adopted
+   * TWICE. `tests/ci/p1-28-devops-gate.test.ts` compares the adopted set with
+   * the set the plan owes as an equality and went red on the merge commit —
+   * correctly, and to nobody, because the merge was the first head on which the
+   * two changes existed together. A duplicate root is not harmless either:
+   * `SCAN_ROOTS` is walked per entry, so every rule judged the appointment tree
+   * twice and any violation there would have been reported twice.
+   *
+   * `tests/ci/p1-28-devops-gate.test.ts` derives the expected adopted set from
+   * the P1-28 plan's §9 sentence, so a fourth tree cannot be forgotten the same
+   * way and a third copy of an existing one cannot be added.
    */
   Object.freeze({
     root: join('apps', 'web', 'src', 'features', 'appointments'),
@@ -148,24 +169,6 @@ export const ADOPTED_ROOTS = Object.freeze([
   }),
   Object.freeze({
     root: join('apps', 'web', 'src', 'features', 'receptions'),
-    authority: 'docs/phase-1/phase-1-28/canonical-plan.md',
-    phase: 'P1-28',
-  }),
-  /*
-   * `P1-28-SEC-003`. The reception tree was adopted alone, and P1-28's plan §9
-   * names TWO feature trees: `features/appointments/**` as well.
-   *
-   * Measured at the head that carried the omission: nine `.ts`/`.tsx` files —
-   * the whole appointment surface, including the two screens that build a
-   * branch-target query and the booking form that posts a company and a branch
-   * in its body — were collected by no root. Seven rules reported clean over a
-   * tree they had never opened, and the eighth (`no-client-asserted-scope`) was
-   * the only one whose premise genuinely does not hold there. That is the same
-   * shape as the P1-27 dashboard-root omission one phase later, so it is fixed
-   * the same way: by citation, not by opinion.
-   */
-  Object.freeze({
-    root: join('apps', 'web', 'src', 'features', 'appointments'),
     authority: 'docs/phase-1/phase-1-28/canonical-plan.md',
     phase: 'P1-28',
   }),
@@ -192,10 +195,13 @@ export const ROOT_AUTHORITY = 'docs/phase-1/phase-1-27/canonical-plan.md';
  * ## Why the list used to be wrong, and why a list could not notice
  *
  * This constant WAS five directories, written by hand. Measured against the
- * imports the three scanned trees actually make, five was **5 of 14**. A
- * hand-written list can only fail when one of ITS entries goes missing; it can
- * never fail because something was never added, which is the failure that
- * happened. The largest omission was `components/data-table` — imported by 38
+ * imports the three trees scanned AT THAT TIME actually make, five was
+ * **5 of 14** — a historical figure, kept because it is what the argument rests
+ * on; two trees have been adopted since and a real run of this gate now reports
+ * 18 imported modules across five. A hand-written list can only fail when one of
+ * ITS entries goes missing; it can never fail because something was never added,
+ * which is the failure that happened. The largest omission was
+ * `components/data-table` — imported by 38
  * import statements across the scanned trees and holding `DataTable.tsx`, the
  * component that renders every customer and vehicle row an operator sees. It was
  * in neither this list nor the security suite's `MOVED_OUT`, which was a second
@@ -214,15 +220,25 @@ export const ROOT_AUTHORITY = 'docs/phase-1/phase-1-27/canonical-plan.md';
  * Because `SCAN_ROOTS` is not a free variable. It is bound in two directions by
  * documents this branch does not own:
  *
- *   - `canonical-plan.md` §9 (lines 327-329) names the three trees, and
- *     `tests/ci/p1-27-frontend-gate.test.ts` re-derives the expected root list
- *     from that text and asserts `SCAN_ROOTS` equals it — including that the
- *     plan declares exactly three. Adding a root without amending the plan makes
- *     the gate contradict its own authority, which is the defect the third root
- *     was added to fix, pointing the other way.
- *   - `check-p1-27-doc-counts.mjs` publishes `p1-27-frontend-gate` (69) and
- *     `p1-27-frontend-gate:trees` (3) as derived markers, and four documents
- *     carry them.
+ *   - P1-27's `canonical-plan.md` §9 names the three trees `PLAN_ROOTS` holds,
+ *     and `tests/ci/p1-27-frontend-gate.test.ts` re-derives that half of the
+ *     root list from the text and asserts `PLAN_ROOTS` equals it — including
+ *     that the plan declares exactly three. Adding a PLAN root without amending
+ *     the plan makes the gate contradict its own authority, which is the defect
+ *     the third root was added to fix, pointing the other way. `ADOPTED_ROOTS`
+ *     is the other half and is checked against P1-28's plan instead, which is
+ *     why `SCAN_ROOTS` is five while the P1-27 plan still names three.
+ *   - `check-p1-27-doc-counts.mjs` publishes `p1-27-frontend-gate` (the file
+ *     count) and `p1-27-frontend-gate:trees` (`SCAN_ROOTS.length`) as derived
+ *     markers, and four documents carry them —
+ *     `deliverable-manifest.md`, `open-decisions.md`,
+ *     `owner-acceptance-fail-remediation.md` and `risk-register.md`. A real run
+ *     of this gate at this head reports **122 files across 5 trees**, and those
+ *     are the values the four documents carry; this sentence used to name 69 and
+ *     3, which were the values when the second tree was adopted and had been
+ *     wrong since. The markers themselves are re-derived on every run, so the
+ *     documents cannot drift — only prose like this can, which is why the
+ *     numbers here now say which run produced them.
  *
  * And a wider widening is worse, not better: measured across the `.ts`/`.tsx`
  * files under `apps/web/src` that no root collects, a rule fires in

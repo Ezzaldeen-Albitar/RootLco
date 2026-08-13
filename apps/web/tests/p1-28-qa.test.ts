@@ -13,12 +13,12 @@ import { STATUS_BY_KIND } from '@/lib/api/read-operation';
  * Every P1-28 `.dom` suite mocks its adapter module wholesale, so it exercises
  * the SCREEN and structurally cannot exercise the adapter. Every P1-28 unit
  * suite exercises a pure module — the contract tables, the wizard rules, the
- * closure graph. **Nothing was executing the thirty-six adapters this phase
+ * closure graph. **Nothing was executing the thirty-eight adapters this phase
  * ships.** That is the P1-27 Wave 5 finding recurring one phase later: mutating
  * an adapter left twenty DOM tests green, because every reference to it in the
  * whole suite was a `vi.fn()` that replaces the thing under test.
  *
- * So this file drives all twenty-two reads and all fourteen writes through all
+ * So this file drives all twenty-three reads and all fourteen writes through all
  * eleven transport kinds, through the four refusal branches the contract names
  * (428 / 409 / 422 / 403), and through the three replay shapes — and it asserts
  * the paths they actually produce against the published contract, in both
@@ -324,12 +324,26 @@ describe('P1-28-QA-001 — every adapter is executed, and this file proves it', 
     expect(mirrored.size).toBeGreaterThan(25);
   });
 
-  it('renders every component the two feature trees ship', () => {
+  it('leaves no component of the two feature trees NAMED BY NO TEST', () => {
     /*
      * DERIVED from the filesystem. A filename assertion — "these fifteen suites
      * exist" — can only fail when a file is renamed, never when a component is
      * untested, and that is exactly how six P1-27 components shipped with zero
      * component coverage under a green QA-001.
+     *
+     * ## What this proves, and what it does not
+     *
+     * It proves NAMING, not rendering, and it used to be titled as though it
+     * proved rendering. The check is a word-boundary search for each component's
+     * identifier across the comment-stripped suite sources: a component named in
+     * an import that a `.dom` suite never mounts satisfies it, and so does one
+     * named only in an `expect(...).toBeNull()`. That is a real gap and it is
+     * stated rather than papered over.
+     *
+     * It is still worth having, because the failure it DOES catch is the one
+     * that happened: a component added to a feature tree that no suite mentions
+     * at all. Rendering is proved where it is proved — by the `.dom` suites, one
+     * component at a time, against real props.
      */
     const components = p1TwentyEightComponents();
     expect(components.length, 'no components were discovered — the walk is broken').toBeGreaterThan(
@@ -337,11 +351,10 @@ describe('P1-28-QA-001 — every adapter is executed, and this file proves it', 
     );
 
     const suite = testSources();
-    const unreferenced = components.filter((name) => !new RegExp(`\\b${name}\\b`).test(suite));
-    expect(
-      unreferenced,
-      `these components are rendered by no test:\n  ${unreferenced.join('\n  ')}`
-    ).toEqual([]);
+    const unnamed = components.filter((name) => !new RegExp(`\\b${name}\\b`).test(suite));
+    expect(unnamed, `these components are named by no test:\n  ${unnamed.join('\n  ')}`).toEqual(
+      []
+    );
   });
 
   it('cannot be satisfied by a component named only in prose', () => {
@@ -641,6 +654,23 @@ describe('P1-28-QA-002 — the four refusal branches the contract names', () => 
   });
 });
 
+/**
+ * `P1-28-QA-002` — the three replay shapes.
+ *
+ * Create replays to a SUCCESS, approve re-runs to a CONFLICT, convert replays to
+ * a SUCCESS carrying `alreadyConverted`. Two successes and one refusal, and each
+ * of the three cases below asserts its own observed outcome against the response
+ * the transport really returned — which is where the "these are genuinely three
+ * shapes" control lives.
+ *
+ * A fourth case used to state that control separately, as
+ * `expect(new Set(['success', 'conflict', 'success']).size).toBe(2)` over a
+ * literal declared on the line above it. It read as a control and was not one:
+ * no product value, no test value and no fixture reached it, so no change to
+ * this repository could ever have made it fail. It is deleted rather than
+ * repaired, because the thing it claimed to guard is already guarded three times
+ * below, by assertions that CAN fail.
+ */
 describe('P1-28-QA-002 — the three replay shapes', () => {
   it('create replay: 200 with no ETag is SUCCESS, and the stored body travels', async () => {
     /*
@@ -718,15 +748,6 @@ describe('P1-28-QA-002 — the three replay shapes', () => {
     expect(result.converted?.workOrderId).toBe(replay.workOrderId);
     // The response carries NO ETag, so nothing may be derived from one.
     expect(Object.keys(replay)).not.toContain('recordVersion');
-  });
-
-  it('the three shapes are genuinely three, not one assertion written three times', () => {
-    // A control for the section: create replays to a SUCCESS, approve re-runs to
-    // a CONFLICT, convert replays to a SUCCESS carrying a flag. Two successes
-    // and one refusal — a section that had collapsed them into one shape would
-    // fail here.
-    const shapes = ['success', 'conflict', 'success'];
-    expect(new Set(shapes).size).toBe(2);
   });
 });
 

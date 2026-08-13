@@ -301,7 +301,8 @@ export const REGISTER = Object.freeze([
     // are derived from the published contract, the adapters from the tree, and
     // every If-Match argument is traced to a parameter or a server-stated
     // recordVersion. Mutation-proved by tests/ci/p1-28-version-sourcing.test.ts.
-    why: 'every version-guarded P1-28 command sources its If-Match from a read or a command response, never from arithmetic or a cached guess',  },
+    why: 'every version-guarded P1-28 command sources its If-Match from a read or a command response, never from arithmetic or a cached guess',
+  },
   {
     name: 'evidence:p1-27',
     owner: ROOT,

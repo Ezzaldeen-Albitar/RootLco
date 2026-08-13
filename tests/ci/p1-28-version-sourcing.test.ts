@@ -1,4 +1,7 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { REPOSITORY_ROOT } from '../../scripts/lib/repository-paths.mjs';
 import {
   RENEWAL_NAMES,
   argumentsAt,
@@ -428,6 +431,52 @@ describe('the helpers this gate is built on', () => {
       required: true,
       used: true,
     });
+  });
+
+  it('bounds the USED region at the next function of ANY kind, not the next export', () => {
+    /*
+     * The two adapters this decides. `closeReceptionWithoutWork` and
+     * `refuseReception` are one-line delegations to `closeVisit`, a module-local
+     * helper that sits between `refuseReception` and the next EXPORTED function.
+     * Bounded at the next export, each region swallowed the whole of
+     * `closeVisit` — whose body mentions `ifMatch` — so `used` was true for both
+     * whatever the delegation actually passed.
+     *
+     * Proved by mutation on the REAL module: drop the version from the
+     * delegation, which is the shipped shape of "a guarded command sent with no
+     * `If-Match` at all", and the gate must see it.
+     */
+    const receptionApi = readFileSync(
+      join(REPOSITORY_ROOT, 'apps', 'web', 'src', 'features', 'receptions', 'api.ts'),
+      'utf8'
+    );
+    type Adapter = { name: string; required: boolean; used: boolean };
+    const shipped = guardedAdaptersIn(receptionApi) as Adapter[];
+    expect(shipped.map((one) => one.name)).toContain('refuseReception');
+    for (const adapter of shipped) expect(adapter.used, adapter.name).toBe(true);
+
+    const mutated = receptionApi.replace(
+      "return closeVisit(receptionId, '/refuse', ifMatch, input, attempt);",
+      "return closeVisit(receptionId, '/refuse', 1, input, attempt);"
+    );
+    expect(mutated, 'the mutation was a no-op — the delegation was rewritten').not.toBe(
+      receptionApi
+    );
+    const after = guardedAdaptersIn(mutated) as Adapter[];
+    expect(after.find((one) => one.name === 'refuseReception')?.used).toBe(false);
+    // And the neighbour is unaffected, so the region really is per-adapter.
+    expect(after.find((one) => one.name === 'closeReceptionWithoutWork')?.used).toBe(true);
+
+    /*
+     * What the old boundary would have reported on that same mutation, measured
+     * rather than asserted: the next EXPORTED function after `refuseReception`
+     * is `conditionEvidenceKinds`, and everything between them — including
+     * `closeVisit` — mentions `ifMatch`.
+     */
+    const nextExport = mutated.indexOf('export async function conditionEvidenceKinds');
+    const refuse = mutated.indexOf('export async function refuseReception');
+    expect(nextExport).toBeGreaterThan(refuse);
+    expect(/\bifMatch\b/.test(mutated.slice(refuse, nextExport))).toBe(true);
   });
 
   it('does not read a DECLARATION as a call to itself', () => {

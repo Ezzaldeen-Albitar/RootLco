@@ -64,8 +64,36 @@ const P1_28_PLAN = 'docs/phase-1/phase-1-28/canonical-plan.md';
 
 const ROOT = 'root';
 
-/** The two commands this task is accountable for. */
-const P1_28_GATES = ['validate:p1-28-matrix', 'validate:p1-28-write-reachability'] as const;
+/**
+ * The commands this task is accountable for — DERIVED from the register.
+ *
+ * ## Why this is no longer two names written down
+ *
+ * It was `['validate:p1-28-matrix', 'validate:p1-28-write-reachability']`, under
+ * a comment calling them "the two commands this task is accountable for". The
+ * command register carried FOUR `validate:p1-28-*` entries at tier `required` by
+ * the time this ran: `validate:p1-28-access` and
+ * `validate:p1-28-version-sourcing` had been added by later waves of the same
+ * phase, and both rode `verify:workspaces` in the clean room and nothing else —
+ * which is the shape this very file's docblock names as failure mode 1, one
+ * phase after `validate:phase-ownership`.
+ *
+ * A hand list cannot fail because something was never added to it. So the set is
+ * read out of the register by phase prefix, and the register's `tier` decides
+ * membership: a gate registered `required` is one this file is accountable for,
+ * whoever added it and whenever. Deriving it is what found the two omissions.
+ *
+ * `informational` entries — `matrix:p1-28`, the generator — are excluded by the
+ * same reading rather than by name, because an informational command is not a
+ * gate and requiring a hosted job to name one would be a rule about the wrong
+ * thing.
+ */
+const P1_28_GATES: readonly string[] = REGISTER.filter(
+  (entry: { name: string; owner: string; tier: string }) =>
+    entry.owner === ROOT && entry.tier === 'required' && /^validate:p1-28-/.test(entry.name)
+)
+  .map((entry: { name: string }) => entry.name)
+  .sort();
 
 /**
  * The reusable-workflow task each gate is named under, read from the file.
@@ -124,7 +152,29 @@ function ciGateNeeds(): string[] {
   return out;
 }
 
-describe('both P1-28 gates are registered as gates, not as reports', () => {
+describe('every P1-28 gate is registered as a gate, not as a report', () => {
+  it('derives the set from the register rather than from a list somebody keeps', () => {
+    /*
+     * Anti-vacuity for the derivation every case below stands on. An empty or
+     * near-empty set would make each of them pass over nothing, and the whole
+     * point of deriving is that the number is allowed to grow without anybody
+     * remembering to edit this file.
+     *
+     * The floor is four because four `validate:p1-28-*` commands are registered
+     * `required` today — two of which this file could not see while the set was
+     * hand-written.
+     */
+    expect(P1_28_GATES.length, 'the P1-28 gate derivation returned nothing').toBeGreaterThanOrEqual(
+      4
+    );
+    expect(P1_28_GATES).toContain('validate:p1-28-access');
+    expect(P1_28_GATES).toContain('validate:p1-28-version-sourcing');
+    // And it discriminates: the generator is registered `informational` and is
+    // not a gate, so a derivation that swept every `p1-28` command would be
+    // requiring a hosted job to run a regenerator.
+    expect(P1_28_GATES).not.toContain('matrix:p1-28');
+  });
+
   it('registers each one `required`, so BOTH halves of coverage are enforced', () => {
     /*
      * `informational` is how `validate:phase-ownership` spent two phases
@@ -171,7 +221,13 @@ describe('a hosted job names each gate DIRECTLY, not only through an aggregate',
     const expected: Record<string, string> = {
       'validate:p1-28-matrix': 'static-quality',
       'validate:p1-28-write-reachability': 'web-quality',
+      'validate:p1-28-access': 'web-quality',
+      'validate:p1-28-version-sourcing': 'web-quality',
     };
+    // Every derived gate must have a stated expectation, and every stated
+    // expectation must name a derived gate. Without the second half a gate could
+    // be dropped from the register and its row here would quietly become dead.
+    expect(Object.keys(expected).sort()).toEqual([...P1_28_GATES].sort());
     for (const name of P1_28_GATES) {
       const task = taskGuarding(NODE_QUALITY, name);
       expect(task, `${name} sits in no \`inputs.task\` block`).toBe(expected[name]);

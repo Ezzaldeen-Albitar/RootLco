@@ -5,16 +5,28 @@ import {
   apiCallSites,
   collectSources,
   consultedPermissions,
+  denyAndReturnGate,
+  firstAwaitedRead,
+  gateInputs,
+  importedReadCallees,
   importSpecifiers,
   linkedRoutes,
   permissionConstants,
   phaseRoutes,
   posix,
   resolveSpecifier,
+  routeSegments,
   run,
   scopeInUrl,
   writeWrappers,
 } from '../../scripts/ci/check-p1-28-access.mjs';
+import {
+  OWNER_PERMISSIONS,
+  P1_28_SCREEN_PERMISSIONS,
+  READER_PERMISSIONS,
+  WITHHELD_PERMISSIONS,
+} from '../../scripts/dev/owner-acceptance/context.mjs';
+import { stripComments } from '../../scripts/ci/check-p1-28-write-reachability.mjs';
 import { REPOSITORY_ROOT } from '../../scripts/lib/repository-paths.mjs';
 
 /**
@@ -55,6 +67,10 @@ function planted(relativePath: string, mutate: (source: string) => string) {
 const APPOINTMENTS_PAGE = 'apps/web/src/app/[locale]/(dashboard)/appointments/page.tsx';
 const QUEUE_PAGE = 'apps/web/src/app/[locale]/(dashboard)/receptions/page.tsx';
 const RECEPTION_API = 'apps/web/src/features/receptions/api.ts';
+const BOOKING_PAGE = 'apps/web/src/app/[locale]/(dashboard)/appointments/new/page.tsx';
+const DETAIL_PAGE = 'apps/web/src/app/[locale]/(dashboard)/appointments/[appointmentId]/page.tsx';
+const WIZARD_MODULE = 'apps/web/src/features/receptions/check-in/wizard.ts';
+const TABLE_STATE = 'apps/web/src/components/data-table/table-state.ts';
 
 function fired(result: { violations: string[] }, rule: string): string[] {
   return result.violations.filter((violation) => violation.startsWith(`${rule}:`));
@@ -73,6 +89,24 @@ describe('the gate is clean on the tree it ships with — and really looked', ()
     expect(REAL.treeFiles).toBeGreaterThanOrEqual(40);
     expect(REAL.constants).toBeGreaterThanOrEqual(40);
     expect(REAL.scanned).toBeGreaterThanOrEqual(200);
+    expect(REAL.segments).toEqual(['appointments', 'reception', 'receptions']);
+    // Rule 5's extended root: the files every route loads out of `components/**`
+    // and `lib/**`, which no root covered until this wave.
+    expect(REAL.closureFiles).toBeGreaterThanOrEqual(100);
+  });
+
+  it('recognised an awaited read on the five routes that perform one', () => {
+    // Rule 1's read half, stated as a census. If this collapsed to zero the rule
+    // would still report clean on every route — a gate ordering nothing against
+    // nothing — which is why the run itself refuses below four.
+    const reading = REAL.routes.filter((route: { reads: boolean }) => route.reads);
+    expect(reading.map((route: { route: string }) => route.route).sort()).toEqual([
+      'apps/web/src/app/[locale]/(dashboard)/appointments/[appointmentId]/page.tsx',
+      'apps/web/src/app/[locale]/(dashboard)/appointments/new/page.tsx',
+      'apps/web/src/app/[locale]/(dashboard)/receptions/check-in/[receptionId]/acknowledgement/page.tsx',
+      'apps/web/src/app/[locale]/(dashboard)/receptions/check-in/[receptionId]/page.tsx',
+      'apps/web/src/app/[locale]/(dashboard)/receptions/check-in/page.tsx',
+    ]);
   });
 
   it('derived a non-trivial permission set for every route, not an empty one', () => {
@@ -86,26 +120,128 @@ describe('the gate is clean on the tree it ships with — and really looked', ()
     const wizard = REAL.routes.find((route) => route.route.includes('[receptionId]/page.tsx'));
     expect(wizard?.consulted.length).toBeGreaterThanOrEqual(12);
   });
-
-  it('finds every route the plan names, including the SINGULAR walk-in segment', () => {
-    // `reception` and `receptions` are two different trees and naming only one
-    // would leave a whole screen outside every rule — the P1-27 dashboard-root
-    // omission, repeating.
-    const routes = phaseRoutes().map((file: string) => posix(file));
-    expect(routes.some((route: string) => route.includes('/reception/walk-in/'))).toBe(true);
-    expect(routes.some((route: string) => route.includes('/receptions/check-in/'))).toBe(true);
-    expect(routes.some((route: string) => route.includes('/appointments/'))).toBe(true);
-  });
 });
 
 describe('rule 1 — gate-before-read', () => {
-  it('fires when a route reads before it checks a permission', () => {
-    const result = planted(
-      QUEUE_PAGE,
-      (source) => `const rows = await listReceptions();\n${source}`
+  /**
+   * ## What this rule measures, and what it used to measure
+   *
+   * Two positions decide it, and both were wrong in the direction of reporting
+   * clean. The gate's was `indexOf('holds(')` — the first `holds` of any kind,
+   * including the `canManage={holds(…)}` that computes a control's visibility
+   * and returns nothing. The read's was the prefix `await (read|list|search)[A-Z]`
+   * — which matched `await searchParams`, a Next.js prop, and could not see
+   * `await Promise.all([listAppointmentTypes(), …])`, which is how two of these
+   * eight routes read.
+   *
+   * The two mutations below are chosen so that each ISOLATES one of those, and
+   * each is accompanied by the measurement the old rule would have made, so the
+   * fix is demonstrated rather than asserted.
+   */
+
+  const BOOKING_READ =
+    '  const [types, channels] = await Promise.all([listAppointmentTypes(), listSourceChannels()]);';
+  const BOOKING_GATE = '  if (!holds(session.permissions, APPOINTMENT_PERMISSIONS.manage)) {';
+
+  it('fires when a route reads inside Promise.all before it checks a permission', () => {
+    const result = planted(BOOKING_PAGE, (source) =>
+      source
+        .replace(`${BOOKING_READ}\n`, '')
+        .replace(BOOKING_GATE, `${BOOKING_READ}\n${BOOKING_GATE}`)
     );
     expect(fired(result, 'gate-before-read')).toHaveLength(1);
     expect(result.violations[0]).toContain('reads before it checks');
+  });
+
+  it('the prefix regex this replaced could not have seen that read', () => {
+    // The mutation above is invisible to `await (read|list|search)[A-Z]`: the
+    // awaited callee is `Promise.all`, and the two reads sit inside its array.
+    // Stated as a measurement over the shipped source rather than as a claim.
+    const shipped = String(collectSources().get(join(REPOSITORY_ROOT, ...BOOKING_PAGE.split('/'))));
+    const stripped = stripComments(shipped);
+    expect(stripped).toContain('await Promise.all([listAppointmentTypes()');
+    expect(stripped.search(/await (?:read|list|search)[A-Z]/)).toBe(-1);
+    // What the new detection sees instead: both callees, by their origin.
+    const callees = importedReadCallees(
+      join(REPOSITORY_ROOT, ...BOOKING_PAGE.split('/')),
+      shipped,
+      (file: string) => collectSources().get(file) ?? null
+    );
+    expect([...callees].sort()).toEqual(['listAppointmentTypes', 'listSourceChannels']);
+    expect(firstAwaitedRead(stripped, callees)).toBeGreaterThan(-1);
+  });
+
+  it('fires when the DENY gate follows the read, even with a capability holds() above it', () => {
+    /*
+     * The isolating case for the gate half. A capability expression is planted
+     * at the very top of the component and the deny-and-return branch is moved
+     * BELOW the detail read. `indexOf('holds(')` would have found the capability
+     * line, measured the gate as early, and reported clean over a page that
+     * reads for an operator it is about to deny.
+     */
+    const result = planted(DETAIL_PAGE, (source) =>
+      source
+        .replace(
+          '  if (!holds(session.permissions, APPOINTMENT_PERMISSIONS.read)) {',
+          '  const early = holds(session.permissions, APPOINTMENT_PERMISSIONS.read);\n' +
+            '  const result = await readAppointment(appointmentId);\n' +
+            '  if (!early && !holds(session.permissions, APPOINTMENT_PERMISSIONS.read)) {'
+        )
+        .replace('  const result = await readAppointment(appointmentId);\n\n', '\n')
+    );
+    expect(fired(result, 'gate-before-read')).toHaveLength(1);
+    expect(result.violations[0]).toContain('reads before it checks');
+  });
+
+  it('measures the deny-and-return gate, not the first holds() of any kind', () => {
+    // The same shape, measured directly: a capability line, then the denial.
+    const source =
+      'const canManage = holds(session.permissions, A.manage);\n' +
+      'if (!holds(session.permissions, A.read)) {\n  return <Denied />;\n}\n';
+    expect(source.indexOf('holds(')).toBe(18);
+    expect(denyAndReturnGate(source)).toBe(source.indexOf('if (!holds('));
+    // And a negated check that falls through is not a gate at all.
+    expect(denyAndReturnGate('if (!holds(p, A.read)) {\n  log("denied");\n}\n')).toBe(-1);
+    // Nor is the positive form, which denies nobody.
+    expect(denyAndReturnGate('if (holds(p, A.read)) {\n  return <Screen />;\n}\n')).toBe(-1);
+  });
+
+  it('does not read a Next.js searchParams prop as a read', () => {
+    // `await searchParams` matched the prefix regex on two of these routes. It
+    // is not an import, so it is not a callee, so it is not a read.
+    const callees = new Set(['listFuelLevels']);
+    expect(firstAwaitedRead('const q = await searchParams;\n', callees)).toBe(-1);
+    const read = 'const f = await listFuelLevels();\n';
+    expect(firstAwaitedRead(read, callees)).toBe(read.indexOf('await'));
+  });
+
+  it('does not read the session that the gate itself consults as a read before it', () => {
+    // Structural, not a named exemption: a gate reading `session.permissions`
+    // cannot precede whatever produced `session`.
+    const source =
+      'const session = await readSession();\nif (!holds(session.permissions, A.read)) {\n  return <Denied />;\n}\n';
+    const gate = denyAndReturnGate(source);
+    expect(gate).toBeGreaterThan(-1);
+    expect(gateInputs(source, gate).has('session')).toBe(true);
+    expect(firstAwaitedRead(source, new Set(['readSession']), gateInputs(source, gate))).toBe(-1);
+    // And with the binding renamed, the same call IS a read before the gate.
+    expect(
+      firstAwaitedRead(
+        source.replace('const session = await readSession()', 'const rows = await readSession()'),
+        new Set(['readSession']),
+        gateInputs(source, gate)
+      )
+    ).toBeGreaterThan(-1);
+  });
+
+  it('fires when a route consults a permission but never denies and returns', () => {
+    const result = planted(QUEUE_PAGE, (source) =>
+      source.replace(
+        'if (!holds(session.permissions, RECEPTION_PERMISSIONS.read)) {',
+        'const canRead = holds(session.permissions, RECEPTION_PERMISSIONS.read);\n  if (false) {'
+      )
+    );
+    expect(fired(result, 'gate-before-read').join(' ')).toContain('never denies and returns');
   });
 
   it('fires when a route checks nothing at all', () => {
@@ -371,6 +507,121 @@ describe('rule 5 — no-scope-in-a-url', () => {
       scopeInUrl("const u = '?companyId=' + a;").map((found: { name: string }) => found.name)
     ).toEqual(['companyId']);
   });
+
+  it('reaches components/** and lib/**, which no root covered before', () => {
+    /*
+     * Every one of these eight routes imports between 24 and 34 files from
+     * `components/**` and `lib/**`, and until the URL clause was extended to the
+     * route closures not one of them was under any rule in this gate. A scope
+     * built into a URL in a shared table helper would have shipped.
+     */
+    const result = planted(
+      TABLE_STATE,
+      (source) => `${source}\nconst forged = '/api/v1/receptions?companyId=' + id;\n`
+    );
+    const violations = fired(result, 'no-scope-in-a-url');
+    expect(violations).toHaveLength(1);
+    expect(violations[0]).toContain('components/data-table/table-state.ts');
+    expect(violations[0]).toContain('and a P1-28 route loads it');
+    expect(REAL.closureFiles).toBeGreaterThanOrEqual(100);
+  });
+
+  it('does NOT extend the tenant clause outside the trees P1-28 owns', () => {
+    /*
+     * The judgement, asserted as the fact it rests on rather than left implicit.
+     * `tenantId` is a session CLAIM in `features/authentication/**` and
+     * `lib/api/session-cookie.ts` — the tenant a session belongs to, resolved
+     * server-side — and every P1-28 route loads those files. Extending the
+     * never-name-it clause to the closure would fire on four P1-26/P1-27 files
+     * that are doing nothing wrong, and a rule that must be suppressed to be
+     * usable stops being read.
+     */
+    const claim = String(
+      collectSources().get(
+        join(REPOSITORY_ROOT, 'apps', 'web', 'src', 'lib', 'api', 'session-cookie.ts')
+      )
+    );
+    expect(scopeInUrl(claim).some((found: { name: string }) => found.name === 'tenantId')).toBe(
+      true
+    );
+    // And it is clean today, because that clause stops at the phase boundary.
+    expect(fired(REAL, 'no-scope-in-a-url')).toEqual([]);
+  });
+});
+
+describe('rule 6 — route-owns-the-gate', () => {
+  it('fires on a holds() call anywhere in the P1-28 feature trees', () => {
+    const result = planted(
+      WIZARD_MODULE,
+      (source) => `${source}\nexport const sneak = (p) => holds(p, 'rec.reception.read');\n`
+    );
+    const violations = fired(result, 'route-owns-the-gate');
+    expect(violations).toHaveLength(1);
+    expect(violations[0]).toContain('features/receptions/check-in/wizard.ts');
+  });
+
+  it('is the enforcement of a sentence that was previously only prose', () => {
+    // `wizard.ts` states "The route is the single place `holds(...)` is called".
+    // Nothing checked it, so rules 2 and 4 — which read route pages — were
+    // complete only for as long as that sentence stayed true by habit.
+    const wizard = String(collectSources().get(join(REPOSITORY_ROOT, ...WIZARD_MODULE.split('/'))));
+    expect(wizard).toContain('The route is the single place');
+    // And it is true today, measured rather than quoted.
+    const trees = ['features/appointments/', 'features/receptions/'];
+    const offenders = [...collectSources().entries()].filter(
+      ([file, source]) =>
+        trees.some((tree) => posix(file).includes(tree)) &&
+        /\bholds\s*\(/.test(stripComments(String(source)))
+    );
+    expect(offenders.map(([file]) => posix(file))).toEqual([]);
+  });
+});
+
+describe('the route set is DERIVED, not a hand-written list of segments', () => {
+  /**
+   * `ROUTE_SEGMENTS` was `['appointments', 'reception', 'receptions']` under a
+   * docblock citing `canonical-plan.md` §9 — which names no route segment at
+   * all. §9 names three PATHS, and the third is the whole `(dashboard)` tree.
+   * A gate whose subject is "did anybody ship a screen outside every rule"
+   * cannot take its set of screens from a list somebody maintains by hand,
+   * because the screen that gets forgotten is exactly the one the list omits.
+   */
+  const PLAN = readFileSync(
+    join(REPOSITORY_ROOT, 'docs', 'phase-1', 'phase-1-28', 'canonical-plan.md'),
+    'utf8'
+  );
+
+  it('cites an authority that really says what the citation claims', () => {
+    expect(PLAN).toContain('apps/web/src/features/appointments/**');
+    expect(PLAN).toContain('apps/web/src/features/receptions/**');
+    expect(PLAN).toContain('apps/web/src/app/[locale]/(dashboard)/**');
+    // And §9 names no route segment, which is why the old citation was false.
+    expect(PLAN).not.toContain('(dashboard)/appointments');
+    expect(PLAN).not.toContain('(dashboard)/receptions');
+  });
+
+  it('finds the eight pages by what they LOAD, including the singular walk-in', () => {
+    const routes = phaseRoutes().map((file: string) => posix(file));
+    expect(routes).toHaveLength(8);
+    expect(routes.some((route: string) => route.includes('/reception/walk-in/'))).toBe(true);
+    expect(routes.some((route: string) => route.endsWith('/appointments/new/page.tsx'))).toBe(true);
+    expect(routes.some((route: string) => route.includes('/acknowledgement/'))).toBe(true);
+    expect(routeSegments()).toEqual(['appointments', 'reception', 'receptions']);
+  });
+
+  it('is a strict subset of the dashboard tree, so the derivation discriminates', () => {
+    // Thirty pages exist under `(dashboard)`; eight load a P1-28 feature tree.
+    // Without this the derivation could be "every page" and still look right.
+    const everyPage = [...collectSources().keys()].filter(
+      (file: string) =>
+        posix(file).includes('/app/[locale]/(dashboard)/') && posix(file).endsWith('/page.tsx')
+    );
+    expect(everyPage.length).toBeGreaterThan(20);
+    expect(phaseRoutes().length).toBeLessThan(everyPage.length);
+    // The CRM customer list is a dashboard page and is NOT P1-28's.
+    const derived = phaseRoutes().map((file: string) => posix(file));
+    expect(derived.some((route: string) => route.includes('/crm/'))).toBe(false);
+  });
 });
 
 describe('the derivations the rules stand on', () => {
@@ -450,22 +701,41 @@ describe('the derivations the rules stand on', () => {
 });
 
 /* ------------------------------------------------------------------ *
- * The Backend gap this branch RECORDS and does not build
+ * The Owner acceptance environment — the gap this wave CLOSED
  * ------------------------------------------------------------------ */
 
-describe('P1-28-SEC-001 — the role-to-grant mapping is a Backend gap, recorded not seeded', () => {
+describe('P1-28-SEC-001 — the acceptance environment can reach the phase under acceptance', () => {
   /**
-   * Seeding roles writes `iam.role_permissions`, which is Backend work: a
-   * Frontend branch may not do it (`canonical-plan.md` §4/§9), and the
-   * acceptance-account script that owns those grants lives in `scripts/dev`,
-   * outside this branch's ownership entirely.
+   * ## What this section used to pin, and why it changed
    *
-   * So the gap is PINNED rather than fixed. These cases pass today because the
-   * gap is real; the day somebody closes it they fail, and whoever closes it is
-   * told to update this record instead of leaving a stale claim behind.
+   * It pinned a GAP. The acceptance role carried the fourteen Administration
+   * codes and the sixteen CRM and Vehicle codes P1-27 added when this same
+   * defect was found there — and not one `apt.*` or `rec.*` code. An Owner
+   * signing in to accept P1-28 would have reached the calendar, the booking
+   * form, the walk-in intake, the queue, all three wizard screens and the
+   * acknowledgement, and been told on every one of them that they do not have
+   * permission. An acceptance environment that cannot reach the phase under
+   * acceptance is not an acceptance environment, and the previous version of
+   * this file said so and then left it standing.
+   *
+   * The gap is closed, so this section pins the CLOSURE. It is written to fail
+   * in both directions: if the grant is removed, if the derivation collapses, if
+   * a screen gains a code the role does not get, or if the reader role stops
+   * being genuinely narrower than the administrator's.
+   *
+   * ## Why "derived" does not make these cases vacuous
+   *
+   * `P1_28_SCREEN_PERMISSIONS` is read out of the route pages, so "the role
+   * holds every code a screen consults" is true by construction and is worth
+   * asserting only as a wiring check. What is NOT true by construction, and is
+   * what these cases actually decide: that the derivation resolved a real set
+   * rather than an empty one, that nothing `WITHHELD_PERMISSIONS` refuses got in
+   * through it, that the reader role is a strict and correctly-shaped subset,
+   * and that every granted code exists in the platform catalogue the seed
+   * applies. Each of those can fail without anybody touching this file.
    */
-  const context = readFileSync(
-    join(REPOSITORY_ROOT, 'scripts', 'dev', 'owner-acceptance', 'context.mjs'),
+  const CATALOGUE = readFileSync(
+    join(REPOSITORY_ROOT, 'supabase', 'seeds', '04_iam_permission_catalog.sql'),
     'utf8'
   );
 
@@ -474,42 +744,86 @@ describe('P1-28-SEC-001 — the role-to-grant mapping is a Backend gap, recorded
     ...new Set(REAL.routes.flatMap((route: { consulted: string[] }) => route.consulted)),
   ].sort();
 
-  it('found the acceptance context and the codes to measure it against', () => {
-    expect(context.length).toBeGreaterThan(2000);
-    expect(context).toContain('OWNER_PERMISSIONS');
-    expect(context).toContain('READER_PERMISSIONS');
+  it('derives the acceptance grant from the same screens this gate judges', () => {
+    // Two independent derivations of one fact — the gate's `run()` and the
+    // acceptance context's own — agreeing. If they ever diverge, one of them has
+    // stopped reading the routes.
     expect(consulted.length).toBeGreaterThanOrEqual(15);
+    expect([...P1_28_SCREEN_PERMISSIONS]).toEqual(consulted);
   });
 
-  it('grants EVERY code an appointment or reception screen consults — no, it grants none', () => {
+  it('grants the administrator EVERY code an appointment or reception screen consults', () => {
+    const missing = consulted.filter((code: string) => !OWNER_PERMISSIONS.includes(code));
+    expect(missing, 'the Owner would meet a permission denial on these screens').toEqual([]);
+    // Named explicitly, because these are the codes whose absence WAS the defect.
+    for (const code of [
+      'apt.appointment.read',
+      'apt.appointment.manage',
+      'apt.appointment.lifecycle.manage',
+      'rec.reception.read',
+      'rec.reception.manage',
+      'rec.reception.approve',
+      'rec.reception.convert',
+      'rec.reception.close',
+    ]) {
+      expect(OWNER_PERMISSIONS).toContain(code);
+    }
+  });
+
+  it('grants nothing WITHHELD_PERMISSIONS refuses, and the withholding still bites', () => {
+    // `crm.customer.merge` and `veh.vehicle.merge` are open Owner decisions
+    // (`P1-OD-017`) that no screen calls. A derivation that swept them in would
+    // let an acceptance run pass while an affordance that must not exist did.
+    for (const code of WITHHELD_PERMISSIONS) {
+      expect(OWNER_PERMISSIONS).not.toContain(code);
+      expect(P1_28_SCREEN_PERMISSIONS).not.toContain(code);
+      expect(READER_PERMISSIONS).not.toContain(code);
+    }
+    expect(WITHHELD_PERMISSIONS.length).toBeGreaterThan(0);
+  });
+
+  it('grants only codes the platform catalogue really contains', () => {
     /*
-     * The finding, stated as the measurement that produced it. The acceptance
-     * role carries the fourteen Administration codes plus the sixteen CRM and
-     * Vehicle codes P1-27 added when the same defect was found there — and not
-     * one `apt.*` or `rec.*` code. An Owner signing in to accept P1-28 would
-     * reach every appointment and reception screen and be told they do not have
-     * permission, exactly as happened to P1-27 before `CRM_VEHICLE_PERMISSIONS`
-     * was added.
+     * The check that caught an invented `veh.vehicle.create` when
+     * `CRM_VEHICLE_PERMISSIONS` was hand-written. A code absent from seed 04
+     * maps to no permission row, the role is seeded short, and the screen is
+     * denied for a reason no log explains. `create-owner-account.mjs` refuses at
+     * run time; this refuses at commit time, without a database.
      */
-    const missing = consulted.filter((code: string) => !context.includes(`'${code}'`));
-    const apt = missing.filter((code: string) => /^(apt|rec)\./.test(code));
-    expect(apt.length, 'the apt/rec grant gap has been closed — update this record').toBe(
-      consulted.filter((code: string) => /^(apt|rec)\./.test(code)).length
-    );
-    expect(apt).toContain('rec.reception.manage');
-    expect(apt).toContain('apt.appointment.read');
+    const absent = OWNER_PERMISSIONS.filter((code: string) => !CATALOGUE.includes(`'${code}'`));
+    expect(absent).toEqual([]);
+    expect(OWNER_PERMISSIONS.length).toBeGreaterThanOrEqual(43);
+    expect(new Set(OWNER_PERMISSIONS).size).toBe(OWNER_PERMISSIONS.length);
   });
 
-  it('is missing the WF-27 pair for the read-only control too', () => {
-    // `iam.sensitive.view` IS granted to the acceptance administrator (it is an
-    // Administration code), so the pair is satisfiable there — but the reader
-    // role holds neither half, which is what makes it a usable negative control
-    // for `SEC-002` once the apt/rec codes land.
-    expect(context).toContain("'iam.sensitive.view'");
-    const reader = /READER_PERMISSIONS = Object\.freeze\(\[([\s\S]*?)\]\)/.exec(context)?.[1] ?? '';
-    expect(reader.length).toBeGreaterThan(50);
-    expect(reader).not.toContain('rec.');
-    expect(reader).not.toContain('apt.');
-    expect(reader).not.toContain('iam.sensitive.view');
+  it('keeps the read-only control genuinely narrower, and usable', () => {
+    /*
+     * Both halves. Narrower: strictly fewer codes, and not one write, manage,
+     * approve, convert, close or record capability. Usable: the two P1-28 read
+     * codes are present, because a reader denied the queue and the calendar
+     * evidences the denial state and nothing about whether a read-only operator
+     * can use the product.
+     */
+    expect(READER_PERMISSIONS).toContain('apt.appointment.read');
+    expect(READER_PERMISSIONS).toContain('rec.reception.read');
+    expect(READER_PERMISSIONS.length).toBeLessThan(OWNER_PERMISSIONS.length);
+    for (const code of READER_PERMISSIONS) expect(OWNER_PERMISSIONS).toContain(code);
+    const writes = READER_PERMISSIONS.filter((code: string) =>
+      /\.(manage|create|write|record|approve|convert|close|verify|review|merge)$/.test(code)
+    );
+    expect(writes, 'the read-only control acquired a write capability').toEqual([]);
+  });
+
+  it('keeps the WF-27 pair unsatisfiable for the reader — the SEC-002 control', () => {
+    /*
+     * The sensitive-narrative rule needs an account that reaches the wizard and
+     * is refused the restricted fields. Before this wave the reader held neither
+     * half of the pair, so the control was unobservable: an operator who cannot
+     * open the wizard evidences nothing about what the wizard withholds. Now it
+     * holds `rec.reception.read` and pointedly not `iam.sensitive.view`.
+     */
+    expect(READER_PERMISSIONS).not.toContain('iam.sensitive.view');
+    expect(OWNER_PERMISSIONS).toContain('iam.sensitive.view');
+    expect(P1_28_SCREEN_PERMISSIONS).toContain('iam.sensitive.view');
   });
 });

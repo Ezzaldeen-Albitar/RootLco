@@ -289,10 +289,22 @@ export function guardedAdaptersIn(source) {
     const part = parts[position];
     const required = /^\s*ifMatch\s*:\s*number\s*$/.test(part);
 
-    // And the body must actually USE it. A parameter accepted and dropped is a
-    // guard the caller believes in and the request does not carry.
+    /*
+     * And the body must actually USE it. A parameter accepted and dropped is a
+     * guard the caller believes in and the request does not carry.
+     *
+     * The region ends at the next function OF ANY KIND, not the next EXPORTED
+     * one, and the difference is the whole value of this check on the two
+     * adapters it matters most for. `closeReceptionWithoutWork` and
+     * `refuseReception` are one-line delegations to `closeVisit`, a module-local
+     * helper that sits between them and the next export. Bounded at the next
+     * export, each of their regions swallowed the whole of `closeVisit` — whose
+     * body mentions `ifMatch` — so both would have read as "uses it" with the
+     * parameter deleted from the delegation entirely, which is exactly the
+     * defect: a guarded command sent with no `If-Match` at all.
+     */
     const bodyStart = text.indexOf(')', declaration.open);
-    const next = exportedFunctions(text).find((one) => one.index > declaration.index);
+    const next = allFunctions(text).find((one) => one.index > declaration.index);
     const body = text.slice(bodyStart, next ? next.index : text.length);
     const used = /\bifMatch\b/.test(body);
 

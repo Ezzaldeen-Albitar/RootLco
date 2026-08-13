@@ -17,6 +17,25 @@ import type { ReadState } from '../api';
  * of* the screen's content, never over it — a table that paints its rows and
  * covers them with an overlay has already sent the data to the browser, and the
  * overlay is decoration.
+ *
+ * ## Why `unavailable` carries the reference, and why it did not
+ *
+ * The `unavailable` branch rendered `<BackendUnavailableState messages={…} />`
+ * with the reference sitting unused in the local one line above, while every
+ * other backend failure beside it passed one. That is the SAME defect
+ * `P1-27-SEC-004` recorded — the CRM profile route read the reference correctly,
+ * held it, and then dropped it at the last step — and it survived every tier for
+ * a structural reason worth writing down: `route-correlation-binding.test.ts`
+ * has a corpus of `src/app/**` and `p1-28-observability.test.ts` has one derived
+ * from P1-28's plan §9, so this file — an Administration boundary under
+ * `src/features` — sat outside both. A shared boundary is the worst place for
+ * this to happen, because one line here is every Administration screen at once.
+ *
+ * `unavailable` is exactly the state an operator reports: a 429 or a transport
+ * failure is the one they will phone about, and `BackendUnavailableState` says
+ * so in its own docblock. `expired` and `not-found` still carry nothing — neither
+ * is a fault, and a reference beside "your session ended" invites a support
+ * ticket for a working system.
  */
 export function ReadBoundary<T>({
   state,
@@ -34,7 +53,9 @@ export function ReadBoundary<T>({
     return <PermissionDeniedState messages={messages} correlationId={correlationId} />;
   }
   if (state.status === 'expired') return <SessionExpiredState messages={messages} />;
-  if (state.status === 'unavailable') return <BackendUnavailableState messages={messages} />;
+  if (state.status === 'unavailable') {
+    return <BackendUnavailableState messages={messages} correlationId={correlationId} />;
+  }
   if (state.status === 'not-found') return <NotFoundState messages={messages} />;
   return <ErrorState messages={messages} correlationId={correlationId} />;
 }

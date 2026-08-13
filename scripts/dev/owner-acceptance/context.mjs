@@ -30,6 +30,27 @@
  */
 import { randomBytes } from 'node:crypto';
 import { execSync } from 'node:child_process';
+import {
+  collectSources,
+  consultedPermissions,
+  permissionConstants,
+  phaseRoutes,
+} from '../../ci/check-p1-28-access.mjs';
+
+/**
+ * How everything here refuses.
+ *
+ * Declared before the first constant rather than beside the guard functions,
+ * because `P1_28_SCREEN_PERMISSIONS` is derived at module evaluation and throws
+ * one of these when the derivation comes back short. A class is hoisted but not
+ * initialised, so a declaration further down this file would be in its temporal
+ * dead zone at exactly the moment the failure needed reporting.
+ */
+export class GuardFailure extends Error {}
+
+function refuse(message) {
+  throw new GuardFailure(message);
+}
 
 /** The one value that opts a run in. Anything else refuses. */
 export const REQUIRED_ENVIRONMENT = 'local-acceptance';
@@ -184,14 +205,97 @@ export const CRM_VEHICLE_PERMISSIONS = Object.freeze([
 export const WITHHELD_PERMISSIONS = Object.freeze(['crm.customer.merge', 'veh.vehicle.merge']);
 
 /**
+ * What the P1-28 Appointment and Reception screens gate on — DERIVED, not
+ * written down.
+ *
+ * ## The finding
+ *
+ * This account held the fourteen Administration codes and the sixteen CRM and
+ * Vehicle codes, and not one `apt.*` or `rec.*` code. An Owner signing in to
+ * accept P1-28 would have reached the calendar, the booking form, the walk-in
+ * intake, the reception queue, all three check-in wizard screens and the
+ * acknowledgement, and been told on every one of them that they do not have
+ * permission — the exact failure P1-27 met before `CRM_VEHICLE_PERMISSIONS`
+ * was added, one phase later and with the lesson already written down.
+ *
+ * ## Why it is derived and the two lists above are not
+ *
+ * `ADMIN_PERMISSIONS` and `CRM_VEHICLE_PERMISSIONS` are hand-written mirrors of
+ * a contract file, and each was wrong on its first attempt: the CRM list
+ * invented a `veh.vehicle.create` that does not exist, and only the catalogue
+ * check caught it. A mirror is a second statement of a fact, and this
+ * repository's whole finding register is second statements drifting from firsts.
+ *
+ * So this one is read out of the screens themselves. `check-p1-28-access.mjs`
+ * already resolves, for every route page P1-28 owns, the permission codes that
+ * page consults — including through an aliased import, which is how the check-in
+ * screen reaches `iam.user.read`. Those codes ARE the answer to "what must the
+ * acceptance account hold", and they cannot drift from the screens because they
+ * are the screens. A route added tomorrow is granted tomorrow, with no edit here.
+ *
+ * The set is not narrowed to `apt.*`/`rec.*`: a P1-28 screen also consults CRM,
+ * Vehicle, `iam.user.read` and `wo.work_order.read` codes, and the union is what
+ * the phase needs. Overlap with the two lists above is expected and harmless —
+ * `OWNER_PERMISSIONS` deduplicates.
+ *
+ * Fails closed. A derivation that returned nothing, or that returned something
+ * `WITHHELD_PERMISSIONS` deliberately refuses, throws here rather than seeding a
+ * role that is quietly wrong in either direction.
+ */
+export function derivePhaseScreenPermissions() {
+  const sources = collectSources();
+  const constants = permissionConstants([...sources.entries()]);
+  const routes = phaseRoutes((file) => sources.get(file) ?? null);
+  const codes = new Set();
+  const unreadable = [];
+
+  for (const route of routes) {
+    const { codes: consulted, unresolved } = consultedPermissions(
+      sources.get(route) ?? '',
+      constants
+    );
+    for (const code of consulted) codes.add(code);
+    for (const expression of unresolved) unreadable.push(`${route}: ${expression}`);
+  }
+
+  if (routes.length < 8 || codes.size < 15) {
+    throw new GuardFailure(
+      `Only ${codes.size} permission code(s) could be read from ${routes.length} P1-28 route ` +
+        'page(s). The acceptance role would be seeded short and every appointment and reception ' +
+        'screen would render a permission denial — which is the defect this derivation closes.'
+    );
+  }
+  if (unreadable.length > 0) {
+    throw new GuardFailure(
+      `A P1-28 route consults a permission this derivation cannot resolve to a literal code: ` +
+        `${unreadable.join('; ')}. Fail closed rather than seed a role missing it.`
+    );
+  }
+  const refused = [...codes].filter((code) => WITHHELD_PERMISSIONS.includes(code));
+  if (refused.length > 0) {
+    throw new GuardFailure(
+      `A P1-28 screen consults [${refused.join(', ')}], which WITHHELD_PERMISSIONS deliberately ` +
+        'refuses. Granting it would let an acceptance run pass while an affordance that must not ' +
+        'exist quietly did; refusing it silently would deny a screen for a reason nobody wrote ' +
+        'down. Decide, and record the decision.'
+    );
+  }
+  return [...codes].sort();
+}
+
+/** The derived set, resolved once. */
+export const P1_28_SCREEN_PERMISSIONS = Object.freeze(derivePhaseScreenPermissions());
+
+/**
  * Everything the Owner-acceptance administrator role carries.
  *
- * Administration (P1-26) plus CRM and Vehicles (P1-27). Deduplicated, because
- * `iam.user.read` legitimately appears in both readings and a duplicate would
- * make the role's own count assertion fail for a reason that is not a defect.
+ * Administration (P1-26), CRM and Vehicles (P1-27), and every code a P1-28
+ * screen consults. Deduplicated, because `iam.user.read` legitimately appears in
+ * all three readings and a duplicate would make the role's own count assertion
+ * fail for a reason that is not a defect.
  */
 export const OWNER_PERMISSIONS = Object.freeze([
-  ...new Set([...ADMIN_PERMISSIONS, ...CRM_VEHICLE_PERMISSIONS]),
+  ...new Set([...ADMIN_PERMISSIONS, ...CRM_VEHICLE_PERMISSIONS, ...P1_28_SCREEN_PERMISSIONS]),
 ]);
 
 /**
@@ -225,6 +329,34 @@ export const OWNER_PERMISSIONS = Object.freeze([
  * The account is also branch-scoped (Company A, Branch A), so it carries both
  * properties §29 names. They are not separable on this one account, and that is
  * stated rather than presented as two independent checks.
+ *
+ * ## Why the two P1-28 read codes were added, and only those two
+ *
+ * The same argument, one phase later. Without `apt.appointment.read` and
+ * `rec.reception.read` the reader account meets a permission denial on the
+ * calendar and the queue, and "everything is denied" evidences nothing about
+ * whether a read-only operator can use the product.
+ *
+ * `rec.reception.read` also makes this account the negative control `SEC-002`
+ * needs. The sensitive-narrative rule is that a reader WITHOUT
+ * `iam.sensitive.view` reaches the check-in wizard and sees the restricted
+ * narrative fields withheld — which is unobservable on an account that cannot
+ * open the wizard at all. So the read code lands and `iam.sensitive.view`
+ * pointedly does not: the pair is what the control is made of.
+ *
+ * Deliberately still absent: `rec.reception.manage` and every other write or
+ * approval code (`party.manage`, `authorization.verify`, `evidence.manage`,
+ * `signature.manage`, `approve`, `convert`, `close`), `apt.appointment.manage`
+ * and `apt.appointment.lifecycle.manage`, and `veh.vehicle.odometer.record`.
+ * The queue's New reception control, the calendar's booking and check-in
+ * affordances and every wizard command must be absent for this operator, and
+ * each absence is the permission rule of a control this phase built.
+ *
+ * This list stays hand-written where `P1_28_SCREEN_PERMISSIONS` is derived, and
+ * that asymmetry is the point: the administrator must hold whatever the screens
+ * consult, so deriving it is correct; the reader is a set of DECISIONS about
+ * what must not render, and a derived reader would grant itself every code and
+ * evidence nothing.
  */
 export const READER_PERMISSIONS = Object.freeze([
   'iam.user.read',
@@ -234,6 +366,8 @@ export const READER_PERMISSIONS = Object.freeze([
   'org.branch.read',
   'crm.customer.read',
   'veh.vehicle.read',
+  'apt.appointment.read',
+  'rec.reception.read',
 ]);
 
 /**
@@ -253,12 +387,6 @@ export const ACCEPTANCE_DB_LOGIN = 'rootlco_acceptance_runtime';
 
 /** Local-only, and never a secret: this database accepts loopback connections only. */
 export const ACCEPTANCE_DB_PASSWORD = 'rootlco-local-acceptance-only';
-
-export class GuardFailure extends Error {}
-
-function refuse(message) {
-  throw new GuardFailure(message);
-}
 
 /**
  * Proves the target is this machine, or refuses.

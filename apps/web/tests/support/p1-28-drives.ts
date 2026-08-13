@@ -20,7 +20,7 @@ import * as customerVehicles from '@/lib/customers/vehicles';
  * nothing was executing the adapters themselves. That is precisely the P1-27
  * Wave 5 finding: mutating an adapter left twenty DOM tests green, because the
  * only references to it in the whole suite were `vi.fn()` stubs that replace the
- * thing under test. Twenty-one reads and fourteen writes shipped in this phase
+ * thing under test. Twenty-three reads and fourteen writes shipped in this phase
  * with contract-table coverage only, and a contract table cannot say which path
  * a function builds, whether it sends a scope, or what it returns for a 403.
  *
@@ -208,11 +208,14 @@ const WINDOW = Object.freeze({
 /**
  * Every write adapter, with a call that reaches `client.send`.
  *
- * `versionGuarded` marks the four commands the backend refuses without
- * `If-Match` (428 `ERR-CON-002`) — three appointment lifecycle commands and,
- * on the reception side, approve, convert and the two terminal exits. `QA-002`
- * drives each of them through the 428 branch and `QA-004` proves each adapter
- * takes the version as a REQUIRED parameter rather than defaulting one.
+ * `versionGuarded` marks the SEVEN commands the backend refuses without
+ * `If-Match` (428 `ERR-CON-002`) — three appointment lifecycle commands
+ * (reschedule, cancel, no-show) and, on the reception side, approve, convert
+ * and the two terminal exits (close-without-work, refuse). The sentence used to
+ * say "four" while enumerating seven, which is the count and the enumeration
+ * disagreeing inside one sentence. `QA-002` drives each of them through the 428
+ * branch and asserts the census is seven, and `QA-004` proves each adapter takes
+ * the version as a REQUIRED parameter rather than defaulting one.
  */
 export const WRITE_DRIVES: readonly AdapterDrive[] = Object.freeze([
   {

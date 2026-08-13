@@ -9,18 +9,37 @@ import { ROUTE_ID_PLACEHOLDER, safeRoute, templateRoute } from '@/lib/observabil
  * reception surface carries the one thing support can trace, and nothing that
  * leaves the browser carries a record identifier.
  *
- * ## Why this file exists at all
+ * ## Why this file exists at all, and what it is the ONLY governance of
  *
- * `route-correlation-binding.test.ts` proves the same property for P1-27, and
- * its corpus is `src/app/**` — every `page.tsx`, including this phase's eight.
- * So the ROUTE half of the apt/rec surface was already governed. The screens
- * were not: this phase renders almost all of its failures from client
- * components under `src/features/appointments` and `src/features/receptions` —
- * thirteen wizard steps, two queues, a booking form, a walk-in intake — and a
- * sweep scoped to `src/app` cannot see one of them. A reception step that
- * rendered `<ErrorState messages={messages} />` after a failed evidence write
- * would have left the operator with "something went wrong" and nothing to
- * quote, with every tier green.
+ * `route-correlation-binding.test.ts` proves a related property for P1-27, and
+ * this docblock used to summarise it as "its corpus is `src/app/**` — every
+ * `page.tsx`, including this phase's eight. So the ROUTE half of the apt/rec
+ * surface was already governed." Read against that file, the second sentence is
+ * false, and it is false in the direction that makes deleting a cover look free.
+ *
+ * What that file really does, sweep by sweep:
+ *
+ *   - Its `PermissionDeniedState` classifier runs over every `page.tsx` under
+ *     `src/app`, unfiltered. That half of the apt/rec route surface IS governed
+ *     twice, and this file's own denial cases agree with it by construction.
+ *   - Its RECOVERABLE-failure sweep — the one that requires `<ErrorState>` and
+ *     `<BackendUnavailableState>` to carry the reference — filters the page list
+ *     to `/(crm|vehicles)/` first (`the scoped surface stays the surface`). The
+ *     eight appointment and reception pages are walked and then discarded.
+ *
+ * So for the property this file is chiefly about — a recoverable failure
+ * reaching the operator with something to quote — **this file is the only
+ * governance of the apt/rec ROUTE half, not merely of the screens.** Nothing
+ * else in the repository would fail if an appointment page dropped its
+ * reference.
+ *
+ * The screen half was never governed at all. This phase renders almost all of
+ * its failures from client components under `src/features/appointments` and
+ * `src/features/receptions` — thirteen wizard steps, two queues, a booking form,
+ * a walk-in intake — and a sweep scoped to `src/app` cannot see one of them. A
+ * reception step that rendered `<ErrorState messages={messages} />` after a
+ * failed evidence write would have left the operator with "something went wrong"
+ * and nothing to quote, with every tier green.
  *
  * ## The rule, and where each half of it comes from
  *
@@ -50,15 +69,49 @@ import { ROUTE_ID_PLACEHOLDER, safeRoute, templateRoute } from '@/lib/observabil
  */
 
 const SRC = join(process.cwd(), 'src');
+const REPO = join(process.cwd(), '..', '..');
 
-/** The two feature trees P1-28 owns, plus the route trees its pages live in. */
-const CORPUS_ROOTS = [
-  join(SRC, 'features', 'appointments'),
-  join(SRC, 'features', 'receptions'),
-  join(SRC, 'app', '[locale]', '(dashboard)', 'appointments'),
-  join(SRC, 'app', '[locale]', '(dashboard)', 'receptions'),
-  join(SRC, 'app', '[locale]', '(dashboard)', 'reception'),
-];
+/**
+ * The trees this rule reads — DERIVED from `canonical-plan.md` §9.
+ *
+ * ## Why this is no longer three route directories written by hand
+ *
+ * It was `features/appointments`, `features/receptions`, and then
+ * `(dashboard)/appointments`, `(dashboard)/receptions`, `(dashboard)/reception`
+ * — the three route segments, named one at a time. §9 does not name route
+ * segments. It names three PATHS, and the third is the whole `(dashboard)`
+ * group:
+ *
+ *   > Frontend work lives in `apps/web/src/features/appointments/**`,
+ *   > `apps/web/src/features/receptions/**` and
+ *   > `apps/web/src/app/[locale]/(dashboard)/**`.
+ *
+ * The difference is not cosmetic. Everything else in the group — the layout, the
+ * navigation shell, the error boundary that catches a crash inside a wizard
+ * step, and every page a P1-28 screen links to — was outside every root this
+ * file had, so a failure state rendered there was governed by nothing. That is
+ * the same shape as the `SCAN_ROOTS` omission `check-p1-27-frontend.mjs` records
+ * in its own docblock, one file later, and it was not latent: closing it found a
+ * shipped `ErrorState` with no reference on it.
+ *
+ * Reading the sentence rather than transcribing it means a fourth path cannot be
+ * forgotten the way the second one was.
+ */
+export function planRoots(): readonly string[] {
+  const plan = readFileSync(
+    join(REPO, 'docs', 'phase-1', 'phase-1-28', 'canonical-plan.md'),
+    'utf8'
+  );
+  const section = plan.slice(plan.indexOf('## 9. Ownership boundary'), plan.indexOf('## 10.'));
+  const sentence = section.slice(section.indexOf('Frontend work lives in'));
+  const paths = [...sentence.matchAll(/`(apps\/web\/src\/[^`]*?)\/\*\*`/g)].map(
+    (match) => match[1]
+  );
+  return [...new Set(paths)] as readonly string[];
+}
+
+const PLAN_ROOTS = planRoots();
+const CORPUS_ROOTS = PLAN_ROOTS.map((root) => join(process.cwd(), '..', '..', ...root.split('/')));
 
 /** Repository-relative, POSIX-separated. `join` yields `\` on Windows, and a
  *  pattern written with `/` then selects nothing there — `P1-27-SEC-004`. */
@@ -266,16 +319,47 @@ const at = (site: Site) => `${site.file}:${site.line}`;
  * ------------------------------------------------------------------ */
 
 describe('the apt/rec failure surface is really being read', () => {
-  it('walks both feature trees and all three route trees', () => {
+  it('takes its roots from the plan sentence, and reads all three of them', () => {
+    /*
+     * The derivation, held to its authority. §9 names three paths and this
+     * reads three; if the sentence is reworded so that a path stops being
+     * matched, the count moves and this fails rather than the sweep quietly
+     * narrowing — which is exactly how the third root came to be three route
+     * segments instead of the whole `(dashboard)` group.
+     */
+    expect(PLAN_ROOTS).toEqual([
+      'apps/web/src/features/appointments',
+      'apps/web/src/features/receptions',
+      'apps/web/src/app/[locale]/(dashboard)',
+    ]);
     // Floors, not equalities. A screen added tomorrow must fail for BREAKING
     // the rule, never for having been added — an equality pin is what stops a
     // sweep checking things.
-    expect(CORPUS.length, 'the P1-28 corpus is empty').toBeGreaterThanOrEqual(30);
+    expect(CORPUS.length, 'the P1-28 corpus is empty').toBeGreaterThanOrEqual(55);
     for (const tree of ['features/appointments/', 'features/receptions/', '(dashboard)/']) {
       expect(
         CORPUS.some((entry) => entry.file.includes(tree)),
         `no file was collected from ${tree}`
       ).toBe(true);
+    }
+  });
+
+  it('reaches the parts of the (dashboard) group the three segments excluded', () => {
+    /*
+     * The measurement that makes the widening real rather than cosmetic. Rooted
+     * at three route segments the corpus was 36 files; rooted at the group the
+     * plan actually names it is 62, and the twenty-six that arrived include the
+     * layout, the error boundary and every page a P1-28 screen links to. A file
+     * outside every root is governed by nothing, whatever the rule says.
+     */
+    const files = CORPUS.map((entry) => entry.file);
+    for (const outside of [
+      'app/[locale]/(dashboard)/error.tsx',
+      'app/[locale]/(dashboard)/layout.tsx',
+      'app/[locale]/(dashboard)/not-found.tsx',
+      'app/[locale]/(dashboard)/page.tsx',
+    ]) {
+      expect(files, `${outside} is collected by no root`).toContain(outside);
     }
   });
 
