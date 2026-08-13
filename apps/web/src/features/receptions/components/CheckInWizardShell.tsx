@@ -9,6 +9,10 @@ import { ErrorState } from '@/components/states/States';
 import { readReception } from '../api';
 import type { ReceptionDetail } from '../receptions-contract';
 import {
+  RECEIVING_EMPLOYEE_NOTICE_KEYS,
+  type ReceivingEmployee,
+} from '../check-in/receiving-employee';
+import {
   activeStep,
   writesLocked as writesLockedFor,
   type CheckInCapabilities,
@@ -41,12 +45,21 @@ import {
  * A step holding its own copy of the version is the defect this shape exists
  * to prevent.
  *
- * ## The receiving employee renders as an identifier, and says why (G-EMP)
+ * ## The receiving employee renders as a NAME, and says what that name is (G-EMP)
  *
- * `receivingEmployeeId` has no foreign key and no employee master exists — the
- * named open decision G-EMP. No label can be joined honestly, so the shell
- * shows the bare identifier WITH the disposition stated, rather than a name it
- * would have had to invent.
+ * This header used to print `receivingEmployeeId` in a `<code>` element, and a
+ * DOM case asserted it did. `canonical-plan.md` §7 disposes of G-EMP with the
+ * sentence "The UI shows names, never UUIDs", so the identifier on screen was
+ * the defect and the case was holding it there.
+ *
+ * The identifier still has no foreign key and there is still no employee master.
+ * What it does have is a directory the check-in screen already reads: the route
+ * resolves the name through `iam.user-detail` under `iam.user.read` — the same
+ * code the employee picker consumes — and hands the outcome down as
+ * `receivingEmployee`. Where no name could be learned, the reason is stated in
+ * words; the identifier is never shown, because it is not a name and no reader
+ * of this screen can do anything with it. The G-EMP note stays beneath either
+ * way: what is recorded is a user account, not an employee record.
  *
  * ## A terminal visit still renders
  *
@@ -71,6 +84,16 @@ interface Props {
    * (G-EMP) and the only nameable identity is the operator's own.
    */
   readonly session: CheckInSessionIdentity;
+  /**
+   * Who received the vehicle, resolved by the ROUTE (G-EMP).
+   *
+   * Resolved there rather than here for the same reason `capabilities` is: the
+   * route is the single place that consults the session, and the outcome — a
+   * name, or the reason there is none — is what the interface renders. The
+   * value does not move under a `refresh()`: no published operation changes
+   * `receiving_employee_id` after the visit is created.
+   */
+  readonly receivingEmployee: ReceivingEmployee;
 }
 
 export function CheckInWizardShell({
@@ -80,6 +103,7 @@ export function CheckInWizardShell({
   steps,
   capabilities,
   session,
+  receivingEmployee,
 }: Props) {
   const [detail, setDetail] = useState<ReceptionDetail>(initialDetail);
   const [chosenStepId, setChosenStepId] = useState<string | null>(null);
@@ -175,15 +199,24 @@ export function CheckInWizardShell({
               {translate(messages, 'receptions.wizard.receivingEmployee')}
             </dt>
             <dd className="text-body text-text-primary">
-              <code className="font-mono text-caption" dir="ltr">
-                {detail.receivingEmployeeId}
-              </code>
+              {receivingEmployee.status === 'named' ? (
+                receivingEmployee.displayName
+              ) : (
+                /* No name was learned, and the reason is said instead. The
+                   identifier is NOT shown: it is not a name, and on the
+                   `unresolved` branch it would present a value naming nobody as
+                   if it were a person. */
+                <span className="text-text-muted" lang={locale}>
+                  {translate(messages, RECEIVING_EMPLOYEE_NOTICE_KEYS[receivingEmployee.status])}
+                </span>
+              )}
             </dd>
           </div>
         </dl>
 
         <p className="mt-2 text-caption text-text-muted" lang={locale}>
-          {/* G-EMP, stated where the identifier is shown. */}
+          {/* G-EMP, stated where the name is shown: it is a user account, not
+              an employee record. */}
           {translate(messages, 'receptions.wizard.receivingEmployeeNote')}
         </p>
       </section>

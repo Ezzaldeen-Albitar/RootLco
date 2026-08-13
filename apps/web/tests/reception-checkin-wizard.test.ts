@@ -11,6 +11,10 @@ import {
   writesLocked,
   type CreateDraft,
 } from '@/features/receptions/check-in/wizard';
+import {
+  RECEIVING_EMPLOYEE_NOTICE_KEYS,
+  resolveReceivingEmployee,
+} from '@/features/receptions/check-in/receiving-employee';
 import { CHECK_IN_STEPS } from '@/features/receptions/check-in/steps';
 import {
   RECEPTION_STATUSES,
@@ -332,5 +336,76 @@ describe('the step registry — the typed extension point Waves E build on', () 
     expect(problems.some((problem) => problem.includes('outside the feature namespace'))).toBe(
       true
     );
+  });
+});
+
+/* --- FE-007: who received the vehicle (G-EMP) ------------------------------ */
+
+describe('the receiving employee, resolved from the directory read', () => {
+  const identity = (displayName: string) => ({
+    status: 'ok' as const,
+    data: { id: 'user-77', displayName },
+    correlationId: 'corr',
+  });
+
+  it('names the employee when the directory answered', () => {
+    expect(resolveReceivingEmployee(identity('Rana Odeh'))).toEqual({
+      status: 'named',
+      displayName: 'Rana Odeh',
+    });
+  });
+
+  it('is DENIED when the route spent no request, and when the backend refused', () => {
+    // `null` is the route deciding it holds no directory permission — no request
+    // was made. A backend 403 is the same answer to the operator, and naming
+    // which tier refused would tell a customer's copy about the workshop's own
+    // permissions.
+    expect(resolveReceivingEmployee(null)).toEqual({ status: 'denied' });
+    expect(resolveReceivingEmployee({ status: 'denied', correlationId: 'c' })).toEqual({
+      status: 'denied',
+    });
+  });
+
+  it('says the identifier resolves to nobody rather than printing it', () => {
+    /*
+     * `receiving_employee_id` has NO foreign key (G-EMP), so a stored value
+     * naming no account is a state the database permits. This is the branch
+     * where rendering the raw value would be actively misleading — an internal
+     * value in the slot where a person's name goes reads as a person.
+     */
+    expect(resolveReceivingEmployee({ status: 'not-found', correlationId: 'c' })).toEqual({
+      status: 'unresolved',
+    });
+    // An account that exists with nothing to show is the same fact to a reader,
+    // and better said than rendered as empty space.
+    expect(resolveReceivingEmployee(identity('   '))).toEqual({ status: 'unresolved' });
+  });
+
+  it('keeps a failed read distinct from an identifier that names nobody', () => {
+    /*
+     * `F1` on this very document was a failed read printed as an observed
+     * absence. "This identifier names nobody" is an observation; "we could not
+     * ask" is not one, and an expired session is neither a denial nor a fact
+     * about the identifier.
+     */
+    for (const status of ['error', 'unavailable', 'expired'] as const) {
+      expect(resolveReceivingEmployee({ status, correlationId: 'c' }), status).toEqual({
+        status: 'unavailable',
+      });
+    }
+  });
+
+  it('has something to say for every outcome that is not a name', () => {
+    // The union and the catalogue cannot drift: a fourth state added without a
+    // message would render a raw key at an operator.
+    for (const [state, key] of Object.entries(RECEIVING_EMPLOYEE_NOTICE_KEYS)) {
+      expect(EN[key], `${state}: ${key} missing from en`).toBeTruthy();
+      expect(AR[key], `${state}: ${key} missing from ar`).toBeTruthy();
+    }
+    expect(Object.keys(RECEIVING_EMPLOYEE_NOTICE_KEYS).sort()).toEqual([
+      'denied',
+      'unavailable',
+      'unresolved',
+    ]);
   });
 });

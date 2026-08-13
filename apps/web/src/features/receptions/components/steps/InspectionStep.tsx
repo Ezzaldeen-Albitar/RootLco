@@ -11,11 +11,12 @@ import { recordConditionEvidence } from '../../api';
 import {
   FINDING_CATEGORIES,
   FINDING_SEVERITIES,
-  MAX_MAP_TYPE,
+  LEAK_TYPES,
   MAX_NOTE,
   MAX_ZONE,
   type FindingCategory,
   type FindingSeverity,
+  type LeakType,
 } from '../../receptions-contract';
 import {
   appendSessionEvidence,
@@ -70,6 +71,25 @@ import {
  * platform — no operation, no report status, no agreed home. **No control here
  * is labelled "road test"**, and the step says the capability is absent instead
  * of offering something that would have to be invented.
+ *
+ * ## The leak type is a CHOICE, and used not to be
+ *
+ * It was a REQUIRED free-text box whose hint asked the operator for their own
+ * words, on the reasoning that the route leaves membership to the database
+ * CHECK and a select over an invented list would offer values the database
+ * refuses. The reasoning was right and the conclusion was backwards:
+ * `ck_leak_observations_type` admits exactly seven values
+ * (`20260721102000_rec_warning_lights_leaks.sql:170`), so the box offered
+ * nothing BUT values the database refuses — and because the field is required,
+ * every leak an operator wrote in their own words was a guaranteed 422
+ * `ERR-VAL-001`, rendered as "This value is not accepted here" with no way to
+ * learn what would be. That is not a hint that could be improved; it is a step
+ * nobody could complete.
+ *
+ * The seven types are therefore restated in `receptions-contract.ts` with the
+ * migration cited, and offered as a translated choice. Nothing is invented; the
+ * list is the database's own. `mapType` and `perspective` keep their
+ * bounded-string treatment, because for those the list really is unknown.
  */
 
 const IDLE: ActionState = { status: 'idle' };
@@ -285,7 +305,7 @@ export function InspectionStep({
                 visitId,
                 {
                   kind: 'leak',
-                  leakType: draft.leakType.trim(),
+                  leakType: draft.leakType as LeakType,
                   vehicleZone: draft.vehicleZone.trim(),
                   ...(draft.severity === '' ? {} : { severity: draft.severity as FindingSeverity }),
                   ...(draft.note.trim() === '' ? {} : { note: draft.note.trim() }),
@@ -296,7 +316,10 @@ export function InspectionStep({
                 remember({
                   evidenceId: result.recorded.evidenceId,
                   kind: 'leak',
-                  summary: `${draft.leakType.trim()} — ${draft.vehicleZone.trim()}`,
+                  summary: `${translateDynamic(
+                    messages,
+                    `receptions.leakType.${draft.leakType}`
+                  )} — ${draft.vehicleZone.trim()}`,
                 });
               }
               await settle(result, leaks.refresh);
@@ -512,7 +535,7 @@ function LeakForm({
   const submit = () => {
     const attempt = (state.attempt ?? 0) + 1;
     const missing =
-      draft.leakType.trim() === ''
+      draft.leakType === ''
         ? 'receptions.leak.error.typeRequired'
         : draft.vehicleZone.trim() === ''
           ? 'receptions.finding.error.zoneRequired'
@@ -539,16 +562,19 @@ function LeakForm({
       }}
       className="flex flex-col gap-3 border-t border-border pt-3"
     >
-      <TextField
+      <SelectField
         label={translate(messages, 'receptions.leak.type')}
-        // `leak_type` is a BOUNDED STRING on the wire, not an enum: the routes
-        // leave membership to the database CHECK deliberately, and a select
-        // rendered from an invented list would offer values the database
-        // refuses. So this is free text within the contract's own bound.
+        // The seven types `ck_leak_observations_type` admits, and nothing else.
+        // This was a required free-text box, which offered the operator only
+        // values the database refuses; see the step docblock.
         description={translate(messages, 'receptions.leak.typeHint')}
         required
         value={draft.leakType}
-        maxLength={MAX_MAP_TYPE}
+        options={LEAK_TYPES.map((value) => ({
+          value,
+          label: translateDynamic(messages, `receptions.leakType.${value}`),
+        }))}
+        placeholder={translate(messages, 'form.select.placeholder')}
         onChange={(event) => set({ leakType: event.target.value })}
       />
       <TextField

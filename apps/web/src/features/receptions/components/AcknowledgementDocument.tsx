@@ -12,6 +12,10 @@ import type {
   ReceptionDetail,
 } from '../receptions-contract';
 import { hasRegisteredMedia, isCustomerReported } from '../check-in/closure';
+import {
+  RECEIVING_EMPLOYEE_NOTICE_KEYS,
+  type ReceivingEmployee,
+} from '../check-in/receiving-employee';
 
 /**
  * The reception acknowledgement document (`FE-021`).
@@ -52,9 +56,16 @@ import { hasRegisteredMedia, isCustomerReported } from '../check-in/closure';
  *     therefore carries *Not yet technically verified*, in Arabic and in
  *     English, and a customer-reported line is labelled as the customer's
  *     report rather than as a fact the workshop has asserted.
- *   - **The receiving employee's name.** There is none to print: G-EMP is an
- *     open decision and the column holds a bare identifier with no referent, so
- *     the document prints the identifier and says what it is.
+ *   - **The receiving employee's identifier.** This sheet used to print it, in
+ *     a `<code>` element, on the copy a customer signs and takes away — and
+ *     `canonical-plan.md` §7 disposes of G-EMP with the sentence "The UI shows
+ *     names, never UUIDs". The page now resolves the name through
+ *     `iam.user-detail` (`iam.user.read`, the code the check-in picker already
+ *     consumes) and prints THAT. Where no name could be learned, the sheet says
+ *     which of the three reasons applies and prints no identifier: an internal
+ *     value in the place a person's name goes reads to a customer as a person.
+ *     The G-EMP note stays, because what is recorded is a user account and not
+ *     an employee record, and that is worth saying on a handover document.
  */
 
 /**
@@ -87,11 +98,14 @@ export function AcknowledgementDocument({
   locale,
   messages,
   detail,
+  receivingEmployee,
   sections,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly detail: ReceptionDetail;
+  /** Who received the vehicle, resolved by the ROUTE (G-EMP). */
+  readonly receivingEmployee: ReceivingEmployee;
   readonly sections: AcknowledgementSections;
 }) {
   const title =
@@ -141,9 +155,14 @@ export function AcknowledgementDocument({
             </Fact>
           ) : null}
           <Fact label={translate(messages, 'receptions.wizard.receivingEmployee')}>
-            <code className="font-mono text-caption" dir="ltr">
-              {detail.receivingEmployeeId}
-            </code>
+            {receivingEmployee.status === 'named' ? (
+              receivingEmployee.displayName
+            ) : (
+              /* The reason, never the identifier. See the docblock. */
+              <span className="text-text-muted" lang={locale}>
+                {translate(messages, RECEIVING_EMPLOYEE_NOTICE_KEYS[receivingEmployee.status])}
+              </span>
+            )}
           </Fact>
         </dl>
         <p className="mt-2 text-supporting text-text-muted" lang={locale}>

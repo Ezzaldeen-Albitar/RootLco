@@ -5,6 +5,7 @@ import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
 import { renderLtr, renderRtl } from './render';
 import type { CheckInStepProps } from '@/features/receptions/check-in/wizard';
+import { LEAK_TYPES } from '@/features/receptions/receptions-contract';
 import type { ReceptionDetail } from '@/features/receptions/receptions-contract';
 
 /**
@@ -402,17 +403,28 @@ describe('the inspection step (FE-011)', () => {
     });
   });
 
-  it('records a leak as a free-text type — no vocabulary is invented for it', async () => {
+  it('records a leak as one of the seven types the database admits', async () => {
+    /*
+     * `oil`, chosen from a list — not "engine oil", typed.
+     *
+     * This case used to type free text and assert it on the wire, and it passed
+     * for the reason every mocked tier passes: the mock returned what it had
+     * been told to return. Against the real database that write is refused —
+     * `ck_leak_observations_type` admits seven values and nothing else — and the
+     * field is REQUIRED, so the assertion was pinning a body the platform 422s
+     * for every leak an operator could describe. The control is now a choice
+     * over the database's own list, and this asserts the chosen member travels.
+     */
     recordConditionEvidence.mockResolvedValue(recorded('leak-1', 'leak'));
     const user = userEvent.setup();
     renderLtr(<InspectionStep {...stepProps()} />);
 
     const leakForm = await screen.findByRole('form', { name: EN['receptions.leak.formLabel']! });
-    // `leak_type` is a BOUNDED STRING on the wire; membership belongs to the
-    // database CHECK, so this must be a text box and not a select.
     const typeField = within(leakForm).getByLabelText(new RegExp(EN['receptions.leak.type']!));
-    expect(typeField.tagName).toBe('INPUT');
-    await user.type(typeField, 'engine oil');
+    expect(typeField.tagName, 'a free-text box offers only values the database refuses').toBe(
+      'SELECT'
+    );
+    await user.selectOptions(typeField, 'oil');
     await user.type(
       within(leakForm).getByLabelText(new RegExp(EN['receptions.finding.zone']!)),
       'under engine bay'
@@ -422,9 +434,37 @@ describe('the inspection step (FE-011)', () => {
     await waitFor(() => expect(recordConditionEvidence).toHaveBeenCalled());
     expect(recordConditionEvidence.mock.calls.at(-1)![1]).toEqual({
       kind: 'leak',
-      leakType: 'engine oil',
+      leakType: 'oil',
       vehicleZone: 'under engine bay',
     });
+  });
+
+  it('offers exactly the seven types, translated, and nothing the database refuses', async () => {
+    /*
+     * The other direction. The case above would still pass over a select that
+     * offered one option, or eight, or the stored tokens as labels — and a
+     * missing member is a leak an operator cannot record at all, which is the
+     * defect this fix exists for wearing different clothes.
+     */
+    renderLtr(<InspectionStep {...stepProps()} />);
+
+    const leakForm = await screen.findByRole('form', { name: EN['receptions.leak.formLabel']! });
+    const typeField = within(leakForm).getByLabelText(new RegExp(EN['receptions.leak.type']!));
+    const offered = within(typeField as HTMLSelectElement)
+      .getAllByRole('option')
+      .map((option) => (option as HTMLOptionElement).value)
+      .filter((value) => value !== '');
+    expect(offered).toEqual([...LEAK_TYPES]);
+
+    for (const type of LEAK_TYPES) {
+      // The LABEL is the translated one, so no operator is shown `brake_fluid`.
+      expect(
+        within(typeField as HTMLSelectElement).getByRole('option', {
+          name: EN[`receptions.leakType.${type}`]!,
+        }),
+        type
+      ).toBeInTheDocument();
+    }
   });
 
   it('states that road test is absent, and offers no control claiming to be one', async () => {

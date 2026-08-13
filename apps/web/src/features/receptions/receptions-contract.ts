@@ -629,11 +629,14 @@ export type DamageMarkType = (typeof DAMAGE_MARK_TYPES)[number];
 export const LEAK_SEVERITIES = FINDING_SEVERITIES;
 
 /**
- * `map_type`, `perspective` and `leak_type` are BOUNDED STRINGS on the wire,
- * not enums: the routes deliberately leave membership to the database CHECK,
- * because a second hand-typed copy could rot without anything failing. This
- * layer does the same — a select rendered from an invented list would offer
- * values the database refuses.
+ * `map_type` and `perspective` are BOUNDED STRINGS on the wire, not enums: the
+ * routes deliberately leave membership to the database CHECK, because a second
+ * hand-typed copy could rot without anything failing. This layer does the same —
+ * a select rendered from an invented list would offer values the database
+ * refuses.
+ *
+ * `leak_type` used to be carried by this bound too. It is not one of these; see
+ * `LEAK_TYPES` below.
  */
 export const MAX_MAP_TYPE = 40;
 
@@ -657,6 +660,35 @@ export const MAX_MAP_TYPE = 40;
  */
 export const WARNING_LIGHT_STATES = ['on', 'flashing', 'intermittent'] as const;
 export type WarningLightState = (typeof WARNING_LIGHT_STATES)[number];
+
+/**
+ * `leak_type` is the SAME defect as `observed_state`, and worse, because the
+ * field is REQUIRED.
+ *
+ * `ck_leak_observations_type` admits exactly these seven values
+ * (`20260721102000_rec_warning_lights_leaks.sql:170`). The field was a required
+ * free-text box whose own hint asked the operator for their own words, so every
+ * leak recorded in an operator's own words — "engine oil", "power steering",
+ * "coolant dripping" — is refused 422 `ERR-VAL-001` and rendered as "This value
+ * is not accepted here", with no way to learn what would be accepted. A required
+ * field that only accepts values the screen never names is a step no operator
+ * can complete.
+ *
+ * Restated here rather than in the step, carrying its authority in this comment
+ * so a future CHECK change has one place to be reconciled with. The rule is not
+ * "never restate a database list"; it is "never invent one" — and this list is
+ * the database's own, copied from the constraint above.
+ */
+export const LEAK_TYPES = [
+  'oil',
+  'coolant',
+  'fuel',
+  'brake_fluid',
+  'transmission',
+  'water',
+  'other',
+] as const;
+export type LeakType = (typeof LEAK_TYPES)[number];
 
 export const SIGNER_ROLES = [
   'service_requester',
@@ -859,8 +891,8 @@ export interface WarningLightEvidenceInput {
 /** One visible leak, as observed. No cause and no fault is asserted. */
 export interface LeakEvidenceInput {
   readonly kind: 'leak';
-  /** Bounded string; membership belongs to the database CHECK. */
-  readonly leakType: string;
+  /** One of the seven types `ck_leak_observations_type` admits. */
+  readonly leakType: LeakType;
   readonly vehicleZone: string;
   readonly severity?: FindingSeverity;
   readonly note?: string | null;

@@ -10,10 +10,13 @@ import {
 import { requireSession } from '@/features/authentication/api/session';
 import { CRM_PERMISSIONS, VEHICLE_PERMISSIONS, holds } from '@/features/crm/permissions';
 import { readReception } from '@/features/receptions/api';
+import { resolveReceivingEmployee } from '@/features/receptions/check-in/receiving-employee';
 import { CHECK_IN_STEPS } from '@/features/receptions/check-in/steps';
 import { SENSITIVE_NARRATIVE_PERMISSION } from '@/features/receptions/check-in/sensitive';
 import { CheckInWizardShell } from '@/features/receptions/components/CheckInWizardShell';
 import { RECEPTION_PERMISSIONS } from '@/features/receptions/receptions-contract';
+import { STAFF_DIRECTORY_PERMISSION } from '@/features/receptions/staff-directory';
+import { readReceivingEmployeeIdentity } from '@/features/receptions/support-api';
 import { WORK_ORDER_READ_PERMISSION } from '@/features/receptions/work-order-contract';
 import { isLocale } from '@/i18n/config';
 import { getMessages } from '@/i18n/get-messages';
@@ -45,6 +48,14 @@ import { pageMetadata } from '@/lib/page-metadata';
  * foreign key and no employee master behind them (the named open decision
  * G-EMP). A name is offered where a uuid would otherwise have to be typed, and
  * the disposition is stated beside every control that submits one.
+ *
+ * The visit's OWN receiving employee is resolved here too, for the same reason
+ * and through the same directory: `iam.user-detail` under `iam.user.read`, the
+ * code the check-in screen's employee picker already consumes and already
+ * discloses on screen. The shell used to print the stored identifier, which
+ * §7's disposition forbids in as many words ("The UI shows names, never
+ * UUIDs"). A caller without the code spends no request and the shell says so;
+ * `check-in/receiving-employee.ts` carries what each outcome means.
  *
  * The route performs the ONE detail read (`rec.reception-detail`); its
  * `recordVersion` is the `If-Match` the guarded commands demand, and the shell
@@ -116,11 +127,26 @@ export default async function CheckInWizardPage({
     );
   }
 
+  /*
+   * The receiving employee's name, or the reason there is none.
+   *
+   * Gated BEFORE the request: a caller without `iam.user.read` would be spending
+   * a request to be refused, and the screen's answer is the same either way.
+   * The read is issued only once the visit is known to exist, so an unreadable
+   * visit costs nothing.
+   */
+  const receivingEmployee = resolveReceivingEmployee(
+    holds(session.permissions, STAFF_DIRECTORY_PERMISSION)
+      ? await readReceivingEmployeeIdentity(result.data.receivingEmployeeId)
+      : null
+  );
+
   return frame(
     <CheckInWizardShell
       locale={locale}
       messages={messages}
       initialDetail={result.data}
+      receivingEmployee={receivingEmployee}
       steps={CHECK_IN_STEPS}
       capabilities={{
         manageParties: holds(session.permissions, RECEPTION_PERMISSIONS.partyManage),

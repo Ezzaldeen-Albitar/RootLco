@@ -219,6 +219,9 @@ const CAPABILITIES = {
 /** The operator the referent-less identity fields (G-EMP) name. */
 const SESSION = { userId: 'user-1', displayName: 'Front Desk' };
 
+/** The receiving employee the route resolved (G-EMP). Not this suite's subject. */
+const RECEIVING_EMPLOYEE = { status: 'named', displayName: 'Rana Odeh' } as const;
+
 function startProps(messages: typeof en) {
   return {
     locale: messages === en ? ('en' as const) : ('ar' as const),
@@ -495,6 +498,7 @@ describe('P1-28-FE-017 — no upload affordance anywhere on the reception surfac
         steps={CHECK_IN_STEPS}
         capabilities={CAPABILITIES}
         session={SESSION}
+        receivingEmployee={RECEIVING_EMPLOYEE}
       />
     );
 
@@ -546,6 +550,7 @@ describe('P1-28-FE-017 — no upload affordance anywhere on the reception surfac
         steps={CHECK_IN_STEPS}
         capabilities={CAPABILITIES}
         session={SESSION}
+        receivingEmployee={RECEIVING_EMPLOYEE}
       />
     );
 
@@ -576,6 +581,7 @@ describe('P1-28-FE-017 — no upload affordance anywhere on the reception surfac
         steps={CHECK_IN_STEPS}
         capabilities={CAPABILITIES}
         session={SESSION}
+        receivingEmployee={RECEIVING_EMPLOYEE}
       />
     );
 

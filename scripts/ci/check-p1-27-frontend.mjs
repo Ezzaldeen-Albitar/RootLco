@@ -233,7 +233,7 @@ export const ROOT_AUTHORITY = 'docs/phase-1/phase-1-27/canonical-plan.md';
  *     markers, and four documents carry them —
  *     `deliverable-manifest.md`, `open-decisions.md`,
  *     `owner-acceptance-fail-remediation.md` and `risk-register.md`. A real run
- *     of this gate at this head reports **122 files across 5 trees**, and those
+ *     of this gate at this head reports **123 files across 5 trees**, and those
  *     are the values the four documents carry; this sentence used to name 69 and
  *     3, which were the values when the second tree was adopted and had been
  *     wrong since. The markers themselves are re-derived on every run, so the

@@ -25,7 +25,9 @@ import {
 import { CHECK_IN_STEPS } from '@/features/receptions/check-in/steps';
 import {
   EVIDENCE_KINDS,
+  LEAK_TYPES,
   MAX_DECLARED_VALUE,
+  WARNING_LIGHT_STATES,
   type ConditionEvidenceEntry,
 } from '@/features/receptions/receptions-contract';
 
@@ -199,6 +201,50 @@ describe('restricted narrative', () => {
       'declaredByPartnerId',
     ]) {
       expect(fields, `${withheld} is not returned by the list`).not.toContain(withheld);
+    }
+  });
+
+  it('reads a CLOSED database vocabulary back translated, never as the stored token', () => {
+    /*
+     * `brake_fluid` or `flashing` printed on a read-back is an internal name
+     * reaching an operator — the same defect as a raw message key, and the
+     * mirror image of the capture-side defect that let those fields be free
+     * text in the first place.
+     *
+     * Bound to the CONTRACT constants rather than to a list here, so a member
+     * added to either vocabulary must be translated in both catalogues before
+     * this passes. The assertion beside this one cannot see any of it: it only
+     * checks that a `vocabulary` field names SOME prefix, so a field declared
+     * `text` — which is what both of these were — is invisible to it.
+     */
+    const closed = [
+      {
+        kind: 'leak',
+        field: 'leakType',
+        prefix: 'receptions.leakType.',
+        members: LEAK_TYPES as readonly string[],
+      },
+      {
+        kind: 'warning_light',
+        field: 'observedState',
+        prefix: 'receptions.warningState.',
+        members: WARNING_LIGHT_STATES as readonly string[],
+      },
+    ] as const;
+
+    for (const entry of closed) {
+      const declared = rowFieldsFor(entry.kind).find((field) => field.field === entry.field);
+      expect(declared, `${entry.kind}.${entry.field} is not published at all`).toBeDefined();
+      expect(
+        declared?.kind,
+        `${entry.kind}.${entry.field} is read back as a raw stored value`
+      ).toBe('vocabulary');
+      expect(declared?.vocabularyPrefix).toBe(entry.prefix);
+      for (const member of entry.members) {
+        const key = `${entry.prefix}${member}`;
+        expect(EN[key], `${key} missing from en`).toBeTruthy();
+        expect(AR[key], `${key} missing from ar`).toBeTruthy();
+      }
     }
   });
 

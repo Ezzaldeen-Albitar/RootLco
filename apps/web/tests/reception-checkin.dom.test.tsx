@@ -152,6 +152,16 @@ const CAPABILITIES = {
 
 const SESSION = { userId: 'user-1', displayName: 'Front Desk' };
 
+/**
+ * The receiving employee the ROUTE resolved (G-EMP).
+ *
+ * A name, because the ordinary case is a name: the identifier `user-77` in
+ * `DETAIL` above is what the route asked `iam.user-detail` about, and this is
+ * what came back. The three states where no name could be learned each have
+ * their own case below.
+ */
+const RECEIVING_EMPLOYEE = { status: 'named', displayName: 'Rana Odeh' } as const;
+
 function startProps(over: Record<string, unknown> = {}) {
   return {
     locale: 'en' as const,
@@ -545,6 +555,7 @@ describe('the wizard shell', () => {
         ]}
         capabilities={CAPABILITIES}
         session={SESSION}
+        receivingEmployee={RECEIVING_EMPLOYEE}
       />
     );
 
@@ -574,6 +585,7 @@ describe('the wizard shell', () => {
         steps={CHECK_IN_STEPS}
         capabilities={CAPABILITIES}
         session={SESSION}
+        receivingEmployee={RECEIVING_EMPLOYEE}
       />
     );
 
@@ -609,6 +621,7 @@ describe('the wizard shell', () => {
         ]}
         capabilities={CAPABILITIES}
         session={SESSION}
+        receivingEmployee={RECEIVING_EMPLOYEE}
       />
     );
     // The status name appears in the header AND in the banner — scope to the
@@ -619,7 +632,17 @@ describe('the wizard shell', () => {
     expect(seen.at(-1)?.writesLocked).toBe(true);
   });
 
-  it('shows the receiving employee as an identifier with the G-EMP note', () => {
+  it('shows the receiving employee by NAME, with the G-EMP note', () => {
+    /*
+     * This case used to assert `getByText('user-77')` — the stored identifier,
+     * rendered in a `<code>` element — and it passed, which is how the defect
+     * survived: a test was holding it in place. `canonical-plan.md` §7 disposes
+     * of G-EMP with one sentence, "The UI shows names, never UUIDs", and the
+     * name was resolvable the whole time through `iam.user-detail`.
+     *
+     * The note stays. It no longer says a name cannot be shown — it says what
+     * the name IS: an account, not an employee record.
+     */
     renderLtr(
       <CheckInWizardShell
         locale="en"
@@ -628,11 +651,43 @@ describe('the wizard shell', () => {
         steps={CHECK_IN_STEPS}
         capabilities={CAPABILITIES}
         session={SESSION}
+        receivingEmployee={RECEIVING_EMPLOYEE}
       />
     );
-    expect(screen.getByText('user-77')).toBeInTheDocument();
+    expect(screen.getByText('Rana Odeh')).toBeInTheDocument();
+    expect(screen.queryByText(DETAIL.receivingEmployeeId)).not.toBeInTheDocument();
     expect(screen.getByText(EN['receptions.wizard.receivingEmployeeNote']!)).toBeInTheDocument();
   });
+
+  for (const { status, key } of [
+    { status: 'denied', key: 'receptions.wizard.receivingEmployeeDenied' },
+    { status: 'unresolved', key: 'receptions.wizard.receivingEmployeeUnresolved' },
+    { status: 'unavailable', key: 'receptions.wizard.receivingEmployeeUnavailable' },
+  ] as const) {
+    it(`says why there is no name when the read came back ${status}, and shows no identifier`, () => {
+      /*
+       * Three states the platform genuinely has, and none of them is a licence
+       * to print the identifier. `unresolved` is the sharpest: the column has no
+       * foreign key, so an identifier naming nobody is a state the database
+       * permits, and rendering it where a person's name goes reads as a person.
+       */
+      renderLtr(
+        <CheckInWizardShell
+          locale="en"
+          messages={en}
+          initialDetail={DETAIL}
+          steps={CHECK_IN_STEPS}
+          capabilities={CAPABILITIES}
+          session={SESSION}
+          receivingEmployee={{ status }}
+        />
+      );
+      expect(screen.getByText(EN[key]!)).toBeInTheDocument();
+      expect(screen.queryByText(DETAIL.receivingEmployeeId)).not.toBeInTheDocument();
+      // The disposition is stated whether or not a name was learned.
+      expect(screen.getByText(EN['receptions.wizard.receivingEmployeeNote']!)).toBeInTheDocument();
+    });
+  }
 });
 
 /* --- FE-008: the confirmation step ----------------------------------------- */

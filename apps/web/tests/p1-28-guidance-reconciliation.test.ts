@@ -149,8 +149,39 @@ describe('the reception sentences', () => {
 
   it('"recorded as an identifier, not as an employee" — G-EMP is stated on screen', () => {
     expect(OPERATOR).toContain('recorded as an identifier, not as an employee');
-    expect(en['receptions.wizard.receivingEmployeeNote']).toContain('no name can be shown');
+    expect(en['receptions.wizard.receivingEmployeeNote']).toContain('G-EMP');
     expect(en['receptions.checkIn.employeeHint']).toContain('G-EMP');
+  });
+
+  it('"it never shows you a raw identifier in place of a name" — and neither surface does', () => {
+    /*
+     * The guide said this while both read-back surfaces rendered
+     * `detail.receivingEmployeeId` in a `<code>` element, and the assertion
+     * beside this one pinned only the note's wording, which stayed true while
+     * the sentence above it did not. `canonical-plan.md` §7 states the same rule
+     * as a disposition: "The UI shows names, never UUIDs."
+     *
+     * Held against the SOURCE of both surfaces rather than against the note,
+     * because the note is not what was wrong.
+     */
+    expect(OPERATOR).toContain('never shows you a raw identifier');
+    for (const file of ['CheckInWizardShell.tsx', 'AcknowledgementDocument.tsx']) {
+      const source = read('features', 'receptions', 'components', file);
+      expect(source, `${file} does not render the receiving employee at all`).toContain(
+        'receivingEmployee'
+      );
+      /*
+       * The identifier must not be READ here at all, not merely not rendered in
+       * the one spelling it was rendered in. A first draft of this matched
+       * `{detail.receivingEmployeeId}` exactly and passed over the same value
+       * put back as a JSX ternary arm — a guard that could only catch the
+       * defect it had already seen. Neither surface has any use for the value:
+       * the route resolves it and hands down the outcome.
+       */
+      expect(source, `${file} reads the raw receiving-employee identifier`).not.toMatch(
+        /detail\.receivingEmployeeId/
+      );
+    }
   });
 
   it('"no submit control on that step" — the signature write really is uncalled', () => {

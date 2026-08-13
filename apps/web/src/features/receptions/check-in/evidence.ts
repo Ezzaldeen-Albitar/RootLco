@@ -288,7 +288,15 @@ export const EVIDENCE_ROW_FIELDS: Readonly<Record<EvidenceKind, readonly Evidenc
     { field: 'note', labelKey: 'receptions.finding.note', kind: 'text' },
   ],
   leak: [
-    { field: 'leakType', labelKey: 'receptions.leak.type', kind: 'text' },
+    {
+      // A closed database vocabulary (`ck_leak_observations_type`), so it is
+      // read back TRANSLATED rather than as the stored token — `brake_fluid` on
+      // a screen is an internal name reaching an operator.
+      field: 'leakType',
+      labelKey: 'receptions.leak.type',
+      kind: 'vocabulary',
+      vocabularyPrefix: 'receptions.leakType.',
+    },
     { field: 'vehicleZone', labelKey: 'receptions.finding.zone', kind: 'text' },
     {
       field: 'severity',

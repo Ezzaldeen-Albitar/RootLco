@@ -17,8 +17,11 @@ import {
   listPartyRoles,
   readReception,
 } from '@/features/receptions/api';
+import { resolveReceivingEmployee } from '@/features/receptions/check-in/receiving-employee';
 import { AcknowledgementDocument } from '@/features/receptions/components/AcknowledgementDocument';
 import { RECEPTION_PERMISSIONS } from '@/features/receptions/receptions-contract';
+import { STAFF_DIRECTORY_PERMISSION } from '@/features/receptions/staff-directory';
+import { readReceivingEmployeeIdentity } from '@/features/receptions/support-api';
 import { isLocale } from '@/i18n/config';
 import { getMessages } from '@/i18n/get-messages';
 import { pageMetadata } from '@/lib/page-metadata';
@@ -109,10 +112,21 @@ export default async function AcknowledgementPage({
   }
 
   const request = { ...INITIAL_REQUEST, pageSize: 50 };
-  const [parties, authorizations, evidence] = await Promise.all([
+  const [parties, authorizations, evidence, employee] = await Promise.all([
     listPartyRoles(receptionId, 'active', request, null),
     listAuthorizations(receptionId, request, null),
     listConditionEvidence(receptionId, undefined, request, null),
+    /*
+     * The receiving employee's name (`iam.user-detail`, `iam.user.read`).
+     *
+     * The sheet used to print the stored identifier, on a document a customer
+     * signs; §7's G-EMP disposition says "The UI shows names, never UUIDs".
+     * Gated before the request, like every other capability this route decides,
+     * and issued alongside the sections because it is independent of them.
+     */
+    holds(session.permissions, STAFF_DIRECTORY_PERMISSION)
+      ? readReceivingEmployeeIdentity(detail.data.receivingEmployeeId)
+      : Promise.resolve(null),
   ]);
 
   /*
@@ -141,6 +155,7 @@ export default async function AcknowledgementPage({
       locale={locale}
       messages={messages}
       detail={detail.data}
+      receivingEmployee={resolveReceivingEmployee(employee)}
       sections={{
         parties: section(parties),
         authorizations: section(authorizations),

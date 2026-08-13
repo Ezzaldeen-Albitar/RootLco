@@ -416,7 +416,8 @@
           "cases": [
             "opens an inspection with the signed-in operator, and states the G-EMP disposition",
             "withholds the finding form until an OPEN inspection exists, and says why",
-            "records a leak as a free-text type — no vocabulary is invented for it",
+            "records a leak as one of the seven types the database admits",
+            "offers exactly the seven types, translated, and nothing the database refuses",
             "states that road test is absent, and offers no control claiming to be one"
           ]
         }

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
 import { renderLtr, renderRtl } from './render';
+import type { ReceivingEmployee } from '@/features/receptions/check-in/receiving-employee';
 import { AcknowledgementDocument } from '@/features/receptions/components/AcknowledgementDocument';
 import type { ReceptionDetail } from '@/features/receptions/receptions-contract';
 
@@ -106,9 +107,26 @@ function sections(over: Record<string, unknown> = {}) {
   } as Parameters<typeof AcknowledgementDocument>[0]['sections'];
 }
 
-function renderSheet(over: Record<string, unknown> = {}) {
+/**
+ * The receiving employee the ROUTE resolved (G-EMP).
+ *
+ * A name in the ordinary case. The sheet used to print `DETAIL`'s stored
+ * identifier here, on the copy a customer signs.
+ */
+const RECEIVING_EMPLOYEE = { status: 'named', displayName: 'Rana Odeh' } as const;
+
+function renderSheet(
+  over: Record<string, unknown> = {},
+  employee: ReceivingEmployee = RECEIVING_EMPLOYEE
+) {
   return renderLtr(
-    <AcknowledgementDocument locale="en" messages={en} detail={DETAIL} sections={sections(over)} />
+    <AcknowledgementDocument
+      locale="en"
+      messages={en}
+      detail={DETAIL}
+      receivingEmployee={employee}
+      sections={sections(over)}
+    />
   );
 }
 
@@ -183,11 +201,39 @@ describe('what the sheet refuses to print', () => {
     ).toBeVisible();
   });
 
-  it('states the receiving employee is an identifier with no register behind it', () => {
+  it('prints the receiving employee by NAME, with the G-EMP note', () => {
+    /*
+     * This case used to assert the stored identifier was visible on the sheet —
+     * on the copy a customer signs and takes away. `canonical-plan.md` §7
+     * disposes of G-EMP with the sentence "The UI shows names, never UUIDs",
+     * and the name is resolvable through `iam.user-detail`.
+     */
     renderSheet();
-    expect(screen.getByText('user-77')).toBeVisible();
+    expect(screen.getByText('Rana Odeh')).toBeVisible();
+    expect(screen.queryByText(DETAIL.receivingEmployeeId)).toBeNull();
     expect(screen.getByText(EN['receptions.wizard.receivingEmployeeNote'] as string)).toBeVisible();
   });
+
+  for (const { status, key } of [
+    { status: 'denied', key: 'receptions.wizard.receivingEmployeeDenied' },
+    { status: 'unresolved', key: 'receptions.wizard.receivingEmployeeUnresolved' },
+    { status: 'unavailable', key: 'receptions.wizard.receivingEmployeeUnavailable' },
+  ] as const) {
+    it(`prints the reason rather than an identifier when the name came back ${status}`, () => {
+      /*
+       * A customer's copy is the worst place for an internal value in the slot
+       * where a person's name goes — and `unresolved` would be the worst of the
+       * three, because the column carries no foreign key and the identifier may
+       * name nobody at all. Each reason is printed in words instead.
+       */
+      renderSheet({}, { status });
+      expect(screen.getByText(EN[key] as string)).toBeVisible();
+      expect(screen.queryByText(DETAIL.receivingEmployeeId)).toBeNull();
+      expect(
+        screen.getByText(EN['receptions.wizard.receivingEmployeeNote'] as string)
+      ).toBeVisible();
+    });
+  }
 
   it('says it is not a diagnosis and not a quotation', () => {
     renderSheet();
@@ -261,7 +307,13 @@ describe('what the sheet says when a section is empty, unreadable or clipped', (
 describe('both directions', () => {
   it('renders in Arabic, right to left, with no English fallback', () => {
     const { container } = renderRtl(
-      <AcknowledgementDocument locale="ar" messages={ar} detail={DETAIL} sections={sections()} />
+      <AcknowledgementDocument
+        locale="ar"
+        messages={ar}
+        detail={DETAIL}
+        receivingEmployee={RECEIVING_EMPLOYEE}
+        sections={sections()}
+      />
     );
     expect(document.documentElement.dir).toBe('rtl');
     expect(screen.getByText(AR['receptions.summary.notVerified'] as string)).toBeVisible();

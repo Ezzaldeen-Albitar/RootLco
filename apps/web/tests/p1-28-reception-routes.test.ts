@@ -71,7 +71,21 @@ vi.mock('@/features/receptions/api', () => ({
   listConditionEvidence: (...args: unknown[]) => listConditionEvidence(...args),
 }));
 
+const readReceivingEmployeeIdentity = vi.fn();
+
+vi.mock('@/features/receptions/support-api', () => ({
+  readReceivingEmployeeIdentity: (...args: unknown[]) => readReceivingEmployeeIdentity(...args),
+  // The rest of the module, present because the wizard route's import closure
+  // reaches it through the step registry. None of them is called here.
+  readCustomerSummary: vi.fn(),
+  readVehicleSummary: vi.fn(),
+  listVehicleRelationshipEntries: vi.fn(),
+  listReceivingEmployeeCandidates: vi.fn(),
+  listConfirmedAppointments: vi.fn(),
+}));
+
 const { RECEPTION_PERMISSIONS } = await import('@/features/receptions/receptions-contract');
+const { STAFF_DIRECTORY_PERMISSION } = await import('@/features/receptions/staff-directory');
 const { WORK_ORDER_READ_PERMISSION } = await import('@/features/receptions/work-order-contract');
 const { CRM_PERMISSIONS, VEHICLE_PERMISSIONS } = await import('@/features/crm/permissions');
 
@@ -94,6 +108,9 @@ const ALL = [
   CRM_PERMISSIONS.customerRead,
   VEHICLE_PERMISSIONS.vehicleRead,
   WORK_ORDER_READ_PERMISSION,
+  // The staff directory (`iam.user.read`), which the receiving-employee name
+  // resolves through. Present so a case that removes it removes something.
+  STAFF_DIRECTORY_PERMISSION,
 ];
 
 /** Walks a returned element tree for the first node carrying `marker`. */
@@ -127,10 +144,16 @@ beforeEach(() => {
   listPartyRoles.mockReset();
   listAuthorizations.mockReset();
   listConditionEvidence.mockReset();
+  readReceivingEmployeeIdentity.mockReset();
   readReception.mockResolvedValue({ status: 'ok', data: DETAIL, correlationId: 'cid' });
   listPartyRoles.mockResolvedValue(page);
   listAuthorizations.mockResolvedValue(page);
   listConditionEvidence.mockResolvedValue(page);
+  readReceivingEmployeeIdentity.mockResolvedValue({
+    status: 'ok',
+    data: { id: DETAIL.receivingEmployeeId, displayName: 'Rana Odeh' },
+    correlationId: 'cid-user',
+  });
 });
 
 describe('the queue route', () => {
@@ -208,6 +231,51 @@ describe('the wizard route resolves every write capability', () => {
     expect(new Set(ALL).size).toBe(ALL.length);
   });
 
+  it('resolves the receiving employee to a NAME, and asks about the stored identifier', async () => {
+    /*
+     * `canonical-plan.md` §7: "The UI shows names, never UUIDs." The shell used
+     * to render `detail.receivingEmployeeId` in a `<code>` element, so the
+     * sentence was false in the one place it was about.
+     *
+     * The identifier asked about is the visit's own, not the operator's — a
+     * route that resolved the SIGNED-IN user would render a plausible name for
+     * the wrong person on every visit somebody else received.
+     */
+    PERMISSIONS = [RECEPTION_PERMISSIONS.read, STAFF_DIRECTORY_PERMISSION];
+    const tree = await WizardPage({ params });
+    expect(readReceivingEmployeeIdentity).toHaveBeenCalledWith(DETAIL.receivingEmployeeId);
+    expect(findProps(tree, 'receivingEmployee')?.['receivingEmployee']).toEqual({
+      status: 'named',
+      displayName: 'Rana Odeh',
+    });
+  });
+
+  it('spends no request on the directory it may not read, and says so instead', async () => {
+    // The gate is decided here, before the request, like every other capability
+    // this route resolves: a caller without the code would be spending a request
+    // to be refused, and the screen's answer is the same either way.
+    PERMISSIONS = ALL.filter((p) => p !== STAFF_DIRECTORY_PERMISSION);
+    const tree = await WizardPage({ params });
+    expect(readReceivingEmployeeIdentity).not.toHaveBeenCalled();
+    expect(findProps(tree, 'receivingEmployee')?.['receivingEmployee']).toEqual({
+      status: 'denied',
+    });
+  });
+
+  it('states a dangling identifier as one, rather than passing it down to be printed', async () => {
+    // `receiving_employee_id` carries no foreign key (G-EMP), so a 404 here is a
+    // state the database permits and not a fault.
+    PERMISSIONS = [RECEPTION_PERMISSIONS.read, STAFF_DIRECTORY_PERMISSION];
+    readReceivingEmployeeIdentity.mockResolvedValue({
+      status: 'not-found',
+      correlationId: 'cid-404',
+    });
+    const tree = await WizardPage({ params });
+    expect(findProps(tree, 'receivingEmployee')?.['receivingEmployee']).toEqual({
+      status: 'unresolved',
+    });
+  });
+
   it('closes BOTH terminal exits with one permission, as the backend does', () => {
     // `close-without-work` and `refuse` register the same code. Two capability
     // fields would be a second, drifting copy of one backend rule.
@@ -237,6 +305,36 @@ describe('the acknowledgement route', () => {
     expect(listConditionEvidence).toHaveBeenCalledTimes(1);
     // Active roles only — an ended role is history, not who handed the vehicle over.
     expect(listPartyRoles.mock.calls[0]?.[1]).toBe('active');
+  });
+
+  it('prints the receiving employee by name, and reads nothing when it may not', async () => {
+    /*
+     * The same rule as the wizard, on the document that matters more: this
+     * sheet is the copy a customer signs and takes away, and it used to print
+     * the stored identifier on it.
+     */
+    PERMISSIONS = [RECEPTION_PERMISSIONS.read, STAFF_DIRECTORY_PERMISSION];
+    const granted = await AcknowledgementPage({ params });
+    expect(readReceivingEmployeeIdentity).toHaveBeenCalledWith(DETAIL.receivingEmployeeId);
+    expect(findProps(granted, 'receivingEmployee')?.['receivingEmployee']).toEqual({
+      status: 'named',
+      displayName: 'Rana Odeh',
+    });
+
+    readReceivingEmployeeIdentity.mockClear();
+    PERMISSIONS = [RECEPTION_PERMISSIONS.read];
+    const withoutDirectory = await AcknowledgementPage({ params });
+    expect(readReceivingEmployeeIdentity).not.toHaveBeenCalled();
+    expect(findProps(withoutDirectory, 'receivingEmployee')?.['receivingEmployee']).toEqual({
+      status: 'denied',
+    });
+  });
+
+  it('does not spend the directory read on a visit that does not exist', async () => {
+    PERMISSIONS = [RECEPTION_PERMISSIONS.read, STAFF_DIRECTORY_PERMISSION];
+    readReception.mockResolvedValue({ status: 'not-found', correlationId: 'cid-404' });
+    await AcknowledgementPage({ params });
+    expect(readReceivingEmployeeIdentity).not.toHaveBeenCalled();
   });
 
   it('carries the backend correlation reference on a backend denial', async () => {

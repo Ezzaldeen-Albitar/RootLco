@@ -25,6 +25,7 @@ import {
   EVIDENCE_KINDS,
   FINDING_CATEGORIES,
   FINDING_SEVERITIES,
+  LEAK_TYPES,
   MAX_ASSIGNMENT_SOURCE,
   MAX_CLOSURE_REASON,
   MAX_COMPLAINT_TEXT,
@@ -221,7 +222,11 @@ const evidenceSchema = z.discriminatedUnion('kind', [
   z
     .object({
       kind: z.literal('leak'),
-      leakType: z.string().min(1).max(MAX_MAP_TYPE),
+      // The seven types the database CHECK admits, not a bounded free string.
+      // The field is REQUIRED, so a free string here meant every leak an
+      // operator described in their own words reached the wire and came back
+      // 422; the mirror refuses it first, beside the field that offers them.
+      leakType: z.enum(LEAK_TYPES),
       vehicleZone: z.string().min(1).max(MAX_ZONE),
       severity: z.enum(FINDING_SEVERITIES).optional(),
       note: z.string().min(1).max(MAX_NOTE).nullable().optional(),

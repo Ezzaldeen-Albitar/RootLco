@@ -73,7 +73,7 @@ cannot, that is said instead of guessed.
 
 | #   | what it printed then                   | what it prints now                     | how the current value is held true                                  |
 | --- | -------------------------------------- | -------------------------------------- | ------------------------------------------------------------------- |
-| 2   | `69 file(s) across 3 tree(s)`          | `122 file(s) across 5 tree(s)`         | derived — §3 and §5.1                                               |
+| 2   | `69 file(s) across 3 tree(s)`          | `123 file(s) across 5 tree(s)`         | derived — §3 and §5.1                                               |
 | 4   | `170 file(s) checked`                  | `179 file(s) checked`                  | re-run; the colour count is unchanged at 54                         |
 | 5   | `195 / 0`, `197 / 0`, `170 / 0`        | `204 / 0`, `206 / 0`, `179 / 0`        | re-run; all three still report zero                                 |
 | 6   | `143 registered · 71 required · 71/71` | `159 registered · 81 required · 81/81` | derived — §7.1                                                      |
@@ -224,18 +224,18 @@ every advance of local `develop` in the sequence above was a fast-forward from
 
 ## 5. Source files
 
-### 5.1 The five trees the P1-27 ownership gate owns — 120 files
+### 5.1 The five trees the P1-27 ownership gate owns — 123 files
 
-`validate:p1-27-frontend` reports **122 files across 5 trees, 0 failures**. Of
+`validate:p1-27-frontend` reports **123 files across 5 trees, 0 failures**. Of
 those, **43** are §5.2 and §5.3 together — the two feature trees — and both
 halves are derived from the trees the gate itself names, so the count follows the
 gate rather than a reader's memory of it. The next **34** are the third
 canonical tree, `apps/web/src/app/[locale]/(dashboard)`, which this manifest
 tables nowhere: §5.4 lists the eight CRM and Vehicle route pages only, and the
-other route files belong to earlier phases or to P1-28. The last **43** are the
+other route files belong to earlier phases or to P1-28. The last **44** are the
 two trees P1-28 adopted: **9** in `apps/web/src/features/appointments`, added
 when `P1-28-DO-001` found that the P1-28 plan names three Frontend trees and the
-gate had adopted only one of them, and **34** in
+gate had adopted only one of them, and **35** in
 `apps/web/src/features/receptions`, which is not a P1-27 tree at all either: P1-28
 ADOPTED these rules for it (`ADOPTED_ROOTS` in the gate, declared by
 `phase-1-28/canonical-plan.md` §9), because `no-upload-path` and
@@ -982,7 +982,7 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
 <!-- derived: files tests/backend:all = 91 -->
 <!-- derived: files apps/web/src/features/crm = 20 -->
 <!-- derived: files apps/web/src/features/vehicles = 23 -->
-<!-- derived: files p1-27-frontend-gate = 122 -->
+<!-- derived: files p1-27-frontend-gate = 123 -->
 <!-- derived: files p1-27-frontend-gate:trees = 5 -->
 <!-- derived: tracked docs/phase-1/phase-1-27 = 41 -->
 <!-- derived: tracked docs/phase-1/phase-1-27:md = 31 -->

@@ -23,6 +23,7 @@ import {
  * | `veh.vehicle-read`               | `/vehicles/{vehicleId}`           | `veh.vehicle.read`   |
  * | `veh.vehicle-relationship-list`  | `/vehicles/{vehicleId}/relationships` | `veh.vehicle.read` |
  * | `iam.user-list`                  | `/iam/users`                      | `iam.user.read`      |
+ * | `iam.user-detail`                | `/iam/users/{userId}`             | `iam.user.read`      |
  * | `apt.appointment-list`           | `/appointments`                   | `apt.appointment.read` |
  *
  * Thin copies of adapters that live in `features/crm` and `features/vehicles`,
@@ -40,10 +41,19 @@ import {
  * PLATFORM USERS (`iam.user-list`) as candidates because a user id is the only
  * identity the platform can resolve to a name, and the operator receiving a
  * vehicle is a signed-in user. That is a stand-in, not an employee register:
- * the stored value is a bare identifier the detail read cannot label
- * (`ReceptionDetail.receivingEmployeeId` is documented bare for the same
- * reason), and this module does NOT invent an employee master to hide that.
- * The check-in screen states the disposition beside the control.
+ * the stored value is a bare identifier the RECEPTION read cannot label, and
+ * this module does NOT invent an employee master to hide that. The check-in
+ * screen states the disposition beside the control.
+ *
+ * What the stand-in DOES make possible is the other half, and the two read-back
+ * surfaces used to skip it: the same directory that offered the candidate can be
+ * asked what that identifier names. `readReceivingEmployeeIdentity` below is
+ * that read — `iam.user-detail`, the SAME `iam.user.read` code the picker
+ * already consumes and already discloses on screen, so nothing is widened. It
+ * resolves a user ACCOUNT, never an employee record, and the disposition stays
+ * stated wherever the name is shown. The column carries no foreign key, so an
+ * identifier that names nobody is a state the platform genuinely has and the
+ * caller is told which state it is rather than shown the identifier.
  */
 
 const EMPTY = { rows: [], nextCursor: null, hasMore: false } as const;
@@ -170,6 +180,36 @@ export async function listReceivingEmployeeCandidates(
     hasMore: result.data.hasMore,
     correlationId: result.correlationId,
   };
+}
+
+/**
+ * The one account field the read-back surfaces render. Subset of
+ * `iam.user-detail`.
+ *
+ * `displayName` and nothing else, deliberately: the wizard header and the
+ * customer's acknowledgement sheet need a name, and an email address or an
+ * account status on a handover document would be a disclosure nobody asked for.
+ */
+export interface ReceivingEmployeeIdentity {
+  readonly id: string;
+  readonly displayName: string;
+}
+
+/**
+ * The name behind `receivingEmployeeId` (`iam.user-detail`).
+ *
+ * The `not-found` outcome is the interesting one and it is NOT a fault: the
+ * column has no foreign key (G-EMP), so an identifier naming no account is a
+ * state the database permits. It reaches the caller as `not-found` and the
+ * surfaces say so in words — showing the raw identifier instead would present a
+ * dangling value as if it were a person.
+ */
+export async function readReceivingEmployeeIdentity(
+  userId: string
+): Promise<ReadState<ReceivingEmployeeIdentity>> {
+  return readOperation<ReceivingEmployeeIdentity>(
+    `/api/v1/iam/users/${encodeURIComponent(userId)}`
+  );
 }
 
 /** One appointment the check-in screen can consume. Subset of the calendar row. */

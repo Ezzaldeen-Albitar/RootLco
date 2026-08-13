@@ -6,6 +6,7 @@ import { requiresIdempotencyKey, resolveOperation } from '@/lib/api/operation-co
 import {
   AUTHORIZING_ROLES,
   EVIDENCE_KINDS,
+  LEAK_TYPES,
   MAX_CLOSURE_REASON,
   MAX_COORD,
   MAX_SOC_PERCENT,
@@ -357,6 +358,41 @@ describe('the vocabularies keep the server distinctions', () => {
     expect(refusalRequiresPartner('signature')).toBe(false);
     expect(refusalRequiresPartner('intake_step')).toBe(false);
     expect(refusalRequiresPartner('other')).toBe(false);
+  });
+
+  it('takes the seven leak types from the database CHECK, never from a guess', () => {
+    /*
+     * The one list this module restates for `leak_type`, held against the
+     * constraint it claims to have copied.
+     *
+     * It matters more here than anywhere else on this surface because the field
+     * is REQUIRED: while it was a free-text box, every leak an operator
+     * described in their own words was a guaranteed 422 the screen could not
+     * explain. A member added, removed or misspelled in the constant now fails
+     * the moment it stops matching `ck_leak_observations_type` — which is the
+     * only thing that makes restating a database list safe.
+     */
+    const migration = readFileSync(
+      join(
+        process.cwd(),
+        '..',
+        '..',
+        'supabase',
+        'migrations',
+        '20260721102000_rec_warning_lights_leaks.sql'
+      ),
+      'utf8'
+    );
+    const constraint =
+      /CONSTRAINT\s+ck_leak_observations_type\s+CHECK\s*\(\s*leak_type\s+IN\s*\(([^)]*)\)/.exec(
+        migration
+      );
+    expect(constraint, 'the leak-type CHECK was renamed, moved or reshaped').not.toBeNull();
+    const admitted = [...constraint![1]!.matchAll(/'([^']+)'/g)].map((match) => match[1]);
+    // Anti-vacuity: a regular expression that matched an empty group would
+    // otherwise compare two empty lists and report clean.
+    expect(admitted.length, 'no members were read out of the CHECK').toBe(7);
+    expect([...LEAK_TYPES]).toEqual(admitted);
   });
 
   it('bounds match the routes, not stricter guesses', () => {
