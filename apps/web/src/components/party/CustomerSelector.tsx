@@ -325,7 +325,28 @@ export function CustomerSelector({
         {translate(messages, 'customerSelector.hint')}
       </p>
 
-      <div className="grid gap-3 sm:grid-cols-3">
+      {/*
+        Three columns WHEN THREE COLUMNS FIT, decided by this box and not by the
+        window.
+
+        It was `sm:grid-cols-3`, and `sm:` is a viewport query. This component is
+        mounted in containers of very different widths — full width on the
+        walk-in intake, and half of a two-column panel inside the check-in
+        wizard — so the viewport says nothing useful about how much room these
+        three fields actually have. At 1024x768 the wizard's panel gives this
+        group 311px, the viewport is comfortably past the `sm` breakpoint, and
+        the media query therefore laid three fields out in 95.5px tracks: a name
+        box under ten characters wide, and a type picker whose only option was
+        rendered as "Any typ⌄".
+
+        `auto-fit` + `minmax` asks the same question of the CONTAINER: as many
+        11rem tracks as fit, sharing the remainder. Wide enough for three and it
+        is the old layout exactly — 1104px desktop and the 688px full-width
+        tablet column both still give three. Too narrow and the fields stack at
+        full width instead of shrinking below legibility, which is what should
+        have happened in the wizard all along.
+      */}
+      <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(11rem,1fr))]">
         <TextField
           label={translate(messages, 'crm.customers.column.name')}
           value={draft.name ?? ''}

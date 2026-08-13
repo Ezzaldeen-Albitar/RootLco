@@ -244,7 +244,58 @@ export function DataTable<Row>({
         data-scroll-region="table"
         className="max-h-[70dvh] flex-initial overflow-auto rounded-xl border border-border-subtle bg-surface shadow-xs [min-height:0] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
       >
-        <table className="w-full border-collapse text-table-cell">
+        {/*
+          `min-w-max` is what lets the scroll region above actually scroll.
+
+          The region has always carried `overflow-auto`, a focusable `role
+          ="region"` and a name — the whole apparatus for a table wider than its
+          box. It could never engage. `w-full` alone lets the automatic table
+          algorithm compress columns without limit, so instead of scrolling, the
+          table SHRANK, and a narrow container was paid for in wrapped cells.
+
+          MEASURED at 1024x768, where the sidebar leaves the content column
+          688px wide (`authenticated-tablet`):
+
+            /en/appointments   natural 1084px, laid out 688px — squeezed 396px
+            /en/receptions     natural  824px, laid out 688px — squeezed 136px
+
+          and what that squeeze looked like was every cell breaking mid-token:
+          `ACC-VEH-0001` over three lines, `Walk-in` over two, `13 Aug 2026,
+          17:00` over three, a 55px row grown to 107px. The region reported
+          `scrollWidth === clientWidth` throughout — there was no overflow to
+          scroll, because the table had already absorbed it.
+
+          `min-width: max-content` with `width: 100%` resolves to the larger of
+          the two. A wide container is unchanged — at 1440 the container is
+          1104px against a natural 824px, so `w-full` still wins and no
+          screen that was correct becomes a scrolling one. A container narrower
+          than the columns need now overflows into the region built for it.
+
+          WHAT BOUNDS IT is the `max-w-[18rem]` on every cell below, and that
+          pairing is not decoration — `max-content` alone is UNBOUNDED. This
+          comment said in an earlier draft that no screen renders prose in a
+          cell, which was simply false: `RolesScreen` has a `description`
+          column. Uncapped, its max-content ran to 956px and took the whole
+          table to 1546px, so `min-w-max` on its own would have made a table
+          that already had to scroll at 1024 scroll at 1440 as well — a defect
+          introduced at desktop while fixing one at tablet.
+
+          MEASURED, with and without the cell cap, on the same page:
+
+                            uncapped        capped
+            roles @1440     1546 (scrolls)  1104 (fits the container exactly)
+            roles @1024     1546            878
+            audit-log @1440 1354            1266
+            both P1-28 tables               unchanged at both widths
+
+          So the cap does nothing where nothing is wrong — the two tables this
+          phase ships are byte-identical before and after — and it is the reason
+          a prose column wraps inside 18rem instead of setting the width of the
+          whole table. It is a MAXIMUM, not a width: at 1440 `w-full` still
+          forces the roles description column out to 370px, because `width:100%`
+          on the table outranks a cell's maximum. That is the intended order.
+        */}
+        <table className="w-full min-w-max border-collapse text-table-cell">
           {caption ? <caption className="sr-only">{caption}</caption> : null}
           <thead className="sticky top-0 z-sticky border-b border-table-border bg-table-header">
             <tr>
@@ -286,12 +337,14 @@ export function DataTable<Row>({
                   {visibleColumns.map((column) => (
                     <td
                       key={column.id}
-                      className={`px-3 ${column.numeric ? 'text-end tabular-nums' : 'text-start'}`}
+                      className={`max-w-[18rem] px-3 ${column.numeric ? 'text-end tabular-nums' : 'text-start'}`}
                     >
                       {column.cell(row)}
                     </td>
                   ))}
-                  {rowActions ? <td className="px-3 text-end">{rowActions(row)}</td> : null}
+                  {rowActions ? (
+                    <td className="max-w-[18rem] px-3 text-end">{rowActions(row)}</td>
+                  ) : null}
                 </tr>
               ))
             )}
@@ -357,7 +410,7 @@ function HeaderCell<Row>({
     return (
       <th
         scope="col"
-        className={`px-3 py-2 text-table-header font-semibold uppercase tracking-wide text-table-header-text ${
+        className={`max-w-[18rem] px-3 py-2 text-table-header font-semibold uppercase tracking-wide text-table-header-text ${
           column.numeric ? 'text-end' : 'text-start'
         }`}
       >
@@ -373,7 +426,7 @@ function HeaderCell<Row>({
       // sort. An arrow glyph alone conveys it to sighted users only, and a
       // `title` is not announced at all.
       aria-sort={sorted === 'asc' ? 'ascending' : sorted === 'desc' ? 'descending' : 'none'}
-      className={`px-3 py-2 text-table-header font-semibold uppercase tracking-wide text-table-header-text ${
+      className={`max-w-[18rem] px-3 py-2 text-table-header font-semibold uppercase tracking-wide text-table-header-text ${
         column.numeric ? 'text-end' : 'text-start'
       }`}
     >

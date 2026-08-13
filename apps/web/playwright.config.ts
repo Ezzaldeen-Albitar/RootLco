@@ -222,8 +222,37 @@ export default defineConfig({
             },
           },
           {
+            /**
+             * The tablet viewport, and the specs whose tablet behaviour has been
+             * ASKED FOR.
+             *
+             * `canonical-plan.md` §10 obliges every Frontend task to work on
+             * desktop AND tablet, and for P1-28 nothing held that obligation: the
+             * match below named `administration.spec.ts` alone, so the entire
+             * appointment and reception surface — the phase's whole deliverable —
+             * was seen at 1440x900 and at no other width. A change-log sentence
+             * claiming this tier ran P1-28 in three projects was false and has
+             * been corrected; the coverage it described is what this line adds.
+             *
+             * WIDENED RATHER THAN SPLIT INTO A SECOND PROJECT, deliberately. A
+             * project in this file is a VIEWPORT-AND-LOCALE identity, not a
+             * phase: `desktop-en`, `laptop-en` and `tablet-ar` above are each one
+             * pairing running whatever is in scope for it. A second tablet
+             * project would carry an identical `viewport` and `locale`, so it
+             * would be the same identity under a second name — and every consumer
+             * that enumerates projects would have to learn it: `test:e2e:
+             * authenticated` in package.json, the workflow that calls it, and the
+             * counts quoted in `.github/ci-baselines/unrun-test-tiers.json`. One
+             * identity, one list of what it covers.
+             *
+             * NOT `.*\.spec\.ts`. That would put five further specs on a third
+             * viewport whose tablet behaviour nobody has asked for, roughly
+             * tripling this project's runtime to assert nothing anyone requested.
+             * The rule for adding a name here is the same rule that put P1-28
+             * here: a document obliges the surface to work at tablet width.
+             */
             name: 'authenticated-tablet',
-            testMatch: /authenticated[\\/]administration\.spec\.ts/,
+            testMatch: /authenticated[\\/](administration|appointments-and-receptions)\.spec\.ts/,
             dependencies: ['auth-setup'],
             use: {
               ...devices['Desktop Chrome'],
