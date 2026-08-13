@@ -92,9 +92,19 @@ halves left open — WHO administers the catalogues, and THROUGH WHICH SURFACE �
 and the twenty-one writes are classified `DELIBERATELY_ABSENT` against it rather
 than parked as not-yet-wired, which the SEC-004 ratchet would have refused
 anyway. The consequence is stated where an operator meets it: until a catalogue
-is populated no appointment can be booked and none can be cancelled, which is
-why `FE-002` and `FE-004` are PARTIAL against a decision rather than against any
-Frontend defect.
+is populated no appointment can be booked and none can be cancelled.
+
+That sentence used to end "which is why `FE-002` and `FE-004` are PARTIAL against
+a decision rather than against any Frontend defect", and **that is no longer what
+the register says**: both rows are **PASS**. The reason is recorded at
+`canonical-plan.md` §7 — a task is graded against the capability it canonically
+owns, and both screens are now proved on both sides of this decision in one
+browser run: they book and cancel against a workspace configured through these
+very management contracts, and they state the blocked truth to a workspace that
+is not configured. What they cannot do is CONFIGURE a tenant, and that is the
+surface this decision withholds, which no canonical P1-28 task binds. The
+verdicts file is the authority; this sentence is corrected to agree with it
+rather than left to contradict it in front of the Owner.
 
 The half nobody had noticed until this wave: **the record went stale again in
 the same week it was corrected.** Three rows of the archaeology, one row of the
@@ -175,7 +185,46 @@ classification cannot be entered without a reviewer seeing the number move.
   client-asserted-scope rule.
 - `P1-28-QA-001`…`-004` ride them too: the contract-mirror suites, the error and
   replay-shape coverage, tenant isolation, and the `recordVersion` sourcing
-  discipline. `P1-28-QA-005` is end-of-phase.
+  discipline.
+
+- `P1-28-QA-005` — the freeze, and the two things a digest cannot check. The
+  phase's last task packages a regression result against ONE named commit and
+  seals it: `docs/phase-1/phase-1-28/evidence/closure-evidence.md` for a reader,
+  `evidence/closure-candidate.json` for a machine, and
+  `evidence/evidence-manifest.json` digesting every file in the phase directory
+  over its BYTES. All five tiers were re-run against that candidate — 9161
+  automated cases, 0 failures — and each figure carries the head it was taken at
+  and the artefact it came from, because P1-27 shipped a closing page pinning a
+  head 47 commits behind the tree it described and it went on reading like
+  evidence.
+
+  The seal is mostly its P1-27 sibling. **Two rules are not, because a digest
+  cannot check either.** The first refuses a candidate the two halves of the
+  package disagree about: a half-update that re-freezes the JSON and leaves the
+  prose naming the old commit produces two documents that both read like
+  evidence, one of them describing a tree nobody measured. The second is the one
+  written for the Owner — the unclosed-task set is **DERIVED from
+  `task-matrix-verdicts.json` on every run**, never listed, so a row that quietly
+  stops being mentioned fails the gate instead of reading like a row that closed.
+  Flip a fourth task to PARTIAL and the gate stays red until both halves of the
+  package name it, with a blocker and an owner.
+
+  And it is proved able to fail rather than asserted to be: five rules fire in
+  one function, the gate drives that function over sixteen known-bad inputs on
+  every invocation before it reads the tree, and
+  `tests/ci/p1-28-evidence-manifest.test.ts` shows a single edited byte in a
+  packaged document turning the check red — using an oracle that never calls
+  `digest()`, because verifying a hash with the function that produced it is
+  `f(x) === f(x)`.
+
+  Packaging also found two of its own documents stale, and both are corrected
+  above rather than quietly refreshed: the tablet-coverage paragraph, and the
+  claim that `FE-002`/`FE-004` are PARTIAL.
+
+  **It closes nothing.** The package says so in its own first paragraph: the
+  phase is OPEN, `OWNER ACCEPTANCE` has not been asked for, and silence is never
+  Pass.
+
 - `P1-28-DO-001` — the two P1-28 gates are now named by hosted jobs directly
   rather than reached only through the clean-room aggregate, and the trace ends
   at the required-check list rather than at "a workflow mentions it":
@@ -215,11 +264,20 @@ could reach the second screen.
 
 The tier now runs the P1-28 surface in the `authenticated-en` and
 `authenticated-ar` projects against the running application, the running API and
-the real database under RLS. It does **not** run at a tablet viewport:
-`authenticated-tablet` matches `administration.spec.ts` only
-(`apps/web/playwright.config.ts:225-233`), so no P1-28 screen is observed at
-1024×768 and the task matrix names that gap on every row rather than implying
-coverage.
+the real database under RLS.
+
+**This entry used to end by saying the tier does not run at a tablet viewport,
+citing an `authenticated-tablet` project that matched `administration.spec.ts`
+alone. That was true when it was written and stopped being true four commits
+later**, when the tablet merge widened the match; the sentence is corrected
+rather than left standing, because a documented gap that has closed is a reader
+being told to expect less evidence than exists. `apps/web/playwright.config.ts:255`
+now matches this phase's spec as well, at 1024×768, and the hosted run bound to
+the closing candidate executed **47 P1-28 cases in that project** — the same 47
+it ran in each of the two desktop projects. The P1-28 surface is observed at two
+viewports and two locales. The numbers are recorded once, in
+`docs/phase-1/phase-1-28/evidence/closure-evidence.md`, and are not restated
+here.
 
 **It seeds no business row to manufacture a green path.** The Owner-acceptance
 workspace holds no customers, no vehicles, no appointment types and no visits, so

@@ -160,12 +160,13 @@ describe('every P1-28 gate is registered as a gate, not as a report', () => {
      * point of deriving is that the number is allowed to grow without anybody
      * remembering to edit this file.
      *
-     * The floor is four because four `validate:p1-28-*` commands are registered
+     * The floor is five because five `validate:p1-28-*` commands are registered
      * `required` today — two of which this file could not see while the set was
-     * hand-written.
+     * hand-written, and one (`validate:p1-28-evidence`, QA-005's seal) added by
+     * the phase's last task.
      */
     expect(P1_28_GATES.length, 'the P1-28 gate derivation returned nothing').toBeGreaterThanOrEqual(
-      4
+      5
     );
     expect(P1_28_GATES).toContain('validate:p1-28-access');
     expect(P1_28_GATES).toContain('validate:p1-28-version-sourcing');
@@ -224,6 +225,10 @@ describe('a hosted job names each gate DIRECTLY, not only through an aggregate',
       // register, so it belongs beside the matrix in the fast static job rather
       // than in the web one.
       'validate:p1-28-traceability': 'static-quality',
+      // `QA-005`'s seal reads documents, the verdicts file and the phase tree —
+      // no browser, no database — so it belongs beside the matrix in the fast
+      // static job rather than in the web one.
+      'validate:p1-28-evidence': 'static-quality',
       'validate:p1-28-write-reachability': 'web-quality',
       'validate:p1-28-access': 'web-quality',
       'validate:p1-28-version-sourcing': 'web-quality',

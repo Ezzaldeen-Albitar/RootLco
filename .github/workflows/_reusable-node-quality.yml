@@ -279,6 +279,18 @@ jobs:
           # gives: a gate a developer meets forty minutes late is a gate they
           # meet after the next commit.
           npm run validate:p1-28-traceability
+          # P1-28-QA-005. The closing seal: every file in the phase directory
+          # digested over its BYTES, the candidate bound in both halves of the
+          # closing package, and the unclosed-task set DERIVED from the verdicts
+          # file rather than listed — so a task that quietly stops being named in
+          # the package fails here instead of reading like a task that closed.
+          # Named directly, beside its two siblings. `validate:p1-27-evidence`
+          # reaches hosted CI only through `verify:policies` -> `verify:workspaces`
+          # in the clean room, which is the slowest job in the pull request; a
+          # gate a developer meets forty minutes late is a gate they meet after
+          # the next commit. It still rides that path too — this is an additional
+          # naming, not a replacement.
+          npm run validate:p1-28-evidence
 
       # =======================================================================
       # Changed-file ownership — P1-27-DO-003.

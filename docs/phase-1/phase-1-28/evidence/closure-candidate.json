@@ -1,0 +1,290 @@
+{
+  "task": "P1-28-QA-005 — the frozen closing candidate",
+  "what": "The machine-readable half of the P1-28 closing package. It names ONE commit as the phase's code candidate and records every measurement taken against it, with the provenance of each. docs/phase-1/phase-1-28/evidence/closure-evidence.md is the prose half and must state the same candidate; scripts/ci/build-p1-28-evidence-manifest.mjs refuses a disagreement between the two.",
+  "why": "P1-27 shipped a closing page that pinned a head 47 commits behind the tree it described, and it went on reading like evidence because nothing compared the claim with the repository. A closing value that names no head is not a measurement of anything. Every figure below therefore carries the head it was taken at and the artefact it came from.",
+  "howToCheck": "npm run validate:p1-28-evidence",
+  "whatThisIsNot": "This is not a tamper-proof seal and not a hosted observation. The digests in evidence-manifest.json remove SILENT revision, not revision. The hosted figures were collected from the GitHub API by a reader of the run; this file records them with their run, job and artefact ids so a later reader can fetch the same objects and disagree.",
+
+  "candidate": {
+    "FINAL_CODE_SHA": "38afa5c28e5b78d484a442cf6b8596fb2a5c34aa",
+    "FINAL_CODE_TREE": "bbae6c90dd51059be7ea949e0b5bca36cf17402d",
+    "branch": "feature/p1-28-appointment-vehicle-reception-frontend",
+    "pullRequest": 226,
+    "baseBranch": "develop",
+    "commitsAheadOfDevelop": 96,
+    "subject": "merge: browser-tier determinism — the tier was rate-limited by the product's own limiter",
+    "whatFreezingMeans": "Every figure in this package describes THIS commit. Commits that land after it are docs-and-machinery successors and are listed in `successors` below; each is required to leave apps/** and supabase/** byte-identical, so the product these measurements describe is the product at the candidate. A successor that changes either tree invalidates this package and the candidate must be re-frozen and re-measured.",
+    "productIdentityCheck": "git diff --name-only 38afa5c28e5b78d484a442cf6b8596fb2a5c34aa..HEAD -- apps supabase",
+    "productIdentityExpectation": "empty output — no product file differs between the candidate and any successor",
+    "vocabularyNote": "`FINAL_CODE_SHA` and `FINAL_CODE_TREE` are the names this package was commissioned under and are used here so the commissioning brief and this record cannot drift apart. They are NOT the P1-27 spelling: that phase says `CODE_CANDIDATE_SHA` for the same idea, and no file in this repository used `FINAL_CODE_*` before this one. The mapping is recorded below rather than left for a reader to guess, because two names for one commit is exactly how a superseded head gets quoted as a current one.",
+    "vocabularyMapping": {
+      "FINAL_CODE_SHA": "P1-27 calls this CODE_CANDIDATE_SHA — the newest commit touching any non-document path.",
+      "FINAL_CODE_TREE": "The tree object of that commit. P1-27 records no equivalent field; it is added here because a tree id is what makes two checkouts comparable without trusting a commit message.",
+      "EVIDENCE_RECORD_SHA": "P1-27's name for the commit carrying the evidence file — here, each entry in `successors`.",
+      "EXECUTABLE_DIFF_COUNT": "P1-27's derivation `git diff --name-only CODE_CANDIDATE_SHA..EVIDENCE_RECORD_SHA` excluding docs/ and *.md. DOCUMENTATION_ONLY_RECORDING may be claimed only when it is exactly zero. This package does NOT claim DOCUMENTATION_ONLY_RECORDING for its first successor, and says so in `successors[0]`: that commit adds executable evidence machinery. It claims the narrower and checkable thing instead — that apps/** and supabase/** are byte-identical, so the PRODUCT measured is the product at the candidate."
+    }
+  },
+
+  "successors": [
+    {
+      "kind": "evidence machinery and package",
+      "what": "P1-28-QA-005 itself: the evidence manifest generator and its gate, the gate's test, the command-register entries, the hosted-job wiring, and the two documents of this package. It adds no file under apps/** or supabase/** and changes none, so the measured product is the candidate's.",
+      "why": "The packaging of a candidate cannot be inside the candidate it packages; a manifest that digested itself would have no fixed point, and a package written before the run it reports could not name the run."
+    },
+    {
+      "kind": "docs-only re-record",
+      "what": "The P1-27 local run ledger re-recorded at the packaging commit, the closing values reconciled, and the P1-27 evidence package resealed.",
+      "why": "check-p1-27-closing-values.mjs expires a local run record when any executable path changes since it was taken. The machinery commit above is such a change, so the record is re-taken rather than left to describe a head it no longer describes."
+    }
+  ],
+
+  "tiers": {
+    "unit": {
+      "label": "root unit and foundation",
+      "tests": 2475,
+      "passed": 2475,
+      "failed": 0,
+      "skipped": 0,
+      "files": 97,
+      "suites": 549,
+      "measuredAtCommit": "cae8bdb0dee6352f6182105b36d1dd3b1d7bf896",
+      "provenance": "LOCAL_AND_HOSTED_AGREE",
+      "hostedArtefact": "evidence-unit-coverage / test-totals-unit.json (job 94614563908)",
+      "note": "The local record in docs/phase-1/phase-1-27/evidence/local-run-ledger.json was taken at cae8bdb0, which is an ancestor of the candidate. Only two P1-27 evidence documents differ between the two commits and no executable path does, so the local measurement describes the candidate exactly. Verify with `git diff --name-only cae8bdb0..38afa5c2`."
+    },
+    "web": {
+      "label": "web component and DOM",
+      "tests": 2669,
+      "passed": 2669,
+      "failed": 0,
+      "skipped": 0,
+      "files": 98,
+      "suites": 651,
+      "measuredAtCommit": "cae8bdb0dee6352f6182105b36d1dd3b1d7bf896",
+      "provenance": "LOCAL_AND_HOSTED_AGREE",
+      "hostedArtefact": "evidence-web-quality / test-totals-web.json (job 94614564128); independently re-run in the clean room as clean-room-web-totals.json (job 94614564119), which reports the same 2669/2669/0 over the same 98 files",
+      "note": "Same ancestor reasoning as the unit tier."
+    },
+    "backend": {
+      "label": "backend integration, against a real PostgreSQL",
+      "tests": 2004,
+      "passed": 2004,
+      "failed": 0,
+      "skipped": 0,
+      "files": 86,
+      "suites": 566,
+      "measuredAtCommit": "38afa5c28e5b78d484a442cf6b8596fb2a5c34aa",
+      "provenance": "HOSTED_ARTEFACT_ATTESTED",
+      "hostedArtefact": "evidence-integration-tests / test-totals-backend.json (job 94614564122)",
+      "note": "NOT measured locally, and the package does not pretend otherwise: this tier needs a running PostgreSQL with every migration applied, which this workstation does not host. It is measured hosted, at the candidate SHA, and that is the only measurement claimed."
+    },
+    "database": {
+      "label": "database and RLS",
+      "tests": 1647,
+      "passed": 1647,
+      "failed": 0,
+      "skipped": 0,
+      "files": 139,
+      "suites": 552,
+      "measuredAtCommit": "38afa5c28e5b78d484a442cf6b8596fb2a5c34aa",
+      "provenance": "HOSTED_ARTEFACT_ATTESTED",
+      "hostedArtefact": "evidence-security-matrix / test-totals-database.json (job 94614564002)",
+      "note": "NOT measured locally, for the same reason as the backend tier."
+    },
+    "browser": {
+      "label": "authenticated browser, against the running application, the running API and the real database under RLS",
+      "planned": 370,
+      "passed": 366,
+      "failed": 0,
+      "skipped": 4,
+      "flaky": 0,
+      "measuredAtCommit": "38afa5c28e5b78d484a442cf6b8596fb2a5c34aa",
+      "provenance": "HOSTED_ARTEFACT_ATTESTED",
+      "hostedArtefact": "evidence-authenticated-browser / apps/web/playwright-report.json (run 31750364479, job 94614564003)",
+      "note": "The four skips are two cases each in authenticated/accessibility.spec.ts under authenticated-en and authenticated-ar. NO P1-28 case is skipped."
+    }
+  },
+
+  "browserByProject": {
+    "spec": "authenticated/appointments-and-receptions.spec.ts",
+    "runId": 31750364479,
+    "jobId": 94614564003,
+    "headSha": "38afa5c28e5b78d484a442cf6b8596fb2a5c34aa",
+    "jobConclusion": "success",
+    "total": 141,
+    "projects": {
+      "authenticated-en": { "planned": 47, "passed": 47, "failed": 0, "skipped": 0 },
+      "authenticated-ar": { "planned": 47, "passed": 47, "failed": 0, "skipped": 0 },
+      "authenticated-tablet": { "planned": 47, "passed": 47, "failed": 0, "skipped": 0 }
+    },
+    "howTaken": "Read per test entry out of the run's own playwright-report.json, grouped by `projectName` and the owning spec file. NOT inferred from a keyword count and not copied from a local run.",
+    "note": "The tablet project observes this phase at 1024x768 (apps/web/playwright.config.ts:254-260). Its testMatch at :255 names `(administration|appointments-and-receptions)`, so the P1-28 surface is seen at two viewports and two locales. Documents written before the tablet merge (88af8acd / 4c6ccfe7) said this tier ran no P1-28 screen at a tablet viewport; that was true when written and is false at this candidate."
+  },
+
+  "hostedCi": {
+    "runId": 31750364479,
+    "workflow": "PR CI",
+    "workflowPath": ".github/workflows/pr-ci.yml",
+    "event": "pull_request",
+    "runAttempt": 1,
+    "headSha": "38afa5c28e5b78d484a442cf6b8596fb2a5c34aa",
+    "checksTotal": 21,
+    "checksSuccess": 21,
+    "checksFailure": 0,
+    "requiredCheck": "ci-gate",
+    "howTaken": "GET /repos/{owner}/{repo}/commits/38afa5c28e5b78d484a442cf6b8596fb2a5c34aa/check-runs — the per-commit endpoint, because /actions/runs does not list every check.",
+    "checks": [
+      { "name": "ci-gate", "id": 94617578352, "conclusion": "success" },
+      { "name": "CodeQL", "id": 94614731700, "conclusion": "success" },
+      {
+        "name": "code-security / code-security (actions)",
+        "id": 94614564183,
+        "conclusion": "success"
+      },
+      { "name": "Web quality / web-quality", "id": 94614564128, "conclusion": "success" },
+      {
+        "name": "integration-tests / integration-tests",
+        "id": 94614564122,
+        "conclusion": "success"
+      },
+      {
+        "name": "hosted-clean-room / hosted-clean-room",
+        "id": 94614564119,
+        "conclusion": "success"
+      },
+      {
+        "name": "code-security / code-security (javascript-typescript)",
+        "id": 94614564116,
+        "conclusion": "success"
+      },
+      { "name": "secret-scan / secret-scan", "id": 94614564097, "conclusion": "success" },
+      {
+        "name": "container-security / container-security",
+        "id": 94614564067,
+        "conclusion": "success"
+      },
+      {
+        "name": "dependency-security / dependency-security",
+        "id": 94614564057,
+        "conclusion": "success"
+      },
+      { "name": "static-quality / static-quality", "id": 94614564036, "conclusion": "success" },
+      {
+        "name": "authenticated-browser / authenticated-browser",
+        "id": 94614564003,
+        "conclusion": "success"
+      },
+      { "name": "database-security / security-matrix", "id": 94614564002, "conclusion": "success" },
+      {
+        "name": "database-migration-replay / migration-replay",
+        "id": 94614563937,
+        "conclusion": "success"
+      },
+      { "name": "unit-tests-coverage / unit-coverage", "id": 94614563908, "conclusion": "success" },
+      { "name": "application-build / build", "id": 94614563886, "conclusion": "success" },
+      { "name": "change-detection", "id": 94614500823, "conclusion": "success" },
+      { "name": "Lint, types, tests, build", "id": 94614499574, "conclusion": "success" },
+      { "name": "Secret and sensitive-file scan", "id": 94614499549, "conclusion": "success" },
+      { "name": "Database migrations and RLS tests", "id": 94614499541, "conclusion": "success" },
+      { "name": "Docker build validation", "id": 94614499502, "conclusion": "success" }
+    ]
+  },
+
+  "codeql": {
+    "headSha": "38afa5c28e5b78d484a442cf6b8596fb2a5c34aa",
+    "ref": "refs/pull/226/head",
+    "analyses": [
+      { "id": 1616577501, "language": "javascript-typescript", "rules": 201, "results": 0 },
+      { "id": 1616569830, "language": "actions", "rules": 27, "results": 0 }
+    ],
+    "openAlertsRepositoryWide": 0,
+    "whatThisDoesNotProve": "A CodeQL run on a pull request is DIFF-INFORMED. Two analyses at this head each returned 0 results and the repository carries 0 open alerts on any analysed ref, but a pull-request analysis does not by itself establish the repository ceiling; only a run on a protected ref does. This is recorded as the pull-request result it is."
+  },
+
+  "dependencySecurity": {
+    "jobId": 94614564057,
+    "productionVulnerabilities": 0,
+    "developmentVulnerabilities": 0,
+    "criticalHighModerateLow": 0,
+    "dependenciesResolved": 830,
+    "policyOk": true,
+    "prohibitedLicences": 0
+  },
+
+  "productionBuild": {
+    "jobId": 94614563886,
+    "ok": true,
+    "routesInManifest": 239,
+    "routeFilesOnDisk": 237,
+    "filesEmitted": 6249,
+    "standaloneBytes": 37476308,
+    "growthRatioAgainstBaseline": 1.0905
+  },
+
+  "database": {
+    "migrationsApplied": 120,
+    "tables": 242,
+    "policies": 631,
+    "rlsMatrixCells": 1356,
+    "securityDefinerFunctions": 0,
+    "replayJobId": 94614563937,
+    "cleanRoomJobId": 94614564119,
+    "note": "database-migration-replay applies all 120 migrations to an empty database and records the resulting schema hash; hosted-clean-room re-applies them at the exact SHA and re-derives the same 1356-cell RLS matrix independently."
+  },
+
+  "taskMatrix": {
+    "source": "docs/phase-1/phase-1-28/task-matrix-verdicts.json",
+    "generator": "npm run matrix:p1-28",
+    "gate": "npm run validate:p1-28-matrix",
+    "taskCount": 35,
+    "pass": 32,
+    "partial": 3,
+    "fail": 0
+  },
+
+  "blockedTasks": {
+    "FE-007": {
+      "verdict": "PARTIAL",
+      "blocker": "G-EMP / R6 — Owner register question A",
+      "owner": "the Product Owner, with the contract half owned by P1-18",
+      "whatIsStillOpen": "The receiving-employee REFERENT. The wizard writes receiving_employee_id on every check-in while the column has no foreign key and no defined meaning. The UUID-on-screen defect this row used to carry is FIXED — both read-back surfaces resolve the name through iam.user-detail and never print the identifier — so what remains is an Owner question about what the column means, not a Frontend defect.",
+      "notThisPhaseToClose": true
+    },
+    "FE-012": {
+      "verdict": "PARTIAL",
+      "blocker": "P1-OD-025 — document and media file policy, with G-MEDIA / R8 behind it",
+      "owner": "the Product Owner (the decision) and P1-15 / P1-18 (the contract half)",
+      "whatIsStillOpen": "The damage-map half. damage_map requires a registered documentId AND the exact documentVersionId, and neither value can exist while the document-category table is empty, no storage provider is configured and no version can be accepted. The mark write itself is delivered and proved — exact coordinates, unrounded, keyboard-placeable, clamped at the contract bounds.",
+      "notThisPhaseToClose": true
+    },
+    "FE-018": {
+      "verdict": "PARTIAL",
+      "blocker": "P1-OD-025 — document and media file policy; and the unowned signature read-back gap",
+      "owner": "the Product Owner (P1-OD-025); P1-18, unassigned (the read-back gap)",
+      "whatIsStillOpen": "rec.reception-signature is called ZERO times by the product. The write needs a registered document and its exact version and nothing in this product registers a document. What ships states what a signature would attribute and records nothing, with the absence of a submit control asserted so it cannot creep back.",
+      "notThisPhaseToClose": true
+    }
+  },
+
+  "openDecisionsThisPackageDoesNotPreEmpt": {
+    "P1-28-OD-001": {
+      "title": "who administers the intake catalogues, and through which surface",
+      "state": "OPEN",
+      "raisedBy": "P1-28",
+      "recordedAt": "docs/phase-1/phase-1-28/canonical-plan.md §7",
+      "owner": "the Product Owner",
+      "whatMustBeDecided": "(a) WHO administers the intake catalogues — a tenant administrator, a head-office role, or the platform operator; and (b) THROUGH WHICH SURFACE — a screen inside this product, a separate administration application, or provisioning performed outside the product altogether.",
+      "consequenceToday": "Seven intake catalogues ship zero rows and no screen in this product can add one. Two of those tables sit on a REQUIRED foreign key of an operator path — appointmentTypeId on apt.appointment-create and cancellationReasonId on apt.appointment-cancel — so until a catalogue is populated no appointment can be booked and none can be cancelled.",
+      "whatShipped": "The API capability and nothing in apps/web. PR #227 registered 21 catalogue-management writes behind apt.catalogue.manage / rec.catalogue.manage; no seed grants either code to any role, so the capability is held by nobody. All 21 are recorded DELIBERATELY_ABSENT against this decision in docs/phase-1/phase-1-28/write-reachability.json, and check-p1-28-write-reachability.mjs resolves that reference against the §7 headings, so the classification cannot be entered with a fabricated decision id.",
+      "identifierCaveat": "P1-28-OD-001 is an id in this phase's own namespace, following the P1-26-OD-### and P1-27-OD-### precedent. It is NOT a P1-OD-### allocation. If the Owner records this decision, the number the Owner assigns supersedes it."
+    }
+  },
+
+  "ownerAcceptance": {
+    "state": "NOT REQUESTED, NOT RETURNED",
+    "rule": "The permanent Frontend closure rule from P1-26 onward: no Frontend phase closes without the Product Owner testing the running application in real installed Chrome and returning `OWNER ACCEPTANCE: PASS` verbatim. Silence is never Pass. Automated CI is necessary and is not sufficient.",
+    "owner": "the Product Owner",
+    "howToRun": "npm run acceptance:serve — a production build, never dev:all. A dev stack compiles route bundles lazily and the API authenticator is installed as a side effect of composing the IAM module, so an acceptance session on a dev stack reports product defects that do not exist.",
+    "note": "This package is the technical evidence an acceptance session rests on. It is NOT a closure record and does not close the phase."
+  }
+}

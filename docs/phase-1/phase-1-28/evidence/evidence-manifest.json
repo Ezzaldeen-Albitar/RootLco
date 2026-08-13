@@ -1,0 +1,106 @@
+{
+  "task": "P1-28-QA-005",
+  "what": "SHA-256 digests of every evidence document in the P1-28 phase directory, bound to the phase closing candidate.",
+  "howToRegenerate": "npm run evidence:p1-28",
+  "whatThisProves": "An evidence document cannot be edited without this file changing in the same diff. Digests are over file BYTES, so an encoding change counts as a change.",
+  "whatThisDoesNotProve": "This is not a tamper-proof seal. Anyone able to edit a document is able to re-run the generator and commit both. It removes SILENT revision, not revision.",
+  "selfExclusion": "This manifest is the only path excluded from its own digest set, because a file containing its own hash has no fixed point. tests/ci/p1-28-evidence-manifest.test.ts asserts the exclusion is exactly this one path.",
+  "candidate": {
+    "FINAL_CODE_SHA": "38afa5c28e5b78d484a442cf6b8596fb2a5c34aa",
+    "FINAL_CODE_TREE": "bbae6c90dd51059be7ea949e0b5bca36cf17402d",
+    "pullRequest": 226,
+    "recordedIn": "docs/phase-1/phase-1-28/evidence/closure-candidate.json",
+    "restatedIn": "docs/phase-1/phase-1-28/evidence/closure-evidence.md"
+  },
+  "tierTotals": {
+    "unit": {
+      "passed": 2475,
+      "failed": 0,
+      "skipped": 0,
+      "provenance": "LOCAL_AND_HOSTED_AGREE"
+    },
+    "web": {
+      "passed": 2669,
+      "failed": 0,
+      "skipped": 0,
+      "provenance": "LOCAL_AND_HOSTED_AGREE"
+    },
+    "backend": {
+      "passed": 2004,
+      "failed": 0,
+      "skipped": 0,
+      "provenance": "HOSTED_ARTEFACT_ATTESTED"
+    },
+    "database": {
+      "passed": 1647,
+      "failed": 0,
+      "skipped": 0,
+      "provenance": "HOSTED_ARTEFACT_ATTESTED"
+    },
+    "browser": {
+      "passed": 366,
+      "failed": 0,
+      "skipped": 4,
+      "provenance": "HOSTED_ARTEFACT_ATTESTED"
+    }
+  },
+  "fileCount": 14,
+  "files": {
+    "docs/phase-1/phase-1-28/canonical-plan.md": {
+      "sha256": "6bd5967701e1ac20c2a95ca3fea8d9bbc838922044d8bd667b8179f0e872b3b9",
+      "bytes": 32320
+    },
+    "docs/phase-1/phase-1-28/composed-permissions.json": {
+      "sha256": "5d0cf3a5567d9c9023fac7ae02a0906565759f249d45415db5c33cfdc00bb336",
+      "bytes": 2816
+    },
+    "docs/phase-1/phase-1-28/contract-archaeology.md": {
+      "sha256": "faa2673c449b376efdd9fad7f8694552f9f5f83da0387fe97d1a62a33c2d3688",
+      "bytes": 72028
+    },
+    "docs/phase-1/phase-1-28/developer-guide.md": {
+      "sha256": "36271c9455913a58a9bba5738aa7d910c57bc0ba683382d26a6adb909c5618eb",
+      "bytes": 11079
+    },
+    "docs/phase-1/phase-1-28/evidence/change-log.md": {
+      "sha256": "429dc757ef85c8b75d759fedd20e5ffd60fdf21cf10ca21cd56ecd703006ceda",
+      "bytes": 29364
+    },
+    "docs/phase-1/phase-1-28/evidence/closure-candidate.json": {
+      "sha256": "09850a7640b4724c0f7d16b5b554e2606cb7eefffc06c76e44160765715631ed",
+      "bytes": 18539
+    },
+    "docs/phase-1/phase-1-28/evidence/closure-evidence.md": {
+      "sha256": "1a7f60a551074ba29be3172839f249054a160ec6f66c63a970252260187f88ac",
+      "bytes": 24118
+    },
+    "docs/phase-1/phase-1-28/evidence/traceability.json": {
+      "sha256": "856f6c41cb7ac6e821f8bb94ae283062e557d590fdfd468159d01a7d5f5b1b33",
+      "bytes": 27544
+    },
+    "docs/phase-1/phase-1-28/evidence/traceability.md": {
+      "sha256": "61d855f3e89138c54b0cf032a369c017ef85d51aea8fc2a9913eb1914433c217",
+      "bytes": 6626
+    },
+    "docs/phase-1/phase-1-28/media-capture-decision-record.md": {
+      "sha256": "30c2e9ffbaccc0d78be3c2c8bc5930a10b713fd4ab60677d2af047279a0830e4",
+      "bytes": 13381
+    },
+    "docs/phase-1/phase-1-28/operator-guide.md": {
+      "sha256": "5fa404d010d7a5d3be023031912c986e03f4fcc57590bfd91e2d39e2c1365cb9",
+      "bytes": 15188
+    },
+    "docs/phase-1/phase-1-28/task-matrix-verdicts.json": {
+      "sha256": "1515ccc071448c8c241c1c7f4f2f2c75cbda613f4a4c61c019d73ad260bad13a",
+      "bytes": 301362
+    },
+    "docs/phase-1/phase-1-28/task-matrix.json": {
+      "sha256": "47e0a89ad34934a569f483ea22a29eb2d67f956264583f03777c5afc22efa688",
+      "bytes": 319844
+    },
+    "docs/phase-1/phase-1-28/write-reachability.json": {
+      "sha256": "347b375ec98508dc922abb75506a7052f8422e937b3efca0c0090d1689de0b96",
+      "bytes": 18887
+    }
+  }
+}

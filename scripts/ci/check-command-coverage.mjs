@@ -262,6 +262,29 @@ export const REGISTER = Object.freeze([
     why: 'regenerates the canonical P1-28 task matrix',
   },
   {
+    name: 'validate:p1-28-evidence',
+    owner: ROOT,
+    tier: 'required',
+    // P1-28-QA-005. The `--check` half of `evidence:p1-28`. It seals the phase
+    // directory by digesting every file's BYTES, and it does two things its
+    // P1-27 sibling does not, because a digest cannot check either: it refuses a
+    // candidate the two halves of the closing package disagree about, and it
+    // DERIVES the unclosed-task set from task-matrix-verdicts.json so a task
+    // that stops being named in the package fails rather than reading like a
+    // task that closed. Named by a hosted job directly rather than riding the
+    // clean-room aggregate the way its P1-27 sibling still does.
+    why: 'every P1-28 evidence document is digested, the digests match the bytes, and the closing package binds its candidate and names every unclosed task',
+  },
+  {
+    name: 'evidence:p1-28',
+    owner: ROOT,
+    tier: 'informational',
+    // The writer, for the same reason `evidence:p1-27` is not required: a CI job
+    // that regenerated the manifest would repair the drift the check reports,
+    // resealing an edit instead of reporting it.
+    why: 'regenerates the P1-28 evidence digest manifest',
+  },
+  {
     name: 'validate:p1-28-write-reachability',
     owner: ROOT,
     tier: 'required',
