@@ -629,13 +629,34 @@ export type DamageMarkType = (typeof DAMAGE_MARK_TYPES)[number];
 export const LEAK_SEVERITIES = FINDING_SEVERITIES;
 
 /**
- * `map_type`, `perspective`, `observed_state` and `leak_type` are BOUNDED
- * STRINGS on the wire, not enums: the routes deliberately leave membership to
- * the database CHECK, because a second hand-typed copy could rot without
- * anything failing. This layer does the same — a select rendered from an
- * invented list would offer values the database refuses.
+ * `map_type`, `perspective` and `leak_type` are BOUNDED STRINGS on the wire,
+ * not enums: the routes deliberately leave membership to the database CHECK,
+ * because a second hand-typed copy could rot without anything failing. This
+ * layer does the same — a select rendered from an invented list would offer
+ * values the database refuses.
  */
 export const MAX_MAP_TYPE = 40;
+
+/**
+ * `observed_state` USED to be treated as one of those bounded strings, and the
+ * treatment was wrong in effect.
+ *
+ * The reasoning above is sound where the list really is unknown. It is not
+ * unknown here: `ck_warning_light_observations_state` admits exactly three
+ * values (`20260721102000_rec_warning_lights_leaks.sql:60`), so a free-text box
+ * does not avoid offering values the database refuses — it offers NOTHING ELSE.
+ * Measured against the running stack: `observedState: 'steady while running'`,
+ * which is the sort of phrase the field's own hint invited, answers 422
+ * `ERR-VAL-001 / incoherent_reference`, and the operator is told "This value is
+ * not accepted here" with no way to learn what would be.
+ *
+ * So this one IS restated, and the restatement carries its authority in the
+ * comment above so a future CHECK change has somewhere to be reconciled with.
+ * The rule that governs the choice is not "never restate a database list"; it
+ * is "never invent one".
+ */
+export const WARNING_LIGHT_STATES = ['on', 'flashing', 'intermittent'] as const;
+export type WarningLightState = (typeof WARNING_LIGHT_STATES)[number];
 
 export const SIGNER_ROLES = [
   'service_requester',
@@ -829,8 +850,8 @@ export interface ContentsEvidenceInput {
 export interface WarningLightEvidenceInput {
   readonly kind: 'warning_light';
   readonly warningLightCodeId: string;
-  /** Bounded string; membership belongs to the database CHECK. */
-  readonly observedState?: string;
+  /** One of the three states `ck_warning_light_observations_state` admits. */
+  readonly observedState?: WarningLightState;
   readonly note?: string | null;
   readonly evidenceDocumentId?: string | null;
 }

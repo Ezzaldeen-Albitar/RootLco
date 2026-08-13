@@ -4,11 +4,11 @@ import { useEffect, useState, useTransition } from 'react';
 import { SelectField, TextField } from '@/components/forms/Field';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
 import type { Messages } from '@/i18n/get-messages';
-import { translate } from '@/i18n/get-messages';
+import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { ActionState } from '@/lib/forms/action-result';
 import { recordConditionEvidence } from '../../api';
 import { listWarningLightCodes, type IntakeCatalogueResult } from '../../catalogue-api';
-import { MAX_MAP_TYPE, MAX_NOTE } from '../../receptions-contract';
+import { MAX_NOTE, WARNING_LIGHT_STATES, type WarningLightState } from '../../receptions-contract';
 import { appendSessionEvidence, type SessionEvidence } from '../../check-in/evidence';
 import type { CheckInStepProps } from '../../check-in/wizard';
 import {
@@ -31,10 +31,18 @@ import {
  * ## The kind is unusable until somebody populates the catalogue
  *
  * `warningLightCodeId` is a REQUIRED reference into `rec.warning_light_codes`,
- * and that table **ships zero rows** — the permanent no-fake-data policy — while
- * `RMC-11` records that no management operation exists to add any. The read
- * route (backend remediation R3) made the catalogue reachable; it did not make
- * it non-empty, and reachability is not population.
+ * and that table **ships zero rows** — the permanent no-fake-data policy. The
+ * read route (backend remediation R3) made the catalogue reachable; it did not
+ * make it non-empty, and reachability is not population.
+ *
+ * The second half of `RMC-11` — "and no management operation exists to add any"
+ * — is NO LONGER TRUE and this paragraph used to still say it. PR #227
+ * registered `rec.catalogue-warning-light-code-create`, `-update` and
+ * `-status-set` behind `rec.catalogue.manage`. What remains open is
+ * `P1-28-OD-001`: no screen in this product reaches those operations, and no
+ * canonical P1-28 task binds one, so a tenant is populated from outside the
+ * product or not at all. That is a surface decision, not a missing capability,
+ * and the difference matters — the state below is a data gate, never dead code.
  *
  * So this step:
  *
@@ -50,9 +58,21 @@ import {
  * the write is the real write. Nothing about this step is a stub; only the data
  * is missing, and the difference is stated on screen.
  *
- * `observedState` is a BOUNDED STRING, not an enum: the route leaves membership
- * to the database CHECK deliberately, so this is free text within the contract's
- * own bound rather than a select rendered from a list nobody agreed to.
+ * ## `observedState` is a CHOICE, and used not to be
+ *
+ * It was a free-text box, on the reasoning that the route leaves membership to
+ * the database CHECK and a select over an invented list would offer values the
+ * database refuses. The reasoning was right and the conclusion was backwards
+ * here: `ck_warning_light_observations_state` admits exactly `on`, `flashing`
+ * and `intermittent`, so the free-text box offered nothing BUT values the
+ * database refuses. Driven against the running stack, "steady while running" —
+ * which is the sort of phrase the field's own hint asked for — came back 422
+ * `ERR-VAL-001 / incoherent_reference` and rendered as "This value is not
+ * accepted here", with no way for the operator to learn what would be.
+ *
+ * The three states are therefore restated in `receptions-contract.ts` with the
+ * migration cited, and offered as a translated choice. Nothing is invented; the
+ * list is the database's own.
  */
 
 const IDLE: ActionState = { status: 'idle' };
@@ -161,9 +181,12 @@ export function WarningLightsStep({
                 {
                   kind: 'warning_light',
                   warningLightCodeId: draft.warningLightCodeId,
-                  ...(draft.observedState.trim() === ''
+                  // An untouched optional stays ABSENT rather than travelling
+                  // blank: the column has its own default and a strict route
+                  // refuses an empty string.
+                  ...(draft.observedState === ''
                     ? {}
-                    : { observedState: draft.observedState.trim() }),
+                    : { observedState: draft.observedState as WarningLightState }),
                   ...(draft.note.trim() === '' ? {} : { note: draft.note.trim() }),
                 },
                 submitAttempt
@@ -256,12 +279,16 @@ function WarningLightForm({
         options={options}
         placeholder={translate(messages, 'form.select.placeholder')}
       />
-      <TextField
+      <SelectField
         label={translate(messages, 'receptions.warning.observedState')}
         description={translate(messages, 'receptions.warning.observedStateHint')}
         optionalHint={translate(messages, 'form.optional')}
         value={draft.observedState}
-        maxLength={MAX_MAP_TYPE}
+        options={WARNING_LIGHT_STATES.map((state) => ({
+          value: state,
+          label: translateDynamic(messages, `receptions.warningState.${state}`),
+        }))}
+        placeholder={translate(messages, 'form.select.placeholder')}
         onChange={(event) =>
           setDraft((current) => ({ ...current, observedState: event.target.value }))
         }

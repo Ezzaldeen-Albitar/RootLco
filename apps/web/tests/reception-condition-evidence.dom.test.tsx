@@ -677,9 +677,20 @@ describe('the warning-lights step (FE-015)', () => {
       await screen.findByLabelText(new RegExp(EN['receptions.warning.code']!)),
       'wl-1'
     );
-    await user.type(
+    /*
+     * `flashing`, not "steady".
+     *
+     * This case used to type the free text "steady" and assert it on the wire,
+     * and it passed for the same reason every mocked tier passes: the mock was
+     * asked what it had been told to return. Against the real database that
+     * write is refused — `ck_warning_light_observations_state` admits `on`,
+     * `flashing` and `intermittent` and nothing else, so the assertion was
+     * pinning a body the platform 422s. The control is now a choice over those
+     * three, and this asserts the chosen one travels.
+     */
+    await user.selectOptions(
       screen.getByLabelText(new RegExp(EN['receptions.warning.observedState']!)),
-      'steady'
+      'flashing'
     );
     await user.click(screen.getByRole('button', { name: EN['receptions.warning.record']! }));
 
@@ -687,7 +698,37 @@ describe('the warning-lights step (FE-015)', () => {
     expect(recordConditionEvidence.mock.calls.at(-1)![1]).toEqual({
       kind: 'warning_light',
       warningLightCodeId: 'wl-1',
-      observedState: 'steady',
+      observedState: 'flashing',
+    });
+  });
+
+  it('an untouched state is ABSENT from the body, not sent blank', async () => {
+    /*
+     * The optional's own rule, and it is not decoration: the column has a
+     * database default and the route is `.strict()` with `min(1)`, so a blank
+     * string is a 422 rather than "no opinion". A select whose placeholder value
+     * reached the wire would refuse every lamp recorded without a state.
+     */
+    listWarningLightCodes.mockResolvedValue({
+      status: 'ok',
+      options: [{ id: 'wl-1', scope: 'tenant', code: 'engine', name: 'Engine management' }],
+      truncated: false,
+      correlationId: 'corr-cat',
+    });
+    recordConditionEvidence.mockResolvedValue(recorded('wl-ev-2', 'warning_light'));
+    const user = userEvent.setup();
+    renderLtr(<WarningLightsStep {...stepProps()} />);
+
+    await user.selectOptions(
+      await screen.findByLabelText(new RegExp(EN['receptions.warning.code']!)),
+      'wl-1'
+    );
+    await user.click(screen.getByRole('button', { name: EN['receptions.warning.record']! }));
+
+    await waitFor(() => expect(recordConditionEvidence).toHaveBeenCalled());
+    expect(recordConditionEvidence.mock.calls.at(-1)![1]).toEqual({
+      kind: 'warning_light',
+      warningLightCodeId: 'wl-1',
     });
   });
 

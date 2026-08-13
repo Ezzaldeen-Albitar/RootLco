@@ -46,6 +46,7 @@ import {
   SIGNATURE_CAPTURE_METHODS,
   SIGNATURE_PURPOSES,
   SIGNER_ROLES,
+  WARNING_LIGHT_STATES,
   type AuthorizationEntry,
   type AuthorizationInput,
   type AuthorizationRecorded,
@@ -209,7 +210,10 @@ const evidenceSchema = z.discriminatedUnion('kind', [
     .object({
       kind: z.literal('warning_light'),
       warningLightCodeId: uuid,
-      observedState: z.string().min(1).max(MAX_MAP_TYPE).optional(),
+      // The three states the database CHECK admits, not a bounded free string.
+      // A free string here let a value the platform refuses reach the wire and
+      // come back 422 `incoherent_reference`; the mirror now refuses it first.
+      observedState: z.enum(WARNING_LIGHT_STATES).optional(),
       note: z.string().min(1).max(MAX_NOTE).nullable().optional(),
       evidenceDocumentId: uuid.nullable().optional(),
     })

@@ -273,7 +273,15 @@ export const EVIDENCE_ROW_FIELDS: Readonly<Record<EvidenceKind, readonly Evidenc
   warning_light: [
     { field: 'warningLightCode', labelKey: 'receptions.warning.code', kind: 'identifier' },
     { field: 'warningLightName', labelKey: 'receptions.warning.name', kind: 'text' },
-    { field: 'observedState', labelKey: 'receptions.warning.observedState', kind: 'text' },
+    {
+      // A closed database vocabulary, so it is read back TRANSLATED rather than
+      // as the stored token. `flashing` on a screen is a raw value reaching an
+      // operator, which is the same defect as a raw message key.
+      field: 'observedState',
+      labelKey: 'receptions.warning.observedState',
+      kind: 'vocabulary',
+      vocabularyPrefix: 'receptions.warningState.',
+    },
     { field: 'note', labelKey: 'receptions.finding.note', kind: 'text' },
   ],
   leak: [

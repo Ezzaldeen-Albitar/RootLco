@@ -12,6 +12,7 @@
   "scripts": {
     "acceptance:create-owner": "node scripts/dev/owner-acceptance/create-owner-account.mjs",
     "acceptance:full-cycle": "node scripts/dev/owner-acceptance/full-cycle.mjs",
+    "acceptance:provision-fixtures": "node scripts/dev/owner-acceptance/provision-acceptance-fixtures.mjs",
     "acceptance:reset-owner": "node scripts/dev/owner-acceptance/reset-owner-account.mjs",
     "acceptance:serve": "node scripts/dev/start-local.mjs --production",
     "acceptance:status-owner": "node scripts/dev/owner-acceptance/status-owner-account.mjs",

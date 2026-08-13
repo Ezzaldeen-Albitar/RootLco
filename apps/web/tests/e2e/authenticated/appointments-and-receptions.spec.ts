@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test, type APIRequestContext, type Locator, type Page } from '@playwright/test';
@@ -26,20 +27,44 @@ import { E2E_API_ORIGIN, REPO_ROOT } from '../origin';
  * So nothing here is mocked. A real session reaches the real Next.js server,
  * which calls the real API, which queries the real database under RLS.
  *
- * ## WHAT THIS FILE DELIBERATELY DOES NOT DO — read this before extending it
+ * ## TWO WORKSPACES, BECAUSE THERE ARE TWO TRUTHS — read this before extending it
  *
- * **It never seeds a business row to make a green path.** The acceptance
- * database holds zero customers, zero vehicles, zero appointment types, zero
- * appointments and zero reception visits, by the no-fake-data policy. Several
- * things a reader would expect to see proved here therefore cannot be, and each
- * one is asserted as the HONEST BLOCKED STATE the screen actually shows rather
- * than skipped, weakened, or made to pass by inventing data:
+ * Every section up to §17 runs against **Tenant A**, the Owner-acceptance
+ * workspace, which holds zero customers, zero vehicles, zero appointment types
+ * and zero reception visits. That is the state a real tenant is in on its first
+ * day and the state **production ships in**, so the sentences those screens show
+ * are a deliverable in their own right and are asserted here as facts, never
+ * skipped and never made to pass by inventing a row.
  *
- *   - **An appointment cannot be BOOKED.** `apt.appointment_types` is empty, so
- *     `/appointments/new` states "no appointment types have been set up … so an
- *     appointment cannot be booked" and DISABLES submit. That sentence is what
- *     this file asserts. Seeding one type would turn a truthful blocked screen
- *     into a green booking path and would prove the opposite of the truth.
+ * §18 runs against **Tenant C**, a second workspace whose seven intake
+ * catalogues have been CONFIGURED — the state a tenant is in after an
+ * administrator has set it up. Nothing about it is seeded: every row is written
+ * at run time by an authenticated call to the same published management contract
+ * an administrator would use (`scripts/dev/owner-acceptance/acceptance-fixtures
+ * .mjs`), nothing reaches `supabase/` or `apps/`, and Tenant A is never touched.
+ *
+ * **The pair is the point.** `P1-28-OD-001` records that the catalogues ship
+ * empty and that no P1-28 screen administers them, so four delivered
+ * capabilities — booking, cancelling with a catalogued reason, the fuel-level
+ * picker and the warning-light picker — are inert until somebody configures the
+ * tenant. Proving only the empty half would say those screens are honest and
+ * nothing about whether they WORK; proving only the configured half would delete
+ * the evidence that production's own state renders truthfully. Both halves run,
+ * in the same file, in the same run, and neither can be quietly dropped for the
+ * other.
+ *
+ * ## What Tenant A still cannot show, and why each is asserted as a blocked state
+ *
+ * These are the sections above §18. Each is the HONEST BLOCKED STATE the screen
+ * actually shows rather than a skip, a weakening, or invented data:
+ *
+ *   - **An appointment cannot be BOOKED in Tenant A.** `apt.appointment_types`
+ *     is empty there, so `/appointments/new` states "no appointment types have
+ *     been set up … so an appointment cannot be booked" and DISABLES submit.
+ *     That sentence is what §4 asserts, and it must keep being asserted: it is
+ *     what a tenant sees on day one. Configuring Tenant A to make booking work
+ *     would have deleted that evidence, which is why the configured path lives
+ *     in a workspace of its own (§18) rather than in a seed.
  *   - **No reception visit exists**, so the wizard's thirteen-step registry and
  *     the acknowledgement document cannot be rendered against a real record.
  *     Both cases below DISCOVER a visit through the real API first and assert
@@ -59,18 +84,22 @@ import { E2E_API_ORIGIN, REPO_ROOT } from '../origin';
  *     status vocabulary the graph is defined over renders as labels, and a board
  *     holding no visit offers no close affordance at all.
  *
- * UNTESTABLE UNTIL THE CATALOGUES AND THE BUSINESS TABLES CAN BE POPULATED —
- * stated here so nobody reads this file as covering them: booking an
- * appointment; taking reschedule, cancel or no-show on a real record; opening a
- * visit; the party-role, concern, condition, odometer, warning-light, contents,
- * damage, evidence, signature and refusal steps; approval; the two terminal
- * exits; the conversion to a work order; the acknowledgement's populated
- * sections and its per-section "could not be read" notice; and the
- * `P1-OD-025` media notice itself, whose only call site is a wizard step. Those
- * need `apt.appointment_types` (and `rec.fuel_levels`,
- * `apt.cancellation_reasons`) to be populatable by an administrator, plus at
- * least one customer and vehicle. When that arrives, the cases marked
- * `NEEDS DATA` below become positive paths without changing shape.
+ * WHAT §18 NOW COVERS, and what is still uncovered. §18 proves, against the
+ * running stack: an appointment BOOKED with a type chosen from the configured
+ * catalogue; the same appointment RESCHEDULED (which is how it becomes
+ * confirmed, there being no Confirm operation); CANCELLED with a catalogued
+ * reason, including that the mandatory reason cannot be escaped; a second
+ * appointment marked NO-SHOW; a reception visit OPENED with a fuel level chosen
+ * from the configured catalogue and a state-of-charge reading, both read back on
+ * the readings step; and a warning lamp RECORDED from the configured catalogue.
+ *
+ * STILL UNCOVERED HERE, stated so nobody reads this file as covering them: the
+ * party-role, concern, condition, odometer, contents, damage, media, signature
+ * and refusal steps; approval; the two terminal exits as an operator takes them;
+ * the conversion to a work order; and the acknowledgement's per-section "could
+ * not be read" notice. Those are reachable now that a visit can be opened —
+ * their absence here is scope, not a blocker, and the `NEEDS DATA` notes below
+ * say which is which.
  *
  * WHAT IS NEVERTHELESS PROVED ABOUT EACH OF THOSE, WITHOUT A ROW. The absence of
  * data removes the positive path; it does not remove every claim. So each
@@ -340,6 +369,29 @@ async function nameScope(field: Locator, value: string): Promise<void> {
 /** The rendered text of the page, lower-cased, after the segment has streamed. */
 async function bodyText(page: Page): Promise<string> {
   return (await page.locator('body').innerText()).toLowerCase();
+}
+
+/**
+ * Signs a principal in through the real form.
+ *
+ * Deliberately a UI sign-in rather than a hand-built cookie, for the reason
+ * `auth.setup.ts` gives: the session is an `httpOnly` cookie set by a Server
+ * Action, so driving the form proves the form, the action, the API contract and
+ * the cookie all agree. `getByRole('textbox', …)` for the password because
+ * `getByLabel` matches an accessible name as a SUBSTRING and the reveal control
+ * inside the field is named "Show password".
+ *
+ * One helper rather than one per principal: this suite signs in as two
+ * identities other than the captured owner — the read-only reader (§10) and the
+ * configured workspace's operator (§18) — and a second copy of these six lines
+ * is a second thing to keep true.
+ */
+async function signInThroughTheForm(page: Page, { email, password }: Credentials): Promise<void> {
+  await page.goto('/en/login');
+  await page.getByLabel('Email address').fill(email);
+  await page.getByRole('textbox', { name: 'Password', exact: true }).fill(password);
+  await page.getByRole('button', { name: 'Sign in' }).click();
+  await page.waitForURL(/\/en(\?.*)?$/, { timeout: 20_000 });
 }
 
 /**
@@ -1039,23 +1091,9 @@ test.describe('a read-only operator meets a denial, not an empty screen', () => 
    */
   test.use({ storageState: { cookies: [], origins: [] } });
 
-  /**
-   * Signs in as the reader through the real form.
-   *
-   * Deliberately a UI sign-in rather than a hand-built cookie, for the reason
-   * `auth.setup.ts` gives: the session is an `httpOnly` cookie set by a Server
-   * Action, so driving the form proves the form, the action, the API contract
-   * and the cookie all agree. `getByRole('textbox', …)` for the password because
-   * `getByLabel` matches an accessible name as a SUBSTRING and the reveal
-   * control inside the field is named "Show password".
-   */
+  /** The read-only principal, signed in the way an operator signs in. */
   async function signInAsReader(page: Page): Promise<void> {
-    const { email, password } = readerCredentials();
-    await page.goto('/en/login');
-    await page.getByLabel('Email address').fill(email);
-    await page.getByRole('textbox', { name: 'Password', exact: true }).fill(password);
-    await page.getByRole('button', { name: 'Sign in' }).click();
-    await page.waitForURL(/\/en(\?.*)?$/, { timeout: 20_000 });
+    await signInThroughTheForm(page, readerCredentials());
   }
 
   test('the booking form is refused, while the calendar and queue still read', async ({ page }) => {
@@ -1905,5 +1943,536 @@ test.describe('the P1-28 surface discloses nothing of another workspace', () => 
       });
       expect(response.status(), `the Tenant A token must be able to read ${path}`).toBe(200);
     }
+  });
+});
+
+/* ================================================================== *
+ * 18 — THE CONFIGURED WORKSPACE: what these four screens do once the
+ *      intake catalogues have rows
+ * ================================================================== */
+
+/**
+ * One catalogue entry as the management contract returned it.
+ *
+ * Read from the manifest rather than typed here: the codes and names are owned
+ * by `scripts/dev/owner-acceptance/acceptance-fixtures.mjs`, and a second copy
+ * in this file would be a second thing to keep true — the exact drift this
+ * suite already avoids by reading `en.json` instead of quoting sentences.
+ */
+interface CatalogueRow {
+  readonly id: string;
+  readonly code: string;
+  readonly name: string;
+}
+
+interface FixtureManifest {
+  readonly tenantId: string;
+  readonly companyId: string;
+  readonly branchId: string;
+  readonly operatorEmail: string;
+  readonly catalogues: {
+    readonly appointmentType: CatalogueRow;
+    readonly sourceChannel: CatalogueRow;
+    readonly cancellationReason: CatalogueRow;
+    readonly fuelLevel: CatalogueRow;
+    readonly warningLightCode: CatalogueRow;
+    readonly visitReason: CatalogueRow;
+    readonly refusalReason: CatalogueRow;
+  };
+  readonly customerId: string;
+  readonly customerDisplayName: string;
+  readonly vehicleId: string;
+  readonly vehicleDisplayNumber: string;
+}
+
+const FIXTURE_MANIFEST = join(REPO_ROOT, '.local', 'acceptance-fixtures.json');
+const PROVISION_COMMAND = join(
+  REPO_ROOT,
+  'scripts',
+  'dev',
+  'owner-acceptance',
+  'provision-acceptance-fixtures.mjs'
+);
+
+/**
+ * Configures the second workspace, by running the command a human runs.
+ *
+ * ## Why a child process rather than an import
+ *
+ * Two reasons, and the second is the one that matters. The provisioning module
+ * is `.mjs` under `scripts/`, outside this workspace's TypeScript project, so
+ * importing it would mean a declaration file restating its exports — a second
+ * statement of a fact. And running the real command means this suite proves
+ * `npm run acceptance:provision-fixtures` itself works: the Owner is told to run
+ * it, and a documented command nothing executes is how a runbook rots.
+ *
+ * ## Why it releases open visits
+ *
+ * A vehicle may hold ONE open visit. The check-in case below opens one, so a
+ * second run of this suite would find the resume affordance instead of the
+ * create form and would quietly be exercising a different screen. The flag is
+ * passed here and nowhere else — an operator running the command by hand keeps
+ * whatever they left open.
+ *
+ * A failure is re-thrown with the command's own output. "Provisioning failed"
+ * on its own would discard the only thing that says whether the API was down,
+ * the grant was missing, or the handoff file had gone.
+ */
+function configureSecondWorkspace(): FixtureManifest {
+  try {
+    execFileSync(process.execPath, [PROVISION_COMMAND, '--release-open-visits'], {
+      cwd: REPO_ROOT,
+      // The three guards in `context.mjs` still apply — a loopback database on
+      // the Supabase port and a loopback identity provider. This names the
+      // environment the browser tier already is.
+      env: { ...process.env, ROOTLCO_ENV: 'local-acceptance' },
+      encoding: 'utf8',
+      stdio: 'pipe',
+    });
+  } catch (error) {
+    const failure = error as { stdout?: string; stderr?: string; message?: string };
+    throw new Error(
+      'The configured workspace could not be provisioned. Is the API running ' +
+        `(npm run acceptance:serve)?\n${failure.stdout ?? ''}\n${failure.stderr ?? failure.message ?? ''}`
+    );
+  }
+  return JSON.parse(readFileSync(FIXTURE_MANIFEST, 'utf8')) as FixtureManifest;
+}
+
+/** The operator of the configured workspace. Never a literal, like every other. */
+function configuredCredentials(): Credentials {
+  const handoff = handoffFile() as { alsoProvisioned?: { configured?: Credentials } };
+  const configured = handoff.alsoProvisioned?.configured;
+  if (!configured?.email || !configured?.password) {
+    throw new Error(
+      'The acceptance handoff carries no configured workspace. Re-run: npm run acceptance:create-owner'
+    );
+  }
+  return { email: configured.email, password: configured.password };
+}
+
+/** A literal made safe to anchor a locator on. */
+function exactly(value: string): RegExp {
+  return new RegExp(`^${value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`);
+}
+
+/**
+ * The VALUE of one labelled fact, located through its own term.
+ *
+ * `toContainText('Confirmed')` over the whole page would be very nearly
+ * unfalsifiable here: "Confirmed time" is a label on the same panel, so the
+ * assertion would pass on an appointment that had never been confirmed. The
+ * facts are a `<dl>` of `<div><dt>label</dt><dd>value</dd></div>`, so the term
+ * is what identifies the pair and the description is what gets asserted.
+ */
+function factValue(page: Page, term: string): Locator {
+  return page
+    .locator('dl > div')
+    .filter({ has: page.locator('dt').filter({ hasText: exactly(term) }) })
+    .locator('dd');
+}
+
+/** `datetime-local` wants exactly this, in the operator's own clock. */
+function localDateTime(moment: Date): string {
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return (
+    `${moment.getFullYear()}-${pad(moment.getMonth() + 1)}-${pad(moment.getDate())}` +
+    `T${pad(moment.getHours())}:${pad(moment.getMinutes())}`
+  );
+}
+
+/**
+ * A future window, an hour long, distinct per call AND per run.
+ *
+ * `ex_appointments_vehicle_confirmed` refuses two overlapping CONFIRMED windows
+ * for one vehicle, and this suite confirms every appointment it books. Two cases
+ * therefore need different days, and a re-run whose predecessor died between
+ * confirming and ending needs a different minute — which is what taking the
+ * minute from the clock rather than from a constant buys.
+ */
+function futureWindow(daysAhead: number): { readonly from: string; readonly to: string } {
+  const from = new Date(Date.now() + daysAhead * 24 * 60 * 60 * 1000);
+  from.setSeconds(0, 0);
+  const to = new Date(from.getTime() + 60 * 60 * 1000);
+  return { from: localDateTime(from), to: localDateTime(to) };
+}
+
+test.describe('the configured workspace: the four catalogue-blocked capabilities, working', () => {
+  /*
+   * A fresh, signed-out context. The captured session belongs to the Tenant A
+   * owner, and every case here is a different principal in a different
+   * workspace — which is also why nothing below can be affected by, or affect,
+   * the seventeen sections above.
+   */
+  test.use({ storageState: { cookies: [], origins: [] } });
+
+  let manifest: FixtureManifest;
+
+  test.beforeAll(() => {
+    manifest = configureSecondWorkspace();
+  });
+
+  /** Signs in and puts the branch target in, the two things every case needs. */
+  async function openConfigured(page: Page, route: string): Promise<void> {
+    await signInThroughTheForm(page, configuredCredentials());
+    await page.goto(route);
+    await segmentRendered(page, route);
+  }
+
+  /**
+   * Books one appointment through the real form and returns nothing but the fact
+   * that the browser landed on its detail page.
+   *
+   * Every value comes from the manifest, so the identifiers this screen sends
+   * are the identifiers the management contract created — not a guess, and not a
+   * literal that would still pass after the catalogue had been renamed.
+   */
+  async function bookAppointment(
+    page: Page,
+    window: { readonly from: string; readonly to: string }
+  ): Promise<void> {
+    await openConfigured(page, '/en/appointments/new');
+
+    const main = page.getByRole('main');
+    /*
+     * The exact inverse of §4, and the reason this section exists: with a type
+     * in the catalogue the screen stops stating that booking is impossible and
+     * offers the control instead. Both sentences are asserted, in one run,
+     * against two workspaces.
+     */
+    await expect(
+      main,
+      'a configured catalogue still reported itself unconfigured'
+    ).not.toContainText(say('en', 'appointments.book.noTypes'));
+    const submit = page.getByRole('button', { name: say('en', 'appointments.book.submit') });
+    await expect(submit, 'a configured catalogue left the booking control disabled').toBeEnabled();
+
+    /*
+     * Validation, which could not be observed while submit was disabled: an
+     * empty form is refused LOCALLY and spends no request. The listener counts
+     * POSTs to the WEB origin because every API call is made by the Next.js
+     * server process — a filter on `/api/v1/` would see nothing whatever
+     * happened (`P1-27-QA-003`).
+     */
+    const posts: string[] = [];
+    page.on('request', (request) => {
+      if (request.method() === 'POST') posts.push(request.url());
+    });
+    await submit.click();
+    await expect(page.getByText(say('en', 'field.required')).first()).toBeVisible();
+    await expect(main).toContainText(say('en', 'appointments.book.requesterRequired'));
+    expect(posts.length, 'an incomplete booking was sent to the server').toBe(0);
+
+    await nameScope(page.getByLabel(say('en', 'admin.scope.companyId')), manifest.companyId);
+    await nameScope(page.getByLabel(say('en', 'admin.scope.branchId')), manifest.branchId);
+
+    // The customer, by NAME — the whole reason `CustomerSelector` exists.
+    const selector = page.getByTestId('customer-selector');
+    await selector.getByLabel(say('en', 'crm.customers.column.name')).fill('Acceptance');
+    await selector.getByRole('button', { name: say('en', 'customerSelector.search') }).click();
+    await selector.getByRole('button').filter({ hasText: manifest.customerDisplayName }).click();
+    await expect(
+      page.getByTestId('customer-selector-value'),
+      'choosing a customer did not carry an identifier into the form'
+    ).toHaveAttribute('value', manifest.customerId);
+
+    // The vehicle, from THAT customer's own vehicles.
+    const vehicles = page.getByTestId('vehicle-picker');
+    const offered = vehicles.getByRole('button').filter({ hasText: manifest.vehicleDisplayNumber });
+    await expect(offered, 'the chosen customer offered no linked vehicle').toHaveCount(1);
+    await offered.click();
+    await expect(
+      vehicles.getByRole('button', { name: say('en', 'appointments.book.vehicleChange') })
+    ).toBeVisible();
+
+    // The type, offered BY NAME and chosen by the identifier behind it.
+    const type = page.getByLabel(say('en', 'appointments.book.type'));
+    await expect(
+      type.locator('option').filter({ hasText: manifest.catalogues.appointmentType.name }),
+      'the configured appointment type is not offered by name'
+    ).toHaveCount(1);
+    await type.selectOption(manifest.catalogues.appointmentType.id);
+
+    // The nullable half of the same story: an offered channel is chosen too.
+    const channel = page.getByLabel(say('en', 'appointments.book.channel'));
+    await channel.selectOption(manifest.catalogues.sourceChannel.id);
+
+    await page.getByLabel(say('en', 'appointments.window.from')).fill(window.from);
+    await page.getByLabel(say('en', 'appointments.window.to')).fill(window.to);
+
+    await submit.click();
+    await page.waitForURL(/\/en\/appointments\/[0-9a-f-]{36}$/, { timeout: 30_000 });
+    await segmentRendered(page, page.url());
+
+    // It landed `requested`, which is the only state creation reaches.
+    await expect(factValue(page, say('en', 'appointments.column.status'))).toHaveText(
+      say('en', 'appointments.status.requested')
+    );
+    await expect(
+      factValue(page, say('en', 'appointments.column.type')),
+      'the booked appointment does not carry the type that was chosen'
+    ).toHaveText(manifest.catalogues.appointmentType.name);
+    await expect(factValue(page, say('en', 'appointments.detail.channel'))).toHaveText(
+      manifest.catalogues.sourceChannel.name
+    );
+  }
+
+  /** Confirms by rescheduling — the only operation that reaches `confirmed`. */
+  async function confirmByRescheduling(
+    page: Page,
+    window: { readonly from: string; readonly to: string }
+  ): Promise<void> {
+    await page.getByLabel(say('en', 'appointments.window.from')).fill(window.from);
+    await page.getByLabel(say('en', 'appointments.window.to')).fill(window.to);
+    await page.getByRole('button', { name: say('en', 'appointments.reschedule.submit') }).click();
+    await expect(factValue(page, say('en', 'appointments.column.status'))).toHaveText(
+      say('en', 'appointments.status.confirmed'),
+      { timeout: 30_000 }
+    );
+  }
+
+  test('an appointment is booked, confirmed by rescheduling, and cancelled with a catalogued reason', async ({
+    page,
+  }) => {
+    test.setTimeout(180_000);
+    /*
+     * `FE-002` and `FE-004`, end to end, against the running application, the
+     * running API and the real database. Both were PARTIAL for one reason and it
+     * was never a Frontend defect: `appointmentTypeId` and `cancellationReasonId`
+     * are required, catalogued references and the tables ship empty. With a
+     * configured workspace the same unchanged screens book and cancel.
+     */
+    await bookAppointment(page, futureWindow(30));
+    await confirmByRescheduling(page, futureWindow(31));
+
+    // The mandatory reason has no free-text escape, and the dialog proves it by
+    // refusing to submit without one — with no request spent.
+    const posts: string[] = [];
+    page.on('request', (request) => {
+      if (request.method() === 'POST') posts.push(request.url());
+    });
+    await expect(
+      page.getByRole('main'),
+      'a configured reason catalogue still reported itself unconfigured'
+    ).not.toContainText(say('en', 'appointments.cancel.noReasons'));
+
+    await page.getByRole('button', { name: say('en', 'appointments.cancel.openDialog') }).click();
+    const reason = page.getByLabel(say('en', 'appointments.cancel.reason'));
+    await expect(reason).toBeVisible();
+    const before = posts.length;
+    await page.getByRole('button', { name: say('en', 'appointments.cancel.confirm') }).click();
+    await expect(page.getByText(say('en', 'field.required')).first()).toBeVisible();
+    expect(posts.length - before, 'a cancellation with no reason was sent to the server').toBe(0);
+
+    // The reason, offered by name and chosen by the identifier behind it.
+    await expect(
+      reason.locator('option').filter({ hasText: manifest.catalogues.cancellationReason.name }),
+      'the configured cancellation reason is not offered by name'
+    ).toHaveCount(1);
+    await reason.selectOption(manifest.catalogues.cancellationReason.id);
+    await page.getByRole('button', { name: say('en', 'appointments.cancel.confirm') }).click();
+
+    await expect(factValue(page, say('en', 'appointments.column.status'))).toHaveText(
+      say('en', 'appointments.status.cancelled'),
+      { timeout: 30_000 }
+    );
+    // And the reason travelled: the stored record names it back.
+    await expect(
+      factValue(page, say('en', 'appointments.detail.cancelled')),
+      'the cancelled appointment does not name the reason that was chosen'
+    ).toContainText(manifest.catalogues.cancellationReason.name);
+    // A terminal appointment offers no further lifecycle control.
+    await expect(
+      page.getByRole('button', { name: say('en', 'appointments.cancel.openDialog') }),
+      'a cancelled appointment still offered cancellation'
+    ).toHaveCount(0);
+  });
+
+  test('a confirmed appointment is marked as a no-show', async ({ page }) => {
+    test.setTimeout(180_000);
+    /*
+     * `FE-005`, which needs `FE-002` to have worked first: no-show is reachable
+     * from `confirmed` ONLY — nobody fails to show up for an appointment nobody
+     * confirmed — so this is also the second half of the reschedule proof.
+     */
+    await bookAppointment(page, futureWindow(60));
+    await expect(
+      page.getByRole('button', { name: say('en', 'appointments.noShow.openDialog') }),
+      'a merely requested appointment offered a no-show'
+    ).toHaveCount(0);
+
+    await confirmByRescheduling(page, futureWindow(61));
+    await page.getByRole('button', { name: say('en', 'appointments.noShow.openDialog') }).click();
+    await page.getByRole('button', { name: say('en', 'appointments.noShow.confirm') }).click();
+
+    await expect(factValue(page, say('en', 'appointments.column.status'))).toHaveText(
+      say('en', 'appointments.status.no_show'),
+      { timeout: 30_000 }
+    );
+  });
+
+  test('a visit is opened with a catalogued fuel level and a charge reading, and a lamp is recorded', async ({
+    page,
+  }) => {
+    test.setTimeout(180_000);
+    /*
+     * `FE-014` and `FE-015`. The fuel picker and the warning-light picker were
+     * both PARTIAL on the same fact — an empty catalogue — and both are exercised
+     * here against rows an administrator put there through the published
+     * contract.
+     *
+     * The state-of-charge half rides the same create, so the two halves of
+     * `FE-014` are proved together and READ BACK together on the readings step:
+     * `rec.reception-create` is the only operation that carries either field, so
+     * what the visit opened with is what the panel must show.
+     */
+    await openConfigured(page, '/en/receptions/check-in');
+
+    const main = page.getByRole('main');
+    await expect(
+      main,
+      'a configured fuel catalogue still reported itself unconfigured'
+    ).not.toContainText(say('en', 'receptions.checkIn.fuelEmpty'));
+    await expect(main).not.toContainText(say('en', 'receptions.checkIn.fuelUnavailable'));
+
+    await nameScope(page.getByLabel(say('en', 'receptions.checkIn.company')), manifest.companyId);
+    await nameScope(page.getByLabel(say('en', 'receptions.checkIn.branch')), manifest.branchId);
+
+    const selector = page.getByTestId('customer-selector');
+    await selector.getByLabel(say('en', 'crm.customers.column.name')).fill('Acceptance');
+    await selector.getByRole('button', { name: say('en', 'customerSelector.search') }).click();
+    await selector.getByRole('button').filter({ hasText: manifest.customerDisplayName }).click();
+
+    const vehicle = page
+      .getByRole('group', { name: say('en', 'receptions.checkIn.vehicleLabel') })
+      .getByRole('button')
+      .filter({ hasText: manifest.vehicleDisplayNumber });
+    await expect(vehicle, 'the requester offered no linked vehicle to receive').toHaveCount(1);
+    await vehicle.click();
+
+    // The picker is usable, offers the configured level BY NAME, and takes it.
+    const fuel = page.getByLabel(say('en', 'receptions.checkIn.fuelLevel'));
+    await expect(fuel, 'a configured catalogue left its picker disabled').toBeEnabled();
+    await expect(
+      fuel.locator('option').filter({ hasText: manifest.catalogues.fuelLevel.name }),
+      'the configured fuel level is not offered by name'
+    ).toHaveCount(1);
+    await fuel.selectOption(manifest.catalogues.fuelLevel.id);
+    await page.getByLabel(say('en', 'receptions.checkIn.evSoc')).fill('64.5');
+
+    await page.getByRole('button', { name: say('en', 'receptions.checkIn.submit') }).click();
+    await expect(main).toContainText(say('en', 'receptions.checkIn.created'), { timeout: 30_000 });
+
+    await page.getByRole('link', { name: say('en', 'receptions.checkIn.continue') }).click();
+    await page.waitForURL(/\/en\/receptions\/check-in\/[0-9a-f-]{36}$/, { timeout: 30_000 });
+    await segmentRendered(page, page.url());
+
+    const steps = page.getByRole('navigation', { name: say('en', 'receptions.wizard.stepsLabel') });
+    await expect(steps).toBeVisible();
+
+    /*
+     * READ BACK, on the step that owns it. The create response echoes the visit,
+     * but the panel renders `rec.reception-detail` — so this is the round trip
+     * through storage rather than a repetition of what was typed.
+     */
+    await steps
+      .getByRole('button')
+      .filter({ hasText: say('en', 'receptions.steps.readings.title') })
+      .click();
+    await expect(
+      factValue(page, say('en', 'receptions.fuel.recordedLevel')),
+      'the visit did not open with the fuel level that was chosen'
+    ).toHaveText(manifest.catalogues.fuelLevel.name);
+    await expect(factValue(page, say('en', 'receptions.fuel.recordedSoc'))).toContainText('64.5');
+    // The honest statement about the one thing this contract cannot do stays put.
+    await expect(page.getByTestId('fuel-not-editable')).toBeVisible();
+
+    // --- FE-015: a lamp, recorded ------------------------------------------
+    await steps
+      .getByRole('button')
+      .filter({ hasText: say('en', 'receptions.steps.warningLights.title') })
+      .click();
+    await expect(
+      page.getByRole('main'),
+      'a configured warning-light catalogue still reported itself empty'
+    ).not.toContainText(say('en', 'receptions.evidence.warningCatalogueEmpty'));
+
+    const form = page.getByRole('form', { name: say('en', 'receptions.warning.formLabel') });
+    await expect(form, 'a configured catalogue rendered no capture form').toBeVisible();
+
+    const lamp = form.getByLabel(say('en', 'receptions.warning.code'));
+    await expect(
+      lamp.locator('option').filter({ hasText: manifest.catalogues.warningLightCode.name }),
+      'the configured lamp is not offered by name'
+    ).toHaveCount(1);
+    await lamp.selectOption(manifest.catalogues.warningLightCode.id);
+    /*
+     * `flashing`, chosen from a list, and the reason this line reads the way it
+     * does is a defect this run found. The control was a free-text box whose
+     * hint asked for the operator's own words, while
+     * `ck_warning_light_observations_state` admits exactly three tokens — so
+     * "steady while running" came back 422 `incoherent_reference` and rendered
+     * as "This value is not accepted here". The three states are now offered as
+     * a translated choice; the value below is one the database really takes.
+     */
+    await form.getByLabel(say('en', 'receptions.warning.observedState')).selectOption('flashing');
+    await form.getByRole('button', { name: say('en', 'receptions.warning.record') }).click();
+
+    // Recorded in this session, and read back from the visit's own evidence list.
+    const session = page.getByRole('region', {
+      name: say('en', 'receptions.evidence.sessionHeading'),
+    });
+    await expect(session, 'the recorded lamp was not listed for this session').toContainText(
+      manifest.catalogues.warningLightCode.name,
+      { timeout: 30_000 }
+    );
+
+    const recorded = page.getByRole('region', { name: say('en', 'receptions.warning.heading') });
+    await expect(recorded, 'the recorded lamp does not read back from the visit').toContainText(
+      manifest.catalogues.warningLightCode.code,
+      { timeout: 30_000 }
+    );
+    // TRANSLATED, not the stored token: `flashing` reaching an operator is a raw
+    // value on screen, which is the same defect class as a raw message key.
+    await expect(recorded, 'the observed state read back as a raw database token').toContainText(
+      say('en', 'receptions.warningState.flashing')
+    );
+  });
+
+  test('ar: the configured pickers offer their rows in Arabic, on both screens', async ({
+    page,
+  }) => {
+    test.setTimeout(120_000);
+    /*
+     * The Arabic half of the same claim. §4 and §12 assert the Arabic
+     * UNCONFIGURED sentences; this asserts that the configured pickers really
+     * render, in Arabic, with the rows an administrator added — so neither
+     * direction is proved in one language only.
+     *
+     * The catalogue NAMES are the administrator's own data and are not
+     * translated by this product; what is asserted is that the Arabic screen
+     * offers them, and that the Arabic "not configured" sentence is absent.
+     */
+    await openConfigured(page, '/ar/appointments/new');
+    await expect(page.getByRole('main')).not.toContainText(say('ar', 'appointments.book.noTypes'));
+    await expect(
+      page.getByLabel(say('ar', 'appointments.book.type')).locator('option'),
+      'the Arabic booking screen offers no configured type'
+    ).toContainText([manifest.catalogues.appointmentType.name]);
+    await expect(
+      page.getByRole('button', { name: say('ar', 'appointments.book.submit') })
+    ).toBeEnabled();
+
+    await page.goto('/ar/receptions/check-in');
+    await segmentRendered(page, '/ar/receptions/check-in');
+    await expect(page.getByRole('main')).not.toContainText(
+      say('ar', 'receptions.checkIn.fuelEmpty')
+    );
+    const fuel = page.getByLabel(say('ar', 'receptions.checkIn.fuelLevel'));
+    await expect(fuel, 'the Arabic check-in screen left its fuel picker disabled').toBeEnabled();
+    await expect(
+      fuel.locator('option'),
+      'the Arabic check-in screen offers no configured fuel level'
+    ).toContainText([manifest.catalogues.fuelLevel.name]);
   });
 });
