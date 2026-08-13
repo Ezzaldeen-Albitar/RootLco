@@ -120,7 +120,11 @@ describe('the local launcher advertises an origin Next will serve', () => {
     const launcher = code('scripts/dev/start-local.mjs');
     expect(launcher).toMatch(/'--hostname',\s*DEV_HOST/);
     expect(launcher).toMatch(/export function tierArgs/);
-    expect(launcher).toMatch(/spawn\(process\.execPath,\s*tierArgs\(tier\)/);
+    // The mode reaches the spawn through the same single builder. Asserting the
+    // argument is here on purpose: a `tierArgs(tier)` that dropped it would
+    // start `next dev` while the launcher printed, recorded and reported
+    // "production" everywhere else.
+    expect(launcher).toMatch(/spawn\(process\.execPath,\s*tierArgs\(tier,\s*mode\)/);
   });
 
   it('agrees with the API origin the web tier defaults to', () => {
@@ -250,6 +254,17 @@ describe('development and production build directories are isolated', () => {
     expect(source).toMatch(/ROOTLCO_DIST_DIR:\s*DEV_DIST_DIR/);
   });
 
+  it('does NOT redirect the production build directory, so build and start agree', () => {
+    // `next build` and `next start` must both use `.next`. Redirecting
+    // production to `.next-dev` would put the acceptance build in the directory
+    // `next dev` overwrites, which is the P1-26-F-055 collision reintroduced
+    // from the other side.
+    const source = read('scripts/dev/start-local.mjs');
+    expect(source).toMatch(
+      /env:\s*\{\s*development:\s*\{\s*ROOTLCO_DIST_DIR:\s*DEV_DIST_DIR\s*\},\s*production:\s*\{\}\s*\}/
+    );
+  });
+
   it('clears a stale production build only for a tier it is about to start', () => {
     // Deleting a build directory a running server is reading would be a worse
     // bug than the one being fixed.
@@ -262,7 +277,7 @@ describe('development and production build directories are isolated', () => {
     const source = code('scripts/dev/start-local.mjs');
     const decision = source.indexOf('planLocalStack(survey)');
     const loop = source.indexOf('for (const tier of toStart)');
-    const clear = source.indexOf('clearStaleProductionBuild(tier)');
+    const clear = source.indexOf('clearStaleProductionBuild(tier, mode)');
     expect(decision, 'the launcher must decide before it clears anything').toBeGreaterThan(0);
     expect(loop, 'the clear must be driven by the tiers being started').toBeGreaterThan(decision);
     expect(clear, 'the clear must happen inside that loop').toBeGreaterThan(loop);

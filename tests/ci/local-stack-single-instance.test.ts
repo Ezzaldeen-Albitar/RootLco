@@ -9,6 +9,7 @@ import {
   classifyPort,
   commandBelongsToWorkspace,
   listenersOnPorts,
+  nextModeOfCommand,
   parseNetstatListeners,
   parsePosixProcessTable,
   parsePowerShellListeners,
@@ -16,7 +17,7 @@ import {
   parseWindowsProcessTable,
   processTable,
 } from '../../scripts/dev/process-discovery.mjs';
-import { maySpawn, planLocalStack } from '../../scripts/dev/local-stack-plan.mjs';
+import { maySpawn, observedMode, planLocalStack } from '../../scripts/dev/local-stack-plan.mjs';
 import {
   acquireLock,
   classifyLock,
@@ -24,7 +25,23 @@ import {
   readLock,
   releaseLock,
 } from '../../scripts/dev/launcher-lock.mjs';
-import { readState, writeStateAtomic, STATE_SCHEMA } from '../../scripts/dev/runtime-state.mjs';
+import {
+  buildState,
+  readState,
+  writeStateAtomic,
+  STATE_SCHEMA,
+} from '../../scripts/dev/runtime-state.mjs';
+import {
+  DEFAULT_MODE,
+  DEVELOPMENT,
+  MODES,
+  PRODUCTION,
+  describeMode,
+  isMode,
+  modeOfNextSubcommand,
+  nextSubcommandFor,
+  parseModeArgv,
+} from '../../scripts/dev/launch-mode.mjs';
 
 /**
  * `P1-26-F-063` — two `npm run dev:all` runs produced two stacks.
@@ -58,6 +75,9 @@ afterEach(() => {
 const NEXT_WORKER = `"C:\\Program Files\\nodejs\\node.exe" ${REPO}\\node_modules\\next\\dist\\server\\lib\\start-server.js`;
 const API_PARENT = `"C:\\Program Files\\nodejs\\node.exe" ${REPO}/node_modules/next/dist/bin/next dev apps/api --hostname localhost --port 3000`;
 const WEB_PARENT = `"C:\\Program Files\\nodejs\\node.exe" ${REPO}/node_modules/next/dist/bin/next dev apps/web --hostname localhost --port 3100`;
+/** The same two tiers served from a production build. */
+const API_PARENT_PROD = API_PARENT.replace('next dev', 'next start');
+const WEB_PARENT_PROD = WEB_PARENT.replace('next dev', 'next start');
 
 function table(rows: { pid: number; ppid: number; name?: string; command: string }[]) {
   return new Map(
@@ -240,6 +260,22 @@ describe('process ownership', () => {
     expect(commandBelongsToWorkspace(other, REPO, 'api')).toBe(false);
   });
 
+  it('recognises a PRODUCTION stack from this checkout just as readily', () => {
+    // The single most dangerous omission this mode could have shipped with. A
+    // launcher that matched only `next dev` would classify the Owner's own
+    // running acceptance stack as an unrelated process: `dev:all` would refuse
+    // to start, `dev:stop` would refuse to stop it, and `dev:status` would
+    // report it as "NOT RootLco" while the Owner was signed into it.
+    expect(commandBelongsToWorkspace(API_PARENT_PROD, REPO, 'api')).toBe(true);
+    expect(commandBelongsToWorkspace(WEB_PARENT_PROD, REPO, 'web')).toBe(true);
+    // And the two workspaces are still not confused with each other.
+    expect(commandBelongsToWorkspace(API_PARENT_PROD, REPO, 'web')).toBe(false);
+    // A different clone is still a different clone.
+    expect(commandBelongsToWorkspace(API_PARENT_PROD.replace(REPO, 'D:/fork'), REPO, 'api')).toBe(
+      false
+    );
+  });
+
   it('rejects an unrelated Next project and a bare next dev', () => {
     expect(
       commandBelongsToWorkspace(
@@ -320,6 +356,210 @@ describe('port classification', () => {
     // The trap in trusting a recorded pid: the number survives the process.
     const t = table([{ pid: 900, ppid: 1, name: 'chrome.exe', command: 'chrome --type=renderer' }]);
     expect(classify(3000, 'api', LIVE_LISTENERS, t)).toMatchObject({ state: 'unrelated' });
+  });
+});
+
+/**
+ * The production acceptance mode.
+ *
+ * `next dev` compiles a route bundle the first time that route is requested,
+ * and the API's authenticator is a module-level singleton installed as a SIDE
+ * EFFECT of composing the IAM module inside the login handler. A route bundle
+ * compiled without having run that composition still holds the unconfigured
+ * authenticator, which fails closed.
+ *
+ * Measured twice, one valid owner bearer token, one process: `/api/v1/receptions`
+ * answered 200 while `/api/v1/vehicles` and `/api/v1/work-orders` answered 401
+ * `ERR-IAM-002`; a second `next dev` process refused a different subset again.
+ * Every one of them answered 200 on a `next build` + `next start` of the same
+ * tree.
+ *
+ * The Owner acceptance environment is started by this launcher, so in
+ * development mode it can refuse authenticated reads on an arbitrary subset of
+ * routes and manufacture product defects that do not exist.
+ */
+describe('the launch-mode vocabulary', () => {
+  it('is exactly two modes, and development is still the default', () => {
+    expect([...MODES]).toEqual([DEVELOPMENT, PRODUCTION]);
+    // An added mode that changes what the existing command does is not an added
+    // mode. `npm run dev:all` must still be `next dev`.
+    expect(DEFAULT_MODE).toBe(DEVELOPMENT);
+    expect(parseModeArgv([]).mode).toBe(DEVELOPMENT);
+  });
+
+  it('maps each mode to the Next subcommand it serves with, both ways', () => {
+    expect(nextSubcommandFor(DEVELOPMENT)).toBe('dev');
+    expect(nextSubcommandFor(PRODUCTION)).toBe('start');
+    expect(modeOfNextSubcommand('dev')).toBe(DEVELOPMENT);
+    expect(modeOfNextSubcommand('start')).toBe(PRODUCTION);
+    // `build` is not a mode. It holds no port and it exits.
+    expect(modeOfNextSubcommand('build')).toBeNull();
+  });
+
+  it('refuses to translate a mode it does not know rather than guessing', () => {
+    expect(() => nextSubcommandFor('prodcution')).toThrow(/unknown launch mode/);
+    // A caller that forgot the argument entirely must throw too, not build an
+    // argv containing the string "undefined". The cast is the point: the type
+    // says this cannot happen, and the runtime must not depend on the type.
+    expect(() => nextSubcommandFor(undefined as unknown as string)).toThrow(/unknown launch mode/);
+    expect(isMode('prodcution')).toBe(false);
+  });
+
+  it('reads --production, --development and --mode=', () => {
+    expect(parseModeArgv(['--production'])).toEqual({ mode: PRODUCTION, errors: [] });
+    expect(parseModeArgv(['--development'])).toEqual({ mode: DEVELOPMENT, errors: [] });
+    expect(parseModeArgv(['--mode=production'])).toEqual({ mode: PRODUCTION, errors: [] });
+  });
+
+  /**
+   * The guard, and the reason argv parsing is not a one-line `includes`.
+   *
+   * `npm run dev:all -- --produciton` must STOP. Silently starting a
+   * development stack would leave the operator certain they were looking at a
+   * production build, and they would attribute its compile-on-demand 401s to
+   * the product — which is the exact belief this whole mode exists to make
+   * impossible.
+   */
+  it('treats an unrecognised argument as an error, never as a shrug', () => {
+    const typo = parseModeArgv(['--produciton']);
+    expect(typo.errors).toHaveLength(1);
+    expect(typo.errors[0]).toMatch(/unrecognised argument/);
+    expect(parseModeArgv(['--mode=staging']).errors[0]).toMatch(/names no mode/);
+    expect(parseModeArgv(['-p']).errors).toHaveLength(1);
+  });
+
+  it('refuses two modes at once instead of letting the last one win', () => {
+    const both = parseModeArgv(['--production', '--development']);
+    expect(both.errors.some((e) => /more than one mode/.test(e))).toBe(true);
+    // Repeating the SAME mode is not a conflict.
+    expect(parseModeArgv(['--production', '--production'])).toEqual({
+      mode: PRODUCTION,
+      errors: [],
+    });
+  });
+
+  it('describes each mode in words an operator can act on', () => {
+    expect(describeMode(PRODUCTION)).toMatch(/next build/);
+    expect(describeMode(PRODUCTION)).toMatch(/next start/);
+    expect(describeMode(DEVELOPMENT)).toMatch(/compiled on first request/);
+    expect(describeMode('nonsense')).toMatch(/unrecognised/);
+  });
+});
+
+describe('the mode of a RUNNING stack is read off its command line', () => {
+  it('names the mode for each subcommand we serve with', () => {
+    expect(nextModeOfCommand(API_PARENT)).toBe(DEVELOPMENT);
+    expect(nextModeOfCommand(API_PARENT_PROD)).toBe(PRODUCTION);
+    expect(nextModeOfCommand(WEB_PARENT_PROD)).toBe(PRODUCTION);
+  });
+
+  it('names no mode for a build, a worker, or anything else', () => {
+    // A build holds no port and exits; adopting one would adopt a corpse.
+    expect(
+      nextModeOfCommand(`node ${REPO}/node_modules/next/dist/bin/next build apps/api`)
+    ).toBeNull();
+    // The listener's own command line names no subcommand at all — which is why
+    // ownership walks the parent chain.
+    expect(nextModeOfCommand(NEXT_WORKER)).toBeNull();
+    expect(nextModeOfCommand('')).toBeNull();
+    expect(nextModeOfCommand('python -m http.server 3000')).toBeNull();
+  });
+
+  it('is not fooled by a path that merely contains the word next', () => {
+    // `node_modules/next/dist/...` must not be read as an invocation.
+    expect(nextModeOfCommand('node /srv/next/dist/thing.js --dev')).toBeNull();
+    expect(nextModeOfCommand('node /opt/nextdev/server.js start')).toBeNull();
+  });
+
+  it('survives the separator and casing Windows mixes freely', () => {
+    expect(nextModeOfCommand(API_PARENT_PROD.replace(/\//g, '\\').toUpperCase())).toBe(PRODUCTION);
+  });
+
+  it('is what classifyPort reports, so the plan and status never guess', () => {
+    const prodTable = table([
+      { pid: 900, ppid: 800, command: NEXT_WORKER },
+      { pid: 800, ppid: 700, command: API_PARENT_PROD },
+    ]);
+    expect(
+      classifyPort({
+        port: 3000,
+        listeners: LIVE_LISTENERS,
+        table: prodTable,
+        repoRootPath: REPO,
+        workspace: 'api',
+      })
+    ).toMatchObject({ state: 'owned', ownerPid: 800, mode: PRODUCTION });
+    expect(
+      classifyPort({
+        port: 3000,
+        listeners: LIVE_LISTENERS,
+        table: LIVE_TABLE,
+        repoRootPath: REPO,
+        workspace: 'api',
+      })
+    ).toMatchObject({ mode: DEVELOPMENT });
+  });
+});
+
+describe('which mode is running — the question with no wrong answer allowed', () => {
+  const owned = (mode: string | null) => ({ state: 'owned', mode });
+
+  it('reports the one mode both tiers agree on', () => {
+    expect(observedMode({ api: owned(PRODUCTION), web: owned(PRODUCTION) }).verdict).toBe(
+      PRODUCTION
+    );
+    expect(observedMode({ api: owned(DEVELOPMENT), web: owned(DEVELOPMENT) }).verdict).toBe(
+      DEVELOPMENT
+    );
+  });
+
+  it('shouts MIXED rather than resolving to whichever tier was asked first', () => {
+    const verdict = observedMode({ api: owned(DEVELOPMENT), web: owned(PRODUCTION) });
+    expect(verdict.verdict).toBe('mixed');
+    expect(verdict.modes).toEqual([
+      { tier: 'api', mode: DEVELOPMENT },
+      { tier: 'web', mode: PRODUCTION },
+    ]);
+    // And the mirror image, so the answer does not depend on inspection order.
+    expect(observedMode({ api: owned(PRODUCTION), web: owned(DEVELOPMENT) }).verdict).toBe('mixed');
+  });
+
+  it('says unknown when a command line named no subcommand — not "development"', () => {
+    // "I could not tell" and "it is the default" are different claims, and only
+    // one of them is true.
+    expect(observedMode({ api: owned(null), web: owned(PRODUCTION) }).verdict).toBe('unknown');
+  });
+
+  it('reports a single running tier without inventing a mode for the other', () => {
+    expect(observedMode({ api: owned(PRODUCTION), web: { state: 'free' } }).verdict).toBe(
+      PRODUCTION
+    );
+    expect(observedMode({ api: { state: 'free' }, web: { state: 'free' } }).verdict).toBe('none');
+    // An unrelated process is not ours, so its mode is not ours to report.
+    expect(observedMode({ api: { state: 'unrelated' }, web: { state: 'free' } }).verdict).toBe(
+      'none'
+    );
+  });
+
+  it('status prints the verdict for every one of those states', () => {
+    const status = read('scripts/dev/status-local.mjs');
+    expect(status).toMatch(/MODE\s+MIXED/);
+    expect(status).toMatch(/MODE\s+UNKNOWN/);
+    expect(status).toContain('nothing of ours is running');
+    // And it says which one is the acceptance configuration, in both directions.
+    expect(status).toContain('NOT the Owner acceptance configuration');
+    expect(status).toContain('This is the Owner acceptance configuration');
+    // The state file's claim is CHECKED against the measurement, not printed
+    // beside it for a reader to compare.
+    expect(status).toContain('mode agrees with the live processes');
+  });
+
+  it('status derives the mode from the processes, not from the state file', () => {
+    const status = read('scripts/dev/status-local.mjs');
+    const measured = status.indexOf('observedMode(survey)');
+    const fromFile = status.indexOf('state.mode');
+    expect(measured).toBeGreaterThan(0);
+    expect(measured).toBeLessThan(fromFile);
   });
 });
 
@@ -445,6 +685,123 @@ describe('the single-instance decision', () => {
   });
 });
 
+/**
+ * State F — ours, from this checkout, healthy, and serving the OTHER mode.
+ *
+ * The verdict the production mode had to add. A `next dev` stack answers every
+ * readiness probe a `next start` stack answers, so without it
+ * `acceptance:serve` would take the ADOPT path, print that the acceptance
+ * environment is up, and hand the Owner precisely the compile-on-demand 401s
+ * the production mode exists to eliminate.
+ */
+describe('a stack in the other mode is refused, never adopted', () => {
+  const owned = (mode: string, pid = 900) => ({
+    state: 'owned',
+    pid,
+    ownerPid: pid - 100,
+    command: mode === PRODUCTION ? API_PARENT_PROD : API_PARENT,
+    mode,
+    addresses: ['::1'],
+  });
+
+  it('refuses a development stack when production was asked for', () => {
+    const plan = planLocalStack({
+      api: owned(DEVELOPMENT, 900),
+      web: owned(DEVELOPMENT, 901),
+      apiHealthy: true,
+      webHealthy: true,
+      mode: PRODUCTION,
+    });
+    expect(plan.decision).toBe('REFUSE_MODE_MISMATCH');
+    // The assertion the whole verdict reduces to.
+    expect(maySpawn(plan.decision)).toBe(false);
+    expect(plan.adopt).toEqual([]);
+    expect(plan.start).toEqual([]);
+    expect(plan.recover).toEqual([]);
+    expect(plan.mismatched.map((m) => m.tier)).toEqual(['api', 'web']);
+    expect(plan.mismatched[0]).toMatchObject({ running: DEVELOPMENT, requested: PRODUCTION });
+  });
+
+  it('refuses a production stack when development was asked for', () => {
+    const plan = planLocalStack({
+      api: owned(PRODUCTION, 900),
+      web: owned(PRODUCTION, 901),
+      apiHealthy: true,
+      webHealthy: true,
+      mode: DEVELOPMENT,
+    });
+    expect(plan.decision).toBe('REFUSE_MODE_MISMATCH');
+    expect(maySpawn(plan.decision)).toBe(false);
+  });
+
+  it('refuses when only ONE tier disagrees, rather than repairing the other', () => {
+    // The worst possible outcome would be starting the missing half in the
+    // requested mode: an API on `next dev` behind a web tier on `next start` is
+    // a configuration nobody can reproduce or reason about.
+    const plan = planLocalStack({
+      api: owned(DEVELOPMENT, 900),
+      web: { state: 'free' },
+      apiHealthy: true,
+      webHealthy: false,
+      mode: PRODUCTION,
+    });
+    expect(plan.decision).toBe('REFUSE_MODE_MISMATCH');
+    expect(plan.start).toEqual([]);
+    expect(plan.mismatched.map((m) => m.tier)).toEqual(['api']);
+  });
+
+  it('adopts normally when the modes agree', () => {
+    for (const mode of MODES) {
+      const plan = planLocalStack({
+        api: owned(mode, 900),
+        web: owned(mode, 901),
+        apiHealthy: true,
+        webHealthy: true,
+        mode,
+      });
+      expect(plan.decision, `${mode} should adopt itself`).toBe('ADOPT_EXISTING');
+      expect(plan.mode).toBe(mode);
+    }
+  });
+
+  it('an UNRELATED process still wins over a mode mismatch', () => {
+    // A foreign owner of a canonical port is the more serious fact, and it is
+    // the one that needs the pid and command line printed.
+    const plan = planLocalStack({
+      api: owned(DEVELOPMENT, 900),
+      web: { state: 'unrelated', pid: 55, name: 'python.exe', command: 'python', addresses: [] },
+      apiHealthy: true,
+      webHealthy: false,
+      mode: PRODUCTION,
+    });
+    expect(plan.decision).toBe('REFUSE_UNRELATED');
+  });
+
+  it('a mode it could not read is not proven to mismatch', () => {
+    // "I could not classify that command line" is not evidence of disagreement,
+    // and refusing on it would strand an operator with no way forward.
+    const plan = planLocalStack({
+      api: { state: 'owned', pid: 900, ownerPid: 800, command: 'odd', mode: null, addresses: [] },
+      web: { state: 'owned', pid: 901, ownerPid: 801, command: 'odd', mode: null, addresses: [] },
+      apiHealthy: true,
+      webHealthy: true,
+      mode: PRODUCTION,
+    });
+    expect(plan.decision).toBe('ADOPT_EXISTING');
+  });
+
+  it('defaults the requested mode to development, so existing callers are unchanged', () => {
+    const plan = planLocalStack({
+      api: owned(DEVELOPMENT, 900),
+      web: owned(DEVELOPMENT, 901),
+      apiHealthy: true,
+      webHealthy: true,
+    });
+    expect(plan.decision).toBe('ADOPT_EXISTING');
+    expect(plan.mode).toBe(DEFAULT_MODE);
+  });
+});
+
 describe('the atomic launcher lock', () => {
   it('is created with an exclusive flag, not test-then-write', () => {
     const source = read('scripts/dev/launcher-lock.mjs');
@@ -508,6 +865,7 @@ describe('the runtime state file', () => {
   const valid = {
     checkout: '/repo',
     launcherPid: 1,
+    mode: DEVELOPMENT,
     api: { pid: 2, port: 3000, command: 'x', acquisition: 'spawned' },
     web: { pid: 3, port: 3100, command: 'y', acquisition: 'spawned' },
     origins: { api: 'http://localhost:3000', web: 'http://localhost:3100' },
@@ -519,6 +877,56 @@ describe('the runtime state file', () => {
     const { state, problem } = readState(file);
     expect(problem).toBeNull();
     expect(state).toMatchObject({ schema: STATE_SCHEMA, launcher: 'rootlco-dev', api: { pid: 2 } });
+  });
+
+  it('records the mode, in both modes', () => {
+    for (const mode of MODES) {
+      expect(
+        buildState({
+          checkout: '/repo',
+          launcherPid: 1,
+          mode,
+          api: { pid: 2, port: 3000, command: 'x', acquisition: 'spawned' },
+          web: { pid: 3, port: 3100, command: 'y', acquisition: 'spawned' },
+          origin: { api: 'http://localhost:3000', web: 'http://localhost:3100' },
+        })
+      ).toMatchObject({ mode });
+    }
+  });
+
+  /**
+   * A typo recorded here would be a WRONG answer to "which mode is running",
+   * not a missing one — and a wrong answer is what cost this phase a false 401
+   * diagnosis. Refusing to write the record is the loud failure; writing
+   * `"prodcution"` would be the quiet one.
+   */
+  it('refuses to record a mode it does not recognise, and refuses to omit one', () => {
+    const record = (mode: unknown) =>
+      buildState({
+        checkout: '/repo',
+        launcherPid: 1,
+        mode,
+        api: { pid: 2, port: 3000, command: 'x', acquisition: 'spawned' },
+        web: { pid: 3, port: 3100, command: 'y', acquisition: 'spawned' },
+        origin: { api: 'http://localhost:3000', web: 'http://localhost:3100' },
+      });
+    expect(() => record('prodcution')).toThrow(/refusing to record launch mode/);
+    expect(() => record(undefined)).toThrow(/refusing to record launch mode/);
+    expect(() => record(null)).toThrow(/refusing to record launch mode/);
+  });
+
+  it('bumped the schema rather than adding the field quietly', () => {
+    // A schema-2 file carries no mode at all. Accepting it would print
+    // `undefined` exactly where the answer belongs, so it is reported as
+    // upgradeable instead and the adopt path rewrites it.
+    expect(STATE_SCHEMA).toBe(3);
+    const file = join(scratch(), 'old.json');
+    writeFileSync(
+      file,
+      JSON.stringify({ schema: 2, launcher: 'rootlco-dev', api: { pid: 2 } }),
+      'utf8'
+    );
+    expect(readState(file).problem).toMatch(/schema 2, expected 3/);
   });
 
   it('writes through a temporary file and renames, so no reader sees a partial record', () => {
@@ -614,7 +1022,23 @@ describe('the launcher control flow', () => {
       .filter(Boolean)
       .pop() ?? '';
 
+  /**
+   * The branch must be REACHABLE, not merely present.
+   *
+   * These three used to assert only that the verdict name appeared somewhere
+   * above the spawn — and a mutation rewriting the test to
+   * `if (false && plan.decision === '…')` SURVIVED it, because the disabled
+   * condition still contains the name being searched for. Pinning the whole
+   * `if (` opener is what makes the assertion about the branch rather than
+   * about the string.
+   */
+  const reachableBranch = (verdict: string) =>
+    expect(stripped, `the ${verdict} branch must be reachable, not merely present`).toContain(
+      `if (plan.decision === '${verdict}') {`
+    );
+
   it('the adopt path ENDS in a return, so it cannot fall through to a spawn', () => {
+    reachableBranch('ADOPT_EXISTING');
     const block = blockAfter(stripped, "=== 'ADOPT_EXISTING'");
     expect(block).toContain('reportAdopted(');
     expect(stripped).toContain('RootLco local stack is already running.');
@@ -624,20 +1048,94 @@ describe('the launcher control flow', () => {
     ).toBe('return;');
     // And it really is above the spawn.
     expect(stripped.indexOf("=== 'ADOPT_EXISTING'")).toBeLessThan(
-      stripped.indexOf('children[tier] = launch(tier)')
+      stripped.indexOf('children[tier] = launch(tier, mode)')
     );
   });
 
   it('the refusal path ENDS in a return too', () => {
+    reachableBranch('REFUSE_UNRELATED');
     const block = blockAfter(stripped, "=== 'REFUSE_UNRELATED'");
     expect(lastStatement(block)).toBe('return;');
     expect(block).toMatch(/process\.exitCode = 1/);
+  });
+
+  /**
+   * The third refusal, and it is a refusal for the same reason as the other
+   * two: a running `next dev` stack answers every readiness probe a `next
+   * start` stack answers, so falling through here would either adopt it — and
+   * report the acceptance environment as up while serving the configuration
+   * that manufactures 401s — or start the missing half in the other mode.
+   */
+  it('the mode-mismatch refusal ENDS in a return too', () => {
+    reachableBranch('REFUSE_MODE_MISMATCH');
+    const block = blockAfter(stripped, "=== 'REFUSE_MODE_MISMATCH'");
+    expect(lastStatement(block)).toBe('return;');
+    expect(block).toMatch(/reportModeMismatch\(plan\)/);
+    expect(block).toMatch(/process\.exitCode = 1/);
+    expect(stripped.indexOf("=== 'REFUSE_MODE_MISMATCH'")).toBeLessThan(
+      stripped.indexOf('children[tier] = launch(tier, mode)')
+    );
   });
 
   it('the lock-contention path ENDS in a return', () => {
     // A second launcher that finds an active lock must not continue either.
     const block = blockAfter(stripped, 'if (!lock.acquired)');
     expect(lastStatement(block)).toBe('return;');
+  });
+
+  /**
+   * The production path, asserted about the launcher's own source because the
+   * alternative — running it — costs two full Next builds.
+   */
+  it('builds before it serves, and awaits the build', () => {
+    const build = stripped.indexOf('await buildTier(tier)');
+    const spawnPoint = stripped.indexOf('children[tier] = launch(tier, mode)');
+    expect(build, 'production mode must build').toBeGreaterThan(0);
+    expect(build, 'the build must happen before the server is started').toBeLessThan(spawnPoint);
+    // A failed build that is not awaited leaves `next start` serving whatever
+    // was in `.next` from an earlier commit — up, answering, and not the tree
+    // anybody asked about.
+    expect(stripped).toMatch(/production build failed with exit code/);
+    // And a zero exit code is the build's own claim about itself; BUILD_ID is
+    // the evidence.
+    expect(stripped).toMatch(/exited 0 but wrote no BUILD_ID/);
+  });
+
+  it('settles the build-time environment BEFORE the build, not before the spawn', () => {
+    // Every `NEXT_PUBLIC_*` value is inlined by `next build`. Set afterwards it
+    // reaches nothing, and the stack comes up with the wrong API origin baked
+    // into the client bundle.
+    const apiBase = stripped.indexOf('NEXT_PUBLIC_API_BASE_URL ??= API_ORIGIN');
+    const appEnv = stripped.indexOf("NEXT_PUBLIC_APP_ENV ??= 'local'");
+    const build = stripped.indexOf('await buildTier(tier)');
+    expect(apiBase).toBeGreaterThan(0);
+    expect(apiBase).toBeLessThan(build);
+    // `local` is what keeps the session cookie unmarked `Secure`. A `Secure`
+    // cookie is discarded in silence by a browser on a plain-HTTP origin, so
+    // the Owner would sign in successfully and land back on the login page.
+    expect(appEnv, 'production must pin the app environment for the build').toBeGreaterThan(0);
+    expect(appEnv).toBeLessThan(build);
+  });
+
+  it('never clears the build directory it is about to serve', () => {
+    // The clear exists to remove a production build from under `next dev`.
+    // Running it in production mode would delete what was just built.
+    const source = read('scripts/dev/start-local.mjs');
+    expect(source).toMatch(/function clearStaleProductionBuild\(workspace, mode\)/);
+    expect(source).toMatch(/if \(mode !== DEVELOPMENT\) return null;/);
+    // And it leaves a tier whose development server reads somewhere else alone,
+    // so a `dev:all` cannot silently destroy the acceptance build.
+    expect(source).toMatch(
+      /if \(TIERS\[workspace\]\.devDistDir !== PRODUCTION_DIST_DIR\) return null;/
+    );
+  });
+
+  it('refuses an argument it does not understand before it takes the lock', () => {
+    const parse = stripped.indexOf('parseModeArgv(process.argv.slice(2))');
+    const lock = stripped.indexOf('acquireLock(');
+    expect(parse).toBeGreaterThan(0);
+    expect(parse).toBeLessThan(lock);
+    expect(stripped).toMatch(/the command line was not understood/);
   });
 
   it('never claims success before readiness has been awaited', () => {
@@ -656,6 +1154,11 @@ describe('the launcher control flow', () => {
   it('pins both hostname and port so Next can never choose 3001 or 3101', () => {
     expect(stripped).toMatch(/'--hostname',\s*DEV_HOST/);
     expect(stripped).toMatch(/'--port',\s*String\(port\)/);
+    // One argv builder for both modes, so the pinning cannot hold for one and
+    // be forgotten for the other. The subcommand is DERIVED from the mode
+    // rather than branched on, so no caller can invent a third spelling.
+    expect(stripped).toMatch(/nextSubcommandFor\(mode\)/);
+    expect(stripped).not.toMatch(/tierArgs\([^)]*\)\s*\{[\s\S]{0,200}'dev'/);
   });
 
   it('never kills by process name', () => {
@@ -680,7 +1183,7 @@ describe('the launcher control flow', () => {
     // immediately before the launch loop — a source-scan assertion cannot save
     // a launcher that ships with the branch deleted.
     const guard = stripped.indexOf('if (!maySpawn(plan.decision))');
-    const spawnPoint = stripped.indexOf('children[tier] = launch(tier)');
+    const spawnPoint = stripped.indexOf('children[tier] = launch(tier, mode)');
     expect(guard, 'the launcher must consult maySpawn before spawning').toBeGreaterThan(0);
     expect(guard).toBeLessThan(spawnPoint);
     expect(blockAfter(stripped, 'if (!maySpawn(plan.decision))')).toMatch(/throw new Error/);
@@ -688,7 +1191,7 @@ describe('the launcher control flow', () => {
 
   it('takes the lock before it surveys or spawns', () => {
     const lock = stripped.indexOf('acquireLock(');
-    const spawnPoint = stripped.indexOf('children[tier] = launch(tier)');
+    const spawnPoint = stripped.indexOf('children[tier] = launch(tier, mode)');
     expect(lock).toBeGreaterThan(0);
     expect(lock).toBeLessThan(spawnPoint);
   });
@@ -761,6 +1264,37 @@ describe('the npm commands cannot drift to another port', () => {
     expect(rootPkg.scripts.dev).toBe(rootPkg.scripts['dev:all']);
   });
 
+  /**
+   * The production acceptance stack is a named command, not a flag an operator
+   * has to remember to forward through npm's `--` separator.
+   *
+   * It is the SAME launcher, deliberately. A second script that could also
+   * spawn would be a second lock, a second plan and a second state file — which
+   * is the duplicate-stack defect (`P1-26-F-063`) rebuilt on purpose.
+   */
+  it('the acceptance stack is one named command running the one launcher', () => {
+    expect(rootPkg.scripts['acceptance:serve']).toBe(
+      'node scripts/dev/start-local.mjs --production'
+    );
+    expect(rootPkg.scripts['acceptance:serve']).toContain(rootPkg.scripts['dev:all']);
+    // And it names no port of its own — the ports come from dev-config.mjs.
+    expect(rootPkg.scripts['acceptance:serve']).not.toMatch(/\d{4}/);
+  });
+
+  it('the development launcher is untouched, because this is an added mode', () => {
+    // An added mode that quietly changes what the existing command does is not
+    // an added mode. `dev:all` must still mean `next dev`.
+    expect(rootPkg.scripts['dev:all']).not.toMatch(/--production/);
+    expect(webPkg.scripts.dev).toBe('next dev --hostname localhost --port 3100');
+  });
+
+  it('is registered in the command-coverage register, with its reason', () => {
+    // A command nothing classifies is a command nothing is accountable for.
+    const register = read('scripts/ci/check-command-coverage.mjs');
+    expect(register).toContain("name: 'acceptance:serve'");
+    expect(register).toMatch(/acceptance:serve'[\s\S]{0,900}Owner acceptance stack/);
+  });
+
   it('pins the hostname and port for every single-tier command', () => {
     // `apps/web` is Frontend-owned, so its script carries the flags directly.
     expect(webPkg.scripts.dev).toBe('next dev --hostname localhost --port 3100');
@@ -791,9 +1325,59 @@ describe('the npm commands cannot drift to another port', () => {
       rootPkg.scripts['dev:all'],
       rootPkg.scripts['dev:api'],
       rootPkg.scripts['dev:web'],
+      rootPkg.scripts['acceptance:serve'],
       webPkg.scripts.dev,
     ]) {
       expect(script).not.toMatch(/300[1-9]|310[1-9]/);
     }
+  });
+});
+
+describe('the single-instance contract is proven for BOTH modes', () => {
+  const verifier = read('scripts/dev/verify-single-instance.mjs');
+
+  /**
+   * The guarantee is about how the launcher IDENTIFIES a running server, and a
+   * production stack's command line is `next start`, not `next dev`. A guard
+   * proven against one subcommand is not proven against the other — that is
+   * exactly the assumption that would have let the acceptance stack be
+   * classified as an unrelated process.
+   */
+  it('takes the mode, and starts the launcher in it', () => {
+    expect(verifier).toMatch(/parseModeArgv\(process\.argv\.slice\(2\)\)/);
+    expect(verifier).toMatch(/args\.push\('--production'\)/);
+    expect(verifier).toMatch(/MODE === PRODUCTION \? 'acceptance:serve' : 'dev:all'/);
+  });
+
+  it('still asserts nothing fell back to 3001 or 3101, in either mode', () => {
+    // The invariant the whole script exists for, and it is mode-independent.
+    expect(verifier).toMatch(/nothing fell back to port 3001/);
+    expect(verifier).toMatch(/nothing fell back to port 3101/);
+  });
+
+  it('asserts the status command reports the mode it started', () => {
+    expect(verifier).toMatch(/dev:status reports the mode as \$\{MODE\}/);
+    expect(verifier).toMatch(/MODE\\\\s\+\$\{MODE\}/);
+  });
+
+  it('proves the OTHER mode is refused rather than adopted', () => {
+    expect(verifier).toMatch(/against a \$\{MODE\} stack exits non-zero/);
+    expect(verifier).toMatch(/refuses rather than adopting the other mode/);
+  });
+
+  it('gives a production run a budget that covers two builds', () => {
+    // A four-second budget once made this report "the API is not answering"
+    // about an API that was answering. A production run compiles both
+    // workspaces before it can answer anything at all.
+    expect(verifier).toMatch(/MODE === PRODUCTION \? 900_000 : 240_000/);
+  });
+});
+
+describe('stop names the mode it is stopping', () => {
+  it('says which mode the server it signalled was serving', () => {
+    // "I stopped it" and "I stopped the one I thought I was looking at" are
+    // different claims, and both modes serve on the same two ports.
+    const stop = read('scripts/dev/stop-local.mjs');
+    expect(stop).toMatch(/stopping the \$\{info\.mode/);
   });
 });

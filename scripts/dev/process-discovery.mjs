@@ -50,6 +50,7 @@
  */
 import { execFileSync } from 'node:child_process';
 import { normalize, resolve, sep } from 'node:path';
+import { modeOfNextSubcommand } from './launch-mode.mjs';
 
 /** Raised when the platform could not be interrogated at all. */
 export class DiscoveryFailure extends Error {
@@ -300,12 +301,49 @@ function comparablePath(value) {
 }
 
 /**
+ * The Next subcommand a command line invokes, if it invokes one we serve with.
+ *
+ * `dev` and `start` only. `build` is deliberately NOT here: a build is a
+ * transient process that holds no port, and treating one as a server would let
+ * the launcher adopt a compile that is about to exit.
+ *
+ * Anchored on a separator before `next` so a path merely CONTAINING the word —
+ * `node_modules/next/dist/bin/…` — cannot match; only the executable name
+ * followed by the subcommand does.
+ */
+const NEXT_SUBCOMMAND = /(?:^|[\s"'/\\])next(?:\.js)?["']?\s+(dev|start)\b/;
+
+/**
+ * Which mode a live server is running in, read off its own command line.
+ *
+ * This is what makes `dev:status` able to answer "which mode is this" with
+ * EVIDENCE rather than with whatever the state file happens to say. A state
+ * file can be stale, can describe a stack that died and was replaced by hand,
+ * or can be absent entirely for an adopted stack — the argv of the process
+ * holding the port cannot be any of those things.
+ *
+ * @param {string} command
+ * @returns {string|null} a launch mode, or null when this is not a Next server
+ */
+export function nextModeOfCommand(command) {
+  const match = NEXT_SUBCOMMAND.exec(comparablePath(command));
+  return match ? modeOfNextSubcommand(match[1]) : null;
+}
+
+/**
  * Does this command line start the given workspace's Next server from THIS
  * checkout?
  *
  * Both halves matter. Matching only `apps/api` would adopt another clone of
  * RootLco sitting elsewhere on the machine; matching only the repository root
  * would confuse the two workspaces with each other.
+ *
+ * `next start` counts as ours exactly as much as `next dev` does. It has to:
+ * the production acceptance stack is served that way, and a launcher that did
+ * not recognise it would classify the Owner's own running stack as an unrelated
+ * process — refusing to start, refusing to stop it, and reporting it in
+ * `dev:status` as "NOT RootLco". Recognising only one of the two subcommands
+ * would be a worse defect than the one the production mode was added to fix.
  *
  * @param {string} command
  * @param {string} repoRootPath
@@ -316,7 +354,7 @@ export function commandBelongsToWorkspace(command, repoRootPath, workspace) {
   if (!text) return false;
   const root = comparablePath(repoRootPath);
   if (!root || !text.includes(root)) return false;
-  if (!/[\\/]next(\.js)?["']?\s+dev\b/.test(text) && !/\bnext\s+dev\b/.test(text)) return false;
+  if (nextModeOfCommand(command) === null) return false;
   return new RegExp(`(^|[\\s"'/])apps/${workspace}([\\s"'/]|$)`).test(text);
 }
 
@@ -348,7 +386,12 @@ export function ancestryOf(pid, table, maxDepth = 6) {
  * Pure: everything it needs is passed in, so every branch is testable without a
  * live server or a platform command.
  *
- * @returns {{state:'free'}|{state:'owned',pid:number,ownerPid:number,command:string,addresses:string[]}|{state:'unrelated',pid:number,name:string,command:string,addresses:string[]}}
+ * An `owned` verdict carries the MODE the server is running in, derived from
+ * the owning process's command line. It is reported rather than assumed because
+ * the launcher must be able to refuse a half-development, half-production
+ * stack, and `dev:status` must be able to say which one the Owner is looking at.
+ *
+ * @returns {{state:'free'}|{state:'owned',pid:number,ownerPid:number,command:string,mode:string|null,addresses:string[]}|{state:'unrelated',pid:number,name:string,command:string,addresses:string[]}}
  */
 export function classifyPort({ port, listeners, table, repoRootPath, workspace }) {
   const holders = (listeners ?? []).filter((l) => Number(l.port) === Number(port));
@@ -367,6 +410,7 @@ export function classifyPort({ port, listeners, table, repoRootPath, workspace }
         pid: holder.pid,
         ownerPid: owner.pid,
         command: owner.command,
+        mode: nextModeOfCommand(owner.command),
         addresses,
       };
     }
