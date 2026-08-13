@@ -78,7 +78,7 @@ cannot, that is said instead of guessed.
 | 5   | `195 / 0`, `197 / 0`, `170 / 0`        | `204 / 0`, `206 / 0`, `179 / 0`        | re-run; all three still report zero                                 |
 | 6   | `143 registered · 71 required · 71/71` | `156 registered · 80 required · 80/80` | derived — §7.1                                                      |
 | 8   | `39 files, 803 passed`                 | `98` files; case total NOT restated    | the file half derived — §3 and §6.1; the case half is `E-03`        |
-| 9   | `77 files, 1680 passed`                | `96 files, 2341 passed`                | recorded, not derived — §6.4 says why                               |
+| 9   | `77 files, 1680 passed`                | `96 files, 2398 passed`                | recorded, not derived — §6.4 says why                               |
 | 10  | `31 files, 638 passed`                 | `46 files, 1202 passed`                | the file half derived — §6.4                                        |
 | 11  | `150 tests in 2 files`                 | **not re-measured**                    | needs a browser install; unchanged as far as any record here states |
 | 12  | `331 tests in 9 files`                 | **not re-measured**                    | the same                                                            |
@@ -563,7 +563,7 @@ anonymous tier had been fixed before merge.
 
 | tier                                                  | files                                           | cases                                                                                                                                                        | how measured                            |
 | ----------------------------------------------------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------- |
-| `npm run test` — the root unit and contract aggregate | **96**                                          | **2341**                                                                                                                                                     | re-run; the file half is not derived    |
+| `npm run test` — the root unit and contract aggregate | **96**                                          | **2398**                                                                                                                                                     | re-run; the file half is not derived    |
 | of which `tests/ci`                                   | **46**                                          | **1202**                                                                                                                                                     | the file half derived; the cases re-run |
 | `tests/backend`                                       | **86** test files (91 files in the directory)   | **not run here** — needs a running PostgreSQL                                                                                                                | both halves derived                     |
 | `tests/db`                                            | **139** test files (143 files in the directory) | **not run here** — needs a running PostgreSQL. **Recorded** as 1636 / 1636 in [`owner-acceptance-fail-remediation.md`](owner-acceptance-fail-remediation.md) | both halves derived                     |
