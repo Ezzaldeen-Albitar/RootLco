@@ -150,6 +150,38 @@ import '@/app/api/v1/reception-catalogue/visit-reasons/route';
 import '@/app/api/v1/reception-catalogue/fuel-levels/route';
 import '@/app/api/v1/reception-catalogue/warning-light-codes/route';
 import '@/app/api/v1/reception-catalogue/refusal-reasons/route';
+// P1-27-INT-018 management half. The seven creates are POSTs inside the seven
+// collection modules already imported above, so they arrive for free — these
+// fourteen do NOT, and each is the only place its operation is declared. An
+// omission here is invisible in this file by construction (both sides of the
+// comparison would load the same short registry); `check-openapi.mjs` counting
+// 282 published against `check-authorization-coverage.mjs` counting 282
+// registered is what actually catches it.
+import '@/app/api/v1/appointment-catalogue/appointment-types/[appointmentTypeId]/route';
+import '@/app/api/v1/appointment-catalogue/appointment-types/[appointmentTypeId]/status/route';
+import '@/app/api/v1/appointment-catalogue/source-channels/[sourceChannelId]/route';
+import '@/app/api/v1/appointment-catalogue/source-channels/[sourceChannelId]/status/route';
+import '@/app/api/v1/appointment-catalogue/cancellation-reasons/[cancellationReasonId]/route';
+import '@/app/api/v1/appointment-catalogue/cancellation-reasons/[cancellationReasonId]/status/route';
+import '@/app/api/v1/reception-catalogue/visit-reasons/[visitReasonId]/route';
+import '@/app/api/v1/reception-catalogue/visit-reasons/[visitReasonId]/status/route';
+import '@/app/api/v1/reception-catalogue/fuel-levels/[fuelLevelId]/route';
+import '@/app/api/v1/reception-catalogue/fuel-levels/[fuelLevelId]/status/route';
+import '@/app/api/v1/reception-catalogue/warning-light-codes/[warningLightCodeId]/route';
+import '@/app/api/v1/reception-catalogue/warning-light-codes/[warningLightCodeId]/status/route';
+import '@/app/api/v1/reception-catalogue/refusal-reasons/[refusalReasonId]/route';
+import '@/app/api/v1/reception-catalogue/refusal-reasons/[refusalReasonId]/status/route';
+// P1-27-INT-018 administrative reads. The picker lists above cannot serve a
+// catalogue-administration screen — they filter to `status = 'active'` and
+// project no `recordVersion` — so these seven are the read the management
+// commands need, gated on `apt.catalogue.manage` / `rec.catalogue.manage`.
+import '@/app/api/v1/appointment-catalogue/management/appointment-types/route';
+import '@/app/api/v1/appointment-catalogue/management/source-channels/route';
+import '@/app/api/v1/appointment-catalogue/management/cancellation-reasons/route';
+import '@/app/api/v1/reception-catalogue/management/visit-reasons/route';
+import '@/app/api/v1/reception-catalogue/management/fuel-levels/route';
+import '@/app/api/v1/reception-catalogue/management/warning-light-codes/route';
+import '@/app/api/v1/reception-catalogue/management/refusal-reasons/route';
 import '@/app/api/v1/receptions/route';
 import '@/app/api/v1/receptions/[receptionId]/route';
 import '@/app/api/v1/receptions/[receptionId]/history/route';

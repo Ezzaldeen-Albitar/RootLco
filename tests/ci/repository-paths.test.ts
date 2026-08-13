@@ -143,7 +143,19 @@ describe('the API application lives in the workspace', () => {
     // `receptions/[receptionId]/history`, the seven intake-catalogue reads,
     // and the two closure commands (`close-without-work`, `refuse`) — while the
     // five other reads it added are GETs on route files that were already here.
-    expect(routeFiles.length).toBe(216);
+    // 230 through the intake-catalogue MANAGEMENT remediation (P1-27-INT-018):
+    // fourteen new route modules, an id-addressed rename and a `/status`
+    // lifecycle module for each of the seven catalogues. The seven creates move
+    // this number not at all — each is a POST added to the catalogue's existing
+    // collection route file, which the read remediation already counted.
+    //
+    // 237 with the seven ADMINISTRATIVE reads under `.../management/<catalogue>`.
+    // They are their own modules rather than a query flag on the picker lists
+    // because they answer to a different permission: the picker filters to
+    // active entries for `apt.appointment.read` / `rec.reception.read`, and the
+    // administrative read shows retired entries and their `recordVersion` to
+    // `apt.catalogue.manage` / `rec.catalogue.manage`.
+    expect(routeFiles.length).toBe(237);
 
     // Non-vacuity. A discovery assertion that only checks a count would pass
     // against a set with one route swapped for another, so the comparison that
@@ -180,7 +192,13 @@ describe('the API application lives in the workspace', () => {
     // 261: the P1-16 customer-vehicle read (`crm.customer-vehicle-list`,
     // P1-27-INT-012) is a GET on the existing vehicles route module, so the
     // route-module count above does not move while the operation count does.
-    expect(report.operations).toHaveLength(261);
+    // 282 through the intake-catalogue management remediation: 21 operations
+    // over 14 new modules, because the seven creates are POSTs co-located with
+    // the seven collection GETs. Operations and route modules move by different
+    // amounts for that reason, which is exactly why both are asserted.
+    // 289 with the seven administrative reads, which move both counts by seven
+    // — one operation per new module.
+    expect(report.operations).toHaveLength(289);
 
     // ~1 s per process by construction, not by slowness. The budget is stated
     // here rather than raised globally, so it cannot quietly cover a different

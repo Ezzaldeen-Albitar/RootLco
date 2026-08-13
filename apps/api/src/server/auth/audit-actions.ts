@@ -636,6 +636,172 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
     description:
       'A reception visit was refused — the terminal exit that ends the visit without work being authorized. The mandatory reason is copied into the append-only status ledger, and the vehicle stops occupying the one-open-visit index so it can be received again.',
   },
+  // ---- Intake configuration catalogues (P1-27-INT-018, executed by P1-18) ---
+  //
+  // Seven dual-scope catalogues the appointment and reception writes reference
+  // by uuid. PR #220 published their reads; these codes record the MANAGEMENT
+  // commands that make them populatable — the tables ship zero rows by the
+  // no-fake-data policy and nothing could add the first one, so the screens
+  // above them could not be used at all.
+  //
+  // One code per catalogue per verb rather than a shared `apt.catalogue.*` pair,
+  // because this catalog fixes ONE entityType per code and "a row changed in
+  // some apt catalogue" is not a queryable fact. Unlike
+  // `wo.work_order.state_changed`, whose transition graph is tenant-overridable,
+  // the set of catalogues is closed in code — so a per-entity vocabulary is one
+  // this catalog can close.
+  //
+  // No `*.deleted` code exists in this block and none can: `app_runtime` holds
+  // no DELETE grant on any of the seven relations. Withdrawal is recorded as a
+  // status change, which is also what keeps a row a live foreign key references
+  // from vanishing.
+  {
+    code: 'apt.appointment_type.created',
+    class: 'privileged',
+    entityType: 'apt.appointment_type',
+    description:
+      'An appointment type was added to a tenant catalogue. Tenant scope always: a platform default is provisioned admin-side and can never be created through this route.',
+  },
+  {
+    code: 'apt.appointment_type.renamed',
+    class: 'privileged',
+    entityType: 'apt.appointment_type',
+    description:
+      'An appointment type’s display name was corrected. The code is immutable, because every appointment already booked against this row means the code.',
+  },
+  {
+    code: 'apt.appointment_type.status_changed',
+    class: 'privileged',
+    entityType: 'apt.appointment_type',
+    description:
+      'An appointment type was retired from the booking pickers or restored to them. Never a deletion: appointments reference the row, so it remains readable and its code remains taken.',
+  },
+  {
+    code: 'apt.source_channel.created',
+    class: 'privileged',
+    entityType: 'apt.source_channel',
+    description:
+      'An intake source channel was added to a tenant catalogue. Tenant scope always; platform defaults are provisioned admin-side.',
+  },
+  {
+    code: 'apt.source_channel.renamed',
+    class: 'privileged',
+    entityType: 'apt.source_channel',
+    description:
+      'An intake source channel’s display name was corrected. The code is immutable, because every appointment recorded against this channel means the code.',
+  },
+  {
+    code: 'apt.source_channel.status_changed',
+    class: 'privileged',
+    entityType: 'apt.source_channel',
+    description:
+      'An intake source channel was retired from the booking pickers or restored to them. Never a deletion; existing references stay satisfied.',
+  },
+  {
+    code: 'apt.cancellation_reason.created',
+    class: 'privileged',
+    entityType: 'apt.cancellation_reason',
+    description:
+      'A cancellation reason was added to a tenant catalogue. Tenant scope always; platform defaults are provisioned admin-side.',
+  },
+  {
+    code: 'apt.cancellation_reason.renamed',
+    class: 'privileged',
+    entityType: 'apt.cancellation_reason',
+    description:
+      'A cancellation reason’s display name was corrected. The code is immutable, because every cancelled appointment means the code it was cancelled under.',
+  },
+  {
+    code: 'apt.cancellation_reason.status_changed',
+    class: 'privileged',
+    entityType: 'apt.cancellation_reason',
+    description:
+      'A cancellation reason was retired from the cancel dialog or restored to it. Never a deletion: cancelled appointments reference the row permanently.',
+  },
+  {
+    code: 'rec.visit_reason.created',
+    class: 'privileged',
+    entityType: 'rec.visit_reason',
+    description:
+      'A visit reason was added to a tenant catalogue. Tenant scope always; platform defaults are provisioned admin-side.',
+  },
+  {
+    code: 'rec.visit_reason.renamed',
+    class: 'privileged',
+    entityType: 'rec.visit_reason',
+    description:
+      'A visit reason’s display name was corrected. The code is immutable, because every reception visit recorded against it means the code.',
+  },
+  {
+    code: 'rec.visit_reason.status_changed',
+    class: 'privileged',
+    entityType: 'rec.visit_reason',
+    description:
+      'A visit reason was retired from the check-in pickers or restored to them. Never a deletion; existing visits keep resolving it.',
+  },
+  {
+    code: 'rec.fuel_level.created',
+    class: 'privileged',
+    entityType: 'rec.fuel_level',
+    description:
+      'A fuel level was added to a tenant catalogue. Tenant scope always; platform defaults are provisioned admin-side.',
+  },
+  {
+    code: 'rec.fuel_level.renamed',
+    class: 'privileged',
+    entityType: 'rec.fuel_level',
+    description:
+      'A fuel level’s display name was corrected. The code is immutable, because every check-in that recorded a level means the code.',
+  },
+  {
+    code: 'rec.fuel_level.status_changed',
+    class: 'privileged',
+    entityType: 'rec.fuel_level',
+    description:
+      'A fuel level was retired from the check-in pickers or restored to them. Never a deletion: the recorded condition of a vehicle at intake must stay readable.',
+  },
+  {
+    code: 'rec.warning_light_code.created',
+    class: 'privileged',
+    entityType: 'rec.warning_light_code',
+    description:
+      'A warning-light code was added to a tenant catalogue. Tenant scope always; platform defaults are provisioned admin-side.',
+  },
+  {
+    code: 'rec.warning_light_code.renamed',
+    class: 'privileged',
+    entityType: 'rec.warning_light_code',
+    description:
+      'A warning-light code’s display name was corrected. The code is immutable, because every warning-light observation recorded at intake means the code.',
+  },
+  {
+    code: 'rec.warning_light_code.status_changed',
+    class: 'privileged',
+    entityType: 'rec.warning_light_code',
+    description:
+      'A warning-light code was retired from the condition-evidence pickers or restored to them. Never a deletion: pre-service condition evidence is permanent and must stay readable.',
+  },
+  {
+    code: 'rec.refusal_reason.created',
+    class: 'privileged',
+    entityType: 'rec.refusal_reason',
+    description:
+      'A refusal reason was added to a tenant catalogue. Tenant scope always; platform defaults are provisioned admin-side.',
+  },
+  {
+    code: 'rec.refusal_reason.renamed',
+    class: 'privileged',
+    entityType: 'rec.refusal_reason',
+    description:
+      'A refusal reason’s display name was corrected. The code is immutable, because every recorded refusal means the code it was recorded under.',
+  },
+  {
+    code: 'rec.refusal_reason.status_changed',
+    class: 'privileged',
+    entityType: 'rec.refusal_reason',
+    description:
+      'A refusal reason was retired from the refusal pickers or restored to them. Never a deletion: a refusal is preserved as its own fact and keeps resolving its reason.',
+  },
   {
     code: 'wo.work_order.state_changed',
     class: 'privileged',
