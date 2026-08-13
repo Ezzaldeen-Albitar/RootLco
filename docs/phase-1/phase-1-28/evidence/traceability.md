@@ -44,8 +44,8 @@ nothing lists" cannot come to exist. That state is exactly what P1-27 paid five
 adversarial rounds for.
 
 The judged matrix at this head holds
-<!-- derived: matrix PASS = 25 --> **25** PASS,
-<!-- derived: matrix PARTIAL = 10 --> **10** PARTIAL and
+<!-- derived: matrix PASS = 31 --> **31** PASS,
+<!-- derived: matrix PARTIAL = 4 --> **4** PARTIAL and
 <!-- derived: matrix FAIL = 0 --> **0** FAIL across
 <!-- derived: matrix taskCount = 35 --> **35** rows. Those verdicts are
 
@@ -85,12 +85,17 @@ session reaches the real Next.js server, the real API and the real database
 under RLS. The gate refuses any other path in that field, and refuses a record
 in which no id cites the browser at all.
 
-<!-- derived: browser cases = 12 --> **12** browser cases across
+<!-- derived: browser cases = 21 --> **21** browser cases across
 <!-- derived: browser files = 1 --> **1** file are cited today. The tier
 
 observes the honest blocked states as well as the working paths, and it seeds no
-business row to manufacture a green one: an empty appointment-type catalogue
-BLOCKS booking, and what the browser asserts is that the screen says so.
+business row to manufacture a green one: against the Owner-acceptance workspace
+an empty appointment-type catalogue BLOCKS booking, and what the browser asserts
+is that the screen says so. The working paths are proved against a SECOND
+workspace whose intake catalogues were populated at run time through the
+published management contracts — never a seed, never a migration — so the
+configured and the unconfigured truth are both asserted, in one run, and neither
+can be dropped for the other.
 
 ## 5. What this page is not
 

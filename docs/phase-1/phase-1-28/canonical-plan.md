@@ -261,7 +261,7 @@ heading.
   no version can reach `accepted`
   (`docs/product/workshop/reception-media-checklist.md:208-210`).
 - **Enforced by:** the `no-upload-path` and `no-invented-media-limit` gate
-  rules (`scripts/ci/check-p1-27-frontend.mjs:876-895,919-939`), which ban any capture
+  rules (`scripts/ci/check-p1-27-frontend.mjs:910`, `:953`), which ban any capture
   UI while the decision is open.
 - The Owner media rows 12-14 are themselves **Blocked** (`INT-093/094/095`),
   and only the COUNT of seven exterior angles is fixed — the angle set is an
@@ -284,10 +284,15 @@ heading.
   `P1-28-OD-001`:** a contract nothing in the product reaches does not populate
   a table either. Who may administer this catalogue, and through which surface,
   is undecided; until it is decided and exercised the table stays empty.
-- **What ships instead:** no warning-light picker; the absence is stated
-  on-screen, not papered over with a disabled control. The no-fake-data policy
-  forbids inventing catalogue rows in a seed, and inventing them would answer a
-  different question from the one that is open.
+- **What ships instead:** while the table is empty the step states the absence
+  on-screen and offers no picker — not a disabled control, which would advertise
+  a capability the tenant does not have. The capture behind it is real and is no
+  longer only claimed: the browser tier records a lamp from a CONFIGURED
+  workspace and reads it back translated
+  (`apps/web/tests/e2e/authenticated/appointments-and-receptions.spec.ts` §18),
+  so what this entry withholds is the population, not the screen. The
+  no-fake-data policy forbids inventing catalogue rows in a seed, and inventing
+  them would answer a different question from the one that is open.
 
 ### `P1-28-OD-001` — who administers the intake catalogues, and through which surface · **OPEN** · raised by this phase
 
@@ -341,8 +346,18 @@ number the Owner assigns supersedes this one and this section is corrected.
   sit on a REQUIRED foreign key of an operator path — `appointmentTypeId` on
   `apt.appointment-create`, `cancellationReasonId` on `apt.appointment-cancel` —
   so **until a catalogue is populated no appointment can be booked and none can
-  be cancelled**. That is why `FE-002` and `FE-004` are PARTIAL against this
-  decision rather than against any Frontend defect.
+  be cancelled**. That consequence is recorded HERE, against this decision,
+  because here is where it can be answered.
+- **Why `FE-002` and `FE-004` are nevertheless PASS in the task matrix.** That
+  register grades a task against the capability it canonically owns, and both
+  screens are now proved on both sides of this decision in one browser run: they
+  book and cancel against a workspace configured through these very management
+  contracts, and they state the blocked truth to a workspace that is not
+  configured
+  (`apps/web/tests/e2e/authenticated/appointments-and-receptions.spec.ts` §18 and
+  §4). What they cannot do is configure a tenant — and that is the surface this
+  decision withholds, which no canonical P1-28 task binds. Withholding their
+  verdicts for it would grade them against scope this phase was never given.
 - **The no-fake-data policy is not the blocker and must not be cited as one.**
   Seeding rows would answer neither half of the question above; it would answer
   a different question badly, and the rows would then be the product's own

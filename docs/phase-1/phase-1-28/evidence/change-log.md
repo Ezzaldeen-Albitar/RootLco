@@ -213,16 +213,81 @@ building `/reception/check-in`, singular, against a wizard mounted at
 `/receptions/check-in`, plural — that every mocked tier passed while no operator
 could reach the second screen.
 
-The tier now runs the P1-28 surface in three projects (English, Arabic, tablet)
-against the running application, the running API and the real database under
-RLS. **It seeds no business row to manufacture a green path.** The acceptance
-database holds no customers, no vehicles, no appointment types and no visits, so
-several things a reader would expect to see proved cannot be — and each is
-asserted as the HONEST BLOCKED STATE the screen actually shows rather than
-skipped or weakened. An empty appointment-type catalogue blocks booking and says
-why; that sentence is what the browser asserts. Neither is any case a skip: a
-skipped test still counts toward the tier's executed total, which is how a
+The tier now runs the P1-28 surface in the `authenticated-en` and
+`authenticated-ar` projects against the running application, the running API and
+the real database under RLS. It does **not** run at a tablet viewport:
+`authenticated-tablet` matches `administration.spec.ts` only
+(`apps/web/playwright.config.ts:225-233`), so no P1-28 screen is observed at
+1024×768 and the task matrix names that gap on every row rather than implying
+coverage.
+
+**It seeds no business row to manufacture a green path.** The Owner-acceptance
+workspace holds no customers, no vehicles, no appointment types and no visits, so
+several things a reader would expect to see proved cannot be against it — and
+each is asserted as the HONEST BLOCKED STATE the screen actually shows rather
+than skipped or weakened. An empty appointment-type catalogue blocks booking and
+says why; that sentence is what the browser asserts. Neither is any case a skip:
+a skipped test still counts toward the tier's executed total, which is how a
 "0 uncovered" number gets reported over a case that measured nothing.
+
+## A second workspace, so the configured path is proved as well as the empty one
+
+Proving only the empty half would have said the screens are honest and nothing
+about whether they WORK. Proving only the configured half would have deleted the
+evidence that production's own first-day state renders truthfully. Both now run,
+in the same file and the same run.
+
+`scripts/dev/owner-acceptance/acceptance-fixtures.mjs`
+(`npm run acceptance:provision-fixtures`) provisions a THIRD acceptance tenant
+whose seven intake catalogues are populated **at run time, through the published
+PR #227 management contracts an administrator would use**. Nothing is seeded:
+nothing entered `supabase/` or `apps/`, no migration was touched, and the
+Owner-acceptance workspace stays UNCONFIGURED so the truthful "not configured"
+sentences keep being asserted. §18 of the browser spec runs the four
+catalogue-blocked capabilities against that workspace — an appointment booked
+with a catalogued type and channel, confirmed by rescheduling, cancelled with a
+catalogued reason, a second one marked no-show, a visit opened with a catalogued
+fuel level and a state-of-charge reading read back off the stored record, and a
+warning lamp recorded and read back translated — with one Arabic case over both
+configured pickers.
+
+The browser tier is also where two defects were found that every mocked tier
+passed, and both were **required fields the database refuses**:
+
+- **`observedState` on the warning-light step** was a free-text box whose own
+  hint asked for the operator's words, while `ck_warning_light_observations_state`
+  admits exactly `on`, `flashing` and `intermittent`. Measured against the running
+  stack, "steady while running" answered 422 `incoherent_reference` and rendered
+  as "This value is not accepted here", with no way to learn what would be.
+- **`leakType` on the inspection step** was the same defect and worse, because
+  the field is REQUIRED: `ck_leak_observations_type` admits exactly seven values,
+  so every leak recorded in an operator's own words was refused and the step was
+  one no operator could complete.
+
+Both are now translated selects over the migrations' own vocabularies, restated
+in `receptions-contract.ts` with the constraint named beside the list. The rule
+applied is not "never restate a database list"; it is "never invent one".
+
+## The receiving employee is a name, not a UUID
+
+`canonical-plan.md` §7 disposes of G-EMP with one sentence — "The UI shows names,
+never UUIDs" — and two surfaces broke it: the wizard header and the
+acknowledgement sheet a customer signs and takes away both rendered
+`receivingEmployeeId` inside a `<code>` element, with a DOM case asserting the
+identifier was on screen, so the defect had a test holding it in place.
+
+The name was resolvable the whole time: `iam.user-detail` is registered under the
+same `iam.user.read` the check-in employee picker already consumes and already
+discloses beside the control, so resolving it widens nobody's access and adds no
+new disposition. Both surfaces now render one of four states — named, denied,
+unresolved, unavailable — and none of them prints the identifier. The three
+non-name outcomes are separate on purpose: a denial learned nothing, a 404 means
+the identifier names nobody (and `receiving_employee_id` has no foreign key, so
+that is a state the database permits), and a failed read is not an observation —
+which is `F1` on this very document, a failed read printed as an observed
+absence.
+
+The referent itself is still undecided, and that half of G-EMP stays open.
 
 ## The acceptance environment must be a production build
 
@@ -342,11 +407,14 @@ Stated here so the absence is a record rather than a discovery:
   by any seed. Who administers the intake catalogues and through which surface
   is `P1-28-OD-001` (`canonical-plan.md` §7), and the 21 writes are recorded
   `DELIBERATELY_ABSENT` against it in `write-reachability.json` rather than
-  parked. The consequence is stated where an operator meets it: no appointment
-  can be booked or cancelled until a catalogue is populated, which is why
-  `FE-002` and `FE-004` are PARTIAL. No row is invented; the no-fake-data policy
-  and this decision are two different reasons and neither substitutes for the
-  other.
+  parked. The consequence is stated where an operator meets it: **a fresh tenant
+  cannot book or cancel an appointment until somebody configures it.** That is a
+  missing SURFACE recorded against the decision that withholds it, not a defect
+  in the booking or cancellation screens — both of which are now proved to work
+  against a configured workspace and to state the blocked truth against an
+  unconfigured one, in the same browser run. No row is invented; the
+  no-fake-data policy and this decision are two different reasons and neither
+  substitutes for the other.
 - **Road test** — no operation, status or report for one exists anywhere in the
   platform. Nothing is labelled as a road test.
 - **Everything after the work order exists** — no work-order editing, no

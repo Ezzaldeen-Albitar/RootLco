@@ -244,7 +244,11 @@
       "observedInBrowserBy": [
         {
           "file": "apps/web/tests/e2e/authenticated/appointments-and-receptions.spec.ts",
-          "cases": ["an empty appointment-type catalogue blocks booking and says why"]
+          "cases": [
+            "an empty appointment-type catalogue blocks booking and says why",
+            "an appointment is booked, confirmed by rescheduling, and cancelled with a catalogued reason",
+            "ar: the configured pickers offer their rows in Arabic, on both screens"
+          ]
         }
       ]
     },
@@ -265,7 +269,8 @@
         {
           "file": "apps/web/tests/e2e/authenticated/appointments-and-receptions.spec.ts",
           "cases": [
-            "an appointment that does not exist renders a not-found and no lifecycle control"
+            "an appointment that does not exist renders a not-found and no lifecycle control",
+            "an appointment is booked, confirmed by rescheduling, and cancelled with a catalogued reason"
           ]
         }
       ]
@@ -285,6 +290,14 @@
           "file": "apps/web/tests/p1-28-appointment-routes.test.ts",
           "cases": ["reads the cancellation reasons only for a holder of the lifecycle permission"]
         }
+      ],
+      "observedInBrowserBy": [
+        {
+          "file": "apps/web/tests/e2e/authenticated/appointments-and-receptions.spec.ts",
+          "cases": [
+            "an appointment is booked, confirmed by rescheduling, and cancelled with a catalogued reason"
+          ]
+        }
       ]
     },
     "TC-P1-28-APT-005": {
@@ -297,6 +310,12 @@
             "surfaces the state-machine refusal as a conflict that re-reading does not cure",
             "withholds ending from a non-holder of the lifecycle permission"
           ]
+        }
+      ],
+      "observedInBrowserBy": [
+        {
+          "file": "apps/web/tests/e2e/authenticated/appointments-and-receptions.spec.ts",
+          "cases": ["a confirmed appointment is marked as a no-show"]
         }
       ]
     },
@@ -354,7 +373,8 @@
           "file": "apps/web/tests/e2e/authenticated/appointments-and-receptions.spec.ts",
           "cases": [
             "the start screen renders its whole form and states the empty fuel catalogue honestly",
-            "a visit loads its thirteen-step registry — or the absent visit reads as not found"
+            "a visit loads its thirteen-step registry — or the absent visit reads as not found",
+            "a visit is opened with a catalogued fuel level and a charge reading, and a lamp is recorded"
           ]
         }
       ]
@@ -473,7 +493,11 @@
       "observedInBrowserBy": [
         {
           "file": "apps/web/tests/e2e/authenticated/appointments-and-receptions.spec.ts",
-          "cases": ["state of charge is offered as an optional reading and accepts one"]
+          "cases": [
+            "state of charge is offered as an optional reading and accepts one",
+            "a visit is opened with a catalogued fuel level and a charge reading, and a lamp is recorded",
+            "ar: the configured pickers offer their rows in Arabic, on both screens"
+          ]
         }
       ]
     },
@@ -485,6 +509,14 @@
           "cases": [
             "states that the catalogue is not configured, and invents no codes",
             "records a lamp the moment the catalogue has one"
+          ]
+        }
+      ],
+      "observedInBrowserBy": [
+        {
+          "file": "apps/web/tests/e2e/authenticated/appointments-and-receptions.spec.ts",
+          "cases": [
+            "a visit is opened with a catalogued fuel level and a charge reading, and a lamp is recorded"
           ]
         }
       ]
