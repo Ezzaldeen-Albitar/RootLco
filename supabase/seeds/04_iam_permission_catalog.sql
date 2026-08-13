@@ -281,7 +281,34 @@ INSERT INTO iam.permissions (permission_code, domain, description, risk_level, c
   ('shared.notification.read', 'shared', 'Read own notification inbox',                     'low',    '00000000-0000-4000-8000-000000000001'),
   ('shared.notification.delivery.read', 'shared', 'Inspect notification delivery attempts', 'medium', '00000000-0000-4000-8000-000000000001'),
   ('shared.document.archive',  'shared', 'Archive documents and evaluate disposal eligibility', 'high', '00000000-0000-4000-8000-000000000001'),
-  ('rpt.report.read',          'rpt', 'Read published report definitions',                'low',    '00000000-0000-4000-8000-000000000001')
+  ('rpt.report.read',          'rpt', 'Read published report definitions',                'low',    '00000000-0000-4000-8000-000000000001'),
+  -- Intake configuration-catalogue MANAGEMENT (P1-27-INT-018, executed by
+  -- P1-18). Seven dual-scope catalogues — appointment types, source channels,
+  -- cancellation reasons, visit reasons, fuel levels, warning-light codes and
+  -- refusal reasons — ship zero rows by the no-fake-data policy, and until this
+  -- remediation no operation anywhere could add one. The database had permitted
+  -- it since the tables were created; only the API published nothing, so a
+  -- required appointmentTypeId could never be satisfied and no appointment could
+  -- be booked.
+  --
+  -- Deliberately NOT apt.appointment.manage / rec.reception.manage. Booking an
+  -- appointment and defining what the appointment types ARE are different
+  -- authorities: a receptionist who may book must not thereby be able to
+  -- withdraw a type from every branch's booking form. This is the same split the
+  -- catalog already makes at apt.appointment.lifecycle.manage and
+  -- veh.vehicle.status.manage, applied to configuration.
+  --
+  -- Deliberately NOT the read codes either. apt.appointment.read and
+  -- rec.reception.read gate the pickers (P1-27-INT-019/-018); reading a
+  -- catalogue is 'low' risk and every intake user needs it, while changing one
+  -- reshapes what every future booking and check-in may record — hence 'high',
+  -- matching org.settings.manage, which is the nearest existing thing to it.
+  --
+  -- One code per schema, not per catalogue: the seven are one administrative
+  -- surface configured by one role in one screen, and seven codes would be a
+  -- distinction no operator makes.
+  ('apt.catalogue.manage',     'apt', 'Manage the tenant appointment configuration catalogues', 'high', '00000000-0000-4000-8000-000000000001'),
+  ('rec.catalogue.manage',     'rec', 'Manage the tenant reception configuration catalogues',   'high', '00000000-0000-4000-8000-000000000001')
 ON CONFLICT (permission_code) DO NOTHING;
 
 DO $$

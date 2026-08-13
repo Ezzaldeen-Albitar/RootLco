@@ -445,9 +445,17 @@ describe('P1-15 / global security posture', () => {
     // tests/backend/p1-23-authorization.test.ts for the positive-direction
     // assertion that now fails when a code is absent.
     //
+    // The intake-catalogue management remediation adds two, taking the catalog
+    // to 109: apt.catalogue.manage and rec.catalogue.manage. Seven catalogue
+    // tables shipped with a read route and no writer of any kind, while
+    // `appointmentTypeId` and `cancellationReasonId` are REQUIRED foreign keys —
+    // so no appointment could be booked or cancelled in the product, ever. The
+    // fix is a management contract, never a seed: the no-fake-data policy is
+    // permanent, and both codes are granted to nobody by default.
+    //
     // The pin moves with the seed deliberately: it is what catches an accidental
     // catalog edit.
-    expect(Number(total.rows[0]?.n)).toBe(107);
+    expect(Number(total.rows[0]?.n)).toBe(109);
   });
 
   it('the exact write-policy inventory of the whole shared schema is unchanged apart from migrations 117 and 119', async () => {
