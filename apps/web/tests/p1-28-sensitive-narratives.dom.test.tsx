@@ -241,7 +241,15 @@ describe('P1-28-SEC-002 — the database refusal surfaces as a permissions messa
 
     // Never a success sentence for a write that did not happen, and the form is
     // still there so the operator can act on what they were told.
-    expect(screen.getByRole('button', { name: EN['receptions.complaint.record'] as string })).toBeTruthy();
+    //
+    // `findByRole`, not `getByRole`: the submit control carries the pending
+    // label while the transition is in flight and takes its own name back when
+    // it settles. Asserting synchronously passes on an idle machine and fails
+    // under a loaded one — a flake that would eventually be "fixed" by deleting
+    // the assertion that noticed.
+    expect(
+      await screen.findByRole('button', { name: EN['receptions.complaint.record'] as string })
+    ).toBeTruthy();
     expect(
       screen.getByLabelText(EN['receptions.complaint.text'] as string, { exact: false })
     ).toBeTruthy();
