@@ -775,12 +775,14 @@
     {
       "TASK_ID": "FE-020",
       "CATEGORY": "Frontend",
-      "CANONICAL_REQUIREMENT": "Reception summary and approval",
+      "CANONICAL_REQUIREMENT": "Reception summary, approval and terminal close",
       "CANONICAL_SOURCE": "docs/phase-1/phase-1-28/canonical-plan.md — the Frontend task table",
       "CANONICAL_BACKEND_OPERATIONS": [
         "rec.reception-approve",
         "rec.reception-detail",
-        "rec.reception-condition-evidence-list"
+        "rec.reception-condition-evidence-list",
+        "rec.reception-close-without-work",
+        "rec.reception-refuse"
       ],
       "CANONICAL_TEST_ID": "TC-P1-28-REC-012",
       "IMPLEMENTATION_SURFACES": "NOT YET ASSESSED",

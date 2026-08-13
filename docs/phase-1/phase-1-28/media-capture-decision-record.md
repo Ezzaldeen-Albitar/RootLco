@@ -149,7 +149,7 @@ owners, and none of them is P1-28's:
 Two enforcement notes worth keeping:
 
 - The `no-upload-path` and `no-invented-media-limit` gate rules
-  (`scripts/ci/check-p1-27-frontend.mjs:558-711`) are the specification, but their
+  (`scripts/ci/check-p1-27-frontend.mjs:876-895,919-939`) are the specification, but their
   `SCAN_ROOTS` do **not** include `apps/web/src/features/receptions`. The reception
   routes are scanned; the feature tree is held by the suites above, which assert
   that fact rather than implying wider coverage than exists.

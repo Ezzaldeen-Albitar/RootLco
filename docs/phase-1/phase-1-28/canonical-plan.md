@@ -89,7 +89,7 @@ remediation register — what is missing, who owns it, and the smallest fix — 
 | **R2** | Appointment read surface — list, detail, and the `apt.appointment.read` seed (`p1-18-p1-28-boundaries.md:29-43`). EXECUTED 2026-08-12 — PR #220.                                                                                    | P1-18 |
 
 A task in §5 whose operations are marked `[MISSING Rn]` binds the operation
-that remediation will create; the binding is honest about not existing yet. **Re-derived 2026-08-12:** R1–R5 are EXECUTED and integrated at this branch’s head — PR #220 (P1-18 read surface, seven catalogues, terminal closes) and PR #221 (P1-16 customer-vehicle read) — and no §5 binding carries the marker any longer. R6–R8 remain open.
+that remediation will create; the binding is honest about not existing yet. **Re-derived 2026-08-13 (`P1-28-DOC-001`):** R1–R5 are EXECUTED and integrated at this branch’s head — PR #220 (P1-18 read surface, seven catalogues, terminal closes) and PR #221 (P1-16 customer-vehicle read) — and no §5 binding carries the marker any longer. Every one of the 35 rows in §5 was re-checked against `docs/phase-1/phase-1-24/evidence/operation-register.json` at this head: **35 tasks, 0 bindings naming an unregistered id.** R6–R8 remain open.
 
 ---
 
@@ -127,25 +127,25 @@ tasks are cross-domain: `FE-006` (walk-in intake composes CRM and Vehicle),
 
 ### 5.2 Reception Frontend — 17 tasks
 
-| id             | canonical name                                  | primary Backend operation(s)                                                                                                         | test id            |
-| -------------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ------------------ |
-| `P1-28-FE-006` | Walk-in customer and vehicle intake             | `crm.customer-search`, `crm.individual-create`, `crm.company-create`, `veh.vehicle-search`, `veh.vehicle-create`, `crm.vehicle-link` | `TC-P1-28-XD-001`  |
-| `P1-28-FE-007` | Reception check-in wizard                       | `rec.reception-create`, `iam.user-list`, `rec.reception-list`, `rec.reception-detail`                                                | `TC-P1-28-REC-001` |
-| `P1-28-FE-008` | Reception customer and vehicle confirmation     | `crm.customer-read`, `veh.vehicle-read`, `veh.vehicle-relationship-list`, `crm.customer-vehicle-list`                                | `TC-P1-28-XD-002`  |
-| `P1-28-FE-009` | Reception party roles and authorization         | `rec.reception-party-role`, `rec.reception-authorization`, `rec.reception-party-role-list`, `rec.reception-authorization-list`       | `TC-P1-28-REC-002` |
-| `P1-28-FE-010` | Reception customer complaint capture            | `rec.reception-condition-evidence [kind complaint]`                                                                                  | `TC-P1-28-REC-003` |
-| `P1-28-FE-011` | Reception visual inspection and condition items | `rec.reception-condition-evidence [kinds inspection/condition_item/leak]`                                                            | `TC-P1-28-REC-004` |
-| `P1-28-FE-012` | Reception damage map and marks                  | `rec.reception-condition-evidence [kinds damage_map/damage_mark]`, `shared.document-read`                                            | `TC-P1-28-REC-005` |
-| `P1-28-FE-013` | Reception odometer capture                      | `veh.vehicle-odometer-record`, `veh.vehicle-odometer-history`                                                                        | `TC-P1-28-XD-003`  |
-| `P1-28-FE-014` | Reception fuel level and EV state of charge     | `rec.reception-create [fields fuelLevelId/evSocPercent]`, `rec.catalogue-fuel-level-list`                                            | `TC-P1-28-REC-006` |
-| `P1-28-FE-015` | Reception warning lights                        | `rec.reception-condition-evidence [kind warning_light]`, `rec.catalogue-warning-light-code-list`                                     | `TC-P1-28-REC-007` |
-| `P1-28-FE-016` | Reception vehicle contents                      | `rec.reception-condition-evidence [kind contents]`                                                                                   | `TC-P1-28-REC-008` |
-| `P1-28-FE-017` | Reception camera and media upload               | `shared.attachment-upload-authorize`, `shared.attachment-version-register`, `shared.attachment-link-create`, `shared.document-read`  | `TC-P1-28-REC-009` |
-| `P1-28-FE-018` | Reception signature capture                     | `rec.reception-signature`                                                                                                            | `TC-P1-28-REC-010` |
-| `P1-28-FE-019` | Reception refusal workflow                      | `rec.reception-refusal`, `rec.catalogue-refusal-reason-list`                                                                         | `TC-P1-28-REC-011` |
-| `P1-28-FE-020` | Reception summary and approval                  | `rec.reception-approve`, `rec.reception-detail`, `rec.reception-condition-evidence-list`                                             | `TC-P1-28-REC-012` |
-| `P1-28-FE-021` | Reception acknowledgement document              | `rec.reception-detail`                                                                                                               | `TC-P1-28-REC-013` |
-| `P1-28-FE-022` | Reception conversion to work order              | `rec.reception-convert-to-work-order`, `wo.work-order-detail`                                                                        | `TC-P1-28-XD-004`  |
+| id             | canonical name                                  | primary Backend operation(s)                                                                                                                         | test id            |
+| -------------- | ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------ |
+| `P1-28-FE-006` | Walk-in customer and vehicle intake             | `crm.customer-search`, `crm.individual-create`, `crm.company-create`, `veh.vehicle-search`, `veh.vehicle-create`, `crm.vehicle-link`                 | `TC-P1-28-XD-001`  |
+| `P1-28-FE-007` | Reception check-in wizard                       | `rec.reception-create`, `iam.user-list`, `rec.reception-list`, `rec.reception-detail`                                                                | `TC-P1-28-REC-001` |
+| `P1-28-FE-008` | Reception customer and vehicle confirmation     | `crm.customer-read`, `veh.vehicle-read`, `veh.vehicle-relationship-list`, `crm.customer-vehicle-list`                                                | `TC-P1-28-XD-002`  |
+| `P1-28-FE-009` | Reception party roles and authorization         | `rec.reception-party-role`, `rec.reception-authorization`, `rec.reception-party-role-list`, `rec.reception-authorization-list`                       | `TC-P1-28-REC-002` |
+| `P1-28-FE-010` | Reception customer complaint capture            | `rec.reception-condition-evidence [kind complaint]`                                                                                                  | `TC-P1-28-REC-003` |
+| `P1-28-FE-011` | Reception visual inspection and condition items | `rec.reception-condition-evidence [kinds inspection/condition_item/leak]`                                                                            | `TC-P1-28-REC-004` |
+| `P1-28-FE-012` | Reception damage map and marks                  | `rec.reception-condition-evidence [kinds damage_map/damage_mark]`, `shared.document-read`                                                            | `TC-P1-28-REC-005` |
+| `P1-28-FE-013` | Reception odometer capture                      | `veh.vehicle-odometer-record`, `veh.vehicle-odometer-history`                                                                                        | `TC-P1-28-XD-003`  |
+| `P1-28-FE-014` | Reception fuel level and EV state of charge     | `rec.reception-create [fields fuelLevelId/evSocPercent]`, `rec.catalogue-fuel-level-list`                                                            | `TC-P1-28-REC-006` |
+| `P1-28-FE-015` | Reception warning lights                        | `rec.reception-condition-evidence [kind warning_light]`, `rec.catalogue-warning-light-code-list`                                                     | `TC-P1-28-REC-007` |
+| `P1-28-FE-016` | Reception vehicle contents                      | `rec.reception-condition-evidence [kind contents]`                                                                                                   | `TC-P1-28-REC-008` |
+| `P1-28-FE-017` | Reception camera and media upload               | `shared.attachment-upload-authorize`, `shared.attachment-version-register`, `shared.attachment-link-create`, `shared.document-read`                  | `TC-P1-28-REC-009` |
+| `P1-28-FE-018` | Reception signature capture                     | `rec.reception-signature`                                                                                                                            | `TC-P1-28-REC-010` |
+| `P1-28-FE-019` | Reception refusal workflow                      | `rec.reception-refusal`, `rec.catalogue-refusal-reason-list`                                                                                         | `TC-P1-28-REC-011` |
+| `P1-28-FE-020` | Reception summary, approval and terminal close  | `rec.reception-approve`, `rec.reception-detail`, `rec.reception-condition-evidence-list`, `rec.reception-close-without-work`, `rec.reception-refuse` | `TC-P1-28-REC-012` |
+| `P1-28-FE-021` | Reception acknowledgement document              | `rec.reception-detail`                                                                                                                               | `TC-P1-28-REC-013` |
+| `P1-28-FE-022` | Reception conversion to work order              | `rec.reception-convert-to-work-order`, `wo.work-order-detail`                                                                                        | `TC-P1-28-XD-004`  |
 
 ### 5.3 Security — 4 · QA — 5 · DevOps — 2 · Documentation — 2
 
@@ -233,7 +233,7 @@ It must not block unrelated tasks.
   no version can reach `accepted`
   (`docs/product/workshop/reception-media-checklist.md:208-210`).
 - **Enforced by:** the `no-upload-path` and `no-invented-media-limit` gate
-  rules (`scripts/ci/check-p1-27-frontend.mjs:558-711`), which ban any capture
+  rules (`scripts/ci/check-p1-27-frontend.mjs:876-895,919-939`), which ban any capture
   UI while the decision is open.
 - The Owner media rows 12-14 are themselves **Blocked** (`INT-093/094/095`),
   and only the COUNT of seven exterior angles is fixed — the angle set is an
@@ -241,14 +241,16 @@ It must not block unrelated tasks.
 
 ### Warning-light catalogue population · **OPEN**
 
-- **Blocks:** `FE-015` only. `rec.warning_light_codes` ships zero rows, no
-  read route and no management operation (RMC-11), so the `warning_light`
-  evidence kind is unusable in practice.
+- **Blocks:** `FE-015` only. `rec.warning_light_codes` ships **zero rows** and
+  has no management operation (RMC-11), so the `warning_light` evidence kind is
+  unusable in practice. R3 gave it a READ route
+  (`rec.catalogue-warning-light-code-list`) and that changed nothing an
+  operator can see: a read does not populate a table.
 - **What ships instead:** no warning-light picker; the absence is stated
-  on-screen, not papered over with a disabled control. A read route (R3) fixes
-  reachability but not emptiness — population needs a management contract or
-  an Owner provisioning decision, and the no-fake-data policy forbids
-  inventing catalogue rows in a seed.
+  on-screen, not papered over with a disabled control. R3 landed and fixed
+  reachability, not emptiness — population needs a management contract or an
+  Owner provisioning decision, and the no-fake-data policy forbids inventing
+  catalogue rows in a seed.
 
 ### Receiving-employee referent — Owner register question A · **OPEN**
 
@@ -283,6 +285,13 @@ unreachable terminal visit states (`G-REC-CLOSE`) and the phone-lookup gap
 contracts with named owners and smallest fixes, recorded as R1-R8 in
 `contract-archaeology.md` §4 so nobody mistakes a backlog for a blocker that
 needs an Owner meeting.
+
+Six of them are now CLOSED by R1–R5 (`G-APT-READ`, `G-REC-READ`, `G-CAT-APT`,
+`G-REC-CLOSE`, `G-CUST-VEH`, `G-PERM`), and `G-CAT-REC` is closed as a READ gap
+only — its four tables still ship zero rows, which is a provisioning decision
+and not a contract gap. `G-CRM-PHONE`, `G-EMP` and `G-MEDIA` remain open, and
+the first of those is the one an operator meets daily: a walk-in cannot be
+found by telephone number.
 
 ---
 

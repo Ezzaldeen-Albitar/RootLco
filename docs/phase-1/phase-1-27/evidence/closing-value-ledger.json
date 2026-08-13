@@ -36,8 +36,8 @@
       "class": "DERIVABLE_LOCAL",
       "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
-      "locator": "the current tree executes **2465** tests",
-      "value": "2465",
+      "locator": "the current tree executes **2405** tests",
+      "value": "2405",
       "binding": {
         "kind": "run",
         "tier": "web",
@@ -50,8 +50,8 @@
       "class": "DERIVABLE_LOCAL",
       "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
-      "locator": "**The 2465 is local, and it is the binding measurement.**",
-      "value": "2465",
+      "locator": "**The 2405 is local, and it is the binding measurement.**",
+      "value": "2405",
       "binding": {
         "kind": "run",
         "tier": "web",
@@ -77,8 +77,8 @@
       "class": "DERIVABLE_LOCAL",
       "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
-      "locator": "| Web tier — tests executed                   | 2465  | `--record web`, from the `vitest` JSON report                      |",
-      "value": "2465",
+      "locator": "| Web tier — tests executed                   | 2405  | `--record web`, from the `vitest` JSON report                      |",
+      "value": "2405",
       "binding": {
         "kind": "run",
         "tier": "web",
@@ -104,8 +104,8 @@
       "class": "DERIVABLE_LOCAL",
       "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
-      "locator": "| Root unit tier — tests executed             | 2279  | `--record unit`, from the `vitest` JSON report                     |",
-      "value": "2279",
+      "locator": "| Root unit tier — tests executed             | 2253  | `--record unit`, from the `vitest` JSON report                     |",
+      "value": "2253",
       "binding": {
         "kind": "run",
         "tier": "unit",
