@@ -268,6 +268,17 @@ jobs:
           # is named by a hosted job from day one too, rather than riding only
           # the aggregate the way its P1-27 sibling still does.
           npm run validate:p1-28-matrix
+          # The record against the tree (P1-28-DOC-001). The archaeology was
+          # corrected on one day and went stale again four days later, because
+          # PR #227 published a catalogue-management surface three of its rows
+          # had just finished saying could not exist — and nothing failed,
+          # because every figure in it was hand-written. Every P1-28 number is
+          # a derived claim now, and this substitutes the tree's answer for it.
+          # Named here beside its sibling rather than riding the clean-room
+          # aggregate alone, for the reason `tests/ci/p1-28-devops-gate.test.ts`
+          # gives: a gate a developer meets forty minutes late is a gate they
+          # meet after the next commit.
+          npm run validate:p1-28-traceability
 
       # =======================================================================
       # Changed-file ownership — P1-27-DO-003.

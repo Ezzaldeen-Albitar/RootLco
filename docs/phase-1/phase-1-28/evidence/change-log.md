@@ -39,8 +39,11 @@ universe is derived from the plan rather than maintained beside it, so the state
 "a task nothing lists" cannot come to exist.
 
 The archaeology found the phase's governing fact: at the P1-27 closure head the
-entire appointment and reception public surface was **12 POST commands and zero
-reads**. Every wave below is sequenced by that fact.
+entire appointment and reception public surface was **12 POST commands and no
+read of any kind**. Every wave below is sequenced by that fact. What the surface
+holds TODAY is stated once, derived from the P1-24 operation register, in
+`contract-archaeology.md` — never restated here, because a figure restated in a
+second document is a figure that will disagree with the first.
 
 ## Backend remediation, before any of it could be consumed (`P1-28-DOC-001`)
 
@@ -68,6 +71,36 @@ them — never inside this Frontend branch, per the standing ownership rule.
 `R6` (the receiving-employee referent), `R7` (customer search by telephone) and
 `R8` (per-reception documents) are still open, and each is stated on the screen
 that meets it rather than papered over.
+
+## The intake catalogues — a contract landed, a surface deliberately did not (#227, `P1-28-OD-001`)
+
+**PR #227** published the intake-catalogue MANAGEMENT surface on the Backend
+branch that owns it: create, update and status-set across all seven catalogues,
+plus one management-projection read each, every one behind
+`apt.catalogue.manage` or `rec.catalogue.manage`.
+
+It changed nothing an operator can see, and that is the entry. **No canonical
+P1-28 task binds a catalogue-administration screen.** The 35-task register is
+the OPERATOR surface — booking, check-in, approval, conversion — so building one
+would have been scope this phase was never given, and inventing the task would
+be the P1-27 failure of treating an adjudicated item as though it were a
+canonical one. Both permission codes are granted to **no role by any seed**, so
+the capability is held by nobody until somebody decides who should hold it.
+
+That decision is recorded as `P1-28-OD-001` (`canonical-plan.md` §7) with both
+halves left open — WHO administers the catalogues, and THROUGH WHICH SURFACE —
+and the twenty-one writes are classified `DELIBERATELY_ABSENT` against it rather
+than parked as not-yet-wired, which the SEC-004 ratchet would have refused
+anyway. The consequence is stated where an operator meets it: until a catalogue
+is populated no appointment can be booked and none can be cancelled, which is
+why `FE-002` and `FE-004` are PARTIAL against a decision rather than against any
+Frontend defect.
+
+The half nobody had noticed until this wave: **the record went stale again in
+the same week it was corrected.** Three rows of the archaeology, one row of the
+gap register and two paragraphs of the change log still said no operation
+anywhere could add a catalogue row, four days after #227 registered twenty-one
+that could. See the Documentation entry below for what replaced them.
 
 ## Wave A — the contract layer and the reachability gate (`P1-28-SEC-004`)
 
@@ -165,23 +198,125 @@ classification cannot be entered without a reviewer seeing the number move.
   structurally, in both directions, so a missing reference on a backend failure
   and an invented one on a client-side gate both fail.
 
+## The browser tier — the first evidence in this phase that is not a mock
+
+Before it, the authenticated browser tier contained **zero** occurrences of
+"appointment" or "reception" anywhere under `apps/web/tests/e2e/**`. That tier is
+governed — `authenticated-browser` sits in the `needs` of both `ci-gate` and
+`protected-gate` — so its green tick is quoted as this repository's
+production-integration evidence, and for P1-28 it had observed nothing the phase
+built. Every other P1-28 tier mocks the transport, and a mock returns what the
+test author believed the operation returns.
+
+That is not hypothetical here. This phase shipped a seam — the walk-in intake
+building `/reception/check-in`, singular, against a wizard mounted at
+`/receptions/check-in`, plural — that every mocked tier passed while no operator
+could reach the second screen.
+
+The tier now runs the P1-28 surface in three projects (English, Arabic, tablet)
+against the running application, the running API and the real database under
+RLS. **It seeds no business row to manufacture a green path.** The acceptance
+database holds no customers, no vehicles, no appointment types and no visits, so
+several things a reader would expect to see proved cannot be — and each is
+asserted as the HONEST BLOCKED STATE the screen actually shows rather than
+skipped or weakened. An empty appointment-type catalogue blocks booking and says
+why; that sentence is what the browser asserts. Neither is any case a skip: a
+skipped test still counts toward the tier's executed total, which is how a
+"0 uncovered" number gets reported over a case that measured nothing.
+
+## The acceptance environment must be a production build
+
+`npm run acceptance:serve` was added, and it is not a convenience. `next dev`
+compiles a route bundle the first time that route is requested, and the API's
+authenticator is a module-level singleton installed as a SIDE EFFECT of
+composing the IAM module inside the login handler — so a bundle compiled without
+that composition holds the unconfigured authenticator, which fails closed.
+
+Measured twice on this checkout, one valid owner token, one process:
+`GET /api/v1/receptions` answered 200 while `GET /api/v1/vehicles` and
+`GET /api/v1/work-orders` answered 401 `ERR-IAM-002`, and a second `next dev`
+process refused a completely different subset. On a production `next build` plus
+`next start` of the same tree, every one answered 200.
+
+An Owner acceptance session on a development stack would therefore have reported
+product defects that do not exist. The launcher is one implementation serving
+both modes — one lock, one process discovery, one plan, one `dev:stop` — and a
+mode disagreement is a terminal verdict (`REFUSE_MODE_MISMATCH`) rather than an
+adoption, because an operator certain they were on a production build is exactly
+the failure this mode exists to prevent.
+
+## Integration fixes that changed the product, not just the record
+
+- **The walk-in-to-check-in seam** — `/reception/check-in` against
+  `/receptions/check-in`. Two green waves, dead at the join. The handoff is now a
+  parser and a builder that round-trip, and the browser tier resolves the address
+  in the running application.
+- **A damage-mark coordinate was silently wrong.** `toFixed(2)` in the submit
+  path turned a typed `0.125` into `0.13` beside a `step="0.01"` a browser would
+  itself have refused. The read-out is assembled without rounding, and the
+  contract suite asserts the typed digits travel.
+- **The no-fake-data gate read a comment as code, for the seventh time in this
+  repository.** The offending comment was reworded, and the gate itself was
+  taught to strip comments on `develop` (#228) rather than each document being
+  edited around it.
+- **CodeQL `js/incomplete-sanitization`** — five sites in the P1-28 gates escaped
+  only the dollar sign of a regular expression. All five now escape every
+  metacharacter, and the first attempt at the fix introduced a character range
+  where three literal characters were meant, which the follow-up corrected.
+- **A refused sensitive-narrative write left a submit control mid-flight** in the
+  DOM suite, which is a real race the operator would see as a form that had not
+  settled.
+
 ## Documentation
 
 - `P1-28-DOC-001` — both authority documents were re-verified against the tree
   at this head. The correction that mattered: an addendum had exempted the
   contract tables from the document's own rule ("if the tree disagrees, the tree
   wins"), leaving the archaeology asserting that operations which now exist and
-  which P1-28 screens now call were MISSING — including the sentence "there is
-  no GET anywhere in apt/rec", the most load-bearing claim in the file. The
+  which P1-28 screens now call were MISSING — including its most load-bearing
+  claim of all, that no read operation existed anywhere in either domain. The
   exemption is withdrawn and every row states what is true at this head, with
   the source-head fact kept and labelled as history where it explains a
   decision. Three documents carried a citation to gate rules that had moved; all
   three are corrected. `FE-020`'s operation binding was missing the two terminal
   exits the reachability manifest already attributed to it, and now names them.
-- `P1-28-DOC-002` — this file, and `operator-guide.md`: what each screen does,
-  what is deliberately blocked and why. Its sentences are pinned to the
-  executable thing they describe, because a guide that only has to exist passes
-  while describing a product nobody built.
+
+  **And then that correction went stale in four days**, because PR #227
+  published a catalogue-management surface three of the rows it had just fixed
+  said could not exist. Correcting them again by hand would have produced
+  sentences that will be wrong again, so this wave replaced the method rather
+  than the sentences: `scripts/ci/check-p1-28-traceability.mjs`
+  (`validate:p1-28-traceability`, required, reachable from `verify:policies`)
+  substitutes the tree's own answer for every figure a P1-28 document states
+  about the platform, refuses the exact claims withdrawn here, resolves every §5
+  operation binding against the P1-24 register, and binds each canonical
+  `TC-P1-28-*` id to quoted cases matched against comment-stripped source.
+  `evidence/traceability.json` and `evidence/traceability.md` are the record it
+  checks. P1-27 declared twenty-nine canonical test ids that appeared in no
+  executable file anywhere; all twenty-two of this phase's now resolve, and an
+  id with no proof must state its gap.
+
+- `P1-28-DOC-002` — `operator-guide.md`, the new `developer-guide.md`, and this
+  file. The canonical name of the task is a conjunction — operator **and**
+  developer guidance, **and** the change-log update — and only two thirds of it
+  had been delivered: this phase had no developer guide at all, where P1-27
+  shipped one whose reconciliation case required it to list exactly the rules its
+  gate enforced. P1-28 had added four gates and more than ten rule ids and
+  documented none of them for a developer.
+
+  The developer guide now lists them, and the list is **derived from the gates**
+  rather than copied: writing it found that `check-p1-28-access.mjs` is headed
+  "The six rules" and enforces **seven** — `composed-permission`, which verifies
+  every composed-permission row against the migration and policy it cites, is
+  enumerated in that docblock nowhere. The operator guide gained the three things
+  it was missing for the person at the desk: what party roles and authority
+  actually record, why every intake catalogue is empty and that the reason is
+  `P1-28-OD-001` rather than a setting, and that an acceptance session is run on
+  `npm run acceptance:serve` and never on `dev:all`.
+
+  Sentences on both pages are pinned to the executable thing they describe,
+  because a guide that only has to exist passes while describing a product
+  nobody built.
 
 ---
 
@@ -197,8 +332,9 @@ Stated here so the absence is a record rather than a discovery:
   and its exact version, and nothing in this product registers a document. The
   step shows what a signature would attribute and records nothing.
 - **Warning-light entries, and every other intake catalogue** — the seven
-  catalogues ship zero rows. This entry used to end "and no operation anywhere
-  can add one"; that stopped being true when PR #227 registered 21 management
+  catalogues ship no rows at all. This entry used to end by asserting that
+  nothing anywhere could add one; that stopped being true when PR #227 registered
+  21 management
   writes, and the sentence is corrected rather than left standing. What is
   absent now is the SURFACE: no screen in this product reaches those writes, no
   canonical P1-28 task binds a catalogue-administration screen, and the

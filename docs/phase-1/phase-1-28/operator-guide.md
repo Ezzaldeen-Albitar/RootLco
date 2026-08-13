@@ -116,6 +116,27 @@ Each step records what it is named after and nothing else. Where a step cannot
 honestly record something, it says which fact is missing and who has to supply
 it.
 
+### Parties and authority
+
+**Who is standing at the desk and who may authorise the work are two different
+records, and the screen keeps them apart.** A party role says what somebody is
+to this visit — the owner, the person who brought the vehicle, the payer, and so
+on. An authorisation decision says that somebody with the standing to do it
+approved or declined.
+
+Recording a role and recording a decision need **different permissions**, and
+the panel shows both together with each entry attributed to the party it belongs
+to. Two things are worth knowing before you use it:
+
+- **A role you added moments ago cannot be superseded in the same breath.** The
+  record refuses it and says so rather than silently keeping one of the two.
+- **A decision from somebody who does not hold the role is refused without
+  saying which part was wrong.** That is deliberate: a message naming the reason
+  would let anyone discover who holds authority on a visit by guessing.
+
+A **declined** decision stands until the same party decides otherwise, and while
+it stands it blocks both approval and conversion.
+
 **Complaint wording and vehicle contents are restricted.** Recording them needs
 the sensitive-information permission in addition to the evidence permission, and
 the refusal comes from the database rather than from the screen — so it is
@@ -130,9 +151,12 @@ why, in your own words.
 
 **Warning lights cannot be recorded today.** The step is built and it submits,
 but the control appears only once the warning-lamp catalogue has entries — and
-the catalogue ships with none, with no screen anywhere in this product for
-adding one. The step says exactly that instead of offering a picker with nothing
-in it.
+the catalogue ships with none. There is no screen anywhere in this product for
+adding one: the workshop's seven intake catalogues can only be filled by
+somebody calling the system directly, and **who should be allowed to do that,
+and from which screen, is an open decision — `P1-28-OD-001`.** It is not a
+defect and there is no setting to look for. The step says exactly that instead
+of offering a picker with nothing in it.
 
 **A damage map cannot be opened at all.** Placing marks needs a registered map
 template and the exact version drawn on, and nothing in this product registers a
@@ -214,6 +238,55 @@ If the visit has already been converted, running it again tells you so and shows
 you the same work order. That is success, not an error.
 
 ---
+
+## The catalogues this workshop has not been given yet
+
+Seven lists sit behind the screens above: appointment types, source channels,
+cancellation reasons, visit reasons, fuel levels, warning-lamp codes and refusal
+reasons. **All seven ship empty, and nothing in this product can add an entry to
+any of them.**
+
+That has consequences you will meet on your first day, so they are stated here
+rather than discovered:
+
+- **No appointment can be booked** until appointment types exist — the booking
+  screen says so and does not let you submit.
+- **No appointment can be cancelled** until cancellation reasons exist, for the
+  same reason.
+- The fuel, warning-lamp and refusal-reason steps work, and offer nothing.
+
+None of this is a fault, and none of it is a setting somebody forgot. The
+capability to fill these lists exists in the system; **who is allowed to use it,
+and through which screen, is a decision that has not been taken —
+`P1-28-OD-001`.** Nothing invents entries in the meantime: a made-up appointment
+type would be this product's own invented data, and it would answer a different
+question from the one that is actually open.
+
+## Running the application to try it — the acceptance stack
+
+Acceptance is done against a **production build**, started with:
+
+```
+npm run acceptance:serve
+```
+
+**Not `npm run dev:all`.** The development mode compiles each screen the first
+time somebody asks for it, and the part of the system that checks who you are is
+set up as a side effect of that compilation. Measured on this checkout with one
+valid sign-in and one running stack: the reception list answered normally while
+the vehicle and work-order lists said the session was not authorised — and a
+second run refused a completely different set. On the production build every one
+of them answered normally.
+
+So a development stack **manufactures faults that do not exist in the product**,
+and an acceptance session run on one would report defects nobody can reproduce.
+The launcher will not paper over the difference either: asking for the
+acceptance stack while a development stack is running is refused with both modes
+named, rather than quietly adopted.
+
+`npm run dev:status` says what is up; `npm run dev:stop` takes it down. The full
+sequence, including the Owner account commands, is
+`docs/phase-1/phase-1-26/local-acceptance-account-runbook.md`.
 
 ## What a message on screen means
 

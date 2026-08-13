@@ -220,6 +220,10 @@ describe('a hosted job names each gate DIRECTLY, not only through an aggregate',
      */
     const expected: Record<string, string> = {
       'validate:p1-28-matrix': 'static-quality',
+      // `DOC-001`'s record-against-tree gate reads documents and the operation
+      // register, so it belongs beside the matrix in the fast static job rather
+      // than in the web one.
+      'validate:p1-28-traceability': 'static-quality',
       'validate:p1-28-write-reachability': 'web-quality',
       'validate:p1-28-access': 'web-quality',
       'validate:p1-28-version-sourcing': 'web-quality',

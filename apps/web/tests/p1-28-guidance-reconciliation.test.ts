@@ -1,5 +1,6 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { APPOINTMENT_PERMISSIONS } from '@/features/appointments/appointments-contract';
 import { RECEPTION_PERMISSIONS } from '@/features/receptions/receptions-contract';
@@ -37,7 +38,36 @@ const PHASE = join(REPO, 'docs', 'phase-1', 'phase-1-28');
 const WEB_SRC = join(process.cwd(), 'src');
 
 const OPERATOR = readFileSync(join(PHASE, 'operator-guide.md'), 'utf8');
+const DEVELOPER = readFileSync(join(PHASE, 'developer-guide.md'), 'utf8');
 const CHANGE_LOG = readFileSync(join(PHASE, 'evidence', 'change-log.md'), 'utf8');
+
+/*
+ * The gates, imported rather than described.
+ *
+ * `import … from '../../../scripts/ci/*.mjs'` is `TS2307` in this workspace —
+ * the P1-27 security suite records the same thing — so the gate modules are
+ * loaded by URL. They are loaded at all because `DOC-002`'s developer half is
+ * only worth anything if the page is held to what the gates ACTUALLY enforce:
+ * writing this page from the access gate's own docblock would have described
+ * six rules where seven exist.
+ */
+const gateModule = async (name: string) =>
+  (await import(pathToFileURL(join(REPO, 'scripts', 'ci', name)).href)) as Record<string, never>;
+
+const TRACEABILITY = (await gateModule('check-p1-28-traceability.mjs')) as unknown as {
+  accessRuleIds: () => string[];
+  deriveCounts: () => { gates: Record<string, number> };
+  TABLE_KINDS: readonly string[];
+};
+const REACHABILITY = (await gateModule('check-p1-28-write-reachability.mjs')) as unknown as {
+  CLASSIFICATIONS: readonly string[];
+};
+const VERSION_SOURCING = (await gateModule('check-p1-28-version-sourcing.mjs')) as unknown as {
+  classifyVersionExpression: (
+    expression: string,
+    context: { cached: Set<string>; declarations: Map<string, string>; parameters: Set<string> }
+  ) => { ok: boolean; reason?: string };
+};
 
 const read = (...parts: string[]) => readFileSync(join(WEB_SRC, ...parts), 'utf8');
 
@@ -249,6 +279,33 @@ describe('the change-log half of DOC-002', () => {
     }
   });
 
+  it('records the Backend remediations, the decision and the browser tier by name', () => {
+    /*
+     * A change log is only a record if a later reader can find the events that
+     * shaped the product in it. These are the ones this phase turned on: the
+     * three pull requests that changed what the Frontend could consume, the
+     * open decision that explains every empty catalogue, the tier that is not a
+     * mock, and the launcher without which an acceptance session reports
+     * defects that do not exist.
+     */
+    for (const anchor of ['#220', '#221', '#227', 'P1-28-OD-001', 'acceptance:serve']) {
+      expect(CHANGE_LOG, `the change log never names ${anchor}`).toContain(anchor);
+    }
+    expect(CHANGE_LOG, 'the browser tier is unlogged').toMatch(
+      /authenticated browser tier|browser tier/i
+    );
+    expect(CHANGE_LOG, 'the production-build acceptance rule is unlogged').toMatch(
+      /next dev|production build/i
+    );
+  });
+
+  it('records the integration fixes that changed the product, not only the record', () => {
+    // Each of these was a real defect a green tier did not see. A change log
+    // that lists only features is a release note.
+    expect(CHANGE_LOG, 'the walk-in seam is unlogged').toContain('/receptions/check-in');
+    expect(CHANGE_LOG, 'the silent coordinate rounding is unlogged').toContain('toFixed(2)');
+  });
+
   it('states the phase is open, because no Owner acceptance has been returned', () => {
     /*
      * The permanent Frontend rule from P1-26 onward: silence is not Pass, and a
@@ -258,5 +315,178 @@ describe('the change-log half of DOC-002', () => {
      */
     expect(CHANGE_LOG).toContain('OWNER ACCEPTANCE');
     expect(CHANGE_LOG).toMatch(/not been (asked|returned|given)|NOT closed|remains open/i);
+  });
+});
+
+/* ================================================================== *
+ * The DEVELOPER half of `DOC-002`
+ * ================================================================== */
+
+/**
+ * `DOC-002` is a conjunction — operator **and** developer guidance, **and** the
+ * change-log update — and this phase shipped two thirds of it. P1-27 paid a
+ * whole adversarial round for exactly this: a conjunction counted as resolved
+ * when only part of it was proven.
+ *
+ * P1-27's precedent is a developer guide held to **list exactly the rules its
+ * gate enforces**, so that is the standard applied here. Nothing below reads the
+ * gates' docblocks: writing this page from the access gate's own prose would
+ * have described six rules where the executable source enforces seven.
+ */
+describe('the developer guide describes the gates that actually exist', () => {
+  it('is a document, not a stub, and names every gate a change must satisfy', () => {
+    expect(DEVELOPER.length, 'the developer guide is too short to say anything').toBeGreaterThan(
+      4000
+    );
+    expect(DEVELOPER).toContain('# Phase 1-28 — developer guide');
+    for (const command of [
+      'validate:p1-28-access',
+      'validate:p1-28-write-reachability',
+      'validate:p1-28-version-sourcing',
+      'validate:p1-28-matrix',
+      'validate:p1-28-traceability',
+    ]) {
+      expect(DEVELOPER, `the guide never names ${command}`).toContain(command);
+    }
+  });
+
+  it('lists exactly the rules the access gate enforces — no more, no fewer', () => {
+    const ids = TRACEABILITY.accessRuleIds();
+    expect(ids.length, 'no rule id was derived — this case would be vacuous').toBeGreaterThan(5);
+
+    const listed = [...DEVELOPER.matchAll(/^- `([a-z][a-z0-9-]+)` — /gm)].flatMap((m) =>
+      m[1] === undefined ? [] : [m[1]]
+    );
+    const missing = ids.filter((id) => !listed.includes(id));
+    const invented = listed.filter((id) => !ids.includes(id));
+    // Named individually: "one missing" is not something a reader can act on.
+    expect(missing, 'gate rules the guide does not describe').toEqual([]);
+    expect(invented, 'rules the guide describes and the gate does not carry').toEqual([]);
+  });
+
+  it('names the three write classifications the reachability gate allows', () => {
+    const classifications = REACHABILITY.CLASSIFICATIONS;
+    expect(classifications.length, 'the vocabulary is three').toBe(3);
+    for (const name of classifications) {
+      expect(DEVELOPER, `the guide never mentions ${name}`).toContain(name);
+    }
+    // And the property that makes the allow-list a ratchet rather than a list.
+    expect(DEVELOPER).toContain('only SHRINKS');
+  });
+
+  it('states the version-sourcing rule the classifier really implements', () => {
+    /*
+     * Driven, not quoted. The guide says a server-stated `.recordVersion` and a
+     * supplied parameter pass, and that arithmetic and component state fail —
+     * so each of those four sentences is run through the gate's own classifier.
+     */
+    const context = {
+      cached: new Set(['cachedVersion']),
+      declarations: new Map<string, string>(),
+      parameters: new Set(['ifMatch']),
+    };
+    const classify = VERSION_SOURCING.classifyVersionExpression;
+    expect(classify('detail.recordVersion', context).ok, 'a server-stated version').toBe(true);
+    expect(classify('ifMatch', context).ok, 'a supplied parameter').toBe(true);
+    expect(classify('version + 1', context).ok, 'arithmetic must fail closed').toBe(false);
+    expect(classify('cachedVersion', context).ok, 'component state must fail closed').toBe(false);
+
+    for (const phrase of ['`COMPUTED`', '`CACHED`', '`UNTRACEABLE`', 'wrong half the time']) {
+      expect(DEVELOPER, `the guide does not state ${phrase}`).toContain(phrase);
+    }
+  });
+
+  it('carries the derived counts rather than hand-written ones', () => {
+    const gates = TRACEABILITY.deriveCounts().gates;
+    expect(TRACEABILITY.TABLE_KINDS.length, 'the marker vocabulary is empty').toBeGreaterThan(3);
+    for (const [name, value] of Object.entries(gates)) {
+      expect(DEVELOPER, `the guide states no derived marker for gates ${name}`).toContain(
+        `derived: gates ${name} = ${value}`
+      );
+    }
+  });
+
+  it('warns about the traps that cost this phase real time', () => {
+    // Each of these was a defect a green battery did not see, and each is the
+    // kind a new developer repeats within a week of arriving.
+    for (const trap of [
+      'typecheck:web',
+      'lint:web',
+      'verify:contracts',
+      'acceptance:serve',
+      'P1-28-OD-001',
+      'G-EMP',
+    ]) {
+      expect(DEVELOPER, `the guide never warns about ${trap}`).toContain(trap);
+    }
+    expect(DEVELOPER, 'the mock rule is the one sentence that must not be dropped').toContain(
+      'Mocks are not production-integration evidence'
+    );
+  });
+});
+
+describe('the operator guide covers what an operator meets on day one', () => {
+  it('explains party roles and authority as two different records', () => {
+    expect(OPERATOR).toContain('### Parties and authority');
+    expect(OPERATOR).toContain('different permissions');
+    // Recording a role and recording a decision are different authorities, and
+    // the contract really carries two codes rather than one.
+    expect(RECEPTION_PERMISSIONS.partyManage).not.toBe(RECEPTION_PERMISSIONS.authorizationVerify);
+  });
+
+  it('names the decision behind every empty catalogue, rather than a setting', () => {
+    /*
+     * The single most likely support call in this release. `P1-28-OD-001` is a
+     * decision recorded in `canonical-plan.md` §7, and the gate that classifies
+     * the twenty-one catalogue writes resolves that reference — so if the
+     * decision heading is ever removed, the reference in this guide stops being
+     * true and `validate:p1-28-write-reachability` fails first.
+     */
+    expect(OPERATOR).toContain('P1-28-OD-001');
+    expect(OPERATOR).toContain('No appointment can be booked');
+    const plan = readFileSync(join(PHASE, 'canonical-plan.md'), 'utf8');
+    expect(plan, 'the guide cites a decision the plan does not record').toContain(
+      '### `P1-28-OD-001`'
+    );
+  });
+
+  it('says acceptance runs on the production build, and why dev must not be used', async () => {
+    expect(OPERATOR).toContain('npm run acceptance:serve');
+    expect(OPERATOR).toContain('Not `npm run dev:all`');
+    expect(DEVELOPER).toContain('npm run acceptance:serve');
+
+    /*
+     * Driven rather than quoted. The guide's claim is that the two commands
+     * serve DIFFERENT modes and that the acceptance one is the production
+     * build — so the launcher's own vocabulary is asked, and the registered
+     * command is asked to parse to the mode the guide names.
+     */
+    const launch = (await import(
+      pathToFileURL(join(REPO, 'scripts', 'dev', 'launch-mode.mjs')).href
+    )) as unknown as {
+      MODES: readonly string[];
+      DEFAULT_MODE: string;
+      PRODUCTION: string;
+      parseModeArgv: (argv: string[]) => { mode: string; errors: string[] };
+    };
+    expect(launch.MODES).toContain(launch.PRODUCTION);
+    expect(launch.DEFAULT_MODE, '`dev:all` must stay the development mode').not.toBe(
+      launch.PRODUCTION
+    );
+
+    const root = JSON.parse(readFileSync(join(REPO, 'package.json'), 'utf8')) as {
+      scripts: Record<string, string>;
+    };
+    const argvOf = (name: string) => {
+      const command = root.scripts[name];
+      if (command === undefined) throw new Error(`no \`${name}\` command is registered`);
+      return command.split(/\s+/).slice(2);
+    };
+    const parsed = launch.parseModeArgv(argvOf('acceptance:serve'));
+    expect(parsed.errors).toEqual([]);
+    expect(parsed.mode, '`acceptance:serve` no longer asks for the production mode').toBe(
+      launch.PRODUCTION
+    );
+    expect(launch.parseModeArgv(argvOf('dev:all')).mode).toBe(launch.DEFAULT_MODE);
   });
 });
