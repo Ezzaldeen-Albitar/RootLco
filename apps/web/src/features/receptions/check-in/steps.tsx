@@ -4,6 +4,7 @@ import { ContentsStep } from '../components/steps/ContentsStep';
 import { ConversionStep } from '../components/steps/ConversionStep';
 import { DamageMapStep } from '../components/steps/DamageMapStep';
 import { InspectionStep } from '../components/steps/InspectionStep';
+import { MediaStep } from '../components/steps/MediaStep';
 import { PartiesStep } from '../components/steps/PartiesStep';
 import { ReadingsStep } from '../components/steps/ReadingsStep';
 import { RefusalStep } from '../components/steps/RefusalStep';
@@ -27,16 +28,19 @@ import type { CheckInStepDefinition } from './wizard';
  * refusal steps appended below, and the shell was untouched except for the
  * session identity every step now receives (the referent-less `inspector_id`
  * and `witnessed_by_employee_id` fields, G-EMP). Wave F/G then appended the
- * two closing steps.
+ * two closing steps, and Wave H the media block (`FE-017`).
  *
  * Order is presentation order, and it follows the ramp: identity is confirmed,
  * the parties are recorded, then the condition of the vehicle is documented in
  * the order an operator walks it — what the customer said, what staff saw,
  * where the damage is, what the meters read, what the dashboard showed, what is
- * inside — then what anybody signed or declined. The two closing steps come
- * last because they are the decision the rest is evidence for: the summary
- * (`FE-020`, approval and the two terminal exits) and then the conversion
- * (`FE-022`), which is legal only from `authorized` and so can only follow it.
+ * inside, and where photographs would go — then what anybody signed or
+ * declined. The media step sits at `FE-017`'s own place in that walk, between
+ * the contents and the signatures, so the operator meets the block where they
+ * would have reached for the camera. The two closing steps come last because
+ * they are the decision the rest is evidence for: the summary (`FE-020`,
+ * approval and the two terminal exits) and then the conversion (`FE-022`),
+ * which is legal only from `authorized` and so can only follow it.
  */
 export const CHECK_IN_STEPS: readonly CheckInStepDefinition[] = Object.freeze([
   {
@@ -86,6 +90,20 @@ export const CHECK_IN_STEPS: readonly CheckInStepDefinition[] = Object.freeze([
     titleKey: 'receptions.steps.contents.title',
     descriptionKey: 'receptions.steps.contents.description',
     Component: ContentsStep,
+  },
+  {
+    /*
+     * `FE-017`, and it captures nothing — deliberately.
+     *
+     * The step is registered so the operator meets the block where they would
+     * have reached for the camera, rather than searching the whole wizard for a
+     * control that cannot exist while `P1-OD-025` is open. See
+     * `../media/media-decision.ts`.
+     */
+    id: 'media-and-photographs',
+    titleKey: 'receptions.steps.media.title',
+    descriptionKey: 'receptions.steps.media.description',
+    Component: MediaStep,
   },
   {
     id: 'reception-signature',

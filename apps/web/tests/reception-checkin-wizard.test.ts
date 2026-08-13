@@ -261,15 +261,22 @@ describe('activeStep', () => {
 });
 
 describe('the step registry — the typed extension point Waves E build on', () => {
-  it('registers the Wave D, Wave E and Wave F/G steps, in presentation order', () => {
-    // The order follows the ramp an operator actually walks: identity, then the
-    // parties, then the condition of the vehicle — what the customer said, what
-    // staff saw, where the damage is, what the meters read, what the dashboard
-    // showed, what is inside — and only then what anybody signed or declined.
-    //
-    // The closing pair comes last, and in this order for a reason the graph
-    // decides rather than a preference: conversion is legal only from
-    // `authorized`, which the summary's approval is what reaches.
+  it('registers the Wave D, E, F/G and H steps, in presentation order', () => {
+    /*
+     * The order follows the ramp an operator actually walks: identity, then the
+     * parties, then the condition of the vehicle — what the customer said, what
+     * staff saw, where the damage is, what the meters read, what the dashboard
+     * showed, what is inside, and where photographs would go — and only then
+     * what anybody signed or declined.
+     *
+     * `media-and-photographs` (`FE-017`) sits at its own place in that walk and
+     * captures nothing: `P1-OD-025` is open, so what it renders is the
+     * named-open-decision notice, held by `p1-28-reception-media.test.ts`.
+     *
+     * The closing pair comes last, and in this order for a reason the graph
+     * decides rather than a preference: conversion is legal only from
+     * `authorized`, which the summary's approval is what reaches.
+     */
     expect(CHECK_IN_STEPS.map((step) => step.id)).toEqual([
       'confirm-identities',
       'parties-and-authorization',
@@ -279,6 +286,7 @@ describe('the step registry — the typed extension point Waves E build on', () 
       'condition-readings',
       'condition-warning-lights',
       'condition-contents',
+      'media-and-photographs',
       'reception-signature',
       'reception-refusal',
       'summary-and-approval',
@@ -286,7 +294,7 @@ describe('the step registry — the typed extension point Waves E build on', () 
     ]);
   });
 
-  it('added Waves E and F/G by APPENDING, leaving the Wave D prefix untouched', () => {
+  it('added Waves E, F/G and H by APPENDING, leaving the Wave D prefix untouched', () => {
     // The promise the registry docblock makes to any later wave: a new step
     // lands as one entry here and nothing before it moves.
     expect(CHECK_IN_STEPS.slice(0, 2).map((step) => step.id)).toEqual([
