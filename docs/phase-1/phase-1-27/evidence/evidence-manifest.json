@@ -32,7 +32,7 @@
       "bytes": 17702
     },
     "docs/phase-1/phase-1-27/clean-room-evidence.md": {
-      "sha256": "cad1d77604968c3fdd9152887fc717574bb677152aa46287e3e8d4f5c5b9786b",
+      "sha256": "75fed95cad5b725747392dc44d506c0edf57cf64844fefd40059f4e3a8b444de",
       "bytes": 23731
     },
     "docs/phase-1/phase-1-27/closure-record.md": {
@@ -60,7 +60,7 @@
       "bytes": 81669
     },
     "docs/phase-1/phase-1-27/evidence/closing-value-ledger.json": {
-      "sha256": "2030a72624afbe3b1d4d98c14eee4c410a238fcaa1f769e5535b0330baee589a",
+      "sha256": "9c06bf767ba78008e835fa2436bef4168d1852386bf56709832c7562098fb031",
       "bytes": 50226
     },
     "docs/phase-1/phase-1-27/evidence/lifecycle-ledger.json": {
@@ -68,7 +68,7 @@
       "bytes": 9208
     },
     "docs/phase-1/phase-1-27/evidence/local-run-ledger.json": {
-      "sha256": "38a6b8a45cce7019d63fb9f98ee9e49980ed8a3b0978e4de9bae4a3db78b449d",
+      "sha256": "7c40db4fdf87a0cc1944ab8cd9747c0c21e5e740d9af2eeb28de4741db584602",
       "bytes": 1200
     },
     "docs/phase-1/phase-1-27/evidence/task-traceability.md": {
