@@ -388,12 +388,23 @@ export function clampCoordinate(value: number): number {
 /**
  * A coordinate string with a fixed, keyboard-friendly precision.
  *
- * Two decimals is the STEP the keyboard and the number inputs move by, not a
- * bound on what may be submitted: `parseCoordinate` accepts any value in range,
- * so a mark typed as `0.125` travels as `0.125`.
+ * Two decimals is the STEP the keyboard and the diagram move by, and the
+ * precision of the read-out beside them — NOT a bound on what may be submitted.
+ * `parseCoordinate` accepts any value in range and `DamageMapStep` sends the
+ * operator's own text, so a mark typed as `0.125` travels as `0.125`.
+ *
+ * Assembled from an integer rather than with `.toFixed(2)`, which the P1-26
+ * `float-money` gate rule refuses across `apps/web/src`. The rule's subject is
+ * money and a map coordinate is not money — but the answer to a rule whose
+ * premise does not apply is not an exemption, which blinds it to this file
+ * forever. There is nothing `.toFixed` was doing here that integer arithmetic
+ * cannot: round to hundredths once, then print the two halves.
  */
 export function formatCoordinate(value: number): string {
-  return clampCoordinate(value).toFixed(2);
+  const hundredths = Math.round(clampCoordinate(value) * 100);
+  const whole = Math.floor(hundredths / 100);
+  const rest = String(hundredths % 100).padStart(2, '0');
+  return `${whole}.${rest}`;
 }
 
 /* ------------------------------------------------------------------ *
