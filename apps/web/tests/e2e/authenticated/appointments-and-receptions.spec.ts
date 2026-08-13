@@ -247,6 +247,51 @@ async function ownerBearer(request: APIRequestContext): Promise<string> {
 }
 
 /**
+ * A real bearer token for the branch-SCOPED reader.
+ *
+ * A separate helper rather than a parameter on `ownerBearer`, because the two
+ * principals answer different questions and the difference is the whole point
+ * of `narrowScope`: it refuses a company or branch outside the caller's grants
+ * ONLY when the caller is restricted. The acceptance owner is unrestricted, so
+ * for the owner that branch is unreachable by construction; the reader is the
+ * principal for whom it fires.
+ */
+async function readerBearer(request: APIRequestContext): Promise<string> {
+  const login = await request.post(`${API}/api/v1/auth/login`, {
+    data: readerCredentials(),
+    failOnStatusCode: false,
+  });
+  expect(login.status(), 'the acceptance reader must be able to sign in to the API').toBe(200);
+  const body = (await login.json()) as { accessToken?: string };
+  expect(body.accessToken, 'the reader login must issue an access token').toBeTruthy();
+  return body.accessToken as string;
+}
+
+/**
+ * The signed-in operator's DISPLAY NAME, read from the identity that issued the
+ * session — never typed here.
+ *
+ * Needed because "the receiving employee defaults to the signed-in operator" is
+ * only asserted by the whole rendered sentence. The screen renders
+ * `You — <displayName>`; asserting the three characters "You" alone is very
+ * nearly unfalsifiable, because 39 entries of `en.json` contain that substring
+ * and any one of them anywhere in `main` satisfies it. A literal name would be
+ * worse still: it would pin this suite to one bootstrap and pass on a screen
+ * that had stopped reading the session at all.
+ */
+async function ownerDisplayName(request: APIRequestContext): Promise<string> {
+  const login = await request.post(`${API}/api/v1/auth/login`, {
+    data: ownerCredentials(),
+    failOnStatusCode: false,
+  });
+  expect(login.status(), 'the acceptance owner must be able to sign in to the API').toBe(200);
+  const body = (await login.json()) as { user?: { displayName?: string } };
+  const name = body.user?.displayName;
+  expect(name, 'the login response carries no display name to assert against').toBeTruthy();
+  return name as string;
+}
+
+/**
  * The first reception visit this branch holds, or `null`.
  *
  * DISCOVERED, never created. This is what lets the two `NEEDS DATA` cases below
@@ -958,6 +1003,11 @@ test.describe('nothing this phase reads reaches the address bar', () => {
   });
 
   test('no request the browser issues carries a tenant parameter', async ({ page }) => {
+    // Eight navigations, each waiting for its segment to stream, plus a
+    // `networkidle` settle. The 30 s default is the per-TEST budget, not the
+    // per-step one, so this case is one slow segment away from failing for a
+    // reason that is not a defect. Same budget as the eight-route walk in §1.
+    test.setTimeout(90_000);
     const observed: string[] = [];
     const scoped: string[] = [];
     page.on('request', (request) => {
@@ -1339,6 +1389,7 @@ test.describe('the opening intake facts', () => {
 test.describe('the receiving-employee control states what it opens', () => {
   test('the directory-scope disposition renders beside the control, in the running application', async ({
     page,
+    request,
   }) => {
     /*
      * `P1-28-SEC-001`. There is no employee master, so "who received this
@@ -1362,10 +1413,25 @@ test.describe('the receiving-employee control states what it opens', () => {
     await expect(page.getByRole('main')).toContainText(
       say('en', 'receptions.checkIn.employeeHint')
     );
+    /*
+     * The WHOLE sentence, not the word.
+     *
+     * `CheckInStartScreen.tsx` renders `${employeeSelf} — ${sessionUserName}`
+     * when the selected employee is the session user, and `employee.label` when
+     * it is not. Asserting only `employeeSelf` — the three characters "You" —
+     * proves almost nothing: 39 entries of the English catalogue contain that
+     * substring, so any of them appearing anywhere in `main` would satisfy it,
+     * including on a screen that had stopped reading the session entirely.
+     *
+     * The name is READ from the identity that issued this session rather than
+     * written down here, so the assertion binds the rendered default to the
+     * signed-in operator instead of to one bootstrap's fixture.
+     */
+    const displayName = await ownerDisplayName(request);
     await expect(
       page.getByRole('main'),
-      'the receiving employee does not default to the signed-in operator'
-    ).toContainText(say('en', 'receptions.checkIn.employeeSelf'));
+      'the receiving employee does not default to the signed-in operator, by name'
+    ).toContainText(`${say('en', 'receptions.checkIn.employeeSelf')} — ${displayName}`);
   });
 });
 
@@ -1533,6 +1599,9 @@ test.describe('reception media is blocked by a named open decision', () => {
   test('no P1-28 route an operator can reach offers a capture control of any kind', async ({
     page,
   }) => {
+    // Eight navigations with three locator assertions each. The 30 s default is
+    // the per-TEST budget; see the identical note in §9.
+    test.setTimeout(90_000);
     /*
      * `P1-OD-025` is an OPEN Owner decision: no retention period, no permitted
      * kinds, no size ceiling, and no storage provider or scanner exists. So
@@ -1659,8 +1728,17 @@ test.describe('the P1-28 surface discloses nothing of another workspace', () => 
     /*
      * `companyId`/`branchId` are a resource SELECTOR this phase legitimately
      * sends — but a selector is a request, not a decision. The Backend resolves
-     * the caller's own authority from the session and refuses a target outside
-     * it. Typed into the real controls, against the real API.
+     * the caller's own authority from the session and never from the field.
+     * Typed into the real controls, against the real API.
+     *
+     * PRECISELY what the Backend does with the request, because the earlier
+     * wording here said "refuses a target outside it" and that is true of only
+     * one of the two principals: `narrowScope` raises `ERR-IAM-001` for a
+     * RESTRICTED caller and skips the check for an unrestricted one, whose
+     * boundary is the row predicate instead. This case runs as the unrestricted
+     * acceptance owner, so what it asserts is the board it actually gets —
+     * nothing of Tenant B in it — and the refusal branch is proved separately,
+     * with the reader, in the API case below.
      */
     await page.goto('/en/receptions');
     await segmentRendered(page, '/en/receptions');
@@ -1681,7 +1759,12 @@ test.describe('the P1-28 surface discloses nothing of another workspace', () => 
     expect(body, 'the queue named the Tenant B branch').not.toContain('isolation branch b');
   });
 
-  test('a Tenant A bearer token is refused both P1-28 boards for Tenant B', async ({ request }) => {
+  const BOARDS_FOR_B = [
+    `/api/v1/appointments?companyId=${COMPANY_B}&branchId=${BRANCH_B}&limit=1`,
+    `/api/v1/receptions?companyId=${COMPANY_B}&branchId=${BRANCH_B}&limit=1`,
+  ] as const;
+
+  test('a branch-scoped token is REFUSED both P1-28 boards for Tenant B', async ({ request }) => {
     /*
      * A REAL bearer token, obtained the way the web tier obtains one. The
      * browser session cookie cannot be used for this and must not be: it belongs
@@ -1690,20 +1773,36 @@ test.describe('the P1-28 surface discloses nothing of another workspace', () => 
      * want of an Authorization header on every probe, and the test would pass
      * while proving nothing about tenancy at all — the exact vacuity
      * `isolation.spec.ts` recorded.
+     *
+     * THE READER, NOT THE OWNER, AND THIS IS THE CORRECTION THAT MADE THE CASE
+     * MEAN SOMETHING.
+     *
+     * It was written against the acceptance OWNER and asserted "must not answer
+     * 200". It failed, and the failure was the test's, not the platform's:
+     * `narrowScope` (`server/context/resolve-context.ts`) refuses a requested
+     * company or branch outside the caller's grants with `ERR-IAM-001`, and it
+     * skips that check entirely for an UNRESTRICTED caller — "unrestricted
+     * callers hold everything in the tenant, so `held` being empty means no
+     * narrowing, not nothing allowed". The acceptance owner is unrestricted, so
+     * the owner is the one principal for whom this guard cannot fire; the case
+     * had picked it and was measuring a branch that is inert by construction.
+     * The reader is provisioned scoped to Company A / Branch A, which is what
+     * turns the same probe into an exercise of the live refusal path.
+     *
+     * Measured here: 403 `ERR-IAM-001` on both boards, and 200 on its own
+     * branch immediately afterwards — without which "it refused" would also be
+     * true of an account that can read nothing at all.
      */
-    const token = await ownerBearer(request);
+    const token = await readerBearer(request);
 
-    for (const path of [
-      `/api/v1/appointments?companyId=${COMPANY_B}&branchId=${BRANCH_B}&limit=1`,
-      `/api/v1/receptions?companyId=${COMPANY_B}&branchId=${BRANCH_B}&limit=1`,
-    ]) {
+    for (const path of BOARDS_FOR_B) {
       const response = await request.get(`${API}${path}`, {
         headers: { Authorization: `Bearer ${token}` },
         failOnStatusCode: false,
       });
       expect(
         response.status(),
-        `${path} must not answer 200 to a token issued for another tenant`
+        `${path} must not answer 200 to a branch-scoped token naming another workspace`
       ).not.toBe(200);
       // A refusal, not a fault: a 5xx here would be the server failing to
       // decide rather than deciding. The exact code is not pinned to one value
@@ -1719,6 +1818,69 @@ test.describe('the P1-28 surface discloses nothing of another workspace', () => 
         TENANT_B_NAME.toLowerCase()
       );
       expect(text, 'a denial echoed the other tenant id').not.toContain(TENANT_B.toLowerCase());
+    }
+
+    // The control that makes the two refusals above evidence rather than noise.
+    for (const path of [
+      `/api/v1/appointments?companyId=${COMPANY_A}&branchId=${BRANCH_A}&limit=1`,
+      `/api/v1/receptions?companyId=${COMPANY_A}&branchId=${BRANCH_A}&limit=1`,
+    ]) {
+      const own = await request.get(`${API}${path}`, {
+        headers: { Authorization: `Bearer ${token}` },
+        failOnStatusCode: false,
+      });
+      expect(own.status(), `the reader was refused its OWN branch on ${path}`).toBe(200);
+    }
+  });
+
+  test('an unrestricted token gets an EMPTY board for Tenant B, never a Tenant B row', async ({
+    request,
+  }) => {
+    /*
+     * The other half of the same rule, asserted as what it is rather than as
+     * what the previous version of this section wished it were.
+     *
+     * `companyId` and `branchId` are a RESOURCE SELECTOR on these two reads
+     * (`P1-18-A-01`: the server refuses to guess which of a multi-grant
+     * operator's branches a board is for) — they are not the tenancy boundary.
+     * The tenancy boundary is the row predicate and RLS. So for an unrestricted
+     * principal a selector naming another workspace is not an authorization
+     * question at all: the board is answered, and it is answered EMPTY.
+     *
+     * WHAT THIS CASE CANNOT PROVE, stated rather than implied. The acceptance
+     * database holds no appointment and no reception in EITHER workspace, so
+     * "no Tenant B row came back" is also what a leaking read would produce. An
+     * empty answer is a necessary condition for isolation here and not a
+     * sufficient one, and it cannot be made sufficient without seeding Tenant B
+     * business rows — which the no-fake-data policy forbids and which this
+     * suite will not do to manufacture a stronger-looking green. What IS proved
+     * is the falsifiable part: the response carries no Tenant B name and no
+     * Tenant B identifier, and it carries no rows at all. The refusal path that
+     * a restricted principal meets is proved in the case above, where it fires.
+     */
+    const token = await ownerBearer(request);
+
+    for (const path of BOARDS_FOR_B) {
+      const response = await request.get(`${API}${path}`, {
+        headers: { Authorization: `Bearer ${token}` },
+        failOnStatusCode: false,
+      });
+      // Both are correct answers and the case refuses to pin one: 403 if the
+      // platform ever narrows unrestricted callers too, 200-and-empty today.
+      expect([200, 403], `${path} answered ${response.status()}`).toContain(response.status());
+
+      const text = (await response.text()).toLowerCase();
+      if (response.status() === 200) {
+        const page = JSON.parse(text) as { items?: readonly unknown[] };
+        expect(
+          page.items ?? [],
+          `${path} returned rows for a workspace the caller does not belong to`
+        ).toHaveLength(0);
+      }
+      expect(text, 'the answer disclosed the other tenant').not.toContain(
+        TENANT_B_NAME.toLowerCase()
+      );
+      expect(text, 'the answer echoed the other tenant id').not.toContain(TENANT_B.toLowerCase());
     }
   });
 
