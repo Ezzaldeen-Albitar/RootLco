@@ -261,6 +261,21 @@ missing dimension; for `ip` that means a peer address from the platform, which i
 - **Health and container probes** are unauthenticated by design and are declared `public` with a
   `publicReason`. They are reported by `npm run validate:authorization-coverage`, so an unthrottled
   public endpoint cannot be quiet.
+- **One environment runs with enforcement switched off, and it is named here rather than left to be
+  found.** The `authenticated-browser` job in
+  `.github/workflows/_reusable-authenticated-browser.yml` starts its API with
+  `RATE_LIMIT_ENABLED=false`. That tier is a browser suite driving one operator at machine speed:
+  measured with a counting proxy, a full run makes 96 `iam.user-list` reads and peaks at 28 of them
+  inside a single 60-second window against `expensive-read`'s budget of 30 — and it peaks higher on
+  the hosted runner, which completes the same suite in 7.6 minutes against 13.5 locally. It exceeded
+  the budget at one candidate and the browser check went red on a screen that had correctly rendered
+  its "temporarily unavailable" state. This is an **environment switch, not a caller exemption**: no
+  tenant, user, address or operation is allow-listed, no policy or limit changes, the default stays
+  `true` everywhere else, and the local acceptance stack (`npm run acceptance:serve`) deliberately
+  does not set it, so the Product Owner meets the product as configured. Enforcement itself stays
+  proved by `tests/foundation/rate-limit.test.ts` and by
+  `tests/backend/p1-24-read-path-shape.test.ts`, which spends a whole window against a running API
+  and requires `ERR-RTE-001`.
 
 ## 10. Review and governance
 

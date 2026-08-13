@@ -1,7 +1,14 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { expect, test, type APIRequestContext, type Locator, type Page } from '@playwright/test';
+import {
+  expect,
+  test,
+  type APIRequestContext,
+  type BrowserContext,
+  type Locator,
+  type Page,
+} from '@playwright/test';
 import { E2E_API_ORIGIN, REPO_ROOT } from '../origin';
 
 /**
@@ -263,16 +270,94 @@ function readerCredentials(): Credentials {
   return { email: reader.email, password: reader.password };
 }
 
-/** A real bearer token for the owner, obtained the way the web tier obtains one. */
-async function ownerBearer(request: APIRequestContext): Promise<string> {
+/**
+ * ONE sign-in per principal per project — because signing in is RATIONED, and
+ * this suite was spending its ration on work it had already done.
+ *
+ * ## The budget, stated rather than discovered
+ *
+ * `POST /api/v1/auth/login` runs under the API's `auth-adjacent` policy: TEN
+ * requests per SIXTY seconds, keyed by operation and CLIENT ADDRESS
+ * (`apps/api/src/server/http/rate-limit.ts`). Every principal this tier uses
+ * reaches the API from one address — the runner — and the browser's own form
+ * sign-ins reach it through the Next.js server, which is that same address
+ * again. So one bucket serves the entire tier, sign-ins through the form and
+ * sign-ins through the API alike.
+ *
+ * The tier was filling that bucket with repetition: `ownerBearer` signed in
+ * from four cases, `ownerDisplayName` performed a FIFTH owner sign-in to read
+ * one field of the same response, and §18 signed the configured operator in
+ * once per case.
+ *
+ * ## What it cost, observed rather than supposed
+ *
+ * Hosted run `31741808624`, job `94587363396`, candidate `daca04f6`: FIVE
+ * sign-ins were refused `429 ERR-RTE-001`. Three were the browser's, so the
+ * page never left `/login` and the case died at `page.waitForURL: Timeout
+ * 20000ms exceeded`; two were the provisioning command's, so §18's `beforeAll`
+ * threw and its cases were reported with a 0ms duration. Six failures, one
+ * cause — and the timeouts invite exactly the wrong reading, because the same
+ * suite passes on the machine it was written on for the opposite reason to the
+ * obvious one: that machine is SLOWER. The hosted runner finished this tier in
+ * 7.6 minutes against 13.1 locally, so it packs the same sign-ins into fewer
+ * seconds and crosses a per-minute limit the slower machine never reaches. With
+ * one sign-in per principal per project the whole tier now spends 19 of them,
+ * and its busiest minute holds 4 — measured with a counting proxy in front of
+ * the API, not estimated from the call sites. The
+ * limits themselves are reproducible by hand against a local API: the eleventh
+ * sign-in and the thirty-first `iam.user-list` read are refused, exactly as the
+ * two policies say.
+ *
+ * ## What is not given up
+ *
+ * Every principal still signs in against the real endpoint, and the sign-in is
+ * still asserted to succeed and to issue a token — once per principal per
+ * project rather than once per case. A second sign-in established nothing the
+ * first did not, and `auth.setup.ts` is the case whose subject is signing in.
+ */
+interface ApiSession {
+  readonly accessToken: string;
+  readonly displayName: string;
+}
+
+/**
+ * Per WORKER, which here means per PROJECT: Playwright gives each project its
+ * own worker process, so `authenticated-en`, `authenticated-ar` and
+ * `authenticated-tablet` each sign in once rather than sharing a token across
+ * projects. A cache that outlived a project would be hiding a real failure —
+ * that a session captured in one project is not usable in another.
+ */
+const apiSessions = new Map<string, ApiSession>();
+
+async function apiSignIn(
+  request: APIRequestContext,
+  who: string,
+  credentials: Credentials
+): Promise<ApiSession> {
+  const held = apiSessions.get(who);
+  if (held !== undefined) return held;
+
   const login = await request.post(`${API}/api/v1/auth/login`, {
-    data: ownerCredentials(),
+    data: credentials,
     failOnStatusCode: false,
   });
-  expect(login.status(), 'the acceptance owner must be able to sign in to the API').toBe(200);
-  const body = (await login.json()) as { accessToken?: string };
-  expect(body.accessToken, 'login must issue an access token').toBeTruthy();
-  return body.accessToken as string;
+  expect(login.status(), `the acceptance ${who} must be able to sign in to the API`).toBe(200);
+  const body = (await login.json()) as {
+    accessToken?: string;
+    user?: { displayName?: string };
+  };
+  expect(body.accessToken, `the ${who} login must issue an access token`).toBeTruthy();
+  const session: ApiSession = {
+    accessToken: body.accessToken as string,
+    displayName: body.user?.displayName ?? '',
+  };
+  apiSessions.set(who, session);
+  return session;
+}
+
+/** A real bearer token for the owner, obtained the way the web tier obtains one. */
+async function ownerBearer(request: APIRequestContext): Promise<string> {
+  return (await apiSignIn(request, 'owner', ownerCredentials())).accessToken;
 }
 
 /**
@@ -286,14 +371,7 @@ async function ownerBearer(request: APIRequestContext): Promise<string> {
  * principal for whom it fires.
  */
 async function readerBearer(request: APIRequestContext): Promise<string> {
-  const login = await request.post(`${API}/api/v1/auth/login`, {
-    data: readerCredentials(),
-    failOnStatusCode: false,
-  });
-  expect(login.status(), 'the acceptance reader must be able to sign in to the API').toBe(200);
-  const body = (await login.json()) as { accessToken?: string };
-  expect(body.accessToken, 'the reader login must issue an access token').toBeTruthy();
-  return body.accessToken as string;
+  return (await apiSignIn(request, 'reader', readerCredentials())).accessToken;
 }
 
 /**
@@ -307,17 +385,14 @@ async function readerBearer(request: APIRequestContext): Promise<string> {
  * and any one of them anywhere in `main` satisfies it. A literal name would be
  * worse still: it would pin this suite to one bootstrap and pass on a screen
  * that had stopped reading the session at all.
+ *
+ * It reads the OWNER'S OWN login response — the same one `ownerBearer` holds,
+ * rather than a second sign-in for one field of an identical answer.
  */
 async function ownerDisplayName(request: APIRequestContext): Promise<string> {
-  const login = await request.post(`${API}/api/v1/auth/login`, {
-    data: ownerCredentials(),
-    failOnStatusCode: false,
-  });
-  expect(login.status(), 'the acceptance owner must be able to sign in to the API').toBe(200);
-  const body = (await login.json()) as { user?: { displayName?: string } };
-  const name = body.user?.displayName;
-  expect(name, 'the login response carries no display name to assert against').toBeTruthy();
-  return name as string;
+  const { displayName } = await apiSignIn(request, 'owner', ownerCredentials());
+  expect(displayName, 'the login response carries no display name to assert against').toBeTruthy();
+  return displayName;
 }
 
 /**
@@ -392,6 +467,45 @@ async function signInThroughTheForm(page: Page, { email, password }: Credentials
   await page.getByRole('textbox', { name: 'Password', exact: true }).fill(password);
   await page.getByRole('button', { name: 'Sign in' }).click();
   await page.waitForURL(/\/en(\?.*)?$/, { timeout: 20_000 });
+}
+
+/** What `BrowserContext.cookies()` hands back, without naming Playwright's type. */
+type SessionCookies = Awaited<ReturnType<BrowserContext['cookies']>>;
+
+/** Per PROJECT, for the same reason `apiSessions` is. */
+const browserSessions = new Map<string, SessionCookies>();
+
+/**
+ * Drives the form ONCE per project, then re-presents the session it produced.
+ *
+ * The `auth-adjacent` ration described above is spent by a form sign-in exactly
+ * as it is by an API one: the Server Action calls `POST /api/v1/auth/login` from
+ * the Next.js server, which is the same client address. Two describe blocks here
+ * sign a principal in — §10's reader, in two cases, and §18's configured
+ * operator, in four — so between them they were spending SIX sign-ins to
+ * establish two facts.
+ *
+ * The first case in a project still signs in through the real form, so the form,
+ * the Server Action, the API contract and the cookie are all still proved
+ * together; the cases after it are handed the cookies that sign-in set.
+ *
+ * COOKIES rather than a whole storage state, deliberately. The session IS an
+ * `httpOnly` cookie — that is the mechanism `auth.setup.ts` exists to exercise —
+ * and nothing either block asserts lives in `localStorage`: the locale travels
+ * in the path, so a captured origin would carry nothing and hide nothing.
+ */
+async function signInOncePerProject(
+  page: Page,
+  who: string,
+  credentials: Credentials
+): Promise<void> {
+  const held = browserSessions.get(who);
+  if (held !== undefined) {
+    await page.context().addCookies(held);
+    return;
+  }
+  await signInThroughTheForm(page, credentials);
+  browserSessions.set(who, await page.context().cookies());
 }
 
 /**
@@ -1093,7 +1207,7 @@ test.describe('a read-only operator meets a denial, not an empty screen', () => 
 
   /** The read-only principal, signed in the way an operator signs in. */
   async function signInAsReader(page: Page): Promise<void> {
-    await signInThroughTheForm(page, readerCredentials());
+    await signInOncePerProject(page, 'reader (browser)', readerCredentials());
   }
 
   test('the booking form is refused, while the calendar and queue still read', async ({ page }) => {
@@ -2082,16 +2196,69 @@ function localDateTime(moment: Date): string {
 }
 
 /**
- * A future window, an hour long, distinct per call AND per run.
+ * Which stretch of the calendar a project books in.
+ *
+ * §18 is the destructive half of this file, and every project runs it: three
+ * projects book, confirm and end appointments on the ONE fixture vehicle, in one
+ * database, one project after another. They stayed out of each other's way only
+ * by luck of the happy path — each case drives its appointment to a terminal
+ * state (`cancelled`, `no_show`) before the next project starts, and a terminal
+ * appointment sits outside `ex_appointments_vehicle_confirmed`'s partial
+ * predicate.
+ *
+ * A case that dies AFTER confirming and BEFORE ending leaves a CONFIRMED window
+ * behind on that vehicle. The next project asks for the same day, the exclusion
+ * constraint refuses the second confirmation, and the failure surfaces in a
+ * project that did nothing wrong, reading like a product defect in rescheduling.
+ * One project's wreckage must not be another project's evidence.
+ *
+ * That §18 can die part-way is not hypothetical: at candidate `daca04f6` it did,
+ * in two of the three projects. Those particular deaths happened at the sign-in,
+ * before anything was booked, so no confirmed window survived them — the hazard
+ * was real and this run simply did not land on it. Waiting for the run that does
+ * is not a plan.
+ *
+ * Islands are 120 days apart: far wider than the 61 days any single project
+ * spans, so two projects cannot meet even at their extremes.
+ */
+const APPOINTMENT_ISLAND_DAYS: Readonly<Record<string, number>> = {
+  'authenticated-en': 0,
+  'authenticated-ar': 120,
+  'authenticated-tablet': 240,
+};
+
+/**
+ * REFUSES an unlisted project rather than defaulting it.
+ *
+ * A default would silently hand a new project `authenticated-en`'s dates, which
+ * is the collision this exists to remove — and it would do it invisibly, on the
+ * day somebody adds a fourth project, in a file they never opened.
+ */
+function islandDays(): number {
+  const project = test.info().project.name;
+  const island = APPOINTMENT_ISLAND_DAYS[project];
+  if (island === undefined) {
+    throw new Error(
+      `Project '${project}' has no entry in APPOINTMENT_ISLAND_DAYS. Add one before it runs §18: ` +
+        'two projects booking the same day on the one fixture vehicle collide on ' +
+        'ex_appointments_vehicle_confirmed as soon as either leaves a confirmed appointment behind.'
+    );
+  }
+  return island;
+}
+
+/**
+ * A future window, an hour long, distinct per call, PER PROJECT and per run.
  *
  * `ex_appointments_vehicle_confirmed` refuses two overlapping CONFIRMED windows
  * for one vehicle, and this suite confirms every appointment it books. Two cases
- * therefore need different days, and a re-run whose predecessor died between
- * confirming and ending needs a different minute — which is what taking the
- * minute from the clock rather than from a constant buys.
+ * therefore need different days, two PROJECTS need different islands (above),
+ * and a re-run whose predecessor died between confirming and ending needs a
+ * different minute — which is what taking the minute from the clock rather than
+ * from a constant buys.
  */
 function futureWindow(daysAhead: number): { readonly from: string; readonly to: string } {
-  const from = new Date(Date.now() + daysAhead * 24 * 60 * 60 * 1000);
+  const from = new Date(Date.now() + (daysAhead + islandDays()) * 24 * 60 * 60 * 1000);
   from.setSeconds(0, 0);
   const to = new Date(from.getTime() + 60 * 60 * 1000);
   return { from: localDateTime(from), to: localDateTime(to) };
@@ -2114,7 +2281,7 @@ test.describe('the configured workspace: the four catalogue-blocked capabilities
 
   /** Signs in and puts the branch target in, the two things every case needs. */
   async function openConfigured(page: Page, route: string): Promise<void> {
-    await signInThroughTheForm(page, configuredCredentials());
+    await signInOncePerProject(page, 'configured operator', configuredCredentials());
     await page.goto(route);
     await segmentRendered(page, route);
   }
