@@ -78,8 +78,8 @@ cannot, that is said instead of guessed.
 | 5   | `195 / 0`, `197 / 0`, `170 / 0`        | `204 / 0`, `206 / 0`, `179 / 0`        | re-run; all three still report zero                                 |
 | 6   | `143 registered · 71 required · 71/71` | `151 registered · 76 required · 76/76` | derived — §7.1                                                      |
 | 8   | `39 files, 803 passed`                 | `70` files; case total NOT restated    | the file half derived — §3 and §6.1; the case half is `E-03`        |
-| 9   | `77 files, 1680 passed`                | `91 files, 2225 passed`                | recorded, not derived — §6.4 says why                               |
-| 10  | `31 files, 638 passed`                 | `41 files, 1043 passed`                | the file half derived — §6.4                                        |
+| 9   | `77 files, 1680 passed`                | `92 files, 2247 passed`                | recorded, not derived — §6.4 says why                               |
+| 10  | `31 files, 638 passed`                 | `42 files, 1065 passed`                | the file half derived — §6.4                                        |
 | 11  | `150 tests in 2 files`                 | **not re-measured**                    | needs a browser install; unchanged as far as any record here states |
 | 12  | `331 tests in 9 files`                 | **not re-measured**                    | the same                                                            |
 
@@ -547,28 +547,30 @@ anonymous tier had been fixed before merge.
 
 | tier                                                  | files                                           | cases                                                                                                                                                        | how measured                            |
 | ----------------------------------------------------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------- |
-| `npm run test` — the root unit and contract aggregate | **91**                                          | **2225**                                                                                                                                                     | re-run; the file half is not derived    |
-| of which `tests/ci`                                   | **41**                                          | **1043**                                                                                                                                                     | the file half derived; the cases re-run |
+| `npm run test` — the root unit and contract aggregate | **92**                                          | **2247**                                                                                                                                                     | re-run; the file half is not derived    |
+| of which `tests/ci`                                   | **42**                                          | **1065**                                                                                                                                                     | the file half derived; the cases re-run |
 | `tests/backend`                                       | **86** test files (91 files in the directory)   | **not run here** — needs a running PostgreSQL                                                                                                                | both halves derived                     |
 | `tests/db`                                            | **139** test files (143 files in the directory) | **not run here** — needs a running PostgreSQL. **Recorded** as 1636 / 1636 in [`owner-acceptance-fail-remediation.md`](owner-acceptance-fail-remediation.md) | both halves derived                     |
 
 The root aggregate's file count is **not** derived, and the reason is worth
 stating rather than leaving as an omission: `npm run test` is a vitest project
 selection, not a directory, so the only honest source for it is the runner. The
-two directory counts beside it are derived, and `tests/ci` at 41 supersedes the
-36 this row carried, which had itself superseded the 31 it carried in two places
-while a third said 33 (`E-08`).
+two directory counts beside it are derived, and `tests/ci` at 42 supersedes the
+41 this row carried, which had superseded 36, which had itself superseded the 31
+it carried in two places while a third said 33 (`E-08`).
 
 **Both rows above were re-measured for the P1-18 intake-catalogue management
 remediation, and both had rotted — in the same way and for the same reason.**
 The `tests/ci` file half is described as derived, and there is a derived marker
-for it at the foot of this document reading 41; the CELL said 36. A marker
-`validate:p1-27-doc-counts` reconciles and a cell it cannot see are two numbers,
-not one, and only the first of them is held true by a gate. The case halves of
-both rows are re-run figures with no marker at all and no gate behind them, so
-they are worth exactly the date attached to them: measured at
-`91 files / 2225 passed` and `41 files / 1043 passed` on the branch that added
-the seven administrative catalogue reads.
+for it at the foot of this document; the CELL said 36 while the marker said 41. A
+marker `validate:p1-27-doc-counts` reconciles and a cell it cannot see are two
+numbers, not one, and only the first of them is held true by a gate. The case
+halves of both rows are re-run figures with no marker at all and no gate behind
+them, so they are worth exactly the date attached to them: measured at
+`92 files / 2247 passed` and `42 files / 1065 passed` on the branch that made
+the no-fake-data gate strip comments before matching, which added
+`tests/ci/no-fake-data-gate.test.ts` and its 22 cases. The figures before it were
+`91 files / 2225 passed` and `41 files / 1043 passed`.
 
 The six `tests/ci` files this phase introduced or that carry its gates are
 `p1-27-frontend-gate.test.ts`, `plain-language-gate.test.ts`,
@@ -682,7 +684,7 @@ under-report itself by seven files.
 | `ci-evidence.md`                                  | 275   | Hosted CI, with every value classified and every hosted one naming its run         |
 | `clean-room-evidence.md`                          | 377   | The clean-room record, and the six classes every closing value is sorted into      |
 | `contract-archaeology.md`                         | 416   | What the Backend actually publishes, read before anything was built                |
-| `deliverable-manifest.md`                         | 1047  | This file                                                                          |
+| `deliverable-manifest.md`                         | 1049  | This file                                                                          |
 | `developer-guide.md`                              | 184   | `DOC-002` — the developer half                                                     |
 | `evidence/change-log.md`                          | 1135  | `DOC-002` — the change-log half; its rows are scraped by a test                    |
 | `evidence/evidence-manifest.json`                 | 171   | `QA-005` — a SHA-256 digest of every document in this directory                    |
@@ -968,7 +970,7 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
      whose regexes read the label and the number as adjacent cells. -->
 
 <!-- derived: files apps/web/tests = 70 -->
-<!-- derived: files tests/ci = 41 -->
+<!-- derived: files tests/ci = 42 -->
 <!-- derived: files scripts/ci = 46 -->
 <!-- derived: files apps/web/scripts = 4 -->
 <!-- derived: files supabase/migrations = 120 -->
@@ -1001,7 +1003,7 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
 <!-- derived: lines docs/phase-1/phase-1-27/clean-room-evidence.md = 377 -->
 <!-- derived: lines docs/phase-1/phase-1-27/closure-record.md = 114 -->
 <!-- derived: lines docs/phase-1/phase-1-27/contract-archaeology.md = 416 -->
-<!-- derived: lines docs/phase-1/phase-1-27/deliverable-manifest.md = 1047 -->
+<!-- derived: lines docs/phase-1/phase-1-27/deliverable-manifest.md = 1049 -->
 <!-- derived: lines docs/phase-1/phase-1-27/developer-guide.md = 184 -->
 <!-- derived: lines docs/phase-1/phase-1-27/evidence/change-log.md = 1135 -->
 <!-- derived: lines docs/phase-1/phase-1-27/evidence/evidence-manifest.json = 171 -->
