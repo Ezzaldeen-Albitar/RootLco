@@ -91,3 +91,96 @@ export const MEDIA_DECISION_KEYS: readonly string[] = Object.freeze([
   'receptions.media.decide.storage',
   'receptions.media.decide.enforcement',
 ]);
+
+/* ------------------------------------------------------------------ *
+ * The document chain — why `damage_map` and `rec.reception-signature`
+ * are unreachable, stated as facts a test can check
+ * ------------------------------------------------------------------ */
+
+/**
+ * THE CORRECTION THIS TABLE EXISTS TO MAKE.
+ *
+ * Three places in this tree said, in one form or another, "no operation
+ * registers a document" — and the SEC-004 manifest said it of the **published
+ * surface**, unqualified. That sentence is false, and a reader can refute it in
+ * one grep: `shared.attachment-upload-authorize` is a published, registered
+ * operation (`docs/api/openapi.v1.json`), and creating the `shared.documents`
+ * row is the first thing it does
+ * (`attachment-service.ts` → `insertDocument`).
+ *
+ * The CONCLUSION it was offered in support of survives — `damage_map` and
+ * `rec.reception-signature` both require a `documentId` **and** the exact
+ * `documentVersionId`, and neither value can be obtained — but it survives for
+ * reasons that are stronger, different, and checkable. A wrong reason attached
+ * to a right verdict is how a classification gets overturned by the first
+ * person who checks it, so the reason is replaced rather than softened.
+ *
+ * `apps/web` calls no part of the chain, and that is a separate fact from the
+ * chain being unable to complete. Both are true; only the second is the reason
+ * a screen may not offer the capability.
+ */
+export interface DocumentChainBlocker {
+  /** Stable id, used by the manifest and by the test that checks the fact. */
+  readonly id: string;
+  /** What stops the chain, in one sentence. */
+  readonly what: string;
+  /** The repository file that establishes it. Checked to exist and to say so. */
+  readonly evidence: string;
+}
+
+/**
+ * Every independent reason the document chain cannot complete in this platform.
+ *
+ * INDEPENDENT is the load-bearing word: closing any one of these leaves the
+ * chain dead, so a future commit that (say) provisions object storage does not
+ * silently make `damage_map` reachable. `tests/p1-28-reception-media.test.ts`
+ * re-derives each row against the repository, so a row that stops being true
+ * FAILS rather than quietly becoming a stale justification — which is the whole
+ * defect this table replaces.
+ */
+export const DOCUMENT_CHAIN_BLOCKERS: readonly DocumentChainBlocker[] = Object.freeze([
+  {
+    id: 'no-document-category',
+    what:
+      'The one operation that creates a document resolves a category code against ' +
+      'shared.document_categories before anything else. That table ships ZERO rows — no seed ' +
+      'anywhere inserts one — and no operation in the published surface creates, updates or ' +
+      'even lists a category. So the call fails ERR-RES-001 for every tenant, configured or ' +
+      'not, and there is no such thing as a tenant that has a document.',
+    evidence: 'supabase/migrations/20260718100000_shared_document_categories_and_documents.sql',
+  },
+  {
+    id: 'no-storage-provider',
+    what:
+      'Past the category it signs a URL through the storage provider, and the default provider ' +
+      'refuses every call with ERR-SYS-001 rather than pretending an object store exists. The ' +
+      'only other provider the composition root can build is the local fake; no production ' +
+      'provider is provisioned, and ADR-012 is open.',
+    evidence: 'apps/api/src/modules/shared-services/provider/storage-provider.ts',
+  },
+  {
+    id: 'no-acceptance',
+    what:
+      // The ceiling is stated in the module docblock above and NOT repeated as a
+      // quoted phrase here: `p1-28-reception-media.test.ts` pins the words this
+      // tree may use about a file, over the comment-stripped source, so a string
+      // literal restating them is a claim where the docblock is a note.
+      'Even a registered version stays pending for ever: the initial-state guard refuses any ' +
+      'other status at insert, and acceptance additionally needs a clean scan record that no ' +
+      'application role may write. So the best state the chain can reach is a pending version ' +
+      'nobody can open — which is why nothing downstream of it may be offered.',
+    evidence: 'apps/api/src/app/api/v1/attachments/versions/route.ts',
+  },
+]);
+
+/**
+ * The two reception writes that cannot be reached because of the table above.
+ *
+ * Named here rather than in either step, because the fact is one fact and the
+ * two steps were drifting into two accounts of it — the same reason
+ * `MediaSurface` is a union.
+ */
+export const DOCUMENT_BOUND_WRITES: readonly string[] = Object.freeze([
+  'rec.reception-condition-evidence [kind damage_map]',
+  'rec.reception-signature',
+]);

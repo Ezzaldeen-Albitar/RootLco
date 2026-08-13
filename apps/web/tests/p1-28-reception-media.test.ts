@@ -5,6 +5,8 @@ import { describe, expect, it } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
 import {
+  DOCUMENT_BOUND_WRITES,
+  DOCUMENT_CHAIN_BLOCKERS,
   MEDIA_CAPTURE_STATUS,
   MEDIA_DECISION_ID,
   MEDIA_DECISION_KEYS,
@@ -563,5 +565,179 @@ describe('P1-28-FE-017 — no reception string claims a file was uploaded or att
 
     const translations = Object.keys(EN).filter((key) => /^receptions\.captureMethod\./.test(key));
     expect(translations).toEqual([]);
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * The document chain, re-derived — `FE-012`'s map half and `FE-018`
+ * ------------------------------------------------------------------ */
+
+/**
+ * Why this block exists, and why it is HERE.
+ *
+ * `damage_map` (`FE-012`) and `rec.reception-signature` (`FE-018`) are both held
+ * unreachable, and until now the stated reason was "no operation registers a
+ * document". That is FALSE about the platform: `shared.attachment-upload-authorize`
+ * is a published operation and creating the `shared.documents` row is the first
+ * thing it does. A right verdict resting on a refutable reason is one grep away
+ * from being overturned, so `DOCUMENT_CHAIN_BLOCKERS` replaces the sentence with
+ * three independent facts, and this suite re-derives every one of them from the
+ * repository rather than trusting the table that names them.
+ *
+ * It lives beside `FE-017` because it is the same decision and the same chain:
+ * one account of `P1-OD-025`, in the module three surfaces already share.
+ */
+describe('P1-28 — the document chain cannot complete, and the reason is derived', () => {
+  const SUPABASE = join(REPO, 'supabase');
+  const API = join(REPO, 'apps', 'api');
+
+  function walkAny(dir: string, keep: RegExp): readonly string[] {
+    if (!existsSync(dir)) return [];
+    return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+      const path = join(dir, entry.name);
+      if (entry.isDirectory()) return walkAny(path, keep);
+      return keep.test(entry.name) ? [path] : [];
+    });
+  }
+
+  it('states the fact the old reason got wrong: an operation DOES create the document row', () => {
+    /*
+     * Asserted in the AFFIRMATIVE, deliberately. If this ever stops being true
+     * the correction below becomes unnecessary, and somebody should learn that
+     * from a failure rather than by re-reading a comment.
+     */
+    const openapi = readFileSync(join(REPO, 'docs', 'api', 'openapi.v1.json'), 'utf8');
+    expect(openapi).toContain('"shared.attachment-upload-authorize"');
+    expect(openapi).toContain('"shared.attachment-version-register"');
+
+    const service = readFileSync(
+      join(API, 'src', 'modules', 'shared-services', 'application', 'attachment-service.ts'),
+      'utf8'
+    );
+    expect(service).toContain('insertDocument');
+  });
+
+  it('names every blocker exactly once, and each cites a file that exists', () => {
+    const ids = DOCUMENT_CHAIN_BLOCKERS.map((blocker) => blocker.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(ids).toContain('no-document-category');
+    for (const blocker of DOCUMENT_CHAIN_BLOCKERS) {
+      expect(blocker.what.trim().length, blocker.id).toBeGreaterThan(0);
+      expect(existsSync(join(REPO, ...blocker.evidence.split('/'))), blocker.evidence).toBe(true);
+    }
+  });
+
+  it('`no-document-category`: the category table ships zero rows and nothing can add one', () => {
+    /*
+     * The decisive blocker, and the one that separates this from the CATALOGUE
+     * question (`P1-28-OD-001`). There, 21 management writes EXIST and are merely
+     * unsurfaced, so "a configured tenant" is a thing that can exist and a row
+     * may not be held PARTIAL for lacking one. Here no operation anywhere can
+     * create a category, so a configured tenant is not a thing that can exist.
+     */
+    const sql = walkAny(SUPABASE, /\.sql$/).map((path) => readFileSync(path, 'utf8'));
+    expect(sql.length).toBeGreaterThan(0);
+    for (const source of sql) {
+      expect(source).not.toMatch(/INSERT\s+INTO\s+shared\.document_categories/i);
+    }
+
+    // …and no published operation creates, amends or even lists one, so there is
+    // no administration surface being withheld here either.
+    const openapi = JSON.parse(
+      readFileSync(join(REPO, 'docs', 'api', 'openapi.v1.json'), 'utf8')
+    ) as { paths: Record<string, Record<string, { operationId?: string }>> };
+    const operationIds = Object.values(openapi.paths).flatMap((methods) =>
+      Object.values(methods)
+        .map((operation) => operation.operationId)
+        .filter((id): id is string => typeof id === 'string')
+    );
+    expect(operationIds.length).toBeGreaterThan(0);
+    expect(operationIds.filter((id) => /document-categor|category-create/i.test(id))).toEqual([]);
+  });
+
+  it('`no-storage-provider`: the default provider refuses, and only a fake is buildable', () => {
+    const provider = readFileSync(
+      join(API, 'src', 'modules', 'shared-services', 'provider', 'storage-provider.ts'),
+      'utf8'
+    );
+    // The module-level DEFAULT, not merely a class that exists somewhere in it.
+    expect(provider).toMatch(/let\s+provider[^=]*=\s*new UnconfiguredStorageProvider\(\)/);
+    expect(provider).toContain('ERR-SYS-001');
+
+    const composition = readFileSync(
+      join(API, 'src', 'modules', 'shared-services', 'index.ts'),
+      'utf8'
+    );
+    // One named alternative, and it says in its own name that it is not real.
+    expect(composition).toContain("'local_fake'");
+  });
+
+  it('`no-acceptance`: a registered version can never leave `pending`', () => {
+    const route = readFileSync(
+      join(API, 'src', 'app', 'api', 'v1', 'attachments', 'versions', 'route.ts'),
+      'utf8'
+    );
+    expect(route).toContain('guard_document_version_initial_state');
+    expect(route).toContain('pending');
+  });
+
+  it('both document-bound reception writes require BOTH uuids, so neither degrades', () => {
+    /*
+     * Why a partial chain would not help: these are not optional fields that
+     * could be omitted while the rest of the write proceeds. Read from the route
+     * and the migration rather than restated here, because a later relaxation
+     * THERE is exactly the change that should reopen these two verdicts.
+     */
+    expect(DOCUMENT_BOUND_WRITES).toHaveLength(2);
+
+    const signature = readFileSync(
+      join(API, 'src', 'app', 'api', 'v1', 'receptions', '[receptionId]', 'signatures', 'route.ts'),
+      'utf8'
+    );
+    expect(signature).toMatch(/signatureDocumentId:\s*schemas\.uuid\s*,/);
+    expect(signature).toMatch(/signatureDocumentVersionId:\s*schemas\.uuid\s*,/);
+    expect(signature).not.toMatch(/signatureDocumentId:[^\n]*(optional|nullable)/);
+    expect(signature).not.toMatch(/signatureDocumentVersionId:[^\n]*(optional|nullable)/);
+
+    const damageMap = readFileSync(
+      join(SUPABASE, 'migrations', '20260721101000_rec_damage_maps_marks.sql'),
+      'utf8'
+    );
+    expect(damageMap).toMatch(/document_id\s+uuid\s+NOT NULL/);
+    expect(damageMap).toMatch(/document_version_id\s+uuid\s+NOT NULL/);
+  });
+
+  it('apps/web reaches no part of the chain — a SEPARATE fact from the chain being dead', () => {
+    const CHAIN = [
+      'attachment-upload-authorize',
+      'attachment-version-register',
+      'attachment-link-create',
+    ];
+    /*
+     * `src/lib/api/idempotent-operations.ts` is GENERATED from the operation
+     * register and names every idempotent operation the platform publishes,
+     * these three included. Naming an operation is not calling one, which is why
+     * `check-p1-28-write-reachability.mjs` excludes the same file by name — so
+     * this case excludes it for the SAME stated reason rather than inventing a
+     * second policy about what counts as a call site.
+     */
+    const GENERATED = 'src/lib/api/idempotent-operations.ts';
+    const sources = walkAny(join(WEB, 'src'), /\.tsx?$/)
+      .map((path) => ({
+        path: path
+          .slice(WEB.length + 1)
+          .split(sep)
+          .join('/'),
+        source: GATE.stripComments(readFileSync(path, 'utf8')),
+      }))
+      .filter(({ path }) => path !== GENERATED);
+    // The exclusion is real, not a path that stopped existing: assert it is there.
+    expect(existsSync(join(WEB, ...GENERATED.split('/')))).toBe(true);
+    expect(sources.length).toBeGreaterThan(0);
+    for (const { path, source } of sources) {
+      for (const operation of CHAIN) {
+        expect(source, `${path} reaches ${operation}`).not.toContain(operation);
+      }
+    }
   });
 });

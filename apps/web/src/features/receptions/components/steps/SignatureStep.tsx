@@ -25,10 +25,19 @@ import { EvidenceSection, EvidenceStates } from './EvidencePanels';
  * `SignatureInput` requires **`signatureDocumentId` AND
  * `signatureDocumentVersionId`** — a registered signature document and the exact
  * version that was signed. Both are `uuid`, neither is optional
- * (`receptions-contract.ts:684-692`, mirrored in the route's own schema). The
- * published surface this product consumes has `shared.document-read` and **no
- * operation that registers a document**, and `P1-OD-025` is the open decision
- * that governs whether one may exist, what may be stored and where.
+ * (`receptions-contract.ts:684-692`, mirrored in the route's own schema).
+ *
+ * This docblock used to say the published surface "has no operation that
+ * registers a document". **That was wrong**, and stating it here made a correct
+ * verdict refutable by one grep: `shared.attachment-upload-authorize` IS
+ * published, and creating the `shared.documents` row is the first thing it does.
+ * The true reason is stronger and is no longer restated in prose — it is
+ * `DOCUMENT_CHAIN_BLOCKERS` in `../../media/media-decision.ts`, three
+ * independent facts (no document category exists or can be created, the default
+ * storage provider refuses every signing call, and no version can ever leave
+ * `pending`), each re-derived from the repository by
+ * `tests/p1-28-reception-media.test.ts`. `P1-OD-025` is the open decision that
+ * governs whether the chain may exist at all.
  *
  * So an operator cannot produce either value, and no arrangement of controls on
  * this screen changes that. Two uuid boxes, a hidden "pending" placeholder, or a

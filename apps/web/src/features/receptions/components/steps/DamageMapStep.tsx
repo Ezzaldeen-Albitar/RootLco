@@ -43,12 +43,21 @@ import {
  *
  * `DamageMapEvidenceInput` requires `documentId` AND `documentVersionId`: a
  * registered map-template document and the exact version the marks were drawn
- * on. **No operation in this product registers a document** — the published
- * surface has `shared.document-read` and no create — and `P1-OD-025` is the open
- * decision that governs whether one may exist. So there is no map form here at
- * all: two uuid boxes would be a control whose only outcome is a refusal, and
- * the reason is stated where the control would have been rather than left for an
- * operator to discover.
+ * on, and `rec.damage_maps` holds both as NOT NULL foreign keys into
+ * `shared.documents` / `shared.document_versions`.
+ *
+ * This docblock used to say "no operation in this product registers a document".
+ * **The published surface does have one** — `shared.attachment-upload-authorize`
+ * — so that sentence was refutable, and a refutable reason attached to a right
+ * verdict is how the verdict gets overturned. The reason now lives in ONE place,
+ * `DOCUMENT_CHAIN_BLOCKERS` in `../../media/media-decision.ts`: the chain cannot
+ * complete for three independent, repository-derived reasons, so no tenant —
+ * configured or otherwise — can hold a damage-map template. `P1-OD-025` governs
+ * whether the chain may exist at all.
+ *
+ * So there is no map form here at all: two uuid boxes would be a control whose
+ * only outcome is a refusal, and the reason is stated where the control would
+ * have been rather than left for an operator to discover.
  *
  * ## Marks are real, and the diagram carries no template image
  *
@@ -351,10 +360,12 @@ function MarkForm({
           type="number"
           min={0}
           max={1}
-          // `any`, not `0.01`: a fixed step is a CONSTRAINT the browser enforces,
-          // and `0.125` against `step=0.01` is a `stepMismatch` the form would
-          // refuse to submit. The spinner's 0.01 lives on the diagram's arrow
-          // keys, where it is a convenience and not a bound.
+          // `any`, not a fixed number: a fixed step is a CONSTRAINT the browser
+          // enforces, and `0.125` against `step=0.01` is a `stepMismatch` the
+          // form would refuse to submit. A step exists in this step's own UI —
+          // `KEYBOARD_STEP` (0.05) for the arrow keys, two decimals for what the
+          // pointer writes — but it lives on the DIAGRAM, where it is a
+          // convenience, and never on the field, where it would be a bound.
           step="any"
           dir="ltr"
           // The operator's own digits, unrewritten. Rendering
