@@ -61,13 +61,28 @@ import { E2E_API_ORIGIN, REPO_ROOT } from '../origin';
  *
  * UNTESTABLE UNTIL THE CATALOGUES AND THE BUSINESS TABLES CAN BE POPULATED —
  * stated here so nobody reads this file as covering them: booking an
- * appointment; confirm/reschedule, cancel and no-show; opening a visit; every
- * evidence, signature and refusal step; approval; the two terminal exits; the
- * conversion to a work order; the acknowledgement's populated sections and its
- * per-section "could not be read" notice. Those need `apt.appointment_types`
- * (and `rec.fuel_levels`, `apt.cancellation_reasons`) to be populatable by an
- * administrator, plus at least one customer and vehicle. When that arrives, the
- * cases marked `NEEDS DATA` below become positive paths without changing shape.
+ * appointment; taking reschedule, cancel or no-show on a real record; opening a
+ * visit; the party-role, concern, condition, odometer, warning-light, contents,
+ * damage, evidence, signature and refusal steps; approval; the two terminal
+ * exits; the conversion to a work order; the acknowledgement's populated
+ * sections and its per-section "could not be read" notice; and the
+ * `P1-OD-025` media notice itself, whose only call site is a wizard step. Those
+ * need `apt.appointment_types` (and `rec.fuel_levels`,
+ * `apt.cancellation_reasons`) to be populatable by an administrator, plus at
+ * least one customer and vehicle. When that arrives, the cases marked
+ * `NEEDS DATA` below become positive paths without changing shape.
+ *
+ * WHAT IS NEVERTHELESS PROVED ABOUT EACH OF THOSE, WITHOUT A ROW. The absence of
+ * data removes the positive path; it does not remove every claim. So each
+ * blocked area carries the half a browser CAN establish against the real stack:
+ * the appointment-originated check-in really asks the real calendar and states
+ * the honest empty answer (§11); the origin XOR survives a change of mind (§11);
+ * the fuel catalogue degrades the field and not the operation (§12); the
+ * odometer/state-of-charge reading is exercisable and never reaches the address
+ * bar (§12); the three lifecycle panels are absent over a record that could not
+ * be read (§15); no capture control exists anywhere an operator can reach while
+ * `P1-OD-025` is open (§16); and the whole surface discloses nothing of another
+ * workspace, at both the browser and the API (§17).
  *
  * ## Reader-only principal
  *
@@ -1089,5 +1104,644 @@ test.describe('a read-only operator meets a denial, not an empty screen', () => 
       page.getByRole('button', { name: say('en', 'receptions.checkIn.submit') }),
       'a reader was shown the open-the-visit control'
     ).toHaveCount(0);
+  });
+});
+
+/* ================================================================== *
+ * 11 — the APPOINTMENT-ORIGINATED check-in path, against the real
+ *      calendar, with nothing invented
+ * ================================================================== */
+
+test.describe('check-in can originate from an appointment', () => {
+  test('the appointment origin asks the real calendar and states the honest empty answer', async ({
+    page,
+  }) => {
+    /*
+     * `ck_reception_visits_one_origin` allows exactly ONE origin, and the draft
+     * is a discriminated union, so appointment and walk-in can never both be
+     * submitted. The appointment path is the one that CHECKS IN a booking:
+     * `rec.reception-create` moves it `confirmed → checked_in` in the same
+     * transaction, which is why the picker offers only confirmed appointments.
+     *
+     * THIS CASE INVENTS NOTHING. It drives the real picker against the real
+     * `GET /appointments` read and asserts the answer an empty branch actually
+     * gives. What it proves without a row is the part that was structurally
+     * unproven: that the appointment origin is offered at all, that the picker
+     * refuses to spend a request before a branch target names one, that naming
+     * the target really does issue the read, and that zero confirmed
+     * appointments is stated in domain words rather than left as a blank region.
+     */
+    const observed: string[] = [];
+    const posts: string[] = [];
+    page.on('request', (request) => {
+      observed.push(request.url());
+      if (request.method() === 'POST') posts.push(request.url());
+    });
+
+    await page.goto('/en/receptions/check-in');
+    await segmentRendered(page, '/en/receptions/check-in');
+
+    // Both origins are offered, as RADIOS — the XOR is a single choice in the
+    // accessibility tree, not two independent toggles that could both be set.
+    const walkIn = page.getByRole('radio', { name: say('en', 'receptions.origin.walk_in') });
+    const fromAppointment = page.getByRole('radio', {
+      name: say('en', 'receptions.origin.appointment'),
+    });
+    await expect(walkIn, 'the walk-in origin is not offered').toBeVisible();
+    await expect(fromAppointment, 'the appointment origin is not offered').toBeVisible();
+
+    await fromAppointment.check();
+    await expect(fromAppointment).toBeChecked();
+    await expect(walkIn, 'both origins were selected at once').not.toBeChecked();
+
+    // The appointment half replaces the walk-in half. A requester control still
+    // rendered here would be collecting a value the operation refuses (422
+    // `incoherent_reference`): the vehicle and the requester come from the
+    // appointment itself.
+    // By test id, not by label: `CustomerSelector` names itself with
+    // `aria-labelledby` on a `role="group"` wrapper rather than a `<label>` for a
+    // control, so a label locator here would be asserting on the shape of the
+    // accessible name rather than on the control being gone.
+    await expect(
+      page.getByTestId('customer-selector'),
+      'the walk-in requester control survived the switch to an appointment origin'
+    ).toHaveCount(0);
+
+    // No branch target yet, so the picker must not be usable and must SAY why
+    // rather than answering an empty list the operator would read as "none".
+    const load = page.getByRole('button', {
+      name: say('en', 'receptions.checkIn.loadAppointments'),
+    });
+    await expect(load, 'the appointment picker was usable with no branch named').toBeDisabled();
+    await expect(page.getByRole('main')).toContainText(say('en', 'receptions.checkIn.targetFirst'));
+
+    const before = posts.length;
+    await nameScope(page.getByLabel(say('en', 'receptions.checkIn.company')), COMPANY_A);
+    await nameScope(page.getByLabel(say('en', 'receptions.checkIn.branch')), BRANCH_A);
+    await expect(load, 'a named branch target did not enable the picker').toBeEnabled();
+    await expect(
+      page.getByRole('main'),
+      'the "name a target first" hint outlived the target being named'
+    ).not.toContainText(say('en', 'receptions.checkIn.targetFirst'));
+
+    await load.click();
+
+    /*
+     * The positive control. Without it every assertion below would also hold on
+     * a screen that issued no request at all — the `P1-27-QA-003` vacuity. The
+     * read is a Server Action (`features/appointments/support-api.ts` is
+     * `'use server'`), so it reaches the network as a POST to the WEB origin;
+     * the API call itself is made by the Next.js server process and is invisible
+     * to a browser listener, which is why nothing here filters on `/api/v1/`.
+     */
+    await expect
+      .poll(() => posts.length - before, {
+        message: 'asking for confirmed appointments issued no request at all',
+      })
+      .toBeGreaterThan(0);
+    expect(observed.length, 'the listener saw no requests at all').toBeGreaterThan(0);
+
+    /*
+     * And the answer. `apt.appointments` is empty, so there are no confirmed
+     * appointments — the truthful outcome, and the screen states it. It must not
+     * be a denial (the acceptance owner holds `apt.appointment.read`) and it must
+     * not be an error (zero rows is the read WORKING).
+     */
+    await expect(page.getByRole('main')).toContainText(
+      say('en', 'receptions.checkIn.noConfirmedAppointments'),
+      { timeout: 20_000 }
+    );
+    await expect(
+      page.getByRole('main'),
+      'a permitted read of the calendar was refused'
+    ).not.toContainText(say('en', 'receptions.checkIn.appointmentsDenied'));
+    await expect(
+      page.getByRole('main'),
+      'an empty calendar was reported as a fault'
+    ).not.toContainText(say('en', 'state.error.title'));
+
+    /*
+     * NEEDS DATA: that CHOOSING a confirmed appointment fills the vehicle and
+     * requester from the appointment, that the chosen row can be changed, and
+     * that submitting moves the appointment `confirmed → checked_in`. All three
+     * need one confirmed appointment to exist, which needs an appointment type,
+     * a customer and a vehicle. `apps/web/tests/` holds them against mocked
+     * reads, which are fixtures; this tier will not seed a row to turn a blocked
+     * screen into a green path.
+     */
+  });
+
+  test('switching back to walk-in restores the walk-in half and clears the appointment half', async ({
+    page,
+  }) => {
+    /*
+     * The XOR has to survive a change of mind. `switchOriginKind` drops the
+     * other side's SELECTIONS as well as its kind, because a stale choice
+     * silently resurrected by switching back is the database constraint being
+     * circumvented in component state — invisible to every mocked tier, because
+     * a mock is asked what it was told to return.
+     */
+    await page.goto('/en/receptions/check-in');
+    await segmentRendered(page, '/en/receptions/check-in');
+
+    await page.getByRole('radio', { name: say('en', 'receptions.origin.appointment') }).check();
+    await expect(
+      page.getByRole('button', { name: say('en', 'receptions.checkIn.loadAppointments') })
+    ).toBeVisible();
+
+    await page.getByRole('radio', { name: say('en', 'receptions.origin.walk_in') }).check();
+    await expect(
+      page.getByRole('button', { name: say('en', 'receptions.checkIn.loadAppointments') }),
+      'the appointment picker outlived the switch back to walk-in'
+    ).toHaveCount(0);
+    // The walk-in half is back, with its own two controls.
+    const requester = page.getByTestId('customer-selector');
+    await expect(requester).toBeVisible();
+    await expect(requester, 'the restored selector is not the requester').toContainText(
+      say('en', 'receptions.checkIn.requester')
+    );
+    await expect(page.getByLabel(say('en', 'receptions.checkIn.walkInNote'))).toBeVisible();
+  });
+});
+
+/* ================================================================== *
+ * 12 — the intake facts the visit opens with: fuel and state of charge
+ * ================================================================== */
+
+test.describe('the opening intake facts', () => {
+  for (const locale of LOCALES) {
+    test(`${locale}: an empty fuel catalogue disables its picker without disabling the form`, async ({
+      page,
+    }) => {
+      /*
+       * `rec.fuel_levels` ships with ZERO rows, and that is the catalogue
+       * WORKING rather than failing. Three separable facts, and a screen can get
+       * any one of them wrong on its own:
+       *
+       *   1. the picker offers nothing, and is DISABLED rather than presenting an
+       *      empty list the operator would read as a broken control;
+       *   2. the reason is stated as "not configured", never as a failed read —
+       *      `fuelUnavailable` is the OTHER fact and only that one is retryable;
+       *   3. the FORM still works. `fuelLevelId` is nullable, so an unconfigured
+       *      catalogue must degrade the field and not the operation. A screen
+       *      that blocked check-in on an empty optional catalogue would be
+       *      refusing every visit in the branch.
+       *
+       * NON-NEGOTIABLE: no fuel level is seeded to produce a populated picker.
+       */
+      const route = `/${locale}/receptions/check-in`;
+      await page.goto(route);
+      await segmentRendered(page, route);
+
+      const fuel = page.getByLabel(say(locale, 'receptions.checkIn.fuelLevel'));
+      await expect(fuel, 'an unconfigured catalogue left its picker usable').toBeDisabled();
+      expect(
+        await fuel.locator('option').count(),
+        'an empty catalogue rendered options from somewhere'
+      ).toBeLessThanOrEqual(1); // the placeholder only, if the control renders one
+
+      await expect(page.getByRole('main')).toContainText(
+        say(locale, 'receptions.checkIn.fuelEmpty')
+      );
+      await expect(
+        page.getByRole('main'),
+        'an EMPTY catalogue was reported as a failed read; they are different facts'
+      ).not.toContainText(say(locale, 'receptions.checkIn.fuelUnavailable'));
+
+      // The form is not held hostage by the optional field.
+      await expect(
+        page.getByRole('button', { name: say(locale, 'receptions.checkIn.submit') }),
+        'an empty OPTIONAL catalogue disabled the whole check-in'
+      ).toBeEnabled();
+    });
+  }
+
+  test('state of charge is offered as an optional reading and accepts one', async ({ page }) => {
+    // The EV counterpart of fuel. It is a free reading rather than a catalogue,
+    // so it is the one opening intake fact that is fully exercisable with an
+    // empty database — typed, held, and never put in the address bar.
+    await page.goto('/en/receptions/check-in');
+    await segmentRendered(page, '/en/receptions/check-in');
+
+    const soc = page.getByLabel(say('en', 'receptions.checkIn.evSoc'));
+    await expect(soc).toBeVisible();
+    await expect(soc).toBeEnabled();
+    await soc.fill('82.5');
+    await expect(soc).toHaveValue('82.5');
+    expect(page.url(), 'a vehicle reading reached the address bar').not.toContain('82.5');
+  });
+});
+
+/* ================================================================== *
+ * 13 — the staff-directory disposition, stated where it is exercised
+ * ================================================================== */
+
+test.describe('the receiving-employee control states what it opens', () => {
+  test('the directory-scope disposition renders beside the control, in the running application', async ({
+    page,
+  }) => {
+    /*
+     * `P1-28-SEC-001`. There is no employee master, so "who received this
+     * vehicle" is served by `iam.user-list` — which reads the WHOLE workspace
+     * user directory, every account with its address and status. That overload
+     * is a disposition, and a disposition recorded only in a document is one an
+     * operator never meets. This asserts it is rendered where the capability is
+     * exercised.
+     *
+     * `G-EMP` is the neighbouring statement: the platform records an identifier,
+     * not an employee-register entry, and the default is the signed-in operator
+     * — the one identity certainly present.
+     */
+    await page.goto('/en/receptions/check-in');
+    await segmentRendered(page, '/en/receptions/check-in');
+
+    const notice = page.getByTestId('employee-directory-scope');
+    await expect(notice, 'the directory-scope disposition is not rendered').toBeVisible();
+    await expect(notice).toContainText(say('en', 'receptions.checkIn.employeeDirectoryScope'));
+
+    await expect(page.getByRole('main')).toContainText(
+      say('en', 'receptions.checkIn.employeeHint')
+    );
+    await expect(
+      page.getByRole('main'),
+      'the receiving employee does not default to the signed-in operator'
+    ).toContainText(say('en', 'receptions.checkIn.employeeSelf'));
+  });
+});
+
+/* ================================================================== *
+ * 14 — the walk-in intake: customer confirmation, then vehicle
+ * ================================================================== */
+
+test.describe('the walk-in intake confirms a customer before a vehicle', () => {
+  for (const locale of LOCALES) {
+    test(`${locale}: the intake opens on the customer station and offers no vehicle step yet`, async ({
+      page,
+    }) => {
+      /*
+       * The intake is ordered — customer, then vehicle, then the handoff — and
+       * the order is the product rule, not decoration: a vehicle is received FOR
+       * somebody, and the walk-in handoff carries the pair. What a browser can
+       * prove with an empty database is the ordering itself and the honest
+       * absence of the later stations.
+       *
+       * NON-NEGOTIABLE: no customer is created to advance the wizard. The create
+       * paths are asserted as OFFERS — the affordance a receptionist facing a
+       * brand-new customer needs — and never taken.
+       */
+      const route = `/${locale}/reception/walk-in`;
+      await page.goto(route);
+      await segmentRendered(page, route);
+
+      const stations = page.getByRole('navigation', {
+        name: say(locale, 'receptions.intake.steps'),
+      });
+      await expect(stations, 'the intake renders no station strip').toBeVisible();
+      for (const key of [
+        'receptions.intake.step.customer',
+        'receptions.intake.step.vehicle',
+        'receptions.intake.step.handoff',
+      ] as const) {
+        await expect(stations, `the station strip is missing ${key}`).toContainText(
+          say(locale, key)
+        );
+      }
+      // The FIRST station is the current one, and exactly one is.
+      await expect(
+        stations.locator('[aria-current="step"]'),
+        'the intake does not mark exactly one current station'
+      ).toHaveCount(1);
+      await expect(stations.locator('[aria-current="step"]')).toHaveText(
+        say(locale, 'receptions.intake.step.customer')
+      );
+
+      // The customer station itself, with both create offers beside the search
+      // rather than behind a failed one.
+      await expect(page.getByRole('main')).toContainText(
+        say(locale, 'receptions.intake.customer.heading')
+      );
+      await expect(page.getByRole('main')).toContainText(
+        say(locale, 'receptions.intake.customer.createOffer')
+      );
+
+      // The stated phone degradation (`G-CRM-PHONE`), rendered where a
+      // receptionist would type a caller's number rather than in a help page.
+      const phone = page.getByTestId('phone-search-notice');
+      await expect(phone, 'the phone-search degradation is not stated at the intake').toBeVisible();
+      await expect(phone).toContainText(say(locale, 'receptions.intake.phone.title'));
+
+      // No handoff has happened, so the handoff panel must not be printed.
+      await expect(
+        page.getByRole('main'),
+        'the intake printed its handoff panel before a customer or vehicle existed'
+      ).not.toContainText(say(locale, 'receptions.intake.done.heading'));
+
+      /*
+       * NEEDS DATA: choosing a customer, choosing or linking a vehicle, and the
+       * handoff panel's Continue link carrying the real pair into the wizard.
+       * Each needs a customer and a vehicle to exist. The REFUSAL half of that
+       * seam — an unresolvable pair starting the check-in screen empty — is
+       * proved in section 7 above, against the real stack.
+       */
+    });
+  }
+});
+
+/* ================================================================== *
+ * 15 — the appointment lifecycle panels never render over a record
+ *      that could not be read
+ * ================================================================== */
+
+test.describe('reschedule, cancel and no-show are panels on a real appointment', () => {
+  test('an appointment that does not exist renders a not-found and no lifecycle control', async ({
+    page,
+  }) => {
+    /*
+     * The detail screen hosts all three lifecycle surfaces — `FE-003`
+     * reschedule, `FE-004` cancel, `FE-005` no-show — and they are separate
+     * authorities: `apt.appointment.manage` ARRANGES, `apt.appointment
+     * .lifecycle.manage` ENDS. Both panels live inside the successful-read
+     * branch, and this is the assertion that the branch really is exclusive.
+     *
+     * A control offered over a record the page could not read is not a cosmetic
+     * defect: every one of these commands is a guarded write whose `If-Match`
+     * comes from the very read that failed, so the button would be submitting a
+     * version it never had. This is the shape P1-27 shipped ten times — a write
+     * form rendered for a principal or a record that could not support it, with
+     * every automated tier green.
+     */
+    const route = `/en/appointments/${ABSENT_ID}`;
+    await page.goto(route);
+    await segmentRendered(page, route);
+
+    const main = page.getByRole('main');
+    const text = (await main.innerText()).toLowerCase();
+    const notFound = say('en', 'state.notFound.title').toLowerCase();
+    const denied = say('en', 'state.denied.title').toLowerCase();
+    expect(
+      text.includes(notFound) || text.includes(denied),
+      'an appointment that does not exist rendered neither a not-found nor a denial'
+    ).toBe(true);
+    await expect(main, 'an absent record was reported as a fault').not.toContainText(
+      say('en', 'state.error.title')
+    );
+
+    // Not one of the three lifecycle surfaces, by its own heading …
+    for (const key of [
+      'appointments.reschedule.title',
+      'appointments.cancel.title',
+      'appointments.noShow.title',
+      'appointments.detail.factsHeading',
+    ] as const) {
+      await expect(main, `${key} was rendered over an unreadable appointment`).not.toContainText(
+        say('en', key)
+      );
+    }
+    // … and not one of their controls.
+    for (const key of [
+      'appointments.reschedule.submit',
+      'appointments.cancel.openDialog',
+      'appointments.noShow.openDialog',
+    ] as const) {
+      await expect(
+        page.getByRole('button', { name: say('en', key) }),
+        `${key} was offered over an unreadable appointment`
+      ).toHaveCount(0);
+    }
+
+    /*
+     * NEEDS DATA: the positive paths — rescheduling into a new window (which is
+     * also the only way an appointment becomes `confirmed`, since this contract
+     * publishes no Confirm operation), cancelling with a reason from
+     * `apt.cancellation_reasons`, and marking a no-show. Each needs a booked
+     * appointment, which needs a populated `apt.appointment_types`, a customer
+     * and a vehicle. Section 4 asserts why booking is blocked today.
+     *
+     * NOTE that `apt.cancellation_reasons` is empty as well, so even with an
+     * appointment the cancel dialog would state `appointments.cancel.noReasons`
+     * rather than offering a picker — a second catalogue this tier will not seed.
+     */
+  });
+});
+
+/* ================================================================== *
+ * 16 — P1-OD-025: no capture control exists anywhere an operator can
+ *      reach, and the notice that says so is wizard-gated
+ * ================================================================== */
+
+test.describe('reception media is blocked by a named open decision', () => {
+  test('no P1-28 route an operator can reach offers a capture control of any kind', async ({
+    page,
+  }) => {
+    /*
+     * `P1-OD-025` is an OPEN Owner decision: no retention period, no permitted
+     * kinds, no size ceiling, and no storage provider or scanner exists. So
+     * reception media cannot be captured, and the deliverable is a notice
+     * explaining that — never a control, and never a DISABLED control standing
+     * in for one, which would assert the capability exists and this operator
+     * lacks permission. That is a different and false statement, the same
+     * distinction `P1-OD-017` forced on the P1-27 merge affordance.
+     *
+     * `tests/p1-28-reception-media.test.ts` reads `MediaDecisionNotice.tsx`'s own
+     * source and fails on `<button`, `<input`, `<form`, `<a `, `<video`,
+     * `<canvas`, `onClick` or `disabled`. That is a proof about ONE file. This
+     * is the complement it cannot make: that no OTHER screen on the phase's
+     * surface quietly grew one — the walk-in intake and the check-in start
+     * screen being exactly where a "just add a photo" control would land.
+     */
+    for (const route of phaseRoutes('en')) {
+      await page.goto(route);
+      await segmentRendered(page, route);
+
+      await expect(
+        page.locator('input[type="file"]'),
+        `${route} offers a file input while P1-OD-025 is open`
+      ).toHaveCount(0);
+      await expect(
+        page.locator('[capture]'),
+        `${route} offers a camera capture affordance while P1-OD-025 is open`
+      ).toHaveCount(0);
+      await expect(
+        page.locator('video'),
+        `${route} renders a video surface while P1-OD-025 is open`
+      ).toHaveCount(0);
+    }
+
+    /*
+     * NEEDS DATA, and stated rather than quietly omitted: the NOTICE itself —
+     * `receptions.media.blocked` naming `P1-OD-025`, the questions the Owner has
+     * to decide, and the honest ceiling of the shipped attachment chain — renders
+     * only inside the check-in wizard's media step, which needs a reception visit
+     * to exist. `MediaDecisionNotice` has exactly one call site (`MediaStep`), so
+     * there is no route this tier can reach it through, and this suite will not
+     * open a visit to manufacture one. What is asserted above is the half a
+     * browser CAN establish: that the absence is real everywhere it can look.
+     */
+  });
+});
+
+/* ================================================================== *
+ * 17 — Tenant B, through the P1-28 surface specifically
+ * ================================================================== */
+
+test.describe('the P1-28 surface discloses nothing of another workspace', () => {
+  /*
+   * `isolation.spec.ts` proves this for the Administration, CRM and Vehicle
+   * screens and names ten routes; not one of them is an appointment or a
+   * reception route, so the phase's own surface had no cross-tenant evidence at
+   * any tier that talks to the real database.
+   *
+   * Tenant B is fixed by `scripts/dev/owner-acceptance/context.mjs`, exists, is
+   * populated, and the acceptance owner holds NO membership in it. Every claim
+   * below is "a Tenant A principal asks for a Tenant B thing and does not get
+   * it", with the control that makes a denial mean something.
+   */
+  const TENANT_B = 'c0000000-0000-4000-8000-00000000000b';
+  const COMPANY_B = 'c1000000-0000-4000-8000-00000000000b';
+  const BRANCH_B = 'c1100000-0000-4000-8000-00000000000b';
+  const TENANT_B_NAME = 'CRM Isolation Tenant B';
+
+  /**
+   * Renders a route and proves it really rendered FOR TENANT A before any
+   * negative assertion is made against it.
+   *
+   * The control is the whole point, and `isolation.spec.ts` records why: a blank
+   * page, a redirect to sign-in, an error boundary and a 404 all satisfy
+   * `not.toContain('Tenant B')` perfectly. Three things are established first —
+   * the session is Tenant A's (the shell prints the signed-in address), the
+   * segment streamed past `(dashboard)/loading.tsx` rather than being measured as
+   * a skeleton, and `main` holds real content.
+   */
+  async function renderedForTenantA(page: Page, route: string): Promise<string> {
+    const { email } = ownerCredentials();
+    await page.goto(route);
+    await segmentRendered(page, route);
+    const body = await bodyText(page);
+    expect(body, `${route} does not show the signed-in Tenant A account`).toContain(
+      email.toLowerCase()
+    );
+    expect(body, `${route} rendered the error boundary`).not.toContain(
+      say('en', 'state.error.title').toLowerCase()
+    );
+    return body;
+  }
+
+  for (const route of phaseRoutes('en')) {
+    test(`Tenant B never appears on ${route}`, async ({ page }) => {
+      const body = await renderedForTenantA(page, route);
+      expect(body, `${route} must not disclose Tenant B`).not.toContain(
+        TENANT_B_NAME.toLowerCase()
+      );
+      expect(body, `${route} must not disclose a Tenant B identifier`).not.toContain(TENANT_B);
+      expect(body, `${route} must not name the Tenant B company`).not.toContain(
+        'isolation company b'
+      );
+      expect(body, `${route} must not name the Tenant B branch`).not.toContain(
+        'isolation branch b'
+      );
+    });
+  }
+
+  test('the control itself can fail — a missing account marker is not tolerated', async ({
+    page,
+  }) => {
+    /*
+     * The positive control for the positive control. Signed out, the same route
+     * redirects to sign-in: the shell and the account address are gone, and
+     * every `not.toContain` above would still hold on that page. If this passes,
+     * the seventeen cases above were measuring something.
+     */
+    await page.context().clearCookies();
+    await expect(renderedForTenantA(page, '/en/receptions')).rejects.toThrow();
+  });
+
+  test('a Tenant B branch target does not widen either board', async ({ page }) => {
+    /*
+     * `companyId`/`branchId` are a resource SELECTOR this phase legitimately
+     * sends — but a selector is a request, not a decision. The Backend resolves
+     * the caller's own authority from the session and refuses a target outside
+     * it. Typed into the real controls, against the real API.
+     */
+    await page.goto('/en/receptions');
+    await segmentRendered(page, '/en/receptions');
+    await nameScope(page.getByLabel(say('en', 'receptions.checkIn.company')), COMPANY_B);
+    await nameScope(page.getByLabel(say('en', 'receptions.checkIn.branch')), BRANCH_B);
+    await page.getByRole('button', { name: say('en', 'receptions.queue.show') }).click();
+
+    const main = page.getByRole('main');
+    // Whatever the answer is, it is not Tenant B's data. The board may state a
+    // denial or an empty result; it may not name another workspace.
+    await expect
+      .poll(async () => (await main.innerText()).trim().length, {
+        message: 'the queue never answered the Tenant B target at all',
+      })
+      .toBeGreaterThan(40);
+    const body = await bodyText(page);
+    expect(body, 'the queue disclosed Tenant B').not.toContain(TENANT_B_NAME.toLowerCase());
+    expect(body, 'the queue named the Tenant B branch').not.toContain('isolation branch b');
+  });
+
+  test('a Tenant A bearer token is refused both P1-28 boards for Tenant B', async ({ request }) => {
+    /*
+     * A REAL bearer token, obtained the way the web tier obtains one. The
+     * browser session cookie cannot be used for this and must not be: it belongs
+     * to the WEB origin and is `httpOnly` precisely so the browser never holds a
+     * bearer token. Driving the API through `page.request` would return 401 for
+     * want of an Authorization header on every probe, and the test would pass
+     * while proving nothing about tenancy at all — the exact vacuity
+     * `isolation.spec.ts` recorded.
+     */
+    const token = await ownerBearer(request);
+
+    for (const path of [
+      `/api/v1/appointments?companyId=${COMPANY_B}&branchId=${BRANCH_B}&limit=1`,
+      `/api/v1/receptions?companyId=${COMPANY_B}&branchId=${BRANCH_B}&limit=1`,
+    ]) {
+      const response = await request.get(`${API}${path}`, {
+        headers: { Authorization: `Bearer ${token}` },
+        failOnStatusCode: false,
+      });
+      expect(
+        response.status(),
+        `${path} must not answer 200 to a token issued for another tenant`
+      ).not.toBe(200);
+      // A refusal, not a fault: a 5xx here would be the server failing to
+      // decide rather than deciding. The exact code is not pinned to one value
+      // because the refusal may come from the authorization target or from the
+      // record simply not being visible, and both are correct answers.
+      expect([400, 401, 403, 404, 422], `${path} answered ${response.status()}`).toContain(
+        response.status()
+      );
+
+      // And a denial must not describe what it is denying.
+      const text = (await response.text()).toLowerCase();
+      expect(text, 'a denial disclosed the other tenant').not.toContain(
+        TENANT_B_NAME.toLowerCase()
+      );
+      expect(text, 'a denial echoed the other tenant id').not.toContain(TENANT_B.toLowerCase());
+    }
+  });
+
+  test('the same token reads its OWN branch, so the refusals above mean something', async ({
+    request,
+  }) => {
+    /*
+     * Without this control every assertion in this section would also pass
+     * against an API that refuses absolutely everything — including a phase
+     * whose two read operations were simply dead. Six P1-27 operations answered
+     * 500 to every request while every tier was green, so "it refused" is never
+     * evidence on its own.
+     */
+    const token = await ownerBearer(request);
+    for (const path of [
+      `/api/v1/appointments?companyId=${COMPANY_A}&branchId=${BRANCH_A}&limit=1`,
+      `/api/v1/receptions?companyId=${COMPANY_A}&branchId=${BRANCH_A}&limit=1`,
+    ]) {
+      const response = await request.get(`${API}${path}`, {
+        headers: { Authorization: `Bearer ${token}` },
+        failOnStatusCode: false,
+      });
+      expect(response.status(), `the Tenant A token must be able to read ${path}`).toBe(200);
+    }
   });
 });
