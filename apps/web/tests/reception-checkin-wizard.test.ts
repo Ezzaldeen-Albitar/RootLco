@@ -261,10 +261,17 @@ describe('activeStep', () => {
 });
 
 describe('the step registry — the typed extension point Waves E build on', () => {
-  it('registers the Wave D steps, in presentation order', () => {
+  it('registers the steps in presentation order, evidence after parties', () => {
+    /*
+     * Identity is confirmed before parties are recorded, and evidence steps slot
+     * in after parties — which is where Wave H's media notice (`FE-017`) lands.
+     * That step captures nothing: `P1-OD-025` is open, so what it renders is the
+     * named-open-decision notice, held by `p1-28-reception-media.test.ts`.
+     */
     expect(CHECK_IN_STEPS.map((step) => step.id)).toEqual([
       'confirm-identities',
       'parties-and-authorization',
+      'media-and-photographs',
     ]);
   });
 

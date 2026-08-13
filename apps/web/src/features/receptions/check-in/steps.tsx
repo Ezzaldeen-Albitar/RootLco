@@ -1,4 +1,5 @@
 import { ConfirmationStep } from '../components/steps/ConfirmationStep';
+import { MediaStep } from '../components/steps/MediaStep';
 import { PartiesStep } from '../components/steps/PartiesStep';
 import type { CheckInStepDefinition } from './wizard';
 
@@ -28,5 +29,19 @@ export const CHECK_IN_STEPS: readonly CheckInStepDefinition[] = Object.freeze([
     titleKey: 'receptions.steps.parties.title',
     descriptionKey: 'receptions.steps.parties.description',
     Component: PartiesStep,
+  },
+  {
+    /*
+     * `FE-017`, and it captures nothing — deliberately.
+     *
+     * The step is registered so the operator meets the block where they would
+     * have reached for the camera, rather than searching the whole wizard for a
+     * control that cannot exist while `P1-OD-025` is open. See
+     * `../media/media-decision.ts`.
+     */
+    id: 'media-and-photographs',
+    titleKey: 'receptions.steps.media.title',
+    descriptionKey: 'receptions.steps.media.description',
+    Component: MediaStep,
   },
 ]);
