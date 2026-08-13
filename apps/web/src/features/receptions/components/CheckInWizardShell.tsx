@@ -12,6 +12,7 @@ import {
   activeStep,
   writesLocked as writesLockedFor,
   type CheckInCapabilities,
+  type CheckInSessionIdentity,
   type CheckInStepDefinition,
 } from '../check-in/wizard';
 
@@ -60,6 +61,16 @@ interface Props {
   readonly initialDetail: ReceptionDetail;
   readonly steps: readonly CheckInStepDefinition[];
   readonly capabilities: CheckInCapabilities;
+  /**
+   * The signed-in operator, resolved by the ROUTE from the session.
+   *
+   * Passed down rather than read in a step, for the same reason `capabilities`
+   * is: no component consults the session, so there is one place where what the
+   * server resolved becomes what the interface shows. The evidence steps need it
+   * because `inspector_id` and `witnessed_by_employee_id` have no referent
+   * (G-EMP) and the only nameable identity is the operator's own.
+   */
+  readonly session: CheckInSessionIdentity;
 }
 
 export function CheckInWizardShell({
@@ -68,6 +79,7 @@ export function CheckInWizardShell({
   initialDetail,
   steps,
   capabilities,
+  session,
 }: Props) {
   const [detail, setDetail] = useState<ReceptionDetail>(initialDetail);
   const [chosenStepId, setChosenStepId] = useState<string | null>(null);
@@ -247,6 +259,7 @@ export function CheckInWizardShell({
             recordVersion={detail.recordVersion}
             detail={detail}
             capabilities={capabilities}
+            session={session}
             writesLocked={locked}
             refresh={refresh}
           />

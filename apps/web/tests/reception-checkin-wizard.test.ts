@@ -261,8 +261,29 @@ describe('activeStep', () => {
 });
 
 describe('the step registry — the typed extension point Waves E build on', () => {
-  it('registers the Wave D steps, in presentation order', () => {
+  it('registers the Wave D and Wave E steps, in presentation order', () => {
+    // The order follows the ramp an operator actually walks: identity, then the
+    // parties, then the condition of the vehicle — what the customer said, what
+    // staff saw, where the damage is, what the meters read, what the dashboard
+    // showed, what is inside — and only then what anybody signed or declined.
     expect(CHECK_IN_STEPS.map((step) => step.id)).toEqual([
+      'confirm-identities',
+      'parties-and-authorization',
+      'condition-complaints',
+      'condition-inspection',
+      'condition-damage',
+      'condition-readings',
+      'condition-warning-lights',
+      'condition-contents',
+      'reception-signature',
+      'reception-refusal',
+    ]);
+  });
+
+  it('added Wave E by APPENDING, leaving the Wave D prefix untouched', () => {
+    // The promise the registry docblock makes to any later wave: a new step
+    // lands as one entry here and nothing before it moves.
+    expect(CHECK_IN_STEPS.slice(0, 2).map((step) => step.id)).toEqual([
       'confirm-identities',
       'parties-and-authorization',
     ]);
