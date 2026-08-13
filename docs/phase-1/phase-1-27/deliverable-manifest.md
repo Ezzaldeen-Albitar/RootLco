@@ -73,13 +73,13 @@ cannot, that is said instead of guessed.
 
 | #   | what it printed then                   | what it prints now                     | how the current value is held true                                  |
 | --- | -------------------------------------- | -------------------------------------- | ------------------------------------------------------------------- |
-| 2   | `69 file(s) across 3 tree(s)`          | `120 file(s) across 5 tree(s)`         | derived — §3 and §5.1                                               |
+| 2   | `69 file(s) across 3 tree(s)`          | `122 file(s) across 5 tree(s)`         | derived — §3 and §5.1                                               |
 | 4   | `170 file(s) checked`                  | `179 file(s) checked`                  | re-run; the colour count is unchanged at 54                         |
 | 5   | `195 / 0`, `197 / 0`, `170 / 0`        | `204 / 0`, `206 / 0`, `179 / 0`        | re-run; all three still report zero                                 |
-| 6   | `143 registered · 71 required · 71/71` | `151 registered · 76 required · 76/76` | derived — §7.1                                                      |
-| 8   | `39 files, 803 passed`                 | `93` files; case total NOT restated    | the file half derived — §3 and §6.1; the case half is `E-03`        |
-| 9   | `77 files, 1680 passed`                | `86 files, 1821 passed`                | recorded, not derived — §6.4 says why                               |
-| 10  | `31 files, 638 passed`                 | `36 files, 715 passed`                 | the file half derived — §6.4                                        |
+| 6   | `143 registered · 71 required · 71/71` | `156 registered · 80 required · 80/80` | derived — §7.1                                                      |
+| 8   | `39 files, 803 passed`                 | `98` files; case total NOT restated    | the file half derived — §3 and §6.1; the case half is `E-03`        |
+| 9   | `77 files, 1680 passed`                | `96 files, 2341 passed`                | recorded, not derived — §6.4 says why                               |
+| 10  | `31 files, 638 passed`                 | `46 files, 1202 passed`                | the file half derived — §6.4                                        |
 | 11  | `150 tests in 2 files`                 | **not re-measured**                    | needs a browser install; unchanged as far as any record here states |
 | 12  | `331 tests in 9 files`                 | **not re-measured**                    | the same                                                            |
 
@@ -162,10 +162,10 @@ fact in words did not, which is the gap this revision closes.
 | Source files under the P1-27 ownership gate                            | **111** (43 feature source + 34 route + 34 adopted reception)      | derived from the gate's own scan roots                                     |
 | Router pages (CRM and Vehicle)                                         | **8**                                                              | command 1                                                                  |
 | Shared-foundation source files changed by the phase or its remediation | **13** named in §5.5                                               | command 1, cross-read against the task register and the remediation record |
-| Web unit and component test files                                      | **93**                                                             | derived                                                                    |
+| Web unit and component test files                                      | **98**                                                             | derived                                                                    |
 | Playwright specification files                                         | **9** (2 anonymous, 7 authenticated)                               | commands 11 and 12 — **not re-measured**, §1.1.1                           |
-| Root CI-contract test files                                            | **36**                                                             | derived                                                                    |
-| CI gate scripts under `scripts/ci`                                     | **48** in the directory, **8** introduced or changed by this phase | derived; the eight are the `scripts/ci` rows of §7.1                       |
+| Root CI-contract test files                                            | **46**                                                             | derived                                                                    |
+| CI gate scripts under `scripts/ci`                                     | **50** in the directory, **8** introduced or changed by this phase | derived; the eight are the `scripts/ci` rows of §7.1                       |
 | Web gate scripts under `apps/web/scripts`                              | **4** in the directory, **1** introduced by this phase             | derived                                                                    |
 | Phase documentation under `docs/phase-1/phase-1-27`                    | **38** tracked, of which **30** are `.md`                          | derived from `git ls-files` — see §9.1                                     |
 | Product planning documentation under `docs/product`                    | **13** tracked                                                     | derived from `git ls-files` — see §9.2                                     |
@@ -563,8 +563,8 @@ anonymous tier had been fixed before merge.
 
 | tier                                                  | files                                           | cases                                                                                                                                                        | how measured                            |
 | ----------------------------------------------------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------- |
-| `npm run test` — the root unit and contract aggregate | **86**                                          | **1821**                                                                                                                                                     | re-run; the file half is not derived    |
-| of which `tests/ci`                                   | **36**                                          | **715**                                                                                                                                                      | the file half derived; the cases re-run |
+| `npm run test` — the root unit and contract aggregate | **96**                                          | **2341**                                                                                                                                                     | re-run; the file half is not derived    |
+| of which `tests/ci`                                   | **46**                                          | **1202**                                                                                                                                                     | the file half derived; the cases re-run |
 | `tests/backend`                                       | **85** test files (90 files in the directory)   | **not run here** — needs a running PostgreSQL                                                                                                                | both halves derived                     |
 | `tests/db`                                            | **139** test files (143 files in the directory) | **not run here** — needs a running PostgreSQL. **Recorded** as 1636 / 1636 in [`owner-acceptance-fail-remediation.md`](owner-acceptance-fail-remediation.md) | both halves derived                     |
 
@@ -599,10 +599,10 @@ gate that keeps this document honest.
 | `scripts/ci/generate-idempotent-operations.mjs` | `validate:idempotent-operations`                     | `P1-27-INT-003` (new)      | Drift between the published contract and the generated table                                                                                                                                                                                                                                                                                                          | `243 published operation(s), 120 idempotent` — manifest matches                           |
 | `scripts/ci/hostile-mutations.mjs`              | none — hand-run                                      | changed by `OA-*`          | The 20 `M-OA` mutations in §8                                                                                                                                                                                                                                                                                                                                         | not re-run here; it mutates tracked source in place                                       |
 | `eslint.config.mjs`                             | `lint` → `verify:repository`                         | `P1-27-F-001` (changed)    | `globalIgnores` gained `'supabase/.temp/**'` and `'supabase/.branches/**'`                                                                                                                                                                                                                                                                                            | covered by `tests/ci/eslint-global-ignores.test.ts`                                       |
-| `scripts/ci/check-command-coverage.mjs`         | `validate:command-coverage`                          | changed — registry entries | A required command not reachable from `verify:workspaces` **and** not invoked by hosted CI                                                                                                                                                                                                                                                                            | **151 registered · 76 required · 76/76 reachable · 76/76 invoked by hosted CI** — derived |
+| `scripts/ci/check-command-coverage.mjs`         | `validate:command-coverage`                          | changed — registry entries | A required command not reachable from `verify:workspaces` **and** not invoked by hosted CI                                                                                                                                                                                                                                                                            | **156 registered · 80 required · 80/80 reachable · 80/80 invoked by hosted CI** — derived |
 | `scripts/ci/build-p1-27-evidence-manifest.mjs`  | `validate:p1-27-evidence` / `evidence:p1-27`         | `QA-005` (new)             | An evidence document edited without its SHA-256 digest being regenerated in the same commit. Digests are over file BYTES, so a BOM or an encoding repair counts as a change. The `--check` half is required; the writer is deliberately optional, because a CI job that ran it would repair the drift the check exists to report                                      | `39 evidence document(s), in sync`                                                        |
 | `scripts/ci/check-p1-27-lifecycle.mjs`          | `validate:p1-27-lifecycle`                           | closure lifecycle (new)    | A declared lifecycle state the tree does not hold, in either direction: a blocker the ledger does not declare, and a declared blocker the tree no longer raises. Eight negative cases run inside the gate on every invocation, so a rule that stopped refusing a transition fails rather than passing quietly                                                         | `CANDIDATE_INCOMPLETE` — merge blocked, 23 blocker(s), 0 disagreement(s)                  |
-| `scripts/ci/check-p1-27-closing-values.mjs`     | `validate:p1-27-closing-values` / `record:p1-27-run` | `QA-005` (new)             | A closing value on either evidence page that names no authority: an unclassified figure, a locally derivable one the tree contradicts, a hosted one naming no run or job, a protected-only one carrying a figure before the merge, an excluded one sitting in a current region. Thirteen negative cases run inside the gate on every invocation                       | `49 classified, A:12 B:4 C:18 D:4 E:10 F:1` — five counts all zero                        |
+| `scripts/ci/check-p1-27-closing-values.mjs`     | `validate:p1-27-closing-values` / `record:p1-27-run` | `QA-005` (new)             | A closing value on either evidence page that names no authority: an unclassified figure, a locally derivable one the tree contradicts, a hosted one naming no run or job, a protected-only one carrying a figure before the merge, an excluded one sitting in a current region. Thirteen negative cases run inside the gate on every invocation                       | `58 classified, A:12 B:8 C:23 D:4 E:10 F:1` — five counts all zero                        |
 
 `validate:web-theme` exists because seven Tailwind colour names were used across
 fourteen components and registered in the theme in none of them, so **51
@@ -971,9 +971,9 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
      an earlier revision put them in the label column and broke two other gates
      whose regexes read the label and the number as adjacent cells. -->
 
-<!-- derived: files apps/web/tests = 93 -->
-<!-- derived: files tests/ci = 44 -->
-<!-- derived: files scripts/ci = 48 -->
+<!-- derived: files apps/web/tests = 98 -->
+<!-- derived: files tests/ci = 46 -->
+<!-- derived: files scripts/ci = 50 -->
 <!-- derived: files apps/web/scripts = 4 -->
 <!-- derived: files supabase/migrations = 120 -->
 <!-- derived: files tests/db = 139 -->
@@ -982,15 +982,15 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
 <!-- derived: files tests/backend:all = 90 -->
 <!-- derived: files apps/web/src/features/crm = 20 -->
 <!-- derived: files apps/web/src/features/vehicles = 23 -->
-<!-- derived: files p1-27-frontend-gate = 120 -->
+<!-- derived: files p1-27-frontend-gate = 122 -->
 <!-- derived: files p1-27-frontend-gate:trees = 5 -->
 <!-- derived: tracked docs/phase-1/phase-1-27 = 41 -->
 <!-- derived: tracked docs/phase-1/phase-1-27:md = 31 -->
 <!-- derived: tracked docs/product = 13 -->
-<!-- derived: commands registered = 154 -->
-<!-- derived: commands required = 78 -->
-<!-- derived: commands reachable = 78 -->
-<!-- derived: commands hosted-ci = 78 -->
+<!-- derived: commands registered = 156 -->
+<!-- derived: commands required = 80 -->
+<!-- derived: commands reachable = 80 -->
+<!-- derived: commands hosted-ci = 80 -->
 <!-- derived: cases vehicle-screens.dom.test.tsx = 40 -->
 <!-- derived: cases tailwind-theme-gate.test.ts = 8 -->
 <!-- derived: cases navigation.test.ts = 22 -->
