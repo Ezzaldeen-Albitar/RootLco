@@ -529,7 +529,7 @@ function enclosingFunction(text, index) {
  */
 export function callsTo(text, names) {
   if (names.size === 0) return [];
-  const escaped = [...names].map((name) => name.replace(/[$]/g, '\\$&'));
+  const escaped = [...names].map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
   const pattern = new RegExp(`\\b(${escaped.join('|')})\\s*\\(`, 'g');
   const found = [];
   let match;

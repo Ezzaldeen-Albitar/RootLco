@@ -475,7 +475,9 @@ function statementEnd(text, from) {
  */
 export function firstAwaitedRead(text, callees, gateReads = new Set()) {
   if (callees.size === 0) return -1;
-  const alternatives = [...callees].map((name) => name.replace(/[$]/g, '\\$&')).join('|');
+  const alternatives = [...callees]
+    .map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .join('|');
   const calls = new RegExp(`\\b(?:${alternatives})\\s*\\(`);
   const awaits = /\bawait\b/g;
   let match;
@@ -638,7 +640,7 @@ export function apiCallSites(source, helpers = new Map(), wrappers = new Map()) 
   /** The argument spans of every write-wrapper call in this file. */
   const wrapperRanges = [];
   if (wrappers.size > 0) {
-    const names = [...wrappers.keys()].map((name) => name.replace(/[$]/g, '\\$&'));
+    const names = [...wrappers.keys()].map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
     const wrapperCall = new RegExp(`\\b(${names.join('|')})\\s*(?:<[^>]*>)?\\s*\\(`, 'g');
     let call;
     while ((call = wrapperCall.exec(stripped)) !== null) {
@@ -655,7 +657,7 @@ export function apiCallSites(source, helpers = new Map(), wrappers = new Map()) 
   // Helper-built paths, resolved on the STRIPPED source: the interpolation
   // normaliser would erase `${vehicleBase(id)}` before it could be read.
   if (helpers.size > 0) {
-    const names = [...helpers.keys()].map((name) => name.replace(/[$]/g, '\\$&'));
+    const names = [...helpers.keys()].map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
     const helperCall = new RegExp(`\\b(${names.join('|')})\\s*\\(`, 'g');
     let call;
     while ((call = helperCall.exec(stripped)) !== null) {
