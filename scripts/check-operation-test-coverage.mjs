@@ -239,6 +239,8 @@ export const isDerivedId = (id) =>
  *   idempotency      a replay produces one row, not two
  *   stale-version    a wrong If-Match is refused with a conflict
  *   provider         a provider fake is driven and its behaviour asserted
+ *   retired-visible  an entry retired through the API is present in this
+ *                    administrative read and absent from the picker read
  */
 /**
  * The replay-evidence kind. Named once because `derivedRequirements` applies it
@@ -261,6 +263,7 @@ export const EVIDENCE_KINDS = Object.freeze([
   'idempotency',
   'stale-version',
   'provider',
+  'retired-visible',
 ]);
 
 // ---------------------------------------------------------------------------
@@ -649,6 +652,50 @@ export const MANIFEST = {
     files: ['tests/backend/p1-18-intake-catalogues.test.ts'],
     required: ['success', 'denial'],
     note: 'P1-27-INT-018. The refusal record could not offer its optional catalogued reason. Same catalogue contract.',
+  },
+  // P1-27-INT-018, ADMINISTRATIVE reads. The seven picker lists above answer
+  // "what may I offer"; these seven answer "what does my catalogue contain",
+  // which is a different question with a different permission. The picker
+  // projection made the catalogue unadministrable: a retired entry appeared in
+  // no read, so nothing could restore it, and no read published the
+  // recordVersion the rename and lifecycle commands demand as If-Match. Each
+  // entry owes `retired-visible` on top of the usual pair — the evidence that
+  // the retired row this suite retires through the API is then present here and
+  // absent from the picker, which is the whole reason the operation exists.
+  'apt.catalogue-appointment-type-management-list': {
+    files: ['tests/backend/p1-18-intake-catalogue-management.test.ts'],
+    required: ['success', 'denial', 'retired-visible'],
+    note: 'P1-27-INT-018. Retired entries included and recordVersion projected, gated on apt.catalogue.manage rather than apt.appointment.read — a booking caller keeps seeing only what it may offer. The projected version is proven by round-tripping it as the If-Match of a rename and of a retirement.',
+  },
+  'apt.catalogue-source-channel-management-list': {
+    files: ['tests/backend/p1-18-intake-catalogue-management.test.ts'],
+    required: ['success', 'denial', 'retired-visible'],
+    note: 'P1-27-INT-018. Same administrative contract; two relations reference a channel, so a withdrawn one is retired and stays visible only here.',
+  },
+  'apt.catalogue-cancellation-reason-management-list': {
+    files: ['tests/backend/p1-18-intake-catalogue-management.test.ts'],
+    required: ['success', 'denial', 'retired-visible'],
+    note: 'P1-27-INT-018. Same administrative contract; the cancellation vocabulary is a policy an operator revises, which means seeing what they have already withdrawn.',
+  },
+  'rec.catalogue-visit-reason-management-list': {
+    files: ['tests/backend/p1-18-intake-catalogue-management.test.ts'],
+    required: ['success', 'denial', 'retired-visible'],
+    note: 'P1-27-INT-018. Same administrative contract; rec.visit_reason_links describes every past visit in this vocabulary, so entries leave it by status only.',
+  },
+  'rec.catalogue-fuel-level-management-list': {
+    files: ['tests/backend/p1-18-intake-catalogue-management.test.ts'],
+    required: ['success', 'denial', 'retired-visible'],
+    note: 'P1-27-INT-018. Same administrative contract; a live visit keeps resolving a level after the operator stops offering it, which is the case the picker structurally cannot show.',
+  },
+  'rec.catalogue-warning-light-code-management-list': {
+    files: ['tests/backend/p1-18-intake-catalogue-management.test.ts'],
+    required: ['success', 'denial', 'retired-visible'],
+    note: 'P1-27-INT-018 / RMC-11. Same administrative contract; the code set grows model by model, so this catalogue is edited most after first population.',
+  },
+  'rec.catalogue-refusal-reason-management-list': {
+    files: ['tests/backend/p1-18-intake-catalogue-management.test.ts'],
+    required: ['success', 'denial', 'retired-visible'],
+    note: 'P1-27-INT-018. Same administrative contract; a recorded refusal keeps naming its reason, so the list only ever changes by status.',
   },
   // P1-27-INT-018, management half. The reads above made the catalogues
   // READABLE; these make them POPULATABLE, which is what the screens actually

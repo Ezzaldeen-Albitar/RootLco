@@ -148,7 +148,14 @@ describe('the API application lives in the workspace', () => {
     // lifecycle module for each of the seven catalogues. The seven creates move
     // this number not at all — each is a POST added to the catalogue's existing
     // collection route file, which the read remediation already counted.
-    expect(routeFiles.length).toBe(230);
+    //
+    // 237 with the seven ADMINISTRATIVE reads under `.../management/<catalogue>`.
+    // They are their own modules rather than a query flag on the picker lists
+    // because they answer to a different permission: the picker filters to
+    // active entries for `apt.appointment.read` / `rec.reception.read`, and the
+    // administrative read shows retired entries and their `recordVersion` to
+    // `apt.catalogue.manage` / `rec.catalogue.manage`.
+    expect(routeFiles.length).toBe(237);
 
     // Non-vacuity. A discovery assertion that only checks a count would pass
     // against a set with one route swapped for another, so the comparison that
@@ -189,7 +196,9 @@ describe('the API application lives in the workspace', () => {
     // over 14 new modules, because the seven creates are POSTs co-located with
     // the seven collection GETs. Operations and route modules move by different
     // amounts for that reason, which is exactly why both are asserted.
-    expect(report.operations).toHaveLength(282);
+    // 289 with the seven administrative reads, which move both counts by seven
+    // — one operation per new module.
+    expect(report.operations).toHaveLength(289);
 
     // ~1 s per process by construction, not by slowness. The budget is stated
     // here rather than raised globally, so it cannot quietly cover a different

@@ -1,9 +1,9 @@
 {
   "generatedFrom": "scripts/check-operation-test-coverage.mjs",
   "counts": {
-    "registered": 50,
-    "publicApi": 50,
-    "operationDepth": 50,
+    "registered": 57,
+    "publicApi": 57,
+    "operationDepth": 57,
     "invocationOnly": 0,
     "pending": 0,
     "unitOnly": 0,
@@ -342,6 +342,22 @@
       "unitOnly": false
     },
     {
+      "id": "apt.catalogue-appointment-type-management-list",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/appointment-catalogue/management/appointment-types",
+      "public": false,
+      "files": ["tests/backend/p1-18-intake-catalogue-management.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization"],
+      "declared": ["success", "denial", "retired-visible"],
+      "required": ["route", "service", "success", "authorization", "denial", "retired-visible"],
+      "provided": ["authorization", "denial", "retired-visible", "route", "service", "success"],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
       "id": "apt.catalogue-appointment-type-status-set",
       "surface": "public-api",
       "method": "POST",
@@ -472,6 +488,22 @@
       "declared": ["success", "denial"],
       "required": ["route", "service", "success", "authorization", "denial"],
       "provided": ["authorization", "denial", "route", "service", "success"],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "apt.catalogue-cancellation-reason-management-list",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/appointment-catalogue/management/cancellation-reasons",
+      "public": false,
+      "files": ["tests/backend/p1-18-intake-catalogue-management.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization"],
+      "declared": ["success", "denial", "retired-visible"],
+      "required": ["route", "service", "success", "authorization", "denial", "retired-visible"],
+      "provided": ["authorization", "denial", "retired-visible", "route", "service", "success"],
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false
@@ -612,6 +644,22 @@
       "unitOnly": false
     },
     {
+      "id": "apt.catalogue-source-channel-management-list",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/appointment-catalogue/management/source-channels",
+      "public": false,
+      "files": ["tests/backend/p1-18-intake-catalogue-management.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization"],
+      "declared": ["success", "denial", "retired-visible"],
+      "required": ["route", "service", "success", "authorization", "denial", "retired-visible"],
+      "provided": ["authorization", "denial", "retired-visible", "route", "service", "success"],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
       "id": "apt.catalogue-source-channel-status-set",
       "surface": "public-api",
       "method": "POST",
@@ -742,6 +790,22 @@
       "declared": ["success", "denial"],
       "required": ["route", "service", "success", "authorization", "denial"],
       "provided": ["authorization", "denial", "route", "service", "success"],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "rec.catalogue-fuel-level-management-list",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/reception-catalogue/management/fuel-levels",
+      "public": false,
+      "files": ["tests/backend/p1-18-intake-catalogue-management.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization"],
+      "declared": ["success", "denial", "retired-visible"],
+      "required": ["route", "service", "success", "authorization", "denial", "retired-visible"],
+      "provided": ["authorization", "denial", "retired-visible", "route", "service", "success"],
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false
@@ -882,6 +946,22 @@
       "unitOnly": false
     },
     {
+      "id": "rec.catalogue-refusal-reason-management-list",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/reception-catalogue/management/refusal-reasons",
+      "public": false,
+      "files": ["tests/backend/p1-18-intake-catalogue-management.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization"],
+      "declared": ["success", "denial", "retired-visible"],
+      "required": ["route", "service", "success", "authorization", "denial", "retired-visible"],
+      "provided": ["authorization", "denial", "retired-visible", "route", "service", "success"],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
       "id": "rec.catalogue-refusal-reason-status-set",
       "surface": "public-api",
       "method": "POST",
@@ -1017,6 +1097,22 @@
       "unitOnly": false
     },
     {
+      "id": "rec.catalogue-visit-reason-management-list",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/reception-catalogue/management/visit-reasons",
+      "public": false,
+      "files": ["tests/backend/p1-18-intake-catalogue-management.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization"],
+      "declared": ["success", "denial", "retired-visible"],
+      "required": ["route", "service", "success", "authorization", "denial", "retired-visible"],
+      "provided": ["authorization", "denial", "retired-visible", "route", "service", "success"],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
       "id": "rec.catalogue-visit-reason-status-set",
       "surface": "public-api",
       "method": "POST",
@@ -1147,6 +1243,22 @@
       "declared": ["success", "denial"],
       "required": ["route", "service", "success", "authorization", "denial"],
       "provided": ["authorization", "denial", "route", "service", "success"],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "rec.catalogue-warning-light-code-management-list",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/reception-catalogue/management/warning-light-codes",
+      "public": false,
+      "files": ["tests/backend/p1-18-intake-catalogue-management.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization"],
+      "declared": ["success", "denial", "retired-visible"],
+      "required": ["route", "service", "success", "authorization", "denial", "retired-visible"],
+      "provided": ["authorization", "denial", "retired-visible", "route", "service", "success"],
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false

@@ -63,7 +63,10 @@ export type {
   AppointmentDetailRow,
   AppointmentListEntry,
 } from './data/appointment-read-repository';
-export type { IntakeCatalogueEntry } from './data/intake-catalogue-repository';
+export type {
+  IntakeCatalogueEntry,
+  IntakeCatalogueRecord,
+} from './data/intake-catalogue-repository';
 export type { IntakeCatalogueEntryView } from './application/intake-catalogue-service';
 // The intake-catalogue management contract (P1-27-INT-018). The bounds are
 // exported because the ROUTES validate against them: a code that fails

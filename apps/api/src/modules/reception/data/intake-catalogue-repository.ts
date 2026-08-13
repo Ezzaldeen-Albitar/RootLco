@@ -8,22 +8,40 @@
  * read of any kind, so no picker could populate itself: a cancellation could
  * not name its mandatory reason and a check-in could not offer a fuel level.
  *
- * ## Scope is RLS's, not this repository's
+ * ## Scope, and what "explicit tenant predicate" means on a dual-scope table
  *
- * Every row is `scope = 'platform'` (tenant_id NULL) or `scope = 'tenant'`, and
- * the SELECT policy states the union once:
- * `USING (scope = 'platform' OR tenant_id = iam.current_tenant_id())`. These
- * queries therefore carry NO tenant predicate — one here would hide every
- * platform row from every tenant (the `vehicle-catalogue` precedent).
+ * The house rule in `server/db/repository.ts` is that every tenant-owned query
+ * carries an explicit tenant predicate in addition to RLS. On these seven
+ * relations that predicate cannot be `tenant_id = $1`: every row is
+ * `scope = 'platform'` (tenant_id NULL) or `scope = 'tenant'`, so an equality
+ * predicate would hide the whole platform catalogue that RLS deliberately
+ * shows. The dual-scope form `(scope = 'platform' OR tenant_id = $1)` is the
+ * house rule honoured, not waived — it mirrors
+ * `USING (scope = 'platform' OR tenant_id = iam.current_tenant_id())` exactly,
+ * which is the `payments.listPaymentMethods` precedent.
  *
- * ## Active rows only
+ * Exactly one statement here carries no tenant predicate at all, and only that
+ * one: the PICKER list (`#list`), whose whole result set is a page of reference
+ * rows and which therefore has nothing to identify. Every statement addressed by
+ * id — `findVisible` and the three writes — carries the predicate, because an
+ * id-addressed statement that trusted RLS alone would be one policy edit away
+ * from reading or writing another tenant's row.
+ *
+ * ## Active rows only — on the picker read
  *
  * Each table carries `status IN ('active','inactive')` and a partial-unique
- * soft delete. These reads serve PICKERS for writes that are about to reference
- * a row, so a retired or soft-deleted code must not be offered: the filter is
- * `status = 'active' AND deleted_at IS NULL`. (The vehicle catalogue projects
- * `status` instead; the difference is deliberate and recorded — these lists
- * exist to feed mandatory references, not to administrate the catalogue.)
+ * soft delete. The picker reads serve writes that are about to reference a row,
+ * so a retired or soft-deleted code must not be offered: the filter is
+ * `status = 'active' AND deleted_at IS NULL`, and neither `status` nor
+ * `record_version` is projected — a picker has no use for either.
+ *
+ * `listForManagement` is the deliberate opposite and exists because that
+ * projection made the catalogue unadministrable: a retired entry was invisible
+ * to every read, so nothing could restore it, and no read published the
+ * `record_version` that `rename`/`setStatus` demand as `If-Match`. It is a
+ * separate operation gated on `apt.catalogue.manage` / `rec.catalogue.manage`
+ * rather than a flag on the picker, so the authority to see and edit the
+ * catalogue is never granted by holding a booking or check-in read code.
  *
  * ## Empty is the honest answer
  *
@@ -158,6 +176,23 @@ const RELATIONS = {
 export type IntakeCatalogue = keyof typeof RELATIONS;
 
 /**
+ * The ordering contract one catalogue's lists are paged by.
+ *
+ * Read from `RELATIONS` rather than re-declared, so the service cannot pair a
+ * catalogue with another catalogue's contract — the cursor carries the contract
+ * key, so a mismatched pair would reject every cursor as belonging to a
+ * different list and silently truncate paging to its first page.
+ *
+ * The picker list and the management list SHARE it deliberately. They are the
+ * same total order (`name ASC, id ASC`) over the same relation and differ only
+ * in their filter, so a cursor is a valid position in both; minting a second
+ * key would assert a difference in ordering that does not exist.
+ */
+export function intakeCatalogueOrdering(catalogue: IntakeCatalogue): OrderingContract {
+  return RELATIONS[assertCatalogue(catalogue)].ordering;
+}
+
+/**
  * The seven keys as a runtime value, frozen.
  *
  * `IntakeCatalogue` is a compile-time union and TypeScript types are erased, so
@@ -267,6 +302,66 @@ export class IntakeCatalogueRepository extends Repository {
     return this.#list(db, 'refusal_reasons', page);
   }
 
+  /**
+   * The administrative list: every entry the caller can see, retired included.
+   *
+   * The picker list above cannot serve a catalogue-administration screen and is
+   * not meant to. It filters to `status = 'active'` and projects four columns,
+   * so a retired entry is invisible to every read there is — nothing could show
+   * it, and therefore nothing could restore it — and no read published the
+   * `record_version` that `rename` and `setStatus` require as `If-Match`, which
+   * left both writes reachable only by a client that had just written the row.
+   *
+   * Three differences from `#list`, each load-bearing:
+   *   - no `status` filter, so retired entries appear and can be restored;
+   *   - `status` and `record_version` projected, so a screen can show the state
+   *     and supply the version its next guarded write demands;
+   *   - an explicit dual-scope tenant predicate, per the header.
+   *
+   * `scope` is projected here as it is on the picker read, because a platform
+   * row is visible and NOT editable — `#requireTenantEntry` answers 403 for one
+   * — so a screen that could not tell the two apart would offer edit controls
+   * that are guaranteed to fail.
+   *
+   * Soft-deleted rows stay excluded. `deleted_at` is not a state this contract
+   * publishes or reverses: nothing in the API sets it, the unique indexes are
+   * partial on it, and a row that reached it is outside the retire/restore
+   * two-way door this module owns.
+   */
+  async listForManagement(
+    db: DbHandle,
+    catalogue: IntakeCatalogue,
+    page: PageRequest
+  ): Promise<Page<IntakeCatalogueRecord>> {
+    const { relation, ordering } = RELATIONS[assertCatalogue(catalogue)];
+    const context = this.assertContext(db);
+    const values: unknown[] = [context.principal.tenantId];
+    const keyset = keysetFragment(page, { sort: 'name', id: 'id' }, ordering, 2);
+    values.push(...keyset.values);
+
+    const result = await this.run<CatalogueRecordRow>(
+      db,
+      `SELECT id, scope, code, name, status, record_version
+         FROM ${relation}
+        WHERE deleted_at IS NULL
+          AND (scope = 'platform' OR tenant_id = $1) ${keyset.predicate}
+        ${keyset.order}
+        ${keyset.limitClause}`,
+      values
+    );
+
+    return buildPageWithCursors(
+      result.rows.map((row) => ({
+        item: toRecord(row),
+        // `name`, the column the ORDER BY names, for the reason `#list` states.
+        sortValue: row.name,
+        id: row.id,
+      })),
+      page,
+      ordering
+    );
+  }
+
   // -------------------------------------------------------------------------
   // Management writes (P1-27-INT-018 remediation, executed by P1-18).
   //
@@ -314,9 +409,22 @@ export class IntakeCatalogueRepository extends Repository {
   /**
    * Reads one entry the caller can see, retired rows included.
    *
-   * Deliberately not filtered to `scope = 'tenant'`: a platform row IS visible
-   * to the caller, and the service has to tell "you may not edit the shared
-   * default" apart from "no such row", which a scope-filtered probe could not.
+   * The predicate is the DUAL-SCOPE tenant predicate, not `tenant_id = $2` and
+   * not nothing. Two mistakes are available here and this form avoids both.
+   *
+   * Filtering to `scope = 'tenant'` (or to `tenant_id` equality, which on these
+   * tables means the same thing — a platform row has `tenant_id IS NULL`) would
+   * make a platform default indistinguishable from a row that does not exist,
+   * and the caller of this probe has to tell those apart: one is "you may not
+   * edit the shared default", the other is 404.
+   *
+   * Omitting the predicate entirely — which this method did until the P1-27
+   * adversarial recheck — leaves an id-addressed read of a tenant-owned table
+   * standing on RLS alone, against the house rule in `server/db/repository.ts`.
+   * That is the predicate this write path is guarded by BEFORE the guarded
+   * UPDATE runs, so its scope is not a redundancy: RLS is the guarantee, the
+   * predicate is the declared intent, and the two disagreeing is a bug worth
+   * failing on.
    */
   async findVisible(
     db: DbHandle,
@@ -324,13 +432,14 @@ export class IntakeCatalogueRepository extends Repository {
     id: string
   ): Promise<IntakeCatalogueRecord | null> {
     const { relation } = RELATIONS[assertCatalogue(catalogue)];
-    this.assertContext(db);
+    const context = this.assertContext(db);
     const result = await this.run<CatalogueRecordRow>(
       db,
       `SELECT id, scope, code, name, status, record_version
          FROM ${relation}
-        WHERE id = $1 AND deleted_at IS NULL`,
-      [id]
+        WHERE id = $1 AND deleted_at IS NULL
+          AND (scope = 'platform' OR tenant_id = $2)`,
+      [id, context.principal.tenantId]
     );
     const row = result.rows[0];
     return row ? toRecord(row) : null;

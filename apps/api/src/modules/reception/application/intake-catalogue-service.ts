@@ -8,6 +8,15 @@
  * against the list's own ordering contract and delegates. Empty pages are the
  * no-fake-data policy working, not a fault.
  *
+ * There are TWO reads per catalogue and the split is the contract, not an
+ * optimisation. The picker read serves the booking and check-in forms: active
+ * entries only, no `status`, no `recordVersion`. `listForManagement` serves the
+ * catalogue-administration screen: every entry including retired ones, with the
+ * `recordVersion` that `rename` and `setStatus` require as `If-Match`. Without
+ * the second one the management commands published here were unreachable in
+ * practice — a retired entry appeared in no read, so nothing could restore it,
+ * and no read supplied the version the writes demand.
+ *
  * The management half is where the decisions live, and there are exactly four:
  *
  *  1. **A platform row is refused before the statement runs.** The
@@ -42,6 +51,7 @@ import {
   SOURCE_CHANNEL_ORDERING,
   VISIT_REASON_ORDERING,
   WARNING_LIGHT_CODE_ORDERING,
+  intakeCatalogueOrdering,
   type IntakeCatalogue,
   type IntakeCatalogueEntry,
   type IntakeCatalogueRecord,
@@ -112,8 +122,35 @@ export class IntakeCatalogueService extends ApplicationService {
   }
 
   // -------------------------------------------------------------------------
-  // Management commands.
+  // Management surface — the administrative read, then the commands.
   // -------------------------------------------------------------------------
+
+  /**
+   * The catalogue as an ADMINISTRATOR sees it: every entry, retired included,
+   * carrying `status` and the `recordVersion` the guarded writes demand.
+   *
+   * One method for all seven rather than seven wrappers, because unlike the
+   * picker reads above there is a `catalogue` argument in play already — the
+   * routes name a literal key, and `assertCatalogue` in the repository turns
+   * that key into a runtime allow-list before it reaches any SQL.
+   *
+   * It is a distinct OPERATION per catalogue at the route layer, gated on
+   * `apt.catalogue.manage` / `rec.catalogue.manage`. That separation is the
+   * whole point: a booking or check-in caller holding `apt.appointment.read`
+   * keeps seeing only the offerable entries, and does not acquire the
+   * catalogue's edit surface by being able to read a picker.
+   */
+  async listForManagement(
+    db: DbHandle,
+    catalogue: IntakeCatalogue,
+    input: PageInput
+  ): Promise<Page<IntakeCatalogueRecord>> {
+    return this.catalogues.listForManagement(
+      db,
+      catalogue,
+      this.#page(input, intakeCatalogueOrdering(catalogue))
+    );
+  }
 
   /**
    * Adds one tenant entry.

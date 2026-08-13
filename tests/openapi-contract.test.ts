@@ -171,6 +171,17 @@ import '@/app/api/v1/reception-catalogue/warning-light-codes/[warningLightCodeId
 import '@/app/api/v1/reception-catalogue/warning-light-codes/[warningLightCodeId]/status/route';
 import '@/app/api/v1/reception-catalogue/refusal-reasons/[refusalReasonId]/route';
 import '@/app/api/v1/reception-catalogue/refusal-reasons/[refusalReasonId]/status/route';
+// P1-27-INT-018 administrative reads. The picker lists above cannot serve a
+// catalogue-administration screen — they filter to `status = 'active'` and
+// project no `recordVersion` — so these seven are the read the management
+// commands need, gated on `apt.catalogue.manage` / `rec.catalogue.manage`.
+import '@/app/api/v1/appointment-catalogue/management/appointment-types/route';
+import '@/app/api/v1/appointment-catalogue/management/source-channels/route';
+import '@/app/api/v1/appointment-catalogue/management/cancellation-reasons/route';
+import '@/app/api/v1/reception-catalogue/management/visit-reasons/route';
+import '@/app/api/v1/reception-catalogue/management/fuel-levels/route';
+import '@/app/api/v1/reception-catalogue/management/warning-light-codes/route';
+import '@/app/api/v1/reception-catalogue/management/refusal-reasons/route';
 import '@/app/api/v1/receptions/route';
 import '@/app/api/v1/receptions/[receptionId]/route';
 import '@/app/api/v1/receptions/[receptionId]/history/route';

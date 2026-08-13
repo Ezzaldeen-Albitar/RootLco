@@ -28,12 +28,24 @@
  *     which is why retirement must be reversible;
  *   - a referenced entry cannot be hard-removed by anybody: `app_runtime` holds
  *     no DELETE grant and every referencing FK is ON DELETE RESTRICT, so
- *     retirement is the only withdrawal there is.
+ *     retirement is the only withdrawal there is;
+ *   - a retired entry is visible in the ADMINISTRATIVE read and absent from the
+ *     picker, and the `recordVersion` that read projects works as the `If-Match`
+ *     of the next rename and the next retirement — which is what makes the
+ *     commands above reachable by a screen rather than only by whoever had just
+ *     written the row.
  *
  * No business row is seeded anywhere in this file. Every catalogue row it
  * creates is created THROUGH the API under test and deleted afterwards.
  *
  * COVERAGE-EVIDENCE (parsed by scripts/check-operation-test-coverage.mjs):
+ *   apt.catalogue-appointment-type-management-list: route service authorization success denial retired-visible
+ *   apt.catalogue-source-channel-management-list: route service authorization success denial retired-visible
+ *   apt.catalogue-cancellation-reason-management-list: route service authorization success denial retired-visible
+ *   rec.catalogue-visit-reason-management-list: route service authorization success denial retired-visible
+ *   rec.catalogue-fuel-level-management-list: route service authorization success denial retired-visible
+ *   rec.catalogue-warning-light-code-management-list: route service authorization success denial retired-visible
+ *   rec.catalogue-refusal-reason-management-list: route service authorization success denial retired-visible
  *   apt.catalogue-appointment-type-create: route service authorization success denial idempotency audit
  *   apt.catalogue-appointment-type-update: route service authorization success denial cross-tenant stale-version audit
  *   apt.catalogue-appointment-type-status-set: route service authorization success denial cross-tenant idempotency stale-version audit
@@ -168,6 +180,34 @@ import {
   POST as STATUS_REFUSAL_REASON,
   REFUSAL_REASON_STATUS_OPERATION,
 } from '@/app/api/v1/reception-catalogue/refusal-reasons/[refusalReasonId]/status/route';
+import {
+  GET as MANAGE_LIST_APPOINTMENT_TYPES,
+  APPOINTMENT_TYPE_MANAGEMENT_LIST_OPERATION,
+} from '@/app/api/v1/appointment-catalogue/management/appointment-types/route';
+import {
+  GET as MANAGE_LIST_SOURCE_CHANNELS,
+  SOURCE_CHANNEL_MANAGEMENT_LIST_OPERATION,
+} from '@/app/api/v1/appointment-catalogue/management/source-channels/route';
+import {
+  GET as MANAGE_LIST_CANCELLATION_REASONS,
+  CANCELLATION_REASON_MANAGEMENT_LIST_OPERATION,
+} from '@/app/api/v1/appointment-catalogue/management/cancellation-reasons/route';
+import {
+  GET as MANAGE_LIST_VISIT_REASONS,
+  VISIT_REASON_MANAGEMENT_LIST_OPERATION,
+} from '@/app/api/v1/reception-catalogue/management/visit-reasons/route';
+import {
+  GET as MANAGE_LIST_FUEL_LEVELS,
+  FUEL_LEVEL_MANAGEMENT_LIST_OPERATION,
+} from '@/app/api/v1/reception-catalogue/management/fuel-levels/route';
+import {
+  GET as MANAGE_LIST_WARNING_LIGHT_CODES,
+  WARNING_LIGHT_CODE_MANAGEMENT_LIST_OPERATION,
+} from '@/app/api/v1/reception-catalogue/management/warning-light-codes/route';
+import {
+  GET as MANAGE_LIST_REFUSAL_REASONS,
+  REFUSAL_REASON_MANAGEMENT_LIST_OPERATION,
+} from '@/app/api/v1/reception-catalogue/management/refusal-reasons/route';
 import { POST as CREATE_RECEPTION } from '@/app/api/v1/receptions/route';
 
 const ROLE_MANAGER = 'c1180000-0000-4000-8000-00000000f001';
@@ -234,6 +274,25 @@ interface PageBody {
   readonly items?: readonly { readonly id: string; readonly code: string }[];
 }
 
+/**
+ * The administrative page shape: the four picker columns plus the two the
+ * picker deliberately withholds.
+ *
+ * `status` and `recordVersion` are optional on the type on purpose — an
+ * assertion that they are PRESENT is the point of the tests below, and a
+ * required field would let TypeScript rather than the running handler decide it.
+ */
+interface ManagementPageBody {
+  readonly items?: readonly {
+    readonly id: string;
+    readonly scope?: string;
+    readonly code: string;
+    readonly name?: string;
+    readonly status?: string;
+    readonly recordVersion?: number;
+  }[];
+}
+
 type ListHandler = (request: Request) => Promise<Response>;
 type CreateHandler = (request: Request) => Promise<Response>;
 type IdHandler = (request: Request, id: string) => Promise<Response>;
@@ -242,14 +301,18 @@ interface CatalogueUnderTest {
   readonly key: string;
   readonly relation: string;
   readonly listPath: string;
+  /** `.../management/<catalogue>` — the administrative read, a DIFFERENT path. */
+  readonly managePath: string;
   readonly permission: string;
   readonly createId: string;
   readonly updateId: string;
   readonly statusId: string;
+  readonly manageListId: string;
   readonly createdAction: string;
   readonly renamedAction: string;
   readonly statusAction: string;
   readonly list: ListHandler;
+  readonly manageList: ListHandler;
   readonly create: CreateHandler;
   readonly update: IdHandler;
   readonly status: IdHandler;
@@ -268,14 +331,17 @@ const CATALOGUES: readonly CatalogueUnderTest[] = [
     key: 'appointment_types',
     relation: 'apt.appointment_types',
     listPath: '/appointment-catalogue/appointment-types',
+    managePath: '/appointment-catalogue/management/appointment-types',
     permission: 'apt.catalogue.manage',
     createId: 'apt.catalogue-appointment-type-create',
     updateId: 'apt.catalogue-appointment-type-update',
     statusId: 'apt.catalogue-appointment-type-status-set',
+    manageListId: 'apt.catalogue-appointment-type-management-list',
     createdAction: 'apt.appointment_type.created',
     renamedAction: 'apt.appointment_type.renamed',
     statusAction: 'apt.appointment_type.status_changed',
     list: LIST_APPOINTMENT_TYPES,
+    manageList: MANAGE_LIST_APPOINTMENT_TYPES,
     create: CREATE_APPOINTMENT_TYPE,
     update: (request, id) =>
       UPDATE_APPOINTMENT_TYPE(request, { params: Promise.resolve({ appointmentTypeId: id }) }),
@@ -286,14 +352,17 @@ const CATALOGUES: readonly CatalogueUnderTest[] = [
     key: 'source_channels',
     relation: 'apt.source_channels',
     listPath: '/appointment-catalogue/source-channels',
+    managePath: '/appointment-catalogue/management/source-channels',
     permission: 'apt.catalogue.manage',
     createId: 'apt.catalogue-source-channel-create',
     updateId: 'apt.catalogue-source-channel-update',
     statusId: 'apt.catalogue-source-channel-status-set',
+    manageListId: 'apt.catalogue-source-channel-management-list',
     createdAction: 'apt.source_channel.created',
     renamedAction: 'apt.source_channel.renamed',
     statusAction: 'apt.source_channel.status_changed',
     list: LIST_SOURCE_CHANNELS,
+    manageList: MANAGE_LIST_SOURCE_CHANNELS,
     create: CREATE_SOURCE_CHANNEL,
     update: (request, id) =>
       UPDATE_SOURCE_CHANNEL(request, { params: Promise.resolve({ sourceChannelId: id }) }),
@@ -304,14 +373,17 @@ const CATALOGUES: readonly CatalogueUnderTest[] = [
     key: 'cancellation_reasons',
     relation: 'apt.cancellation_reasons',
     listPath: '/appointment-catalogue/cancellation-reasons',
+    managePath: '/appointment-catalogue/management/cancellation-reasons',
     permission: 'apt.catalogue.manage',
     createId: 'apt.catalogue-cancellation-reason-create',
     updateId: 'apt.catalogue-cancellation-reason-update',
     statusId: 'apt.catalogue-cancellation-reason-status-set',
+    manageListId: 'apt.catalogue-cancellation-reason-management-list',
     createdAction: 'apt.cancellation_reason.created',
     renamedAction: 'apt.cancellation_reason.renamed',
     statusAction: 'apt.cancellation_reason.status_changed',
     list: LIST_CANCELLATION_REASONS,
+    manageList: MANAGE_LIST_CANCELLATION_REASONS,
     create: CREATE_CANCELLATION_REASON,
     update: (request, id) =>
       UPDATE_CANCELLATION_REASON(request, {
@@ -326,14 +398,17 @@ const CATALOGUES: readonly CatalogueUnderTest[] = [
     key: 'visit_reasons',
     relation: 'rec.visit_reasons',
     listPath: '/reception-catalogue/visit-reasons',
+    managePath: '/reception-catalogue/management/visit-reasons',
     permission: 'rec.catalogue.manage',
     createId: 'rec.catalogue-visit-reason-create',
     updateId: 'rec.catalogue-visit-reason-update',
     statusId: 'rec.catalogue-visit-reason-status-set',
+    manageListId: 'rec.catalogue-visit-reason-management-list',
     createdAction: 'rec.visit_reason.created',
     renamedAction: 'rec.visit_reason.renamed',
     statusAction: 'rec.visit_reason.status_changed',
     list: LIST_VISIT_REASONS,
+    manageList: MANAGE_LIST_VISIT_REASONS,
     create: CREATE_VISIT_REASON,
     update: (request, id) =>
       UPDATE_VISIT_REASON(request, { params: Promise.resolve({ visitReasonId: id }) }),
@@ -344,14 +419,17 @@ const CATALOGUES: readonly CatalogueUnderTest[] = [
     key: 'fuel_levels',
     relation: 'rec.fuel_levels',
     listPath: '/reception-catalogue/fuel-levels',
+    managePath: '/reception-catalogue/management/fuel-levels',
     permission: 'rec.catalogue.manage',
     createId: 'rec.catalogue-fuel-level-create',
     updateId: 'rec.catalogue-fuel-level-update',
     statusId: 'rec.catalogue-fuel-level-status-set',
+    manageListId: 'rec.catalogue-fuel-level-management-list',
     createdAction: 'rec.fuel_level.created',
     renamedAction: 'rec.fuel_level.renamed',
     statusAction: 'rec.fuel_level.status_changed',
     list: LIST_FUEL_LEVELS,
+    manageList: MANAGE_LIST_FUEL_LEVELS,
     create: CREATE_FUEL_LEVEL,
     update: (request, id) =>
       UPDATE_FUEL_LEVEL(request, { params: Promise.resolve({ fuelLevelId: id }) }),
@@ -362,14 +440,17 @@ const CATALOGUES: readonly CatalogueUnderTest[] = [
     key: 'warning_light_codes',
     relation: 'rec.warning_light_codes',
     listPath: '/reception-catalogue/warning-light-codes',
+    managePath: '/reception-catalogue/management/warning-light-codes',
     permission: 'rec.catalogue.manage',
     createId: 'rec.catalogue-warning-light-code-create',
     updateId: 'rec.catalogue-warning-light-code-update',
     statusId: 'rec.catalogue-warning-light-code-status-set',
+    manageListId: 'rec.catalogue-warning-light-code-management-list',
     createdAction: 'rec.warning_light_code.created',
     renamedAction: 'rec.warning_light_code.renamed',
     statusAction: 'rec.warning_light_code.status_changed',
     list: LIST_WARNING_LIGHT_CODES,
+    manageList: MANAGE_LIST_WARNING_LIGHT_CODES,
     create: CREATE_WARNING_LIGHT_CODE,
     update: (request, id) =>
       UPDATE_WARNING_LIGHT_CODE(request, {
@@ -384,14 +465,17 @@ const CATALOGUES: readonly CatalogueUnderTest[] = [
     key: 'refusal_reasons',
     relation: 'rec.refusal_reasons',
     listPath: '/reception-catalogue/refusal-reasons',
+    managePath: '/reception-catalogue/management/refusal-reasons',
     permission: 'rec.catalogue.manage',
     createId: 'rec.catalogue-refusal-reason-create',
     updateId: 'rec.catalogue-refusal-reason-update',
     statusId: 'rec.catalogue-refusal-reason-status-set',
+    manageListId: 'rec.catalogue-refusal-reason-management-list',
     createdAction: 'rec.refusal_reason.created',
     renamedAction: 'rec.refusal_reason.renamed',
     statusAction: 'rec.refusal_reason.status_changed',
     list: LIST_REFUSAL_REASONS,
+    manageList: MANAGE_LIST_REFUSAL_REASONS,
     create: CREATE_REFUSAL_REASON,
     update: (request, id) =>
       UPDATE_REFUSAL_REASON(request, { params: Promise.resolve({ refusalReasonId: id }) }),
@@ -616,7 +700,56 @@ afterAll(async () => {
   }
 });
 
-describe('P1-27-INT-018 — the twenty-one management operations are registered as declared', () => {
+describe('P1-27-INT-018 — the seven administrative reads are registered as declared', () => {
+  it('gates each on the manage code, not on the picker read code', () => {
+    const declared = [
+      [
+        APPOINTMENT_TYPE_MANAGEMENT_LIST_OPERATION,
+        'apt.catalogue-appointment-type-management-list',
+      ],
+      [SOURCE_CHANNEL_MANAGEMENT_LIST_OPERATION, 'apt.catalogue-source-channel-management-list'],
+      [
+        CANCELLATION_REASON_MANAGEMENT_LIST_OPERATION,
+        'apt.catalogue-cancellation-reason-management-list',
+      ],
+      [VISIT_REASON_MANAGEMENT_LIST_OPERATION, 'rec.catalogue-visit-reason-management-list'],
+      [FUEL_LEVEL_MANAGEMENT_LIST_OPERATION, 'rec.catalogue-fuel-level-management-list'],
+      [
+        WARNING_LIGHT_CODE_MANAGEMENT_LIST_OPERATION,
+        'rec.catalogue-warning-light-code-management-list',
+      ],
+      [REFUSAL_REASON_MANAGEMENT_LIST_OPERATION, 'rec.catalogue-refusal-reason-management-list'],
+    ] as const;
+
+    expect(declared).toHaveLength(7);
+
+    for (const [operation, id] of declared) {
+      const namespace = id.startsWith('apt.') ? 'apt' : 'rec';
+      expect(operation.id, id).toBe(id);
+      expect(operation.method, id).toBe('GET');
+      expect(operation.module, id).toBe('reception');
+      expect(operation.scope, id).toBe('tenant');
+      // The separation the whole design rests on. If this read ever accepted a
+      // picker read code, the administrative view — retired entries included —
+      // would be granted to every booking and check-in screen, and the
+      // `catalogue.manage` split would be decorative.
+      expect(operation.permissions, id).toEqual([`${namespace}.catalogue.manage`]);
+      expect(operation.permissions, id).not.toContain('apt.appointment.read');
+      expect(operation.permissions, id).not.toContain('rec.reception.read');
+      // A read writes nothing, so it declares neither guard and audits nothing.
+      expect(operation.auditClass, id).toBe('none');
+      expect(operation.idempotent ?? false, id).toBe(false);
+      expect(operation.versionGuarded ?? false, id).toBe(false);
+      expect(operation.rateLimitPolicy, id).toBe('low-risk-metadata');
+      expect(operation.cacheCategory, id).toBe('never');
+      // A path distinct from the picker's, which is what lets the two carry
+      // different permissions at all: one method and one path is one operation.
+      expect(operation.path, id).toContain('/management/');
+    }
+  });
+});
+
+describe('P1-27-INT-018 — the twenty-one management commands are registered as declared', () => {
   it('declares each command with its own permission, audit action and guards', () => {
     const declared = [
       [APPOINTMENT_TYPE_CREATE_OPERATION, 'apt.catalogue-appointment-type-create', 'POST'],
@@ -839,6 +972,138 @@ describe.each(CATALOGUES.map((c) => [c.key, c] as const))(
       expect(await offered()).toBe(true);
 
       expect(await auditCount(entry.id, catalogue.statusAction)).toBe(2);
+    });
+
+    /** The administrative page, as the manage-permission caller sees it. */
+    const managementPage = async (): Promise<ManagementPageBody> => {
+      const response = await catalogue.manageList(
+        new Request(`http://localhost/api/v1${catalogue.managePath}?limit=100`)
+      );
+      expect(response.status, catalogue.manageListId).toBe(200);
+      return (await response.json()) as ManagementPageBody;
+    };
+
+    /** The picker page, read through the SAME shape so the projection is comparable. */
+    const pickerPage = async (): Promise<ManagementPageBody> => {
+      const response = await catalogue.list(
+        new Request(`http://localhost/api/v1${catalogue.listPath}?limit=100`)
+      );
+      expect(response.status).toBe(200);
+      return (await response.json()) as ManagementPageBody;
+    };
+
+    it('shows a retired entry the picker hides, and projects what the picker withholds', async () => {
+      authAs(SUBJ_MANAGER);
+      const entry = await addEntry(catalogue);
+
+      const managed = (await managementPage()).items?.find((item) => item.id === entry.id);
+      expect(managed?.status).toBe('active');
+      expect(managed?.recordVersion).toBe(entry.version);
+      // `scope` too: a platform default is visible here and NOT editable, so a
+      // screen that could not tell the two apart would render edit controls that
+      // are guaranteed to answer 403.
+      expect(managed?.scope).toBe('tenant');
+      expect(managed?.code).toBe(entry.code);
+
+      // The picker read is UNCHANGED — asserted, not assumed. If it started
+      // projecting these two, the split this operation exists for would have
+      // quietly collapsed and every reader would hold the administrative view.
+      const offered = (await pickerPage()).items?.find((item) => item.id === entry.id);
+      expect(offered).toBeDefined();
+      expect(offered?.status).toBeUndefined();
+      expect(offered?.recordVersion).toBeUndefined();
+
+      // Retire it through the API, and the two reads disagree exactly as
+      // designed: gone from the picker, present here with its new state and
+      // version. This is the case that made the catalogue unadministrable —
+      // before this read existed, a retired entry appeared in NO read, so
+      // nothing could show it and therefore nothing could restore it.
+      expect((await setStatus(catalogue, entry.id, 'inactive', entry.version)).status).toBe(200);
+
+      expect((await pickerPage()).items?.some((item) => item.id === entry.id)).toBe(false);
+      const retired = (await managementPage()).items?.find((item) => item.id === entry.id);
+      expect(retired?.status).toBe('inactive');
+      expect(retired?.recordVersion).toBe(entry.version + 1);
+    });
+
+    it('projects a recordVersion that round-trips as a working If-Match', async () => {
+      authAs(SUBJ_MANAGER);
+      const entry = await addEntry(catalogue);
+
+      // Every version below is re-read from the administrative list and the
+      // create response's own version is deliberately never reused. That is the
+      // claim under test: a screen that has performed no write can drive both
+      // guarded commands from this read alone. Reusing `entry.version` would
+      // prove the commands work and say nothing about the read.
+      const publishedVersion = async (): Promise<number> => {
+        const row = (await managementPage()).items?.find((item) => item.id === entry.id);
+        expect(row?.recordVersion, catalogue.manageListId).toEqual(expect.any(Number));
+        return row?.recordVersion ?? -1;
+      };
+
+      const renamed = await patch(
+        catalogue,
+        entry.id,
+        { name: 'Renamed from the administrative read' },
+        await publishedVersion()
+      );
+      expect(renamed.status, `${catalogue.updateId} under a projected version`).toBe(200);
+
+      const retired = await setStatus(catalogue, entry.id, 'inactive', await publishedVersion());
+      expect(retired.status, `${catalogue.statusId} under a projected version`).toBe(200);
+
+      // And the version this read reports for a RETIRED row restores it, which
+      // is the half of the two-way door only this read can reach: the picker
+      // cannot see the row at all now, so nothing else could supply the version.
+      const restored = await setStatus(catalogue, entry.id, 'active', await publishedVersion());
+      expect(restored.status).toBe(200);
+      expect(
+        await scalar(`SELECT status AS value FROM ${catalogue.relation} WHERE id = $1`, [entry.id])
+      ).toBe('active');
+    });
+
+    it('refuses the administrative read to a caller holding both READ codes', async () => {
+      authAs(SUBJ_MANAGER);
+      const entry = await addEntry(catalogue);
+      expect((await setStatus(catalogue, entry.id, 'inactive', entry.version)).status).toBe(200);
+
+      authAs(SUBJ_READER);
+      const denied = await catalogue.manageList(
+        new Request(`http://localhost/api/v1${catalogue.managePath}?limit=100`)
+      );
+      expect(denied.status).toBe(403);
+
+      // The same principal may still read the picker, so the manage code is what
+      // decides — not authentication, and not the tenant. And the entry the
+      // manager retired is absent from the read this principal may use, which is
+      // what "the administrative view is not granted by a read code" means in
+      // terms of rows rather than status codes.
+      expect((await pickerPage()).items?.some((item) => item.id === entry.id)).toBe(false);
+    });
+
+    it('refuses the administrative read to an unauthenticated caller', async () => {
+      __resetAuthenticatorForTests();
+      const response = await catalogue.manageList(
+        new Request(`http://localhost/api/v1${catalogue.managePath}`)
+      );
+      expect(response.status).toBe(401);
+    });
+
+    it('never shows another tenant’s entry', async () => {
+      authAs(SUBJ_TENANT_B, TENANT_B);
+      const foreign = await addEntry(catalogue);
+
+      authAs(SUBJ_MANAGER);
+      const items = (await managementPage()).items ?? [];
+      expect(items.some((item) => item.id === foreign.id)).toBe(false);
+      // Non-vacuity: this caller's OWN rows are in the page being searched, so
+      // an empty page cannot be what makes the assertion above pass.
+      expect(items.length).toBeGreaterThan(0);
+
+      // Tenant B still sees it, so the row genuinely exists and is genuinely
+      // readable — the exclusion above is scope, not absence.
+      authAs(SUBJ_TENANT_B, TENANT_B);
+      expect((await managementPage()).items?.some((item) => item.id === foreign.id)).toBe(true);
     });
 
     it('renames under If-Match, refusing a missing version with 428 and a stale one with 409', async () => {

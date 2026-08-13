@@ -11,9 +11,13 @@
  * correct a typo is not the authority to withdraw a fuel level from every
  * intake form.
  *
- * `If-Match` is mandatory. The list read publishes no record version, so the
- * caller's version comes from the create response or from a prior write — the
- * same contract every guarded command in this module uses.
+ * `If-Match` is mandatory, and the version it carries now has a read to come
+ * from: the management list under `/management/` projects `recordVersion`
+ * alongside `status`. It was published in the same remediation as this command
+ * and for this command's sake — the PICKER list projects neither, so before it
+ * existed the only source of a version was a response the caller had just
+ * received from a write, which made a guarded edit reachable only by whoever had
+ * most recently performed one.
  */
 import { z } from 'zod';
 import { defineOperation } from '@/server/auth/operation-registry';
