@@ -73,11 +73,11 @@ cannot, that is said instead of guessed.
 
 | #   | what it printed then                   | what it prints now                     | how the current value is held true                                  |
 | --- | -------------------------------------- | -------------------------------------- | ------------------------------------------------------------------- |
-| 2   | `69 file(s) across 3 tree(s)`          | unchanged at the time of writing       | derived — §3 and §5.1                                               |
+| 2   | `69 file(s) across 3 tree(s)`          | `111 file(s) across 4 tree(s)`         | derived — §3 and §5.1                                               |
 | 4   | `170 file(s) checked`                  | `179 file(s) checked`                  | re-run; the colour count is unchanged at 54                         |
 | 5   | `195 / 0`, `197 / 0`, `170 / 0`        | `204 / 0`, `206 / 0`, `179 / 0`        | re-run; all three still report zero                                 |
 | 6   | `143 registered · 71 required · 71/71` | `151 registered · 76 required · 76/76` | derived — §7.1                                                      |
-| 8   | `39 files, 803 passed`                 | `72` files; case total NOT restated    | the file half derived — §3 and §6.1; the case half is `E-03`        |
+| 8   | `39 files, 803 passed`                 | `91` files; case total NOT restated    | the file half derived — §3 and §6.1; the case half is `E-03`        |
 | 9   | `77 files, 1680 passed`                | `86 files, 1821 passed`                | recorded, not derived — §6.4 says why                               |
 | 10  | `31 files, 638 passed`                 | `36 files, 715 passed`                 | the file half derived — §6.4                                        |
 | 11  | `150 tests in 2 files`                 | **not re-measured**                    | needs a browser install; unchanged as far as any record here states |
@@ -159,10 +159,10 @@ fact in words did not, which is the gap this revision closes.
 
 | category                                                               | artefacts                                                          | how counted                                                                |
 | ---------------------------------------------------------------------- | ------------------------------------------------------------------ | -------------------------------------------------------------------------- |
-| Source files under the P1-27 ownership gate                            | **71** (43 feature source + 28 route)                              | derived from the gate's own scan roots                                     |
+| Source files under the P1-27 ownership gate                            | **111** (43 feature source + 34 route + 34 adopted reception)      | derived from the gate's own scan roots                                     |
 | Router pages (CRM and Vehicle)                                         | **8**                                                              | command 1                                                                  |
 | Shared-foundation source files changed by the phase or its remediation | **13** named in §5.5                                               | command 1, cross-read against the task register and the remediation record |
-| Web unit and component test files                                      | **84**                                                             | derived                                                                    |
+| Web unit and component test files                                      | **91**                                                             | derived                                                                    |
 | Playwright specification files                                         | **9** (2 anonymous, 7 authenticated)                               | commands 11 and 12 — **not re-measured**, §1.1.1                           |
 | Root CI-contract test files                                            | **36**                                                             | derived                                                                    |
 | CI gate scripts under `scripts/ci`                                     | **48** in the directory, **8** introduced or changed by this phase | derived; the eight are the `scripts/ci` rows of §7.1                       |
@@ -224,19 +224,26 @@ every advance of local `develop` in the sequence above was a fast-forward from
 
 ## 5. Source files
 
-### 5.1 The three trees the P1-27 ownership gate owns — 75 files
+### 5.1 The four trees the P1-27 ownership gate owns — 111 files
 
-`validate:p1-27-frontend` reports **75 files across 3 trees, 0 failures**. Of
+`validate:p1-27-frontend` reports **111 files across 4 trees, 0 failures**. Of
 those, **43** are §5.2 and §5.3 together — the two feature trees — and both
 halves are derived from the trees the gate itself names, so the count follows the
-gate rather than a reader's memory of it. The remaining **32** are the third
+gate rather than a reader's memory of it. The next **34** are the third
 canonical tree, `apps/web/src/app/[locale]/(dashboard)`, which this manifest
 tables nowhere: §5.4 lists the eight CRM and Vehicle route pages only, and the
-other twenty-four route files belong to earlier phases or to P1-28 (the Wave D reception check-in routes). They are counted here
-because the gate scans them, not because this phase wrote them. The gate refuses to pass a rule that inspected zero files, and it runs its
-own `selfTest()` on **every** invocation — a comment stripper that over-matched
-would turn all eight rules into scans over empty strings and report clean, which is
-the one failure mode the per-rule anti-vacuity checks cannot see.
+other route files belong to earlier phases or to P1-28. The last **34** are
+`apps/web/src/features/receptions`, which is not a P1-27 tree at all: P1-28
+ADOPTED these rules for it (`ADOPTED_ROOTS` in the gate, declared by
+`phase-1-28/canonical-plan.md` §9), because `no-upload-path` and
+`no-invented-media-limit` enforce the standing `P1-OD-025` disposition rather
+than a P1-27 one, and while no root collected that tree both reported clean over
+a tree they had never opened. Every one of these files is counted here because
+the gate scans it, not because this phase wrote it. The gate refuses to pass a
+rule that inspected zero files, and it runs its own `selfTest()` on **every**
+invocation — a comment stripper that over-matched would turn all eight rules into
+scans over empty strings and report clean, which is the one failure mode the
+per-rule anti-vacuity checks cannot see.
 
 This sentence said **40** until this revision, in the document whose own
 `DOC-001` fix had corrected that number everywhere except inside itself
@@ -397,7 +404,7 @@ records.
 
 ## 6. Test files
 
-### 6.1 Web unit and component — `apps/web/tests` (84 files, and no case total — `E-03`)
+### 6.1 Web unit and component — `apps/web/tests` (91 files, and no case total — `E-03`)
 
 **`E-03` is closed by DELETING the number, not by correcting it.** The heading
 used to read `(70 files, 1493 cases, 0 failed)`, and before that `(66 files, 1231
@@ -407,14 +414,14 @@ and borrowing its credibility. It drifted exactly as the finding predicted: the
 paragraphs below this heading still said `66` and `1231` while the heading beside
 them said `70` and `1493` — `E-02` returning, in the section written to close it.
 
-`84` is recomputed from the tree on every run, here and in §3, and
+`91` is recomputed from the tree on every run, here and in §3, and
 `p1-27-doc-reconciliation.test.ts` fails if either statement of it disagrees with
 `apps/web/tests`.
 
 **No tier-wide case total is stated anywhere in this document, because none can
 be derived.** A case count is derived by counting `it(` / `test(` call sites in
 comment-stripped source, and that number is only right for a file whose cases are
-all written down. **Twenty-five of the eighty-four files build theirs at runtime**
+all written down. **Twenty-eight of the ninety-one files build theirs at runtime**
 — `it.each` over a table, or an `it(` inside a `for` or an iteration callback —
 so `scripts/ci/check-p1-27-doc-counts.mjs` refuses them rather than certify a
 plausible wrong number: `api-client.test.ts`,
@@ -425,17 +432,19 @@ plausible wrong number: `api-client.test.ts`,
 `operation-contract.test.ts`, `overlays.dom.test.tsx`,
 `p1-27-owner-acceptance.dom.test.tsx`,
 `p1-27-permission-route-binding.dom.test.tsx`,
-`p1-28-appointment-routes.test.ts`, `profile-accessibility.dom.test.tsx`,
-`receptions-contract.test.ts`, `route-permission-binding.test.ts`,
+`p1-28-appointment-routes.test.ts`, `p1-28-reception-routes.test.ts`,
+`profile-accessibility.dom.test.tsx`, `reception-queue.dom.test.tsx`,
+`reception-summary.dom.test.tsx`, `receptions-contract.test.ts`,
+`route-permission-binding.test.ts`,
 `server-vocabularies.test.ts`, `shell.dom.test.tsx`,
 `stylelint-policy.test.ts`, `vehicle-api.test.ts`,
 `vehicle-documents.test.ts`, `vehicle-duplicates.test.ts`,
 `vehicle-party-identity.dom.test.tsx` and
-`write-permission-gating.dom.test.tsx`. A total over 84 files that is unknowable
-for 25 of them is not a measurement, it is an estimate with a decimal point.
+`write-permission-gating.dom.test.tsx`. A total over 91 files that is unknowable
+for 28 of them is not a measurement, it is an estimate with a decimal point.
 
-**The derivable half is 50 files, and it is derived per file rather than summed.**
-Each of the fifty carries an exact answer the gate recomputes; the three this
+**The derivable half is 63 files, and it is derived per file rather than summed.**
+Each of the sixty-three carries an exact answer the gate recomputes; the three this
 document actually cites are pinned by name at the foot of this file
 (`vehicle-screens.dom.test.tsx`, `tailwind-theme-gate.test.ts`,
 `navigation.test.ts`), and a citation that needs no count is written without one
@@ -579,18 +588,18 @@ gate that keeps this document honest.
 
 ### 7.1 Introduced or changed by P1-27 and its remediation
 
-| script                                          | npm command                                          | owning task                | what it refuses                                                                                                                                                                                                                                                                                                                                                      | measured output                                                                           |
-| ----------------------------------------------- | ---------------------------------------------------- | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| `scripts/ci/check-p1-27-frontend.mjs`           | `validate:p1-27-frontend`                            | `DO-001` (new)             | The eight rules in §5.7, over all three canonical trees — the two feature trees and the `(dashboard)` route tree. Comments are stripped first, a rule inspecting zero files fails, and `selfTest()` runs on every invocation                                                                                                                                         | `69 file(s) across 3 tree(s), 0 failure(s)`                                               |
-| `scripts/ci/check-plain-language.mjs`           | `validate:plain-language`                            | `OA-07` (new)              | 24 rules over every value in both message catalogues — JSON, UUID, enum, payload, null, boolean, object, schema, endpoint, API, design token, status code, token, cursor, idempotency, serialise, SQL, regex, tenant, permission code, operation id, snake_case identifier, camelCase identifier, raw translation key. **No exemptions**, and a two-way `selfTest()` | `2 catalogue(s), 24 rule(s), 0 finding(s)`                                                |
-| `apps/web/scripts/check-tailwind-theme.mjs`     | `validate:web-theme` (root) / `validate:theme` (web) | `OA-08` (new)              | A colour utility whose name resolves to no entry in `theme.extend.colors` and to no surviving Tailwind palette name                                                                                                                                                                                                                                                  | `170 file(s) checked, 54 colour(s) registered, 0 unresolvable`                            |
-| `scripts/ci/generate-idempotent-operations.mjs` | `validate:idempotent-operations`                     | `P1-27-INT-003` (new)      | Drift between the published contract and the generated table                                                                                                                                                                                                                                                                                                         | `243 published operation(s), 120 idempotent` — manifest matches                           |
-| `scripts/ci/hostile-mutations.mjs`              | none — hand-run                                      | changed by `OA-*`          | The 20 `M-OA` mutations in §8                                                                                                                                                                                                                                                                                                                                        | not re-run here; it mutates tracked source in place                                       |
-| `eslint.config.mjs`                             | `lint` → `verify:repository`                         | `P1-27-F-001` (changed)    | `globalIgnores` gained `'supabase/.temp/**'` and `'supabase/.branches/**'`                                                                                                                                                                                                                                                                                           | covered by `tests/ci/eslint-global-ignores.test.ts`                                       |
-| `scripts/ci/check-command-coverage.mjs`         | `validate:command-coverage`                          | changed — registry entries | A required command not reachable from `verify:workspaces` **and** not invoked by hosted CI                                                                                                                                                                                                                                                                           | **151 registered · 76 required · 76/76 reachable · 76/76 invoked by hosted CI** — derived |
-| `scripts/ci/build-p1-27-evidence-manifest.mjs`  | `validate:p1-27-evidence` / `evidence:p1-27`         | `QA-005` (new)             | An evidence document edited without its SHA-256 digest being regenerated in the same commit. Digests are over file BYTES, so a BOM or an encoding repair counts as a change. The `--check` half is required; the writer is deliberately optional, because a CI job that ran it would repair the drift the check exists to report                                     | `39 evidence document(s), in sync`                                                        |
-| `scripts/ci/check-p1-27-lifecycle.mjs`          | `validate:p1-27-lifecycle`                           | closure lifecycle (new)    | A declared lifecycle state the tree does not hold, in either direction: a blocker the ledger does not declare, and a declared blocker the tree no longer raises. Eight negative cases run inside the gate on every invocation, so a rule that stopped refusing a transition fails rather than passing quietly                                                        | `CANDIDATE_INCOMPLETE` — merge blocked, 23 blocker(s), 0 disagreement(s)                  |
-| `scripts/ci/check-p1-27-closing-values.mjs`     | `validate:p1-27-closing-values` / `record:p1-27-run` | `QA-005` (new)             | A closing value on either evidence page that names no authority: an unclassified figure, a locally derivable one the tree contradicts, a hosted one naming no run or job, a protected-only one carrying a figure before the merge, an excluded one sitting in a current region. Thirteen negative cases run inside the gate on every invocation                      | `49 classified, A:12 B:4 C:18 D:4 E:10 F:1` — five counts all zero                        |
+| script                                          | npm command                                          | owning task                | what it refuses                                                                                                                                                                                                                                                                                                                                                       | measured output                                                                           |
+| ----------------------------------------------- | ---------------------------------------------------- | -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `scripts/ci/check-p1-27-frontend.mjs`           | `validate:p1-27-frontend`                            | `DO-001` (new)             | The eight rules in §5.7, over the three canonical trees — the two feature trees and the `(dashboard)` route tree — and over the adopted `features/receptions` tree (`ADOPTED_ROOTS`; `no-client-asserted-scope` alone is narrowed away from it, see §5.1). Comments are stripped first, a rule inspecting zero files fails, and `selfTest()` runs on every invocation | `69 file(s) across 3 tree(s), 0 failure(s)`                                               |
+| `scripts/ci/check-plain-language.mjs`           | `validate:plain-language`                            | `OA-07` (new)              | 24 rules over every value in both message catalogues — JSON, UUID, enum, payload, null, boolean, object, schema, endpoint, API, design token, status code, token, cursor, idempotency, serialise, SQL, regex, tenant, permission code, operation id, snake_case identifier, camelCase identifier, raw translation key. **No exemptions**, and a two-way `selfTest()`  | `2 catalogue(s), 24 rule(s), 0 finding(s)`                                                |
+| `apps/web/scripts/check-tailwind-theme.mjs`     | `validate:web-theme` (root) / `validate:theme` (web) | `OA-08` (new)              | A colour utility whose name resolves to no entry in `theme.extend.colors` and to no surviving Tailwind palette name                                                                                                                                                                                                                                                   | `170 file(s) checked, 54 colour(s) registered, 0 unresolvable`                            |
+| `scripts/ci/generate-idempotent-operations.mjs` | `validate:idempotent-operations`                     | `P1-27-INT-003` (new)      | Drift between the published contract and the generated table                                                                                                                                                                                                                                                                                                          | `243 published operation(s), 120 idempotent` — manifest matches                           |
+| `scripts/ci/hostile-mutations.mjs`              | none — hand-run                                      | changed by `OA-*`          | The 20 `M-OA` mutations in §8                                                                                                                                                                                                                                                                                                                                         | not re-run here; it mutates tracked source in place                                       |
+| `eslint.config.mjs`                             | `lint` → `verify:repository`                         | `P1-27-F-001` (changed)    | `globalIgnores` gained `'supabase/.temp/**'` and `'supabase/.branches/**'`                                                                                                                                                                                                                                                                                            | covered by `tests/ci/eslint-global-ignores.test.ts`                                       |
+| `scripts/ci/check-command-coverage.mjs`         | `validate:command-coverage`                          | changed — registry entries | A required command not reachable from `verify:workspaces` **and** not invoked by hosted CI                                                                                                                                                                                                                                                                            | **151 registered · 76 required · 76/76 reachable · 76/76 invoked by hosted CI** — derived |
+| `scripts/ci/build-p1-27-evidence-manifest.mjs`  | `validate:p1-27-evidence` / `evidence:p1-27`         | `QA-005` (new)             | An evidence document edited without its SHA-256 digest being regenerated in the same commit. Digests are over file BYTES, so a BOM or an encoding repair counts as a change. The `--check` half is required; the writer is deliberately optional, because a CI job that ran it would repair the drift the check exists to report                                      | `39 evidence document(s), in sync`                                                        |
+| `scripts/ci/check-p1-27-lifecycle.mjs`          | `validate:p1-27-lifecycle`                           | closure lifecycle (new)    | A declared lifecycle state the tree does not hold, in either direction: a blocker the ledger does not declare, and a declared blocker the tree no longer raises. Eight negative cases run inside the gate on every invocation, so a rule that stopped refusing a transition fails rather than passing quietly                                                         | `CANDIDATE_INCOMPLETE` — merge blocked, 23 blocker(s), 0 disagreement(s)                  |
+| `scripts/ci/check-p1-27-closing-values.mjs`     | `validate:p1-27-closing-values` / `record:p1-27-run` | `QA-005` (new)             | A closing value on either evidence page that names no authority: an unclassified figure, a locally derivable one the tree contradicts, a hosted one naming no run or job, a protected-only one carrying a figure before the merge, an excluded one sitting in a current region. Thirteen negative cases run inside the gate on every invocation                       | `49 classified, A:12 B:4 C:18 D:4 E:10 F:1` — five counts all zero                        |
 
 `validate:web-theme` exists because seven Tailwind colour names were used across
 fourteen components and registered in the theme in none of them, so **51
@@ -674,8 +683,8 @@ under-report itself by seven files.
 | `ci-evidence.md`                                  | 275   | Hosted CI, with every value classified and every hosted one naming its run         |
 | `clean-room-evidence.md`                          | 379   | The clean-room record, and the six classes every closing value is sorted into      |
 | `contract-archaeology.md`                         | 416   | What the Backend actually publishes, read before anything was built                |
-| `deliverable-manifest.md`                         | 1039  | This file                                                                          |
-| `developer-guide.md`                              | 184   | `DOC-002` — the developer half                                                     |
+| `deliverable-manifest.md`                         | 1048  | This file                                                                          |
+| `developer-guide.md`                              | 188   | `DOC-002` — the developer half                                                     |
 | `evidence/change-log.md`                          | 1135  | `DOC-002` — the change-log half; its rows are scraped by a test                    |
 | `evidence/evidence-manifest.json`                 | 171   | `QA-005` — a SHA-256 digest of every document in this directory                    |
 | `evidence/closing-value-ledger.json`              | 907   | Every closing value on the two evidence pages, classified, with its authority      |
@@ -959,7 +968,7 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
      an earlier revision put them in the label column and broke two other gates
      whose regexes read the label and the number as adjacent cells. -->
 
-<!-- derived: files apps/web/tests = 84 -->
+<!-- derived: files apps/web/tests = 91 -->
 <!-- derived: files tests/ci = 43 -->
 <!-- derived: files scripts/ci = 48 -->
 <!-- derived: files apps/web/scripts = 4 -->
@@ -970,8 +979,8 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
 <!-- derived: files tests/backend:all = 90 -->
 <!-- derived: files apps/web/src/features/crm = 20 -->
 <!-- derived: files apps/web/src/features/vehicles = 23 -->
-<!-- derived: files p1-27-frontend-gate = 75 -->
-<!-- derived: files p1-27-frontend-gate:trees = 3 -->
+<!-- derived: files p1-27-frontend-gate = 111 -->
+<!-- derived: files p1-27-frontend-gate:trees = 4 -->
 <!-- derived: tracked docs/phase-1/phase-1-27 = 41 -->
 <!-- derived: tracked docs/phase-1/phase-1-27:md = 31 -->
 <!-- derived: tracked docs/product = 13 -->
@@ -993,8 +1002,8 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
 <!-- derived: lines docs/phase-1/phase-1-27/clean-room-evidence.md = 379 -->
 <!-- derived: lines docs/phase-1/phase-1-27/closure-record.md = 114 -->
 <!-- derived: lines docs/phase-1/phase-1-27/contract-archaeology.md = 416 -->
-<!-- derived: lines docs/phase-1/phase-1-27/deliverable-manifest.md = 1039 -->
-<!-- derived: lines docs/phase-1/phase-1-27/developer-guide.md = 184 -->
+<!-- derived: lines docs/phase-1/phase-1-27/deliverable-manifest.md = 1048 -->
+<!-- derived: lines docs/phase-1/phase-1-27/developer-guide.md = 188 -->
 <!-- derived: lines docs/phase-1/phase-1-27/evidence/change-log.md = 1135 -->
 <!-- derived: lines docs/phase-1/phase-1-27/evidence/evidence-manifest.json = 171 -->
 <!-- derived: lines docs/phase-1/phase-1-27/evidence/closing-value-ledger.json = 907 -->
