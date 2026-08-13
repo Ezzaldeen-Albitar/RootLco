@@ -275,6 +275,22 @@ export const REGISTER = Object.freeze([
     why: 'every canonical P1-28 apt/rec write is reachable, allow-listed with a reason, or deliberately absent',
   },
   {
+    name: 'validate:p1-28-version-sourcing',
+    owner: ROOT,
+    tier: 'required',
+    // QA-004's mechanical half. The canonical plan states the sourcing rule in
+    // one sentence — a version-guarded write takes its recordVersion from a
+    // READ or from the immediately prior command response — and until this gate
+    // that sentence had nothing behind it: a screen sending `version + 1` would
+    // satisfy every adapter test in the suite, because the adapter forwards
+    // whatever number it is handed, and approve answers sent + 1 or sent + 2
+    // depending on a state the screen does not control. The guarded operations
+    // are derived from the published contract, the adapters from the tree, and
+    // every If-Match argument is traced to a parameter or a server-stated
+    // recordVersion. Mutation-proved by tests/ci/p1-28-version-sourcing.test.ts.
+    why: 'every version-guarded P1-28 command sources its If-Match from a read or a command response, never from arithmetic or a cached guess',
+  },
+  {
     name: 'evidence:p1-27',
     owner: ROOT,
     // `informational`, not `optional`. `optional` is not one of the four tiers
