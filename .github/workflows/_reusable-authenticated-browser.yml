@@ -323,6 +323,30 @@ jobs:
           cat api.log
           exit 1
 
+      - name: Provision the configured workspace
+        run: |
+          set -euo pipefail
+          # The CONFIGURED half of the P1-28 evidence. Tenant A deliberately
+          # stays empty, because production ships with no catalogue rows and the
+          # truthful "not configured" sentences are themselves a deliverable the
+          # suite asserts. This provisions a THIRD tenant whose seven intake
+          # catalogues hold one deterministic synthetic row each — created at run
+          # time by authenticated POSTs to the published management contracts,
+          # never seeded into `supabase/` or `apps/`, which the permanent
+          # no-fake-data policy forbids.
+          #
+          # It runs AFTER the API reports ready because every row is created
+          # through that API, not against the database.
+          #
+          # Without this step the configured-workspace cases fail here while
+          # passing locally, which is exactly how this step came to exist.
+          #
+          # `--release-open-visits` is the browser tier's own flag: one vehicle
+          # may hold one open visit, so a re-run would silently exercise the
+          # RESUME path instead of the create path it means to prove — a green
+          # result for a journey nobody tested.
+          npm run acceptance:provision-fixtures -- --release-open-visits
+
       - name: The authenticated browser tier
         env:
           # The variable whose absence was the finding. Nothing else in the
