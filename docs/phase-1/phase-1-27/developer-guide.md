@@ -59,7 +59,7 @@ restating it, so no sentence here can drift from the gate. Adding the third tree
 proved the arrangement — the gate went from 43 files across two trees to
 `69 file(s) across 3 tree(s)`, and the wider check followed in the same commit,
 with no edit to this page's roots. Add a `'use server'` file called anything
-else, anywhere in any of the four trees, and it fails naming the file. All
+else, anywhere in any of the five trees, and it fails naming the file. All
 thirteen `'use server'` files are still in the two feature trees; the route tree
 contributes none.
 
@@ -68,7 +68,7 @@ contributes none.
 `npm run validate:p1-27-frontend` fails the build on:
 
 - a merge caller of any shape while `P1-OD-017` is open,
-- a duplicate-scan call from anywhere in any of the four trees — there is no
+- a duplicate-scan call from anywhere in any of the five trees — there is no
   exemption; the creation-time warning arrives on the create RESPONSE,
 - a client-asserted `tenantId` / `companyId` / `branchId` — **asserted**, not
   merely displayed: the profile screen renders the tenant the server resolved
@@ -93,7 +93,7 @@ contributes none.
   extension allow-list or an `accept=` attribute. §14 says keep upload
   acceptance blocked **and** do not invent limits; a "sensible default" of 10 MB
   and JPEG/PNG pre-empts the Owner's decision while looking like diligence,
-- any `console.*` in any of the four trees.
+- any `console.*` in any of the five trees.
 
 A test can be deleted around a decision. A gate has to be argued with in a diff.
 Wave 6 shipped a working merge form past review, typecheck, lint and 669 green
