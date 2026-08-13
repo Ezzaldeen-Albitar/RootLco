@@ -496,7 +496,7 @@ export function mutationCallSites(source) {
   }
 
   if (helpers.size > 0) {
-    const names = [...helpers.keys()].map((name) => name.replace(/[$]/g, '\\$&'));
+    const names = [...helpers.keys()].map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
     const helperCall = new RegExp(`\\b(${names.join('|')})\\s*\\(`, 'g');
     let call;
     while ((call = helperCall.exec(text)) !== null) {
