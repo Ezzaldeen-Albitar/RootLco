@@ -122,8 +122,11 @@ export const EVIDENCE_KIND_COVERAGE: readonly EvidenceKindCoverage[] = Object.fr
     task: 'P1-28-FE-012',
     // `documentId` AND `documentVersionId` are both required uuids naming a
     // registered map-template document and the exact version it was drawn on.
-    // No operation in this product registers a document, so no operator can
-    // produce either value — P1-OD-025.
+    // The published surface DOES have an operation that creates a document row;
+    // what it does not have is a chain that can complete — see
+    // `DOCUMENT_CHAIN_BLOCKERS` in `../media/media-decision.ts`, three
+    // independent facts a test re-derives from the repository. So no operator in
+    // any tenant can produce either value — P1-OD-025.
     noticeKey: 'receptions.evidence.damageMapBlocked',
   },
   {
@@ -388,8 +391,11 @@ export function clampCoordinate(value: number): number {
 /**
  * A coordinate string with a fixed, keyboard-friendly precision.
  *
- * Two decimals is the STEP the keyboard and the diagram move by, and the
- * precision of the read-out beside them — NOT a bound on what may be submitted.
+ * Two decimals is the PRECISION the diagram writes at — the pointer and the
+ * arrow keys both round to hundredths here — and the precision of the read-out
+ * beside it. It is NOT a bound on what may be submitted, and it is not the
+ * keyboard's step either: `DamageMapStep.KEYBOARD_STEP` is `0.05`, and it is
+ * expressible at this precision rather than defined by it.
  * `parseCoordinate` accepts any value in range and `DamageMapStep` sends the
  * operator's own text, so a mark typed as `0.125` travels as `0.125`.
  *

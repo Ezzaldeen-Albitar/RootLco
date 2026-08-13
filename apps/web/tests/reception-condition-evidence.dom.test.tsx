@@ -641,6 +641,134 @@ describe('the damage step (FE-012)', () => {
     await user.keyboard('{ArrowLeft>20/}');
     expect(screen.getByTestId('damage-diagram-position')).toHaveTextContent('0.00 / 0.50');
   });
+
+  it('re-reads after a successful mark and renders the STORED coordinate, unrounded', async () => {
+    /*
+     * PERSISTENCE, which none of the cases above reach: they stop at what was
+     * SENT. `0.125` surviving the request proves the form; it does not prove
+     * that what comes back is shown as what was stored.
+     *
+     * `rec.reception-condition-evidence-list` publishes `coordX`/`coordY`
+     * `::text` precisely because the column is `numeric(6,5)` and a JS float
+     * would not be it — so the round trip returns `0.12500`, five decimals, and
+     * `EVIDENCE_ROW_FIELDS` renders both as `identifier`: a token printed as it
+     * arrived, never reformatted. A renderer that put `formatCoordinate` on the
+     * READ side would show `0.13` here while the record held `0.125`, which is
+     * the same disagreement `W-E-01` produced on the write side and is invisible
+     * to every assertion that only inspects the request.
+     */
+    const STORED_MARK = {
+      kind: 'damage_mark',
+      id: 'mark-9',
+      recordedAt: '2026-08-13T09:00:00.000Z',
+      damageMapId: 'map-1',
+      markType: 'chip',
+      vehicleZone: 'rear bumper',
+      coordX: '0.12500',
+      coordY: '0.33330',
+      note: null,
+    };
+    let markRows: readonly unknown[] = [];
+    listConditionEvidence.mockImplementation((_visitId: string, kind: string) =>
+      Promise.resolve(
+        page(kind === 'damage_map' ? [DAMAGE_MAP] : kind === 'damage_mark' ? markRows : [])
+      )
+    );
+    // The write is what makes the next read return the row — so the re-read is
+    // observed by its RESULT changing, not by counting calls on a spy.
+    recordConditionEvidence.mockImplementation(() => {
+      markRows = [STORED_MARK];
+      return Promise.resolve(recorded('mark-9', 'damage_mark'));
+    });
+
+    const user = userEvent.setup();
+    renderLtr(<DamageMapStep {...stepProps()} />);
+
+    const form = await screen.findByRole('form', { name: EN['receptions.damage.formLabel']! });
+    await user.selectOptions(
+      within(form).getByLabelText(new RegExp(EN['receptions.damage.map']!)),
+      'map-1'
+    );
+    await user.selectOptions(
+      within(form).getByLabelText(new RegExp(EN['receptions.damage.markType']!)),
+      'chip'
+    );
+    await user.type(
+      within(form).getByLabelText(new RegExp(EN['receptions.finding.zone']!)),
+      'rear bumper'
+    );
+    const xField = within(form).getByLabelText(new RegExp(EN['receptions.damage.coordX']!));
+    await user.clear(xField);
+    await user.type(xField, '0.125');
+    const yField = within(form).getByLabelText(new RegExp(EN['receptions.damage.coordY']!));
+    await user.clear(yField);
+    await user.type(yField, '0.3333');
+    await user.click(within(form).getByRole('button', { name: EN['receptions.damage.record']! }));
+
+    // The stored value, at the database's own scale, re-rendered from the read.
+    expect(await screen.findByText('0.12500')).toBeInTheDocument();
+    expect(screen.getByText('0.33330')).toBeInTheDocument();
+    // …and not a two-decimal copy of it anywhere on the step.
+    expect(screen.queryByText('0.13')).not.toBeInTheDocument();
+    expect(screen.queryByText('0.33')).not.toBeInTheDocument();
+  });
+
+  it('withdraws the mark form for a REASON, not as the missing-map gate, when writes are gone', async () => {
+    /*
+     * Two different absences that look identical on screen unless the copy
+     * distinguishes them: "no map exists to hang a mark off" (the data gate) and
+     * "you may not record one" (permission, or a terminal visit). A map EXISTS
+     * in both halves below, so a step that fell back to the missing-map notice
+     * would be telling the operator to fix something that is not wrong.
+     */
+    evidenceByKind({ damage_map: [DAMAGE_MAP] });
+
+    const readOnly = renderLtr(
+      <DamageMapStep {...stepProps({ capabilities: { ...CAPABILITIES, manageEvidence: false } })} />
+    );
+    expect(await screen.findByText(EN['receptions.evidence.readOnly']!)).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: EN['receptions.damage.record']! })
+    ).not.toBeInTheDocument();
+    expect(screen.queryByTestId('evidence-notice-damage_mark')).not.toBeInTheDocument();
+    // The BLOCKED map is still stated: it is blocked for everybody, permission
+    // or not, and hiding it here would hide the open decision.
+    expect(screen.getByTestId('evidence-notice-damage_map')).toBeInTheDocument();
+    readOnly.unmount();
+
+    renderLtr(<DamageMapStep {...stepProps({ writesLocked: true })} />);
+    expect(await screen.findByText(EN['receptions.evidence.lockedNote']!)).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: EN['receptions.damage.record']! })
+    ).not.toBeInTheDocument();
+    expect(screen.queryByTestId('evidence-notice-damage_mark')).not.toBeInTheDocument();
+  });
+
+  it('renders in Arabic, RTL — and the map surface itself stays LTR so no mark is mirrored', async () => {
+    /*
+     * The one RTL rule this step has that no other step has: a coordinate is a
+     * FRACTION OF THE MAP, so `coordX = 0` must be the same physical place in
+     * Arabic as in English. Mirroring the surface for RTL would mirror every
+     * mark already stored against every map ever drawn — the single thing a
+     * damage map must never do — and nothing outside this case would notice,
+     * because the value submitted would still be a legal `0..1` fraction.
+     */
+    evidenceByKind({ damage_map: [DAMAGE_MAP] });
+    renderRtl(<DamageMapStep {...stepProps({ locale: 'ar', messages: ar as typeof en })} />);
+
+    expect(document.documentElement.dir).toBe('rtl');
+    const form = await screen.findByRole('form', { name: AR['receptions.damage.formLabel']! });
+    expect(within(form).getByText(AR['receptions.damage.record']!)).toBeInTheDocument();
+
+    // The surface, and the two authoritative inputs, opt OUT of the direction.
+    expect(screen.getByTestId('damage-diagram')).toHaveAttribute('dir', 'ltr');
+    expect(
+      within(form).getByLabelText(new RegExp(AR['receptions.damage.coordX']!))
+    ).toHaveAttribute('dir', 'ltr');
+    expect(
+      within(form).getByLabelText(new RegExp(AR['receptions.damage.coordY']!))
+    ).toHaveAttribute('dir', 'ltr');
+  });
 });
 
 /* --- FE-015: warning lights ------------------------------------------------- */
