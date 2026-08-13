@@ -50,7 +50,7 @@
       "measuredAtCommit": "cae8bdb0dee6352f6182105b36d1dd3b1d7bf896",
       "provenance": "LOCAL_AND_HOSTED_AGREE",
       "hostedArtefact": "evidence-unit-coverage / test-totals-unit.json (job 94614563908)",
-      "note": "The local record in docs/phase-1/phase-1-27/evidence/local-run-ledger.json was taken at cae8bdb0, which is an ancestor of the candidate. Only two P1-27 evidence documents differ between the two commits and no executable path does, so the local measurement describes the candidate exactly. Verify with `git diff --name-only cae8bdb0..38afa5c2`."
+      "note": "The local record in docs/phase-1/phase-1-27/evidence/local-run-ledger.json was taken at cae8bdb0, an ancestor of the candidate. Only two P1-27 evidence documents differ between the two commits and no executable path does, so that measurement describes the candidate exactly. Verify with `git diff --name-only cae8bdb0..38afa5c2`. A READER RUNNING THE SUITE TODAY WILL SEE A LARGER NUMBER, and that is not drift: the successors listed above add QA-005's own gate test, so the run ledger has since been re-recorded at the packaging head and reports a bigger unit tier. This figure is frozen at the candidate on purpose; the ledger tracks the head it was last taken at, and the two are not the same thing."
     },
     "web": {
       "label": "web component and DOM",

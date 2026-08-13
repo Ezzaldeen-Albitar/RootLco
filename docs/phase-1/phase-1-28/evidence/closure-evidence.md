@@ -122,6 +122,16 @@ Only two P1-27 evidence documents differ between that commit and the candidate a
 **no executable path does**, so the local measurement describes the candidate
 exactly. Verify with `git diff --name-only cae8bdb0..38afa5c2`.
 
+**A reader running the unit suite today will count more than 2475, and that is
+not drift.** The successors that package this evidence add QA-005's own gate
+test, so the run ledger has since been re-recorded at the packaging head and
+reports a larger unit tier over 98 files rather than 97. The figure in the table
+above is frozen at the candidate deliberately; the ledger tracks whichever head
+it was last taken at. The two are different measurements of different commits,
+and the seal's own test checks each against the head it names rather than
+against the other — an equality between a frozen figure and a moving one is
+exactly the confusion this package exists to prevent.
+
 ### What no tier measures
 
 No automated tier in this repository observes the product the way the Product

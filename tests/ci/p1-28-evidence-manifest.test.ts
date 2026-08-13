@@ -453,30 +453,64 @@ describe('P1-28-QA-005 — the candidate is bound, and both halves agree about i
     });
   });
 
-  it('reconciles the recorded local tiers against the run ledger rather than restating them', () => {
+  it('pins each local tier to the head it was measured at, and reconciles it only there', () => {
     /*
-     * A closing figure is a claim about a command's output. This one is checked
-     * against the only file that is allowed to write it — the P1-27 run ledger,
-     * written solely by `check-p1-27-closing-values.mjs --record`. A hand-edited
-     * total in the candidate record fails here.
+     * A closing figure is a claim about a command's output at a NAMED head, and
+     * the two heads here are deliberately different.
+     *
+     * The candidate's local figures describe `38afa5c2`. The P1-27 run ledger —
+     * the only file allowed to write an executed total, and only via
+     * `check-p1-27-closing-values.mjs --record` — tracks whatever head it was
+     * last taken at, and it MOVES: the successor commits that package this
+     * evidence add test files of their own, so the ledger legitimately reports a
+     * larger unit tier than the candidate does.
+     *
+     * The first version of this case asserted the two were equal. That was true
+     * when it was written and became false the moment QA-005's own 37 cases
+     * landed — an equality between a frozen figure and a moving one, which is
+     * the very confusion this package exists to prevent. So the rule is the
+     * P1-27 one instead: a measurement is checked against the head it names.
+     * Same head, the figures must agree; different head, the candidate figure is
+     * a pinned historical measurement and must say which head it belongs to.
      */
     const candidate = JSON.parse(readRepo(CANDIDATE_PATH)) as {
-      tiers: Record<string, { tests: number; files: number; provenance: string }>;
+      tiers: Record<
+        string,
+        { tests: number; files: number; provenance: string; measuredAtCommit: string }
+      >;
     };
     const ledger = JSON.parse(
       readRepo('docs/phase-1/phase-1-27/evidence/local-run-ledger.json')
-    ) as { tiers: Record<string, { tests: number; files: number }> };
+    ) as { tiers: Record<string, { tests: number; files: number; measuredAtCommit: string }> };
 
     for (const tier of ['unit', 'web']) {
-      expect(candidate.tiers[tier]?.provenance, `${tier} claims no provenance`).toBe(
-        'LOCAL_AND_HOSTED_AGREE'
+      const recorded = candidate.tiers[tier];
+      const measured = ledger.tiers[tier];
+      expect(recorded?.provenance, `${tier} claims no provenance`).toBe('LOCAL_AND_HOSTED_AGREE');
+      expect(recorded?.measuredAtCommit, `${tier} names no head`).toMatch(/^[0-9a-f]{40}$/);
+      expect(measured?.measuredAtCommit, `the ${tier} run ledger names no head`).toMatch(
+        /^[0-9a-f]{40}$/
       );
-      expect(candidate.tiers[tier]?.tests, `the ${tier} total disagrees with the run ledger`).toBe(
-        ledger.tiers[tier]?.tests
-      );
-      expect(candidate.tiers[tier]?.files, `the ${tier} file count disagrees`).toBe(
-        ledger.tiers[tier]?.files
-      );
+
+      if (recorded?.measuredAtCommit === measured?.measuredAtCommit) {
+        expect(recorded?.tests, `the ${tier} total disagrees with the run ledger at one head`).toBe(
+          measured?.tests
+        );
+        expect(recorded?.files, `the ${tier} file count disagrees at one head`).toBe(
+          measured?.files
+        );
+      } else {
+        // Different heads. The candidate figure is frozen, so the only thing to
+        // check is that it is not silently drifting toward the moving one.
+        expect(
+          typeof recorded?.tests,
+          `the ${tier} candidate figure is pinned to ${recorded?.measuredAtCommit} and must still be a number`
+        ).toBe('number');
+        expect(
+          (recorded as unknown as { note?: string }).note ?? '',
+          `the ${tier} figure names a head the ledger has moved past and does not explain it`
+        ).toMatch(/ancestor|candidate|head/i);
+      }
     }
   });
 
