@@ -575,7 +575,7 @@ test.describe('the booking screen states the blocked truth rather than offering 
        * NON-NEGOTIABLE, AND THE REASON THIS CASE IS WRITTEN THIS WAY.
        *
        * `apt.appointment_types` is EMPTY in the acceptance database, because no
-       * fake business data ships and no operation in this phase populates a
+       * fabricated business data ships and no operation in this phase populates a
        * catalogue. An appointment therefore cannot be booked, and the correct
        * assertion is the sentence the screen shows — not a seeded row that would
        * manufacture a green booking path. A test that invents data to pass is
