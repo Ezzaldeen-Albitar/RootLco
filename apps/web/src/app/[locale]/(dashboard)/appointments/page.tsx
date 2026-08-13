@@ -5,6 +5,7 @@ import { requireSession } from '@/features/authentication/api/session';
 import { AppointmentCalendarScreen } from '@/features/appointments/components/AppointmentCalendarScreen';
 import { APPOINTMENT_PERMISSIONS } from '@/features/appointments/appointments-contract';
 import { holds } from '@/features/crm/permissions';
+import { RECEPTION_PERMISSIONS } from '@/features/receptions/receptions-contract';
 import { isLocale } from '@/i18n/config';
 import { getMessages } from '@/i18n/get-messages';
 import { pageMetadata } from '@/lib/page-metadata';
@@ -66,6 +67,14 @@ export default async function AppointmentsPage({
           companyIds={session.companyIds}
           branchIds={session.branchIds}
           canManage={holds(session.permissions, APPOINTMENT_PERMISSIONS.manage)}
+          /*
+           * The day queue's arrival affordance leads to `rec.reception-create`,
+           * so it is gated on THAT operation's permission rather than on an
+           * appointment code. Gating a control on a code the operation behind it
+           * does not require is the defect `P1-26-F-011` and `P1-26-F-029` both
+           * recorded.
+           */
+          canCheckIn={holds(session.permissions, RECEPTION_PERMISSIONS.manage)}
         />
       </PageBody>
     </>

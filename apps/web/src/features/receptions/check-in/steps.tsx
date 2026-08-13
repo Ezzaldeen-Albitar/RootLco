@@ -1,5 +1,7 @@
 import { ConfirmationStep } from '../components/steps/ConfirmationStep';
+import { ConversionStep } from '../components/steps/ConversionStep';
 import { PartiesStep } from '../components/steps/PartiesStep';
+import { SummaryStep } from '../components/steps/SummaryStep';
 import type { CheckInStepDefinition } from './wizard';
 
 /**
@@ -14,7 +16,11 @@ import type { CheckInStepDefinition } from './wizard';
  * contract (unique id, feature-namespaced keys present in `en` and `ar`).
  *
  * Order is presentation order: identity is confirmed before parties are
- * recorded, and evidence steps slot in after parties when they land.
+ * recorded, evidence steps slot in after parties when they land, and the two
+ * closing steps come last because they are the decision the rest is evidence
+ * for — the summary (`FE-020`, approval and the two terminal exits) and then
+ * the conversion (`FE-022`), which is legal only from `authorized` and so can
+ * only follow it.
  */
 export const CHECK_IN_STEPS: readonly CheckInStepDefinition[] = Object.freeze([
   {
@@ -28,5 +34,17 @@ export const CHECK_IN_STEPS: readonly CheckInStepDefinition[] = Object.freeze([
     titleKey: 'receptions.steps.parties.title',
     descriptionKey: 'receptions.steps.parties.description',
     Component: PartiesStep,
+  },
+  {
+    id: 'summary-and-approval',
+    titleKey: 'receptions.steps.summary.title',
+    descriptionKey: 'receptions.steps.summary.description',
+    Component: SummaryStep,
+  },
+  {
+    id: 'convert-to-work-order',
+    titleKey: 'receptions.steps.convert.title',
+    descriptionKey: 'receptions.steps.convert.description',
+    Component: ConversionStep,
   },
 ]);

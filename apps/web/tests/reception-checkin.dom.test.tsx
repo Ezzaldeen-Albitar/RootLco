@@ -135,6 +135,10 @@ const CAPABILITIES = {
   verifyAuthorizations: true,
   readCustomers: true,
   readVehicles: true,
+  approveReceptions: true,
+  convertReceptions: true,
+  closeReceptions: true,
+  readWorkOrders: true,
 };
 
 function startProps(over: Record<string, unknown> = {}) {

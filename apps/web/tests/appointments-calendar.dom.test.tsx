@@ -72,6 +72,7 @@ function renderScreen({
   companyIds = ['11111111-1111-4111-8111-111111111111'],
   branchIds = ['22222222-2222-4222-8222-222222222222'],
   canManage = false,
+  canCheckIn = false,
 } = {}) {
   return renderLtr(
     <AppointmentCalendarScreen
@@ -80,6 +81,7 @@ function renderScreen({
       companyIds={companyIds}
       branchIds={branchIds}
       canManage={canManage}
+      canCheckIn={canCheckIn}
     />
   );
 }
@@ -251,6 +253,87 @@ describe('honest states', () => {
   });
 });
 
+/**
+ * The DAY QUEUE half (Wave G).
+ *
+ * A calendar answers "what is booked"; a queue answers "who is arriving now".
+ * Two controls complete it, and both have a rule behind them rather than a
+ * preference: Today must not turn into the one read this screen issues without
+ * being asked, and Check in must appear on `confirmed` rows and on no other,
+ * because `rec.reception-create` answers 409 `ERR-TRN-001` for every other
+ * lifecycle status.
+ */
+describe('the day queue', () => {
+  it('collapses the range to one day WITHOUT issuing a read', async () => {
+    const user = userEvent.setup();
+    renderScreen();
+    await user.click(screen.getByRole('button', { name: en['appointments.calendar.today'] }));
+
+    const from = screen.getByLabelText(en['appointments.calendar.fromDay']) as HTMLInputElement;
+    const to = screen.getByLabelText(en['appointments.calendar.toDay']) as HTMLInputElement;
+    expect(from.value).toBe(to.value);
+    expect(from.value).not.toBe('');
+    // The shortcut sets the draft. The operator still names the branch and
+    // presses Show, so "no request before intent" is not special-cased.
+    expect(listAppointments).not.toHaveBeenCalled();
+  });
+
+  it('reads the collapsed day once the branch is named', async () => {
+    const user = userEvent.setup();
+    renderScreen();
+    await user.click(screen.getByRole('button', { name: en['appointments.calendar.today'] }));
+    await submitTarget(user);
+    await waitFor(() => expect(listAppointments).toHaveBeenCalledTimes(1));
+
+    const criteria = listAppointments.mock.calls[0]?.[1] as { from: string; to: string };
+    // Both bounds fall on the same local day: the start of it and the end.
+    expect(new Date(criteria.from).getDate()).toBe(new Date(criteria.to).getDate());
+    expect(Date.parse(criteria.to)).toBeGreaterThan(Date.parse(criteria.from));
+  });
+
+  it('offers Check in on a confirmed row and on no other status', async () => {
+    listAppointments.mockResolvedValue(
+      page({
+        rows: [
+          { ...ROW, id: 'row-confirmed', displayNumber: 'APT-1', lifecycleStatus: 'confirmed' },
+          { ...ROW, id: 'row-requested', displayNumber: 'APT-2', lifecycleStatus: 'requested' },
+          { ...ROW, id: 'row-cancelled', displayNumber: 'APT-3', lifecycleStatus: 'cancelled' },
+        ],
+      })
+    );
+    const user = userEvent.setup();
+    renderScreen({ canCheckIn: true });
+    await submitTarget(user);
+    await screen.findByText('APT-1');
+
+    const links = screen.getAllByRole('link', { name: en['appointments.calendar.checkIn'] });
+    expect(links).toHaveLength(1);
+    expect(links[0]).toHaveAttribute('href', '/en/receptions/check-in');
+  });
+
+  it('withdraws Check in from an operator who cannot open a visit', async () => {
+    listAppointments.mockResolvedValue(page({ rows: [{ ...ROW, lifecycleStatus: 'confirmed' }] }));
+    const user = userEvent.setup();
+    renderScreen({ canCheckIn: false });
+    await submitTarget(user);
+    await screen.findByText('APT-0007');
+    expect(screen.queryByRole('link', { name: en['appointments.calendar.checkIn'] })).toBeNull();
+    // The row is still openable; only the arrival affordance is withdrawn.
+    expect(screen.getByRole('button', { name: en['appointments.calendar.open'] })).toBeVisible();
+  });
+
+  it('says "Check in", never "Confirm" — there is no confirm operation', () => {
+    // Confirmation is a side effect of rescheduling. A control that claimed to
+    // confirm would name an operation this contract does not publish.
+    renderScreen({ canCheckIn: true });
+    expect(en['appointments.calendar.checkIn']).toBe('Check in');
+    const confirming = Object.entries(en).filter(
+      ([key, value]) => key.startsWith('appointments.') && /^confirm$/i.test(String(value).trim())
+    );
+    expect(confirming.map(([key]) => key)).toEqual([]);
+  });
+});
+
 describe('both directions', () => {
   it('renders in Arabic, right to left', async () => {
     const user = userEvent.setup();
@@ -261,6 +344,7 @@ describe('both directions', () => {
         companyIds={['11111111-1111-4111-8111-111111111111']}
         branchIds={['22222222-2222-4222-8222-222222222222']}
         canManage={false}
+        canCheckIn={false}
       />
     );
     expect(screen.getByText(ar['appointments.calendar.idleTitle'])).toBeInTheDocument();

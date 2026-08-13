@@ -63,7 +63,7 @@ export default async function CheckInStartPage({
   const messages = getMessages(locale);
 
   const crumbs = [
-    { labelKey: 'nav.receptions', href: `/${locale}/receptions/check-in` },
+    { labelKey: 'nav.receptions', href: `/${locale}/receptions` },
     { labelKey: 'receptions.checkIn.title' },
   ];
 

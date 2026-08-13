@@ -75,6 +75,7 @@ vi.mock('@/features/appointments/catalogue-api', () => ({
 }));
 
 const { APPOINTMENT_PERMISSIONS } = await import('@/features/appointments/appointments-contract');
+const { RECEPTION_PERMISSIONS } = await import('@/features/receptions/receptions-contract');
 const CalendarPage = (await import('@/app/[locale]/(dashboard)/appointments/page')).default;
 const BookingPage = (await import('@/app/[locale]/(dashboard)/appointments/new/page')).default;
 const DetailPage = (await import('@/app/[locale]/(dashboard)/appointments/[appointmentId]/page'))
@@ -135,6 +136,23 @@ describe('the calendar route', () => {
     PERMISSIONS = ALL.filter((p) => p !== APPOINTMENT_PERMISSIONS.manage);
     const denied = await CalendarPage({ params: Promise.resolve({ locale: 'en' }) });
     expect(findProps(denied, 'companyIds')?.['canManage']).toBe(false);
+  });
+
+  it('grants the day queue’s arrival affordance from the RECEPTION permission', async () => {
+    /*
+     * The control leads to `rec.reception-create`, so it is gated on that
+     * operation's own code. Gating it on an `apt.*` code would be the defect
+     * `P1-26-F-011` and `P1-26-F-029` both recorded: a control gated on a
+     * permission the operation behind it does not require.
+     */
+    PERMISSIONS = [APPOINTMENT_PERMISSIONS.read, RECEPTION_PERMISSIONS.manage];
+    const granted = await CalendarPage({ params: Promise.resolve({ locale: 'en' }) });
+    expect(findProps(granted, 'companyIds')?.['canCheckIn']).toBe(true);
+
+    // Every appointment permission and NOT the reception one: still false.
+    PERMISSIONS = ALL;
+    const denied = await CalendarPage({ params: Promise.resolve({ locale: 'en' }) });
+    expect(findProps(denied, 'companyIds')?.['canCheckIn']).toBe(false);
   });
 
   it("passes the session's own resolved scope as the target options", async () => {

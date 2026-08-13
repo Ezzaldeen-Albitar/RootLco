@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   CLASSIFICATIONS,
   DAY_ONE_NOT_YET_WIRED,
+  literalUnionParameters,
   mutationCallSites,
   normaliseRoutePath,
   normaliseSourcePaths,
@@ -540,12 +541,10 @@ describe('a path built by a helper is still a call site', () => {
   });
 
   it('refuses to vouch for a path the call site does not spell out', () => {
-    // A variable tail builds an unknown segment. The gate must not guess which
-    // terminal command it is: the tail is glued straight onto the identifier,
-    // so the resolved `:p:p` matches no registered route and every operation it
-    // could have been stays unreached. This is `closeVisit` in the real
-    // reception adapter, whose tail is `/close-without-work` or `/refuse`
-    // depending on its caller.
+    // An UNTYPED variable tail builds an unknown segment. The gate must not
+    // guess which terminal command it is: the tail is glued straight onto the
+    // identifier, so the resolved `:p:p` matches no registered route and every
+    // operation it could have been stays unreached.
     const VARIABLE_TAIL = `
 function synthPath(receptionId, tail = '') {
   return \`/api/v1/synthetic-receptions/\${encodeURIComponent(receptionId)}\${tail}\`;
@@ -564,6 +563,87 @@ export async function closeSyntheticVisit(receptionId, tail) {
     expect(normaliseRoutePath('/api/v1/synthetic-receptions/{receptionId}/seal')).not.toBe(
       '/api/v1/synthetic-receptions/:p:p'
     );
+  });
+
+  /*
+   * The Waves F/G extension, and the reason it is an extension rather than a
+   * loosening.
+   *
+   * The real reception adapter forwards a tail typed
+   * `'/close-without-work' | '/refuse'` through `visitPath`, so the two terminal
+   * exits were wired by their screen while this gate could see neither path.
+   * The type has already enumerated what the call can be, and a value outside
+   * the union is a compile error — so expanding it reports exactly the paths the
+   * code can build, and never one it cannot. The untyped case above is what
+   * proves the two are distinguished.
+   */
+  it('enumerates a tail typed as a union of string literals', () => {
+    const TYPED_TAIL = `
+function synthPath(receptionId: string, tail = ''): string {
+  return \`/api/v1/synthetic-receptions/\${encodeURIComponent(receptionId)}\${tail}\`;
+}
+export async function endSyntheticVisit(
+  receptionId: string,
+  tail: '/seal' | '/void',
+  input: unknown
+) {
+  return client.send('POST', synthPath(receptionId, tail), input);
+}
+`;
+    expect(mutationCallSites(TYPED_TAIL)).toEqual([
+      {
+        method: 'POST',
+        path: '/api/v1/synthetic-receptions/:p/seal',
+        owner: 'endSyntheticVisit',
+      },
+      {
+        method: 'POST',
+        path: '/api/v1/synthetic-receptions/:p/void',
+        owner: 'endSyntheticVisit',
+      },
+    ]);
+  });
+
+  it('reads a literal union by SHAPE, and treats every other annotation as unknown', () => {
+    expect([...literalUnionParameters(["tail: '/seal' | '/void'"]).entries()]).toEqual([
+      ['tail', ['/seal', '/void']],
+    ]);
+    // Everything a union of string literals is NOT stays opaque, which is the
+    // failing-closed half of the rule.
+    for (const parameter of [
+      'tail: string',
+      'tail: Tail',
+      "tail: '/seal' | string",
+      "tail: '/seal'",
+      'tail',
+      'receptionId: string',
+      'tail: `/seal` | `/void`',
+    ]) {
+      expect(literalUnionParameters([parameter]).size, parameter).toBe(0);
+    }
+  });
+
+  it('still collapses a typed union that reaches a DIFFERENT function’s parameter', () => {
+    // The union is read off the function that ENCLOSES the call. A same-named
+    // parameter on an unrelated function must not vouch for this one.
+    const ELSEWHERE = `
+function synthPath(receptionId: string, tail = ''): string {
+  return \`/api/v1/synthetic-receptions/\${encodeURIComponent(receptionId)}\${tail}\`;
+}
+export function unrelated(tail: '/seal' | '/void') {
+  return tail;
+}
+export async function endSyntheticVisit(receptionId: string, tail: string) {
+  return client.send('POST', synthPath(receptionId, tail), {});
+}
+`;
+    expect(mutationCallSites(ELSEWHERE)).toEqual([
+      {
+        method: 'POST',
+        path: '/api/v1/synthetic-receptions/:p:p',
+        owner: 'endSyntheticVisit',
+      },
+    ]);
   });
 
   it('flips an allow-listed write once its helper-built call site is consumed', () => {

@@ -816,20 +816,30 @@ function readSourceCrumb(element: ts.Expression): SourceCrumb {
 }
 
 /**
- * A string the source states outright, with `${locale}` resolved to `en`.
+ * A string the source states outright, with each `${identifier}` filled in.
  *
- * Every crumb href in this application is either a literal or a template whose
- * only hole is the locale — which is the one value a rendered trail needs to be
- * a real path. Anything else returns `null`, and the corpus case fails naming
- * the file rather than treating an href it could not read as an absent one.
+ * Every crumb href in this application is a literal or a template, and every
+ * hole in one is a plain identifier: the locale, or — since the reception
+ * acknowledgement gained a visit as its parent crumb — a route parameter naming
+ * the record the ancestor page is for. `locale` resolves to `en` because a
+ * rendered trail needs a real locale segment; any other identifier resolves to a
+ * stable placeholder segment, which is all this suite needs of it. What it
+ * asserts about an href is that the ancestor HAS one and that it is not empty;
+ * which record it points at is not a property of the breadcrumb.
+ *
+ * Anything that is not a plain identifier — a call, a member access, a
+ * conditional — still returns `null`, and the corpus case fails naming the file
+ * rather than treating an href it could not read as an absent one. That is the
+ * property this function exists to protect: an unreadable href must never be
+ * silently downgraded into "this crumb is the current page".
  */
 function staticText(node: ts.Expression): string | null {
   if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) return node.text;
   if (ts.isTemplateExpression(node)) {
     let text = node.head.text;
     for (const span of node.templateSpans) {
-      if (!ts.isIdentifier(span.expression) || span.expression.text !== 'locale') return null;
-      text += `en${span.literal.text}`;
+      if (!ts.isIdentifier(span.expression)) return null;
+      text += `${span.expression.text === 'locale' ? 'en' : 'record-id'}${span.literal.text}`;
     }
     return text;
   }

@@ -162,7 +162,7 @@ fact in words did not, which is the gap this revision closes.
 | Source files under the P1-27 ownership gate                            | **71** (43 feature source + 28 route)                              | derived from the gate's own scan roots                                     |
 | Router pages (CRM and Vehicle)                                         | **8**                                                              | command 1                                                                  |
 | Shared-foundation source files changed by the phase or its remediation | **13** named in §5.5                                               | command 1, cross-read against the task register and the remediation record |
-| Web unit and component test files                                      | **81**                                                             | derived                                                                    |
+| Web unit and component test files                                      | **86**                                                             | derived                                                                    |
 | Playwright specification files                                         | **9** (2 anonymous, 7 authenticated)                               | commands 11 and 12 — **not re-measured**, §1.1.1                           |
 | Root CI-contract test files                                            | **36**                                                             | derived                                                                    |
 | CI gate scripts under `scripts/ci`                                     | **48** in the directory, **8** introduced or changed by this phase | derived; the eight are the `scripts/ci` rows of §7.1                       |
@@ -224,12 +224,12 @@ every advance of local `develop` in the sequence above was a fast-forward from
 
 ## 5. Source files
 
-### 5.1 The three trees the P1-27 ownership gate owns — 75 files
+### 5.1 The three trees the P1-27 ownership gate owns — 77 files
 
-`validate:p1-27-frontend` reports **75 files across 3 trees, 0 failures**. Of
+`validate:p1-27-frontend` reports **77 files across 3 trees, 0 failures**. Of
 those, **43** are §5.2 and §5.3 together — the two feature trees — and both
 halves are derived from the trees the gate itself names, so the count follows the
-gate rather than a reader's memory of it. The remaining **32** are the third
+gate rather than a reader's memory of it. The remaining **34** are the third
 canonical tree, `apps/web/src/app/[locale]/(dashboard)`, which this manifest
 tables nowhere: §5.4 lists the eight CRM and Vehicle route pages only, and the
 other twenty-four route files belong to earlier phases or to P1-28 (the Wave D reception check-in routes). They are counted here
@@ -397,7 +397,7 @@ records.
 
 ## 6. Test files
 
-### 6.1 Web unit and component — `apps/web/tests` (81 files, and no case total — `E-03`)
+### 6.1 Web unit and component — `apps/web/tests` (86 files, and no case total — `E-03`)
 
 **`E-03` is closed by DELETING the number, not by correcting it.** The heading
 used to read `(70 files, 1493 cases, 0 failed)`, and before that `(66 files, 1231
@@ -407,14 +407,14 @@ and borrowing its credibility. It drifted exactly as the finding predicted: the
 paragraphs below this heading still said `66` and `1231` while the heading beside
 them said `70` and `1493` — `E-02` returning, in the section written to close it.
 
-`81` is recomputed from the tree on every run, here and in §3, and
+`86` is recomputed from the tree on every run, here and in §3, and
 `p1-27-doc-reconciliation.test.ts` fails if either statement of it disagrees with
 `apps/web/tests`.
 
 **No tier-wide case total is stated anywhere in this document, because none can
 be derived.** A case count is derived by counting `it(` / `test(` call sites in
 comment-stripped source, and that number is only right for a file whose cases are
-all written down. **Twenty-five of the eighty-one files build theirs at runtime**
+all written down. **Twenty-eight of the eighty-six files build theirs at runtime**
 — `it.each` over a table, or an `it(` inside a `for` or an iteration callback —
 so `scripts/ci/check-p1-27-doc-counts.mjs` refuses them rather than certify a
 plausible wrong number: `api-client.test.ts`,
@@ -425,13 +425,15 @@ plausible wrong number: `api-client.test.ts`,
 `operation-contract.test.ts`, `overlays.dom.test.tsx`,
 `p1-27-owner-acceptance.dom.test.tsx`,
 `p1-27-permission-route-binding.dom.test.tsx`,
-`p1-28-appointment-routes.test.ts`, `profile-accessibility.dom.test.tsx`,
-`receptions-contract.test.ts`, `route-permission-binding.test.ts`,
+`p1-28-appointment-routes.test.ts`, `p1-28-reception-routes.test.ts`,
+`profile-accessibility.dom.test.tsx`, `reception-queue.dom.test.tsx`,
+`reception-summary.dom.test.tsx`, `receptions-contract.test.ts`,
+`route-permission-binding.test.ts`,
 `server-vocabularies.test.ts`, `shell.dom.test.tsx`,
 `stylelint-policy.test.ts`, `vehicle-api.test.ts`,
 `vehicle-documents.test.ts`, `vehicle-duplicates.test.ts`,
 `vehicle-party-identity.dom.test.tsx` and
-`write-permission-gating.dom.test.tsx`. A total over 81 files that is unknowable
+`write-permission-gating.dom.test.tsx`. A total over 86 files that is unknowable
 for 25 of them is not a measurement, it is an estimate with a decimal point.
 
 **The derivable half is 50 files, and it is derived per file rather than summed.**
@@ -674,7 +676,7 @@ under-report itself by seven files.
 | `ci-evidence.md`                                  | 275   | Hosted CI, with every value classified and every hosted one naming its run         |
 | `clean-room-evidence.md`                          | 379   | The clean-room record, and the six classes every closing value is sorted into      |
 | `contract-archaeology.md`                         | 416   | What the Backend actually publishes, read before anything was built                |
-| `deliverable-manifest.md`                         | 1039  | This file                                                                          |
+| `deliverable-manifest.md`                         | 1041  | This file                                                                          |
 | `developer-guide.md`                              | 184   | `DOC-002` — the developer half                                                     |
 | `evidence/change-log.md`                          | 1135  | `DOC-002` — the change-log half; its rows are scraped by a test                    |
 | `evidence/evidence-manifest.json`                 | 171   | `QA-005` — a SHA-256 digest of every document in this directory                    |
@@ -959,7 +961,7 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
      an earlier revision put them in the label column and broke two other gates
      whose regexes read the label and the number as adjacent cells. -->
 
-<!-- derived: files apps/web/tests = 81 -->
+<!-- derived: files apps/web/tests = 86 -->
 <!-- derived: files tests/ci = 43 -->
 <!-- derived: files scripts/ci = 48 -->
 <!-- derived: files apps/web/scripts = 4 -->
@@ -970,7 +972,7 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
 <!-- derived: files tests/backend:all = 90 -->
 <!-- derived: files apps/web/src/features/crm = 20 -->
 <!-- derived: files apps/web/src/features/vehicles = 23 -->
-<!-- derived: files p1-27-frontend-gate = 75 -->
+<!-- derived: files p1-27-frontend-gate = 77 -->
 <!-- derived: files p1-27-frontend-gate:trees = 3 -->
 <!-- derived: tracked docs/phase-1/phase-1-27 = 41 -->
 <!-- derived: tracked docs/phase-1/phase-1-27:md = 31 -->
@@ -993,7 +995,7 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
 <!-- derived: lines docs/phase-1/phase-1-27/clean-room-evidence.md = 379 -->
 <!-- derived: lines docs/phase-1/phase-1-27/closure-record.md = 114 -->
 <!-- derived: lines docs/phase-1/phase-1-27/contract-archaeology.md = 416 -->
-<!-- derived: lines docs/phase-1/phase-1-27/deliverable-manifest.md = 1039 -->
+<!-- derived: lines docs/phase-1/phase-1-27/deliverable-manifest.md = 1041 -->
 <!-- derived: lines docs/phase-1/phase-1-27/developer-guide.md = 184 -->
 <!-- derived: lines docs/phase-1/phase-1-27/evidence/change-log.md = 1135 -->
 <!-- derived: lines docs/phase-1/phase-1-27/evidence/evidence-manifest.json = 171 -->

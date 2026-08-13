@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useEffect, useState, useTransition } from 'react';
+import { useCallback, useState, useTransition } from 'react';
 import { INITIAL_REQUEST, type TableRequest } from '@/components/data-table/table-state';
 import { useServerTable, type ServerPage } from '@/components/data-table/use-server-table';
 import { RadioGroupField, SelectField, TextAreaField, TextField } from '@/components/forms/Field';
@@ -230,12 +230,25 @@ export function CheckInStartScreen({
    */
   const vehicleRows = vehicles.response?.rows ?? null;
   const vehiclesLoaded = vehicles.status === 'idle' && vehicleRows !== null;
-  useEffect(() => {
-    if (handoff === null || handoff.vehicle !== 'pending' || !vehiclesLoaded) return;
+  /*
+   * Adjusted DURING RENDER, not in an effect.
+   *
+   * This is React's documented shape for deriving state when an input changes,
+   * and it is what `react-hooks/set-state-in-effect` exists to push code
+   * towards: an effect that calls `setState` synchronously renders once with
+   * the stale value, commits it, and renders again — a cascading render on a
+   * path the operator is watching. Updating during render re-runs this
+   * component before anything is committed, so the pre-selection and the notice
+   * appear together in the first painted frame.
+   *
+   * It still runs exactly once: settling the verdict moves `handoff.vehicle`
+   * off `pending`, which is the condition that got us here.
+   */
+  if (handoff !== null && handoff.vehicle === 'pending' && vehiclesLoaded) {
     const match = (vehicleRows ?? []).find((row) => row.vehicleId === handoff.vehicleId) ?? null;
     if (match !== null) setWalkInVehicle(match);
     setHandoff({ ...handoff, vehicle: match === null ? 'not-listed' : 'selected' });
-  }, [handoff, vehiclesLoaded, vehicleRows]);
+  }
 
   /* --- the open-visit lookup (resume) -------------------------------------- */
 

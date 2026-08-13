@@ -13,6 +13,7 @@ import { readReception } from '@/features/receptions/api';
 import { CHECK_IN_STEPS } from '@/features/receptions/check-in/steps';
 import { CheckInWizardShell } from '@/features/receptions/components/CheckInWizardShell';
 import { RECEPTION_PERMISSIONS } from '@/features/receptions/receptions-contract';
+import { WORK_ORDER_READ_PERMISSION } from '@/features/receptions/work-order-contract';
 import { isLocale } from '@/i18n/config';
 import { getMessages } from '@/i18n/get-messages';
 import { pageMetadata } from '@/lib/page-metadata';
@@ -58,7 +59,7 @@ export default async function CheckInWizardPage({
         messages={messages}
         titleKey="receptions.wizard.title"
         crumbs={[
-          { labelKey: 'nav.receptions', href: `/${locale}/receptions/check-in` },
+          { labelKey: 'nav.receptions', href: `/${locale}/receptions` },
           { labelKey: 'receptions.wizard.title' },
         ]}
       />
@@ -110,6 +111,10 @@ export default async function CheckInWizardPage({
         verifyAuthorizations: holds(session.permissions, RECEPTION_PERMISSIONS.authorizationVerify),
         readCustomers: holds(session.permissions, CRM_PERMISSIONS.customerRead),
         readVehicles: holds(session.permissions, VEHICLE_PERMISSIONS.vehicleRead),
+        approveReceptions: holds(session.permissions, RECEPTION_PERMISSIONS.approve),
+        convertReceptions: holds(session.permissions, RECEPTION_PERMISSIONS.convert),
+        closeReceptions: holds(session.permissions, RECEPTION_PERMISSIONS.close),
+        readWorkOrders: holds(session.permissions, WORK_ORDER_READ_PERMISSION),
       }}
     />
   );

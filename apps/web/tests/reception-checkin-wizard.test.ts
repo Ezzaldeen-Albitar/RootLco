@@ -261,10 +261,15 @@ describe('activeStep', () => {
 });
 
 describe('the step registry — the typed extension point Waves E build on', () => {
-  it('registers the Wave D steps, in presentation order', () => {
+  it('registers the Wave D and Wave F/G steps, in presentation order', () => {
+    // The closing pair comes last, and in this order for a reason the graph
+    // decides rather than a preference: conversion is legal only from
+    // `authorized`, which the summary's approval is what reaches.
     expect(CHECK_IN_STEPS.map((step) => step.id)).toEqual([
       'confirm-identities',
       'parties-and-authorization',
+      'summary-and-approval',
+      'convert-to-work-order',
     ]);
   });
 
