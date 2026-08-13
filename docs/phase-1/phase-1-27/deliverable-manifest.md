@@ -226,7 +226,7 @@ every advance of local `develop` in the sequence above was a fast-forward from
 
 ### 5.1 The five trees the P1-27 ownership gate owns — 120 files
 
-`validate:p1-27-frontend` reports **120 files across 5 trees, 0 failures**. Of
+`validate:p1-27-frontend` reports **122 files across 5 trees, 0 failures**. Of
 those, **43** are §5.2 and §5.3 together — the two feature trees — and both
 halves are derived from the trees the gate itself names, so the count follows the
 gate rather than a reader's memory of it. The next **34** are the third
@@ -407,7 +407,7 @@ records.
 
 ## 6. Test files
 
-### 6.1 Web unit and component — `apps/web/tests` (93 files, and no case total — `E-03`)
+### 6.1 Web unit and component — `apps/web/tests` (98 files, and no case total — `E-03`)
 
 **`E-03` is closed by DELETING the number, not by correcting it.** The heading
 used to read `(70 files, 1493 cases, 0 failed)`, and before that `(66 files, 1231
