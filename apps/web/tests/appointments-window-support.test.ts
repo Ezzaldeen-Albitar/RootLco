@@ -44,8 +44,11 @@ describe('composeInstant', () => {
     expect(composed).not.toBeNull();
     expect(hasExplicitUtcOffset(composed as string)).toBe(true);
     expect(validateInstant(composed as string)).toBe('ok');
-    // Seconds are always present — the list schema refuses their absence.
-    expect(composed).toMatch(/^2026-08-21T09:00:00[+-Z]/);
+    // Seconds are always present — the list schema refuses their absence, and
+    // a zone marker follows them. `[+-Z]` would be a RANGE from `+` to `Z`,
+    // which accepts every digit and capital letter between them: written that
+    // way this assertion also passed on `…:005`.
+    expect(composed).toMatch(/^2026-08-21T09:00:00(?:Z|[+-])/);
   });
 
   it('denotes the same wall-clock moment the environment itself resolves', () => {
