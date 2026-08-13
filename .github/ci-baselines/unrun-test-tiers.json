@@ -14,6 +14,7 @@
       "apps/web/tests/e2e/authenticated/isolation.spec.ts",
       "apps/web/tests/e2e/authenticated/accessibility.spec.ts",
       "apps/web/tests/e2e/authenticated/crm-and-vehicles.spec.ts",
+      "apps/web/tests/e2e/authenticated/appointments-and-receptions.spec.ts",
       "apps/web/tests/e2e/authenticated/administration.spec.ts",
       "apps/web/tests/e2e/authenticated/shared-ux.spec.ts",
       "apps/web/tests/e2e/authenticated/drawer-and-restore.spec.ts"
