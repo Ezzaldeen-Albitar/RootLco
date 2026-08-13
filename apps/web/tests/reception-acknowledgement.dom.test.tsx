@@ -87,12 +87,21 @@ const FINDING = {
   vehicleZone: 'front-left',
 };
 
+/** One section as a SUCCEEDED read. Overrides go per section, not per field. */
+function ok(rows: readonly unknown[], hasMore = false) {
+  return { status: 'ok' as const, rows, hasMore, correlationId: null };
+}
+
+/** One section as a FAILED read: no rows, and a reference to chase. */
+function failed(status: 'denied' | 'expired' | 'unavailable' | 'error', correlationId: string) {
+  return { status, rows: [], hasMore: false, correlationId };
+}
+
 function sections(over: Record<string, unknown> = {}) {
   return {
-    parties: [PARTY],
-    authorizations: [AUTHORIZATION],
-    evidence: [COMPLAINT, FINDING],
-    truncated: { parties: false, authorizations: false, evidence: false },
+    parties: ok([PARTY]),
+    authorizations: ok([AUTHORIZATION]),
+    evidence: ok([COMPLAINT, FINDING]),
     ...over,
   } as Parameters<typeof AcknowledgementDocument>[0]['sections'];
 }
@@ -186,16 +195,53 @@ describe('what the sheet refuses to print', () => {
   });
 });
 
-describe('what the sheet says when a section is empty or clipped', () => {
+describe('what the sheet says when a section is empty, unreadable or clipped', () => {
   it('states an empty section rather than printing a blank block', () => {
-    renderSheet({ parties: [], authorizations: [], evidence: [] });
+    renderSheet({ parties: ok([]), authorizations: ok([]), evidence: ok([]) });
     expect(screen.getByText(EN['receptions.summary.partiesEmpty'] as string)).toBeVisible();
     expect(screen.getByText(EN['receptions.summary.authorizationsEmpty'] as string)).toBeVisible();
     expect(screen.getByText(EN['receptions.summary.evidenceEmpty'] as string)).toBeVisible();
   });
 
+  it('prints a FAILED read as a failed read, never as an empty section (`F1`)', () => {
+    /*
+     * The defect this replaces: a section read that failed answers `rows: []`,
+     * the sheet took that for an empty section, and a customer handover document
+     * asserted *no records are recorded on this visit* about records nobody had
+     * been able to look at.
+     *
+     * Each failed section must therefore say it could not be read AND carry its
+     * correlation reference, and must NOT print the empty-section sentence.
+     */
+    renderSheet({
+      parties: failed('unavailable', 'corr-parties'),
+      authorizations: failed('error', 'corr-auth'),
+      evidence: failed('denied', 'corr-evidence'),
+    });
+
+    expect(
+      screen.getAllByText(EN['receptions.acknowledgement.sectionUnreadable'] as string).length
+    ).toBe(3);
+    for (const reference of ['corr-parties', 'corr-auth', 'corr-evidence']) {
+      expect(screen.getByText(reference)).toBeVisible();
+    }
+
+    // The false absence itself, asserted gone.
+    expect(screen.queryByText(EN['receptions.summary.partiesEmpty'] as string)).toBeNull();
+    expect(screen.queryByText(EN['receptions.summary.authorizationsEmpty'] as string)).toBeNull();
+    expect(screen.queryByText(EN['receptions.summary.evidenceEmpty'] as string)).toBeNull();
+  });
+
+  it('withholds the truncation note on a failed read — `hasMore: false` is not an answer', () => {
+    renderSheet({ evidence: failed('unavailable', 'corr-evidence') });
+    expect(
+      screen.getByText(EN['receptions.acknowledgement.sectionUnreadable'] as string)
+    ).toBeVisible();
+    expect(screen.queryByText(EN['receptions.acknowledgement.truncated'] as string)).toBeNull();
+  });
+
   it('says so when one printed page is not the whole section', () => {
-    renderSheet({ truncated: { parties: false, authorizations: false, evidence: true } });
+    renderSheet({ evidence: ok([COMPLAINT, FINDING], true) });
     expect(screen.getByText(EN['receptions.acknowledgement.truncated'] as string)).toBeVisible();
   });
 

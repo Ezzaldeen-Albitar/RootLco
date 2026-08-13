@@ -21,7 +21,7 @@ import type { MediaSurface } from './media-decision';
  * ## No control, of any kind
  *
  * No file input, no drag target, no camera affordance, and no disabled button
- * standing in for one. `tests/p1-28-reception-media.test.tsx` reads this file's
+ * standing in for one. `tests/p1-28-reception-media.test.ts` reads this file's
  * own source and fails on `<button`, `<input`, `<form`, `<a `, `<video`,
  * `<canvas`, `onClick` or `disabled` — the same shape of proof P1-27 uses for
  * the vehicle media section, because a rendered-DOM assertion alone cannot see

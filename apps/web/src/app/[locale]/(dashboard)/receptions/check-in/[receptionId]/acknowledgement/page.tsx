@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { INITIAL_REQUEST } from '@/components/data-table/table-state';
+import type { ServerPageStatus } from '@/components/data-table/use-server-table';
 import { PageBody, PageHeader } from '@/components/shell/PageHeader';
 import {
   ErrorState,
@@ -35,11 +36,16 @@ import { pageMetadata } from '@/lib/page-metadata';
  *
  * Without the visit there is no document, so a failed detail read is rendered as
  * the failure it is, one branch per outcome, in the same order as the wizard
- * route beside it. A failed SECTION read is different: the sheet still exists
- * and the section is printed as empty with the run's truncation note absent —
- * the alternative is refusing to print a handover document because one of four
- * lists was unavailable. Each section carries its own `hasMore`, which the
- * document states on the sheet.
+ * route beside it. A failed SECTION read is different: the sheet still exists,
+ * because the alternative is refusing to print a handover document because one
+ * of four lists was unavailable.
+ *
+ * **But it is printed as a failed read, never as an empty section.** Each
+ * section's `status` and `correlationId` travel to the document alongside its
+ * rows. This is `F1`: a failure arrives as `rows: []`, the page used to pass the
+ * rows alone, and the sheet then printed *no records are recorded on this visit*
+ * — an absence nobody observed, asserted on the copy a customer signs and takes
+ * away. Each section also carries its own `hasMore`, which the document states.
  *
  * The reads are issued together rather than in sequence: they are independent
  * and the page has nothing to decide between them.
@@ -109,20 +115,36 @@ export default async function AcknowledgementPage({
     listConditionEvidence(receptionId, undefined, request, null),
   ]);
 
+  /*
+   * The OUTCOME travels with the rows, not just the rows.
+   *
+   * A failed section read answers `rows: []`, which is indistinguishable from an
+   * empty section unless the status goes with it — and the document prints the
+   * two differently, because "nothing is recorded" is an observation and a
+   * failed read is not one. The correlation reference goes too, so the operator
+   * holding an incomplete sheet has the one identifier that can be chased.
+   */
+  const section = <Row,>(page: {
+    readonly status: ServerPageStatus;
+    readonly rows: readonly Row[];
+    readonly hasMore: boolean;
+    readonly correlationId: string | null;
+  }) => ({
+    status: page.status,
+    rows: page.rows,
+    hasMore: page.hasMore,
+    correlationId: page.correlationId,
+  });
+
   return frame(
     <AcknowledgementDocument
       locale={locale}
       messages={messages}
       detail={detail.data}
       sections={{
-        parties: parties.rows,
-        authorizations: authorizations.rows,
-        evidence: evidence.rows,
-        truncated: {
-          parties: parties.hasMore,
-          authorizations: authorizations.hasMore,
-          evidence: evidence.hasMore,
-        },
+        parties: section(parties),
+        authorizations: section(authorizations),
+        evidence: section(evidence),
       }}
     />
   );

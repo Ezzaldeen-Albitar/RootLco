@@ -512,10 +512,104 @@ describe('the damage step (FE-012)', () => {
       vehicleZone: 'rear bumper',
     });
     // FRACTIONS of the map, not pixels — which is why a mark survives a resize.
-    expect(input['coordX']).toBeGreaterThanOrEqual(0);
-    expect(input['coordX']).toBeLessThanOrEqual(1);
-    expect(input['coordY']).toBeGreaterThanOrEqual(0);
-    expect(input['coordY']).toBeLessThanOrEqual(1);
+    // The centre is the documented default, asserted EXACTLY: a bounds check
+    // alone cannot fail, because every value the form can hold is in bounds.
+    expect(input['coordX']).toBe(0.5);
+    expect(input['coordY']).toBe(0.5);
+  });
+
+  it('submits the coordinate the operator TYPED, to the digit — `0.125` is not `0.13`', async () => {
+    /*
+     * `W-E-01`, a silent wrong write. The two fields rendered
+     * `formatCoordinate(value)` as their own `value`, so a controlled input
+     * rewrote `0.125` to `0.13` under the operator's cursor while the draft
+     * carried `0.125` — the screen and the record disagreeing about where the
+     * damage is, on a document a customer signs.
+     *
+     * The contract bounds the RANGE (`0..1`), never the scale, so the assertion
+     * is on the exact number: a bounds check passes for both readings and is
+     * therefore incapable of catching this.
+     */
+    evidenceByKind({ damage_map: [DAMAGE_MAP] });
+    recordConditionEvidence.mockResolvedValue(recorded('mark-2', 'damage_mark'));
+    const user = userEvent.setup();
+    renderLtr(<DamageMapStep {...stepProps()} />);
+
+    const form = await screen.findByRole('form', { name: EN['receptions.damage.formLabel']! });
+    await user.selectOptions(
+      within(form).getByLabelText(new RegExp(EN['receptions.damage.map']!)),
+      'map-1'
+    );
+    await user.selectOptions(
+      within(form).getByLabelText(new RegExp(EN['receptions.damage.markType']!)),
+      'dent'
+    );
+    await user.type(
+      within(form).getByLabelText(new RegExp(EN['receptions.finding.zone']!)),
+      'rear bumper'
+    );
+
+    const xField = within(form).getByLabelText(new RegExp(EN['receptions.damage.coordX']!));
+    const yField = within(form).getByLabelText(new RegExp(EN['receptions.damage.coordY']!));
+    await user.clear(xField);
+    await user.type(xField, '0.125');
+    await user.clear(yField);
+    await user.type(yField, '0.3333');
+
+    // What the operator sees is their own text, not a rounded copy of it.
+    expect(xField).toHaveValue(0.125);
+    expect(yField).toHaveValue(0.3333);
+
+    await user.click(within(form).getByRole('button', { name: EN['receptions.damage.record']! }));
+
+    await waitFor(() => expect(recordConditionEvidence).toHaveBeenCalled());
+    const typed = recordConditionEvidence.mock.calls.at(-1)![1] as Record<string, unknown>;
+    expect(typed['coordX']).toBe(0.125);
+    expect(typed['coordY']).toBe(0.3333);
+  });
+
+  it('keeps an out-of-range keystroke on screen, and refuses a blank coordinate BY NAME', async () => {
+    /*
+     * The old field swallowed anything `parseCoordinate` rejected: the operator
+     * typed `5`, the box reverted to the previous number, and nothing said why.
+     * The text is theirs now, so `5` stays visible — `min`/`max` are on the
+     * control, so the browser itself refuses that one.
+     *
+     * A blank coordinate is the case no native constraint covers (`required` is
+     * announced via `aria-required`, not enforced), so the client guard is what
+     * answers, and it answers by NAME rather than by sending an incomplete mark.
+     */
+    evidenceByKind({ damage_map: [DAMAGE_MAP] });
+    const user = userEvent.setup();
+    renderLtr(<DamageMapStep {...stepProps()} />);
+
+    const form = await screen.findByRole('form', { name: EN['receptions.damage.formLabel']! });
+    await user.selectOptions(
+      within(form).getByLabelText(new RegExp(EN['receptions.damage.map']!)),
+      'map-1'
+    );
+    await user.selectOptions(
+      within(form).getByLabelText(new RegExp(EN['receptions.damage.markType']!)),
+      'dent'
+    );
+    await user.type(
+      within(form).getByLabelText(new RegExp(EN['receptions.finding.zone']!)),
+      'rear bumper'
+    );
+
+    const xField = within(form).getByLabelText(new RegExp(EN['receptions.damage.coordX']!));
+    await user.clear(xField);
+    await user.type(xField, '5');
+    expect(xField).toHaveValue(5);
+    expect((xField as HTMLInputElement).validity.rangeOverflow).toBe(true);
+
+    await user.clear(xField);
+    await user.click(within(form).getByRole('button', { name: EN['receptions.damage.record']! }));
+
+    expect(recordConditionEvidence).not.toHaveBeenCalled();
+    expect(
+      await within(form).findByText(EN['receptions.damage.error.coordRange']!)
+    ).toBeInTheDocument();
   });
 
   it('places the mark from the KEYBOARD, so the diagram is not a pointer-only input', async () => {

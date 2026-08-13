@@ -315,7 +315,7 @@ It must not enter `apps/api/src/**`, `supabase/**`, historical migrations, the
 database schema, or Backend route/authorization/OpenAPI implementation.
 
 Frontend work lives in `apps/web/src/features/appointments/**`,
-`apps/web/src/features/reception/**` and
+`apps/web/src/features/receptions/**` and
 `apps/web/src/app/[locale]/(dashboard)/**`.
 
 Required at merge: `APPS_API_EXECUTABLE_DIFF=0`, `SUPABASE_DIFF=0`,

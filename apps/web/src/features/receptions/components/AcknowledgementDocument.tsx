@@ -1,4 +1,5 @@
 import { BrandMark } from '@/components/brand/BrandMark';
+import type { ServerPageStatus } from '@/components/data-table/use-server-table';
 import { PrintDocument, PrintTable } from '@/components/print/PrintDocument';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
@@ -56,16 +57,30 @@ import { hasRegisteredMedia, isCustomerReported } from '../check-in/closure';
  *     the document prints the identifier and says what it is.
  */
 
+/**
+ * One section of the sheet, WITH the outcome of the read that produced it.
+ *
+ * The status travels because an empty list and a failed read are different
+ * facts and print differently. They used to be the same value here — the page
+ * passed `rows` alone, a failure arrives as `rows: []`, and the sheet printed
+ * *nothing is recorded on this visit*: an observed ABSENCE, asserted on a
+ * document the customer signs and takes away, about records that may well
+ * exist. A read that did not happen is now said to have not happened, with its
+ * correlation reference, which is the only honest thing the sheet can print.
+ */
+export interface AcknowledgementSection<Row> {
+  readonly status: ServerPageStatus;
+  readonly rows: readonly Row[];
+  /** True when the read reported more rows than this one page carries. */
+  readonly hasMore: boolean;
+  /** The failed read's reference, for the operator who has to chase it. */
+  readonly correlationId: string | null;
+}
+
 export interface AcknowledgementSections {
-  readonly parties: readonly PartyRoleEntry[];
-  readonly authorizations: readonly AuthorizationEntry[];
-  readonly evidence: readonly ConditionEvidenceEntry[];
-  /** True when a section's read reported more rows than the page carries. */
-  readonly truncated: {
-    readonly parties: boolean;
-    readonly authorizations: boolean;
-    readonly evidence: boolean;
-  };
+  readonly parties: AcknowledgementSection<PartyRoleEntry>;
+  readonly authorizations: AcknowledgementSection<AuthorizationEntry>;
+  readonly evidence: AcknowledgementSection<ConditionEvidenceEntry>;
 }
 
 export function AcknowledgementDocument({
@@ -140,7 +155,9 @@ export function AcknowledgementDocument({
         <h2 id="acknowledgement-parties" className="mb-2 text-section-title font-medium">
           {translate(messages, 'receptions.summary.partiesHeading')}
         </h2>
-        {sections.parties.length === 0 ? (
+        {sections.parties.status !== 'ok' ? (
+          <Unreadable locale={locale} messages={messages} section={sections.parties} />
+        ) : sections.parties.rows.length === 0 ? (
           <p lang={locale}>{translate(messages, 'receptions.summary.partiesEmpty')}</p>
         ) : (
           <PrintTable
@@ -149,21 +166,23 @@ export function AcknowledgementDocument({
               translate(messages, 'receptions.parties.role'),
               translate(messages, 'receptions.acknowledgement.columnFrom'),
             ]}
-            rows={sections.parties.map((row) => [
+            rows={sections.parties.rows.map((row) => [
               row.partnerDisplayName ?? translate(messages, 'receptions.checkIn.partyUnavailable'),
               translateDynamic(messages, `receptions.partyRole.${row.relationshipRole}`),
               <bdi key={row.id}>{formatDateTime(row.validFrom, locale)}</bdi>,
             ])}
           />
         )}
-        <Truncation locale={locale} messages={messages} truncated={sections.truncated.parties} />
+        <Truncation locale={locale} messages={messages} section={sections.parties} />
       </section>
 
       <section aria-labelledby="acknowledgement-authorizations" className="mb-6">
         <h2 id="acknowledgement-authorizations" className="mb-2 text-section-title font-medium">
           {translate(messages, 'receptions.summary.authorizationsHeading')}
         </h2>
-        {sections.authorizations.length === 0 ? (
+        {sections.authorizations.status !== 'ok' ? (
+          <Unreadable locale={locale} messages={messages} section={sections.authorizations} />
+        ) : sections.authorizations.rows.length === 0 ? (
           <p lang={locale}>{translate(messages, 'receptions.summary.authorizationsEmpty')}</p>
         ) : (
           <PrintTable
@@ -172,7 +191,7 @@ export function AcknowledgementDocument({
               translate(messages, 'receptions.authorization.decision'),
               translate(messages, 'receptions.acknowledgement.columnRecord'),
             ]}
-            rows={sections.authorizations.map((row) => [
+            rows={sections.authorizations.rows.map((row) => [
               row.partnerDisplayName ?? translate(messages, 'receptions.checkIn.partyUnavailable'),
               translate(
                 messages,
@@ -189,11 +208,7 @@ export function AcknowledgementDocument({
             ])}
           />
         )}
-        <Truncation
-          locale={locale}
-          messages={messages}
-          truncated={sections.truncated.authorizations}
-        />
+        <Truncation locale={locale} messages={messages} section={sections.authorizations} />
       </section>
 
       <section aria-labelledby="acknowledgement-evidence">
@@ -203,7 +218,9 @@ export function AcknowledgementDocument({
         <p className="mb-2" lang={locale}>
           {translate(messages, 'receptions.summary.notVerified')}
         </p>
-        {sections.evidence.length === 0 ? (
+        {sections.evidence.status !== 'ok' ? (
+          <Unreadable locale={locale} messages={messages} section={sections.evidence} />
+        ) : sections.evidence.rows.length === 0 ? (
           <p lang={locale}>{translate(messages, 'receptions.summary.evidenceEmpty')}</p>
         ) : (
           <PrintTable
@@ -213,7 +230,7 @@ export function AcknowledgementDocument({
               translate(messages, 'receptions.acknowledgement.columnMedia'),
               translate(messages, 'receptions.acknowledgement.columnRecordedAt'),
             ]}
-            rows={sections.evidence.map((row) => [
+            rows={sections.evidence.rows.map((row) => [
               translateDynamic(messages, `receptions.evidenceKind.${row.kind}`),
               translate(
                 messages,
@@ -232,7 +249,7 @@ export function AcknowledgementDocument({
         <p className="mt-2 text-supporting text-text-muted" lang={locale}>
           {translate(messages, 'receptions.summary.complaintWordsRestricted')}
         </p>
-        <Truncation locale={locale} messages={messages} truncated={sections.truncated.evidence} />
+        <Truncation locale={locale} messages={messages} section={sections.evidence} />
       </section>
     </PrintDocument>
   );
@@ -248,23 +265,62 @@ function Fact({ label, children }: { readonly label: string; readonly children: 
 }
 
 /**
+ * A section whose read FAILED, said in place of the rows it would have carried.
+ *
+ * This is the whole point of carrying the status: the alternative printed
+ * *nothing is recorded on this visit* — an absence the sheet never observed —
+ * on the copy a customer signs. What the reader gets instead is the truth
+ * (this section could not be read) and the reference that identifies the failed
+ * request, so the gap is chaseable rather than mistaken for a fact.
+ *
+ * Every failure prints the same sentence. A denial, an expiry and an outage are
+ * different causes with the same consequence for this sheet — the section is
+ * missing — and naming the cause on a customer's copy would state the
+ * workshop's internal condition to the wrong reader.
+ */
+function Unreadable({
+  locale,
+  messages,
+  section,
+}: {
+  readonly locale: Locale;
+  readonly messages: Messages;
+  readonly section: AcknowledgementSection<unknown>;
+}) {
+  return (
+    <p lang={locale}>
+      {translate(messages, 'receptions.acknowledgement.sectionUnreadable')}
+      {section.correlationId !== null ? (
+        <code className="ms-2 font-mono text-caption" dir="ltr">
+          {section.correlationId}
+        </code>
+      ) : null}
+    </p>
+  );
+}
+
+/**
  * Truncation, said rather than hidden.
  *
  * Each section prints ONE keyset page. A document that silently stopped at the
  * page boundary would be a customer's copy missing records nobody mentioned, so
  * when the read reports more, the sheet says so and points at the screen that
  * pages.
+ *
+ * A failed read reports `hasMore: false`, which is not a claim that there is no
+ * more — it is the absence of an answer. `Unreadable` has already said so, so
+ * this note is withheld rather than printed as a second, quieter falsehood.
  */
 function Truncation({
   locale,
   messages,
-  truncated,
+  section,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
-  readonly truncated: boolean;
+  readonly section: AcknowledgementSection<unknown>;
 }) {
-  if (!truncated) return null;
+  if (section.status !== 'ok' || !section.hasMore) return null;
   return (
     <p className="mt-2 text-supporting text-text-muted" lang={locale}>
       {translate(messages, 'receptions.acknowledgement.truncated')}

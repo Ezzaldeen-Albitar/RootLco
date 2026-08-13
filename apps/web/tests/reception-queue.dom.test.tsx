@@ -239,6 +239,26 @@ describe('the terminal-exit affordance follows the transition graph', () => {
     expect(release).toHaveAttribute('href', '/en/receptions/check-in/rv-1');
   });
 
+  it('is LABELLED as navigation, in both catalogues — it shares an href and performs no write', () => {
+    /*
+     * `F2`. The label read "End the visit and release the vehicle" while the
+     * href was the row's own visit — the SAME destination as "Open the visit"
+     * beside it. A link that names a write it cannot perform is the mislabelling
+     * this phase rules out permanently, so the label is pinned here in both
+     * languages rather than left to prose.
+     */
+    for (const catalogue of [EN, AR]) {
+      const label = catalogue['receptions.queue.releaseVehicle'] as string;
+      expect(label).toBeTruthy();
+      for (const claim of ['release', 'الإفراج']) {
+        expect(label.toLowerCase()).not.toContain(claim.toLowerCase());
+      }
+    }
+    // The English label states navigation, not a command.
+    expect(EN['receptions.queue.releaseVehicle']).toBe('Open the visit to end it');
+    expect(AR['receptions.queue.releaseVehicle']).toBe('فتح الزيارة لإنهائها');
+  });
+
   it('links every row to its visit and to its acknowledgement', async () => {
     const user = userEvent.setup();
     renderQueue();

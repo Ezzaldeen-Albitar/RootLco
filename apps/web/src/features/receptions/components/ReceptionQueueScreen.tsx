@@ -371,8 +371,16 @@ function QueueResults({
                 href={`/${locale}/receptions/check-in/${row.id}`}
                 className="text-primary underline-offset-2 hover:underline focus-visible:outline focus-visible:outline-2"
               >
-                {/* Labelled as what it does: it opens the visit where the
-                    guarded close is taken against that visit's own version. */}
+                {/*
+                 * Labelled as NAVIGATION, because that is all it is: the href is
+                 * the row's own visit, the same destination as "Open the visit"
+                 * beside it, and no release happens from the board.
+                 *
+                 * It read "End the visit and release the vehicle" (`F2`) — a
+                 * link promising a write it cannot perform. The label now says
+                 * where it goes and what can be done there; the guarded close is
+                 * taken on the visit, against that visit's own version (QA-004).
+                 */}
                 {translate(messages, 'receptions.queue.releaseVehicle')}
               </Link>
             ) : null}

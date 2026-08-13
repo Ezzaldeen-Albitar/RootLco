@@ -257,9 +257,19 @@ describe('the acknowledgement route', () => {
     expect(listPartyRoles).not.toHaveBeenCalled();
   });
 
-  it('still prints the sheet when ONE section read fails', async () => {
-    // A handover document refused because one of four lists was unavailable is
-    // a worse answer than a sheet with an empty section.
+  it('still prints the sheet when ONE section read fails, and hands the document its FAILURE', async () => {
+    /*
+     * `F1`. A handover document refused because one of four lists was
+     * unavailable is a worse answer than a sheet with a missing section — but
+     * the sheet must know the section is missing rather than empty.
+     *
+     * This assertion used to be `expect(sections.evidence).toEqual([])`, which
+     * pinned exactly the defect: the route passed the rows alone, so a failed
+     * read reached the document as an empty list and printed as *no evidence is
+     * recorded on this visit* — an absence nobody observed, on a document a
+     * customer signs. The status and the correlation reference now travel with
+     * the rows, and `AcknowledgementDocument` prints the difference.
+     */
     PERMISSIONS = [RECEPTION_PERMISSIONS.read];
     listConditionEvidence.mockResolvedValue({
       status: 'error',
@@ -269,9 +279,24 @@ describe('the acknowledgement route', () => {
       correlationId: 'cid-500',
     });
     const tree = await AcknowledgementPage({ params });
-    const sections = findProps(tree, 'sections')?.['sections'] as {
-      readonly evidence: readonly unknown[];
-    };
-    expect(sections.evidence).toEqual([]);
+    const sections = findProps(tree, 'sections')?.['sections'] as Record<
+      string,
+      {
+        readonly status: string;
+        readonly rows: readonly unknown[];
+        readonly correlationId: unknown;
+      }
+    >;
+
+    // The sheet is still printed.
+    expect(sections).not.toBeUndefined();
+    expect(sections['evidence']?.status).toBe('error');
+    expect(sections['evidence']?.rows).toEqual([]);
+    expect(sections['evidence']?.correlationId).toBe('cid-500');
+
+    // The sections that DID answer are unaffected: one failed read does not
+    // turn the whole sheet into a failure.
+    expect(sections['parties']?.status).toBe('ok');
+    expect(sections['authorizations']?.status).toBe('ok');
   });
 });

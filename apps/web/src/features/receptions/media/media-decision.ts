@@ -20,7 +20,7 @@
  *     best state of any registered file is therefore **"registered, pending,
  *     never downloadable"** (`reception-media-checklist.md:208-210`).
  *   - The `no-upload-path` and `no-invented-media-limit` gate rules
- *     (`scripts/ci/check-p1-27-frontend.mjs:558-711`) refuse capture code and
+ *     (the `RULES` table of `scripts/ci/check-p1-27-frontend.mjs`) refuse capture code and
  *     invented ceilings while the decision is open.
  *
  * So what ships is the NOTICE: the operator is told, where they would have
@@ -35,7 +35,7 @@
  * and a disabled control is the single most likely thing for a later commit to
  * enable. There is no control here at all — the P1-27 vehicle-media surface
  * settled the same question the same way (`documents-contract.ts`), and
- * `tests/p1-28-reception-media.test.tsx` reads the component's own source to
+ * `tests/p1-28-reception-media.test.ts` reads the component's own source to
  * prove no control crept back in.
  *
  * ## Why it is shared
