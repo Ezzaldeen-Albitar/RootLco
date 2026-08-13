@@ -71,6 +71,10 @@ for (const [tier, port] of [
     refusals.push({ tier, port, info });
     continue;
   }
+  // Naming the mode being stopped, because "I stopped it" and "I stopped the
+  // one I thought I was looking at" are different claims, and both modes serve
+  // on the same two ports.
+  console.log(`${tier}: stopping the ${info.mode ?? 'unrecognised-mode'} server on port ${port}.`);
   // The listener AND the `next dev` parent, plus the launcher that owns both if
   // it is still alive — stopping the parent alone can orphan the listener.
   for (const pid of [info.pid, info.ownerPid]) {

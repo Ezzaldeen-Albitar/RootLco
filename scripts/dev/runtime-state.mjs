@@ -18,8 +18,18 @@
  */
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { MODES, isMode } from './launch-mode.mjs';
 
-export const STATE_SCHEMA = 2;
+/**
+ * Schema 3 added `mode`.
+ *
+ * Bumped rather than added quietly. A schema-2 file carries no mode at all, and
+ * a reader that accepted it would print `undefined` where the answer to "which
+ * mode is this stack" belongs — which is the one question this field exists to
+ * answer. Reported as upgradeable instead: `dev:status` says so and the adopt
+ * path rewrites it.
+ */
+export const STATE_SCHEMA = 3;
 export const LAUNCHER_ID = 'rootlco-dev';
 
 /**
@@ -81,11 +91,24 @@ export function clearState(file) {
 /**
  * The record the launcher writes. Named so a reader of the file can tell a
  * spawned stack from an adopted one without reading this source.
+ *
+ * `mode` is validated rather than accepted. A typo recorded here would be a
+ * WRONG answer to "which mode is running" rather than a missing one, and a
+ * wrong answer is what cost this phase a false 401 diagnosis in the first
+ * place. Refusing to write the record is the loud failure; writing
+ * `"prodcution"` would be the quiet one.
  */
-export function buildState({ checkout, api, web, origin, launcherPid }) {
+export function buildState({ checkout, api, web, origin, launcherPid, mode }) {
+  if (!isMode(mode)) {
+    throw new Error(
+      `refusing to record launch mode ${JSON.stringify(mode)} in the runtime state — ` +
+        `expected one of ${MODES.join(', ')}`
+    );
+  }
   return {
     checkout,
     launcherPid: launcherPid ?? null,
+    mode,
     startedAt: new Date().toISOString(),
     api: {
       pid: api.pid,

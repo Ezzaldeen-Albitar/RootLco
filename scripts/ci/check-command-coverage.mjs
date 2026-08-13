@@ -343,6 +343,19 @@ export const REGISTER = Object.freeze([
     tier: 'interactive',
     why: 'starts and stops real servers to prove two dev:all runs cannot duplicate the stack',
   },
+  {
+    name: 'acceptance:serve',
+    owner: ROOT,
+    tier: 'interactive',
+    // The Owner acceptance stack, and the reason it cannot be `next dev`: a
+    // development server compiles each route on first request, and a route
+    // bundle compiled without having run the API's IAM composition holds an
+    // unconfigured authenticator that refuses a valid bearer token. Measured
+    // twice — 200 on /receptions while /vehicles and /work-orders answered 401
+    // in the same process, with a different subset the second time — and every
+    // one of them answered 200 on a production build of the same tree.
+    why: 'builds both workspaces and serves them with next start: the Owner acceptance stack',
+  },
   // The Owner-acceptance tooling is `interactive` for the same reason `dev:*`
   // is: it needs a running local Supabase and refuses every other target, so a
   // hosted runner could not execute it even if a workflow asked. Requiring it

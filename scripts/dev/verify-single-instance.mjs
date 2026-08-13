@@ -2,10 +2,20 @@
 /**
  * Proves the single-instance contract against the real machine.
  *
- *     npm run dev:verify-single-instance
+ *     npm run dev:verify-single-instance                  development
+ *     npm run dev:verify-single-instance -- --production  production
  *
  * Opt-in, because it starts and stops the local servers. It touches no
  * database, no fixtures and no credentials — only processes and ports.
+ *
+ * The `--production` run is the SAME contract against the acceptance mode, and
+ * it has to be run separately rather than inferred from the development one:
+ * the single-instance guarantee is about how the launcher identifies a running
+ * server, and a production stack's command line is `next start`, not `next dev`.
+ * A guard proven against one subcommand is not proven against the other — that
+ * is exactly the assumption that would have let the production stack be
+ * classified as an unrelated process. It is much slower, because it builds both
+ * workspaces twice.
  *
  * This exists because the defect it guards (`P1-26-F-063`) is invisible to
  * every other tier. The unit suite proves the DECISION is right for a given set
@@ -30,10 +40,22 @@ import {
   repoRoot,
 } from './dev-config.mjs';
 import { listenersOnPorts } from './process-discovery.mjs';
+import { PRODUCTION, parseModeArgv } from './launch-mode.mjs';
 
 const root = repoRoot();
 const failures = [];
 let step = 0;
+
+const { mode: MODE, errors: MODE_ERRORS } = parseModeArgv(process.argv.slice(2));
+if (MODE_ERRORS.length > 0) {
+  for (const error of MODE_ERRORS) console.error(`  ${error}`);
+  process.exit(2);
+}
+
+/** The command an operator would type for this mode — and what this proves about. */
+const START_SCRIPT = MODE === PRODUCTION ? 'acceptance:serve' : 'dev:all';
+/** A production run compiles both workspaces before it can answer anything. */
+const READY_BUDGET_MS = MODE === PRODUCTION ? 900_000 : 240_000;
 
 function check(label, ok, detail = '') {
   step += 1;
@@ -53,6 +75,8 @@ function npm(script, { detached = false } = {}) {
     cwd: root,
     encoding: 'utf8',
     shell: !useEntry && process.platform === 'win32',
+    // A second `acceptance:serve` still has to reach the adopt decision, which
+    // happens before any build — so this budget covers a survey, not a compile.
     timeout: detached ? 60_000 : 300_000,
     maxBuffer: 32 * 1024 * 1024,
   });
@@ -71,7 +95,9 @@ function npm(script, { detached = false } = {}) {
  */
 function startDetached(logName) {
   const log = openSync(join(root, '.local', logName), 'a');
-  const child = spawn(process.execPath, ['scripts/dev/start-local.mjs'], {
+  const args = ['scripts/dev/start-local.mjs'];
+  if (MODE === PRODUCTION) args.push('--production');
+  const child = spawn(process.execPath, args, {
     cwd: root,
     detached: true,
     stdio: ['ignore', log, log],
@@ -120,7 +146,7 @@ async function waitForPortsFree(timeoutMs = 60_000) {
   }
 }
 
-async function waitForReady(timeoutMs = 240_000) {
+async function waitForReady(timeoutMs = READY_BUDGET_MS) {
   const start = Date.now();
   for (;;) {
     if (
@@ -134,7 +160,7 @@ async function waitForReady(timeoutMs = 240_000) {
 }
 
 console.log('');
-console.log('RootLco single-instance contract');
+console.log(`RootLco single-instance contract — ${MODE} mode (npm run ${START_SCRIPT})`);
 console.log('');
 
 // --- 1. clean slate -------------------------------------------------------
@@ -150,7 +176,7 @@ check(
 // background and observed through the ports.
 startDetached('verify-first.log');
 const ready = await waitForReady();
-check('first dev:all brings both tiers up', ready);
+check(`first ${START_SCRIPT} brings both tiers up`, ready);
 
 const apiPids = listenerPids(API_PORT);
 const webPids = listenerPids(WEB_PORT);
@@ -166,13 +192,38 @@ check(
 );
 
 // --- 3. second start must adopt ------------------------------------------
-const second = npm('dev:all');
+const second = npm(START_SCRIPT);
 const output = `${second.stdout ?? ''}${second.stderr ?? ''}`;
 
-check('second dev:all exits 0', second.status === 0, `exit ${second.status}`);
-check('second dev:all reports the stack is already running', /already running/i.test(output));
-check('second dev:all reports EADDRINUSE nowhere', !/EADDRINUSE/i.test(output));
-check('second dev:all started nothing', !/RootLco local stack is up/i.test(output));
+check(`second ${START_SCRIPT} exits 0`, second.status === 0, `exit ${second.status}`);
+check(
+  `second ${START_SCRIPT} reports the stack is already running`,
+  /already running/i.test(output)
+);
+check(`second ${START_SCRIPT} reports EADDRINUSE nowhere`, !/EADDRINUSE/i.test(output));
+check(`second ${START_SCRIPT} started nothing`, !/RootLco local stack is up/i.test(output));
+// The adopt path proves ownership through the process tree, and in production
+// mode the command line it has to recognise is `next start`. A launcher that
+// did not would have reported the Owner's own stack as an unrelated process.
+check(`second ${START_SCRIPT} names the running mode`, new RegExp(MODE).test(output), MODE);
+
+// --- 3b. the OTHER mode must be refused, never adopted --------------------
+// A running stack answers every readiness probe whichever mode it is in, so
+// without this refusal the acceptance command would adopt a development stack
+// and report the acceptance environment as up.
+const otherScript = MODE === PRODUCTION ? 'dev:all' : 'acceptance:serve';
+const crossed = npm(otherScript);
+const crossedOut = `${crossed.stdout ?? ''}${crossed.stderr ?? ''}`;
+check(
+  `${otherScript} against a ${MODE} stack exits non-zero`,
+  crossed.status !== 0,
+  `exit ${crossed.status}`
+);
+check(
+  `${otherScript} refuses rather than adopting the other mode`,
+  /different mode/i.test(crossedOut)
+);
+check(`${otherScript} started nothing`, !/RootLco local stack is up/i.test(crossedOut));
 
 check(
   'the API listener pid is unchanged',
@@ -194,6 +245,12 @@ const status = npm('dev:status');
 const statusOut = `${status.stdout ?? ''}${status.stderr ?? ''}`;
 check('dev:status exits 0', status.status === 0, `exit ${status.status}`);
 check('dev:status reports the stack as running', /VERDICT\s+RUNNING/.test(statusOut));
+// The question whose wrong answer cost this phase a false 401 diagnosis.
+check(
+  `dev:status reports the mode as ${MODE}`,
+  new RegExp(`MODE\\s+${MODE}`).test(statusOut),
+  statusOut.match(/MODE\s+\S+/)?.[0] ?? '(no MODE line)'
+);
 check(
   'dev:status names the live listener pids',
   (apiPids ?? []).every((p) => statusOut.includes(String(p))) &&
@@ -211,7 +268,7 @@ check('both canonical ports are free after dev:stop', await waitForPortsFree());
 
 // --- 6. and it starts cleanly again --------------------------------------
 startDetached('verify-restart.log');
-check('a fresh dev:all starts a clean stack', await waitForReady());
+check(`a fresh ${START_SCRIPT} starts a clean stack`, await waitForReady());
 const restartedApi = listenerPids(API_PORT);
 check(
   'the restarted stack has NEW pids, proving the stop was real',
@@ -221,7 +278,7 @@ check(
 
 console.log('');
 if (failures.length === 0) {
-  console.log(`  ${step}/${step} invariants hold. Running dev:all twice is safe.`);
+  console.log(`  ${step}/${step} invariants hold. Running ${START_SCRIPT} twice is safe.`);
   console.log('');
   process.exit(0);
 }

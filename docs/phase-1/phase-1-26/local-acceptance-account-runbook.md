@@ -55,20 +55,137 @@ npm run supabase:reset          # 119 migrations + the platform seeds
 $env:ROOTLCO_ENV = 'local-acceptance'   # PowerShell
 npm run acceptance:create-owner
 
-npm run dev:all                 # API 3000 · Web 3100
+npm run acceptance:serve        # API 3000 · Web 3100 — THE ACCEPTANCE STACK
 npm run acceptance:status-owner # proves the account can actually sign in
+```
+
+> **`acceptance:serve`, not `dev:all`.** An Owner acceptance session **must** be
+> run against the production mode. `dev:all` is for development and will
+> manufacture defects that do not exist — the measured evidence is §3c below.
+> Read it before you decide the shorter command will do.
+
+## 3c. The acceptance environment MUST be the production mode
+
+|                   | `npm run dev:all`           | `npm run acceptance:serve`      |
+| ----------------- | --------------------------- | ------------------------------- |
+| Serves with       | `next dev`                  | `next build`, then `next start` |
+| Route compilation | on first request, per route | once, before anything is served |
+| Code changes      | picked up live              | need a stop and a start         |
+| Startup           | seconds                     | minutes — it compiles both apps |
+| Owner acceptance  | **NEVER**                   | **ALWAYS**                      |
+
+### What `next dev` does to authenticated reads
+
+`next dev` compiles a route bundle the first time that route is requested. The
+API's authenticator is a module-level singleton installed as a **side effect** of
+composing the IAM module inside the login handler
+(`apps/api/src/modules/iam/index.ts` → `installIamRuntime()`, stored at
+`apps/api/src/server/context/principal.ts:76`). A route bundle Next compiled on
+demand **without** having run that composition still holds the unconfigured
+authenticator — and that one fails closed.
+
+Measured twice, with **one** valid Owner bearer token, in **one** process:
+
+```
+GET /api/v1/receptions     -> 200
+GET /api/v1/vehicles       -> 401  ERR-IAM-002
+GET /api/v1/work-orders    -> 401  ERR-IAM-002
+```
+
+A second `next dev` process, same token, same tree, refused a completely
+different subset — `/org/tenant`, `/iam/roles`, `/iam/users`,
+`/iam/permissions`, `/audit-events`, `/iam/approval-limits`,
+`/appointment-catalogue/*` and `/reception-catalogue/*`. On a production
+`next build` plus `next start` of that same tree, **every one of those routes
+answered 200.**
+
+So which screens appear broken depends on the order the Owner happened to click
+things in. Nothing about it looks like a tooling fault: the sign-in works, the
+session is real, the permissions are real, and then a screen reports that the
+Owner is not allowed to read something they are plainly allowed to read. An
+Owner would reasonably conclude the phase is broken, and the phase would be
+reopened over a defect that exists only in the development server.
+
+That is why this is a rule and not a preference. **A `dev:all` stack is not an
+acceptance result, whatever it shows** — neither a pass nor a fail from one
+means anything about the product.
+
+### The mode is reported, never assumed
+
+`npm run dev:status` prints a `MODE` line, and it derives it from the **command
+lines of the processes actually holding 3000 and 3100** — not from
+`.local/dev-state.json`, which can be stale, can be absent for a stack that was
+adopted, and can describe a stack that died and was replaced by hand. The state
+file's own claim is printed too, and printed as agreeing or not.
+
+```
+VERDICT    RUNNING — OWNED
+MODE       production — next build, then next start against the built output
+           read from the running processes' own command lines
+```
+
+`MIXED` is a real verdict and a loud one: it means the two tiers are serving
+different modes, which is a configuration nobody can reproduce. Stop the stack
+and start one mode.
+
+### Starting the other mode is refused, not adopted
+
+A `next dev` stack answers every readiness probe a `next start` stack answers.
+If the launcher merely adopted whatever was running, `acceptance:serve` against
+a development stack would report the acceptance environment as up and hand the
+Owner the 401s above. So a mode disagreement is a fifth terminal verdict,
+`REFUSE_MODE_MISMATCH`: nothing is killed, nothing is started, and the message
+names both modes and the command to fix it.
+
+```bash
+npm run dev:stop
+npm run acceptance:serve
+```
+
+### Everything else is identical, on purpose
+
+Production mode is the **same launcher**. One lock, one process discovery, one
+enumerated plan, one state file, one `dev:stop`. A second script that could also
+spawn servers would be `P1-26-F-063` — the duplicate-stack defect — rebuilt
+deliberately. `npm run acceptance:serve` is `node scripts/dev/start-local.mjs
+--production`, and `npm run dev:all -- --production` is the same thing.
+
+An argument the launcher does not recognise **stops it**. `dev:all --produciton`
+does not quietly start a development stack, because an operator certain they
+were on a production build is the entire failure this mode exists to prevent.
+
+Two build-time values are pinned before the build, and printed:
+
+- `NEXT_PUBLIC_API_BASE_URL` — inlined into the client bundle by `next build`,
+  so it cannot be corrected afterwards.
+- `NEXT_PUBLIC_APP_ENV=local` — what keeps the session cookie unmarked `Secure`.
+  A `Secure` cookie is discarded in silence by a browser on a plain-HTTP origin,
+  so the Owner would sign in successfully and land back on the login page.
+
+There is deliberately **no** flag to skip the build. An acceptance environment
+serving a build nobody can date is worse than a slow one, and the fast path
+already exists — it is called development mode.
+
+To prove the whole contract against this machine in either mode:
+
+```bash
+npm run dev:verify-single-instance                  # development
+npm run dev:verify-single-instance -- --production  # production, and much slower
 ```
 
 ## 3a. `localhost` is the canonical local hostname
 
-|                       |                                                               |
-| --------------------- | ------------------------------------------------------------- |
-| Web origin            | `http://localhost:3100`                                       |
-| API origin            | `http://localhost:3000`                                       |
-| API readiness         | `http://localhost:3000/api/v1/health/ready`                   |
-| English login         | `http://localhost:3100/en/login`                              |
-| Arabic login          | `http://localhost:3100/ar/login`                              |
-| Start · status · stop | `npm run dev:all` · `npm run dev:status` · `npm run dev:stop` |
+|                       |                                                                        |
+| --------------------- | ---------------------------------------------------------------------- |
+| Web origin            | `http://localhost:3100`                                                |
+| API origin            | `http://localhost:3000`                                                |
+| API readiness         | `http://localhost:3000/api/v1/health/ready`                            |
+| English login         | `http://localhost:3100/en/login`                                       |
+| Arabic login          | `http://localhost:3100/ar/login`                                       |
+| Start · status · stop | `npm run acceptance:serve` · `npm run dev:status` · `npm run dev:stop` |
+
+Both ports are the same in both modes. Which mode is serving them is what
+`dev:status` reports, and §3c is why that matters.
 
 All of these come from `API_ORIGIN` and `WEB_ORIGIN` in
 `scripts/dev/dev-config.mjs`. Nothing else states them.
@@ -98,22 +215,29 @@ RootLco local stack is already running.
 and exits **0**. **"Already running" is a success, not an error.** Nothing is
 started, no credential is touched, and no fixture is reset.
 
-| Command                              | Does                                                  |
-| ------------------------------------ | ----------------------------------------------------- |
-| `npm run dev`                        | the same as `dev:all` — it used to start only the API |
-| `npm run dev:all`                    | start, or adopt what is already running               |
-| `npm run dev:status`                 | verify and report; changes nothing                    |
-| `npm run dev:stop`                   | stop only verified RootLco processes                  |
-| `npm run dev:api` / `dev:web`        | one tier, on its pinned port                          |
-| `npm run dev:verify-single-instance` | prove the whole contract on this machine              |
+| Command                              | Does                                                       |
+| ------------------------------------ | ---------------------------------------------------------- |
+| `npm run dev`                        | the same as `dev:all` — it used to start only the API      |
+| `npm run dev:all`                    | development: start, or adopt what is already running       |
+| `npm run acceptance:serve`           | production: build, then start — the acceptance stack       |
+| `npm run dev:status`                 | verify and report, **including the mode**; changes nothing |
+| `npm run dev:stop`                   | stop only verified RootLco processes, in either mode       |
+| `npm run dev:api` / `dev:web`        | one tier, on its pinned port                               |
+| `npm run dev:verify-single-instance` | prove the whole contract on this machine, in either mode   |
 
 ### How it decides
 
 Before anything is started the launcher asks the operating system which process
 holds 3000 and 3100, then walks each listener's **parent chain** looking for a
-`next dev apps/<tier>` belonging to this checkout. It reaches one of four
-verdicts — adopt, start, repair the partial case, or refuse — and the adopt path
-returns before the code that spawns anything.
+`next dev apps/<tier>` — or a `next start apps/<tier>` — belonging to this
+checkout. It reaches one of five verdicts — adopt, start, repair the partial
+case, refuse an unrelated owner, or refuse a mode disagreement — and the adopt
+path returns before the code that spawns anything.
+
+Both subcommands count as ours. A launcher that recognised only `next dev` would
+classify the Owner's own running acceptance stack as an unrelated process:
+refusing to start, refusing to stop it, and reporting it in `dev:status` as
+"NOT RootLco" while the Owner was signed into it.
 
 It walks the parent chain because the process holding the port is not the one
 that was started:
@@ -185,11 +309,24 @@ believed.
 
 ### Troubleshooting
 
+**A screen says the Owner is not allowed to read something they plainly are.**
+Run `npm run dev:status` and read the `MODE` line **before** writing it down as
+a defect. If it says `development`, the finding is very likely §3c and not the
+product: stop the stack and start `npm run acceptance:serve`, then try the same
+screen again.
+
 **Every table sits loading, or sign-in redirects back to the login page.** You
 are almost certainly on the wrong origin. Check the address bar; then check
 `apps/web/.env.local`, which is git-ignored, is read in preference to every
 default, and is invisible to every gate in this repository. `npm run dev:all`
 warns when it contradicts the canonical API origin (`P1-26-F-062`).
+
+In production mode the same symptom has a second cause: `NEXT_PUBLIC_APP_ENV`.
+It is inlined at build time and anything other than `local` marks the session
+cookie `Secure`, which a browser on a plain-HTTP origin discards without saying
+so. The launcher pins it to `local` for a production build and prints the value
+it used — if the printed value is not `local`, something in your environment set
+it first.
 
 **`dev:all` reports a port in use but nothing seems to be running.** A previous
 launcher parent died and left its Next children holding the ports. `dev:status`
@@ -312,9 +449,17 @@ other leaves the second reading the first one's output (`P1-26-F-055`). It has
 taken the stack down mid-suite and, worse, manufactured a 404 on routes that were
 correct — half an hour went into diagnosing a phantom.
 
-The launcher now builds development into `.next-dev` via `ROOTLCO_DIST_DIR`, so
-the two can never collide. If you run `next dev` by hand, either use the launcher
-or clear `.next` first — and never clear it while a server is reading it.
+The launcher builds development into `.next-dev` via `ROOTLCO_DIST_DIR`, so the
+two can never collide. Production mode deliberately does **not** redirect it:
+`next build` and `next start` must agree on `.next`, which is also what Docker,
+the browser suite and CI use. If you run `next dev` by hand, either use the
+launcher or clear `.next` first — and never clear it while a server is reading it.
+
+For the same reason the launcher's stale-build clear is now narrower than it
+was. It runs only in development mode, and only for a tier whose development
+server actually reads `.next` — which is the API, not the web tier. Clearing the
+web tier's `.next` would have silently destroyed the acceptance build on every
+`dev:all`, forcing a full rebuild before the next Owner session.
 
 ## 6. Take it down
 
