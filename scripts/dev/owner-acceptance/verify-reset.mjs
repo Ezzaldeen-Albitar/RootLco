@@ -44,13 +44,14 @@ const REPO_ROOT = resolve(HERE, '..', '..', '..');
 const HANDOFF = join(REPO_ROOT, '.local', 'owner-acceptance-account.json');
 const BROWSER_STATE = join(REPO_ROOT, '.local', 'e2e');
 
-const TENANTS = [IDS.tenantA, IDS.tenantB];
+const TENANTS = [IDS.tenantA, IDS.tenantB, IDS.tenantC];
 const EMAILS = [
   NAMES.ownerEmail,
   NAMES.readerEmail,
   NAMES.invitedEmail,
   NAMES.lockedEmail,
   NAMES.tenantBEmail,
+  NAMES.configuredEmail,
 ];
 
 /**

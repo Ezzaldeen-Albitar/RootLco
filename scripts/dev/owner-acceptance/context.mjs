@@ -82,33 +82,43 @@ export const SYSTEM_ACTOR = '00000000-0000-4000-8000-000000000001';
 export const IDS = Object.freeze({
   tenantA: 'c0000000-0000-4000-8000-00000000000a',
   tenantB: 'c0000000-0000-4000-8000-00000000000b',
+  tenantC: 'c0000000-0000-4000-8000-00000000000c',
   companyA: 'c1000000-0000-4000-8000-00000000000a',
   companyB: 'c1000000-0000-4000-8000-00000000000b',
+  companyC: 'c1000000-0000-4000-8000-00000000000c',
   branchA: 'c1100000-0000-4000-8000-00000000000a',
   branchB: 'c1100000-0000-4000-8000-00000000000b',
+  branchC: 'c1100000-0000-4000-8000-00000000000c',
   ownerUser: 'c2000000-0000-4000-8000-00000000000a',
   readerUser: 'c2000000-0000-4000-8000-00000000000b',
   invitedUser: 'c2000000-0000-4000-8000-00000000000c',
   lockedUser: 'c2000000-0000-4000-8000-00000000000d',
   tenantBUser: 'c2000000-0000-4000-8000-00000000000e',
+  configuredUser: 'c2000000-0000-4000-8000-00000000000f',
   adminRoleA: 'c3000000-0000-4000-8000-00000000000a',
   readerRoleA: 'c3000000-0000-4000-8000-00000000000b',
   adminRoleB: 'c3000000-0000-4000-8000-00000000000c',
+  adminRoleC: 'c3000000-0000-4000-8000-00000000000d',
 });
 
 /** Codes and display names. Every code matches `^[a-z][a-z0-9_]{1,62}$`. */
 export const NAMES = Object.freeze({
   tenantCodeA: 'acceptance_a',
   tenantCodeB: 'acceptance_b',
+  tenantCodeC: 'acceptance_c',
   tenantNameA: 'CRM Owner Acceptance Tenant',
   tenantNameB: 'CRM Isolation Tenant B',
+  tenantNameC: 'CRM Configured Acceptance Tenant',
   companyCodeA: 'acceptance_co_a',
   companyCodeB: 'acceptance_co_b',
+  companyCodeC: 'acceptance_co_c',
   companyNameA: 'CRM Owner Acceptance Company',
   companyNameB: 'CRM Isolation Company B',
+  companyNameC: 'CRM Configured Acceptance Company',
   branchCode: 'main',
   branchNameA: 'Main Acceptance Branch',
   branchNameB: 'Isolation Branch B',
+  branchNameC: 'Configured Acceptance Branch',
   adminRoleCode: 'acceptance_administrator',
   adminRoleName: 'Owner Acceptance Administrator',
   readerRoleCode: 'acceptance_reader',
@@ -123,6 +133,8 @@ export const NAMES = Object.freeze({
   lockedDisplayName: 'Acceptance Locked Operator',
   tenantBEmail: 'operator.tenantb@crm.local',
   tenantBDisplayName: 'Isolation Tenant B Operator',
+  configuredEmail: 'operator.configured@crm.local',
+  configuredDisplayName: 'Configured Acceptance Operator',
 });
 
 /**
@@ -287,15 +299,63 @@ export function derivePhaseScreenPermissions() {
 export const P1_28_SCREEN_PERMISSIONS = Object.freeze(derivePhaseScreenPermissions());
 
 /**
+ * The two intake-catalogue administration codes — held HERE and by no seed.
+ *
+ * ## Why they are not in `P1_28_SCREEN_PERMISSIONS`, and must not be
+ *
+ * That set is DERIVED from the phase's route pages, and no P1-28 route page
+ * consults either code. That is not an oversight: `canonical-plan.md` §7
+ * (`P1-28-OD-001`, "capability shipped, surface withheld") records that the
+ * 35-task register is the OPERATOR surface and that **no canonical P1-28 task
+ * binds a catalogue-administration screen**. PR #227 published 21 management
+ * writes behind `apt.catalogue.manage` / `rec.catalogue.manage`, and
+ * `supabase/seeds/04_iam_permission_catalog.sql` defines both codes while
+ * **granting neither to any role** — so in the product as shipped the capability
+ * is granted to nobody until the Owner decides who should hold it.
+ *
+ * ## Why the ACCEPTANCE administrator holds them anyway
+ *
+ * A tenant whose intake catalogues are empty cannot book, cannot cancel, cannot
+ * offer a fuel level and cannot record a warning lamp — every one of those is a
+ * REQUIRED or catalogued reference. An acceptance environment that can only ever
+ * show the unconfigured state can evidence exactly half of what those screens
+ * do, and the missing half is the half that matters: whether the configured path
+ * works at all.
+ *
+ * So the acceptance administrator is granted the two codes **in this tooling**,
+ * which ships with nothing and runs only against a loopback development
+ * database. It is the acceptance environment's operator standing in for whichever
+ * principal `P1-28-OD-001` eventually names. Nothing here pre-empts that
+ * decision, nothing here reaches `supabase/` or `apps/`, and no screen in the
+ * product consults either code — so granting them changes no rendering anywhere.
+ *
+ * The rows those grants then create are made at RUN TIME through the product's
+ * own published contracts (`acceptance-fixtures.mjs`), never seeded. The
+ * permanent no-fake-data policy forbids fabricated business rows SHIPPING as
+ * product defaults; it does not forbid an acceptance environment configuring
+ * itself the way a real tenant's administrator would.
+ */
+export const CATALOGUE_ADMIN_PERMISSIONS = Object.freeze([
+  'apt.catalogue.manage',
+  'rec.catalogue.manage',
+]);
+
+/**
  * Everything the Owner-acceptance administrator role carries.
  *
- * Administration (P1-26), CRM and Vehicles (P1-27), and every code a P1-28
- * screen consults. Deduplicated, because `iam.user.read` legitimately appears in
- * all three readings and a duplicate would make the role's own count assertion
- * fail for a reason that is not a defect.
+ * Administration (P1-26), CRM and Vehicles (P1-27), every code a P1-28 screen
+ * consults, and the two intake-catalogue administration codes above.
+ * Deduplicated, because `iam.user.read` legitimately appears in three of those
+ * readings and a duplicate would make the role's own count assertion fail for a
+ * reason that is not a defect.
  */
 export const OWNER_PERMISSIONS = Object.freeze([
-  ...new Set([...ADMIN_PERMISSIONS, ...CRM_VEHICLE_PERMISSIONS, ...P1_28_SCREEN_PERMISSIONS]),
+  ...new Set([
+    ...ADMIN_PERMISSIONS,
+    ...CRM_VEHICLE_PERMISSIONS,
+    ...P1_28_SCREEN_PERMISSIONS,
+    ...CATALOGUE_ADMIN_PERMISSIONS,
+  ]),
 ]);
 
 /**

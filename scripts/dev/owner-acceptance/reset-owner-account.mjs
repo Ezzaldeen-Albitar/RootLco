@@ -38,15 +38,27 @@ import { MINIMUM_PLAUSIBLE_SCOPED_TABLES, surveyAcceptanceRows } from './discove
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(HERE, '..', '..', '..');
 const HANDOFF = join(REPO_ROOT, '.local', 'owner-acceptance-account.json');
+const FIXTURE_MANIFEST = join(REPO_ROOT, '.local', 'acceptance-fixtures.json');
 const BROWSER_STATE = join(REPO_ROOT, '.local', 'e2e');
 
-const TENANTS = [IDS.tenantA, IDS.tenantB];
+/**
+ * Every acceptance tenant, including the CONFIGURED one.
+ *
+ * Tenant C holds the only rows in this environment that a business table would
+ * normally reject as fake data — seven catalogue entries, one customer, one
+ * vehicle and whatever a run of the browser tier booked or opened. Leaving it
+ * out of this list would be the `P1-26-F-056` shape again: a reset that reports
+ * success and leaves the rows the Database tier's clean-state test then fails
+ * on, blaming a table nobody touched.
+ */
+const TENANTS = [IDS.tenantA, IDS.tenantB, IDS.tenantC];
 const EMAILS = [
   NAMES.ownerEmail,
   NAMES.readerEmail,
   NAMES.invitedEmail,
   NAMES.lockedEmail,
   NAMES.tenantBEmail,
+  NAMES.configuredEmail,
 ];
 
 async function main() {
@@ -132,6 +144,15 @@ async function main() {
   if (existsSync(HANDOFF)) {
     rmSync(HANDOFF);
     console.log('  removed .local/owner-acceptance-account.json');
+  }
+
+  // The fixture manifest describes rows this reset has just deleted. Leaving it
+  // behind means the next browser run reads identifiers for catalogue entries
+  // and a customer that no longer exist, and fails far from the cause — the same
+  // trap the browser session state below is removed for.
+  if (existsSync(FIXTURE_MANIFEST)) {
+    rmSync(FIXTURE_MANIFEST);
+    console.log('  removed .local/acceptance-fixtures.json');
   }
 
   // The browser storage state carries a live session cookie for the account

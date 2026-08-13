@@ -1,11 +1,15 @@
 #!/usr/bin/env node
 /**
- * Creates the local Owner-acceptance account and its two synthetic tenants.
+ * Creates the local Owner-acceptance account and its three synthetic tenants.
  *
  * The Product Owner cannot accept a Frontend phase without signing in to it.
  * This builds the smallest real environment in which that is possible: one
  * workspace the Owner administers, a second workspace they have no membership
- * in, and enough content that every delivered screen has something to show.
+ * in, a third whose intake catalogues can be configured, and enough content that
+ * every delivered screen has something to show.
+ *
+ * The third exists because P1-28 has two states to prove and only one database
+ * to prove them in — see the Tenant C block below.
  *
  * ## What makes this a real account rather than a shortcut
  *
@@ -479,6 +483,63 @@ async function main() {
       permissions: OWNER_PERMISSIONS,
     });
 
+    /* --- Tenant C: the workspace whose intake catalogues are CONFIGURED ------
+     *
+     * WHY A THIRD TENANT EXISTS, stated here because a reader will reasonably
+     * ask whether Tenant A could not simply have been configured.
+     *
+     * It could not, and the reason is that BOTH states have to be provable in
+     * the SAME run. The seven intake catalogues ship empty (`P1-28-OD-001`), and
+     * four delivered capabilities — booking, cancelling, the fuel-level picker,
+     * the warning-light picker — are inert until somebody fills them. Production
+     * ships unconfigured, so the truthful "not configured" statement is a
+     * deliverable in its own right and must keep being asserted. Configuring
+     * Tenant A would delete that evidence: the browser tier would then only ever
+     * see the configured world, and the honest-empty assertions would have to be
+     * removed or made conditional on run order.
+     *
+     * So Tenant A stays exactly as it was — every unconfigured assertion still
+     * runs against it — and Tenant C is what a tenant looks like AFTER an
+     * administrator has configured it. Its catalogue rows are not created here:
+     * they are written at run time through the published management contracts by
+     * `acceptance-fixtures.mjs`, which needs the API to be running.
+     *
+     * It is deliberately NOT a second isolation counterpart. Tenant B is the
+     * workspace the Owner must not reach and holds no business rows; making that
+     * one configured would have entangled the isolation evidence with the
+     * configuration evidence, and a failure in either would have read as the
+     * other.
+     */
+    await ensureTenant(client, {
+      id: IDS.tenantC,
+      code: NAMES.tenantCodeC,
+      name: NAMES.tenantNameC,
+      locale: 'en',
+    });
+    await ensureCompany(client, {
+      id: IDS.companyC,
+      tenantId: IDS.tenantC,
+      code: NAMES.companyCodeC,
+      name: NAMES.companyNameC,
+    });
+    await ensureBranch(client, {
+      id: IDS.branchC,
+      tenantId: IDS.tenantC,
+      companyId: IDS.companyC,
+      code: NAMES.branchCode,
+      name: NAMES.branchNameC,
+    });
+    await ensureRole(client, {
+      id: IDS.adminRoleC,
+      tenantId: IDS.tenantC,
+      code: NAMES.adminRoleCode,
+      name: NAMES.adminRoleName,
+      description:
+        'Full approved capability for the configured acceptance workspace, including the two ' +
+        'intake-catalogue administration codes no seed grants to anybody.',
+      permissions: OWNER_PERMISSIONS,
+    });
+
     // --- identities ---------------------------------------------------------
     const people = [
       {
@@ -530,6 +591,19 @@ async function main() {
         displayName: NAMES.tenantBDisplayName,
         status: 'active',
         roleId: IDS.adminRoleB,
+        signsIn: true,
+      },
+      {
+        // The principal who administers the configured workspace. Unrestricted
+        // within Tenant C and a member of nothing else, so a session it opens
+        // can see the configured catalogues and cannot see Tenant A or B.
+        key: 'configured',
+        id: IDS.configuredUser,
+        tenantId: IDS.tenantC,
+        email: NAMES.configuredEmail,
+        displayName: NAMES.configuredDisplayName,
+        status: 'active',
+        roleId: IDS.adminRoleC,
         signsIn: true,
       },
     ];
@@ -588,8 +662,9 @@ async function main() {
          (SELECT count(*)::int FROM iam.roles WHERE tenant_id = $1)                     AS roles_a,
          (SELECT count(*)::int FROM iam.role_permissions WHERE role_id = $2)            AS perms_owner,
          (SELECT count(*)::int FROM org.company_settings WHERE tenant_id = $1)          AS settings_a,
-         (SELECT count(*)::int FROM iam.user_accounts WHERE tenant_id = $3)             AS users_b`,
-      [IDS.tenantA, IDS.adminRoleA, IDS.tenantB]
+         (SELECT count(*)::int FROM iam.user_accounts WHERE tenant_id = $3)             AS users_b,
+         (SELECT count(*)::int FROM iam.user_accounts WHERE tenant_id = $4)             AS users_c`,
+      [IDS.tenantA, IDS.adminRoleA, IDS.tenantB, IDS.tenantC]
     );
     const c = counts.rows[0];
 
@@ -643,6 +718,16 @@ async function main() {
           alsoProvisioned: {
             reader: { email: NAMES.readerEmail, password, note: 'read-only, branch-scoped' },
             tenantB: { email: NAMES.tenantBEmail, password, tenantId: IDS.tenantB },
+            configured: {
+              email: NAMES.configuredEmail,
+              password,
+              tenantId: IDS.tenantC,
+              companyId: IDS.companyC,
+              branchId: IDS.branchC,
+              note:
+                'the workspace whose intake catalogues can be configured. Its rows are written ' +
+                'by npm run acceptance:provision-fixtures, which needs the API running.',
+            },
           },
           resetCommand: 'npm run acceptance:reset-owner',
         },
@@ -668,6 +753,7 @@ async function main() {
     log(`  owner permissions ${c.perms_owner} of ${OWNER_PERMISSIONS.length}`);
     log(`  company settings  ${c.settings_a}`);
     log(`  Tenant B users    ${c.users_b}`);
+    log(`  Tenant C users    ${c.users_c}  (configured workspace — catalogues filled separately)`);
     log('');
     // The password is NOT printed.
     //

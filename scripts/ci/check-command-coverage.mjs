@@ -364,7 +364,19 @@ export const REGISTER = Object.freeze([
     name: 'acceptance:create-owner',
     owner: ROOT,
     tier: 'interactive',
-    why: 'creates the local-only Owner acceptance account and both synthetic tenants',
+    why: 'creates the local-only Owner acceptance account and all three synthetic tenants',
+  },
+  {
+    name: 'acceptance:provision-fixtures',
+    owner: ROOT,
+    tier: 'interactive',
+    // Not `required`, and not merely because it needs a database: it needs a
+    // RUNNING API, because every row it writes is written by an authenticated
+    // call to a published operation rather than by an INSERT. The browser tier
+    // provisions the same fixtures through the same module, so CI needs no step
+    // of its own; this command exists so a human can reach the configured
+    // workspace by hand.
+    why: 'configures the intake catalogues of the acceptance workspace through the published management contracts',
   },
   {
     name: 'acceptance:status-owner',
