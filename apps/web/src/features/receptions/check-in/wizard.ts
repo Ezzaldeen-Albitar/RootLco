@@ -46,7 +46,20 @@ import {
  * (409 `ERR-TRN-001` — the state itself refuses the command).
  */
 
-/** What the route resolved from the session — visibility only, never access. */
+/**
+ * What the route resolved from the session — visibility only, never access.
+ *
+ * One boolean per PERMISSION, not per control: a step asks whether the operator
+ * holds the code the operation it is about to call registers, and never
+ * consults the session itself. The route is the single place `holds(...)` is
+ * called, which is the joint `tests/p1-28-reception-routes.test.ts` holds in
+ * both directions.
+ *
+ * Waves F/G added the closure codes. They are separate fields rather than one
+ * "can finish the visit" flag because the backend separates them: approving,
+ * converting and closing are three permissions, and an operator can hold any
+ * one without the others.
+ */
 export interface CheckInCapabilities {
   /** `rec.reception.party.manage` — the party-role write. */
   readonly manageParties: boolean;
@@ -75,6 +88,14 @@ export interface CheckInCapabilities {
    * vehicle. Held by neither `veh.vehicle.manage` nor `rec.reception.manage`.
    */
   readonly recordOdometer: boolean;
+  /** `rec.reception.approve` — the decision that lets work begin (`FE-020`). */
+  readonly approveReceptions: boolean;
+  /** `rec.reception.convert` — turning an authorized visit into a work order (`FE-022`). */
+  readonly convertReceptions: boolean;
+  /** `rec.reception.close` — BOTH terminal exits, close-without-work and refuse (`FE-020`). */
+  readonly closeReceptions: boolean;
+  /** `wo.work_order.read` — the conversion result display only; P1-29 owns the rest. */
+  readonly readWorkOrders: boolean;
 }
 
 /**

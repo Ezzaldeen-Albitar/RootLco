@@ -49,6 +49,26 @@ import { BranchTargetFields } from './BranchTargetFields';
  * The operation publishes `hasMore` and no total. The table renders exactly
  * that: a page count is never invented, and "Next" is offered only while the
  * server says more exists.
+ *
+ * ## The DAY QUEUE half (Wave G)
+ *
+ * A calendar answers "what is booked"; a queue answers "who is arriving now",
+ * and the second is what a reception desk actually stands at. Two additions
+ * complete it without a second screen:
+ *
+ *   - **Today**, which collapses the range to the single current day. It sets
+ *     the DRAFT rather than submitting, so the operator still names the branch
+ *     and presses Show — the "no request before intent" rule above is not
+ *     special-cased for a convenience control.
+ *   - **Check in**, offered on a `confirmed` row and on no other. That is the
+ *     transition graph, not a preference: `rec.reception-create` moves an
+ *     appointment `confirmed → checked_in` in the same transaction, and any
+ *     other lifecycle status answers 409 `ERR-TRN-001`. Offering it on a
+ *     `requested` row would be offering a refusal.
+ *
+ * The control is labelled "Check in" because that is the operation it leads to.
+ * There is NO appointment "Confirm" operation anywhere in this contract —
+ * confirmation is a side effect of rescheduling — so no control here says it.
  */
 
 interface SubmittedCalendar {
@@ -64,15 +84,24 @@ interface Draft {
   readonly status: '' | AppointmentStatus;
 }
 
+/** One calendar day in the OPERATOR's own calendar, as the date input wants it. */
+export function calendarDay(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(
+    date.getDate()
+  ).padStart(2, '0')}`;
+}
+
 /** Today and six days on — one operator week, in the operator's own calendar. */
 function initialDraft(now = new Date()): Draft {
-  const day = (date: Date) =>
-    `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(
-      date.getDate()
-    ).padStart(2, '0')}`;
   const weekOn = new Date(now.getTime());
   weekOn.setDate(weekOn.getDate() + 6);
-  return { companyId: '', branchId: '', fromDay: day(now), toDay: day(weekOn), status: '' };
+  return {
+    companyId: '',
+    branchId: '',
+    fromDay: calendarDay(now),
+    toDay: calendarDay(weekOn),
+    status: '',
+  };
 }
 
 export function AppointmentCalendarScreen({
@@ -81,6 +110,7 @@ export function AppointmentCalendarScreen({
   companyIds,
   branchIds,
   canManage,
+  canCheckIn,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
@@ -89,6 +119,8 @@ export function AppointmentCalendarScreen({
   readonly branchIds: readonly string[];
   /** `apt.appointment.manage` — gates the offer to book. */
   readonly canManage: boolean;
+  /** `rec.reception.manage` — gates the day queue's arrival affordance. */
+  readonly canCheckIn: boolean;
 }) {
   const [draft, setDraft] = useState<Draft>(() => initialDraft());
   const [submitted, setSubmitted] = useState<SubmittedCalendar | null>(null);
@@ -190,6 +222,19 @@ export function AppointmentCalendarScreen({
           >
             {translate(messages, 'appointments.calendar.show')}
           </button>
+          <button
+            type="button"
+            onClick={() => {
+              // Sets the DRAFT only. The operator still names the branch and
+              // presses Show; a shortcut that fired a read would be the one
+              // request this screen makes without being asked.
+              const today = calendarDay(new Date());
+              setDraft((d) => ({ ...d, fromDay: today, toDay: today }));
+            }}
+            className="rounded-md border border-border px-4 py-2 text-body text-text-primary transition-colors duration-fast ease-standard hover:bg-surface-subtle"
+          >
+            {translate(messages, 'appointments.calendar.today')}
+          </button>
           {canManage ? (
             <Link
               href={`/${locale}/appointments/new`}
@@ -215,6 +260,7 @@ export function AppointmentCalendarScreen({
           locale={locale}
           messages={messages}
           submitted={submitted}
+          canCheckIn={canCheckIn}
         />
       )}
     </div>
@@ -225,10 +271,12 @@ function CalendarResults({
   locale,
   messages,
   submitted,
+  canCheckIn,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly submitted: SubmittedCalendar;
+  readonly canCheckIn: boolean;
 }) {
   const router = useRouter();
   const load = useCallback(
@@ -354,13 +402,25 @@ function CalendarResults({
          */
         suppressEmptyState
         rowActions={(row) => (
-          <button
-            type="button"
-            onClick={() => router.push(`/${locale}/appointments/${row.id}`)}
-            className="text-primary underline-offset-2 hover:underline focus-visible:outline focus-visible:outline-2"
-          >
-            {translate(messages, 'appointments.calendar.open')}
-          </button>
+          <span className="flex flex-wrap gap-3">
+            <button
+              type="button"
+              onClick={() => router.push(`/${locale}/appointments/${row.id}`)}
+              className="text-primary underline-offset-2 hover:underline focus-visible:outline focus-visible:outline-2"
+            >
+              {translate(messages, 'appointments.calendar.open')}
+            </button>
+            {canCheckIn && row.lifecycleStatus === 'confirmed' ? (
+              // Only `confirmed` checks in — every other lifecycle status
+              // answers 409 `ERR-TRN-001`, so the affordance follows the graph.
+              <Link
+                href={`/${locale}/receptions/check-in`}
+                className="text-primary underline-offset-2 hover:underline focus-visible:outline focus-visible:outline-2"
+              >
+                {translate(messages, 'appointments.calendar.checkIn')}
+              </Link>
+            ) : null}
+          </span>
         )}
       />
       {table.response && table.response.rows.length === 0 ? (

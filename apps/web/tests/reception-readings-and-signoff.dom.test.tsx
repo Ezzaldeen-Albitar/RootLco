@@ -115,6 +115,11 @@ const CAPABILITIES = {
   manageEvidence: true,
   manageSignatures: true,
   recordOdometer: true,
+  // Wave F/G widened the contract; the closing steps hold their own suite.
+  approveReceptions: true,
+  convertReceptions: true,
+  closeReceptions: true,
+  readWorkOrders: true,
 };
 
 function stepProps(over: Partial<CheckInStepProps> = {}): CheckInStepProps {

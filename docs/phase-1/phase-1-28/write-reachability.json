@@ -68,20 +68,20 @@
       "reason": "P1-28-FE-019: the refusal step of the check-in wizard (apps/web/src/features/receptions/components/steps/RefusalStep.tsx) submits through recordRefusal in apps/web/src/features/receptions/api.ts, which sends POST visitPath(receptionId, '/refusals'). It is registered in apps/web/src/features/receptions/check-in/steps.tsx as `reception-refusal` and is distinct from the rec.reception-refuse EXIT command, which this step does not call and says so on screen."
     },
     "rec.reception-approve": {
-      "classification": "NOT_YET_WIRED",
-      "reason": "P1-28-FE-020 (reception summary and approval) has not landed."
+      "classification": "REACHABLE",
+      "reason": "P1-28-FE-020: the decision panel of the summary step (apps/web/src/features/receptions/components/steps/SummaryStep.tsx, registered in apps/web/src/features/receptions/check-in/steps.tsx) submits through approveReception in apps/web/src/features/receptions/api.ts, which sends POST visitPath(receptionId, '/approve') guarded by the If-Match the shell's rec.reception-detail read supplies."
     },
     "rec.reception-convert-to-work-order": {
-      "classification": "NOT_YET_WIRED",
-      "reason": "P1-28-FE-022 (reception conversion to work order) has not landed."
+      "classification": "REACHABLE",
+      "reason": "P1-28-FE-022: the conversion step (apps/web/src/features/receptions/components/steps/ConversionStep.tsx, registered in apps/web/src/features/receptions/check-in/steps.tsx) submits through convertReceptionToWorkOrder in apps/web/src/features/receptions/api.ts, which sends POST visitPath(receptionId, '/convert-to-work-order'). A replay answers 200 with alreadyConverted: true and the step renders it as the success it is."
     },
     "rec.reception-close-without-work": {
-      "classification": "NOT_YET_WIRED",
-      "reason": "Terminal-close command added by P1-18 remediation R5 (PR #220) after the plan's task table was derived; no plan task binds it yet. Consumed by the reception summary / terminal-close surface (nearest task P1-28-FE-020) when it lands."
+      "classification": "REACHABLE",
+      "reason": "P1-28-FE-020: the 'close without work' form of the summary step (apps/web/src/features/receptions/components/steps/SummaryStep.tsx) submits through closeReceptionWithoutWork in apps/web/src/features/receptions/api.ts, which forwards to closeVisit and sends POST visitPath(receptionId, '/close-without-work'). The gate resolves that path because closeVisit types its tail as a union of string literals, which Waves F/G taught it to enumerate."
     },
     "rec.reception-refuse": {
-      "classification": "NOT_YET_WIRED",
-      "reason": "Terminal-close command added by P1-18 remediation R5 (PR #220) after the plan's task table was derived; no plan task binds it yet. Consumed by the reception refusal workflow (nearest task P1-28-FE-019) when it lands."
+      "classification": "REACHABLE",
+      "reason": "P1-28-FE-020: the 'refuse the visit' form of the same summary step (apps/web/src/features/receptions/components/steps/SummaryStep.tsx) submits through refuseReception in apps/web/src/features/receptions/api.ts, which forwards to closeVisit and sends POST visitPath(receptionId, '/refuse'). This is the terminal EXIT, not rec.reception-refusal, which appends refusal evidence and changes no status."
     }
   }
 }

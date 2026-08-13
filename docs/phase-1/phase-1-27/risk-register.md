@@ -102,7 +102,7 @@ column** and no owner other than the phase.
 **P1-27 relevance: none.** This phase builds no pricing, quotation, invoice or
 service-catalogue screen. Measured on this branch, the two **feature** trees this
 phase authors (`apps/web/src/features/crm`, `apps/web/src/features/vehicles` —
-**43** files, now 43 of the **75** the ownership gate scans) name exactly
+**43** files, now 43 of the **77** the ownership gate scans) name exactly
 **three** permission codes outside the `crm.` and `veh.` namespaces:
 
 | code                     | where                                                                                                                                                                     |
@@ -577,7 +577,7 @@ and returns `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
      an earlier revision put them in a label column and broke two other gates
      whose regexes read the label and the number as adjacent cells. -->
 
-<!-- derived: files p1-27-frontend-gate = 75 -->
+<!-- derived: files p1-27-frontend-gate = 77 -->
 <!-- derived: files p1-27-frontend-gate:trees = 3 -->
 <!-- derived: files tests/backend = 85 -->
 <!-- derived: files tests/backend:all = 90 -->

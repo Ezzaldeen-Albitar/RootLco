@@ -135,11 +135,16 @@ const CAPABILITIES = {
   verifyAuthorizations: true,
   readCustomers: true,
   readVehicles: true,
-  // Wave E capabilities. Present here so the shell cases keep compiling against
-  // the widened contract; the evidence steps have their own suites.
+  // Wave E and Wave F/G capabilities. Present here so the shell cases keep
+  // compiling against the widened contract; the evidence and closing steps have
+  // their own suites.
   manageEvidence: true,
   manageSignatures: true,
   recordOdometer: true,
+  approveReceptions: true,
+  convertReceptions: true,
+  closeReceptions: true,
+  readWorkOrders: true,
 };
 
 const SESSION = { userId: 'user-1', displayName: 'Front Desk' };

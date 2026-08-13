@@ -13,12 +13,13 @@ import { readReception } from '@/features/receptions/api';
 import { CHECK_IN_STEPS } from '@/features/receptions/check-in/steps';
 import { CheckInWizardShell } from '@/features/receptions/components/CheckInWizardShell';
 import { RECEPTION_PERMISSIONS } from '@/features/receptions/receptions-contract';
+import { WORK_ORDER_READ_PERMISSION } from '@/features/receptions/work-order-contract';
 import { isLocale } from '@/i18n/config';
 import { getMessages } from '@/i18n/get-messages';
 import { pageMetadata } from '@/lib/page-metadata';
 
 /**
- * The check-in wizard for one reception visit (`P1-28-FE-007`…`FE-019`).
+ * The check-in wizard for one reception visit (`P1-28-FE-007`…`FE-024`).
  *
  * `rec.reception.read` gates the page; every WRITE capability gates a control
  * inside a step, resolved here into `capabilities` so no component consults the
@@ -73,7 +74,7 @@ export default async function CheckInWizardPage({
         messages={messages}
         titleKey="receptions.wizard.title"
         crumbs={[
-          { labelKey: 'nav.receptions', href: `/${locale}/receptions/check-in` },
+          { labelKey: 'nav.receptions', href: `/${locale}/receptions` },
           { labelKey: 'receptions.wizard.title' },
         ]}
       />
@@ -128,6 +129,10 @@ export default async function CheckInWizardPage({
         manageEvidence: holds(session.permissions, RECEPTION_PERMISSIONS.evidenceManage),
         manageSignatures: holds(session.permissions, RECEPTION_PERMISSIONS.signatureManage),
         recordOdometer: holds(session.permissions, VEHICLE_PERMISSIONS.odometerRecord),
+        approveReceptions: holds(session.permissions, RECEPTION_PERMISSIONS.approve),
+        convertReceptions: holds(session.permissions, RECEPTION_PERMISSIONS.convert),
+        closeReceptions: holds(session.permissions, RECEPTION_PERMISSIONS.close),
+        readWorkOrders: holds(session.permissions, WORK_ORDER_READ_PERMISSION),
       }}
       session={{ userId: session.userId, displayName: session.displayName }}
     />

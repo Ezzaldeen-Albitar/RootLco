@@ -71,9 +71,20 @@
  * a slot the call site fills, anything else (`${encodeURIComponent(id)}`) is an
  * opaque value and normalises to `:p` — so `visitPath(id, '/party-roles')`
  * resolves to `/api/v1/receptions/:p/party-roles` while `visitPath(id, tail)`
- * with a variable tail resolves to `/api/v1/receptions/:p/:p` and matches
- * nothing. A helper this rule cannot read stays invisible, which fails closed:
- * the `REACHABLE` claim goes red and whoever flips it extends this gate.
+ * with an UNTYPED variable tail resolves to `/api/v1/receptions/:p/:p` and
+ * matches nothing. A helper this rule cannot read stays invisible, which fails
+ * closed: the `REACHABLE` claim goes red and whoever flips it extends this gate.
+ *
+ * Waves F/G are the first flip that had to. `closeVisit` in the reception
+ * adapter forwards a `tail` typed `'/close-without-work' | '/refuse'` into
+ * `visitPath`, and both commands were wired by the summary screen while this
+ * gate could see neither. So a slot filled by an identifier whose ENCLOSING
+ * function types it as a union of STRING LITERALS is expanded into one candidate
+ * path per member. That is enumeration, not guessing: the type has already
+ * listed what the call can be, and a value outside the union is a compile error,
+ * so no path appears that the code cannot build. Everything else is unchanged —
+ * an untyped variable, a `string`, and a union with one non-literal member all
+ * stay `:p` — and `tests/ci/p1-28-write-reachability.test.ts` holds both halves.
  *
  * ## A call site nobody can reach is not reachability
  *
@@ -326,24 +337,95 @@ function literalValue(argument) {
   return literal ? literal[2] : null;
 }
 
-/** The path a helper call builds, with everything unknown collapsed to `:p`. */
-function resolveHelperCall(helper, args) {
-  let path = '';
+/**
+ * Parameters whose TYPE is a union of string literals, as name → alternatives.
+ *
+ * `tail: '/close-without-work' | '/refuse'` names two paths and no others. A
+ * value like that is not unknown — the type system has already enumerated it —
+ * so collapsing it to `:p` throws away a fact the source states outright. A
+ * parameter typed anything else (`string`, a named type, a union with a
+ * non-literal member) yields nothing and stays opaque, which is the failing-
+ * closed behaviour the rest of this gate relies on.
+ */
+export function literalUnionParameters(parameterTexts) {
+  const unions = new Map();
+  for (const part of parameterTexts) {
+    const declaration = /^\s*([A-Za-z_$][\w$]*)\s*:\s*([\s\S]+)$/.exec(part);
+    if (!declaration) continue;
+    const alternatives = declaration[2].split('|').map((piece) => piece.trim());
+    if (alternatives.length < 2) continue;
+    const values = [];
+    for (const alternative of alternatives) {
+      const literal = /^(['"])((?:(?!\1)[^\\])*)\1$/.exec(alternative);
+      if (!literal) {
+        values.length = 0;
+        break;
+      }
+      values.push(literal[2]);
+    }
+    if (values.length > 0) unions.set(declaration[1], values);
+  }
+  return unions;
+}
+
+/** The literal-union parameters of the nearest `function` header before `index`. */
+function enclosingLiteralUnions(text, index) {
+  const declaration = /\bfunction\s+[A-Za-z_$][\w$]*\s*\(/g;
+  let nearest = null;
+  let match;
+  while ((match = declaration.exec(text)) !== null) {
+    if (match.index > index) break;
+    nearest = match;
+  }
+  if (nearest === null) return new Map();
+  const parameters = argumentsAt(text, nearest.index + nearest[0].length - 1);
+  return parameters === null ? new Map() : literalUnionParameters(parameters);
+}
+
+/**
+ * Every path a helper call can build, with everything unknown collapsed to `:p`.
+ *
+ * An ARRAY rather than one string, because one call site can spell out more than
+ * one path. `closeVisit(receptionId, tail, …)` in the reception adapter forwards
+ * a `tail` typed `'/close-without-work' | '/refuse'`: the function sends exactly
+ * two routes and the type says which two, so reporting `:p` for it would leave
+ * two demonstrably wired commands invisible to this gate — and this gate's own
+ * rule is that an invisible write cannot be claimed REACHABLE. Enumerating what
+ * the type enumerates is not guessing; a path the code cannot build never
+ * appears, because a value outside the union is a compile error.
+ *
+ * A parameter typed `string`, or absent, is still unknown and still `:p`.
+ */
+function resolveHelperCall(helper, args, unions) {
+  let paths = [''];
+  const extend = (candidates) => {
+    const next = [];
+    for (const prefix of paths) for (const candidate of candidates) next.push(prefix + candidate);
+    paths = next;
+  };
+
   for (const segment of helper.segments) {
     if (segment.kind === 'literal') {
-      path += segment.text;
+      extend([segment.text]);
     } else if (segment.kind === 'opaque') {
-      path += ':p';
+      extend([':p']);
     } else {
       const supplied = args[segment.index];
-      const value =
-        supplied === undefined
-          ? (helper.params[segment.index]?.default ?? null)
-          : literalValue(supplied);
-      path += value === null ? ':p' : value;
+      if (supplied === undefined) {
+        extend([helper.params[segment.index]?.default ?? ':p']);
+        continue;
+      }
+      const value = literalValue(supplied);
+      if (value !== null) {
+        extend([value]);
+        continue;
+      }
+      const identifier = /^\s*([A-Za-z_$][\w$]*)\s*$/.exec(supplied);
+      const union = identifier ? unions.get(identifier[1]) : undefined;
+      extend(union ?? [':p']);
     }
   }
-  return path;
+  return paths;
 }
 
 /** Exported function declarations, in source order, as `{ index, name }`. */
@@ -422,11 +504,10 @@ export function mutationCallSites(source) {
       if (!method) continue;
       const args = argumentsAt(text, call.index + call[0].length - 1);
       if (args === null) continue;
-      sites.push({
-        method,
-        path: resolveHelperCall(helpers.get(call[1]), args),
-        owner: ownerAt(call.index),
-      });
+      const unions = enclosingLiteralUnions(text, call.index);
+      for (const path of resolveHelperCall(helpers.get(call[1]), args, unions)) {
+        sites.push({ method, path, owner: ownerAt(call.index) });
+      }
     }
   }
 

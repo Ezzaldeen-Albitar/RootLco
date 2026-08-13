@@ -187,7 +187,7 @@ with in a diff rather than deleted around:
 
 | #   | where                                                               | what it refuses                                                                                                                                                                                                 |
 | --- | ------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | `scripts/ci/check-p1-27-frontend.mjs`, rule `no-merge-caller`       | Any of `customer-merge`, `vehicle-merge`, a `"/merge"` path literal or a `merge*Action` export, across the **75** files the gate owns, in all three canonical trees                                             |
+| 1   | `scripts/ci/check-p1-27-frontend.mjs`, rule `no-merge-caller`       | Any of `customer-merge`, `vehicle-merge`, a `"/merge"` path literal or a `merge*Action` export, across the **77** files the gate owns, in all three canonical trees                                             |
 | 2   | `apps/web/tests/crm-duplicate-review.test.ts`                       | Describe block "the merge affordance is absent, not merely unused": `validateMerge`, `MergeInput` and `mergeCustomerAction` must all be absent                                                                  |
 | 3   | `apps/web/tests/vehicle-duplicates.test.ts:73`                      | No export of the vehicle duplicates adapter whose name matches `/merge/i`                                                                                                                                       |
 | 4   | `apps/web/tests/vehicle-screens.dom.test.tsx:264,236`               | Line 234 walks **every rendered button** and refuses any whose text matches `/merge/i`; line 236 refuses any button whose accessible name matches `/merge/i`                                                    |
@@ -297,7 +297,7 @@ Two mechanisms keep that true rather than merely stated:
 
 | mechanism                                                                                   | what it refuses                                                                                                                                                                                                                                                                                                                                                                                                                |
 | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `scripts/ci/check-p1-27-frontend.mjs`, rules `no-upload-path` and `no-invented-media-limit` | Seven file-access constructs — `new FormData(` with or without an argument, `multipart/form-data`, a file input in any spelling, `FileReader`, an `input.files` list, an `onDrop=`/`onDragOver=` target and a `DataTransfer` — plus every invented limit: a `MAX_FILE_SIZE_`-style constant, byte arithmetic, an accepted-MIME list, an extension allow-list or an `accept=` attribute. Across all **75** files the gate scans |
+| `scripts/ci/check-p1-27-frontend.mjs`, rules `no-upload-path` and `no-invented-media-limit` | Seven file-access constructs — `new FormData(` with or without an argument, `multipart/form-data`, a file input in any spelling, `FileReader`, an `input.files` list, an `onDrop=`/`onDragOver=` target and a `DataTransfer` — plus every invented limit: a `MAX_FILE_SIZE_`-style constant, byte arithmetic, an accepted-MIME list, an extension allow-list or an `accept=` attribute. Across all **77** files the gate scans |
 | `apps/web/tests/vehicle-duplicates.test.ts:203`                                             | No export of `@/features/vehicles/documents-api` whose name matches `upload`, `media` or `attach`, case-insensitively                                                                                                                                                                                                                                                                                                          |
 
 ### The decision alone does not make upload reachable, and the difference is worth stating
@@ -689,7 +689,7 @@ records, a fabricated number is the worst possible decoration.
 
 The refusal is enforced rather than intended: `scripts/ci/check-p1-27-frontend.mjs`
 rule `no-invented-total` refuses `total: rows`, `total: items` and
-`total: <anything>.length` across all **75** files the gate owns.
+`total: <anything>.length` across all **77** files the gate owns.
 
 ### A contrast worth keeping, because the rule is narrower than it sounds
 
@@ -1201,5 +1201,5 @@ returns `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
      an earlier revision put them in a label column and broke two other gates
      whose regexes read the label and the number as adjacent cells. -->
 
-<!-- derived: files p1-27-frontend-gate = 75 -->
+<!-- derived: files p1-27-frontend-gate = 77 -->
 <!-- derived: files p1-27-frontend-gate:trees = 3 -->
