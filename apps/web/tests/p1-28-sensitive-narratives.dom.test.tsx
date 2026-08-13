@@ -225,7 +225,9 @@ describe('P1-28-SEC-002 — the database refusal surfaces as a permissions messa
       screen.getByLabelText(EN['receptions.complaint.text'] as string, { exact: false }),
       'A knocking sound from the front left when braking.'
     );
-    await user.click(screen.getByRole('button', { name: EN['receptions.complaint.record'] as string }));
+    await user.click(
+      screen.getByRole('button', { name: EN['receptions.complaint.record'] as string })
+    );
 
     await waitFor(() => expect(recordConditionEvidence).toHaveBeenCalledTimes(1));
 
@@ -278,7 +280,9 @@ describe('P1-28-SEC-002 — the database refusal surfaces as a permissions messa
       screen.getByLabelText(EN['receptions.complaint.text'] as string, { exact: false }),
       'A rattle over speed bumps.'
     );
-    await user.click(screen.getByRole('button', { name: EN['receptions.complaint.record'] as string }));
+    await user.click(
+      screen.getByRole('button', { name: EN['receptions.complaint.record'] as string })
+    );
 
     await waitFor(() => expect(recordConditionEvidence).toHaveBeenCalledTimes(1));
     expect(screen.queryByTestId('complaint-sensitive-denied')).toBeNull();
