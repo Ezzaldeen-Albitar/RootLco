@@ -702,7 +702,9 @@ describe('F9 · creation commands keep their pre-handler resolved target', () =>
 
 // ---------------------------------------------------------------------------
 // F10 — exactly the twelve id-addressed P1-18 commands hold the locked-row
-// path, and exactly the six id-addressed reads hold the deferred-authorizer one
+// path, exactly the six id-addressed reads hold the deferred-authorizer one,
+// and exactly the fourteen id-addressed intake-catalogue commands are the
+// tenant-scoped configuration class that owns neither
 // ---------------------------------------------------------------------------
 
 /**
@@ -732,6 +734,45 @@ const EXPECTED_LOCKED_ROW_OPERATIONS = [
   'rec.reception-refusal',
   'rec.reception-refuse',
   'rec.reception-signature',
+] as const;
+
+/**
+ * The fourteen id-addressed CONFIGURATION commands (P1-27-INT-018, executed by
+ * P1-18): seven renames and seven lifecycle changes over the intake catalogues.
+ *
+ * These are id-addressed and therefore discovered, but they are deliberately NOT
+ * locked-row operations, and the distinction is real rather than bookkeeping. An
+ * appointment or a reception visit belongs to one branch of one company, so its
+ * commands must re-authorize against the row they just locked. A catalogue entry
+ * belongs to the TENANT — `apt.appointment_types` and its six siblings carry
+ * `scope`/`tenant_id` and no company or branch column at all — so there is no
+ * row-owned company or branch to name, and an `authorizeScope` call here would
+ * have nothing true to pass it. Isolation is the `upd_<t>_tenant` RLS policy
+ * plus a `tenant_id` predicate taken from the principal.
+ *
+ * They are listed rather than filtered out for the reason the discovery comment
+ * above gives: the completeness assertion compares the discovered set against
+ * BOTH lists together, so a new id-addressed `apt.`/`rec.` command still fails
+ * this file until somebody consciously decides which class it is in. Excluding
+ * them by predicate — `scope !== 'tenant'`, say — would let the next
+ * branch-scoped command that forgot its scope line vanish from the guard, which
+ * is the exact blindness this block was rewritten to remove.
+ */
+const EXPECTED_TENANT_CONFIGURATION_COMMANDS = [
+  'apt.catalogue-appointment-type-status-set',
+  'apt.catalogue-appointment-type-update',
+  'apt.catalogue-cancellation-reason-status-set',
+  'apt.catalogue-cancellation-reason-update',
+  'apt.catalogue-source-channel-status-set',
+  'apt.catalogue-source-channel-update',
+  'rec.catalogue-fuel-level-status-set',
+  'rec.catalogue-fuel-level-update',
+  'rec.catalogue-refusal-reason-status-set',
+  'rec.catalogue-refusal-reason-update',
+  'rec.catalogue-visit-reason-status-set',
+  'rec.catalogue-visit-reason-update',
+  'rec.catalogue-warning-light-code-status-set',
+  'rec.catalogue-warning-light-code-update',
 ] as const;
 
 /**
@@ -836,10 +877,24 @@ describe('F10 · structural completeness of the locked-row path', () => {
     expect(operations.length).toBeGreaterThan(50);
   });
 
-  it('discovers exactly the twelve id-addressed P1-18 commands', () => {
-    expect(affectedCommands.map((entry) => entry.id).sort()).toEqual([
-      ...EXPECTED_LOCKED_ROW_OPERATIONS,
-    ]);
+  it('discovers exactly the twenty-six id-addressed P1-18 commands, in two classes', () => {
+    // Compared against BOTH lists at once. That is what keeps the guard total:
+    // an id-addressed command that is in neither list fails here, so a new one
+    // cannot be protected by an assumption about which class it belongs to.
+    expect(affectedCommands.map((entry) => entry.id).sort()).toEqual(
+      [...EXPECTED_LOCKED_ROW_OPERATIONS, ...EXPECTED_TENANT_CONFIGURATION_COMMANDS].sort()
+    );
+  });
+
+  it('keeps the two command classes disjoint', () => {
+    // A command in both lists would satisfy the completeness assertion above
+    // while being asserted to declare `branch` and `tenant` scope at once —
+    // contradictory expectations that would surface as a confusing per-id
+    // failure rather than as the classification mistake it is.
+    const overlap = EXPECTED_LOCKED_ROW_OPERATIONS.filter((id) =>
+      (EXPECTED_TENANT_CONFIGURATION_COMMANDS as readonly string[]).includes(id)
+    );
+    expect(overlap).toEqual([]);
   });
 
   it('discovers exactly the six id-addressed P1-18 reads', () => {
@@ -884,6 +939,34 @@ describe('F10 · structural completeness of the locked-row path', () => {
     // ambiguous. Per method rather than per file, because the co-located GET the
     // framework forces is a different declaration with its own constant — the
     // `handleOperation(\n    CONST,` match stays unambiguous per constant.
+    const entry = affectedCommands.find((candidate) => candidate.id === id);
+    const siblings = operations.filter(
+      (candidate) => candidate.file === entry?.file && candidate.method === entry?.method
+    );
+    expect(siblings).toHaveLength(1);
+  });
+
+  it.each(EXPECTED_TENANT_CONFIGURATION_COMMANDS)('%s declares tenant scope explicitly', (id) => {
+    // Asserted, not assumed. `defineOperation` defaults a missing `scope` to
+    // `'tenant'`, so a branch-scoped command that lost its scope line would land
+    // in this class looking correct. Requiring the declaration to be present and
+    // to say `tenant` means the default can never be what makes this pass.
+    const entry = affectedCommands.find((candidate) => candidate.id === id);
+    expect(entry).toBeDefined();
+    expect(entry?.scope).toBe('tenant');
+    expect(entry?.source).toContain("scope: 'tenant'");
+  });
+
+  it.each(EXPECTED_TENANT_CONFIGURATION_COMMANDS)('%s runs under its OWN declaration', (id) => {
+    // Same reason as the locked-row class: binding a route to a sibling's
+    // declaration would evaluate the sibling's permissions. Seven catalogues
+    // share one handler shape here, so a copied constant is the likely mistake.
+    const entry = affectedCommands.find((candidate) => candidate.id === id);
+    expect(entry).toBeDefined();
+    expect(entry?.source).toContain(`handleOperation(\n    ${entry?.constant},`);
+  });
+
+  it.each(EXPECTED_TENANT_CONFIGURATION_COMMANDS)('%s declares exactly one operation', (id) => {
     const entry = affectedCommands.find((candidate) => candidate.id === id);
     const siblings = operations.filter(
       (candidate) => candidate.file === entry?.file && candidate.method === entry?.method

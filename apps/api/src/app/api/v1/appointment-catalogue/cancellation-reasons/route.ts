@@ -1,6 +1,13 @@
 /**
- * GET /api/v1/appointment-catalogue/cancellation-reasons (P1-27 remediation executed by P1-18,
- * `P1-27-INT-018`).
+ * GET / POST /api/v1/appointment-catalogue/cancellation-reasons (P1-27 remediation executed by
+ * P1-18, `P1-27-INT-018`).
+ *
+ * The POST is the management half. `apt.appointment-cancel` demands a mandatory catalogued `cancellationReasonId` with NO free-text escape, the table ships zero rows by the no-fake-data policy, and no operation anywhere could add one — so no appointment could be cancelled at all. The database has permitted the
+ * write since the table was created (`GRANT SELECT, INSERT, UPDATE ... TO
+ * app_runtime` plus `ins_cancellation_reasons_tenant`); only the API published nothing.
+ *
+ * Creating is NOT seeding: no row ships, and the operator decides what their
+ * catalogue contains.
  *
  * `apt.cancellation_reasons` is a dual-scope configuration catalogue the intake writes
  * reference by uuid, and nothing published its rows — a cancellation demands a catalogued reason id and no picker could name one, which made the cancel dialog unbuildable.
@@ -20,14 +27,32 @@
 import { z } from 'zod';
 import { defineOperation } from '@/server/auth/operation-registry';
 import { handleOperation } from '@/server/http/route-handler';
-import { parseOrFail, schemas, searchParamsToObject } from '@/server/http/validation';
-import { receptionModule } from '@/modules/reception';
+import {
+  parseJsonBody,
+  parseOrFail,
+  schemas,
+  searchParamsToObject,
+} from '@/server/http/validation';
+import { CATALOGUE_CODE_PATTERN, MAX_CATALOGUE_NAME, receptionModule } from '@/modules/reception';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const Query = z
   .object({ cursor: schemas.cursor.optional(), limit: schemas.limit.optional() })
+  .strict();
+
+/**
+ * `code` mirrors the relation's `code_format` CHECK so a bad code is a 422 that
+ * names the field rather than a CHECK violation. `scope` and `tenantId` are
+ * absent by design: both come from the resolved principal, and accepting either
+ * from the client is how a tenant writes another tenant's row.
+ */
+const CreateBody = z
+  .object({
+    code: z.string().regex(CATALOGUE_CODE_PATTERN),
+    name: z.string().trim().min(1).max(MAX_CATALOGUE_NAME),
+  })
   .strict();
 
 export const CANCELLATION_REASON_LIST_OPERATION = defineOperation({
@@ -53,5 +78,41 @@ export async function GET(request: Request): Promise<Response> {
         parseOrFail(Query, searchParamsToObject(new URL(raw.url).searchParams), 'query')
       ),
     })
+  );
+}
+
+export const CANCELLATION_REASON_CREATE_OPERATION = defineOperation({
+  id: 'apt.catalogue-cancellation-reason-create',
+  module: 'reception',
+  method: 'POST',
+  path: '/appointment-catalogue/cancellation-reasons',
+  summary: 'Add a cancellation reason to the caller tenant catalogue.',
+  permissions: ['apt.catalogue.manage'],
+  scope: 'tenant',
+  auditClass: 'privileged',
+  auditAction: 'apt.cancellation_reason.created',
+  idempotent: true,
+  rateLimitPolicy: 'standard-command',
+  cacheCategory: 'never',
+});
+
+export async function POST(request: Request): Promise<Response> {
+  const body = await request
+    .clone()
+    .json()
+    .catch(() => null);
+  return handleOperation(
+    CANCELLATION_REASON_CREATE_OPERATION,
+    request,
+    async ({ db, request: raw }) => {
+      const input = await parseJsonBody(raw, CreateBody);
+      const created = await receptionModule().intakeCatalogues.create(
+        db,
+        'cancellation_reasons',
+        input
+      );
+      return { status: 201, body: created, recordVersion: created.recordVersion };
+    },
+    { body }
   );
 }

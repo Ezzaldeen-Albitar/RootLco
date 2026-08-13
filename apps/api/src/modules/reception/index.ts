@@ -64,6 +64,17 @@ export type {
   AppointmentListEntry,
 } from './data/appointment-read-repository';
 export type { IntakeCatalogueEntry } from './data/intake-catalogue-repository';
+export type { IntakeCatalogueEntryView } from './application/intake-catalogue-service';
+// The intake-catalogue management contract (P1-27-INT-018). The bounds are
+// exported because the ROUTES validate against them: a code that fails
+// `ck_<t>_code_format` must be a 422 naming the field, not a CHECK violation.
+export {
+  CATALOGUE_CODE_PATTERN,
+  CATALOGUE_STATUSES,
+  INTAKE_CATALOGUE_DESCRIPTORS,
+  MAX_CATALOGUE_NAME,
+  type CatalogueStatus,
+} from './domain/intake-catalogue';
 export type {
   ComplaintEvidence,
   ConditionEvidenceInput,

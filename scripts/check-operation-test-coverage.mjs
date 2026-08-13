@@ -650,6 +650,118 @@ export const MANIFEST = {
     required: ['success', 'denial'],
     note: 'P1-27-INT-018. The refusal record could not offer its optional catalogued reason. Same catalogue contract.',
   },
+  // P1-27-INT-018, management half. The reads above made the catalogues
+  // READABLE; these make them POPULATABLE, which is what the screens actually
+  // needed — every one of the seven tables ships zero rows by the no-fake-data
+  // policy and no operation could add one, so a required appointmentTypeId
+  // could never be satisfied. One suite covers all twenty-one because the seven
+  // relations are structurally identical; it is table-driven over the REAL
+  // handlers, so each catalogue is exercised in full rather than by analogy.
+  'apt.catalogue-appointment-type-create': {
+    files: ['tests/backend/p1-18-intake-catalogue-management.test.ts'],
+    required: ['success', 'denial', 'idempotency', 'audit'],
+    note: 'P1-27-INT-018. apt.appointment-create REQUIRES appointmentTypeId and nothing could add a type, so no appointment could be booked at all. scope and tenant_id come from the principal (proven by reading the stored row back), never the request; a duplicate code is 409 and a RETIRED entry still holds its code, because uq_appointment_types_tenant_code names deleted_at and not status.',
+  },
+  'apt.catalogue-appointment-type-update': {
+    files: ['tests/backend/p1-18-intake-catalogue-management.test.ts'],
+    required: ['success', 'denial', 'stale-version', 'audit'],
+    note: 'P1-27-INT-018. Renames only: code is frozen by tg_appointment_types_immutable and offering it is a 422 under the strict schema, because every appointment already booked means the code. A platform default answers an explained 403 rather than the zero-row UPDATE the RLS policy would otherwise produce.',
+  },
+  'apt.catalogue-appointment-type-status-set': {
+    files: ['tests/backend/p1-18-intake-catalogue-management.test.ts'],
+    required: ['success', 'denial', 'idempotency', 'stale-version', 'audit'],
+    note: 'P1-27-INT-018. The only removal affordance there is: app_runtime holds no DELETE grant and fk_appointments_type is ON DELETE RESTRICT. Bidirectional on purpose — a retired row keeps its code, so retire-only would burn it for the tenant permanently.',
+  },
+  'apt.catalogue-source-channel-create': {
+    files: ['tests/backend/p1-18-intake-catalogue-management.test.ts'],
+    required: ['success', 'denial', 'idempotency', 'audit'],
+    note: 'P1-27-INT-018. The optional sourceChannelId on booking had no options to offer. Same management contract as the appointment types.',
+  },
+  'apt.catalogue-source-channel-update': {
+    files: ['tests/backend/p1-18-intake-catalogue-management.test.ts'],
+    required: ['success', 'denial', 'stale-version', 'audit'],
+    note: 'P1-27-INT-018. Same rename contract; the code is frozen because appointments and walk-in references both record the channel they arrived through.',
+  },
+  'apt.catalogue-source-channel-status-set': {
+    files: ['tests/backend/p1-18-intake-catalogue-management.test.ts'],
+    required: ['success', 'denial', 'idempotency', 'stale-version', 'audit'],
+    note: 'P1-27-INT-018. Same lifecycle contract; two referencing FKs (apt.appointments, rec.walk_in_references), both ON DELETE RESTRICT.',
+  },
+  'apt.catalogue-cancellation-reason-create': {
+    files: ['tests/backend/p1-18-intake-catalogue-management.test.ts'],
+    required: ['success', 'denial', 'idempotency', 'audit'],
+    note: 'P1-27-INT-018. apt.appointment-cancel demands a mandatory catalogued cancellationReasonId with no free-text escape and nothing could add one, so no appointment could be cancelled at all. Same management contract.',
+  },
+  'apt.catalogue-cancellation-reason-update': {
+    files: ['tests/backend/p1-18-intake-catalogue-management.test.ts'],
+    required: ['success', 'denial', 'stale-version', 'audit'],
+    note: 'P1-27-INT-018. Same rename contract; the code is frozen because every cancelled appointment names the reason it was cancelled under.',
+  },
+  'apt.catalogue-cancellation-reason-status-set': {
+    files: ['tests/backend/p1-18-intake-catalogue-management.test.ts'],
+    required: ['success', 'denial', 'idempotency', 'stale-version', 'audit'],
+    note: 'P1-27-INT-018. Same lifecycle contract; cancelled appointments reference the row permanently, so withdrawal can only ever be a status.',
+  },
+  'rec.catalogue-visit-reason-create': {
+    files: ['tests/backend/p1-18-intake-catalogue-management.test.ts'],
+    required: ['success', 'denial', 'idempotency', 'audit'],
+    note: 'P1-27-INT-018. rec.visit_reasons existed with zero rows and zero operations of any kind. Same management contract.',
+  },
+  'rec.catalogue-visit-reason-update': {
+    files: ['tests/backend/p1-18-intake-catalogue-management.test.ts'],
+    required: ['success', 'denial', 'stale-version', 'audit'],
+    note: 'P1-27-INT-018. Same rename contract; rec.visit_reason_links records why the vehicle came in and means the code.',
+  },
+  'rec.catalogue-visit-reason-status-set': {
+    files: ['tests/backend/p1-18-intake-catalogue-management.test.ts'],
+    required: ['success', 'denial', 'idempotency', 'stale-version', 'audit'],
+    note: 'P1-27-INT-018. Same lifecycle contract; fk_visit_reason_links_reason is ON DELETE RESTRICT.',
+  },
+  'rec.catalogue-fuel-level-create': {
+    files: ['tests/backend/p1-18-intake-catalogue-management.test.ts'],
+    required: ['success', 'denial', 'idempotency', 'audit'],
+    note: 'P1-27-INT-018. Check-in accepts fuelLevelId and the picker had nothing to show. This is also the catalogue the end-to-end proof runs on: a level created through the API is then referenced by a REAL reception visit opened through rec.reception-create.',
+  },
+  'rec.catalogue-fuel-level-update': {
+    files: ['tests/backend/p1-18-intake-catalogue-management.test.ts'],
+    required: ['success', 'denial', 'stale-version', 'audit'],
+    note: 'P1-27-INT-018. Same rename contract; the level recorded at intake is part of the condition the vehicle arrived in and means the code.',
+  },
+  'rec.catalogue-fuel-level-status-set': {
+    files: ['tests/backend/p1-18-intake-catalogue-management.test.ts'],
+    required: ['success', 'denial', 'idempotency', 'stale-version', 'audit'],
+    note: 'P1-27-INT-018. Where the no-hard-delete claim is proven behaviourally rather than asserted: a DELETE from the runtime role is 42501, a DELETE of a row a live visit references is 23503 even as admin, and retiring leaves the visit still resolving it.',
+  },
+  'rec.catalogue-warning-light-code-create': {
+    files: ['tests/backend/p1-18-intake-catalogue-management.test.ts'],
+    required: ['success', 'denial', 'idempotency', 'audit'],
+    note: 'P1-27-INT-018 / RMC-11. The warning_light evidence kind requires a code id; PR #220 shipped the read and recorded that population remained a separately provisioned decision — this is the operation that makes it one an operator can actually take.',
+  },
+  'rec.catalogue-warning-light-code-update': {
+    files: ['tests/backend/p1-18-intake-catalogue-management.test.ts'],
+    required: ['success', 'denial', 'stale-version', 'audit'],
+    note: 'P1-27-INT-018. Same rename contract; pre-service condition evidence is permanent and names the code it observed.',
+  },
+  'rec.catalogue-warning-light-code-status-set': {
+    files: ['tests/backend/p1-18-intake-catalogue-management.test.ts'],
+    required: ['success', 'denial', 'idempotency', 'stale-version', 'audit'],
+    note: 'P1-27-INT-018. Same lifecycle contract; fk_warning_light_observations_code is ON DELETE RESTRICT, so recorded evidence keeps resolving its code forever.',
+  },
+  'rec.catalogue-refusal-reason-create': {
+    files: ['tests/backend/p1-18-intake-catalogue-management.test.ts'],
+    required: ['success', 'denial', 'idempotency', 'audit'],
+    note: 'P1-27-INT-018. The refusal record could not offer its optional catalogued reason. rec.reception-close-without-work states the same gap from the other side — it takes bounded free text precisely BECAUSE this catalogue had no management operation.',
+  },
+  'rec.catalogue-refusal-reason-update': {
+    files: ['tests/backend/p1-18-intake-catalogue-management.test.ts'],
+    required: ['success', 'denial', 'stale-version', 'audit'],
+    note: 'P1-27-INT-018. Same rename contract; every recorded refusal means the code it was recorded under.',
+  },
+  'rec.catalogue-refusal-reason-status-set': {
+    files: ['tests/backend/p1-18-intake-catalogue-management.test.ts'],
+    required: ['success', 'denial', 'idempotency', 'stale-version', 'audit'],
+    note: 'P1-27-INT-018. Same lifecycle contract; a refusal is preserved as its own fact and keeps naming its reason.',
+  },
   'rec.reception-close-without-work': {
     files: ['tests/backend/p1-18-reception-closure.test.ts'],
     required: [

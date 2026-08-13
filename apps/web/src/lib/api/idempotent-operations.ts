@@ -10,7 +10,7 @@
  * The backend requires an `Idempotency-Key` header on every operation it
  * registers as idempotent, and answers `400 ERR-INT-002` without one — before
  * authorization is evaluated. That set is NOT "the POST operations": it is
- * currently 122 operations (PATCH 3, POST 113, PUT 6).
+ * currently 136 operations (PATCH 3, POST 127, PUT 6).
  *
  * The client used to infer the answer from the HTTP method, which was wrong for
  * every non-POST member of that set. This table is the contract instead of a
@@ -24,7 +24,7 @@
  * thirteen of them stating which class a write declares, none of them checkable
  * — because the Web tier held no data from which one could be derived.
  *
- * Currently approval 13, export 1, financial 13, none 106, privileged 115, security 13.
+ * Currently approval 13, export 1, financial 13, none 106, privileged 136, security 13.
  *
  * `(absent)` above would mean an operation the document publishes with NO audit
  * class. It is emitted as the empty string rather than defaulted to `none`,
@@ -49,7 +49,7 @@ export interface PublishedOperation {
   readonly auditClass: string;
 }
 
-/** Every operation the contract publishes. 261 of them. */
+/** Every operation the contract publishes. 282 of them. */
 export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze([
   {
     template: '/additional-work/{requestId}/approval',
@@ -101,6 +101,27 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     auditClass: 'none',
   },
   {
+    template: '/appointment-catalogue/appointment-types',
+    method: 'POST',
+    operationId: 'apt.catalogue-appointment-type-create',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/appointment-catalogue/appointment-types/{appointmentTypeId}',
+    method: 'PATCH',
+    operationId: 'apt.catalogue-appointment-type-update',
+    idempotent: false,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/appointment-catalogue/appointment-types/{appointmentTypeId}/status',
+    method: 'POST',
+    operationId: 'apt.catalogue-appointment-type-status-set',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
     template: '/appointment-catalogue/cancellation-reasons',
     method: 'GET',
     operationId: 'apt.catalogue-cancellation-reason-list',
@@ -108,11 +129,53 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     auditClass: 'none',
   },
   {
+    template: '/appointment-catalogue/cancellation-reasons',
+    method: 'POST',
+    operationId: 'apt.catalogue-cancellation-reason-create',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/appointment-catalogue/cancellation-reasons/{cancellationReasonId}',
+    method: 'PATCH',
+    operationId: 'apt.catalogue-cancellation-reason-update',
+    idempotent: false,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/appointment-catalogue/cancellation-reasons/{cancellationReasonId}/status',
+    method: 'POST',
+    operationId: 'apt.catalogue-cancellation-reason-status-set',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
     template: '/appointment-catalogue/source-channels',
     method: 'GET',
     operationId: 'apt.catalogue-source-channel-list',
     idempotent: false,
     auditClass: 'none',
+  },
+  {
+    template: '/appointment-catalogue/source-channels',
+    method: 'POST',
+    operationId: 'apt.catalogue-source-channel-create',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/appointment-catalogue/source-channels/{sourceChannelId}',
+    method: 'PATCH',
+    operationId: 'apt.catalogue-source-channel-update',
+    idempotent: false,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/appointment-catalogue/source-channels/{sourceChannelId}/status',
+    method: 'POST',
+    operationId: 'apt.catalogue-source-channel-status-set',
+    idempotent: true,
+    auditClass: 'privileged',
   },
   {
     template: '/appointments',
@@ -1249,11 +1312,53 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     auditClass: 'none',
   },
   {
+    template: '/reception-catalogue/fuel-levels',
+    method: 'POST',
+    operationId: 'rec.catalogue-fuel-level-create',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/reception-catalogue/fuel-levels/{fuelLevelId}',
+    method: 'PATCH',
+    operationId: 'rec.catalogue-fuel-level-update',
+    idempotent: false,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/reception-catalogue/fuel-levels/{fuelLevelId}/status',
+    method: 'POST',
+    operationId: 'rec.catalogue-fuel-level-status-set',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
     template: '/reception-catalogue/refusal-reasons',
     method: 'GET',
     operationId: 'rec.catalogue-refusal-reason-list',
     idempotent: false,
     auditClass: 'none',
+  },
+  {
+    template: '/reception-catalogue/refusal-reasons',
+    method: 'POST',
+    operationId: 'rec.catalogue-refusal-reason-create',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/reception-catalogue/refusal-reasons/{refusalReasonId}',
+    method: 'PATCH',
+    operationId: 'rec.catalogue-refusal-reason-update',
+    idempotent: false,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/reception-catalogue/refusal-reasons/{refusalReasonId}/status',
+    method: 'POST',
+    operationId: 'rec.catalogue-refusal-reason-status-set',
+    idempotent: true,
+    auditClass: 'privileged',
   },
   {
     template: '/reception-catalogue/visit-reasons',
@@ -1263,11 +1368,53 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     auditClass: 'none',
   },
   {
+    template: '/reception-catalogue/visit-reasons',
+    method: 'POST',
+    operationId: 'rec.catalogue-visit-reason-create',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/reception-catalogue/visit-reasons/{visitReasonId}',
+    method: 'PATCH',
+    operationId: 'rec.catalogue-visit-reason-update',
+    idempotent: false,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/reception-catalogue/visit-reasons/{visitReasonId}/status',
+    method: 'POST',
+    operationId: 'rec.catalogue-visit-reason-status-set',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
     template: '/reception-catalogue/warning-light-codes',
     method: 'GET',
     operationId: 'rec.catalogue-warning-light-code-list',
     idempotent: false,
     auditClass: 'none',
+  },
+  {
+    template: '/reception-catalogue/warning-light-codes',
+    method: 'POST',
+    operationId: 'rec.catalogue-warning-light-code-create',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/reception-catalogue/warning-light-codes/{warningLightCodeId}',
+    method: 'PATCH',
+    operationId: 'rec.catalogue-warning-light-code-update',
+    idempotent: false,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/reception-catalogue/warning-light-codes/{warningLightCodeId}/status',
+    method: 'POST',
+    operationId: 'rec.catalogue-warning-light-code-status-set',
+    idempotent: true,
+    auditClass: 'privileged',
   },
   {
     template: '/receptions',
