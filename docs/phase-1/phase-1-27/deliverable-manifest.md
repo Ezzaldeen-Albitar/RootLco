@@ -73,11 +73,11 @@ cannot, that is said instead of guessed.
 
 | #   | what it printed then                   | what it prints now                     | how the current value is held true                                  |
 | --- | -------------------------------------- | -------------------------------------- | ------------------------------------------------------------------- |
-| 2   | `69 file(s) across 3 tree(s)`          | `111 file(s) across 4 tree(s)`         | derived — §3 and §5.1                                               |
+| 2   | `69 file(s) across 3 tree(s)`          | `120 file(s) across 5 tree(s)`         | derived — §3 and §5.1                                               |
 | 4   | `170 file(s) checked`                  | `179 file(s) checked`                  | re-run; the colour count is unchanged at 54                         |
 | 5   | `195 / 0`, `197 / 0`, `170 / 0`        | `204 / 0`, `206 / 0`, `179 / 0`        | re-run; all three still report zero                                 |
 | 6   | `143 registered · 71 required · 71/71` | `151 registered · 76 required · 76/76` | derived — §7.1                                                      |
-| 8   | `39 files, 803 passed`                 | `91` files; case total NOT restated    | the file half derived — §3 and §6.1; the case half is `E-03`        |
+| 8   | `39 files, 803 passed`                 | `93` files; case total NOT restated    | the file half derived — §3 and §6.1; the case half is `E-03`        |
 | 9   | `77 files, 1680 passed`                | `86 files, 1821 passed`                | recorded, not derived — §6.4 says why                               |
 | 10  | `31 files, 638 passed`                 | `36 files, 715 passed`                 | the file half derived — §6.4                                        |
 | 11  | `150 tests in 2 files`                 | **not re-measured**                    | needs a browser install; unchanged as far as any record here states |
@@ -224,16 +224,19 @@ every advance of local `develop` in the sequence above was a fast-forward from
 
 ## 5. Source files
 
-### 5.1 The four trees the P1-27 ownership gate owns — 111 files
+### 5.1 The five trees the P1-27 ownership gate owns — 120 files
 
-`validate:p1-27-frontend` reports **111 files across 4 trees, 0 failures**. Of
+`validate:p1-27-frontend` reports **120 files across 5 trees, 0 failures**. Of
 those, **43** are §5.2 and §5.3 together — the two feature trees — and both
 halves are derived from the trees the gate itself names, so the count follows the
 gate rather than a reader's memory of it. The next **34** are the third
 canonical tree, `apps/web/src/app/[locale]/(dashboard)`, which this manifest
 tables nowhere: §5.4 lists the eight CRM and Vehicle route pages only, and the
-other route files belong to earlier phases or to P1-28. The last **34** are
-`apps/web/src/features/receptions`, which is not a P1-27 tree at all: P1-28
+other route files belong to earlier phases or to P1-28. The last **43** are the
+two trees P1-28 adopted: **9** in `apps/web/src/features/appointments`, added
+when `P1-28-DO-001` found that the P1-28 plan names three Frontend trees and the
+gate had adopted only one of them, and **34** in
+`apps/web/src/features/receptions`, which is not a P1-27 tree at all either: P1-28
 ADOPTED these rules for it (`ADOPTED_ROOTS` in the gate, declared by
 `phase-1-28/canonical-plan.md` §9), because `no-upload-path` and
 `no-invented-media-limit` enforce the standing `P1-OD-025` disposition rather
@@ -404,7 +407,7 @@ records.
 
 ## 6. Test files
 
-### 6.1 Web unit and component — `apps/web/tests` (91 files, and no case total — `E-03`)
+### 6.1 Web unit and component — `apps/web/tests` (93 files, and no case total — `E-03`)
 
 **`E-03` is closed by DELETING the number, not by correcting it.** The heading
 used to read `(70 files, 1493 cases, 0 failed)`, and before that `(66 files, 1231
@@ -683,7 +686,7 @@ under-report itself by seven files.
 | `ci-evidence.md`                                  | 275   | Hosted CI, with every value classified and every hosted one naming its run         |
 | `clean-room-evidence.md`                          | 379   | The clean-room record, and the six classes every closing value is sorted into      |
 | `contract-archaeology.md`                         | 416   | What the Backend actually publishes, read before anything was built                |
-| `deliverable-manifest.md`                         | 1048  | This file                                                                          |
+| `deliverable-manifest.md`                         | 1051  | This file                                                                          |
 | `developer-guide.md`                              | 188   | `DOC-002` — the developer half                                                     |
 | `evidence/change-log.md`                          | 1135  | `DOC-002` — the change-log half; its rows are scraped by a test                    |
 | `evidence/evidence-manifest.json`                 | 171   | `QA-005` — a SHA-256 digest of every document in this directory                    |
@@ -968,8 +971,8 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
      an earlier revision put them in the label column and broke two other gates
      whose regexes read the label and the number as adjacent cells. -->
 
-<!-- derived: files apps/web/tests = 91 -->
-<!-- derived: files tests/ci = 43 -->
+<!-- derived: files apps/web/tests = 93 -->
+<!-- derived: files tests/ci = 44 -->
 <!-- derived: files scripts/ci = 48 -->
 <!-- derived: files apps/web/scripts = 4 -->
 <!-- derived: files supabase/migrations = 120 -->
@@ -979,8 +982,8 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
 <!-- derived: files tests/backend:all = 90 -->
 <!-- derived: files apps/web/src/features/crm = 20 -->
 <!-- derived: files apps/web/src/features/vehicles = 23 -->
-<!-- derived: files p1-27-frontend-gate = 111 -->
-<!-- derived: files p1-27-frontend-gate:trees = 4 -->
+<!-- derived: files p1-27-frontend-gate = 120 -->
+<!-- derived: files p1-27-frontend-gate:trees = 5 -->
 <!-- derived: tracked docs/phase-1/phase-1-27 = 41 -->
 <!-- derived: tracked docs/phase-1/phase-1-27:md = 31 -->
 <!-- derived: tracked docs/product = 13 -->
@@ -1002,7 +1005,7 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
 <!-- derived: lines docs/phase-1/phase-1-27/clean-room-evidence.md = 379 -->
 <!-- derived: lines docs/phase-1/phase-1-27/closure-record.md = 114 -->
 <!-- derived: lines docs/phase-1/phase-1-27/contract-archaeology.md = 416 -->
-<!-- derived: lines docs/phase-1/phase-1-27/deliverable-manifest.md = 1048 -->
+<!-- derived: lines docs/phase-1/phase-1-27/deliverable-manifest.md = 1051 -->
 <!-- derived: lines docs/phase-1/phase-1-27/developer-guide.md = 188 -->
 <!-- derived: lines docs/phase-1/phase-1-27/evidence/change-log.md = 1135 -->
 <!-- derived: lines docs/phase-1/phase-1-27/evidence/evidence-manifest.json = 171 -->

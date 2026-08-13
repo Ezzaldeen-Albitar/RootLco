@@ -129,6 +129,23 @@ export const PLAN_ROOTS = [
  * @type {ReadonlyArray<{ root: string, authority: string, phase: string }>}
  */
 export const ADOPTED_ROOTS = Object.freeze([
+  /*
+   * P1-28's plan §9 names THREE trees — `features/appointments`,
+   * `features/receptions` and `app/[locale]/(dashboard)` — and this constant
+   * recorded one of them. The dashboard tree is already a `PLAN_ROOT`, so the
+   * omission was `features/appointments` alone: nine files holding the booking,
+   * calendar and detail screens, collected by no root, while the docblock above
+   * described the adoption as complete. That is the same shape the third
+   * `PLAN_ROOT` was added to fix — a gate contradicting its own authority — and
+   * `tests/ci/p1-28-devops-gate.test.ts` now derives the expected adopted set
+   * from the P1-28 plan's §9 sentence so a fourth tree cannot be forgotten the
+   * same way (`P1-28-DO-001`).
+   */
+  Object.freeze({
+    root: join('apps', 'web', 'src', 'features', 'appointments'),
+    authority: 'docs/phase-1/phase-1-28/canonical-plan.md',
+    phase: 'P1-28',
+  }),
   Object.freeze({
     root: join('apps', 'web', 'src', 'features', 'receptions'),
     authority: 'docs/phase-1/phase-1-28/canonical-plan.md',
@@ -288,6 +305,13 @@ export const MODULE_DISPOSITION = Object.freeze({
    * so `in-surface` rather than transport.
    */
   'apps/web/src/components/notifications': 'in-surface',
+  /**
+   * The dialog, drawer and confirmation family. Newly visible when the P1-28
+   * appointment tree adopted these rules: the cancellation and no-show
+   * confirmations are overlays, and a confirmation is the last thing an
+   * operator reads before a lifecycle write. `in-surface`, not transport.
+   */
+  'apps/web/src/components/overlays': 'in-surface',
   /**
    * `PrintDocument`/`PrintTable` — the page geometry of the acknowledgement
    * sheet a customer is handed. Newly visible with the adopted tree, and about

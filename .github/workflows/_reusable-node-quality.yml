@@ -261,6 +261,13 @@ jobs:
           # UUIDs, no permission codes, no snake_case identifiers, no raw
           # translation keys — in either language.
           npm run validate:plain-language
+          # The 35-task P1-28 register, derived from its canonical plan rather
+          # than maintained beside it. P1-27 counted 33 adjudicated items as 42
+          # canonical tasks and nine tasks appeared in no status table for four
+          # adversarial rounds, so this authority exists from day one — and it
+          # is named by a hosted job from day one too, rather than riding only
+          # the aggregate the way its P1-27 sibling still does.
+          npm run validate:p1-28-matrix
 
       # =======================================================================
       # Changed-file ownership — P1-27-DO-003.
@@ -589,6 +596,15 @@ jobs:
           # P1-27 mutation must be reachable from a real production call site,
           # or carry an approved decision saying why it is not.
           npm run validate:p1-27-reachability
+          # The apt/rec twin (P1-28-SEC-004). The line above derives its
+          # canonical list from the crm/veh operations alone, so the fourteen
+          # appointment and reception writes P1-28 consumes had no reachability
+          # authority named by any hosted job — INT-113's exact precondition,
+          # one domain over. It rode the clean-room aggregate and nothing else,
+          # and the clean room is the slowest job in the pull request; a gate a
+          # developer meets forty minutes late is a gate they meet after the
+          # next commit. Named here so it fails beside its sibling.
+          npm run validate:p1-28-write-reachability
 
       - name: Web component tier
         if: inputs.task == 'web-quality'
