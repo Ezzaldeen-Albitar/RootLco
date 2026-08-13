@@ -205,6 +205,9 @@ const CAPABILITIES = {
   readCustomers: true,
   readVehicles: true,
   manageEvidence: true,
+  // P1-28-SEC-002: the WF-27 second permission, held here so the existing
+  // cases keep exercising the capture forms they were written against.
+  viewSensitiveNarratives: true,
   manageSignatures: true,
   recordOdometer: true,
   approveReceptions: true,

@@ -11,6 +11,7 @@ import { requireSession } from '@/features/authentication/api/session';
 import { CRM_PERMISSIONS, VEHICLE_PERMISSIONS, holds } from '@/features/crm/permissions';
 import { readReception } from '@/features/receptions/api';
 import { CHECK_IN_STEPS } from '@/features/receptions/check-in/steps';
+import { SENSITIVE_NARRATIVE_PERMISSION } from '@/features/receptions/check-in/sensitive';
 import { CheckInWizardShell } from '@/features/receptions/components/CheckInWizardShell';
 import { RECEPTION_PERMISSIONS } from '@/features/receptions/receptions-contract';
 import { WORK_ORDER_READ_PERMISSION } from '@/features/receptions/work-order-contract';
@@ -127,6 +128,11 @@ export default async function CheckInWizardPage({
         readCustomers: holds(session.permissions, CRM_PERMISSIONS.customerRead),
         readVehicles: holds(session.permissions, VEHICLE_PERMISSIONS.vehicleRead),
         manageEvidence: holds(session.permissions, RECEPTION_PERMISSIONS.evidenceManage),
+        // `P1-28-SEC-002` / WF-27. The SECOND permission the complaint and
+        // contents writes need — the operation's own check passes without it and
+        // the database then refuses the narrative row. Resolved here with every
+        // other capability so no step consults the session itself.
+        viewSensitiveNarratives: holds(session.permissions, SENSITIVE_NARRATIVE_PERMISSION),
         manageSignatures: holds(session.permissions, RECEPTION_PERMISSIONS.signatureManage),
         recordOdometer: holds(session.permissions, VEHICLE_PERMISSIONS.odometerRecord),
         approveReceptions: holds(session.permissions, RECEPTION_PERMISSIONS.approve),

@@ -31,6 +31,7 @@ import {
   type ChosenAppointment,
   type OriginDraft,
 } from '../check-in/wizard';
+import { STAFF_DIRECTORY_NOTICE_KEY } from '../staff-directory';
 import {
   listConfirmedAppointments,
   listReceivingEmployeeCandidates,
@@ -990,6 +991,22 @@ function EmployeeControl({
             no employee master exists to validate it against. */}
         {translate(messages, 'receptions.checkIn.employeeHint')}
       </p>
+
+      {canPickEmployee ? (
+        <p
+          data-testid="employee-directory-scope"
+          className="text-caption text-text-muted"
+          lang={locale}
+        >
+          {/* `P1-28-SEC-001`. The disposition for the `iam.user.read` overload,
+              stated where the capability is exercised rather than only in a
+              document: this control reads the WHOLE workspace user directory,
+              because that is the only staff read the platform publishes.
+              `features/receptions/staff-directory.ts` carries the reasoning and
+              names the operations the code opens. */}
+          {translate(messages, STAFF_DIRECTORY_NOTICE_KEY)}
+        </p>
+      ) : null}
 
       {searching && canPickEmployee ? (
         <div className="flex flex-col gap-2 rounded-md border border-border p-3">

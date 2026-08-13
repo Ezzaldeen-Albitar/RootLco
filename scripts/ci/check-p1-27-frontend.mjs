@@ -134,6 +134,24 @@ export const ADOPTED_ROOTS = Object.freeze([
     authority: 'docs/phase-1/phase-1-28/canonical-plan.md',
     phase: 'P1-28',
   }),
+  /*
+   * `P1-28-SEC-003`. The reception tree was adopted alone, and P1-28's plan §9
+   * names TWO feature trees: `features/appointments/**` as well.
+   *
+   * Measured at the head that carried the omission: nine `.ts`/`.tsx` files —
+   * the whole appointment surface, including the two screens that build a
+   * branch-target query and the booking form that posts a company and a branch
+   * in its body — were collected by no root. Seven rules reported clean over a
+   * tree they had never opened, and the eighth (`no-client-asserted-scope`) was
+   * the only one whose premise genuinely does not hold there. That is the same
+   * shape as the P1-27 dashboard-root omission one phase later, so it is fixed
+   * the same way: by citation, not by opinion.
+   */
+  Object.freeze({
+    root: join('apps', 'web', 'src', 'features', 'appointments'),
+    authority: 'docs/phase-1/phase-1-28/canonical-plan.md',
+    phase: 'P1-28',
+  }),
 ]);
 
 /** Every tree the gate opens: the plan's three, plus every adopted tree. */
@@ -288,6 +306,13 @@ export const MODULE_DISPOSITION = Object.freeze({
    * so `in-surface` rather than transport.
    */
   'apps/web/src/components/notifications': 'in-surface',
+  /**
+   * The confirmation dialogs the appointment detail screen raises before it
+   * cancels an appointment or records a no-show — both terminal, both
+   * irreversible. Newly visible when the P1-28 appointment tree was adopted;
+   * operator-facing, so `in-surface`.
+   */
+  'apps/web/src/components/overlays': 'in-surface',
   /**
    * `PrintDocument`/`PrintTable` — the page geometry of the acknowledgement
    * sheet a customer is handed. Newly visible with the adopted tree, and about

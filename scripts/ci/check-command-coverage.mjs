@@ -275,6 +275,19 @@ export const REGISTER = Object.freeze([
     why: 'every canonical P1-28 apt/rec write is reachable, allow-listed with a reason, or deliberately absent',
   },
   {
+    name: 'validate:p1-28-access',
+    owner: ROOT,
+    tier: 'required',
+    // `P1-28-SEC-001` / `SEC-003`. SEC-004's gate asks whether an operation can
+    // be reached; this asks the two questions after it — whether the screen
+    // requires exactly the permission its operations require and no more, and
+    // whether anything in these trees puts a scope into a request. Both were
+    // enforced by test files alone before this, and a test can be deleted in the
+    // same commit as the code it guards. Mutation-proved by
+    // tests/ci/p1-28-access-gate.test.ts.
+    why: 'every P1-28 screen gates before it reads, consults only published codes, requires no more than its operations require, and asserts no scope in a URL',
+  },
+  {
     name: 'evidence:p1-27',
     owner: ROOT,
     // `informational`, not `optional`. `optional` is not one of the four tiers
