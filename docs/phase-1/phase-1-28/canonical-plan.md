@@ -77,9 +77,11 @@ Permanent rule, carried from P1-27 §4: **no new Backend feature development is
 allowed inside the P1-28 Frontend branch.** A real Backend gap goes through
 separate protected remediation owned by the Backend phase that owns the domain.
 
-The contract archaeology proved the apt/rec public surface is **12 POST
-commands and zero reads**
-(`docs/product/workshop/frontend-implementation-program.md:334-336`). The
+The contract archaeology proved that at the P1-27 closure head the apt/rec
+public surface was **12 POST commands and no read of any kind**
+(`docs/product/workshop/frontend-implementation-program.md:334-336`). That is
+the fact this whole phase is sequenced by, and it is history: the surface at
+THIS head is stated once, derived, in `contract-archaeology.md`. The
 remediation register — what is missing, who owns it, and the smallest fix — is
 `contract-archaeology.md` §4 (R1 through R8). The two highest-leverage items:
 
@@ -89,7 +91,21 @@ remediation register — what is missing, who owns it, and the smallest fix — 
 | **R2** | Appointment read surface — list, detail, and the `apt.appointment.read` seed (`p1-18-p1-28-boundaries.md:29-43`). EXECUTED 2026-08-12 — PR #220.                                                                                    | P1-18 |
 
 A task in §5 whose operations are marked `[MISSING Rn]` binds the operation
-that remediation will create; the binding is honest about not existing yet. **Re-derived 2026-08-13 (`P1-28-DOC-001`):** R1–R5 are EXECUTED and integrated at this branch’s head — PR #220 (P1-18 read surface, seven catalogues, terminal closes) and PR #221 (P1-16 customer-vehicle read) — and no §5 binding carries the marker any longer. Every one of the 35 rows in §5 was re-checked against `docs/phase-1/phase-1-24/evidence/operation-register.json` at this head: **35 tasks, 0 bindings naming an unregistered id.** R6–R8 remain open.
+that remediation will create; the binding is honest about not existing yet.
+
+**Re-derived 2026-08-13 (`P1-28-DOC-001`), and no longer re-derivable by hand.**
+R1–R5 are EXECUTED and integrated at this branch's head — PR #220 (P1-18 read
+surface, seven catalogue reads, the two terminal closes) and PR #221 (P1-16
+customer-vehicle read) — and PR #227 has since published the intake-catalogue
+management surface. No §5 binding carries a `[MISSING Rn]` marker any longer,
+and none may: `scripts/ci/check-p1-28-traceability.mjs` resolves **every**
+binding of **every** §5 row against
+`docs/phase-1/phase-1-24/evidence/operation-register.json` on every pull
+request, and refuses the marker outright now that the remediations it names have
+landed. The paragraph you are reading used to be the proof; it is now a
+description of a check, which is the only form of this sentence that cannot go
+stale. R6–R8 remain open, and the surface figures live in
+`contract-archaeology.md` as derived claims — never restated here.
 
 ---
 
@@ -100,7 +116,9 @@ Documentation 2.
 
 Every title is **domain-qualified**. Operations are bound from the contract
 archaeology: a plain id (for example `apt.appointment-create`) is registered
-and routable at this branch’s head (originally recorded at `develop` `d64f259`; re-derived 2026-08-12 after R1–R5 landed); an id marked `[MISSING Rn]` did not exist
+and routable at this branch's head — originally recorded at `develop` `d64f259`,
+re-derived after R1–R5 landed, and checked on every pull request since (§4); an
+id marked `[MISSING Rn]` did not exist
 at that head and names the operation remediation `Rn` of
 `contract-archaeology.md` §4 will create; a bracketed `[kind ...]` or
 `[fields ...]` qualifier narrows one registered operation to the part of its
@@ -256,8 +274,9 @@ heading.
   route (`rec.catalogue-warning-light-code-list`) and that changed nothing an
   operator can see: a read does not populate a table.
 - **The contract half is now CLOSED, and the entry is corrected rather than
-  left standing.** This entry used to read "and has no management operation
-  (RMC-11)". That sentence is **no longer true**: PR #227 registered
+  left standing.** This entry used to assert that the catalogue had no
+  management contract at all (RMC-11). That assertion is **no longer true**: PR
+  #227 registered
   `rec.catalogue-warning-light-code-create`, `-update` and `-status-set` behind
   `rec.catalogue.manage`. RMC-11 named two things at once — a missing contract
   and an unpopulated table — and only the first has been answered.

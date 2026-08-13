@@ -1,0 +1,623 @@
+{
+  "$comment": [
+    "P1-28 traceability record (P1-28-DOC-001), checked by",
+    "scripts/ci/check-p1-28-traceability.mjs (validate:p1-28-traceability).",
+    "",
+    "WHAT THIS IS. The binding between the canonical 35-task register and the",
+    "tree: which operation each task consumes, which permission that operation",
+    "publishes, and which EXECUTABLE CASES prove the canonical test id the plan",
+    "allocated to it.",
+    "",
+    "WHY IT IS DATA AND NOT PROSE. P1-27 declared twenty-nine TC ids across three",
+    "documents and a repository-wide search returned nothing for any of them: the",
+    "plan said each 'will expand into the required path matrix', a future tense",
+    "nobody ever discharged. Twenty-nine empty test files would have made that",
+    "search succeed and proved nothing. So a citation here names a FILE and quotes",
+    "CASE TITLES, the titles are matched against comment-stripped source, and a",
+    "renamed case breaks the record instead of quietly hollowing it out.",
+    "",
+    "WHAT IS NOT HERE. No count that the tree can answer. The apt/rec surface",
+    "figures, the task-category sizes, the reachability classification counts and",
+    "the matrix totals are all derived by the gate and substituted into the",
+    "documents that carry a `derived:` marker. A number written here by hand would",
+    "be a number that goes stale, which is the exact defect this record exists to",
+    "close. The three totals below are the record's own shape, not the tree's, and",
+    "the gate recomputes them from these rows.",
+    "",
+    "THE BROWSER COLUMN IS DELIBERATELY SEPARATE. `provenBy` is the mocked tier:",
+    "component and contract suites that mock the transport, which is a test",
+    "fixture and NOT production-integration evidence (canonical-plan.md section",
+    "10). `observedInBrowserBy` may only cite apps/web/tests/e2e/**, where a real",
+    "session reaches the real Next.js server, the real API and the real database.",
+    "The gate refuses any other path in that field."
+  ],
+  "totals": {
+    "declared": 22,
+    "bound": 22,
+    "unbound": 0
+  },
+  "permissions": {
+    "apt.appointment.manage": "Books and reschedules. FE-002 and FE-003 consult it; confirming is a side effect of reschedule, so this one code carries both.",
+    "apt.appointment.lifecycle.manage": "Ends an appointment against the customer — cancel and no-show. A DIFFERENT code from booking, deliberately, and FE-004/FE-005 gate on it alone.",
+    "apt.appointment.read": "The appointment list, detail and the three operator-facing appointment catalogue reads. Seeded by R2 (PR #220); before it no apt.*.read code existed anywhere.",
+    "apt.catalogue.manage": "The nine appointment catalogue management writes and the three management reads PR #227 registered. Granted to NO role by any seed: P1-28-OD-001.",
+    "rec.reception.manage": "Opens a visit. FE-007's create form is withdrawn without it, and the read permission still keeps the resume path.",
+    "rec.reception.read": "The six per-visit reads, the queue and the four operator-facing reception catalogue reads. Seeded by R1 (PR #220); it is what lifted the single-session limitation.",
+    "rec.reception.party.manage": "Records a party role on the visit (FE-009).",
+    "rec.reception.authorization.verify": "Records an authorization decision (FE-009). High risk, approval audit class.",
+    "rec.reception.evidence.manage": "All eight condition-evidence kinds (FE-010 … FE-016). For complaint and contents the DATABASE additionally requires iam.sensitive.view — WF-27, recorded in composed-permissions.json.",
+    "rec.reception.signature.manage": "The signature record and the refusal record (FE-018, FE-019) — one code, two different operations.",
+    "rec.reception.approve": "Approves the visit (FE-020). Above being able to record evidence.",
+    "rec.reception.close": "The two terminal exits R5 added, close-without-work and refuse (FE-020). A third authority again.",
+    "rec.reception.convert": "Converts a visit into a work order (FE-022). NOT a wo.* code — WF-12.",
+    "rec.catalogue.manage": "The twelve reception catalogue management writes and the four management reads PR #227 registered. Granted to NO role by any seed: P1-28-OD-001."
+  },
+  "tasks": {
+    "FE-001": {
+      "testId": "TC-P1-28-APT-001",
+      "surface": "features/appointments/components/AppointmentCalendarScreen.tsx behind app/[locale]/(dashboard)/appointments/page.tsx; the queue half is features/receptions/components/ReceptionQueueScreen.tsx."
+    },
+    "FE-002": {
+      "testId": "TC-P1-28-APT-002",
+      "surface": "features/appointments/components/AppointmentBookingScreen.tsx behind appointments/new/page.tsx.",
+      "decisionRef": "P1-28-OD-001"
+    },
+    "FE-003": {
+      "testId": "TC-P1-28-APT-003",
+      "surface": "the confirm-by-rescheduling section of features/appointments/components/AppointmentDetailScreen.tsx."
+    },
+    "FE-004": {
+      "testId": "TC-P1-28-APT-004",
+      "surface": "the cancellation section of AppointmentDetailScreen.tsx, over apt.catalogue-cancellation-reason-list.",
+      "decisionRef": "P1-28-OD-001"
+    },
+    "FE-005": {
+      "testId": "TC-P1-28-APT-005",
+      "surface": "the no-show section of AppointmentDetailScreen.tsx."
+    },
+    "FE-006": {
+      "testId": "TC-P1-28-XD-001",
+      "surface": "features/receptions/intake/components/WalkInIntakeScreen.tsx and features/receptions/intake/intake-handoff.ts."
+    },
+    "FE-007": {
+      "testId": "TC-P1-28-REC-001",
+      "surface": "features/receptions/components/CheckInStartScreen.tsx, features/receptions/check-in/wizard.ts and check-in/steps.ts."
+    },
+    "FE-008": {
+      "testId": "TC-P1-28-XD-002",
+      "surface": "features/receptions/components/steps/IdentityStep.tsx."
+    },
+    "FE-009": {
+      "testId": "TC-P1-28-REC-002",
+      "surface": "features/receptions/components/steps/PartiesStep.tsx."
+    },
+    "FE-010": {
+      "testId": "TC-P1-28-REC-003",
+      "surface": "features/receptions/components/steps/ComplaintStep.tsx."
+    },
+    "FE-011": {
+      "testId": "TC-P1-28-REC-004",
+      "surface": "features/receptions/components/steps/InspectionStep.tsx."
+    },
+    "FE-012": {
+      "testId": "TC-P1-28-REC-005",
+      "surface": "features/receptions/components/steps/DamageStep.tsx."
+    },
+    "FE-013": {
+      "testId": "TC-P1-28-XD-003",
+      "surface": "features/receptions/components/steps/ReadingsStep.tsx, over the veh.* odometer operations."
+    },
+    "FE-014": {
+      "testId": "TC-P1-28-REC-006",
+      "surface": "features/receptions/components/steps/FuelStep.tsx.",
+      "decisionRef": "P1-28-OD-001"
+    },
+    "FE-015": {
+      "testId": "TC-P1-28-REC-007",
+      "surface": "features/receptions/components/steps/WarningLightsStep.tsx.",
+      "decisionRef": "P1-28-OD-001"
+    },
+    "FE-016": {
+      "testId": "TC-P1-28-REC-008",
+      "surface": "features/receptions/components/steps/ContentsStep.tsx."
+    },
+    "FE-017": {
+      "testId": "TC-P1-28-REC-009",
+      "surface": "features/receptions/media/* — the named-open-decision notice and nothing else.",
+      "decisionRef": "P1-OD-025"
+    },
+    "FE-018": {
+      "testId": "TC-P1-28-REC-010",
+      "surface": "features/receptions/components/steps/SignatureStep.tsx — attribution shown, nothing recorded.",
+      "decisionRef": "P1-OD-025"
+    },
+    "FE-019": {
+      "testId": "TC-P1-28-REC-011",
+      "surface": "features/receptions/components/steps/RefusalStep.tsx."
+    },
+    "FE-020": {
+      "testId": "TC-P1-28-REC-012",
+      "surface": "features/receptions/components/steps/SummaryStep.tsx and the reception queue board."
+    },
+    "FE-021": {
+      "testId": "TC-P1-28-REC-013",
+      "surface": "features/receptions/components/ReceptionAcknowledgementScreen.tsx, inside the shared print frame."
+    },
+    "FE-022": {
+      "testId": "TC-P1-28-XD-004",
+      "surface": "the conversion section of SummaryStep.tsx, reading wo.work-order-detail for the result."
+    },
+    "SEC-001": {
+      "testId": "N/A — the plan binds none",
+      "surface": "scripts/ci/check-p1-28-access.mjs and docs/phase-1/phase-1-28/composed-permissions.json."
+    },
+    "SEC-002": {
+      "testId": "N/A — the plan binds none",
+      "surface": "the composed iam.sensitive.view rows of composed-permissions.json and the two restricted wizard steps."
+    },
+    "SEC-003": {
+      "testId": "N/A — the plan binds none",
+      "surface": "the no-scope-in-a-url rule of check-p1-28-access.mjs."
+    },
+    "SEC-004": {
+      "testId": "N/A — the plan binds none",
+      "surface": "scripts/ci/check-p1-28-write-reachability.mjs and docs/phase-1/phase-1-28/write-reachability.json."
+    },
+    "QA-001": {
+      "testId": "N/A — the plan binds none",
+      "surface": "apps/web/tests/p1-28-qa.test.ts and the per-screen DOM suites."
+    },
+    "QA-002": {
+      "testId": "N/A — the plan binds none",
+      "surface": "the error-path and replay-shape cases of apps/web/tests/p1-28-qa.test.ts."
+    },
+    "QA-003": {
+      "testId": "N/A — the plan binds none",
+      "surface": "the isolation cases of apps/web/tests/p1-28-security.test.ts and the browser isolation spec."
+    },
+    "QA-004": {
+      "testId": "N/A — the plan binds none",
+      "surface": "scripts/ci/check-p1-28-version-sourcing.mjs."
+    },
+    "QA-005": {
+      "testId": "N/A — the plan binds none",
+      "surface": "end-of-phase; the evidence package is sealed against the closing candidate."
+    },
+    "DO-001": {
+      "testId": "N/A — the plan binds none",
+      "surface": "the P1-28 gate wiring in .github/workflows and scripts/ci/check-command-coverage.mjs."
+    },
+    "DO-002": {
+      "testId": "N/A — the plan binds none",
+      "surface": "apps/web/tests/p1-28-observability.test.ts — the correlation-reference sweep."
+    },
+    "DOC-001": {
+      "testId": "N/A — the plan binds none",
+      "surface": "canonical-plan.md, contract-archaeology.md, this record and scripts/ci/check-p1-28-traceability.mjs."
+    },
+    "DOC-002": {
+      "testId": "N/A — the plan binds none",
+      "surface": "operator-guide.md, developer-guide.md and evidence/change-log.md."
+    }
+  },
+  "testIds": {
+    "TC-P1-28-APT-001": {
+      "task": "FE-001",
+      "provenBy": [
+        {
+          "file": "apps/web/tests/appointments-calendar.dom.test.tsx",
+          "cases": [
+            "sends the named branch as the target and the days as offset-bearing bounds",
+            "renders a denial instead of an empty calendar",
+            "says a zero-row range is about the RANGE, not the branch",
+            "renders in Arabic, right to left"
+          ]
+        },
+        {
+          "file": "apps/web/tests/p1-28-appointment-routes.test.ts",
+          "cases": ["passes the session's own resolved scope as the target options"]
+        }
+      ],
+      "observedInBrowserBy": [
+        {
+          "file": "apps/web/tests/e2e/authenticated/appointments-and-receptions.spec.ts",
+          "cases": [
+            "it shows the idle state and issues no read until a target is submitted",
+            "an inverted range is refused beside the field, not relayed from the server"
+          ]
+        }
+      ]
+    },
+    "TC-P1-28-APT-002": {
+      "task": "FE-002",
+      "provenBy": [
+        {
+          "file": "apps/web/tests/appointments-booking.dom.test.tsx",
+          "cases": [
+            "says no types are configured, and blocks booking honestly",
+            "sends exactly what the operator chose, with offset-bearing instants",
+            "reads THAT customer's vehicles once chosen",
+            "renders in Arabic, right to left"
+          ]
+        }
+      ],
+      "observedInBrowserBy": [
+        {
+          "file": "apps/web/tests/e2e/authenticated/appointments-and-receptions.spec.ts",
+          "cases": ["an empty appointment-type catalogue blocks booking and says why"]
+        }
+      ]
+    },
+    "TC-P1-28-APT-003": {
+      "task": "FE-003",
+      "provenBy": [
+        {
+          "file": "apps/web/tests/appointment-detail.dom.test.tsx",
+          "cases": [
+            "has no control that says Confirm without saying rescheduling",
+            "sends the version the page READ, and a window carrying explicit offsets",
+            "surfaces a lost race as a conflict with a re-read affordance",
+            "sources the NEXT command version from the previous command response"
+          ]
+        }
+      ],
+      "observedInBrowserBy": [
+        {
+          "file": "apps/web/tests/e2e/authenticated/appointments-and-receptions.spec.ts",
+          "cases": [
+            "an appointment that does not exist renders a not-found and no lifecycle control"
+          ]
+        }
+      ]
+    },
+    "TC-P1-28-APT-004": {
+      "task": "FE-004",
+      "provenBy": [
+        {
+          "file": "apps/web/tests/appointment-detail.dom.test.tsx",
+          "cases": [
+            "sends the chosen reason with the read version",
+            "refuses to submit without a reason — there is no free-text escape",
+            "says an EMPTY reason catalogue is unpopulated, not broken"
+          ]
+        },
+        {
+          "file": "apps/web/tests/p1-28-appointment-routes.test.ts",
+          "cases": ["reads the cancellation reasons only for a holder of the lifecycle permission"]
+        }
+      ]
+    },
+    "TC-P1-28-APT-005": {
+      "task": "FE-005",
+      "provenBy": [
+        {
+          "file": "apps/web/tests/appointment-detail.dom.test.tsx",
+          "cases": [
+            "confirms before sending, then sends the read version with no body input",
+            "surfaces the state-machine refusal as a conflict that re-reading does not cure",
+            "withholds ending from a non-holder of the lifecycle permission"
+          ]
+        }
+      ]
+    },
+    "TC-P1-28-XD-001": {
+      "task": "FE-006",
+      "provenBy": [
+        {
+          "file": "apps/web/tests/reception-walkin.dom.test.tsx",
+          "cases": [
+            "states beside the search controls, in English, that phone search is not available",
+            "links the chosen customer to the searched vehicle in the chosen role",
+            "completes the customer-first path entirely in Arabic"
+          ]
+        },
+        {
+          "file": "apps/web/tests/reception-walkin-handoff.test.ts",
+          "cases": [
+            "round-trips what the intake built",
+            "is the plural segment — the singular one holds the intake, not the wizard"
+          ]
+        }
+      ],
+      "observedInBrowserBy": [
+        {
+          "file": "apps/web/tests/e2e/authenticated/appointments-and-receptions.spec.ts",
+          "cases": [
+            "the address the intake builds resolves to the check-in screen",
+            "a pair that does not resolve starts the screen empty rather than erroring"
+          ]
+        }
+      ]
+    },
+    "TC-P1-28-REC-001": {
+      "task": "FE-007",
+      "provenBy": [
+        {
+          "file": "apps/web/tests/reception-checkin.dom.test.tsx",
+          "cases": [
+            "a successful create offers the wizard, by the visit the backend named",
+            "defaults the receiving employee to the operator and states the G-EMP disposition",
+            "a 409 on create renders the copy that does NOT guess which rule refused",
+            "renders in Arabic, RTL, from the same catalogue"
+          ]
+        },
+        {
+          "file": "apps/web/tests/reception-checkin-wizard.test.ts",
+          "cases": [
+            "walk-in: sends the chosen vehicle and requester, and omits an empty note",
+            "appointment origin: vehicle and requester come from the APPOINTMENT, never the walk-in picks"
+          ]
+        }
+      ],
+      "observedInBrowserBy": [
+        {
+          "file": "apps/web/tests/e2e/authenticated/appointments-and-receptions.spec.ts",
+          "cases": [
+            "the start screen renders its whole form and states the empty fuel catalogue honestly",
+            "a visit loads its thirteen-step registry — or the absent visit reads as not found"
+          ]
+        }
+      ]
+    },
+    "TC-P1-28-XD-002": {
+      "task": "FE-008",
+      "provenBy": [
+        {
+          "file": "apps/web/tests/reception-checkin.dom.test.tsx",
+          "cases": [
+            "presents the requester from the active service_requester role and reads the customer",
+            "renders a MERGED vehicle honestly — a fact with a link, never a 404",
+            "states the recorded link in both directions — and its absence as a fact, not an error",
+            "a denied identity panel says so, with the backend reference"
+          ]
+        }
+      ]
+    },
+    "TC-P1-28-REC-002": {
+      "task": "FE-009",
+      "provenBy": [
+        {
+          "file": "apps/web/tests/reception-checkin.dom.test.tsx",
+          "cases": [
+            "records a party role and re-reads: list, and the shell detail, after success",
+            "renders the authorization UNION: decisions AND refusals, each attributed and marked",
+            "a 409 verdict renders the non-guessing copy AND triggers the re-read",
+            "withdraws the write forms without their permissions, saying why"
+          ]
+        }
+      ]
+    },
+    "TC-P1-28-REC-003": {
+      "task": "FE-010",
+      "provenBy": [
+        {
+          "file": "apps/web/tests/reception-condition-evidence.dom.test.tsx",
+          "cases": [
+            "records the complaint in the contract shape, omitting an untouched severity",
+            "keeps the typed words visible and says the read cannot return them",
+            "renders the published read-back fields, and never the withheld text"
+          ]
+        },
+        {
+          "file": "apps/web/tests/p1-28-sensitive-narratives.dom.test.tsx",
+          "cases": [
+            "renders the denial, a reference to quote, and the pair — and keeps the form",
+            "does not blame a permission for a refusal that is not one",
+            "an ENDED visit still says the visit ended, not the permission"
+          ]
+        }
+      ]
+    },
+    "TC-P1-28-REC-004": {
+      "task": "FE-011",
+      "provenBy": [
+        {
+          "file": "apps/web/tests/reception-condition-evidence.dom.test.tsx",
+          "cases": [
+            "opens an inspection with the signed-in operator, and states the G-EMP disposition",
+            "withholds the finding form until an OPEN inspection exists, and says why",
+            "records a leak as a free-text type — no vocabulary is invented for it",
+            "states that road test is absent, and offers no control claiming to be one"
+          ]
+        }
+      ]
+    },
+    "TC-P1-28-REC-005": {
+      "task": "FE-012",
+      "provenBy": [
+        {
+          "file": "apps/web/tests/reception-condition-evidence.dom.test.tsx",
+          "cases": [
+            "states the blocked map, where the control to open one would have been",
+            "records a mark against an existing map, with 0..1 coordinates",
+            "places the mark from the KEYBOARD, so the diagram is not a pointer-only input",
+            "clamps a keyboard move at the contract bounds instead of leaving the map"
+          ]
+        },
+        {
+          "file": "apps/web/tests/reception-evidence.test.ts",
+          "cases": [
+            "does NOT round what it accepts",
+            "clamps a pointer or keyboard move into range"
+          ]
+        }
+      ]
+    },
+    "TC-P1-28-XD-003": {
+      "task": "FE-013",
+      "provenBy": [
+        {
+          "file": "apps/web/tests/reception-readings-and-signoff.dom.test.tsx",
+          "cases": [
+            "records a reading through the vehicle operation, bound to the visit vehicle",
+            "reads the VEHICLE history for the visit vehicle, and says where a reading lands",
+            "withdraws the form without veh.vehicle.odometer.record, saying why"
+          ]
+        }
+      ]
+    },
+    "TC-P1-28-REC-006": {
+      "task": "FE-014",
+      "provenBy": [
+        {
+          "file": "apps/web/tests/reception-readings-and-signoff.dom.test.tsx",
+          "cases": [
+            "renders what check-in recorded, and says neither can be amended",
+            "states an empty fuel catalogue as NOT CONFIGURED, never as an error",
+            "a failed catalogue read is an ERROR with its reference, not emptiness",
+            "renders the configured levels when a tenant has any"
+          ]
+        }
+      ],
+      "observedInBrowserBy": [
+        {
+          "file": "apps/web/tests/e2e/authenticated/appointments-and-receptions.spec.ts",
+          "cases": ["state of charge is offered as an optional reading and accepts one"]
+        }
+      ]
+    },
+    "TC-P1-28-REC-007": {
+      "task": "FE-015",
+      "provenBy": [
+        {
+          "file": "apps/web/tests/reception-condition-evidence.dom.test.tsx",
+          "cases": [
+            "states that the catalogue is not configured, and invents no codes",
+            "records a lamp the moment the catalogue has one"
+          ]
+        }
+      ]
+    },
+    "TC-P1-28-REC-008": {
+      "task": "FE-016",
+      "provenBy": [
+        {
+          "file": "apps/web/tests/reception-condition-evidence.dom.test.tsx",
+          "cases": [
+            "declares an item with its quantity, location, value and currency",
+            "refuses a currency with no value BESIDE THE CURRENCY, before spending a request",
+            "reads back only the quantity and the location, and says the rest is restricted"
+          ]
+        },
+        {
+          "file": "apps/web/tests/reception-evidence.test.ts",
+          "cases": ["refuses a quantity that is not a positive whole number"]
+        }
+      ]
+    },
+    "TC-P1-28-REC-009": {
+      "task": "FE-017",
+      "provenBy": [
+        {
+          "file": "apps/web/tests/p1-28-reception-media.dom.test.tsx",
+          "cases": [
+            "states the block, names P1-OD-025, and says what the Owner must decide (English)",
+            "offers none on ANY registered wizard step — every step is visited",
+            "puts the notice where the photographs would have gone, and nothing else"
+          ]
+        },
+        {
+          "file": "apps/web/tests/p1-28-reception-media.test.ts",
+          "cases": [
+            "carries every media key in BOTH catalogues, with real Arabic",
+            "invents no size, no file kind and no extension, in EITHER script"
+          ]
+        }
+      ],
+      "observedInBrowserBy": [
+        {
+          "file": "apps/web/tests/e2e/authenticated/appointments-and-receptions.spec.ts",
+          "cases": ["no P1-28 route an operator can reach offers a capture control of any kind"]
+        }
+      ]
+    },
+    "TC-P1-28-REC-010": {
+      "task": "FE-018",
+      "provenBy": [
+        {
+          "file": "apps/web/tests/reception-readings-and-signoff.dom.test.tsx",
+          "cases": [
+            "states the block and offers NO control that could not work",
+            "says there is no signature read either, rather than showing an empty list",
+            "shows the parties a signature would be attributed to, from the party-role read"
+          ]
+        }
+      ]
+    },
+    "TC-P1-28-REC-011": {
+      "task": "FE-019",
+      "provenBy": [
+        {
+          "file": "apps/web/tests/reception-readings-and-signoff.dom.test.tsx",
+          "cases": [
+            "states that recording a refusal is NOT the command that ends the visit",
+            "refuses an AUTHORIZATION refusal with no party, beside the field, before sending",
+            "states the empty reason catalogue as NOT CONFIGURED, and still records"
+          ]
+        }
+      ]
+    },
+    "TC-P1-28-REC-012": {
+      "task": "FE-020",
+      "provenBy": [
+        {
+          "file": "apps/web/tests/reception-summary.dom.test.tsx",
+          "cases": [
+            "issues the three per-visit reads for the visit it was handed",
+            "guards the command with the version the shell read",
+            "says a re-run on an authorized visit is refused by the STATE (ERR-TRN-001)",
+            "sends close-without-work with the version and the trimmed reason",
+            "sends refuse from its own form, and only that one"
+          ]
+        },
+        {
+          "file": "apps/web/tests/reception-queue.dom.test.tsx",
+          "cases": [
+            "leads to the visit rather than closing from the board",
+            "invents no total, and offers Next only while the server says more exists"
+          ]
+        }
+      ],
+      "observedInBrowserBy": [
+        {
+          "file": "apps/web/tests/e2e/authenticated/appointments-and-receptions.spec.ts",
+          "cases": ["the status vocabulary renders as labels, and an empty board offers no close"]
+        }
+      ]
+    },
+    "TC-P1-28-REC-013": {
+      "task": "FE-021",
+      "provenBy": [
+        {
+          "file": "apps/web/tests/reception-acknowledgement.dom.test.tsx",
+          "cases": [
+            "renders inside the shared print document frame",
+            "generates no file: no download, no blob, no PDF claim",
+            "prints a FAILED read as a failed read, never as an empty section (`F1`)",
+            "renders in Arabic, right to left, with no English fallback"
+          ]
+        }
+      ],
+      "observedInBrowserBy": [
+        {
+          "file": "apps/web/tests/e2e/authenticated/appointments-and-receptions.spec.ts",
+          "cases": ["an unreadable visit prints a not-found, never a sheet with empty sections"]
+        }
+      ]
+    },
+    "TC-P1-28-XD-004": {
+      "task": "FE-022",
+      "provenBy": [
+        {
+          "file": "apps/web/tests/reception-summary.dom.test.tsx",
+          "cases": [
+            "renders a REPLAY as success, never as an error",
+            "renders the opaque state code as a code, without translating it",
+            "reads the work order on intent, and shows its jobs",
+            "withdraws the command from an operator without the conversion permission"
+          ]
+        }
+      ]
+    }
+  }
+}

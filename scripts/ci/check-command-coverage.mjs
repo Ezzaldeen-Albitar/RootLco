@@ -304,6 +304,21 @@ export const REGISTER = Object.freeze([
     why: 'every version-guarded P1-28 command sources its If-Match from a read or a command response, never from arithmetic or a cached guess',
   },
   {
+    name: 'validate:p1-28-traceability',
+    owner: ROOT,
+    tier: 'required',
+    // `P1-28-DOC-001`. The P1-28 sibling of `validate:p1-27-doc-counts`, and it
+    // exists for the same defect: a true sentence that stopped being true. This
+    // phase corrected its contract archaeology twice in one week — the second
+    // time because PR #227 overtook the first correction — so every figure a
+    // P1-28 document states about the platform is now a `derived:` marker this
+    // gate substitutes the tree's answer for. It also binds each canonical test
+    // id to quoted cases in comment-stripped source, so P1-27's twenty-nine
+    // declared-and-unbound ids cannot recur. Mutation-proved by
+    // tests/ci/p1-28-matrix.test.ts.
+    why: 'every P1-28 derived count matches the tree, every canonical test id resolves to real cases, and no withdrawn claim returns',
+  },
+  {
     name: 'evidence:p1-27',
     owner: ROOT,
     // `informational`, not `optional`. `optional` is not one of the four tiers

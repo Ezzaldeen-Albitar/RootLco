@@ -13,6 +13,17 @@ import {
   VERDICTS,
   MATRIX,
 } from '../../scripts/ci/build-p1-28-task-matrix.mjs';
+import {
+  evaluate as evaluateTraceability,
+  checkRecord,
+  checkMarkers,
+  checkSuperseded,
+  deriveCounts,
+  declaredTestIds,
+  boundOperations,
+  SUPERSEDED,
+  RECORD_PATH,
+} from '../../scripts/ci/check-p1-28-traceability.mjs';
 
 /**
  * The canonical 35-task authority, held from DAY ONE of the phase.
@@ -292,5 +303,205 @@ describe('the generated matrix is what the generator produces now', () => {
     // The `--check` mode CI runs, asserted here so a hand-edited matrix cannot
     // pass while claiming to be derived.
     expect(serialise(buildMatrix(ROOT))).toBe(readFileSync(join(ROOT, MATRIX), 'utf8'));
+  });
+});
+
+/* ================================================================== *
+ * `P1-28-DOC-001` — the record against the tree
+ * ================================================================== */
+
+/**
+ * The matrix above proves the register is internally consistent. These cases
+ * prove the thing DOC-001 actually owns: that the record still describes THIS
+ * TREE.
+ *
+ * The distinction is not academic. The contract archaeology was corrected on
+ * 2026-08-13 and went stale again in the same week, because PR #227 published a
+ * catalogue-management surface three of its rows had just finished saying could
+ * not exist. Nothing failed. Every number in the file was hand-written, so
+ * nothing could fail.
+ *
+ * Each mutation below drives ONE refusal of `check-p1-28-traceability.mjs` with
+ * an input the tree does not hold. A gate whose refusals have never been
+ * observed is a gate nobody has tested, and this repository has shipped four
+ * checkers that agreed perfectly with a tree they never opened.
+ */
+const record = JSON.parse(readFileSync(join(ROOT, RECORD_PATH), 'utf8')) as {
+  totals: Record<string, number>;
+  permissions: Record<string, string>;
+  tasks: Record<string, Record<string, string>>;
+  testIds: Record<
+    string,
+    { provenBy?: { file: string; cases: string[] }[]; observedInBrowserBy?: unknown[] }
+  >;
+};
+
+/**
+ * The entry for `id`, or a thrown error.
+ *
+ * Every accessor below throws rather than returning `undefined`, because a
+ * mutation applied to nothing still leaves the gate reporting exactly what the
+ * unmutated record reports — a passing case that proved nothing, which is the
+ * shape of four checkers this repository has already shipped.
+ */
+const entryOf = (draft: typeof record, id: string) => {
+  const found = draft.testIds[id];
+  if (!found) throw new Error(`${id} is not in the record; this mutation would prove nothing`);
+  return found;
+};
+
+/** The `index`-th citation of `id`, or a thrown error, for the same reason. */
+const proofOf = (draft: typeof record, id: string, index = 0) => {
+  const proof = entryOf(draft, id).provenBy?.[index];
+  if (!proof) throw new Error(`${id} has no citation at index ${index}`);
+  return proof;
+};
+
+/** Moves a declared total, refusing to invent one the record does not declare. */
+const shift = (draft: typeof record, name: string, by: number) => {
+  const current = draft.totals[name];
+  if (current === undefined) throw new Error(`the record declares no ${name} total`);
+  draft.totals[name] = current + by;
+};
+
+/** A structural clone, so a mutation cannot leak into the next case. */
+const mutate = (change: (draft: typeof record) => void) => {
+  const draft = JSON.parse(JSON.stringify(record)) as typeof record;
+  change(draft);
+  return checkRecord(ROOT, { record: draft });
+};
+
+describe('the phase record is synchronized with the tree', () => {
+  it('reports no disagreement at this head', () => {
+    const result = evaluateTraceability(ROOT);
+    expect(result.problems).toEqual([]);
+    // Anti-vacuity, in the gate's own terms: a run that inspected nothing
+    // reports zero problems too.
+    expect(result.documents, 'no P1-28 document was scanned').toBeGreaterThan(3);
+    expect(result.claims, 'no document opted a number into the check').toBeGreaterThan(10);
+  });
+
+  it('binds every canonical task and every operation the plan names', () => {
+    const canonical = readCanonicalTasks(ROOT).map((t: { TASK_ID: string }) => t.TASK_ID);
+    expect(Object.keys(record.tasks).sort()).toEqual([...canonical].sort());
+
+    // Every §5 binding resolves in the P1-24 register AT THIS HEAD — which is
+    // what "no `[MISSING Rn]` marker survives a landed remediation" means as an
+    // executable statement rather than a claim in prose.
+    const registered = deriveCounts(ROOT).operationIds as Set<string>;
+    const unregistered = [...boundOperations(ROOT).keys()].filter((id) => !registered.has(id));
+    expect(unregistered, 'operations bound by a task and published by nothing').toEqual([]);
+  });
+
+  it('resolves every canonical test id to named, executable cases', () => {
+    /*
+     * P1-27 declared twenty-nine `TC-P1-27-*` ids and a repository-wide search
+     * found NONE of them in any executable file. The count is derived from the
+     * plan on both sides, so an id added to the plan without a binding fails
+     * here rather than joining a silent backlog.
+     */
+    const declared = declaredTestIds(readFileSync(join(ROOT, PLAN), 'utf8'));
+    expect(declared.length, 'the plan declares no test id — this case would be vacuous').toBe(22);
+    expect(Object.keys(record.testIds).sort()).toEqual([...declared].sort());
+    expect(record.totals.unbound, 'an unbound id must be recorded as a gap, not left silent').toBe(
+      0
+    );
+  });
+});
+
+describe('the synchronization gate refuses what it claims to refuse', () => {
+  it('catches a quoted case title that no test carries', () => {
+    const problems = mutate((draft) => {
+      proofOf(draft, 'TC-P1-28-APT-001').cases[0] = 'a case nobody ever wrote';
+    });
+    expect(problems.join('\n')).toContain('which is in no case of');
+  });
+
+  it('catches a citation of a file that does not exist', () => {
+    const problems = mutate((draft) => {
+      proofOf(draft, 'TC-P1-28-REC-012').file = 'apps/web/tests/not-a-file.test.ts';
+    });
+    expect(problems.join('\n')).toContain('which does not exist');
+  });
+
+  it('refuses browser evidence that is not the browser tier', () => {
+    /*
+     * The field exists to answer "was this seen against the running
+     * application". A mocked suite offered there would answer a different
+     * question with the same word, which is precisely how a mock becomes
+     * production-integration evidence by accident.
+     */
+    const problems = mutate((draft) => {
+      entryOf(draft, 'TC-P1-28-APT-001').observedInBrowserBy = [
+        { file: 'apps/web/tests/appointments-calendar.dom.test.tsx', cases: ['renders in Arabic'] },
+      ];
+    });
+    expect(problems.join('\n')).toContain('only the authenticated tier');
+  });
+
+  it('refuses an id that names no proof and states no gap', () => {
+    const problems = mutate((draft) => {
+      entryOf(draft, 'TC-P1-28-REC-013').provenBy = [];
+      shift(draft, 'bound', -1);
+      shift(draft, 'unbound', 1);
+    });
+    expect(problems.join('\n')).toContain('an unstated gap is a lie');
+  });
+
+  it('refuses a permission the register does not publish, and misses none it does', () => {
+    const invented = mutate((draft) => {
+      draft.permissions['rec.reception.invented'] = 'a code no operation registers';
+    });
+    expect(invented.join('\n')).toContain('which no published apt/rec operation registers');
+
+    const dropped = mutate((draft) => {
+      delete draft.permissions['rec.reception.approve'];
+    });
+    expect(dropped.join('\n')).toContain('and the record omits it');
+  });
+
+  it('catches a derived count that disagrees with the tree', () => {
+    const derived = deriveCounts(ROOT);
+    const wrong = derived.surface.writes + 1;
+    const { problems } = checkMarkers(
+      'sample.md',
+      `the surface holds <!-- derived: surface writes = ${wrong} --> writes`,
+      derived
+    );
+    expect(problems.join('\n')).toContain(`the tree holds ${derived.surface.writes}`);
+  });
+
+  it('fails a marker it cannot derive rather than ignoring it', () => {
+    /*
+     * The P1-27 lesson exactly: a gate that matched only the kinds it knew let a
+     * document opt a number in, misspell the kind, and be unchecked in a way
+     * indistinguishable from being checked.
+     */
+    const derived = deriveCounts(ROOT);
+    for (const [source, expected] of [
+      ['<!-- derived: surfase writes = 35 -->', 'unknown derived kind'],
+      ['<!-- derived: surface widgets = 35 -->', 'cannot derive'],
+      ['<!-- derived: surface writes 35 -->', 'malformed derived marker'],
+    ] as const) {
+      const { problems } = checkMarkers('sample.md', source, derived);
+      expect(problems.join('\n'), source).toContain(expected);
+    }
+  });
+
+  it('refuses every claim it has already had to withdraw once', () => {
+    /*
+     * Each entry carries the withdrawn wording as its own fixture, so the list
+     * cannot rot into patterns that match nothing. A ban nobody has seen fire is
+     * the same shape as the four scanners this repository shipped that agreed
+     * perfectly with a tree they never opened.
+     */
+    expect(SUPERSEDED.length, 'the withdrawn-claim list is empty').toBeGreaterThan(3);
+    for (const entry of SUPERSEDED as readonly { sample: string; why: string }[]) {
+      expect(entry.sample, 'an entry with no fixture is a ban nobody has seen fire').toBeTruthy();
+      const problems = checkSuperseded('sample.md', `A row states: ${entry.sample}.`);
+      expect(problems.length, `nothing refused: ${entry.sample}`).toBeGreaterThan(0);
+      expect(problems.join('\n')).toContain(entry.why.slice(0, 40));
+    }
+    expect(checkSuperseded('sample.md', 'A page that makes none of those claims.')).toEqual([]);
   });
 });
