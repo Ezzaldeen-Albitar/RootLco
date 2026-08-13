@@ -125,6 +125,27 @@ export const PROFILES = {
       supabase: 'the partner-identity remediation must not change the database',
     },
   },
+  'repository-tooling': {
+    why:
+      'a repository-wide GATE and its suite, owned by no phase — the no-fake-data guard, the ' +
+      'workflow that runs it, the tests that prove it can still fail, and the phase records its ' +
+      'counts appear in',
+    // `web` is forbidden for the same reason every Backend profile forbids it,
+    // pointing the other way: a branch that may rewrite a gate must not also
+    // carry product changes that the gate is what reviews. A profile borrowed
+    // from a phase would declare nothing — this branch belongs to no phase, and
+    // saying so is the whole content of the declaration.
+    allowed: ['tooling', 'tests', 'docs', 'rootConfig'],
+    forbidden: {
+      web: 'a repository tooling change must not carry Frontend source — that is a phase change',
+      webGenerated:
+        'a repository tooling change must not regenerate the Frontend contract manifest',
+      apiSource: 'a repository tooling change must not change API source',
+      apiConfig: 'a repository tooling change must not change API workspace configuration',
+      migrations: 'a repository tooling change must not change a migration',
+      supabase: 'a repository tooling change must not change the database',
+    },
+  },
   'api-boundary': {
     why: 'the pre-P1-26 API file-boundary remediation',
     allowed: ['apiSource', 'apiConfig', 'docs', 'tooling', 'tests', 'rootConfig', 'web'],
