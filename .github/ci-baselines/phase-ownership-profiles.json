@@ -30,6 +30,11 @@
       "why": "a P1-27 documentation branch changes docs, which the Frontend profile permits, and must not change API source or the database any more than the phase itself may"
     },
     {
+      "branchPrefix": "tooling/no-fake-data-",
+      "profile": "repository-tooling",
+      "why": "the no-fake-data guard belongs to no phase — it runs on every branch in four workflows — so it is declared under `repository-tooling`, which permits the gate, its suite and the phase records its counts appear in, and forbids the product source a gate change must not smuggle. Borrowing a phase profile would have declared nothing"
+    },
+    {
       "branchPrefix": "feature/p1-26-",
       "profile": "p1-26-frontend",
       "why": "the P1-26 Frontend branch"
