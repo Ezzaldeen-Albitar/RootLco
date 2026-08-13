@@ -1,0 +1,47 @@
+{
+  "$comment": [
+    "P1-28 composed permissions (SEC-001 / SEC-002), checked by",
+    "scripts/ci/check-p1-28-access.mjs (validate:p1-28-access).",
+    "",
+    "The least-privilege rule derives what a screen MAY require from the P1-24",
+    "operation register: every permission the operations reachable from that",
+    "screen declare. That derivation has one blind spot, and it is not a",
+    "theoretical one — it is WF-27, the trap this phase's contract archaeology",
+    "names as the fourth of the five riskiest contract facts.",
+    "",
+    "A write can require a permission the OPERATION does not declare. The",
+    "application check passes on the operation's own code and a row-level policy",
+    "on the table it writes then refuses the statement. The register cannot show",
+    "that, because the register records what a route registers.",
+    "",
+    "So the composition is recorded here — and the record is VERIFIED, not",
+    "trusted. For every row the gate opens the named migration, finds the named",
+    "policy statement, and requires that statement to contain",
+    "iam.has_permission('<permission>'). A row whose citation no longer holds is",
+    "a violation, so this file cannot become a place to park a permission a",
+    "screen wanted for some other reason.",
+    "",
+    "This is deliberately NOT an allow-list of screens. It records a fact about",
+    "an OPERATION, and any screen that can reach that operation inherits it —",
+    "which is why a new evidence screen needs no entry here and a screen that",
+    "cannot reach the operation gets no licence from it."
+  ],
+  "composed": [
+    {
+      "permission": "iam.sensitive.view",
+      "operation": "rec.reception-condition-evidence",
+      "task": "P1-28-SEC-002",
+      "why": "WF-27. The operation registers rec.reception.evidence.manage and the application check passes on that alone. Two of its eight evidence kinds write a RESTRICTED narrative row beside the envelope — a complaint's text into rec.complaint_details, a content item's description, declared value and currency into rec.vehicle_content_details — and both tables carry INSERT policies ending in iam.has_permission('iam.sensitive.view'). The refusal is a database 42501 mapped to ERR-IAM-001, a 403 at write time on a form the operator was allowed to open. The check-in wizard therefore resolves this capability like any other and the two restricted steps withhold their capture form without it.",
+      "policies": [
+        {
+          "migration": "supabase/migrations/20260721099000_rec_complaints.sql",
+          "policy": "ins_complaint_details_gated"
+        },
+        {
+          "migration": "supabase/migrations/20260721103000_rec_vehicle_contents.sql",
+          "policy": "ins_vehicle_content_details_gated"
+        }
+      ]
+    }
+  ]
+}

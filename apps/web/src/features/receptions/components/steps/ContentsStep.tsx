@@ -15,6 +15,7 @@ import {
   type ContentsDraft,
   type SessionEvidence,
 } from '../../check-in/evidence';
+import { narrativeDenialKey, narrativeGate } from '../../check-in/sensitive';
 import type { CheckInStepProps } from '../../check-in/wizard';
 import {
   EvidenceReadBack,
@@ -88,6 +89,13 @@ export function ContentsStep({
   const [witnessed, setWitnessed] = useState(false);
   const [state, setState] = useState<ActionState>(IDLE);
   const [pending, startTransition] = useTransition();
+
+  // `P1-28-SEC-002`. The item description, the declared value and its currency
+  // land in `rec.vehicle_content_details`, whose INSERT policy ends
+  // `AND iam.has_permission('iam.sensitive.view')` — the same WF-27 pair the
+  // complaint step meets, on a different table.
+  const gate = narrativeGate('contents', capabilities, writesLocked);
+  const denialKey = narrativeDenialKey('contents', state);
 
   const set = (patch: Partial<ContentsDraft>) => setDraft((current) => ({ ...current, ...patch }));
 
@@ -166,18 +174,8 @@ export function ContentsStep({
         messages={messages}
         headingKey="receptions.contents.captureHeading"
       >
-        {writesLocked ? (
-          <WriteWithdrawn
-            locale={locale}
-            messages={messages}
-            messageKey="receptions.evidence.lockedNote"
-          />
-        ) : !capabilities.manageEvidence ? (
-          <WriteWithdrawn
-            locale={locale}
-            messages={messages}
-            messageKey="receptions.evidence.readOnly"
-          />
+        {gate.noticeKey !== null ? (
+          <WriteWithdrawn locale={locale} messages={messages} messageKey={gate.noticeKey} />
         ) : (
           <form
             aria-label={translate(messages, 'receptions.contents.formLabel')}
@@ -263,6 +261,11 @@ export function ContentsStep({
             />
 
             <StepOutcome messages={messages} state={state} />
+            {denialKey === null ? null : (
+              <p data-testid="contents-sensitive-denied" className="text-caption text-error">
+                {translate(messages, denialKey as never)}
+              </p>
+            )}
 
             <div>
               <button type="submit" disabled={pending} className={PRIMARY_BUTTON}>

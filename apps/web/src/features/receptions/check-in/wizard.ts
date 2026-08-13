@@ -75,6 +75,17 @@ export interface CheckInCapabilities {
    */
   readonly manageEvidence: boolean;
   /**
+   * `iam.sensitive.view` — the SECOND permission the two restricted-narrative
+   * kinds need (`FE-010` complaint text, `FE-016` contents description).
+   *
+   * Not a preference and not a duplicate of `manageEvidence`: WF-27 is the case
+   * where the application check passes on the operation's own code and the
+   * DATABASE then refuses the narrative row. `check-in/sensitive.ts` carries the
+   * whole reasoning, including why holding this code is necessary but never
+   * sufficient.
+   */
+  readonly viewSensitiveNarratives: boolean;
+  /**
    * `rec.reception.signature.manage` — signatures AND refusal evidence
    * (`FE-018`, `FE-019`). The two share a permission because both record what a
    * person put their name to.

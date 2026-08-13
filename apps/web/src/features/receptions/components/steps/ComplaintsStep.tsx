@@ -15,6 +15,7 @@ import {
   type ComplaintSeverity,
 } from '../../receptions-contract';
 import { appendSessionEvidence, type SessionEvidence } from '../../check-in/evidence';
+import { narrativeDenialKey, narrativeGate } from '../../check-in/sensitive';
 import type { CheckInStepProps } from '../../check-in/wizard';
 import {
   EvidenceReadBack,
@@ -73,6 +74,12 @@ export function ComplaintsStep({
   const [reporter, setReporter] = useState<SelectedCustomer | null>(null);
   const [state, setState] = useState<ActionState>(IDLE);
   const [pending, startTransition] = useTransition();
+
+  // `P1-28-SEC-002`. WF-27: this write needs `iam.sensitive.view` on top of the
+  // operation's own code, so a session without it is told before it types four
+  // thousand characters into a form that could only be refused.
+  const gate = narrativeGate('complaint', capabilities, writesLocked);
+  const denialKey = narrativeDenialKey('complaint', state);
 
   const submit = () => {
     const attempt = (state.attempt ?? 0) + 1;
@@ -169,18 +176,8 @@ export function ComplaintsStep({
         messages={messages}
         headingKey="receptions.complaint.captureHeading"
       >
-        {writesLocked ? (
-          <WriteWithdrawn
-            locale={locale}
-            messages={messages}
-            messageKey="receptions.evidence.lockedNote"
-          />
-        ) : !capabilities.manageEvidence ? (
-          <WriteWithdrawn
-            locale={locale}
-            messages={messages}
-            messageKey="receptions.evidence.readOnly"
-          />
+        {gate.noticeKey !== null ? (
+          <WriteWithdrawn locale={locale} messages={messages} messageKey={gate.noticeKey} />
         ) : (
           <form
             aria-label={translate(messages, 'receptions.complaint.formLabel')}
@@ -243,6 +240,15 @@ export function ComplaintsStep({
             )}
 
             <StepOutcome messages={messages} state={state} />
+            {denialKey === null ? null : (
+              // The refusal is rendered by `StepOutcome` above and is not
+              // rewritten here. This only NAMES the pair, and says that the
+              // refusal does not distinguish them — the platform's uniform
+              // denial is deliberate and this screen does not guess past it.
+              <p data-testid="complaint-sensitive-denied" className="text-caption text-error">
+                {translate(messages, denialKey as never)}
+              </p>
+            )}
 
             <div>
               <button type="submit" disabled={pending} className={PRIMARY_BUTTON}>
