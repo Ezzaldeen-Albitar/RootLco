@@ -53,8 +53,25 @@ function credentialsForTenantA(): Credentials {
   };
 }
 
+/**
+ * The token this file's two API cases share, signed in for ONCE PER PROJECT.
+ *
+ * `POST /api/v1/auth/login` is rationed — ten per sixty seconds, keyed by
+ * operation and client address (`apps/api/src/server/http/rate-limit.ts`) — and
+ * every principal in the authenticated tier reaches the API from one address, so
+ * one bucket serves the whole tier. Signing in twice here, for two cases that
+ * want the same token, spent two of those ten on one answer; on the hosted
+ * runner five sign-ins were refused `429 ERR-RTE-001` and six cases failed on
+ * it.
+ *
+ * Per WORKER, which Playwright makes per project: a token carried across
+ * projects would be hiding a real question rather than answering it.
+ */
+let tenantABearer: string | null = null;
+
 /** Signs in as the Tenant A owner and returns a real bearer token. */
 async function bearerForTenantA(request: APIRequestContext): Promise<string> {
+  if (tenantABearer !== null) return tenantABearer;
   const credentials = credentialsForTenantA();
 
   const login = await request.post(`${API}/api/v1/auth/login`, {
@@ -65,7 +82,8 @@ async function bearerForTenantA(request: APIRequestContext): Promise<string> {
   const body = await login.json();
   const token = body.accessToken;
   expect(token, 'login must issue an access token').toBeTruthy();
-  return token as string;
+  tenantABearer = token as string;
+  return tenantABearer;
 }
 
 /**
