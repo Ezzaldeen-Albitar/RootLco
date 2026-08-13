@@ -180,9 +180,13 @@ carries no per-task test id. Their scope in P1-28 terms:
 - `SEC-003` — no client-asserted scope (P1-27-SEC-001); any `branchId`
   resource selector a future read surface needs enters as a NAMED `query()`
   exemption with a pinning test, never a workaround.
-- `SEC-004` — the analogue of `check-p1-27-write-reachability.mjs` for the 12
+- `SEC-004` — the analogue of `check-p1-27-write-reachability.mjs` for the
   `apt.*`/`rec.*` writes: the declared-but-never-wired class (INT-113, P1-27's
-  dominant defect) must not recur.
+  dominant defect) must not recur. The count is **derived from the P1-24
+  register at check time, never written down** — it was 12 when this plan was
+  drafted, 14 after R5 added the two terminal closes, and **35** once PR #227
+  registered the 21 intake-catalogue management writes. A number in this prose
+  is a description of a past run; the gate's own derivation is the authority.
 - `QA-002` — the 428/409/422/403 branches per operation and the THREE replay
   shapes (create replay answers 200 with no ETag; approve re-run answers 409
   `ERR-TRN-001`; convert re-run answers 200 `alreadyConverted: true`).
@@ -213,11 +217,17 @@ boundary sits at that action.
 
 ---
 
-## 7. Open decisions inherited
+## 7. Open decisions
 
 The governing rule, from P1-27 §7: an unresolved decision must **block only the
 affected capability** or be **implemented as a decision-neutral foundation**.
 It must not block unrelated tasks.
+
+Four entries below are **inherited**. One — `P1-28-OD-001` — is **raised by
+this phase** and says so in its own heading; it sits beside the warning-light
+entry because the two are halves of one question. The section is no longer
+titled "inherited" because that word would have made the new entry a lie in a
+heading.
 
 ### `P1-OD-025` — document and media file policy · **OPEN**
 
@@ -241,16 +251,83 @@ It must not block unrelated tasks.
 
 ### Warning-light catalogue population · **OPEN**
 
-- **Blocks:** `FE-015` only. `rec.warning_light_codes` ships **zero rows** and
-  has no management operation (RMC-11), so the `warning_light` evidence kind is
-  unusable in practice. R3 gave it a READ route
-  (`rec.catalogue-warning-light-code-list`) and that changed nothing an
+- **Blocks:** `FE-015` only. `rec.warning_light_codes` ships **zero rows**, so
+  the `warning_light` evidence kind is unusable in practice. R3 gave it a READ
+  route (`rec.catalogue-warning-light-code-list`) and that changed nothing an
   operator can see: a read does not populate a table.
+- **The contract half is now CLOSED, and the entry is corrected rather than
+  left standing.** This entry used to read "and has no management operation
+  (RMC-11)". That sentence is **no longer true**: PR #227 registered
+  `rec.catalogue-warning-light-code-create`, `-update` and `-status-set` behind
+  `rec.catalogue.manage`. RMC-11 named two things at once — a missing contract
+  and an unpopulated table — and only the first has been answered.
+- **What remains open is the second half, and it is the same question as
+  `P1-28-OD-001`:** a contract nothing in the product reaches does not populate
+  a table either. Who may administer this catalogue, and through which surface,
+  is undecided; until it is decided and exercised the table stays empty.
 - **What ships instead:** no warning-light picker; the absence is stated
-  on-screen, not papered over with a disabled control. R3 landed and fixed
-  reachability, not emptiness — population needs a management contract or an
-  Owner provisioning decision, and the no-fake-data policy forbids inventing
-  catalogue rows in a seed.
+  on-screen, not papered over with a disabled control. The no-fake-data policy
+  forbids inventing catalogue rows in a seed, and inventing them would answer a
+  different question from the one that is open.
+
+### `P1-28-OD-001` — who administers the intake catalogues, and through which surface · **OPEN** · raised by this phase
+
+**Disposition: capability shipped, surface withheld.**
+
+**On the identifier, stated before anything else.** `P1-28-OD-001` is an id in
+**this phase's own namespace**, following the `P1-26-OD-###` and `P1-27-OD-###`
+precedent. It is **not** a `P1-OD-###` allocation and must not be read as one.
+`docs/phase-1/phase-1-27/open-decisions.md` §0.1 records why: this repository
+holds no `P1-OD-###` register to allocate from, `P1-OD-042` is merely the
+highest number any document treats as an existing decision, and issuing a
+number in that series is the register owner's act performed in the canonical
+Word documents outside this repository. If the Owner records this decision, the
+number the Owner assigns supersedes this one and this section is corrected.
+
+- **Blocks:** any catalogue-administration screen, and through it the
+  populated-catalogue half of `FE-002`, `FE-004`, `FE-014` and `FE-015`. The
+  35-task register in §5 is the **operator** surface — booking, check-in,
+  approval, conversion — and **no canonical P1-28 task binds a
+  catalogue-administration screen**. Building one would be scope this phase was
+  never given, and inventing the task would be the P1-27 failure of treating an
+  adjudicated item as though it were a canonical one.
+- **What ships instead — the API capability, and nothing in `apps/web`.** PR
+  #227 registered **21** catalogue-management writes: create, update and
+  status-set across the seven intake catalogues (`apt.appointment_types`,
+  `apt.cancellation_reasons`, `apt.source_channels`, `rec.fuel_levels`,
+  `rec.refusal_reasons`, `rec.visit_reasons`, `rec.warning_light_codes`). Every
+  one is behind `apt.catalogue.manage` or `rec.catalogue.manage`; both codes
+  exist in the permission catalogue
+  (`supabase/seeds/04_iam_permission_catalog.sql:307-311`) and **no seed grants
+  either code to any role**, so the capability is granted to **nobody** until
+  somebody decides who should hold it. All 21 are recorded
+  `DELIBERATELY_ABSENT` against this decision in
+  `docs/phase-1/phase-1-28/write-reachability.json`.
+- **Enforced by:** `scripts/ci/check-p1-28-write-reachability.mjs`, which
+  resolves every `decisionRef` against the decision headings of **this section**
+  — a reference naming no decision recorded here fails the gate, and
+  `tests/ci/p1-28-write-reachability.test.ts` holds that refusal. The 21 may
+  therefore not be quietly parked: the classification is only as good as this
+  entry, and the gate reads this entry.
+- **What the Owner must decide:** (a) **who** administers the intake catalogues
+  — a tenant administrator, a head-office role, or the platform operator; and
+  (b) **through which surface** — a screen inside this product, a separate
+  administration application, or provisioning performed outside the product
+  altogether. Nothing here pre-empts either half, and no candidate answer is
+  recommended.
+- **The consequence today, stated plainly:** an operator **cannot populate a
+  catalogue from the product**. Seven tables ship zero rows, no screen can add
+  one, and an administrator must call the API directly holding a
+  `catalogue.manage` grant that no role currently carries. Two of those tables
+  sit on a REQUIRED foreign key of an operator path — `appointmentTypeId` on
+  `apt.appointment-create`, `cancellationReasonId` on `apt.appointment-cancel` —
+  so **until a catalogue is populated no appointment can be booked and none can
+  be cancelled**. That is why `FE-002` and `FE-004` are PARTIAL against this
+  decision rather than against any Frontend defect.
+- **The no-fake-data policy is not the blocker and must not be cited as one.**
+  Seeding rows would answer neither half of the question above; it would answer
+  a different question badly, and the rows would then be the product's own
+  invented data.
 
 ### Receiving-employee referent — Owner register question A · **OPEN**
 
@@ -287,11 +364,15 @@ contracts with named owners and smallest fixes, recorded as R1-R8 in
 needs an Owner meeting.
 
 Six of them are now CLOSED by R1–R5 (`G-APT-READ`, `G-REC-READ`, `G-CAT-APT`,
-`G-REC-CLOSE`, `G-CUST-VEH`, `G-PERM`), and `G-CAT-REC` is closed as a READ gap
-only — its four tables still ship zero rows, which is a provisioning decision
-and not a contract gap. `G-CRM-PHONE`, `G-EMP` and `G-MEDIA` remain open, and
-the first of those is the one an operator meets daily: a walk-in cannot be
-found by telephone number.
+`G-REC-CLOSE`, `G-CUST-VEH`, `G-PERM`). `G-CAT-REC` was closed as a READ gap
+only; PR #227 has since closed its **write** half as well, for the reception and
+the appointment catalogues alike — 21 management operations across all seven
+tables. What remains is neither a read gap nor a write gap: the tables still
+ship zero rows because nothing in the product reaches those operations, and who
+may reach them is `P1-28-OD-001`, recorded above as a decision rather than
+carried here as a backlog item. `G-CRM-PHONE`, `G-EMP` and `G-MEDIA` remain
+open, and the first of those is the one an operator meets daily: a walk-in
+cannot be found by telephone number.
 
 ---
 

@@ -66,7 +66,12 @@
 /** One `apt.*` operation row, mirrored by the QA-001 harness. */
 export interface AppointmentOperationRow {
   readonly operationId: string;
-  readonly method: 'GET' | 'POST';
+  /**
+   * `PATCH` joined the union with the intake-catalogue management contract
+   * (PR #227): a catalogue amend is the first `apt.*` operation that is not a
+   * GET or a POST.
+   */
+  readonly method: 'GET' | 'POST' | 'PATCH';
   /** Path template WITHOUT the `/api/v1` prefix, exactly as published. */
   readonly template: string;
   /** True when the backend refuses the request without an `Idempotency-Key`. */
@@ -86,6 +91,20 @@ export const APPOINTMENT_PERMISSIONS = {
   manage: 'apt.appointment.manage',
   /** Cancelling and recording a no-show — ENDING it is a separate authority. */
   lifecycleManage: 'apt.appointment.lifecycle.manage',
+  /**
+   * Administering the appointment intake catalogues — appointment types,
+   * cancellation reasons and source channels.
+   *
+   * The code is named here because the backend registers it and this layer must
+   * know every code its domain can be denied for; it is NOT consulted by any
+   * screen, because there is no catalogue-administration screen. No canonical
+   * P1-28 task binds one, and who administers the intake catalogues and through
+   * which surface is `P1-28-OD-001` (`docs/phase-1/phase-1-28/canonical-plan.md`
+   * §7). The twelve operations behind it are recorded in
+   * `docs/phase-1/phase-1-28/write-reachability.json`, the writes among them as
+   * DELIBERATELY_ABSENT against that decision.
+   */
+  catalogueManage: 'apt.catalogue.manage',
 } as const;
 
 /**
@@ -174,6 +193,133 @@ export const APPOINTMENT_OPERATIONS: readonly AppointmentOperationRow[] = Object
     versionGuarded: false,
     permission: APPOINTMENT_PERMISSIONS.read,
     auditClass: 'none',
+  },
+
+  /*
+   * The intake-catalogue ADMINISTRATION surface (PR #227).
+   *
+   * These twelve rows mirror a published contract that NO screen in this
+   * product reaches, and that is the point of writing them down: this module's
+   * claim is "every apt.* operation the platform publishes", and an operation
+   * left out because nothing calls it would make the mirror a description of
+   * the screens rather than of the contract — which is how a backend code the
+   * interface never learned about becomes a denial nobody wrote down.
+   *
+   * There is no adapter for any of them. No canonical P1-28 task binds a
+   * catalogue-administration screen, and who may administer these catalogues
+   * and through which surface is `P1-28-OD-001`
+   * (`docs/phase-1/phase-1-28/canonical-plan.md` §7). The nine writes among
+   * them are recorded DELIBERATELY_ABSENT against that decision in
+   * `docs/phase-1/phase-1-28/write-reachability.json`, which the SEC-004 gate
+   * resolves against §7 itself.
+   */
+  {
+    operationId: 'apt.catalogue-appointment-type-create',
+    method: 'POST',
+    template: '/appointment-catalogue/appointment-types',
+    idempotent: true,
+    versionGuarded: false,
+    permission: APPOINTMENT_PERMISSIONS.catalogueManage,
+    auditClass: 'privileged',
+  },
+  {
+    operationId: 'apt.catalogue-appointment-type-management-list',
+    method: 'GET',
+    template: '/appointment-catalogue/management/appointment-types',
+    idempotent: false,
+    versionGuarded: false,
+    permission: APPOINTMENT_PERMISSIONS.catalogueManage,
+    auditClass: 'none',
+  },
+  {
+    operationId: 'apt.catalogue-appointment-type-status-set',
+    method: 'POST',
+    template: '/appointment-catalogue/appointment-types/{appointmentTypeId}/status',
+    idempotent: true,
+    versionGuarded: true,
+    permission: APPOINTMENT_PERMISSIONS.catalogueManage,
+    auditClass: 'privileged',
+  },
+  {
+    operationId: 'apt.catalogue-appointment-type-update',
+    method: 'PATCH',
+    template: '/appointment-catalogue/appointment-types/{appointmentTypeId}',
+    idempotent: false,
+    versionGuarded: true,
+    permission: APPOINTMENT_PERMISSIONS.catalogueManage,
+    auditClass: 'privileged',
+  },
+  {
+    operationId: 'apt.catalogue-cancellation-reason-create',
+    method: 'POST',
+    template: '/appointment-catalogue/cancellation-reasons',
+    idempotent: true,
+    versionGuarded: false,
+    permission: APPOINTMENT_PERMISSIONS.catalogueManage,
+    auditClass: 'privileged',
+  },
+  {
+    operationId: 'apt.catalogue-cancellation-reason-management-list',
+    method: 'GET',
+    template: '/appointment-catalogue/management/cancellation-reasons',
+    idempotent: false,
+    versionGuarded: false,
+    permission: APPOINTMENT_PERMISSIONS.catalogueManage,
+    auditClass: 'none',
+  },
+  {
+    operationId: 'apt.catalogue-cancellation-reason-status-set',
+    method: 'POST',
+    template: '/appointment-catalogue/cancellation-reasons/{cancellationReasonId}/status',
+    idempotent: true,
+    versionGuarded: true,
+    permission: APPOINTMENT_PERMISSIONS.catalogueManage,
+    auditClass: 'privileged',
+  },
+  {
+    operationId: 'apt.catalogue-cancellation-reason-update',
+    method: 'PATCH',
+    template: '/appointment-catalogue/cancellation-reasons/{cancellationReasonId}',
+    idempotent: false,
+    versionGuarded: true,
+    permission: APPOINTMENT_PERMISSIONS.catalogueManage,
+    auditClass: 'privileged',
+  },
+  {
+    operationId: 'apt.catalogue-source-channel-create',
+    method: 'POST',
+    template: '/appointment-catalogue/source-channels',
+    idempotent: true,
+    versionGuarded: false,
+    permission: APPOINTMENT_PERMISSIONS.catalogueManage,
+    auditClass: 'privileged',
+  },
+  {
+    operationId: 'apt.catalogue-source-channel-management-list',
+    method: 'GET',
+    template: '/appointment-catalogue/management/source-channels',
+    idempotent: false,
+    versionGuarded: false,
+    permission: APPOINTMENT_PERMISSIONS.catalogueManage,
+    auditClass: 'none',
+  },
+  {
+    operationId: 'apt.catalogue-source-channel-status-set',
+    method: 'POST',
+    template: '/appointment-catalogue/source-channels/{sourceChannelId}/status',
+    idempotent: true,
+    versionGuarded: true,
+    permission: APPOINTMENT_PERMISSIONS.catalogueManage,
+    auditClass: 'privileged',
+  },
+  {
+    operationId: 'apt.catalogue-source-channel-update',
+    method: 'PATCH',
+    template: '/appointment-catalogue/source-channels/{sourceChannelId}',
+    idempotent: false,
+    versionGuarded: true,
+    permission: APPOINTMENT_PERMISSIONS.catalogueManage,
+    auditClass: 'privileged',
   },
 ]);
 

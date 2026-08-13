@@ -23,9 +23,21 @@
     "refuses an allow-listed operation that IS called — the wave that lands a",
     "screen must flip the entry to REACHABLE in the same change.",
     "",
-    "DELIBERATELY_ABSENT requires a decisionRef naming an approved decision.",
-    "No operation carries it today; the vocabulary exists so a future Owner",
-    "decision can be recorded as a decision rather than parked as not-yet-wired."
+    "DELIBERATELY_ABSENT requires a decisionRef that RESOLVES against the",
+    "decisions recorded in canonical-plan.md section 7. Non-emptiness is not",
+    "enough: a fabricated reference reads exactly like an approved one, and one",
+    "was walked past an earlier version of this gate. The checker now reads the",
+    "plan and refuses any reference no decision heading there carries.",
+    "",
+    "Twenty-one operations carry it, all of them the intake-catalogue",
+    "management writes PR #227 registered: create, update and status-set across",
+    "the seven catalogues. They are absent from apps/web deliberately. The",
+    "35-task register is the OPERATOR surface and no canonical P1-28 task binds",
+    "a catalogue-administration screen, so who administers these catalogues and",
+    "through which surface is an Owner decision that has not been taken. It is",
+    "recorded as P1-28-OD-001, and this is the vocabulary's stated purpose: a",
+    "future Owner decision recorded AS a decision rather than parked as",
+    "not-yet-wired, which the frozen ratchet would refuse anyway."
   ],
   "operations": {
     "apt.appointment-create": {
@@ -82,6 +94,111 @@
     "rec.reception-refuse": {
       "classification": "REACHABLE",
       "reason": "P1-28-FE-020: the 'refuse the visit' form of the same summary step (apps/web/src/features/receptions/components/steps/SummaryStep.tsx) submits through refuseReception in apps/web/src/features/receptions/api.ts, which forwards to closeVisit and sends POST visitPath(receptionId, '/refuse'). This is the terminal EXIT, not rec.reception-refusal, which appends refusal evidence and changes no status."
+    },
+    "apt.catalogue-appointment-type-create": {
+      "classification": "DELIBERATELY_ABSENT",
+      "decisionRef": "P1-28-OD-001",
+      "reason": "Catalogue apt.appointment_types — create. No administration screen exists in this product and no canonical P1-28 task binds one; the capability ships as API only, behind apt.catalogue.manage, which no seed grants to any role. Populating this catalogue is what would unblock FE-002, because appointmentTypeId is a required uuid on apt.appointment-create."
+    },
+    "apt.catalogue-appointment-type-update": {
+      "classification": "DELIBERATELY_ABSENT",
+      "decisionRef": "P1-28-OD-001",
+      "reason": "Catalogue apt.appointment_types — update. Same surface question as the create: an amend needs the same administration screen that has not been decided on, so no apps/web module calls it."
+    },
+    "apt.catalogue-appointment-type-status-set": {
+      "classification": "DELIBERATELY_ABSENT",
+      "decisionRef": "P1-28-OD-001",
+      "reason": "Catalogue apt.appointment_types — status set (retire or restore). Same surface question: the operator surface never withdraws a catalogue row, and the administration surface that would is undecided."
+    },
+    "apt.catalogue-cancellation-reason-create": {
+      "classification": "DELIBERATELY_ABSENT",
+      "decisionRef": "P1-28-OD-001",
+      "reason": "Catalogue apt.cancellation_reasons — create. No administration screen and no canonical task binding one; API only, behind apt.catalogue.manage, granted to no role. Populating this catalogue is what would unblock FE-004, because cancellationReasonId is mandatory on apt.appointment-cancel with no free-text alternative."
+    },
+    "apt.catalogue-cancellation-reason-update": {
+      "classification": "DELIBERATELY_ABSENT",
+      "decisionRef": "P1-28-OD-001",
+      "reason": "Catalogue apt.cancellation_reasons — update. Same surface question as its create; no apps/web module calls it."
+    },
+    "apt.catalogue-cancellation-reason-status-set": {
+      "classification": "DELIBERATELY_ABSENT",
+      "decisionRef": "P1-28-OD-001",
+      "reason": "Catalogue apt.cancellation_reasons — status set. Same surface question; retiring a reason is an administrative act with no decided surface."
+    },
+    "apt.catalogue-source-channel-create": {
+      "classification": "DELIBERATELY_ABSENT",
+      "decisionRef": "P1-28-OD-001",
+      "reason": "Catalogue apt.source_channels — create. No administration screen and no canonical task binding one; API only, behind apt.catalogue.manage. sourceChannelId is NULLABLE on apt.appointment-create, so an empty channel catalogue degrades FE-002 rather than blocking it — the emptiness is recorded on screen as an absence, not as an error."
+    },
+    "apt.catalogue-source-channel-update": {
+      "classification": "DELIBERATELY_ABSENT",
+      "decisionRef": "P1-28-OD-001",
+      "reason": "Catalogue apt.source_channels — update. Same surface question as its create; no apps/web module calls it."
+    },
+    "apt.catalogue-source-channel-status-set": {
+      "classification": "DELIBERATELY_ABSENT",
+      "decisionRef": "P1-28-OD-001",
+      "reason": "Catalogue apt.source_channels — status set. Same surface question; no apps/web module calls it."
+    },
+    "rec.catalogue-fuel-level-create": {
+      "classification": "DELIBERATELY_ABSENT",
+      "decisionRef": "P1-28-OD-001",
+      "reason": "Catalogue rec.fuel_levels — create. No administration screen and no canonical task binding one; API only, behind rec.catalogue.manage, granted to no role. Populating this catalogue answers ONE of FE-014's two blockers; the other is that no operation amends a created visit's fuelLevelId, which is a P1-18 contract gap and not this decision."
+    },
+    "rec.catalogue-fuel-level-update": {
+      "classification": "DELIBERATELY_ABSENT",
+      "decisionRef": "P1-28-OD-001",
+      "reason": "Catalogue rec.fuel_levels — update. Same surface question as its create; no apps/web module calls it."
+    },
+    "rec.catalogue-fuel-level-status-set": {
+      "classification": "DELIBERATELY_ABSENT",
+      "decisionRef": "P1-28-OD-001",
+      "reason": "Catalogue rec.fuel_levels — status set. Same surface question; no apps/web module calls it."
+    },
+    "rec.catalogue-refusal-reason-create": {
+      "classification": "DELIBERATELY_ABSENT",
+      "decisionRef": "P1-28-OD-001",
+      "reason": "Catalogue rec.refusal_reasons — create. No administration screen and no canonical task binding one; API only, behind rec.catalogue.manage. The refusal reason is OPTIONAL on rec.reception-refusal, so FE-019 degrades rather than blocks — which is exactly why FE-019 is PASS and FE-004 is not."
+    },
+    "rec.catalogue-refusal-reason-update": {
+      "classification": "DELIBERATELY_ABSENT",
+      "decisionRef": "P1-28-OD-001",
+      "reason": "Catalogue rec.refusal_reasons — update. Same surface question as its create; no apps/web module calls it."
+    },
+    "rec.catalogue-refusal-reason-status-set": {
+      "classification": "DELIBERATELY_ABSENT",
+      "decisionRef": "P1-28-OD-001",
+      "reason": "Catalogue rec.refusal_reasons — status set. Same surface question; no apps/web module calls it."
+    },
+    "rec.catalogue-visit-reason-create": {
+      "classification": "DELIBERATELY_ABSENT",
+      "decisionRef": "P1-28-OD-001",
+      "reason": "Catalogue rec.visit_reasons — create. No administration screen and no canonical task binding one; API only, behind rec.catalogue.manage, granted to no role."
+    },
+    "rec.catalogue-visit-reason-update": {
+      "classification": "DELIBERATELY_ABSENT",
+      "decisionRef": "P1-28-OD-001",
+      "reason": "Catalogue rec.visit_reasons — update. Same surface question as its create; no apps/web module calls it."
+    },
+    "rec.catalogue-visit-reason-status-set": {
+      "classification": "DELIBERATELY_ABSENT",
+      "decisionRef": "P1-28-OD-001",
+      "reason": "Catalogue rec.visit_reasons — status set. Same surface question; no apps/web module calls it."
+    },
+    "rec.catalogue-warning-light-code-create": {
+      "classification": "DELIBERATELY_ABSENT",
+      "decisionRef": "P1-28-OD-001",
+      "reason": "Catalogue rec.warning_light_codes — create. This is the operation RMC-11 said did not exist; it exists now, and the table is still empty because nothing in the product reaches it. That remaining half is this decision, and it is what keeps FE-015's warning_light evidence kind unusable in the product as shipped."
+    },
+    "rec.catalogue-warning-light-code-update": {
+      "classification": "DELIBERATELY_ABSENT",
+      "decisionRef": "P1-28-OD-001",
+      "reason": "Catalogue rec.warning_light_codes — update. Same surface question as its create; no apps/web module calls it."
+    },
+    "rec.catalogue-warning-light-code-status-set": {
+      "classification": "DELIBERATELY_ABSENT",
+      "decisionRef": "P1-28-OD-001",
+      "reason": "Catalogue rec.warning_light_codes — status set. Same surface question; no apps/web module calls it."
     }
   }
 }

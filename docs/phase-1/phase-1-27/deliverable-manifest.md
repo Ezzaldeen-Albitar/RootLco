@@ -565,7 +565,7 @@ anonymous tier had been fixed before merge.
 | ----------------------------------------------------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------- |
 | `npm run test` — the root unit and contract aggregate | **96**                                          | **2341**                                                                                                                                                     | re-run; the file half is not derived    |
 | of which `tests/ci`                                   | **46**                                          | **1202**                                                                                                                                                     | the file half derived; the cases re-run |
-| `tests/backend`                                       | **85** test files (90 files in the directory)   | **not run here** — needs a running PostgreSQL                                                                                                                | both halves derived                     |
+| `tests/backend`                                       | **86** test files (91 files in the directory)   | **not run here** — needs a running PostgreSQL                                                                                                                | both halves derived                     |
 | `tests/db`                                            | **139** test files (143 files in the directory) | **not run here** — needs a running PostgreSQL. **Recorded** as 1636 / 1636 in [`owner-acceptance-fail-remediation.md`](owner-acceptance-fail-remediation.md) | both halves derived                     |
 
 The root aggregate's file count is **not** derived, and the reason is worth
@@ -958,7 +958,7 @@ Two claims that look wrong and are right, recorded so nobody "corrects" them:
 | The nine tasks `task-register.md` does not name individually                                           | An edit to that register, in a change that owns it                                                                       |
 | Any definition of `P1-OD-017` or `P1-OD-025`                                                           | The canonical Word documents outside this repository                                                                     |
 | Whether any of the 176 planning findings is in Phase 1 scope                                           | A Product Owner scope decision                                                                                           |
-| Current case counts for `tests/backend` (85 test files) and `tests/db` (139 test files)                | A running local PostgreSQL                                                                                               |
+| Current case counts for `tests/backend` (86 test files) and `tests/db` (139 test files)                | A running local PostgreSQL                                                                                               |
 | A mutation for `OA-05`, and whether the `creation-actions.ts` allow-list entry was ever exercised      | Unchanged by this reconciliation — `evidence/task-traceability.md` §12 and `risk-register.md` §10 still record both      |
 
 **None of this is acceptance.** Reconciling documents against each other makes
@@ -978,8 +978,8 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
 <!-- derived: files supabase/migrations = 120 -->
 <!-- derived: files tests/db = 139 -->
 <!-- derived: files tests/db:all = 143 -->
-<!-- derived: files tests/backend = 85 -->
-<!-- derived: files tests/backend:all = 90 -->
+<!-- derived: files tests/backend = 86 -->
+<!-- derived: files tests/backend:all = 91 -->
 <!-- derived: files apps/web/src/features/crm = 20 -->
 <!-- derived: files apps/web/src/features/vehicles = 23 -->
 <!-- derived: files p1-27-frontend-gate = 122 -->

@@ -28,10 +28,17 @@
  *     parameters include `#/components/parameters/IfMatch`.
  *   - The GUARDED ADAPTERS come from the tree: every function exported by a
  *     `'use server'` module of the two feature trees whose parameter list
- *     declares `ifMatch`. Their count must EQUAL the guarded-operation count —
- *     an operation the contract guards with no adapter demanding a version, or
- *     an adapter demanding one for an operation that is not guarded, is a
- *     disagreement worth failing on.
+ *     declares `ifMatch`. Their count must EQUAL the number of guarded
+ *     operations this application is expected to reach — an operation the
+ *     contract guards with no adapter demanding a version, or an adapter
+ *     demanding one for an operation that is not guarded, is a disagreement
+ *     worth failing on.
+ *   - The EXPECTED set is the guarded set minus any operation recorded
+ *     `DELIBERATELY_ABSENT` in `docs/phase-1/phase-1-28/write-reachability.json`
+ *     against a `decisionRef` the canonical plan §7 records. That is the whole
+ *     exclusion mechanism, it is checked here rather than trusted, and an
+ *     unresolvable reference is reported as a violation instead of honoured —
+ *     see `expectedAdapterOperations`.
  *   - The CALL SITES come from walking `apps/web/src` for calls to those
  *     adapters by name.
  *
@@ -83,11 +90,14 @@
 import { readFileSync, readdirSync, lstatSync, statSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import { REPOSITORY_ROOT } from '../lib/repository-paths.mjs';
+import { recordedDecisions } from './check-p1-28-write-reachability.mjs';
 
 const ROOT = REPOSITORY_ROOT;
 const jsonOutput = process.argv.includes('--json');
 
 const OPENAPI = join(ROOT, 'docs', 'api', 'openapi.v1.json');
+const MANIFEST = join(ROOT, 'docs', 'phase-1', 'phase-1-28', 'write-reachability.json');
+const PLAN = join(ROOT, 'docs', 'phase-1', 'phase-1-28', 'canonical-plan.md');
 const WEB_SRC = join(ROOT, 'apps', 'web', 'src');
 
 /** The trees whose `'use server'` modules hold the guarded adapters. */
@@ -198,6 +208,65 @@ export function guardedOperations(document) {
     }
   }
   return found.sort((a, b) => a.id.localeCompare(b.id));
+}
+
+/**
+ * The guarded operations this application is EXPECTED to carry an adapter for.
+ *
+ * The adapter-equality below is a real check and stays one: a guarded operation
+ * with no adapter cannot be invoked safely. But PR #227 published an
+ * intake-catalogue ADMINISTRATION surface — fourteen of whose operations are
+ * version guarded — that this product deliberately reaches from nowhere: no
+ * canonical P1-28 task binds a catalogue-administration screen, and who
+ * administers those catalogues and through which surface is an open Owner
+ * decision. Demanding an adapter for them would force the phase to build a
+ * screenless adapter surface, which is the exact shape Wave A learned not to
+ * ship.
+ *
+ * So an operation may be excluded, and ONLY on evidence that is not this file's
+ * own opinion: it must be classified `DELIBERATELY_ABSENT` in the SEC-004
+ * manifest against a `decisionRef` the canonical plan §7 records as a decision.
+ * Both halves are required and both are checked here rather than taken on trust
+ * from the gate next door — a manifest edited alone would otherwise quietly
+ * shrink this gate's subject, which is precisely the loosening these gates
+ * exist to refuse. A classification with an unresolvable reference is reported
+ * as a violation instead of an exclusion.
+ */
+export function expectedAdapterOperations(guarded, manifest, decisions) {
+  const classified = manifest?.operations ?? {};
+  const expected = [];
+  const withheld = [];
+  const violations = [];
+
+  for (const operation of guarded) {
+    const entry = classified[operation.id];
+    if (entry?.classification !== 'DELIBERATELY_ABSENT') {
+      expected.push(operation);
+      continue;
+    }
+    const reference = String(entry.decisionRef ?? '').trim();
+    if (!reference || !decisions.includes(reference)) {
+      violations.push(
+        `${operation.id} is DELIBERATELY_ABSENT against "${reference || '(nothing)'}", which the ` +
+          'canonical plan §7 does not record as a decision. An unresolvable reference cannot ' +
+          'excuse a guarded operation from needing an adapter.'
+      );
+      expected.push(operation);
+      continue;
+    }
+    withheld.push({ id: operation.id, decisionRef: reference });
+  }
+
+  // Anti-vacuity: if everything were withheld this gate would measure nothing,
+  // and the equality below would hold against zero.
+  if (guarded.length > 0 && expected.length === 0) {
+    violations.push(
+      'every version-guarded operation is recorded as deliberately absent; a gate whose subject ' +
+        'is empty proves nothing about version sourcing'
+    );
+  }
+
+  return { expected, withheld, violations };
 }
 
 /* ------------------------------------------------------------------ *
@@ -595,8 +664,35 @@ export function run(injected = {}) {
     one.split(sep).join('/')
   );
 
+  let manifest = injected.manifest;
+  if (!manifest) {
+    try {
+      manifest = JSON.parse(readFileSync(MANIFEST, 'utf8'));
+    } catch (error) {
+      fail(`Cannot read the reachability manifest: ${error.message}`);
+    }
+  }
+
+  let decisions = injected.decisions;
+  if (!decisions) {
+    let plan;
+    try {
+      plan = readFileSync(PLAN, 'utf8');
+    } catch (error) {
+      fail(`Cannot read the canonical plan to resolve decision references: ${error.message}`);
+    }
+    decisions = recordedDecisions(plan);
+    if (decisions === null) {
+      fail(
+        'The canonical plan has no section 7, so no decision reference can be resolved. That is ' +
+          'the check failing to run, not a clean run.'
+      );
+    }
+  }
+
   const guarded = guardedOperations(document);
-  const violations = [];
+  const subject = expectedAdapterOperations(guarded, manifest, decisions);
+  const violations = [...subject.violations];
 
   /* --- the adapters ---------------------------------------------------- */
 
@@ -702,16 +798,24 @@ export function run(injected = {}) {
         'command is unreachable, or this gate stopped seeing call sites — both are failures.'
     );
   }
-  if (adapters.size !== guarded.length) {
+  if (adapters.size !== subject.expected.length) {
     violations.push(
-      `the contract guards ${guarded.length} apt/rec operations and the tree exports ` +
-        `${adapters.size} adapters that demand a version. A guarded operation with no adapter ` +
-        'cannot be invoked safely, and an adapter demanding a version for an unguarded ' +
-        'operation sends a header nothing reads.'
+      `the contract guards ${guarded.length} apt/rec operations, ${subject.withheld.length} of ` +
+        `them recorded as deliberately absent, leaving ${subject.expected.length} this ` +
+        `application must reach — and the tree exports ${adapters.size} adapters that demand a ` +
+        'version. A guarded operation with no adapter cannot be invoked safely, and an adapter ' +
+        'demanding a version for an unguarded operation sends a header nothing reads.'
     );
   }
 
-  return { guarded, adapters: [...adapters.values()], sites, violations };
+  return {
+    guarded,
+    expected: subject.expected,
+    withheld: subject.withheld,
+    adapters: [...adapters.values()],
+    sites,
+    violations,
+  };
 }
 
 /* ------------------------------------------------------------------ *
@@ -726,7 +830,9 @@ if (process.argv[1] && process.argv[1].endsWith('check-p1-28-version-sourcing.mj
   } else {
     console.log(
       `P1-28 version sourcing: ${report.guarded.length} guarded operation(s), ` +
-        `${report.adapters.length} adapter(s), ${report.sites.length} guarded call site(s).`
+        `${report.withheld.length} deliberately absent, ${report.expected.length} this ` +
+        `application must reach, ${report.adapters.length} adapter(s), ` +
+        `${report.sites.length} guarded call site(s).`
     );
     if (report.violations.length === 0) {
       console.log(

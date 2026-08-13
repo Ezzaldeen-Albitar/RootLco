@@ -74,7 +74,10 @@ that meets it rather than papered over.
 The typed apt/rec/customer-vehicle contract modules were written from route
 source, and `validate:p1-28-write-reachability` landed with them. It derives the
 canonical write list from the P1-24 operation register at check time — 14
-operations — and refuses any it cannot classify.
+operations when the wave landed, **35 today** after PR #227 registered the
+intake-catalogue management writes — and refuses any it cannot classify. The
+number is never written into the gate; that the count moved without anybody
+editing a list is the derivation working.
 
 It exists because of `P1-27-INT-113`: ten canonical P1-27 writes shipped with a
 route, a permission, an audit class, an idempotency entry, an OpenAPI path and a
@@ -89,6 +92,18 @@ before its screens, so a write can have a real call site and still be invocable
 by nobody. Teaching the gate to resolve a path helper by shape would have
 flipped five screenless writes to REACHABLE — INT-113 certified by the gate
 built to catch it — so consumption is required as well as a call site.
+
+The gate was hardened once more when the catalogue writes arrived. Its third
+classification, `DELIBERATELY_ABSENT`, is the one the ratchet does not
+constrain, and it used to require only a NON-EMPTY `decisionRef` — an
+adversarial refuter walked `decisionRef: 'FAKE-DECISION-999'` straight through
+it, which made the whole route worthless, because a fabricated reference reads
+exactly like an approved one. The gate now RESOLVES every reference against the
+decisions recorded in `canonical-plan.md` §7 and names what it did find when it
+fails; a missing §7 is exit 2 rather than a pass, and an empty §7 refuses
+everything. `tests/ci/p1-28-write-reachability.test.ts` holds the refuter's
+fabrication as a fixture, and pins the live `DELIBERATELY_ABSENT` count so the
+classification cannot be entered without a reviewer seeing the number move.
 
 ## Waves B–H — the screens (`P1-28-FE-001` … `P1-28-FE-022`)
 
@@ -181,8 +196,21 @@ Stated here so the absence is a record rather than a discovery:
 - **The signature image** — the write requires a registered signature document
   and its exact version, and nothing in this product registers a document. The
   step shows what a signature would attribute and records nothing.
-- **Warning-light entries** — the catalogue ships zero rows and no operation
-  anywhere can add one. The step says so; no row is invented.
+- **Warning-light entries, and every other intake catalogue** — the seven
+  catalogues ship zero rows. This entry used to end "and no operation anywhere
+  can add one"; that stopped being true when PR #227 registered 21 management
+  writes, and the sentence is corrected rather than left standing. What is
+  absent now is the SURFACE: no screen in this product reaches those writes, no
+  canonical P1-28 task binds a catalogue-administration screen, and the
+  `apt.catalogue.manage` / `rec.catalogue.manage` codes are granted to no role
+  by any seed. Who administers the intake catalogues and through which surface
+  is `P1-28-OD-001` (`canonical-plan.md` §7), and the 21 writes are recorded
+  `DELIBERATELY_ABSENT` against it in `write-reachability.json` rather than
+  parked. The consequence is stated where an operator meets it: no appointment
+  can be booked or cancelled until a catalogue is populated, which is why
+  `FE-002` and `FE-004` are PARTIAL. No row is invented; the no-fake-data policy
+  and this decision are two different reasons and neither substitutes for the
+  other.
 - **Road test** — no operation, status or report for one exists anywhere in the
   platform. Nothing is labelled as a road test.
 - **Everything after the work order exists** — no work-order editing, no

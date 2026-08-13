@@ -111,17 +111,28 @@ const sources: readonly (readonly [string, string])[] = [
 
 interface Report {
   guarded: { id: string }[];
+  expected: { id: string }[];
+  withheld: { id: string; decisionRef: string }[];
   adapters: { name: string; required: boolean; used: boolean }[];
   sites: { adapter: string; argument: string; ok: boolean; renews?: boolean }[];
   violations: string[];
 }
 
-/** Runs the gate over synthetic inputs, with optional per-case overrides. */
+/**
+ * Runs the gate over synthetic inputs, with optional per-case overrides.
+ *
+ * The manifest and the decision list are injected EMPTY, so a synthetic case
+ * cannot borrow the real repository's recorded decisions: every synthetic
+ * guarded operation is expected to carry an adapter, exactly as before the
+ * exclusion mechanism existed.
+ */
 function judge(over: Record<string, unknown> = {}): Report {
   return run({
     document,
     sources,
     adapterRoots: [ADAPTER_ROOT],
+    manifest: { operations: {} },
+    decisions: [],
     ...over,
   }) as Report;
 }
@@ -148,11 +159,40 @@ describe('the gate is green on the CURRENT tree', () => {
   });
 
   it('derives the guarded operations from the published contract', () => {
-    // Seven: three appointment lifecycle commands, and on the reception side
-    // approve, convert and the two terminal exits. Pinned, because a derivation
-    // that returned nothing would pass as "nothing to check".
-    expect(live.guarded).toHaveLength(7);
+    // Twenty-one guarded operations today. Seven of them are the OPERATOR
+    // commands this gate was built for — three appointment lifecycle commands,
+    // and on the reception side approve, convert and the two terminal exits.
+    // The other fourteen arrived with PR #227's intake-catalogue
+    // ADMINISTRATION contract (every catalogue amend and retirement guards on
+    // `recordVersion`), and this product reaches none of them: there is no
+    // catalogue-administration screen, and who administers those catalogues is
+    // an open Owner decision recorded in the canonical plan §7.
+    //
+    // Both numbers are pinned, because each fails a different way. A guarded
+    // count that collapsed would pass as "nothing to check"; a withheld count
+    // that grew would be this gate's subject shrinking without anybody
+    // deciding to.
+    expect(live.guarded).toHaveLength(21);
+    expect(live.withheld).toHaveLength(14);
+    expect(live.expected).toHaveLength(7);
     for (const operation of live.guarded) expect(operation.id).toMatch(/^(apt|rec)\./);
+  });
+
+  it('excuses an operation only against a decision the plan §7 records', () => {
+    // The exclusion is the loosening this gate would otherwise have no defence
+    // against, so it is asserted rather than assumed: every withheld operation
+    // names a reference, and the run resolved each one — an unresolvable
+    // reference is a violation, and the live run holds none.
+    expect(live.violations).toEqual([]);
+    for (const entry of live.withheld) {
+      expect(entry.id).toMatch(/^(apt|rec)\.catalogue-/);
+      expect(entry.decisionRef.trim().length, `${entry.id} carries no decisionRef`).toBeGreaterThan(
+        0
+      );
+    }
+    // One decision, not fourteen: a per-operation reference would be a place to
+    // hide a second, unreviewed excuse.
+    expect(new Set(live.withheld.map((entry) => entry.decisionRef)).size).toBe(1);
   });
 
   it('finds one adapter per guarded operation, each demanding a required version', () => {
@@ -189,6 +229,85 @@ describe('the gate is green on a correct synthetic tree', () => {
       'rec.synthetic-lock',
       'rec.synthetic-unlock',
     ]);
+  });
+});
+
+describe('an operation is excused only by a decision that resolves', () => {
+  /*
+   * The exclusion mechanism, mutation-tested from all three sides.
+   *
+   * PR #227 published fourteen version-guarded operations this product reaches
+   * from nowhere, so the adapter-equality had to learn a legitimate absence.
+   * That is the one place this gate can be loosened, so every case below
+   * changes an INPUT and asserts the judgement moves with it: an excuse that
+   * resolves shrinks the subject, an excuse that does not is refused and
+   * reported, and an excuse that swallows the whole subject fails outright.
+   */
+  const withheldEntry = (decisionRef: string) => ({
+    operations: { 'rec.synthetic-unlock': { classification: 'DELIBERATELY_ABSENT', decisionRef } },
+  });
+
+  it('shrinks the expected set when the reference resolves', () => {
+    const report = judge({
+      manifest: withheldEntry('SYN-OD-001'),
+      decisions: ['SYN-OD-001'],
+    });
+    expect(report.guarded.map((operation) => operation.id)).toEqual([
+      'rec.synthetic-lock',
+      'rec.synthetic-unlock',
+    ]);
+    expect(report.expected.map((operation) => operation.id)).toEqual(['rec.synthetic-lock']);
+    expect(report.withheld).toEqual([{ id: 'rec.synthetic-unlock', decisionRef: 'SYN-OD-001' }]);
+    // And the shrink is OBSERVED rather than assumed: the tree still exports
+    // two guarded adapters, so the equality now fails against one.
+    expect(report.violations.join('\n')).toContain('1 this application must reach');
+  });
+
+  it('refuses a reference the plan §7 does not record, and says so', () => {
+    const report = judge({
+      manifest: withheldEntry('FAKE-DECISION-999'),
+      decisions: ['SYN-OD-001'],
+    });
+    expect(report.violations.join('\n')).toContain('FAKE-DECISION-999');
+    expect(report.violations.join('\n')).toContain('does not record as a decision');
+    // Refused, not honoured: the operation is still expected to have one.
+    expect(report.expected).toHaveLength(2);
+    expect(report.withheld).toEqual([]);
+  });
+
+  it('refuses an excuse that swallows the whole subject', () => {
+    const report = judge({
+      manifest: {
+        operations: {
+          'rec.synthetic-lock': {
+            classification: 'DELIBERATELY_ABSENT',
+            decisionRef: 'SYN-OD-001',
+          },
+          'rec.synthetic-unlock': {
+            classification: 'DELIBERATELY_ABSENT',
+            decisionRef: 'SYN-OD-001',
+          },
+        },
+      },
+      decisions: ['SYN-OD-001'],
+    });
+    expect(report.violations.join('\n')).toContain('a gate whose subject is empty');
+  });
+
+  it('ignores a classification that is not DELIBERATELY_ABSENT', () => {
+    // NOT_YET_WIRED is the allow-list, governed by a frozen ratchet elsewhere.
+    // It excuses nothing here: an operation somebody intends to wire still
+    // needs an adapter before it can be wired safely.
+    const report = judge({
+      manifest: {
+        operations: {
+          'rec.synthetic-unlock': { classification: 'NOT_YET_WIRED', reason: 'later' },
+        },
+      },
+      decisions: ['SYN-OD-001'],
+    });
+    expect(report.expected).toHaveLength(2);
+    expect(report.withheld).toEqual([]);
   });
 });
 

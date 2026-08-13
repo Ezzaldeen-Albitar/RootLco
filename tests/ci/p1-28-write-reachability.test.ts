@@ -7,6 +7,7 @@ import {
   normaliseRoutePath,
   normaliseSourcePaths,
   pathHelpers,
+  recordedDecisions,
   run,
   stripComments,
 } from '../../scripts/ci/check-p1-28-write-reachability.mjs';
@@ -152,6 +153,16 @@ const manifest = {
 /** The synthetic day-one high-water mark: only the seal write may be parked. */
 const highWater = ['rec.synthetic-seal'];
 
+/**
+ * The synthetic §7 — the decisions a `decisionRef` may resolve against.
+ *
+ * Injected for the same reason the register and the high-water mark are: the
+ * gate reads the REAL canonical plan in production, and a suite that let a
+ * synthetic manifest borrow the real plan's decisions would be asserting
+ * against a document it does not control.
+ */
+const decisions = ['SYN-OD-001'];
+
 const sources: readonly (readonly [string, string])[] = [
   ['apps/web/src/features/synthetic-appointments/booking-actions.ts', BOOKING_CALLER],
   ['apps/web/src/features/synthetic-receptions/approve-actions.ts', APPROVE_CALLER],
@@ -160,10 +171,10 @@ const sources: readonly (readonly [string, string])[] = [
 
 /** Runs the gate over synthetic inputs, with optional per-case overrides. */
 function judge(over: Record<string, unknown> = {}) {
-  return run({ register, manifest, sources, highWater, ...over }) as {
+  return run({ register, manifest, sources, highWater, decisions, ...over }) as {
     violations: string[];
     counts: Record<string, number>;
-    results: { id: string; classification: string; callSite?: string }[];
+    results: { id: string; classification: string; callSite?: string; decisionRef?: string }[];
   };
 }
 
@@ -181,8 +192,9 @@ describe('the gate is green on the CURRENT tree', () => {
   const live = run() as {
     violations: string[];
     counts: Record<string, number>;
-    results: { id: string; classification: string }[];
+    results: { id: string; classification: string; decisionRef?: string }[];
     canonical: { id: string }[];
+    decisions: string[];
     scanned: number;
     sites: number;
   };
@@ -192,10 +204,11 @@ describe('the gate is green on the CURRENT tree', () => {
   });
 
   it('derives the canonical writes from the register rather than a hand list', () => {
-    // 12 per the canonical plan §4 plus the two R5 terminal closes. Pinned so
-    // a register regression (the derivation returning nothing) cannot pass as
-    // "nothing to check".
-    expect(live.canonical.length).toBe(14);
+    // 12 per the canonical plan §4, plus the two R5 terminal closes, plus the
+    // 21 intake-catalogue management writes PR #227 registered. Pinned so a
+    // register regression (the derivation returning nothing, or a whole family
+    // of writes vanishing) cannot pass as "nothing to check".
+    expect(live.canonical.length).toBe(35);
     expect(live.scanned).toBeGreaterThan(0);
     // The crm/veh call sites prove the scanner works even while the apt/rec
     // wired count is legitimately zero.
@@ -213,16 +226,41 @@ describe('the gate is green on the CURRENT tree', () => {
     expect(parked.length).toBeLessThanOrEqual(DAY_ONE_NOT_YET_WIRED.length);
   });
 
-  it('pins the live DELIBERATELY_ABSENT count at exactly zero', () => {
-    // The gate's shape check accepts ANY non-empty decisionRef — a fabricated
-    // reference reads exactly like an approved one, so reclassifying an
-    // operation to DELIBERATELY_ABSENT is a sideways exit from the allow-list
-    // that nothing structural reviews. This pin closes that exit: the same
-    // diff that reclassifies an operation must move this number, which puts
-    // the claimed decision reference in front of a reviewer instead of letting
-    // it slide through as a manifest-only edit. No operation carries the
-    // classification today, and none may without being seen.
-    expect(live.counts.DELIBERATELY_ABSENT ?? 0).toBe(0);
+  it('pins the live DELIBERATELY_ABSENT count at exactly 21', () => {
+    // WHAT THIS NUMBER MEANS, now that it is no longer zero.
+    //
+    // The pin exists because DELIBERATELY_ABSENT is the sideways exit from the
+    // allow-list: the ratchet does not constrain it, so reclassifying an
+    // operation into it is the one manifest-only edit that could otherwise
+    // slide past review. The pin forces the same diff to move this number,
+    // which puts the claimed decision in front of a reviewer.
+    //
+    // It moved from 0 to 21 once, deliberately, and the 21 are exactly the
+    // intake-catalogue management writes PR #227 registered: create, update
+    // and status-set across the seven catalogues. They are absent from
+    // apps/web because the 35-task register is the OPERATOR surface and no
+    // canonical P1-28 task binds a catalogue-administration screen — who
+    // administers those catalogues, and through which surface, is an Owner
+    // decision nobody has taken. It is recorded in the canonical plan §7, and
+    // the case below proves the gate resolves the reference against that
+    // section rather than accepting any non-empty string.
+    //
+    // So the number now reads: 21 writes whose absence is a recorded decision,
+    // and nothing else may join them without moving this line again.
+    expect(live.counts.DELIBERATELY_ABSENT ?? 0).toBe(21);
+  });
+
+  it('resolves every live DELIBERATELY_ABSENT reference against the plan §7', () => {
+    // Derived rather than written as a literal: the assertion is that the
+    // manifest's references and the plan's decisions are the SAME set members,
+    // not that a particular identifier was typed here.
+    const referenced = live.results
+      .filter((r) => r.classification === 'DELIBERATELY_ABSENT')
+      .map((r) => r.decisionRef);
+    expect(referenced).toHaveLength(21);
+    expect(live.decisions.length).toBeGreaterThan(0);
+    const unresolved = referenced.filter((ref) => !ref || !live.decisions.includes(ref));
+    expect(unresolved, 'a decisionRef naming no decision recorded in the plan §7').toEqual([]);
   });
 });
 
@@ -361,6 +399,20 @@ describe('an allow-list entry must explain itself', () => {
     expect(report.violations.join('\n')).toContain('no decisionRef');
   });
 
+  it('fails a DELIBERATELY_ABSENT entry with no reason', () => {
+    // The decision says why the surface is withheld; the reason says which
+    // operation this is and what it would have administered. A resolvable
+    // reference alone would let twenty-one entries share one sentence and say
+    // nothing about any of them individually.
+    const report = judge({
+      manifest: withEntry('rec.synthetic-erase', {
+        classification: 'DELIBERATELY_ABSENT',
+        decisionRef: 'SYN-OD-001',
+      }),
+    });
+    expect(report.violations.join('\n')).toContain('no reason');
+  });
+
   it('fails a DELIBERATELY_ABSENT operation that IS called', () => {
     const report = judge({
       sources: [
@@ -373,6 +425,115 @@ describe('an allow-list entry must explain itself', () => {
     });
     expect(report.violations.join('\n')).toContain('rec.synthetic-erase');
     expect(report.violations.join('\n')).toContain('the classification and the code disagree');
+  });
+});
+
+describe('a decisionRef must name a decision that exists', () => {
+  /*
+   * The refutation this section closes.
+   *
+   * `DELIBERATELY_ABSENT` is the one classification the ratchet does not
+   * constrain, so it is the exit an author under pressure reaches for. The
+   * gate used to check only that the reference was a non-empty string, and an
+   * adversarial refuter walked a fabricated `decisionRef: 'FAKE-DECISION-999'`
+   * straight through — which makes the whole route worthless, because a
+   * made-up reference reads exactly like an approved one. The gate now
+   * RESOLVES the reference against the decisions recorded in the canonical
+   * plan §7, and the first case below is that refutation, kept as a fixture.
+   */
+  it('fails a decisionRef that names no recorded decision', () => {
+    const report = judge({
+      manifest: withEntry('rec.synthetic-erase', {
+        classification: 'DELIBERATELY_ABSENT',
+        decisionRef: 'FAKE-DECISION-999',
+        reason: 'a fabricated reference, in the shape the refuter used',
+      }),
+    });
+    expect(report.violations.join('\n')).toContain('rec.synthetic-erase');
+    expect(report.violations.join('\n')).toContain('FAKE-DECISION-999');
+    expect(report.violations.join('\n')).toContain('names no decision recorded');
+  });
+
+  it('names what it DID find, so the failure is actionable', () => {
+    const report = judge({
+      manifest: withEntry('rec.synthetic-erase', {
+        classification: 'DELIBERATELY_ABSENT',
+        decisionRef: 'SYN-OD-002',
+        reason: 'one digit away from the recorded decision',
+      }),
+    });
+    expect(report.violations.join('\n')).toContain('SYN-OD-001');
+  });
+
+  it('refuses everything when the plan records no decision at all', () => {
+    // An empty §7 is not a licence. The classification survives only as long
+    // as the document behind it does.
+    const report = judge({ decisions: [] });
+    expect(report.violations.join('\n')).toContain('rec.synthetic-erase');
+    expect(report.violations.join('\n')).toContain('(none)');
+  });
+
+  it('reads §7 headings by shape, and stops at the next top-level section', () => {
+    const PLAN = [
+      '## 6. Scope boundary',
+      '',
+      '### `SYN-OD-900` — a decision recorded in the WRONG section',
+      '',
+      '## 7. Open decisions',
+      '',
+      '### `SYN-OD-001` — a decision · **OPEN**',
+      '',
+      'Body text mentioning `SYN-OD-777` in prose, which is not a heading.',
+      '',
+      '### A decision identified only by its topic · **OPEN**',
+      '',
+      '### `SYN-OD-002` — another decision',
+      '',
+      '## 8. Owner acceptance',
+      '',
+      '### `SYN-OD-901` — after the section closed',
+    ].join('\n');
+
+    // Only the two backticked ids INSIDE §7. The topic-only heading carries no
+    // identifier, so nothing can reference it and the gate invents none; the
+    // ids in §6 and §8 are outside the section; the prose mention is not a
+    // heading.
+    expect(recordedDecisions(PLAN)).toEqual(['SYN-OD-001', 'SYN-OD-002']);
+  });
+
+  it('refuses a backticked heading that is not an identifier', () => {
+    // A `###` heading may legitimately open with a backticked file or field
+    // name. Requiring at least two dash-separated capitalised segments keeps
+    // those from passing themselves off as decisions.
+    const PLAN = [
+      '## 7. Open decisions',
+      '',
+      '### `canonical-plan.md` — a file, not a decision',
+      '',
+      '### `receivingEmployeeId` — a field, not a decision',
+      '',
+      '### `SYN-OD-001` — a decision',
+    ].join('\n');
+    expect(recordedDecisions(PLAN)).toEqual(['SYN-OD-001']);
+  });
+
+  it('returns null — not an empty list — when the section is absent', () => {
+    // The distinction is the whole anti-vacuity argument: "no §7" means the
+    // check cannot run (the production path exits 2), while "an empty §7"
+    // means no decision exists and every reference must fail. Collapsing the
+    // two would make a document refactor look like a clean run.
+    expect(recordedDecisions('## 6. Scope boundary\n\n## 8. Owner acceptance\n')).toBeNull();
+    expect(recordedDecisions('## 7. Open decisions\n\nNo decisions yet.\n')).toEqual([]);
+  });
+
+  it('resolves the decisions the REAL canonical plan records', () => {
+    // The live half. Without it the resolver could be reading a shape this
+    // repository's plan does not use, and every synthetic case above would
+    // still pass.
+    const live = run() as { decisions: string[] };
+    expect(live.decisions.length).toBeGreaterThan(0);
+    for (const id of live.decisions) expect(id).toMatch(/^[A-Z][A-Z0-9]*(-[A-Z0-9]+)+$/);
+    expect(live.decisions).not.toContain('FAKE-DECISION-999');
   });
 });
 

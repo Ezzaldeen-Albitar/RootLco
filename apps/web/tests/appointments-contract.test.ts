@@ -56,6 +56,26 @@ function concrete(template: string): string {
   return '/api/v1' + template.replace(/\{[^}]+\}/g, '11111111-1111-4111-8111-111111111111');
 }
 
+/**
+ * The two surfaces this table now mirrors, partitioned by the permission the
+ * BACKEND registers rather than by a list kept here.
+ *
+ * PR #227 added the intake-catalogue administration contract, and it is a
+ * different surface from the operator one in the only way that matters: every
+ * one of its operations demands `apt.catalogue.manage`, a code no screen in
+ * this product consults, because no catalogue-administration screen exists and
+ * `P1-28-OD-001` records why. Several pins below are statements about the
+ * OPERATOR surface — "exactly three guarded commands", "arranging and ending
+ * are two authorities" — and widening them to cover both surfaces would have
+ * turned each into a different, weaker claim.
+ */
+const ADMINISTRATION_OPERATIONS = APPOINTMENT_OPERATIONS.filter(
+  (row) => row.permission === APPOINTMENT_PERMISSIONS.catalogueManage
+);
+const OPERATOR_OPERATIONS = APPOINTMENT_OPERATIONS.filter(
+  (row) => row.permission !== APPOINTMENT_PERMISSIONS.catalogueManage
+);
+
 function publishedDocumentOperation(method: string, template: string) {
   const path = OPENAPI.paths[`/api/v1${template}`];
   expect(path, `the OpenAPI document publishes no path /api/v1${template}`).toBeDefined();
@@ -112,6 +132,31 @@ describe('every module row mirrors the generated operation manifest', () => {
     const ids = APPOINTMENT_OPERATIONS.map((row) => row.operationId);
     expect(new Set(ids).size).toBe(ids.length);
   });
+
+  it('partitions the table into an operator and an administration surface', () => {
+    // Anti-vacuity for the partition every narrowed pin below depends on. An
+    // empty administration side would make those pins silently equivalent to
+    // the old whole-table ones; an empty operator side would make them vacuous.
+    expect(OPERATOR_OPERATIONS.length).toBe(9);
+    expect(ADMINISTRATION_OPERATIONS.length).toBe(12);
+    expect(OPERATOR_OPERATIONS.length + ADMINISTRATION_OPERATIONS.length).toBe(
+      APPOINTMENT_OPERATIONS.length
+    );
+    // The administration surface is exactly the catalogue-management contract.
+    for (const row of ADMINISTRATION_OPERATIONS) {
+      expect(row.operationId).toMatch(/^apt\.catalogue-/);
+    }
+    // And the operator-facing catalogue PICKERS stay on the operator side —
+    // the same table is read by a booking clerk under `apt.appointment.read`
+    // and administered under a code nobody is granted. Conflating the two would
+    // have made the pickers unreachable the day this partition was drawn.
+    const pickers = OPERATOR_OPERATIONS.filter((row) => /^apt\.catalogue-/.test(row.operationId));
+    expect(pickers.map((row) => row.operationId).sort()).toEqual([
+      'apt.catalogue-appointment-type-list',
+      'apt.catalogue-cancellation-reason-list',
+      'apt.catalogue-source-channel-list',
+    ]);
+  });
 });
 
 describe('the contract facts the archaeology pinned', () => {
@@ -131,7 +176,14 @@ describe('the contract facts the archaeology pinned', () => {
   });
 
   it('guards exactly the three lifecycle commands with If-Match', () => {
-    const guarded = APPOINTMENT_OPERATIONS.filter((row) => row.versionGuarded)
+    // NARROWED TO THE OPERATOR SURFACE, deliberately and with the boundary
+    // derived rather than listed. PR #227 added an ADMINISTRATION surface —
+    // twelve catalogue-management operations, every one of them behind
+    // `apt.catalogue.manage` — whose amends and retirements are version-guarded
+    // too. Leaving this pin over the whole table would have made it say "these
+    // three and nine others", which is not the fact it was written to hold:
+    // that ending an appointment is guarded and arranging one is not.
+    const guarded = OPERATOR_OPERATIONS.filter((row) => row.versionGuarded)
       .map((row) => row.operationId)
       .sort();
     expect(guarded).toEqual([
@@ -139,6 +191,26 @@ describe('the contract facts the archaeology pinned', () => {
       'apt.appointment-no-show',
       'apt.appointment-reschedule',
     ]);
+  });
+
+  it('guards every catalogue amend and retirement, and no catalogue create', () => {
+    // The administration surface's own version-guard rule, held rather than
+    // waived: a row that already exists is amended against its `recordVersion`,
+    // and a row that does not yet exist has none to guard.
+    const guarded = ADMINISTRATION_OPERATIONS.filter((row) => row.versionGuarded)
+      .map((row) => row.operationId)
+      .sort();
+    expect(guarded).toEqual([
+      'apt.catalogue-appointment-type-status-set',
+      'apt.catalogue-appointment-type-update',
+      'apt.catalogue-cancellation-reason-status-set',
+      'apt.catalogue-cancellation-reason-update',
+      'apt.catalogue-source-channel-status-set',
+      'apt.catalogue-source-channel-update',
+    ]);
+    for (const row of ADMINISTRATION_OPERATIONS.filter((r) => /-create$/.test(r.operationId))) {
+      expect(row.versionGuarded, row.operationId).toBe(false);
+    }
   });
 
   it('requires an idempotency key on every write and on no read', () => {

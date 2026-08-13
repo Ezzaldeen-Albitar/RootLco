@@ -61,13 +61,33 @@ function concrete(template: string): string {
 
 interface MirrorRow {
   readonly operationId: string;
-  readonly method: 'GET' | 'POST';
+  /** `PATCH` since the intake-catalogue amend contract (PR #227). */
+  readonly method: 'GET' | 'POST' | 'PATCH';
   readonly template: string;
   readonly idempotent: boolean;
   readonly versionGuarded: boolean;
   readonly permission: string;
   readonly auditClass: string;
 }
+
+/**
+ * The two surfaces this table now mirrors, partitioned by the permission the
+ * BACKEND registers rather than by a list kept here.
+ *
+ * PR #227 added the intake-catalogue administration contract: sixteen `rec.*`
+ * operations, every one behind `rec.catalogue.manage`, a code no screen in this
+ * product consults because no catalogue-administration screen exists and
+ * `P1-28-OD-001` records why. Several pins below are statements about the
+ * OPERATOR surface — "exactly four guarded commands", "the write surface is
+ * spread across eight authorities" — and widening them to cover both surfaces
+ * would have turned each into a different and weaker claim.
+ */
+const ADMINISTRATION_OPERATIONS = RECEPTION_OPERATIONS.filter(
+  (row) => row.permission === RECEPTION_PERMISSIONS.catalogueManage
+);
+const OPERATOR_OPERATIONS = RECEPTION_OPERATIONS.filter(
+  (row) => row.permission !== RECEPTION_PERMISSIONS.catalogueManage
+);
 
 function publishedDocumentOperation(method: string, template: string) {
   const path = OPENAPI.paths[`/api/v1${template}`];
@@ -114,6 +134,37 @@ describe('every module row mirrors the generated manifest and the published docu
     expect(mirrored).toEqual(published);
   });
 
+  it('partitions the table into an operator and an administration surface', () => {
+    // Anti-vacuity for the partition the narrowed pins below depend on.
+    expect(OPERATOR_OPERATIONS.length).toBe(20);
+    expect(ADMINISTRATION_OPERATIONS.length).toBe(16);
+    expect(OPERATOR_OPERATIONS.length + ADMINISTRATION_OPERATIONS.length).toBe(
+      RECEPTION_OPERATIONS.length
+    );
+    for (const row of ADMINISTRATION_OPERATIONS) {
+      expect(row.operationId).toMatch(/^rec\.catalogue-/);
+    }
+    // The operator-facing catalogue PICKERS stay on the operator side: the same
+    // four tables are read during check-in under `rec.reception.read` and
+    // administered under a code nobody is granted.
+    const pickers = OPERATOR_OPERATIONS.filter((row) => /^rec\.catalogue-/.test(row.operationId));
+    expect(pickers.map((row) => row.operationId).sort()).toEqual([
+      'rec.catalogue-fuel-level-list',
+      'rec.catalogue-refusal-reason-list',
+      'rec.catalogue-visit-reason-list',
+      'rec.catalogue-warning-light-code-list',
+    ]);
+  });
+
+  it('puts the whole administration surface behind ONE code, by design', () => {
+    // The opposite shape from the operator surface, and deliberately so. The
+    // permission seed states it: "One code per schema, not per catalogue: the
+    // seven are one administrative surface configured by one role in one
+    // screen, and seven codes would be a distinction no operator makes."
+    const codes = new Set(ADMINISTRATION_OPERATIONS.map((row) => row.permission));
+    expect([...codes]).toEqual([RECEPTION_PERMISSIONS.catalogueManage]);
+  });
+
   it('names each operation exactly once', () => {
     const ids = RECEPTION_OPERATIONS.map((row) => row.operationId);
     expect(new Set(ids).size).toBe(ids.length);
@@ -141,7 +192,11 @@ describe('the contract facts the archaeology pinned', () => {
   });
 
   it('guards exactly the four terminal-decision commands with If-Match', () => {
-    const guarded = RECEPTION_OPERATIONS.filter((row) => row.versionGuarded)
+    // NARROWED TO THE OPERATOR SURFACE — see the partition above. The
+    // administration surface guards its amends too, and folding the two
+    // together would make this pin say "these four and eight others" instead
+    // of the fact it holds: a decision that ends a visit is version-guarded.
+    const guarded = OPERATOR_OPERATIONS.filter((row) => row.versionGuarded)
       .map((row) => row.operationId)
       .sort();
     expect(guarded).toEqual([
@@ -150,6 +205,25 @@ describe('the contract facts the archaeology pinned', () => {
       'rec.reception-convert-to-work-order',
       'rec.reception-refuse',
     ]);
+  });
+
+  it('guards every catalogue amend and retirement, and no catalogue create', () => {
+    const guarded = ADMINISTRATION_OPERATIONS.filter((row) => row.versionGuarded)
+      .map((row) => row.operationId)
+      .sort();
+    expect(guarded).toEqual([
+      'rec.catalogue-fuel-level-status-set',
+      'rec.catalogue-fuel-level-update',
+      'rec.catalogue-refusal-reason-status-set',
+      'rec.catalogue-refusal-reason-update',
+      'rec.catalogue-visit-reason-status-set',
+      'rec.catalogue-visit-reason-update',
+      'rec.catalogue-warning-light-code-status-set',
+      'rec.catalogue-warning-light-code-update',
+    ]);
+    for (const row of ADMINISTRATION_OPERATIONS.filter((r) => /-create$/.test(r.operationId))) {
+      expect(row.versionGuarded, row.operationId).toBe(false);
+    }
   });
 
   it('requires an idempotency key on every write and on no read', () => {
@@ -169,8 +243,12 @@ describe('the contract facts the archaeology pinned', () => {
     // Evidence capture, signature capture, authorization verification,
     // approval, conversion and closure are DIFFERENT authorities. A screen
     // gated on one code must not render another code's controls.
+    // The OPERATOR write surface — see the partition above. The administration
+    // surface deliberately does the opposite: seven catalogues behind ONE code,
+    // because the seed records them as one administrative surface configured by
+    // one role, and the case below holds that as its own separate claim.
     const writeCodes = new Set(
-      RECEPTION_OPERATIONS.filter((row) => row.method === 'POST').map((row) => row.permission)
+      OPERATOR_OPERATIONS.filter((row) => row.method === 'POST').map((row) => row.permission)
     );
     expect([...writeCodes].sort()).toEqual([
       'rec.reception.approve',

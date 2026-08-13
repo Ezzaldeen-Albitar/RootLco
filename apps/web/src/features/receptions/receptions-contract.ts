@@ -82,7 +82,12 @@
 /** One `rec.*` operation row, mirrored by the QA-001 harness. */
 export interface ReceptionOperationRow {
   readonly operationId: string;
-  readonly method: 'GET' | 'POST';
+  /**
+   * `PATCH` joined the union with the intake-catalogue management contract
+   * (PR #227): a catalogue amend is the first `rec.*` operation that is not a
+   * GET or a POST.
+   */
+  readonly method: 'GET' | 'POST' | 'PATCH';
   /** Path template WITHOUT the `/api/v1` prefix, exactly as published. */
   readonly template: string;
   /** True when the backend refuses the request without an `Idempotency-Key`. */
@@ -114,6 +119,20 @@ export const RECEPTION_PERMISSIONS = {
   convert: 'rec.reception.convert',
   /** Both terminal exits: close-without-work and refuse. */
   close: 'rec.reception.close',
+  /**
+   * Administering the reception intake catalogues — visit reasons, fuel levels,
+   * warning-light codes and refusal reasons.
+   *
+   * The code is named here because the backend registers it and this layer must
+   * know every code its domain can be denied for; it is NOT consulted by any
+   * screen, because there is no catalogue-administration screen. No canonical
+   * P1-28 task binds one, and who administers the intake catalogues and through
+   * which surface is `P1-28-OD-001` (`docs/phase-1/phase-1-28/canonical-plan.md`
+   * §7). The sixteen operations behind it are recorded in
+   * `docs/phase-1/phase-1-28/write-reachability.json`, the writes among them as
+   * DELIBERATELY_ABSENT against that decision.
+   */
+  catalogueManage: 'rec.catalogue.manage',
 } as const;
 
 /**
@@ -300,6 +319,167 @@ export const RECEPTION_OPERATIONS: readonly ReceptionOperationRow[] = Object.fre
     versionGuarded: false,
     permission: RECEPTION_PERMISSIONS.read,
     auditClass: 'none',
+  },
+
+  /*
+   * The intake-catalogue ADMINISTRATION surface (PR #227).
+   *
+   * These sixteen rows mirror a published contract that NO screen in this
+   * product reaches, and that is the point of writing them down: this module's
+   * claim is "every rec.* operation the platform publishes", and an operation
+   * left out because nothing calls it would make the mirror a description of
+   * the screens rather than of the contract.
+   *
+   * There is no adapter for any of them. No canonical P1-28 task binds a
+   * catalogue-administration screen, and who may administer these catalogues
+   * and through which surface is `P1-28-OD-001`
+   * (`docs/phase-1/phase-1-28/canonical-plan.md` §7). The twelve writes among
+   * them are recorded DELIBERATELY_ABSENT against that decision in
+   * `docs/phase-1/phase-1-28/write-reachability.json`.
+   */
+  {
+    operationId: 'rec.catalogue-fuel-level-create',
+    method: 'POST',
+    template: '/reception-catalogue/fuel-levels',
+    idempotent: true,
+    versionGuarded: false,
+    permission: RECEPTION_PERMISSIONS.catalogueManage,
+    auditClass: 'privileged',
+  },
+  {
+    operationId: 'rec.catalogue-fuel-level-management-list',
+    method: 'GET',
+    template: '/reception-catalogue/management/fuel-levels',
+    idempotent: false,
+    versionGuarded: false,
+    permission: RECEPTION_PERMISSIONS.catalogueManage,
+    auditClass: 'none',
+  },
+  {
+    operationId: 'rec.catalogue-fuel-level-status-set',
+    method: 'POST',
+    template: '/reception-catalogue/fuel-levels/{fuelLevelId}/status',
+    idempotent: true,
+    versionGuarded: true,
+    permission: RECEPTION_PERMISSIONS.catalogueManage,
+    auditClass: 'privileged',
+  },
+  {
+    operationId: 'rec.catalogue-fuel-level-update',
+    method: 'PATCH',
+    template: '/reception-catalogue/fuel-levels/{fuelLevelId}',
+    idempotent: false,
+    versionGuarded: true,
+    permission: RECEPTION_PERMISSIONS.catalogueManage,
+    auditClass: 'privileged',
+  },
+  {
+    operationId: 'rec.catalogue-refusal-reason-create',
+    method: 'POST',
+    template: '/reception-catalogue/refusal-reasons',
+    idempotent: true,
+    versionGuarded: false,
+    permission: RECEPTION_PERMISSIONS.catalogueManage,
+    auditClass: 'privileged',
+  },
+  {
+    operationId: 'rec.catalogue-refusal-reason-management-list',
+    method: 'GET',
+    template: '/reception-catalogue/management/refusal-reasons',
+    idempotent: false,
+    versionGuarded: false,
+    permission: RECEPTION_PERMISSIONS.catalogueManage,
+    auditClass: 'none',
+  },
+  {
+    operationId: 'rec.catalogue-refusal-reason-status-set',
+    method: 'POST',
+    template: '/reception-catalogue/refusal-reasons/{refusalReasonId}/status',
+    idempotent: true,
+    versionGuarded: true,
+    permission: RECEPTION_PERMISSIONS.catalogueManage,
+    auditClass: 'privileged',
+  },
+  {
+    operationId: 'rec.catalogue-refusal-reason-update',
+    method: 'PATCH',
+    template: '/reception-catalogue/refusal-reasons/{refusalReasonId}',
+    idempotent: false,
+    versionGuarded: true,
+    permission: RECEPTION_PERMISSIONS.catalogueManage,
+    auditClass: 'privileged',
+  },
+  {
+    operationId: 'rec.catalogue-visit-reason-create',
+    method: 'POST',
+    template: '/reception-catalogue/visit-reasons',
+    idempotent: true,
+    versionGuarded: false,
+    permission: RECEPTION_PERMISSIONS.catalogueManage,
+    auditClass: 'privileged',
+  },
+  {
+    operationId: 'rec.catalogue-visit-reason-management-list',
+    method: 'GET',
+    template: '/reception-catalogue/management/visit-reasons',
+    idempotent: false,
+    versionGuarded: false,
+    permission: RECEPTION_PERMISSIONS.catalogueManage,
+    auditClass: 'none',
+  },
+  {
+    operationId: 'rec.catalogue-visit-reason-status-set',
+    method: 'POST',
+    template: '/reception-catalogue/visit-reasons/{visitReasonId}/status',
+    idempotent: true,
+    versionGuarded: true,
+    permission: RECEPTION_PERMISSIONS.catalogueManage,
+    auditClass: 'privileged',
+  },
+  {
+    operationId: 'rec.catalogue-visit-reason-update',
+    method: 'PATCH',
+    template: '/reception-catalogue/visit-reasons/{visitReasonId}',
+    idempotent: false,
+    versionGuarded: true,
+    permission: RECEPTION_PERMISSIONS.catalogueManage,
+    auditClass: 'privileged',
+  },
+  {
+    operationId: 'rec.catalogue-warning-light-code-create',
+    method: 'POST',
+    template: '/reception-catalogue/warning-light-codes',
+    idempotent: true,
+    versionGuarded: false,
+    permission: RECEPTION_PERMISSIONS.catalogueManage,
+    auditClass: 'privileged',
+  },
+  {
+    operationId: 'rec.catalogue-warning-light-code-management-list',
+    method: 'GET',
+    template: '/reception-catalogue/management/warning-light-codes',
+    idempotent: false,
+    versionGuarded: false,
+    permission: RECEPTION_PERMISSIONS.catalogueManage,
+    auditClass: 'none',
+  },
+  {
+    operationId: 'rec.catalogue-warning-light-code-status-set',
+    method: 'POST',
+    template: '/reception-catalogue/warning-light-codes/{warningLightCodeId}/status',
+    idempotent: true,
+    versionGuarded: true,
+    permission: RECEPTION_PERMISSIONS.catalogueManage,
+    auditClass: 'privileged',
+  },
+  {
+    operationId: 'rec.catalogue-warning-light-code-update',
+    method: 'PATCH',
+    template: '/reception-catalogue/warning-light-codes/{warningLightCodeId}',
+    idempotent: false,
+    versionGuarded: true,
+    permission: RECEPTION_PERMISSIONS.catalogueManage,
+    auditClass: 'privileged',
   },
 ]);
 

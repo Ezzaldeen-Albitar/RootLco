@@ -17,9 +17,10 @@
  * It comes from the P1-24 operation register: every `apt.*` / `rec.*` operation
  * whose method is not GET. The canonical plan's §4 says "12 POST commands";
  * remediation R5 (PR #220) then added the two terminal closes
- * (`rec.reception-close-without-work`, `rec.reception-refuse`), so the derived
- * set is 14 today — and the derivation, not the prose, is the authority. An
- * operation in the register and not in the manifest is UNWIRED and fails.
+ * (`rec.reception-close-without-work`, `rec.reception-refuse`), and PR #227
+ * added the 21 intake-catalogue management writes, so the derived set is 35
+ * today — and the derivation, not the prose, is the authority. An operation in
+ * the register and not in the manifest is UNWIRED and fails.
  *
  * ## The allow-list, and why it only shrinks
  *
@@ -123,9 +124,32 @@
  * found anywhere in the tree (the crm/veh call sites prove the scanner works
  * even while the apt/rec count is legitimately zero), and a malformed
  * classification. `NOT_YET_WIRED` requires a non-empty `reason` and
- * `DELIBERATELY_ABSENT` a non-empty `decisionRef` — an absence with nothing
+ * `DELIBERATELY_ABSENT` a `decisionRef` that RESOLVES — an absence with nothing
  * recorded behind it is indistinguishable from an omission, which is what this
  * gate is for.
+ *
+ * ## A `decisionRef` must name a decision that exists
+ *
+ * `DELIBERATELY_ABSENT` is the sideways exit from the allow-list: it is the one
+ * classification the ratchet does not constrain, so it is the one an author
+ * under pressure reaches for. The first version of this gate checked only that
+ * the reference was a non-empty string, and an adversarial refuter walked a
+ * fabricated `decisionRef: 'FAKE-DECISION-999'` straight through it — which
+ * makes the whole route worthless, because a made-up reference reads exactly
+ * like an approved one.
+ *
+ * So the reference is RESOLVED. `recordedDecisions` reads §7 of
+ * `docs/phase-1/phase-1-28/canonical-plan.md` and returns the identifier of
+ * every decision recorded there — the backticked id that opens a `###` heading
+ * inside that section, and nothing else. A `decisionRef` outside that set is a
+ * violation naming what it could not find. The section is the source rather
+ * than a list in this file for the same reason the operation list is derived:
+ * a list here would be a second authority to keep in step, and it is precisely
+ * the step nobody takes.
+ *
+ * Failing to READ the plan, or finding no §7 at all, is exit 2 — the check
+ * could not run — never a pass. An empty §7 is not a licence to classify
+ * anything absent.
  *
  * Usage:  node scripts/ci/check-p1-28-write-reachability.mjs [--json]
  * Exit:   0 clean · 1 a violation · 2 the check could not run.
@@ -139,7 +163,11 @@ const jsonOutput = process.argv.includes('--json');
 
 const REGISTER = join(ROOT, 'docs', 'phase-1', 'phase-1-24', 'evidence', 'operation-register.json');
 const MANIFEST = join(ROOT, 'docs', 'phase-1', 'phase-1-28', 'write-reachability.json');
+const PLAN = join(ROOT, 'docs', 'phase-1', 'phase-1-28', 'canonical-plan.md');
 const WEB_SRC = join(ROOT, 'apps', 'web', 'src');
+
+/** The plan section that records this phase's decisions. */
+export const DECISIONS_SECTION = /^##\s*7\.\s/;
 
 export const CLASSIFICATIONS = Object.freeze(['REACHABLE', 'NOT_YET_WIRED', 'DELIBERATELY_ABSENT']);
 
@@ -186,6 +214,38 @@ const IS_TEST = /\.(test|spec)\.[jt]sx?$/;
 function fail(message) {
   console.error(message);
   process.exit(2);
+}
+
+/**
+ * Every decision identifier recorded in §7 of the canonical plan.
+ *
+ * A decision is a `###` heading INSIDE that section whose first token is a
+ * backticked identifier — `` ### `P1-28-OD-001` — who administers … `` yields
+ * `P1-28-OD-001`. Headings identified only by topic ("Warning-light catalogue
+ * population") are real decisions and are deliberately NOT returned: they carry
+ * no identifier, so nothing can reference them, and inventing one here would
+ * put a name in the gate that the document does not use.
+ *
+ * The shape is `ABC-123`-ish and anchored — at least two dash-separated
+ * segments of capitals and digits — so a heading that merely opens with a
+ * backticked FILE or FIELD name cannot pass itself off as a decision.
+ *
+ * Returns `null` when the section is absent, which the caller treats as
+ * "the check could not run" rather than as "no decisions exist".
+ */
+export function recordedDecisions(planMarkdown) {
+  const lines = String(planMarkdown).split(/\r?\n/);
+  const start = lines.findIndex((line) => DECISIONS_SECTION.test(line));
+  if (start === -1) return null;
+
+  const ids = [];
+  for (let i = start + 1; i < lines.length; i += 1) {
+    const line = lines[i];
+    if (/^##\s/.test(line)) break; // the next top-level section ends §7
+    const heading = /^###\s+`([A-Z][A-Z0-9]*(?:-[A-Z0-9]+)+)`/.exec(line);
+    if (heading && !ids.includes(heading[1])) ids.push(heading[1]);
+  }
+  return ids;
 }
 
 /** Source with comments removed. `https://` is not a comment start. */
@@ -541,6 +601,24 @@ export function run(injected = {}) {
   }
   const highWater = injected.highWater ?? DAY_ONE_NOT_YET_WIRED;
 
+  let decisions = injected.decisions;
+  if (!decisions) {
+    let plan;
+    try {
+      plan = readFileSync(PLAN, 'utf8');
+    } catch (error) {
+      fail(`Cannot read the canonical plan to resolve decision references: ${error.message}`);
+    }
+    decisions = recordedDecisions(plan);
+    if (decisions === null) {
+      fail(
+        `${relative(ROOT, PLAN).split(sep).join('/')} has no section 7. That section is where ` +
+          'this gate resolves every DELIBERATELY_ABSENT decisionRef, so its absence means the ' +
+          'check cannot run — it does not mean there is nothing to resolve against.'
+      );
+    }
+  }
+
   const canonical = (register.operations ?? [])
     .filter((op) => /^(apt|rec)\./.test(op.id) && op.method !== 'GET')
     .sort((a, b) => a.id.localeCompare(b.id));
@@ -671,10 +749,26 @@ export function run(injected = {}) {
     }
 
     if (classification === 'DELIBERATELY_ABSENT') {
-      if (!String(decisionRef ?? '').trim()) {
+      const reference = String(decisionRef ?? '').trim();
+      if (!reference) {
         violations.push(
           `${operation.id} is DELIBERATELY_ABSENT with no decisionRef; an absence without an ` +
             'approved decision is an omission'
+        );
+      } else if (!decisions.includes(reference)) {
+        violations.push(
+          `${operation.id} is DELIBERATELY_ABSENT against "${reference}", which names no decision ` +
+            'recorded in the canonical plan §7. A reference nothing resolves reads exactly like ' +
+            `an approved one, which is why it is refused. Recorded there: ${
+              decisions.length === 0 ? '(none)' : decisions.join(', ')
+            }.`
+        );
+      }
+      if (!String(reason ?? '').trim()) {
+        violations.push(
+          `${operation.id} is DELIBERATELY_ABSENT with no reason; the decision says why the ` +
+            'surface is withheld, the reason says which operation this is and what it would have ' +
+            'administered'
         );
       }
       if (site) {
@@ -708,6 +802,9 @@ export function run(injected = {}) {
     // so "the scanner works" and "somebody can reach it" stay distinguishable.
     found: found.length,
     canonical,
+    // The decision identifiers §7 records, so a run can be read without
+    // re-deriving them and a drifted plan is visible in the JSON output.
+    decisions,
   };
 }
 
@@ -720,7 +817,8 @@ if (process.argv[1] && process.argv[1].endsWith('check-p1-28-write-reachability.
     console.log(
       `P1-28 write reachability: ${report.canonical.length} canonical write(s), ` +
         `${report.scanned} production file(s), ${report.found} mutation call site(s), ` +
-        `${report.sites} of them consumed.`
+        `${report.sites} of them consumed, ` +
+        `${report.decisions.length} decision(s) recorded in the plan §7.`
     );
     for (const key of [...CLASSIFICATIONS, 'UNWIRED', 'MALFORMED']) {
       if (report.counts[key]) console.log(`  ${key} = ${report.counts[key]}`);

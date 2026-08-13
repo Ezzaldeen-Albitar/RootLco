@@ -185,6 +185,51 @@ function publishedAptRec(): readonly string[] {
     .sort();
 }
 
+const REPO = join(process.cwd(), '..', '..');
+
+function repoJson<T>(...segments: string[]): T {
+  return JSON.parse(readFileSync(join(REPO, ...segments), 'utf8')) as T;
+}
+
+const OPENAPI = repoJson<{
+  readonly paths: Record<
+    string,
+    Record<string, { readonly 'x-required-permissions'?: readonly string[] }>
+  >;
+}>('docs', 'api', 'openapi.v1.json');
+
+/**
+ * The intake-catalogue ADMINISTRATION surface, derived from the permission the
+ * BACKEND registers — never a list kept here.
+ *
+ * PR #227 published 28 operations that administer the seven intake catalogues,
+ * and this application reaches none of them ON PURPOSE. There is no
+ * catalogue-administration screen: no canonical P1-28 task binds one, and who
+ * administers the catalogues and through which surface is `P1-28-OD-001`
+ * (`docs/phase-1/phase-1-28/canonical-plan.md` §7). Writing an adapter for
+ * them would be exactly what Wave A learned not to do — an adapter nobody
+ * consumes is not reach, it is INT-113 with a call site.
+ *
+ * The boundary is the `*.catalogue.manage` permission, which is how the backend
+ * itself draws it: the seed records the seven catalogues as ONE administrative
+ * surface behind one code per schema. So the partition cannot be widened by
+ * editing this file — only by a backend that puts an operator operation behind
+ * an administration code, which would fail the access gate first.
+ */
+function administrativeAptRec(): readonly string[] {
+  const ids: string[] = [];
+  for (const operation of PUBLISHED_OPERATIONS) {
+    if (!/^(apt|rec)\./.test(operation.operationId)) continue;
+    const document =
+      OPENAPI.paths[`/api/v1${operation.template}`]?.[operation.method.toLowerCase()];
+    const permissions = document?.['x-required-permissions'] ?? [];
+    if (permissions.some((code) => /\.catalogue\.manage$/.test(code))) {
+      ids.push(operation.operationId);
+    }
+  }
+  return ids.sort();
+}
+
 /* ================================================================== *
  * QA-001 — the contract mirror, and the coverage it claims
  * ================================================================== */
@@ -290,14 +335,80 @@ describe('P1-28-QA-001 — every adapter is executed, and this file proves it', 
     ).toEqual([]);
 
     const published = publishedAptRec();
-    const unreached = published.filter((id) => !reached.has(id));
+    const administrative = new Set(administrativeAptRec());
+    const operator = published.filter((id) => !administrative.has(id));
+
+    const unreached = operator.filter((id) => !reached.has(id));
     expect(
       unreached,
       `these published operations are reached by no adapter:\n  ${unreached.join('\n  ')}`
     ).toEqual([]);
-    // Anti-vacuity for the derivation itself: an empty published set would make
-    // the filter above trivially satisfied.
+
+    /*
+     * The administration surface, from the other side. It is EXCLUDED above
+     * and asserted UNREACHED here, so the exclusion cannot quietly become a
+     * place to park an operation somebody did wire: if an adapter ever calls
+     * one of these, this case fails and whoever wired it must answer
+     * `P1-28-OD-001` and flip the SEC-004 manifest in the same change.
+     */
+    const reachedAdministrative = [...reached].filter((id) => administrative.has(id)).sort();
+    expect(
+      reachedAdministrative,
+      'an adapter reaches the catalogue-administration surface, which this product withholds ' +
+        'pending P1-28-OD-001; wire it deliberately or not at all'
+    ).toEqual([]);
+
+    // Anti-vacuity for both derivations. An empty published set would make the
+    // filter above trivially satisfied; an administration set that swallowed
+    // the operator surface would do the same, one layer down.
     expect(published.length).toBeGreaterThan(25);
+    expect(administrative.size).toBe(28);
+    expect(operator.length).toBeGreaterThan(25);
+  });
+
+  it('records the withheld administration surface as a DECISION, not as an omission', () => {
+    /*
+     * The corroboration that makes the exclusion above trustworthy. Excluding
+     * 28 operations from a completeness sweep is exactly the move that hides an
+     * INT-113, so the exclusion is not allowed to rest on this file's own
+     * judgement: every WRITE among them must be classified
+     * `DELIBERATELY_ABSENT` in the SEC-004 manifest, against a `decisionRef`
+     * that the canonical plan §7 records as a decision heading.
+     *
+     * `scripts/ci/check-p1-28-write-reachability.mjs` is the authority and
+     * resolves the reference itself; this case is the web tier refusing to take
+     * the exclusion on trust while that gate runs elsewhere.
+     */
+    const manifest = repoJson<{
+      operations: Record<string, { classification: string; decisionRef?: string }>;
+    }>('docs', 'phase-1', 'phase-1-28', 'write-reachability.json');
+    const plan = readFileSync(
+      join(REPO, 'docs', 'phase-1', 'phase-1-28', 'canonical-plan.md'),
+      'utf8'
+    );
+    const section = /^##\s*7\.\s[\s\S]*?(?=^##\s(?!#))/m.exec(plan)?.[0] ?? '';
+    expect(
+      section.length,
+      'the canonical plan has no section 7 to resolve against'
+    ).toBeGreaterThan(0);
+
+    const writes = administrativeAptRec().filter((id) => {
+      const operation = PUBLISHED_OPERATIONS.find((op) => op.operationId === id);
+      return operation !== undefined && operation.method !== 'GET';
+    });
+    expect(writes.length, 'the administration surface publishes no write').toBe(21);
+
+    for (const id of writes) {
+      const entry = manifest.operations[id];
+      expect(entry, `${id} is unclassified in the SEC-004 manifest`).toBeDefined();
+      expect(entry?.classification, id).toBe('DELIBERATELY_ABSENT');
+      const reference = entry?.decisionRef ?? '';
+      expect(reference.length, `${id} carries no decisionRef`).toBeGreaterThan(0);
+      expect(
+        new RegExp(`^###\\s+\`${reference}\``, 'm').test(section),
+        `${id} names "${reference}", which the canonical plan §7 does not record as a decision`
+      ).toBe(true);
+    }
   });
 
   it('gives every operation an adapter reaches a contract-module row', async () => {
