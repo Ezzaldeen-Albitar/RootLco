@@ -162,7 +162,7 @@ fact in words did not, which is the gap this revision closes.
 | Source files under the P1-27 ownership gate                            | **71** (43 feature source + 28 route)                              | derived from the gate's own scan roots                                     |
 | Router pages (CRM and Vehicle)                                         | **8**                                                              | command 1                                                                  |
 | Shared-foundation source files changed by the phase or its remediation | **13** named in §5.5                                               | command 1, cross-read against the task register and the remediation record |
-| Web unit and component test files                                      | **81**                                                             | derived                                                                    |
+| Web unit and component test files                                      | **84**                                                             | derived                                                                    |
 | Playwright specification files                                         | **9** (2 anonymous, 7 authenticated)                               | commands 11 and 12 — **not re-measured**, §1.1.1                           |
 | Root CI-contract test files                                            | **36**                                                             | derived                                                                    |
 | CI gate scripts under `scripts/ci`                                     | **48** in the directory, **8** introduced or changed by this phase | derived; the eight are the `scripts/ci` rows of §7.1                       |
@@ -397,7 +397,7 @@ records.
 
 ## 6. Test files
 
-### 6.1 Web unit and component — `apps/web/tests` (81 files, and no case total — `E-03`)
+### 6.1 Web unit and component — `apps/web/tests` (84 files, and no case total — `E-03`)
 
 **`E-03` is closed by DELETING the number, not by correcting it.** The heading
 used to read `(70 files, 1493 cases, 0 failed)`, and before that `(66 files, 1231
@@ -407,14 +407,14 @@ and borrowing its credibility. It drifted exactly as the finding predicted: the
 paragraphs below this heading still said `66` and `1231` while the heading beside
 them said `70` and `1493` — `E-02` returning, in the section written to close it.
 
-`81` is recomputed from the tree on every run, here and in §3, and
+`84` is recomputed from the tree on every run, here and in §3, and
 `p1-27-doc-reconciliation.test.ts` fails if either statement of it disagrees with
 `apps/web/tests`.
 
 **No tier-wide case total is stated anywhere in this document, because none can
 be derived.** A case count is derived by counting `it(` / `test(` call sites in
 comment-stripped source, and that number is only right for a file whose cases are
-all written down. **Twenty-five of the eighty-one files build theirs at runtime**
+all written down. **Twenty-five of the eighty-four files build theirs at runtime**
 — `it.each` over a table, or an `it(` inside a `for` or an iteration callback —
 so `scripts/ci/check-p1-27-doc-counts.mjs` refuses them rather than certify a
 plausible wrong number: `api-client.test.ts`,
@@ -431,7 +431,7 @@ plausible wrong number: `api-client.test.ts`,
 `stylelint-policy.test.ts`, `vehicle-api.test.ts`,
 `vehicle-documents.test.ts`, `vehicle-duplicates.test.ts`,
 `vehicle-party-identity.dom.test.tsx` and
-`write-permission-gating.dom.test.tsx`. A total over 81 files that is unknowable
+`write-permission-gating.dom.test.tsx`. A total over 84 files that is unknowable
 for 25 of them is not a measurement, it is an estimate with a decimal point.
 
 **The derivable half is 50 files, and it is derived per file rather than summed.**
@@ -959,7 +959,7 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
      an earlier revision put them in the label column and broke two other gates
      whose regexes read the label and the number as adjacent cells. -->
 
-<!-- derived: files apps/web/tests = 81 -->
+<!-- derived: files apps/web/tests = 84 -->
 <!-- derived: files tests/ci = 43 -->
 <!-- derived: files scripts/ci = 48 -->
 <!-- derived: files apps/web/scripts = 4 -->

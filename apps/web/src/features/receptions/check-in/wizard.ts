@@ -54,8 +54,43 @@ export interface CheckInCapabilities {
   readonly verifyAuthorizations: boolean;
   /** `crm.customer.read` — the confirmation step's customer panel and every partner search. */
   readonly readCustomers: boolean;
-  /** `veh.vehicle.read` — the confirmation step's vehicle panels. */
+  /** `veh.vehicle.read` — the confirmation step's vehicle panels, and the odometer history. */
   readonly readVehicles: boolean;
+  /**
+   * `rec.reception.evidence.manage` — all eight condition-evidence kinds
+   * (`FE-010`…`FE-016`). One permission for the whole discriminated union.
+   */
+  readonly manageEvidence: boolean;
+  /**
+   * `rec.reception.signature.manage` — signatures AND refusal evidence
+   * (`FE-018`, `FE-019`). The two share a permission because both record what a
+   * person put their name to.
+   */
+  readonly manageSignatures: boolean;
+  /**
+   * `veh.vehicle.odometer.record` — the arrival reading (`FE-013`).
+   *
+   * A VEHICLE-domain capability, deliberately its own code: a technician who
+   * reads a dashboard at check-in records mileage without being able to edit the
+   * vehicle. Held by neither `veh.vehicle.manage` nor `rec.reception.manage`.
+   */
+  readonly recordOdometer: boolean;
+}
+
+/**
+ * Who is signed in, for the fields whose referent the platform never defined.
+ *
+ * `rec.visual_inspections.inspector_id` and
+ * `rec.vehicle_contents.witnessed_by_employee_id` are NOT NULL / nullable uuids
+ * with **no foreign key**, exactly like `receiving_employee_id` before them
+ * (the named open decision G-EMP). No employee master exists, so the only
+ * identity this platform can resolve to a name is the signed-in user — which is
+ * offered as a stand-in, with the disposition stated beside the control, and
+ * never as a uuid the operator is asked to type.
+ */
+export interface CheckInSessionIdentity {
+  readonly userId: string;
+  readonly displayName: string;
 }
 
 /** The component contract every wizard step takes. See the module docblock. */
@@ -67,6 +102,8 @@ export interface CheckInStepProps {
   readonly recordVersion: number;
   readonly detail: ReceptionDetail;
   readonly capabilities: CheckInCapabilities;
+  /** The signed-in operator, for the referent-less identity fields (G-EMP). */
+  readonly session: CheckInSessionIdentity;
   /** True when the visit is terminal: render facts, withdraw write controls. */
   readonly writesLocked: boolean;
   /** Re-reads `rec.reception-detail` and re-renders every step with it. */

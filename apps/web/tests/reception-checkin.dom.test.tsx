@@ -135,7 +135,14 @@ const CAPABILITIES = {
   verifyAuthorizations: true,
   readCustomers: true,
   readVehicles: true,
+  // Wave E capabilities. Present here so the shell cases keep compiling against
+  // the widened contract; the evidence steps have their own suites.
+  manageEvidence: true,
+  manageSignatures: true,
+  recordOdometer: true,
 };
+
+const SESSION = { userId: 'user-1', displayName: 'Front Desk' };
 
 function startProps(over: Record<string, unknown> = {}) {
   return {
@@ -529,6 +536,7 @@ describe('the wizard shell', () => {
           },
         ]}
         capabilities={CAPABILITIES}
+        session={SESSION}
       />
     );
 
@@ -557,6 +565,7 @@ describe('the wizard shell', () => {
         initialDetail={DETAIL}
         steps={CHECK_IN_STEPS}
         capabilities={CAPABILITIES}
+        session={SESSION}
       />
     );
 
@@ -591,6 +600,7 @@ describe('the wizard shell', () => {
           },
         ]}
         capabilities={CAPABILITIES}
+        session={SESSION}
       />
     );
     // The status name appears in the header AND in the banner — scope to the
@@ -609,6 +619,7 @@ describe('the wizard shell', () => {
         initialDetail={DETAIL}
         steps={CHECK_IN_STEPS}
         capabilities={CAPABILITIES}
+        session={SESSION}
       />
     );
     expect(screen.getByText('user-77')).toBeInTheDocument();
@@ -626,6 +637,7 @@ function stepProps(over: Partial<CheckInStepProps> = {}): CheckInStepProps {
     recordVersion: 3,
     detail: DETAIL,
     capabilities: CAPABILITIES,
+    session: SESSION,
     writesLocked: false,
     refresh: vi.fn().mockResolvedValue(undefined),
     ...over,

@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useEffect, useState, useTransition } from 'react';
+import { useCallback, useState, useTransition } from 'react';
 import { INITIAL_REQUEST, type TableRequest } from '@/components/data-table/table-state';
 import { useServerTable, type ServerPage } from '@/components/data-table/use-server-table';
 import { RadioGroupField, SelectField, TextAreaField, TextField } from '@/components/forms/Field';
@@ -106,11 +106,19 @@ export interface WalkInHandoffStart {
   readonly vehicleId: string;
 }
 
-/** How far the handed-over vehicle got. `pending` until the list answers. */
-type HandoffState = {
-  readonly vehicleId: string;
-  readonly vehicle: 'pending' | 'selected' | 'not-listed';
-} | null;
+/**
+ * The handed-over vehicle, held only as the identifier that arrived.
+ *
+ * How far it GOT is not stored, deliberately. It used to be — a
+ * `pending | selected | not-listed` field written by an effect once the
+ * vehicle list answered — and that is a second copy of something the list
+ * already knows, kept in sync by a `setState` inside an effect body
+ * (`react-hooks/set-state-in-effect`, which fails `lint:web`). The verdict is
+ * derived below instead, so there is nothing to fall out of step and no
+ * cascading render: `null` means no handoff or a consumed one, and everything
+ * else follows from the rows.
+ */
+type HandoffState = { readonly vehicleId: string } | null;
 
 interface Props {
   readonly locale: Locale;
@@ -175,7 +183,7 @@ export function CheckInStartScreen({
    * note explaining the pre-selection goes with it.
    */
   const [handoff, setHandoff] = useState<HandoffState>(
-    walkInHandoff === null ? null : { vehicleId: walkInHandoff.vehicleId, vehicle: 'pending' }
+    walkInHandoff === null ? null : { vehicleId: walkInHandoff.vehicleId }
   );
 
   const switchOrigin = (kind: 'walk_in' | 'appointment') => {
@@ -221,28 +229,35 @@ export function CheckInStartScreen({
   });
 
   /*
-   * Applying the handed-over vehicle. It arrives as an identifier, and what the
-   * form submits is a ROW off this customer's own list — so the pre-selection
-   * can only be made once that list has answered. `pending` is what makes this
-   * run exactly once: the first loaded page settles it either way, and a
-   * `not-listed` verdict is stated on screen rather than left as an empty
-   * control the operator has no reason to distrust.
+   * Applying the handed-over vehicle, by DERIVATION.
+   *
+   * It arrives as an identifier, and what the form submits is a ROW off this
+   * customer's own list — so the pre-selection can only exist once that list has
+   * answered. It is computed from the rows on every render rather than copied
+   * into state by an effect: a copy needs synchronising, synchronising it in an
+   * effect is `react-hooks/set-state-in-effect`, and a copy that falls behind
+   * would submit a vehicle the operator can no longer see.
+   *
+   * The operator's own choice WINS over the handoff, and a `not-listed` verdict
+   * is stated on screen rather than left as an empty control they have no
+   * reason to distrust.
    */
   const vehicleRows = vehicles.response?.rows ?? null;
   const vehiclesLoaded = vehicles.status === 'idle' && vehicleRows !== null;
-  useEffect(() => {
-    if (handoff === null || handoff.vehicle !== 'pending' || !vehiclesLoaded) return;
-    const match = (vehicleRows ?? []).find((row) => row.vehicleId === handoff.vehicleId) ?? null;
-    if (match !== null) setWalkInVehicle(match);
-    setHandoff({ ...handoff, vehicle: match === null ? 'not-listed' : 'selected' });
-  }, [handoff, vehiclesLoaded, vehicleRows]);
+  const handoffVehicle =
+    handoff === null || !vehiclesLoaded
+      ? null
+      : ((vehicleRows ?? []).find((row) => row.vehicleId === handoff.vehicleId) ?? null);
+  const handoffNotListed = handoff !== null && vehiclesLoaded && handoffVehicle === null;
+  /** What the form actually submits: the explicit choice, else the handed-over row. */
+  const effectiveVehicle = walkInVehicle ?? handoffVehicle;
 
   /* --- the open-visit lookup (resume) -------------------------------------- */
 
   const chosenVehicleId =
     origin.kind === 'appointment'
       ? (appointment?.vehicleId ?? null)
-      : (walkInVehicle?.vehicleId ?? null);
+      : (effectiveVehicle?.vehicleId ?? null);
 
   const loadOpenVisits = useCallback(
     (request: TableRequest, cursor: string | null) =>
@@ -283,7 +298,7 @@ export function CheckInStartScreen({
       branchId,
       origin,
       appointment,
-      walkInVehicleId: walkInVehicle?.vehicleId ?? null,
+      walkInVehicleId: effectiveVehicle?.vehicleId ?? null,
       walkInRequesterId: requesterId,
       receivingEmployeeId: employee.id,
       fuelLevelId,
@@ -498,7 +513,7 @@ export function CheckInStartScreen({
               >
                 {translate(
                   messages,
-                  handoff.vehicle === 'not-listed'
+                  handoffNotListed
                     ? 'receptions.checkIn.handoffVehicleMissing'
                     : 'receptions.checkIn.handoffApplied'
                 )}
@@ -529,7 +544,7 @@ export function CheckInStartScreen({
                   <VehicleChoice
                     messages={messages}
                     table={vehicles}
-                    chosen={walkInVehicle}
+                    chosen={effectiveVehicle}
                     onChoose={setWalkInVehicle}
                   />
                 ) : null}

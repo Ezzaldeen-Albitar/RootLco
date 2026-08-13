@@ -18,7 +18,7 @@ import { getMessages } from '@/i18n/get-messages';
 import { pageMetadata } from '@/lib/page-metadata';
 
 /**
- * The check-in wizard for one reception visit (`P1-28-FE-007`/`FE-008`/`FE-009`).
+ * The check-in wizard for one reception visit (`P1-28-FE-007`…`FE-019`).
  *
  * `rec.reception.read` gates the page; every WRITE capability gates a control
  * inside a step, resolved here into `capabilities` so no component consults the
@@ -26,8 +26,23 @@ import { pageMetadata } from '@/lib/page-metadata';
  *
  * - `rec.reception.party.manage` — the party-role form (`FE-009`);
  * - `rec.reception.authorization.verify` — the authorization form (`FE-009`);
+ * - `rec.reception.evidence.manage` — all eight condition-evidence kinds
+ *   (`FE-010`…`FE-016`), one permission for the whole discriminated union;
+ * - `rec.reception.signature.manage` — refusal evidence (`FE-019`), which
+ *   shares its permission with signatures (`FE-018`);
+ * - `veh.vehicle.odometer.record` — the arrival reading (`FE-013`), a VEHICLE
+ *   capability with its own code, held by neither vehicle-manage nor
+ *   reception-manage;
  * - `crm.customer.read` / `veh.vehicle.read` — the confirmation step's
- *   identity panels (`FE-008`) and every partner search.
+ *   identity panels (`FE-008`), the odometer history (`FE-013`) and every
+ *   partner search.
+ *
+ * The signed-in operator travels down as `session`, for the two evidence fields
+ * whose referent the platform never defined — `rec.visual_inspections.inspector_id`
+ * and `rec.vehicle_contents.witnessed_by_employee_id`, both uuid columns with no
+ * foreign key and no employee master behind them (the named open decision
+ * G-EMP). A name is offered where a uuid would otherwise have to be typed, and
+ * the disposition is stated beside every control that submits one.
  *
  * The route performs the ONE detail read (`rec.reception-detail`); its
  * `recordVersion` is the `If-Match` the guarded commands demand, and the shell
@@ -110,7 +125,11 @@ export default async function CheckInWizardPage({
         verifyAuthorizations: holds(session.permissions, RECEPTION_PERMISSIONS.authorizationVerify),
         readCustomers: holds(session.permissions, CRM_PERMISSIONS.customerRead),
         readVehicles: holds(session.permissions, VEHICLE_PERMISSIONS.vehicleRead),
+        manageEvidence: holds(session.permissions, RECEPTION_PERMISSIONS.evidenceManage),
+        manageSignatures: holds(session.permissions, RECEPTION_PERMISSIONS.signatureManage),
+        recordOdometer: holds(session.permissions, VEHICLE_PERMISSIONS.odometerRecord),
       }}
+      session={{ userId: session.userId, displayName: session.displayName }}
     />
   );
 }

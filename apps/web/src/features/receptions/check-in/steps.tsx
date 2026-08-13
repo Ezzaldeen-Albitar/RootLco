@@ -1,5 +1,13 @@
+import { ComplaintsStep } from '../components/steps/ComplaintsStep';
 import { ConfirmationStep } from '../components/steps/ConfirmationStep';
+import { ContentsStep } from '../components/steps/ContentsStep';
+import { DamageMapStep } from '../components/steps/DamageMapStep';
+import { InspectionStep } from '../components/steps/InspectionStep';
 import { PartiesStep } from '../components/steps/PartiesStep';
+import { ReadingsStep } from '../components/steps/ReadingsStep';
+import { RefusalStep } from '../components/steps/RefusalStep';
+import { SignatureStep } from '../components/steps/SignatureStep';
+import { WarningLightsStep } from '../components/steps/WarningLightsStep';
 import type { CheckInStepDefinition } from './wizard';
 
 /**
@@ -13,8 +21,16 @@ import type { CheckInStepDefinition } from './wizard';
  * test (`tests/reception-checkin-wizard.test.ts`) holds every entry to the
  * contract (unique id, feature-namespaced keys present in `en` and `ar`).
  *
- * Order is presentation order: identity is confirmed before parties are
- * recorded, and evidence steps slot in after parties when they land.
+ * Wave E did exactly that: eight condition-evidence, reading, signature and
+ * refusal steps appended below, and the shell was untouched except for the
+ * session identity every step now receives (the referent-less `inspector_id`
+ * and `witnessed_by_employee_id` fields, G-EMP).
+ *
+ * Order is presentation order, and it follows the ramp: identity is confirmed,
+ * the parties are recorded, then the condition of the vehicle is documented in
+ * the order an operator walks it — what the customer said, what staff saw,
+ * where the damage is, what the meters read, what the dashboard showed, what is
+ * inside — and only then what anybody signed or declined.
  */
 export const CHECK_IN_STEPS: readonly CheckInStepDefinition[] = Object.freeze([
   {
@@ -28,5 +44,53 @@ export const CHECK_IN_STEPS: readonly CheckInStepDefinition[] = Object.freeze([
     titleKey: 'receptions.steps.parties.title',
     descriptionKey: 'receptions.steps.parties.description',
     Component: PartiesStep,
+  },
+  {
+    id: 'condition-complaints',
+    titleKey: 'receptions.steps.complaints.title',
+    descriptionKey: 'receptions.steps.complaints.description',
+    Component: ComplaintsStep,
+  },
+  {
+    id: 'condition-inspection',
+    titleKey: 'receptions.steps.inspection.title',
+    descriptionKey: 'receptions.steps.inspection.description',
+    Component: InspectionStep,
+  },
+  {
+    id: 'condition-damage',
+    titleKey: 'receptions.steps.damage.title',
+    descriptionKey: 'receptions.steps.damage.description',
+    Component: DamageMapStep,
+  },
+  {
+    id: 'condition-readings',
+    titleKey: 'receptions.steps.readings.title',
+    descriptionKey: 'receptions.steps.readings.description',
+    Component: ReadingsStep,
+  },
+  {
+    id: 'condition-warning-lights',
+    titleKey: 'receptions.steps.warningLights.title',
+    descriptionKey: 'receptions.steps.warningLights.description',
+    Component: WarningLightsStep,
+  },
+  {
+    id: 'condition-contents',
+    titleKey: 'receptions.steps.contents.title',
+    descriptionKey: 'receptions.steps.contents.description',
+    Component: ContentsStep,
+  },
+  {
+    id: 'reception-signature',
+    titleKey: 'receptions.steps.signature.title',
+    descriptionKey: 'receptions.steps.signature.description',
+    Component: SignatureStep,
+  },
+  {
+    id: 'reception-refusal',
+    titleKey: 'receptions.steps.refusal.title',
+    descriptionKey: 'receptions.steps.refusal.description',
+    Component: RefusalStep,
   },
 ]);
