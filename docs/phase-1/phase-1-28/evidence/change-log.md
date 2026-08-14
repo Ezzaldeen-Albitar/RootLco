@@ -200,12 +200,26 @@ classification cannot be entered without a reviewer seeing the number move.
   finding-fix waves changed 37 files under `apps/**` after `38afa5c2` was frozen;
   the gate COMPUTED the product diff, found it non-empty and refused the package.
   The candidate is now `6392ccb4321b004ed12e5d04ad583298da3303dd`. The two local
-  tiers were re-measured against it — root unit 2542 and web 2726, 0 failures,
-  5268 cases — and the three hosted-only tiers could not be, because a hosted run
+  tiers were re-measured against it — root unit 2555 and web 2726, 0 failures,
+  5281 cases — and the three hosted-only tiers could not be, because a hosted run
   is taken by CI at a head and this workstation cannot take one. Those three, and
   eight other hosted bindings, are recorded PENDING at this candidate rather than
   restated from the head they were measured at; the coordinator binds them with an
   exact-head run.
+
+  **The exact-head rule was itself a circularity, and it is removed.** The
+  seal’s own machinery cannot live inside the commit it seals, so hosted CI
+  necessarily runs at a later head; under a rule that demanded the candidate
+  exactly, every hosted run forced another re-freeze whose seal commit moved the
+  head again. A binding may now cite a run at a head that is not the candidate
+  only while it declares `describesProductIdenticalSuccessor` and the gate
+  COMPUTES that the head is a commit this repository contains, DESCENDS from the
+  candidate, and differs from it by no path under `apps/**` or `supabase/**`. An
+  ancestor head is refused by it and stays pending. The same commit stops a
+  merge-ref checkout making the base branch this phase’s: `actions/checkout`
+  defaults for a pull request to the merge ref, and hosted CI reported a
+  `develop` commit absent from this branch as an unnamed executable successor of
+  this candidate.
 
   The seal is mostly its P1-27 sibling. **Two rules are not, because a digest
   cannot check either.** The first refuses a candidate the two halves of the
@@ -219,7 +233,7 @@ classification cannot be entered without a reviewer seeing the number move.
   package name it, with a blocker and an owner.
 
   And it is proved able to fail rather than asserted to be: eight rules fire in
-  one function, the gate drives that function over fifty-six known-bad worlds on
+  one function, the gate drives that function over sixty-seven known-bad worlds on
   every invocation before it reads the tree, and
   `tests/ci/p1-28-evidence-manifest.test.ts` shows a single edited byte in a
   packaged document turning the check red — using an oracle that never calls

@@ -45,19 +45,27 @@
       "kind": "evidence machinery — the two new rules proved against the tree",
       "what": "Seven cases in `tests/ci/p1-28-evidence-manifest.test.ts` that drive the PENDING and measurement-drift rules against THIS repository rather than against a synthetic one, and three existing cases moved with the rules: the tier-provenance case accepts either local provenance while requiring the ledger reconciliation unchanged; the hosted-attestation case requires headSha === candidate for a tier that CLAIMS an observation here and requires a PENDING tier to declare which head its figures belong to; and the anchored-claim case is split so that a denial is refused while a run IS bound and allowed while none is.",
       "why": "The self-check proves a rule can compute a verdict from a world. It cannot prove the COMMITTED package satisfies that rule, and a package that satisfied no rule would leave every synthetic case green. This commit is executable and is named here rather than filed as documentation.",
-      "measurementHead": "This is the head both LOCAL tiers were measured at. A tier run before it would report a suite that does not include these seven cases."
+      "measurementHead": "NOT the measurement head. It was, until the successor below landed; a tier run at this commit would report a suite that does not include that commit's twelve cases."
+    },
+    {
+      "commit": "f4ba407485a916a2848f2de7bf6df090d18840b1",
+      "kind": "evidence machinery — the hosted circularity removed, and the merge-ref false positive with it",
+      "what": "Two corrections to the seal. HOSTED: a binding may cite a run taken at a head that is NOT the candidate provided it declares `describesProductIdenticalSuccessor` and the gate COMPUTES all of — that head is a commit this repository contains, it DESCENDS from the candidate, `git diff --name-only <candidate>..<runHead> -- apps supabase` is EMPTY (a diff git refuses to take is UNKNOWN, never empty), and `headSha` names that head so a reader sees which commit was exercised. An ancestor head is refused by it and stays on the `describesSupersededHead` path, and a binding may not wear both markers. SUCCESSORS: the set is what THIS BRANCH added after the freeze, computed in two independent subtractions — the base branch is resolved to a commit and excluded from the range, and a checkout that is a synthetic merge of this branch with its base is judged as the branch side of that merge, but only when the merge carries no content of its own. Both fail closed: a base this checkout cannot resolve makes the successor set UNKNOWN and is refused. It adds eleven known-bad worlds and twelve tree-level cases; it adds no file under apps/** or supabase/** and changes none.",
+      "why": "TWO defects, both of which made the gate say something false about itself. (1) A hosted binding cleared only when its headSha WAS the candidate — and the seal's own machinery cannot live inside the commit it seals, so hosted CI necessarily runs at a later head. Every hosted run therefore forced another re-freeze whose seal commit moved the head again, without end. (2) `actions/checkout` defaults for a pull_request to the MERGE REF, so `git log <candidate>..HEAD` swept in the base branch's own history: hosted CI reported 0c89647de1a661105ec3a612955789989da58a0d — a develop commit authored by another session, absent from this branch — as an unnamed executable successor of this candidate, and the same ref would have made the product-identity diff report the base's changes as a broken freeze.",
+      "provedByFailingFirst": "Nine mutations of the seal, applied one at a time and each observed red before being reverted: the descent check, the product-identity check, the containment check, the refused-diff check, the undeclared-head check, the base subtraction, the merge-ref unwrap, the fail-closed base, and the evil-merge guard. Every one of the fifty-six known-bad worlds and seven tree-level cases that stood before this commit still fails.",
+      "measurementHead": "This is the head both LOCAL tiers were measured at. A tier run before it would report a suite that does not include its twelve cases. The three executable paths that differ between it and the candidate are what both tiers declare as `measurementDrift`."
     }
   ],
-  "howTierFiguresAreChecked": "Four obligations, because there are four kinds of claim. ARITHMETIC: `passed + failed + skipped` must equal the declared total, for every tier — the review set `passed: 3, failed: 812` beside `tests: 2475` and the first revision of the gate accepted it, because nothing added the three numbers up. LOCAL: the figures must equal the P1-27 run ledger’s, read out of git at the commit named in `localLedger.atCommit`, and a LOCAL tier may carry no figure the ledger does not write. MEASUREMENT HEAD: the head a local tier names must be executable-identical to the candidate, or a NAMED successor of it carrying no product drift and declaring `measurementDrift` exactly equal to what `git diff --name-only <head>..<candidate>` computes. HOSTED: cannot be computed from this repository at all, and the gate says so in those words; what it requires instead is that the claim be FETCHABLE — a run id, a job id, the head the job ran at, and the artefact — and, when that head is not the candidate, that the record SAY SO, name a head this repository contains and can prove is an ancestor, and appear in `pendingHostedBindings`.",
+  "howTierFiguresAreChecked": "Four obligations, because there are four kinds of claim. ARITHMETIC: `passed + failed + skipped` must equal the declared total, for every tier — the review set `passed: 3, failed: 812` beside `tests: 2475` and the first revision of the gate accepted it, because nothing added the three numbers up. LOCAL: the figures must equal the P1-27 run ledger’s, read out of git at the commit named in `localLedger.atCommit`, and a LOCAL tier may carry no figure the ledger does not write. MEASUREMENT HEAD: the head a local tier names must be executable-identical to the candidate, or a NAMED successor of it carrying no product drift and declaring `measurementDrift` exactly equal to what `git diff --name-only <head>..<candidate>` computes. HOSTED: cannot be computed from this repository at all, and the gate says so in those words; what it requires instead is that the claim be FETCHABLE — a run id, a job id, the head the job ran at, and the artefact — and, when that head is not the candidate, that the record SAY WHICH OF TWO THINGS IT IS — a head the candidate SUPERSEDES, marked `describesSupersededHead`, proved an ancestor and listed in `pendingHostedBindings`; or a head that DESCENDS from the candidate, marked `describesProductIdenticalSuccessor`, whose apps/** and supabase/** `git diff` computes to be identical to the candidate's. Either way the head must be a commit this repository contains.",
   "tiers": {
     "unit": {
       "label": "root unit and foundation",
-      "tests": 2542,
-      "passed": 2542,
+      "tests": 2555,
+      "passed": 2555,
       "failed": 0,
       "skipped": 0,
       "files": 98,
-      "measuredAtCommit": "8f8c5cfaa8cbb25693affa6422e957fc4f914ab6",
+      "measuredAtCommit": "f4ba407485a916a2848f2de7bf6df090d18840b1",
       "measurementDrift": [
         ".github/ci-baselines/unrun-test-tiers.json",
         "scripts/ci/build-p1-28-evidence-manifest.mjs",
@@ -67,7 +75,7 @@
       "localLedger": {
         "path": "docs/phase-1/phase-1-27/evidence/local-run-ledger.json",
         "tier": "unit",
-        "atCommit": "94e180008c81816d32003bfe8e44eab8226907dd",
+        "atCommit": "d41c90980e63ecd7132861473b324a48938f3a5d",
         "howChecked": "`git show 94e18000:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD when this measurement was committed, not as it stands now. Pinned to a commit because the ledger MOVES: `check-p1-27-closing-values.mjs --record` rewrites it at whatever head it was last taken at, so a check against the working copy would go red on the next unrelated re-record and would then be relaxed rather than fixed."
       },
       "hostedAttestation": {
@@ -87,7 +95,7 @@
       "failed": 0,
       "skipped": 0,
       "files": 98,
-      "measuredAtCommit": "8f8c5cfaa8cbb25693affa6422e957fc4f914ab6",
+      "measuredAtCommit": "f4ba407485a916a2848f2de7bf6df090d18840b1",
       "measurementDrift": [
         ".github/ci-baselines/unrun-test-tiers.json",
         "scripts/ci/build-p1-28-evidence-manifest.mjs",
@@ -97,7 +105,7 @@
       "localLedger": {
         "path": "docs/phase-1/phase-1-27/evidence/local-run-ledger.json",
         "tier": "web",
-        "atCommit": "94e180008c81816d32003bfe8e44eab8226907dd",
+        "atCommit": "d41c90980e63ecd7132861473b324a48938f3a5d",
         "howChecked": "`git show 94e18000:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD when this measurement was committed, not as it stands now. Pinned to a commit because the ledger MOVES: `check-p1-27-closing-values.mjs --record` rewrites it at whatever head it was last taken at, so a check against the working copy would go red on the next unrelated re-record and would then be relaxed rather than fixed."
       },
       "hostedAttestation": {
@@ -446,7 +454,7 @@
     "what": "Every binding in this package that describes a head other than the candidate, listed by name. The gate DERIVES this set from the documents’ own `headSha` fields and refuses a difference in either direction, so a pending binding cannot go unlisted and a listed one cannot be decorative.",
     "awaits": "an exact-head CI run at the candidate 6392ccb4321b004ed12e5d04ad583298da3303dd, taken by the phase coordinator",
     "whyNoneCanBeTakenHere": "A hosted figure is produced by a GitHub-hosted runner. This workstation can run the unit and web tiers and nothing else in this list: the backend and database tiers need a running PostgreSQL it does not host, the browser tier needs the full acceptance stack, and hosted CI, CodeQL, the dependency audit and the production build are properties of a RUN, not of a checkout.",
-    "whatTheCoordinatorMustDo": "Run CI at the candidate and bind the real figures. NOTE THE CONSTRAINT THIS PACKAGE CANNOT REMOVE: a binding leaves the pending state only when its `headSha` IS the candidate, so the run must be taken at 6392ccb4321b004ed12e5d04ad583298da3303dd itself. A run at a later head describes that head; if that is what is taken, the candidate must be re-frozen there and the local tiers re-measured, exactly as this cycle did.",
+    "whatTheCoordinatorMustDo": "Run CI and bind the real figures. A binding leaves the pending state in exactly two ways and must declare which: (1) its `headSha` IS the candidate 6392ccb4321b004ed12e5d04ad583298da3303dd; or (2) its `headSha` is a commit this repository CONTAINS, which DESCENDS from the candidate, whose apps/** and supabase/** the gate COMPUTES to be byte-identical to the candidate's, and which the binding marks `describesProductIdenticalSuccessor`. The second exists because the seal's own machinery cannot live inside the commit it seals, so hosted CI necessarily runs at a later head; under the old rule every hosted run forced another re-freeze whose seal commit moved the head again. What is still refused is a run at a head the candidate SUPERSEDES (that stays `describesSupersededHead`, and stays pending), a run at a head this repository does not contain, and a run at a descendant whose product differs — in which case the candidate must be re-frozen there and the local tiers re-measured, exactly as this cycle did.",
     "bindings": [
       "browserByProject",
       "codeql",
