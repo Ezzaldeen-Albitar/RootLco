@@ -884,161 +884,337 @@ describe('P1-28-QA-005 — a re-freeze may not carry the old head’s numbers fo
     expect(judge(soundInputsOver(ROOT, { tiers: bad }), () => {}).tiersOk).toBe(false);
   });
 });
+/* ------------------------------------------------------------------ *
+ * A repository this file OWNS
+ *
+ * WHY THESE WORLDS ARE NOT BUILT ON `ROOT`.
+ *
+ * The first version of the two suites below asked the real repository for
+ * `HEAD` and built its worlds around whatever that was. On a workstation `HEAD`
+ * is this branch's tip and every case passed. In hosted CI it is the pull
+ * request's MERGE REF — `actions/checkout` defaults to it for a `pull_request`
+ * event — so three cases asserted things about a commit that is not this
+ * branch's head at all, and went red for a reason that had nothing to do with
+ * the rules they were supposed to be testing.
+ *
+ * A case whose verdict depends on which refs the machine happens to carry is
+ * measuring the machine. Every world below is therefore built out of objects
+ * this file creates, in a repository this file creates, and torn down after.
+ * The rules are exercised against real git — real reachability, real diffs, real
+ * merge parents — and against nothing ambient.
+ * ------------------------------------------------------------------ */
+
+interface Scratch {
+  readonly root: string;
+  readonly git: (args: string[]) => string | null;
+  readonly run: (...args: string[]) => string;
+  /** The commit before the candidate, carrying DIFFERENT product content. */
+  readonly previous: string;
+  /** The frozen candidate. */
+  readonly candidate: string;
+  readonly candidateTree: string;
+  /** An executable successor of the candidate, on this branch. */
+  readonly successor: string;
+  /** A documentation-only successor: this branch's head. */
+  readonly branchHead: string;
+  /** The base branch's tip, which this branch does not contain. */
+  readonly baseTip: string;
+  /** The root commit, on the base's line and far behind its tip. */
+  readonly origin: string;
+  /** Point `refs/remotes/origin/develop` somewhere else. */
+  readonly setBaseRef: (sha: string) => void;
+  /** A synthetic merge of the base with this branch, carrying no content. */
+  readonly mergeRef: string;
+  /** A merge carrying a tree neither parent has. */
+  readonly evilMerge: string;
+  readonly checkout: (sha: string) => void;
+  readonly dropBaseRefs: () => void;
+  readonly document: (over?: Record<string, unknown>) => Record<string, unknown>;
+}
+
+function withScratchRepository<T>(use: (repo: Scratch) => T): T {
+  const root = mkdtempSync(join(tmpdir(), 'rootlco-seal-world-'));
+  try {
+    const run = (...args: string[]): string =>
+      execFileSync('git', args, {
+        cwd: root,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+        env: {
+          ...process.env,
+          GIT_AUTHOR_NAME: 'probe',
+          GIT_AUTHOR_EMAIL: 'probe@local',
+          GIT_COMMITTER_NAME: 'probe',
+          GIT_COMMITTER_EMAIL: 'probe@local',
+          GIT_AUTHOR_DATE: '2000-01-01T00:00:00+0000',
+          GIT_COMMITTER_DATE: '2000-01-01T00:00:00+0000',
+        },
+      }).trim();
+
+    const put = (relative: string, content: string): void => {
+      const target = join(root, relative);
+      mkdirSync(dirname(target), { recursive: true });
+      writeFileSync(target, content, 'utf8');
+    };
+    const commit = (message: string): string => {
+      run('add', '-A');
+      run('commit', '--quiet', '-m', message);
+      return run('rev-parse', 'HEAD');
+    };
+
+    run('init', '--quiet', '--initial-branch=develop');
+    run('config', 'user.name', 'probe');
+    run('config', 'user.email', 'probe@local');
+    run('config', 'commit.gpgsign', 'false');
+
+    put('README.md', '# scratch\n');
+    const origin = commit('root');
+
+    run('checkout', '--quiet', '-b', 'feature/phase');
+    put('apps/web/screen.ts', 'export const version = 1;\n');
+    const previous = commit('feat: the product, before the freeze');
+    put('apps/web/screen.ts', 'export const version = 2;\n');
+    put('scripts/ci/tool.mjs', 'export const tool = 1;\n');
+    const candidate = commit('chore: the frozen candidate');
+    put('scripts/ci/seal.mjs', 'export const seal = 1;\n');
+    const successor = commit('fix: the seal machinery, executable');
+    put('docs/record.md', '# record\n');
+    const branchHead = commit('docs: the record that names it');
+
+    run('checkout', '--quiet', 'develop');
+    put('scripts/ci/base-tool.mjs', 'export const base = 1;\n');
+    put('apps/web/base-screen.ts', 'export const base = 1;\n');
+    const baseTip = commit('feat: a base-branch commit this branch does not contain');
+    run('update-ref', 'refs/remotes/origin/develop', baseTip);
+
+    /*
+     * The merge ref carries the BASE's tree, which is what makes the world
+     * hostile: read naively, its product differs from the candidate by the
+     * base's own files. Being identical to its first parent, its combined diff
+     * is empty, so it is a clean preview and may be unwrapped.
+     */
+    const baseTree = run('rev-parse', `${baseTip}^{tree}`);
+    const mergeRef = run('commit-tree', baseTree, '-p', baseTip, '-p', branchHead, '-m', 'Merge');
+    const candidateTree = run('rev-parse', `${candidate}^{tree}`);
+
+    /*
+     * A tree neither parent has, so the merge below carries content of its own.
+     * A merge whose every path matches SOME parent is a clean merge however odd
+     * its tree looks — `--cc` reports only paths that differ from ALL parents —
+     * so the conflicted content has to be a third value, not a borrowed one.
+     */
+    run('checkout', '--quiet', '--detach', branchHead);
+    put('apps/web/screen.ts', 'export const version = 3;\n');
+    const conflicted = commit('a resolution neither side wrote');
+    const conflictedTree = run('rev-parse', `${conflicted}^{tree}`);
+    const evilMerge = run(
+      'commit-tree',
+      conflictedTree,
+      '-p',
+      branchHead,
+      '-p',
+      baseTip,
+      '-m',
+      'Merge carrying a tree neither parent has'
+    );
+
+    run('checkout', '--quiet', '--detach', branchHead);
+
+    return use({
+      root,
+      git: gitReader(root) as (args: string[]) => string | null,
+      run,
+      previous,
+      origin,
+      candidate,
+      candidateTree,
+      successor,
+      branchHead,
+      baseTip,
+      mergeRef,
+      evilMerge,
+      checkout: (sha) => void run('checkout', '--quiet', '--detach', sha),
+      setBaseRef: (sha) => void run('update-ref', 'refs/remotes/origin/develop', sha),
+      dropBaseRefs: () => {
+        run('update-ref', '-d', 'refs/remotes/origin/develop');
+        run('branch', '--quiet', '-D', 'develop');
+      },
+      document: (over = {}) => ({
+        candidate: {
+          FINAL_CODE_SHA: candidate,
+          FINAL_CODE_TREE: candidateTree,
+          baseBranch: 'develop',
+        },
+        successors: [{ commit: successor, kind: 'evidence machinery' }],
+        ...over,
+      }),
+    });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+/** What `repositoryBinding` returns, for the cases below. */
+interface Binding {
+  readonly baseResolved: boolean;
+  readonly baseRef: string | null;
+  readonly baseSha: string | null;
+  readonly baseFrom: string | null;
+  readonly baseAttempted: string[];
+  readonly phaseHead: string | null;
+  readonly checkoutHead: string | null;
+  readonly unwrappedMergeRef: string | null;
+  readonly mergeRefBaseSide: string | null;
+  readonly evilMergePaths: string[];
+  readonly declinedUnwrap: string | null;
+  readonly productDiff: string[];
+  readonly productDiffUnknown: boolean;
+  readonly rangeUnknown: boolean;
+  readonly commits: { sha: string; paths: string[] | null }[];
+  readonly unrecordedExecutable: string[];
+}
+
+const bindingOf = (doc: unknown, git: (args: string[]) => string | null): Binding =>
+  repositoryBinding(doc as never, git) as unknown as Binding;
 
 describe('P1-28-QA-005 — a hosted run may be cited at a later head, and only at an identical one', () => {
   /*
    * THE CIRCULARITY THIS CLOSES.
    *
-   * The seal clears a hosted binding only when the run's head is the candidate.
-   * But the seal's own machinery cannot be inside the commit it seals — writing
-   * it there changes that commit — so the machinery lands AFTER the candidate
-   * and hosted CI necessarily runs at a later head. Under the exact-head rule
-   * every hosted run forced another re-freeze, whose seal commit moved the head
-   * again: an unbounded loop, and one this package walked into.
+   * The seal cleared a hosted binding only when the run's head WAS the
+   * candidate. But the seal's own machinery cannot live inside the commit it
+   * seals — writing it there changes that commit — so the machinery lands after
+   * the candidate and hosted CI necessarily runs at a later head. Under the
+   * exact-head rule every hosted run forced another re-freeze, whose seal commit
+   * moved the head again: an unbounded loop, and one this package walked into.
    *
    * The local half already had the answer. A tier may be measured at a named
    * executable successor while `git diff` COMPUTES that no product path differs,
    * because the claim is about the PRODUCT and the product is provably the same.
-   * The hosted half is now allowed the same escape on the same evidence — and
-   * these cases are the mutations that prove it is not a relaxation. Every one
-   * uses REAL commits of this repository: `HEAD` genuinely descends from the
-   * candidate with an empty product diff, and `38afa5c2` is genuinely an
-   * ancestor of it whose product differs by 37 files.
+   * The hosted half is allowed the same escape on the same evidence, and the
+   * cases below are the mutations that prove it is not a relaxation.
    */
-  const git = gitReader(ROOT);
-  const candidateFile = JSON.parse(readRepo(CANDIDATE_PATH)) as {
-    candidate: { FINAL_CODE_SHA: string };
-  };
-  const CANDIDATE = candidateFile.candidate.FINAL_CODE_SHA;
-  const HEAD = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: ROOT, encoding: 'utf8' }).trim();
-  /** The head this candidate superseded: a real ancestor, product-different. */
-  const OLD_CANDIDATE = '38afa5c28e5b78d484a442cf6b8596fb2a5c34aa';
 
-  /** The committed package with every hosted binding re-cited at `runHead`. */
-  const citedAt = (runHead: string, candidateSha = CANDIDATE): Record<string, unknown> => {
-    const doc = JSON.parse(readRepo(CANDIDATE_PATH)) as {
-      candidate: { FINAL_CODE_SHA: string };
-      tiers: Record<string, Record<string, unknown>>;
-      pendingHostedBindings?: unknown;
-      [key: string]: unknown;
-    };
-    doc.candidate = { ...doc.candidate, FINAL_CODE_SHA: candidateSha };
-    const forward = { headSha: runHead, describesProductIdenticalSuccessor: true };
-    for (const row of Object.values(doc.tiers)) {
-      const attestation = row.hostedAttestation as Record<string, unknown>;
-      const { describesSupersededHead: _drop, supersededBy: _also, ...rest } = attestation;
-      row.provenance = (LOCAL_PROVENANCES as readonly string[]).includes(String(row.provenance))
-        ? PROVENANCE_LOCAL
-        : PROVENANCE_HOSTED;
-      row.hostedAttestation = { ...rest, ...forward };
-    }
-    for (const [key, value] of Object.entries(doc)) {
-      if (key === 'tiers' || key === 'candidate') continue;
-      if (value && typeof value === 'object' && !Array.isArray(value) && 'headSha' in value) {
-        const {
-          describesSupersededHead: _drop,
-          supersededBy: _also,
-          ...rest
-        } = value as Record<string, unknown>;
-        doc[key] = { ...rest, ...forward };
-      }
-    }
-    delete doc.pendingHostedBindings;
-    return doc as Record<string, unknown>;
-  };
+  /** A package citing every hosted binding at `runHead`, against `candidate`. */
+  const cited = (runHead: string, candidateSha: string, tree: string): Record<string, unknown> => ({
+    candidate: { FINAL_CODE_SHA: candidateSha, FINAL_CODE_TREE: tree, baseBranch: 'develop' },
+    tiers: {
+      unit: {
+        planned: 3,
+        passed: 3,
+        failed: 0,
+        skipped: 0,
+        provenance: PROVENANCE_HOSTED,
+        hostedAttestation: {
+          runId: 11,
+          jobId: 22,
+          headSha: runHead,
+          artefact: 'totals-unit.json',
+          describesProductIdenticalSuccessor: true,
+        },
+      },
+    },
+    hostedCi: {
+      runId: 11,
+      headSha: runHead,
+      describesProductIdenticalSuccessor: true,
+      checksTotal: 1,
+      checksSuccess: 1,
+      checksFailure: 0,
+      checks: [{ name: 'ci-gate', conclusion: 'success' }],
+    },
+  });
 
-  const hostedOf = (doc: Record<string, unknown>): string[] =>
+  const hostedProblems = (doc: unknown, git: (args: string[]) => string | null): string[] =>
     (tierBinding(doc as never, git) as unknown as { hostedProblems: string[] }).hostedProblems;
 
-  it('is a hostile world: the real repository disagrees with the naive reading', () => {
-    // Anti-vacuity. If HEAD were the candidate, or `38afa5c2` were not an
-    // ancestor whose product differs, every case below would prove nothing.
-    expect(HEAD, 'HEAD is the candidate, so no forward citation is exercised').not.toBe(CANDIDATE);
-    expect(
-      execFileSync('git', ['merge-base', '--is-ancestor', CANDIDATE, HEAD], { cwd: ROOT })
-    ).toBeDefined();
-    expect(
-      execFileSync(
-        'git',
-        ['diff', '--name-only', `${CANDIDATE}..${HEAD}`, '--', 'apps', 'supabase'],
-        {
-          cwd: ROOT,
-          encoding: 'utf8',
-        }
-      ).trim(),
-      'HEAD is not product-identical to the candidate'
-    ).toBe('');
-    expect(
-      execFileSync(
-        'git',
-        ['diff', '--name-only', `${OLD_CANDIDATE}..${HEAD}`, '--', 'apps', 'supabase'],
-        { cwd: ROOT, encoding: 'utf8' }
-      ).trim().length,
-      'the superseded head is product-identical, so the product mutation is vacuous'
-    ).toBeGreaterThan(0);
-  });
+  it('is a hostile world: the repository disagrees with the naive reading', () =>
+    withScratchRepository((repo) => {
+      // Anti-vacuity, computed rather than assumed. If the later head were the
+      // candidate, or the earlier head were product-identical to it, every case
+      // below would be proving nothing.
+      expect(repo.branchHead).not.toBe(repo.candidate);
+      expect(repo.run('merge-base', '--is-ancestor', repo.candidate, repo.branchHead)).toBe('');
+      expect(
+        repo.run('diff', '--name-only', `${repo.candidate}..${repo.branchHead}`, '--', 'apps'),
+        'the later head is not product-identical to the candidate'
+      ).toBe('');
+      expect(
+        repo.run('diff', '--name-only', `${repo.previous}..${repo.branchHead}`, '--', 'apps'),
+        'the earlier head is product-identical, so the product mutation is vacuous'
+      ).not.toBe('');
+      expect(repo.run('merge-base', '--is-ancestor', repo.previous, repo.candidate)).toBe('');
+    }));
 
-  it('ACCEPTS a run at a descendant head whose product diff is empty', () => {
-    const doc = citedAt(HEAD);
-    expect(hostedOf(doc), 'a product-identical successor run was refused').toEqual([]);
-    const analysis = pendingBinding(doc as never, git) as unknown as {
-      problems: string[];
-      bound: string[];
-      superseded: string[];
-      boundAtSuccessor: string[];
-    };
-    expect(analysis.problems).toEqual([]);
-    expect(analysis.superseded, 'a bound successor was filed as pending').toEqual([]);
-    expect(analysis.bound.length, 'nothing was bound, so nothing was proved').toBeGreaterThan(5);
-    expect(analysis.boundAtSuccessor.join(' ')).toContain(HEAD.slice(0, 8));
-    // And the record may then say so: the claim world reads the same computed set.
-    const world = worldFrom(doc as never, null, new Set(analysis.bound)) as unknown as {
-      hostedCiRecorded: boolean;
-      phaseSpecObservedHosted: boolean;
-    };
-    expect(world.hostedCiRecorded, 'a bound run is still reported as no result').toBe(true);
-    expect(world.phaseSpecObservedHosted).toBe(true);
-  });
+  it('ACCEPTS a run at a descendant head whose product diff is empty', () =>
+    withScratchRepository((repo) => {
+      const doc = cited(repo.branchHead, repo.candidate, repo.candidateTree);
+      expect(
+        hostedProblems(doc, repo.git),
+        'a product-identical successor run was refused'
+      ).toEqual([]);
 
-  it('REFUSES the same head when a product file differs from the candidate', () => {
-    // The identical citation, against the head this candidate superseded: the
-    // run head still exists and still descends from it, and 37 product files
-    // differ. Only the product identity changed, and only it is being tested.
-    const doc = citedAt(HEAD, OLD_CANDIDATE);
-    const problems = hostedOf(doc);
-    expect(problems.length, 'a run measuring different software was accepted').toBeGreaterThan(0);
-    expect(problems.join(' ')).toContain('PRODUCT path(s) differ');
-    expect(
-      judge(soundInputsOver(ROOT, { tiers: tierBinding(doc as never, git) }), () => {}).tiersOk
-    ).toBe(false);
-  });
+      const analysis = pendingBinding(doc as never, repo.git) as unknown as {
+        problems: string[];
+        bound: string[];
+        superseded: string[];
+        boundAtSuccessor: string[];
+      };
+      expect(analysis.problems).toEqual([]);
+      expect(analysis.superseded, 'a bound successor was filed as pending').toEqual([]);
+      expect(analysis.bound, 'nothing was bound, so nothing was proved').toEqual([
+        'hostedCi',
+        'tiers.unit.hostedAttestation',
+      ]);
+      expect(analysis.boundAtSuccessor.join(' ')).toContain(repo.branchHead.slice(0, 8));
 
-  it('REFUSES a run head this repository does not contain', () => {
-    const absent = 'deadbeef'.repeat(5);
-    expect(
-      () =>
-        execFileSync('git', ['cat-file', '-e', `${absent}^{commit}`], {
-          cwd: ROOT,
-          stdio: 'ignore',
-        }),
-      'the chosen head exists after all'
-    ).toThrow();
-    const problems = hostedOf(citedAt(absent));
-    expect(problems.length, 'a run at a head nobody can fetch was accepted').toBeGreaterThan(0);
-    expect(problems.join(' ')).toContain('names no commit in this repository');
-  });
+      // And the record may then say so: the claim world reads the same set.
+      const world = worldFrom(doc as never, null, new Set(analysis.bound)) as unknown as {
+        hostedCiRecorded: boolean;
+      };
+      expect(world.hostedCiRecorded, 'a bound run is still reported as no result').toBe(true);
+    }));
 
-  it('REFUSES a run head that is an ANCESTOR of the candidate', () => {
-    // A run taken before this code existed cannot describe it. The backward
-    // citation is not forbidden — it is `describesSupersededHead`, and the
-    // committed package uses it — but it may not wear the forward marker.
-    const problems = hostedOf(citedAt(OLD_CANDIDATE));
-    expect(problems.length, 'a run that predates the candidate was accepted').toBeGreaterThan(0);
-    expect(problems.join(' ')).toContain('does not descend from the candidate');
-  });
+  it('REFUSES the same head when a product file differs from the candidate', () =>
+    withScratchRepository((repo) => {
+      // The identical citation against the head the candidate superseded. The
+      // run head still exists and still descends from it; only the product
+      // identity changed, and only it is being tested.
+      const doc = cited(repo.branchHead, repo.previous, repo.candidateTree);
+      const problems = hostedProblems(doc, repo.git);
+      expect(problems.length, 'a run measuring different software was accepted').toBeGreaterThan(0);
+      expect(problems.join(' ')).toContain('PRODUCT path(s) differ');
+    }));
 
-  it('leaves the backward citation exactly as it was — the committed package still binds', () => {
-    const sound = tierBinding(candidateFile as never, git) as unknown as {
+  it('REFUSES a run head this repository does not contain', () =>
+    withScratchRepository((repo) => {
+      const absent = 'deadbeef'.repeat(5);
+      expect(repo.git(['cat-file', '-e', `${absent}^{commit}`]), 'the head exists after all').toBe(
+        null
+      );
+      const problems = hostedProblems(cited(absent, repo.candidate, repo.candidateTree), repo.git);
+      expect(problems.length, 'a run at a head nobody can fetch was accepted').toBeGreaterThan(0);
+      expect(problems.join(' ')).toContain('names no commit in this repository');
+    }));
+
+  it('REFUSES a run head that is an ANCESTOR of the candidate', () =>
+    withScratchRepository((repo) => {
+      // A run taken before this code existed cannot describe it. The backward
+      // citation is not forbidden — it is `describesSupersededHead` — but it may
+      // not wear the forward marker.
+      const problems = hostedProblems(
+        cited(repo.previous, repo.candidate, repo.candidateTree),
+        repo.git
+      );
+      expect(problems.length, 'a run that predates the candidate was accepted').toBeGreaterThan(0);
+      expect(problems.join(' ')).toContain('does not descend from the candidate');
+    }));
+
+  it('leaves the backward citation exactly as it was — the committed package binds', () => {
+    // The one assertion here that is legitimately about THIS repository: the
+    // package as committed is pending, and every pending binding still binds.
+    const committed = JSON.parse(readRepo(CANDIDATE_PATH)) as Record<string, never>;
+    const sound = tierBinding(committed, gitReader(ROOT)) as unknown as {
       hostedProblems: string[];
       supersededBindings: string[];
     };
@@ -1055,240 +1231,261 @@ describe('P1-28-QA-005 — a merge-ref checkout does not make the base branch a 
    * THE FALSE POSITIVE THIS CLOSES, reported by hosted CI against this branch.
    *
    * `actions/checkout` defaults, for a `pull_request` event, to the pull
-   * request's MERGE REF — a synthetic merge of this branch with its base. Under
-   * it `git log candidate..HEAD` sweeps in the BASE BRANCH's history, and
-   * `0c89647de1a661105ec3a612955789989da58a0d` — a develop commit authored by
-   * another session, absent from this branch — was reported as an executable
-   * successor this package had failed to name. The same ref would have made
-   * `git diff candidate..HEAD -- apps supabase` report the base's product
+   * request's MERGE REF. Under it `git log <candidate>..HEAD` sweeps in the BASE
+   * BRANCH's history, and a `develop` commit authored by another session and
+   * absent from this branch was reported as an executable successor this package
+   * had failed to name. The same ref would have made
+   * `git diff <candidate>..HEAD -- apps supabase` report the base's product
    * changes as a broken freeze.
    *
-   * The world below is that world, built out of REAL commit objects: a base tip
-   * this branch does not contain, and a merge of it with this branch's head.
-   * Only the base POINTER is injected; every reachability question is answered
-   * by git against the real object graph.
+   * The successor set is what THIS BRANCH added after the freeze, so it is
+   * computed that way: the base is subtracted from the range, and a checkout
+   * that is a clean synthetic merge of this branch with its base is judged as
+   * the branch side of that merge.
    */
-  const git = gitReader(ROOT);
-  const candidateFile = JSON.parse(readRepo(CANDIDATE_PATH)) as {
-    candidate: { FINAL_CODE_SHA: string; baseBranch: string };
-  };
-  const CANDIDATE = candidateFile.candidate.FINAL_CODE_SHA;
-  const HEAD = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: ROOT, encoding: 'utf8' }).trim();
-  const BASE_REF = `refs/remotes/origin/${candidateFile.candidate.baseBranch}`;
 
-  /*
-   * Fixed identity and dates, so the two probe objects are CONTENT-ADDRESSED to
-   * the same ids on every run: the world is created once and re-created as a
-   * no-op, rather than littering the object store on every invocation.
-   */
-  const plumbing = (args: string[]): string =>
-    execFileSync('git', args, {
-      cwd: ROOT,
-      encoding: 'utf8',
-      env: {
-        ...process.env,
-        GIT_AUTHOR_NAME: 'probe',
-        GIT_AUTHOR_EMAIL: 'probe@local',
-        GIT_COMMITTER_NAME: 'probe',
-        GIT_COMMITTER_EMAIL: 'probe@local',
-        GIT_AUTHOR_DATE: '2000-01-01T00:00:00+0000',
-        GIT_COMMITTER_DATE: '2000-01-01T00:00:00+0000',
-      },
-    }).trim();
+  it('is a hostile world: the naive range and diff both take the base branch in', () =>
+    withScratchRepository((repo) => {
+      repo.checkout(repo.mergeRef);
+      const swept = repo
+        .run('log', '--format=%H', `${repo.candidate}..${repo.mergeRef}`)
+        .split('\n');
+      expect(swept, 'the merge-ref range does not contain the base commit').toContain(repo.baseTip);
+      expect(
+        repo.run('diff', '--name-only', `${repo.candidate}..${repo.mergeRef}`, '--', 'apps'),
+        'the merge-ref product diff is empty, so it demonstrates no hazard'
+      ).not.toBe('');
+    }));
 
-  // A base tip carrying the SUPERSEDED head's tree: it differs from this branch
-  // by executable AND product paths, which is what makes both hazards visible.
-  const foreignTree = plumbing(['rev-parse', '38afa5c28e5b78d484a442cf6b8596fb2a5c34aa^{tree}']);
-  const baseTip = plumbing([
-    'commit-tree',
-    foreignTree,
-    '-p',
-    BASE_REF,
-    '-m',
-    'probe: a base-branch commit this branch does not contain',
-  ]);
-  const mergeRef = plumbing([
-    'commit-tree',
-    foreignTree,
-    '-p',
-    baseTip,
-    '-p',
-    HEAD,
-    '-m',
-    'probe: the pull request merge ref',
-  ]);
+  it('judges the branch, not the merge: no base commit is a successor of this phase', () =>
+    withScratchRepository((repo) => {
+      repo.checkout(repo.mergeRef);
+      const bound = bindingOf(repo.document(), repo.git);
+      expect(bound.checkoutHead, 'the checkout is not the merge ref').toBe(repo.mergeRef);
+      expect(bound.unwrappedMergeRef, 'the merge ref was not recognised').toBe(repo.mergeRef);
+      expect(bound.phaseHead, 'the head under test is not this branch').toBe(repo.branchHead);
+      expect(bound.mergeRefBaseSide).toBe(repo.baseTip);
+      expect(
+        bound.commits.map((c) => c.sha),
+        'the range is not exactly what this branch added after the freeze'
+      ).toEqual([repo.branchHead, repo.successor]);
+      expect(bound.productDiff, 'the base’s product changes were read as a broken freeze').toEqual(
+        []
+      );
+      expect(bound.unrecordedExecutable, 'an unnamed executable successor was invented').toEqual(
+        []
+      );
+      expect(judge(soundInputsOver(ROOT, { repository: bound }), () => {}).repositoryOk).toBe(true);
+    }));
 
-  /** Real git, with the checkout standing at the merge ref and the base moved. */
-  const asMergeRef =
-    (over: Record<string, string | null> = {}) =>
-    (args: string[]): string | null => {
-      const key = args.join(' ');
-      if (key in over) return over[key] ?? null;
-      if (key === 'rev-list --parents -n 1 HEAD') return `${mergeRef} ${baseTip} ${HEAD}\n`;
-      if (key === `rev-parse --verify --quiet ${BASE_REF}^{commit}`) return `${baseTip}\n`;
-      return git(args);
-    };
+  it('still FAILS when this branch’s own executable successor is unnamed', () =>
+    withScratchRepository((repo) => {
+      // The correction must not have bought its silence by silencing the rule.
+      repo.checkout(repo.mergeRef);
+      const bad = bindingOf(repo.document({ successors: [] }), repo.git);
+      expect(bad.unrecordedExecutable, 'the branch’s own successor stopped being reported').toEqual(
+        [repo.successor]
+      );
+      expect(judge(soundInputsOver(ROOT, { repository: bad }), () => {}).repositoryOk).toBe(false);
+    }));
 
-  interface Binding {
-    readonly baseResolved: boolean;
-    readonly baseRef: string | null;
-    readonly baseSha: string | null;
-    readonly phaseHead: string | null;
-    readonly checkoutHead: string | null;
-    readonly unwrappedMergeRef: string | null;
-    readonly productDiff: string[];
-    readonly commits: { sha: string; paths: string[] | null }[];
-    readonly unrecordedExecutable: string[];
-  }
+  it('recovers the base from the merge ref when NO base ref resolves', () =>
+    withScratchRepository((repo) => {
+      /*
+       * The shallow-clone case. A filtered clone may carry no
+       * `refs/remotes/origin/develop` at all — and the first revision of this
+       * correction could not run without one, because it classified the merge's
+       * parents by asking which was contained in the base. The question is asked
+       * by the CANDIDATE now, so the base side falls out of the merge itself.
+       */
+      repo.checkout(repo.mergeRef);
+      repo.dropBaseRefs();
+      expect(
+        repo.git(['rev-parse', '--verify', '--quiet', 'refs/remotes/origin/develop^{commit}'])
+      ).toBe(null);
+      expect(repo.git(['rev-parse', '--verify', '--quiet', 'refs/heads/develop^{commit}'])).toBe(
+        null
+      );
 
-  it('is a hostile world: the naive range and diff both take the base branch in', () => {
-    const swept = plumbing(['log', '--format=%H', `${CANDIDATE}..${mergeRef}`]).split('\n');
-    expect(swept, 'the merge-ref range does not contain the foreign base commit').toContain(
-      baseTip
-    );
-    expect(
-      plumbing(['diff', '--name-only', `${CANDIDATE}..${mergeRef}`, '--', 'apps', 'supabase'])
-        .length,
-      'the merge-ref product diff is empty, so it demonstrates no hazard'
-    ).toBeGreaterThan(0);
-  });
+      const bound = bindingOf(repo.document(), repo.git);
+      expect(bound.baseResolved, 'the base could not be recovered').toBe(true);
+      expect(bound.baseRef, 'a ref resolved after all, so recovery is not what is tested').toBe(
+        null
+      );
+      expect(bound.baseSha).toBe(repo.baseTip);
+      expect(bound.baseFrom).toBe("the merge ref's base-side parent");
+      expect(bound.phaseHead).toBe(repo.branchHead);
+      expect(
+        bound.commits.map((c) => c.sha),
+        'the base was recovered and then not subtracted'
+      ).toEqual([repo.branchHead, repo.successor]);
+      expect(bound.unrecordedExecutable).toEqual([]);
+      expect(judge(soundInputsOver(ROOT, { repository: bound }), () => {}).repositoryOk).toBe(true);
+    }));
 
-  it('judges the branch, not the merge: no base commit is a successor of this phase', () => {
-    const bound = repositoryBinding(candidateFile as never, asMergeRef()) as unknown as Binding;
-    expect(bound.unwrappedMergeRef, 'the merge ref was not recognised').toBe(mergeRef);
-    expect(bound.checkoutHead).toBe(mergeRef);
-    expect(bound.phaseHead, 'the head under test is not this branch').toBe(HEAD);
-    expect(bound.baseSha).toBe(baseTip);
-    expect(
-      bound.commits.map((c) => c.sha),
-      'a base-branch commit is being judged as this phase’s successor'
-    ).not.toContain(baseTip);
-    // DERIVED, not a literal: the range this branch actually adds after the
-    // freeze. A number here would go stale on the next commit and be relaxed.
-    const branchOnly = plumbing(['log', '--format=%H', `${CANDIDATE}..${HEAD}`]).split('\n');
-    expect(
-      bound.commits.map((c) => c.sha),
-      'the merge-ref range is not this branch’s own range'
-    ).toEqual(branchOnly);
-    expect(bound.productDiff, 'the base’s product changes were read as a broken freeze').toEqual(
-      []
-    );
-    expect(bound.unrecordedExecutable, 'an unnamed executable successor was invented').toEqual([]);
-    expect(judge(soundInputsOver(ROOT, { repository: bound }), () => {}).repositoryOk).toBe(true);
-  });
+  it('fails CLOSED when there is no base ref AND no merge ref to recover one from', () =>
+    withScratchRepository((repo) => {
+      // "I could not tell" is not "there are none". This is the shape the
+      // coordinator asked to be certain of: a checkout with neither source of a
+      // base must stop, and say which refs it tried.
+      repo.checkout(repo.branchHead);
+      repo.dropBaseRefs();
+      const blind = bindingOf(repo.document(), repo.git);
+      expect(blind.baseResolved, 'an unresolvable base was treated as resolved').toBe(false);
+      expect(blind.commits, 'a successor set was computed with no base to subtract').toEqual([]);
+      expect(blind.baseAttempted).toEqual([
+        'refs/remotes/origin/develop',
+        'refs/heads/develop',
+        'develop',
+      ]);
+      const said: string[] = [];
+      expect(
+        judge(soundInputsOver(ROOT, { repository: blind }), (l: string) => said.push(l))
+          .repositoryOk
+      ).toBe(false);
+      expect(said.join(' '), 'the refusal does not name what it tried').toContain(
+        'refs/remotes/origin/develop'
+      );
+    }));
 
-  it('still FAILS when this branch’s own executable successor is unnamed', () => {
-    // The correction must not have bought its silence by silencing the rule.
-    const sound = repositoryBinding(candidateFile as never, asMergeRef()) as unknown as Binding;
-    const executable = sound.commits
-      .filter((c) => c.paths === null || c.paths.some((p) => !isDocumentationPath(p)))
-      .map((c) => c.sha);
-    expect(executable.length, 'no executable successor exists to hide').toBeGreaterThan(0);
+  it('does NOT unwrap a merge that carries content of its own', () =>
+    withScratchRepository((repo) => {
+      /*
+       * The one thing the unwrap must never do. A merge ref previews a merge and
+       * introduces nothing; a merge that resolved a conflict carries content
+       * neither parent has, and stepping past it would step past that content.
+       */
+      repo.checkout(repo.evilMerge);
+      const evil = bindingOf(repo.document(), repo.git);
+      expect(evil.unwrappedMergeRef, 'an evil merge was unwrapped past').toBe(null);
+      expect(evil.phaseHead, 'the head under test is not the checkout').toBe(repo.evilMerge);
+      expect(evil.evilMergePaths.length, 'the merge carries no content of its own').toBeGreaterThan(
+        0
+      );
+      // And the base is STILL subtracted, which is the second, independent half.
+      expect(
+        evil.commits.map((c) => c.sha),
+        'a base-branch commit survived into this phase’s range'
+      ).not.toContain(repo.baseTip);
+      expect(
+        evil.unrecordedExecutable,
+        'the un-unwrapped merge is executable and unnamed, and must be reported as such'
+      ).toEqual([repo.evilMerge]);
+    }));
 
-    const bad = repositoryBinding(
-      { ...(candidateFile as object), successors: [] } as never,
-      asMergeRef()
-    ) as unknown as Binding;
-    expect(bad.unrecordedExecutable, 'an executable successor was not reported').toEqual(
-      executable
-    );
-    expect(judge(soundInputsOver(ROOT, { repository: bad }), () => {}).repositoryOk).toBe(false);
-  });
+  it('unwraps even when the base ref is STALE relative to the merge’s base side', () =>
+    withScratchRepository((repo) => {
+      /*
+       * THE CASE A PROBE AGAINST THIS REPOSITORY FOUND, and the reason the
+       * cross-check asks about a RELATION rather than containment in one
+       * direction.
+       *
+       * A merge ref is computed by the forge when the branch or its base last
+       * moved; the remote-tracking ref in any given checkout is a snapshot that
+       * may sit either side of it. Here the ref is far behind the merge's base
+       * side — the shape a checkout fetched before the base advanced produces —
+       * and a rule demanding the base side be CONTAINED IN the ref would decline
+       * the unwrap for no better reason than which snapshot was fetched.
+       */
+      repo.checkout(repo.mergeRef);
+      repo.setBaseRef(repo.origin);
+      expect(
+        repo.git(['merge-base', '--is-ancestor', repo.baseTip, repo.origin]),
+        'the base side is contained in the stale ref, so this proves nothing'
+      ).toBe(null);
+      expect(
+        repo.git(['merge-base', '--is-ancestor', repo.origin, repo.baseTip]),
+        'the two are unrelated, so this is not a stale ref at all'
+      ).toBe('');
 
-  it('does NOT unwrap a merge that carries content of its own', () => {
-    /*
-     * The one thing the unwrap must never do. A merge ref previews a merge and
-     * introduces nothing; a merge that resolved a conflict carries content
-     * neither parent has, and stepping past it would step past that content.
-     * Its combined diff is non-empty, so it is judged as the commit it is.
-     */
-    const evil = repositoryBinding(
-      candidateFile as never,
-      asMergeRef({
-        [`diff-tree --cc --name-only --no-commit-id ${mergeRef}`]: 'apps/web/src/x.tsx\n',
-      })
-    ) as unknown as Binding & { evilMergePaths: string[] };
-    expect(evil.unwrappedMergeRef, 'an evil merge was unwrapped past').toBeNull();
-    expect(evil.phaseHead).toBe(mergeRef);
-    expect(evil.evilMergePaths).toEqual(['apps/web/src/x.tsx']);
-  });
+      const bound = bindingOf(repo.document(), repo.git);
+      expect(bound.unwrappedMergeRef, 'a stale base ref declined the unwrap').toBe(repo.mergeRef);
+      expect(bound.phaseHead).toBe(repo.branchHead);
+      expect(bound.commits.map((c) => c.sha)).toEqual([repo.branchHead, repo.successor]);
+      expect(bound.unrecordedExecutable).toEqual([]);
+    }));
 
-  it('subtracts the base even when the checkout is NOT unwrappable', () => {
-    /*
-     * The second, independent subtraction, and the world that makes it
-     * load-bearing. This merge carries a tree neither parent has, so the unwrap
-     * declines it and the head under test IS the merge — exactly as it should
-     * be. The base branch is still in that range, and `--not <base>` is the only
-     * thing that keeps develop's own commits from being read as this phase's.
-     */
-    const ownTree = plumbing(['rev-parse', `${CANDIDATE}^{tree}`]);
-    const evilMerge = plumbing([
-      'commit-tree',
-      ownTree,
-      '-p',
-      HEAD,
-      '-p',
-      baseTip,
-      '-m',
-      'probe: a merge carrying a tree neither parent has',
-    ]);
-    const swept = plumbing(['log', '--format=%H', `${CANDIDATE}..${evilMerge}`]).split('\n');
-    expect(swept, 'the range does not contain the foreign base commit').toContain(baseTip);
+  it('declines the unwrap when the merge’s base side is not in the base branch', () =>
+    withScratchRepository((repo) => {
+      /*
+       * A merge of this branch with something that is NOT its base is not a
+       * preview of this pull request. The cross-check can only be made when a
+       * base ref resolves, and when it can be made it may only make the rule
+       * stricter.
+       */
+      const stranger = repo.run(
+        'commit-tree',
+        repo.candidateTree,
+        '-p',
+        repo.previous,
+        '-m',
+        'a commit on no branch'
+      );
+      const foreign = repo.run(
+        'commit-tree',
+        repo.run('rev-parse', `${repo.branchHead}^{tree}`),
+        '-p',
+        stranger,
+        '-p',
+        repo.branchHead,
+        '-m',
+        'Merge of something that is not the base'
+      );
+      repo.checkout(foreign);
+      const bound = bindingOf(repo.document(), repo.git);
+      expect(bound.unwrappedMergeRef, 'a merge with a foreign base side was unwrapped').toBe(null);
+      expect(bound.declinedUnwrap, 'the decline was not explained').toContain(stranger.slice(0, 8));
+      expect(bound.phaseHead).toBe(foreign);
+    }));
 
-    const named = {
-      ...(candidateFile as object),
-      successors: [
-        ...((candidateFile as unknown as { successors: unknown[] }).successors ?? []),
-        { commit: evilMerge, kind: 'probe' },
-      ],
-    };
-    const bound = repositoryBinding(named as never, (args: string[]) => {
-      const key = args.join(' ');
-      if (key === 'rev-list --parents -n 1 HEAD') return `${evilMerge} ${HEAD} ${baseTip}\n`;
-      if (key === `rev-parse --verify --quiet ${BASE_REF}^{commit}`) return `${baseTip}\n`;
-      return git(args);
-    }) as unknown as Binding & { evilMergePaths: string[] };
+  it('refuses an UNKNOWN successor range rather than reading it as “none”', () =>
+    withScratchRepository((repo) => {
+      // `lines(null)` is `[]`, and `[]` reads as "this branch added nothing".
+      // A command that refused to run has not answered the question.
+      repo.checkout(repo.branchHead);
+      const blind = bindingOf(repo.document(), (args: string[]) =>
+        args[0] === 'log' ? null : repo.git(args)
+      );
+      expect(blind.rangeUnknown, 'a refused range was read as an answer').toBe(true);
+      expect(blind.commits).toEqual([]);
+      expect(blind.unrecordedExecutable).toEqual([]);
+      const said: string[] = [];
+      expect(
+        judge(soundInputsOver(ROOT, { repository: blind }), (l: string) => said.push(l))
+          .repositoryOk
+      ).toBe(false);
+      expect(said.join(' ')).toContain('UNKNOWN');
+    }));
 
-    expect(bound.unwrappedMergeRef, 'a merge with its own content was unwrapped').toBeNull();
-    expect(bound.phaseHead, 'the head under test is not the checkout').toBe(evilMerge);
-    expect(
-      bound.evilMergePaths.length,
-      'the merge carries no content, so it is not this world'
-    ).toBeGreaterThan(0);
-    expect(
-      bound.commits.map((c) => c.sha),
-      'a base-branch commit survived into this phase’s successor range'
-    ).not.toContain(baseTip);
-    expect(
-      bound.unrecordedExecutable,
-      'a base commit was reported as an unnamed successor'
-    ).toEqual([]);
-  });
+  it('refuses an UNKNOWN product diff rather than reading it as “identical”', () =>
+    withScratchRepository((repo) => {
+      repo.checkout(repo.branchHead);
+      const blind = bindingOf(repo.document(), (args: string[]) =>
+        args[0] === 'diff' && args.includes('apps') ? null : repo.git(args)
+      );
+      expect(blind.productDiffUnknown, 'a refused diff was read as an answer').toBe(true);
+      expect(blind.productDiff).toEqual([]);
+      const said: string[] = [];
+      expect(
+        judge(soundInputsOver(ROOT, { repository: blind }), (l: string) => said.push(l))
+          .repositoryOk
+      ).toBe(false);
+      expect(said.join(' ')).toContain('UNKNOWN');
+    }));
 
-  it('fails CLOSED when the base branch cannot be resolved at all', () => {
-    // A shallow CI clone cannot see the base. "I could not tell" is not "there
-    // are none", and a gate that reported none would be reporting a guess.
-    const blind = repositoryBinding(candidateFile as never, (args: string[]) =>
-      args[0] === 'rev-parse' && args.includes('--verify') ? null : git(args)
-    ) as unknown as Binding;
-    expect(blind.baseResolved, 'an unresolvable base was treated as resolved').toBe(false);
-    expect(blind.commits, 'a successor set was computed with no base to subtract').toEqual([]);
-    const said: string[] = [];
-    expect(
-      judge(soundInputsOver(ROOT, { repository: blind }), (l: string) => said.push(l)).repositoryOk
-    ).toBe(false);
-    expect(said.join(' '), 'the refusal does not say what could not be resolved').toContain(
-      BASE_REF
-    );
-  });
-
-  it('resolves the base in the checkout this workstation actually has', () => {
-    const honest = repositoryBinding(candidateFile as never, git) as unknown as Binding;
-    expect(honest.baseResolved).toBe(true);
-    expect(honest.baseRef).toBe(BASE_REF);
-    expect(honest.unwrappedMergeRef, 'an ordinary checkout was treated as a merge ref').toBeNull();
-    expect(honest.phaseHead).toBe(HEAD);
-  });
+  it('resolves the base from a ref when the checkout has one, and does not unwrap', () =>
+    withScratchRepository((repo) => {
+      repo.checkout(repo.branchHead);
+      const honest = bindingOf(repo.document(), repo.git);
+      expect(honest.baseResolved).toBe(true);
+      expect(honest.baseRef).toBe('refs/remotes/origin/develop');
+      expect(honest.baseSha).toBe(repo.baseTip);
+      expect(honest.unwrappedMergeRef, 'an ordinary checkout was treated as a merge ref').toBe(
+        null
+      );
+      expect(honest.phaseHead).toBe(repo.branchHead);
+      expect(honest.commits.map((c) => c.sha)).toEqual([repo.branchHead, repo.successor]);
+    }));
 });
 
 describe('P1-28-QA-005 — a record may not state what the candidate refutes', () => {

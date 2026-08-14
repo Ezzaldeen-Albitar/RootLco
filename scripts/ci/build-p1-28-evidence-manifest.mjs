@@ -439,41 +439,91 @@ export function resolveBaseRef(git, baseBranch) {
 /**
  * The head THIS BRANCH contributes, which is not always the checked-out commit.
  *
- * Returns the checkout unchanged in every case but one: a two-parent HEAD with
- * exactly one parent contained in the base branch, exactly one parent
- * descending from the candidate, and NO content of its own. That is the shape
- * of a pull request's merge ref, and under it the branch is the second of those
- * parents. Every other shape — an octopus merge, a merge whose parents are both
- * in the base, a merge that resolved a conflict and so carries content neither
- * parent has — is left alone, because the honest failure of this function is to
- * decline to unwrap, never to unwrap the wrong thing.
+ * ## Classified by the CANDIDATE, not by the base — and why that matters
  *
- * `evilMergePaths` is returned rather than swallowed: a merge that was NOT
- * unwrapped because it carries its own content is a fact a reader wants.
+ * The first revision of this function asked which parent was contained in the
+ * BASE BRANCH, so it could not run at all unless a base ref resolved. That made
+ * the merge-ref correction depend on the very thing a shallow or filtered clone
+ * is most likely to be missing, and it threw away the one piece of information a
+ * merge ref always carries: its own parents.
+ *
+ * The question is asked the other way round now. The branch under test is the
+ * parent that CONTAINS THE CANDIDATE — a question about the candidate, which
+ * this package always has — and the other parent is, by construction, the base
+ * side of the merge. The base is therefore RECOVERED from the merge ref when no
+ * ref names it, which is exactly the case a shallow checkout produces.
+ *
+ * When a base ref DOES resolve it is used as a cross-check and may only make
+ * this function stricter: if the non-candidate parent is not contained in that
+ * base, this is not a preview of this pull request and the unwrap is DECLINED
+ * and said out loud.
+ *
+ * Every other shape is left alone: an octopus merge, a merge where both parents
+ * carry the candidate or neither does, and a merge that resolved a conflict and
+ * so carries content neither parent has. The honest failure of this function is
+ * to decline to unwrap, never to unwrap the wrong thing.
+ *
+ * `evilMergePaths` and `declined` are returned rather than swallowed: a merge
+ * that was NOT unwrapped, and the reason, are facts a reader wants.
  */
 export function phaseHead(git, candidateSha, baseSha) {
   const row = lines(git(['rev-list', '--parents', '-n', '1', 'HEAD']))[0] ?? '';
   const ids = row.split(/\s+/).filter(Boolean);
   const checkout = ids[0] ?? null;
   const parents = ids.slice(1);
-  const plain = { head: checkout, checkout, mergeRef: null, baseSide: null, evilMergePaths: [] };
-  if (checkout === null || parents.length !== 2 || !baseSha || !candidateSha) return plain;
+  const plain = {
+    head: checkout,
+    checkout,
+    mergeRef: null,
+    baseSide: null,
+    evilMergePaths: [],
+    declined: null,
+  };
+  if (checkout === null || parents.length !== 2 || !candidateSha) return plain;
 
-  const inBase = parents.filter((p) => git(['merge-base', '--is-ancestor', p, baseSha]) !== null);
-  const branchSide = parents.filter(
-    (p) => !inBase.includes(p) && git(['merge-base', '--is-ancestor', candidateSha, p]) !== null
+  const carries = parents.filter(
+    (p) => git(['merge-base', '--is-ancestor', candidateSha, p]) !== null
   );
-  if (inBase.length !== 1 || branchSide.length !== 1) return plain;
+  if (carries.length !== 1) return plain;
+  const branchSide = carries[0];
+  const baseSide = parents.find((p) => p !== branchSide) ?? null;
+  if (baseSide === null) return plain;
+
+  /*
+   * The cross-check asks whether the two are ON THE SAME LINE, in either
+   * direction — not whether the merge's base side is contained in the ref.
+   *
+   * A pull request's merge ref is computed by the forge when the branch or its
+   * base last moved, and the remote-tracking ref in any given checkout is a
+   * SNAPSHOT that may sit either side of it: fetched later, and the ref is ahead
+   * of the merge's base side; fetched earlier, and it is behind. Demanding
+   * containment in one direction made the rule depend on which, and a probe
+   * whose base side was one commit AHEAD of `origin/develop` declined the unwrap
+   * for that reason alone. What actually distinguishes a base-branch merge from
+   * a merge with some unrelated branch is that one of the two contains the
+   * other; a foreign parent is on neither side of the base's history.
+   */
+  if (
+    baseSha &&
+    git(['merge-base', '--is-ancestor', baseSide, baseSha]) === null &&
+    git(['merge-base', '--is-ancestor', baseSha, baseSide]) === null
+  ) {
+    return {
+      ...plain,
+      declined: `its non-candidate parent ${baseSide.slice(0, 8)} is on neither side of the base branch ${baseSha.slice(0, 8)} — neither contains the other — so this is not a preview of this pull request`,
+    };
+  }
 
   const combined = lines(git(['diff-tree', '--cc', '--name-only', '--no-commit-id', checkout]));
   if (combined.length > 0) return { ...plain, evilMergePaths: combined };
 
   return {
-    head: branchSide[0],
+    head: branchSide,
     checkout,
     mergeRef: checkout,
-    baseSide: inBase[0],
+    baseSide,
     evilMergePaths: [],
+    declined: null,
   };
 }
 
@@ -539,7 +589,15 @@ export function repositoryBinding(candidateFile, git) {
 
   const base = resolveBaseRef(git, String(candidate.baseBranch ?? ''));
   const head = phaseHead(git, sha, base.sha);
-  const baseResolved = Boolean(base.sha);
+  /*
+   * The base, from a ref if this checkout has one and from the merge ref's own
+   * base-side parent if it does not. Recovering it is deliberate: a shallow or
+   * filtered clone may carry no `refs/remotes/origin/<base>` at all, and a merge
+   * ref names its base side in its parent list whether or not any ref does.
+   */
+  const baseSha = base.sha ?? head.baseSide;
+  const baseFrom = base.sha ? base.ref : head.baseSide ? "the merge ref's base-side parent" : null;
+  const baseResolved = Boolean(baseSha);
 
   const exists = wellFormed && git(['cat-file', '-e', `${sha}^{commit}`]) !== null;
   const actualTree = exists ? (lines(git(['rev-parse', `${sha}^{tree}`]))[0] ?? null) : null;
@@ -549,12 +607,26 @@ export function repositoryBinding(candidateFile, git) {
     Boolean(head.head) &&
     git(['merge-base', '--is-ancestor', sha, head.head]) !== null;
 
-  const productDiff = isAncestorOfHead
-    ? lines(git(['diff', '--name-only', `${sha}..${head.head}`, '--', 'apps', 'supabase']))
-    : [];
+  /*
+   * `null` from `git` is a REFUSAL, and `lines(null)` is `[]` — which reads as
+   * "no product file differs" and "this branch added no successors". Both are
+   * the fail-OPEN this package exists to prevent, so each is captured as its own
+   * UNKNOWN and refused. A command that could not run has not answered the
+   * question; it has declined to.
+   */
+  const productRaw = isAncestorOfHead
+    ? git(['diff', '--name-only', `${sha}..${head.head}`, '--', 'apps', 'supabase'])
+    : '';
+  const productDiffUnknown = productRaw === null;
+  const productDiff = productDiffUnknown ? [] : lines(productRaw);
 
-  const commits = isAncestorOfHead
-    ? lines(git(['log', '--format=%H %s', head.head, '--not', sha, base.sha])).map((line) => {
+  const rangeRaw = isAncestorOfHead
+    ? git(['log', '--format=%H %s', head.head, '--not', sha, baseSha])
+    : '';
+  const rangeUnknown = rangeRaw === null;
+  const commits = rangeUnknown
+    ? []
+    : lines(rangeRaw).map((line) => {
         const at = line.indexOf(' ');
         const id = at === -1 ? line : line.slice(0, at);
         const touched = git(['diff', '--name-only', `${id}^`, id]);
@@ -566,8 +638,7 @@ export function repositoryBinding(candidateFile, git) {
           // unknown must be recorded like any other executable successor.
           paths: touched === null ? null : lines(touched),
         };
-      })
-    : [];
+      });
 
   const recorded = (candidateFile.successors ?? []).map((s) => String(s?.commit ?? ''));
   const inRange = new Set(commits.map((c) => c.sha));
@@ -581,7 +652,8 @@ export function repositoryBinding(candidateFile, git) {
     treeMatches: Boolean(actualTree) && actualTree === tree,
     baseBranch: base.branch,
     baseRef: base.ref,
-    baseSha: base.sha,
+    baseSha,
+    baseFrom,
     baseAttempted: base.attempted,
     baseResolved,
     phaseHead: head.head,
@@ -589,8 +661,11 @@ export function repositoryBinding(candidateFile, git) {
     unwrappedMergeRef: head.mergeRef,
     mergeRefBaseSide: head.baseSide,
     evilMergePaths: head.evilMergePaths,
+    declinedUnwrap: head.declined,
     isAncestorOfHead,
     productDiff,
+    productDiffUnknown,
+    rangeUnknown,
     commits,
     recorded,
     malformedSuccessors: recorded.filter((id) => !/^[0-9a-f]{40}$/.test(id)),
@@ -1820,9 +1895,14 @@ export function reportRepository(binding, write = toStderr) {
   if (!binding.baseResolved) {
     sound = false;
     write(
-      `::error::the base branch \`${binding.baseBranch || '(unnamed)'}\` could not be resolved in this checkout, so the successor set is UNKNOWN and this gate fails closed. Tried ${(binding.baseAttempted ?? []).join(', ') || 'nothing — the package names no baseBranch'}. A shallow clone cannot see the base; fetch it (\`fetch-depth: 0\`) or record the base this candidate sits on.\n`
+      `::error::the base branch \`${binding.baseBranch || '(unnamed)'}\` could not be resolved in this checkout AND could not be recovered from a merge ref, so the successor set is UNKNOWN and this gate fails closed. Tried ${(binding.baseAttempted ?? []).join(', ') || 'nothing — the package names no baseBranch'}, then HEAD's own parents. A shallow clone may carry none of them; fetch the base (\`fetch-depth: 0\`), check out the pull request's merge ref, or record the base this candidate sits on.\n`
     );
     return sound;
+  }
+  if (binding.declinedUnwrap) {
+    // Not a failure by itself — the merge is judged as an ordinary commit —
+    // but a reader must be told the unwrap was declined and why.
+    write(`::notice::HEAD is a merge that was NOT unwrapped: ${binding.declinedUnwrap}\n`);
   }
   if (binding.evilMergePaths.length > 0) {
     // Not a failure by itself — the merge is judged as an ordinary commit
@@ -1835,6 +1915,26 @@ export function reportRepository(binding, write = toStderr) {
     sound = false;
     write(
       `::error::the candidate ${binding.sha.slice(0, 8)} is not an ancestor of ${String(binding.phaseHead ?? 'the head under test').slice(0, 8)}. A frozen candidate the current branch does not contain describes a tree nobody is looking at.\n`
+    );
+    return sound;
+  }
+  /*
+   * A command that could not run has not said "nothing differs" and has not said
+   * "no successors". Both refusals used to arrive as an empty list and read as
+   * the good answer — the same fail-open shape as a base ref that resolves to
+   * nothing — so each is refused in its own words.
+   */
+  if (binding.productDiffUnknown) {
+    sound = false;
+    write(
+      `::error::\`git diff --name-only ${binding.sha.slice(0, 8)}..${String(binding.phaseHead).slice(0, 8)} -- apps supabase\` could not be taken, so product identity between the candidate and the head under test is UNKNOWN. Unknown is not identical, and this gate fails closed on it.\n`
+    );
+    return sound;
+  }
+  if (binding.rangeUnknown) {
+    sound = false;
+    write(
+      `::error::\`git log ${String(binding.phaseHead).slice(0, 8)} --not ${binding.sha.slice(0, 8)} ${String(binding.baseSha).slice(0, 8)}\` could not be taken, so the successor set is UNKNOWN. An empty answer from a command that refused to run is not "this branch added nothing".\n`
     );
     return sound;
   }
@@ -2083,8 +2183,10 @@ const SYNTHETIC_GIT_TABLE = Object.freeze({
  */
 const MERGE_REF_GIT = Object.freeze({
   [`rev-list --parents -n 1 HEAD`]: `${W.mergeRef} ${W.baseTip} ${W.branchHead}\n`,
+  /* Which parent carries the candidate — the question that needs no base ref. */
+  [`merge-base --is-ancestor ${W.candidate} ${W.baseTip}`]: undefined,
+  /* The cross-check, applied only because a base ref also resolves here. */
   [`merge-base --is-ancestor ${W.baseTip} ${W.baseTip}`]: '',
-  [`merge-base --is-ancestor ${W.branchHead} ${W.baseTip}`]: undefined,
   [`diff-tree --cc --name-only --no-commit-id ${W.mergeRef}`]: '',
 });
 
@@ -2910,6 +3012,62 @@ export const WORLD_CHECK_CASES = [
     inputs: worldInputs({
       git: syntheticGit({
         [`rev-parse --verify --quiet refs/remotes/origin/develop^{commit}`]: undefined,
+      }),
+    }),
+    expects: { repositoryOk: false, sound: false },
+    explains: true,
+  },
+  {
+    name: 'a base ref that resolves to something empty-but-present',
+    inputs: worldInputs({
+      git: syntheticGit({
+        [`rev-parse --verify --quiet refs/remotes/origin/develop^{commit}`]: '\n',
+        [`rev-parse --verify --quiet refs/heads/develop^{commit}`]: '\n',
+        [`rev-parse --verify --quiet develop^{commit}`]: '\n',
+      }),
+    }),
+    expects: { repositoryOk: false, sound: false },
+    explains: true,
+  },
+  {
+    name: 'no base ref at all, recovered from the merge ref’s own base-side parent — allowed',
+    inputs: worldInputs({
+      git: syntheticGit({
+        ...MERGE_REF_GIT,
+        [`rev-parse --verify --quiet refs/remotes/origin/develop^{commit}`]: undefined,
+        /* The cross-check cannot be asked without a base ref, and is not. */
+        [`merge-base --is-ancestor ${W.baseTip} ${W.baseTip}`]: undefined,
+      }),
+    }),
+    expects: { repositoryOk: true },
+    explains: false,
+  },
+  {
+    name: 'a merge ref whose base side is not in the base branch — not unwrapped',
+    inputs: worldInputs({
+      git: syntheticGit({
+        ...MERGE_REF_GIT,
+        [`merge-base --is-ancestor ${W.baseTip} ${W.baseTip}`]: undefined,
+      }),
+    }),
+    expects: { repositoryOk: false, sound: false },
+    explains: true,
+  },
+  {
+    name: 'a product diff between the candidate and the head under test that git refuses to take',
+    inputs: worldInputs({
+      git: syntheticGit({
+        [`diff --name-only ${W.candidate}..${W.branchHead} -- apps supabase`]: undefined,
+      }),
+    }),
+    expects: { repositoryOk: false, sound: false },
+    explains: true,
+  },
+  {
+    name: 'a successor range git refuses to compute — an empty answer is not "none"',
+    inputs: worldInputs({
+      git: syntheticGit({
+        [`log --format=%H %s ${W.branchHead} --not ${W.candidate} ${W.baseTip}`]: undefined,
       }),
     }),
     expects: { repositoryOk: false, sound: false },
