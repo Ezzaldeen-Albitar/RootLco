@@ -6,42 +6,42 @@
   "whatThisDoesNotProve": "This is not a tamper-proof seal. Anyone able to edit a document is able to re-run the generator and commit both. It removes SILENT revision, not revision.",
   "selfExclusion": "This manifest is the only path excluded from its own digest set, because a file containing its own hash has no fixed point. tests/ci/p1-28-evidence-manifest.test.ts asserts the exclusion is exactly this one path.",
   "candidate": {
-    "FINAL_CODE_SHA": "38afa5c28e5b78d484a442cf6b8596fb2a5c34aa",
-    "FINAL_CODE_TREE": "bbae6c90dd51059be7ea949e0b5bca36cf17402d",
+    "FINAL_CODE_SHA": "6392ccb4321b004ed12e5d04ad583298da3303dd",
+    "FINAL_CODE_TREE": "9a4cd553e7fe1501b9a340a7c4d86d125bdc2ad3",
     "pullRequest": 226,
     "recordedIn": "docs/phase-1/phase-1-28/evidence/closure-candidate.json",
     "restatedIn": "docs/phase-1/phase-1-28/evidence/closure-evidence.md"
   },
   "tierTotals": {
     "unit": {
-      "passed": 2475,
+      "passed": 2542,
       "failed": 0,
       "skipped": 0,
-      "provenance": "LOCAL_AND_HOSTED_AGREE"
+      "provenance": "LOCAL_COMPUTED_HOSTED_PENDING"
     },
     "web": {
-      "passed": 2669,
+      "passed": 2726,
       "failed": 0,
       "skipped": 0,
-      "provenance": "LOCAL_AND_HOSTED_AGREE"
+      "provenance": "LOCAL_COMPUTED_HOSTED_PENDING"
     },
     "backend": {
       "passed": 2004,
       "failed": 0,
       "skipped": 0,
-      "provenance": "HOSTED_ARTEFACT_ATTESTED"
+      "provenance": "HOSTED_PENDING_AT_CANDIDATE"
     },
     "database": {
       "passed": 1647,
       "failed": 0,
       "skipped": 0,
-      "provenance": "HOSTED_ARTEFACT_ATTESTED"
+      "provenance": "HOSTED_PENDING_AT_CANDIDATE"
     },
     "browser": {
       "passed": 366,
       "failed": 0,
       "skipped": 4,
-      "provenance": "HOSTED_ARTEFACT_ATTESTED"
+      "provenance": "HOSTED_PENDING_AT_CANDIDATE"
     }
   },
   "fileCount": 14,
@@ -63,16 +63,16 @@
       "bytes": 11687
     },
     "docs/phase-1/phase-1-28/evidence/change-log.md": {
-      "sha256": "4a1610b2794e34681218b05dbc4fa096a367c1f7f78125805f81f748cd466b2b",
-      "bytes": 31946
+      "sha256": "75eb7b60a0c02ea8ebfdc415c843b7f14a1b7d674a439bd271bd9d643cbbfc3b",
+      "bytes": 32678
     },
     "docs/phase-1/phase-1-28/evidence/closure-candidate.json": {
-      "sha256": "1daa6ab576048d9741bf1dfef176098d1631f0833d94fc3972f0d8c03480c27a",
-      "bytes": 24372
+      "sha256": "6bd6c1322c8bac44ec9dc489af01dba3827f2b1f31cf2c8b5da802913340970a",
+      "bytes": 34616
     },
     "docs/phase-1/phase-1-28/evidence/closure-evidence.md": {
-      "sha256": "03eafe98bc195f69fb0cd8bcf2a51d722fa47839f06dd5cc409f707ea3b9d269",
-      "bytes": 33406
+      "sha256": "5788d98370ecf60ad7a8f4ba97e7a193e212e678420697db63deec6d502146df",
+      "bytes": 46327
     },
     "docs/phase-1/phase-1-28/evidence/traceability.json": {
       "sha256": "600a8ae57e4a33b5c54d847befbcab82acb2a0d136d005cec777345c39c74ab1",
@@ -91,12 +91,12 @@
       "bytes": 15930
     },
     "docs/phase-1/phase-1-28/task-matrix-verdicts.json": {
-      "sha256": "65626a56913536767ad2c966025138e2aad6e9870b4afb9cff11dd599a6985bc",
-      "bytes": 335857
+      "sha256": "6c1ab0c512a54f320774622882fefab69c20add6cb25d9986d0c86f01862e2bc",
+      "bytes": 361961
     },
     "docs/phase-1/phase-1-28/task-matrix.json": {
-      "sha256": "0a46d3afd4a5e2c529807e657bd168228d4c47973a8d311d3f59dfd30cdbfa0a",
-      "bytes": 354147
+      "sha256": "f8add47ea05cfc36c142dafbfc2799d33dc5916b869e4d3921d970ce9b007f78",
+      "bytes": 380251
     },
     "docs/phase-1/phase-1-28/write-reachability.json": {
       "sha256": "347b375ec98508dc922abb75506a7052f8422e937b3efca0c0090d1689de0b96",

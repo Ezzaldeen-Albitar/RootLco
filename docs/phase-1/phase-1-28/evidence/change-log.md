@@ -192,11 +192,20 @@ classification cannot be entered without a reviewer seeing the number move.
   seals it: `docs/phase-1/phase-1-28/evidence/closure-evidence.md` for a reader,
   `evidence/closure-candidate.json` for a machine, and
   `evidence/evidence-manifest.json` digesting every file in the phase directory
-  over its BYTES. All five tiers were re-run against that candidate — 9161
-  automated cases, 0 failures — and each figure carries the head it was taken at
-  and the artefact it came from, because P1-27 shipped a closing page pinning a
-  head 47 commits behind the tree it described and it went on reading like
-  evidence.
+  over its BYTES. Each figure carries the head it was taken at and the artefact it
+  came from, because P1-27 shipped a closing page pinning a head 47 commits behind
+  the tree it described and it went on reading like evidence.
+
+  **The candidate has been re-frozen once, and the seal is why.** Three
+  finding-fix waves changed 37 files under `apps/**` after `38afa5c2` was frozen;
+  the gate COMPUTED the product diff, found it non-empty and refused the package.
+  The candidate is now `6392ccb4321b004ed12e5d04ad583298da3303dd`. The two local
+  tiers were re-measured against it — root unit 2542 and web 2726, 0 failures,
+  5268 cases — and the three hosted-only tiers could not be, because a hosted run
+  is taken by CI at a head and this workstation cannot take one. Those three, and
+  eight other hosted bindings, are recorded PENDING at this candidate rather than
+  restated from the head they were measured at; the coordinator binds them with an
+  exact-head run.
 
   The seal is mostly its P1-27 sibling. **Two rules are not, because a digest
   cannot check either.** The first refuses a candidate the two halves of the
@@ -209,8 +218,8 @@ classification cannot be entered without a reviewer seeing the number move.
   Flip a fourth task to PARTIAL and the gate stays red until both halves of the
   package name it, with a blocker and an owner.
 
-  And it is proved able to fail rather than asserted to be: five rules fire in
-  one function, the gate drives that function over sixteen known-bad inputs on
+  And it is proved able to fail rather than asserted to be: eight rules fire in
+  one function, the gate drives that function over fifty-six known-bad worlds on
   every invocation before it reads the tree, and
   `tests/ci/p1-28-evidence-manifest.test.ts` shows a single edited byte in a
   packaged document turning the check red — using an oracle that never calls
@@ -272,10 +281,11 @@ alone. That was true when it was written and stopped being true four commits
 later**, when the tablet merge widened the match; the sentence is corrected
 rather than left standing, because a documented gap that has closed is a reader
 being told to expect less evidence than exists. `apps/web/playwright.config.ts:255`
-now matches this phase's spec as well, at 1024×768, and the hosted run bound to
-the closing candidate executed **47 P1-28 cases in that project** — the same 47
-it ran in each of the two desktop projects. The P1-28 surface is observed at two
-viewports and two locales. The numbers are recorded once, in
+now matches this phase's spec as well, at 1024×768 — a fact about the CONFIG,
+unchanged at the current candidate. The run that executed **47 P1-28 cases in
+that project** measured `38afa5c2`, a head the candidate now supersedes, so the
+EXECUTION half of this correction is PENDING again and the package records it as
+such rather than restating it. The numbers are recorded once, in
 `docs/phase-1/phase-1-28/evidence/closure-evidence.md`, and are not restated
 here.
 

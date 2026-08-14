@@ -33,13 +33,37 @@ the candidate, and refuses either half that fails to name an unclosed task.
 
 ## The frozen candidate
 
-| Binding           | Value                                                                                      |
-| ----------------- | ------------------------------------------------------------------------------------------ |
-| `FINAL_CODE_SHA`  | `38afa5c28e5b78d484a442cf6b8596fb2a5c34aa`                                                 |
-| `FINAL_CODE_TREE` | `bbae6c90dd51059be7ea949e0b5bca36cf17402d`                                                 |
-| Branch            | `feature/p1-28-appointment-vehicle-reception-frontend`                                     |
-| Pull request      | **#226** (draft), base `develop`, 96 commits ahead                                         |
-| Subject           | `merge: browser-tier determinism — the tier was rate-limited by the product's own limiter` |
+| Binding           | Value                                                                                       |
+| ----------------- | ------------------------------------------------------------------------------------------- |
+| `FINAL_CODE_SHA`  | `6392ccb4321b004ed12e5d04ad583298da3303dd`                                                  |
+| `FINAL_CODE_TREE` | `9a4cd553e7fe1501b9a340a7c4d86d125bdc2ad3`                                                  |
+| Branch            | `feature/p1-28-appointment-vehicle-reception-frontend`                                      |
+| Pull request      | **#226** (draft), base `develop`, 110 commits ahead                                         |
+| Subject           | `chore(p1-28): regenerate the operation register and evidence seal after the finding fixes` |
+
+### This candidate is a RE-FREEZE, and the seal is why
+
+The previous candidate was `38afa5c28e5b78d484a442cf6b8596fb2a5c34aa`, tree
+`bbae6c90dd51059be7ea949e0b5bca36cf17402d`. Three finding-fix waves landed after
+it was frozen — `648fa46f` (product honesty), `4eaf5d6a` (evidence integrity),
+`3bd2298d` (record accuracy), and the two fixes beneath them — and they changed
+**37 files under `apps/**`**.
+
+The gate **computed** `git diff --name-only 38afa5c2..HEAD -- apps supabase`,
+found it non-empty, and refused the package. Five `tests/ci` cases went red for
+that one reason. That refusal is the rule working: the package was describing
+software the branch no longer held, and nothing but a computed diff would have
+noticed.
+
+**What the re-freeze cost, and what it did not.** The two LOCAL tiers were
+re-measured here and are bound as usual. The **hosted** tiers could not be. A
+hosted figure is produced by a GitHub-hosted runner at a head, and this
+workstation cannot take one at any candidate — the backend and database tiers
+need a running PostgreSQL it does not host, the browser tier needs the full
+acceptance stack, and hosted CI, CodeQL, the dependency audit and the production
+build are properties of a **run**, not of a checkout. So **every hosted binding
+in this package is recorded PENDING at this candidate**; see
+[What is PENDING at this candidate](#what-is-pending-at-this-candidate).
 
 **On the two names, before anything else.** `FINAL_CODE_SHA` and
 `FINAL_CODE_TREE` are the names this package was commissioned under. They are
@@ -51,53 +75,91 @@ quoted as a current one.
 
 ### What freezing means, and what it does not
 
-Every figure in this package describes **that commit**. Commits landing after it
-are successors, and they are named by their full id rather than glossed:
+Every **local** figure in this package describes **that commit**, or a named
+successor of it whose drift from it is declared path by path. Commits landing
+after it are successors, and they are named by their full id rather than glossed:
 
-1. **`1b9811c8f489cd40b24dd1677add0f0dbfecfd7e` — the packaging commit.**
-   P1-28-QA-005 itself: this document, the candidate record, the digest manifest,
-   the generator and gate (`scripts/ci/build-p1-28-evidence-manifest.mjs`), its
-   test (`tests/ci/p1-28-evidence-manifest.test.ts`), the command-register
-   entries and the hosted-job wiring.
+1. **`e2dd8b8d8ba6ce124c464409fbe827ceea82b1fc` — the machinery commit that
+   taught the seal to say PENDING.** Two rules were added, both demanding more
+   than the silence they replace. **Hosted:** a binding whose head is not the
+   candidate must declare `describesSupersededHead`, that head must be a commit
+   this repository contains **and** an ancestor of the candidate, it must name
+   what replaces it, and it must appear in `pendingHostedBindings` — a list the
+   gate computes from the documents' own `headSha` fields and compares in both
+   directions. A tier may not claim `LOCAL_AND_HOSTED_AGREE` while its hosted
+   half describes a superseded head. **Local:** a tier measurement may be taken
+   at a named executable successor of the candidate, provided no product path is
+   in the drift and the package declares `measurementDrift` exactly equal to what
+   `git diff` computes.
 
    **This successor is NOT a documentation-only recording, and does not claim to
    be.** P1-27's rule is that `DOCUMENTATION_ONLY_RECORDING` may be claimed only
    when `git diff --name-only CODE_CANDIDATE_SHA..EVIDENCE_RECORD_SHA` excluding
-   `docs/` and `*.md` is exactly zero, and this commit adds executable files. It
-   claims the narrower and checkable thing instead:
+   `docs/` and `*.md` is exactly zero, and this commit changes three executable
+   files. It claims the narrower and checkable thing instead:
 
    ```text
-   git diff --name-only 38afa5c28e5b78d484a442cf6b8596fb2a5c34aa..HEAD -- apps supabase
+   git diff --name-only 6392ccb4321b004ed12e5d04ad583298da3303dd..HEAD -- apps supabase
    ```
 
-   returns **nothing** — and that is now **run by the gate**, not offered to the
+   returns **nothing** — and that is **run by the gate**, not offered to the
    reader as an exercise. No file under `apps/**` or `supabase/**` differs
    between the candidate and HEAD, so the product these measurements describe is
    the product at the candidate. A successor that changes either tree fails
-   `validate:p1-28-evidence`, and the candidate must be re-frozen and re-measured.
+   `validate:p1-28-evidence`, and the candidate must be re-frozen and re-measured
+   — which is precisely what this cycle did.
 
-2. **`897209637c43af8db7633d7e8b91a3766b0933cc` — the seal's own correction and
-   the docs re-record.** The seal's test was checking each local tier against the
-   other tier's head rather than against its own; and the P1-27 local run ledger
-   was re-taken, its closing values reconciled and its evidence package resealed.
-   `check-p1-27-closing-values.mjs` expires a local run record when any
-   executable path has changed since it was taken, and successor (1) is such a
-   change. This commit touches `tests/ci/p1-28-evidence-manifest.test.ts`, so it
-   is **executable** and is named here rather than filed as documentation.
-
-3. **`5e97dc9241179ca56d8aeb38599090072536e32d` — the repository-binding
-   commit.** The seal bound to `git` (see _The seal is now bound to the
-   repository_ below), and the 32 refuted verdict cells re-derived.
-
-   **This entry is itself the proof of the rule it adds.** At that commit the
-   gate reported `unrecorded executable successor: 5e97dc92`, exit 1, because a
-   commit that adds executable code and is not named must fail. The
+   **This entry is itself the proof of the rule it carries.** At that commit the
+   gate reported `unrecorded executable successor: e2dd8b8d`, exit 1, because a
+   commit that changes executable code and is not named must fail. The
    documentation-only commit that names it is what discharges the complaint —
    and that commit, being documentation-only, is the one the gate prints rather
    than demands.
 
+   It adds fourteen known-bad worlds to the gate's self-check.
+
+2. **`8f8c5cfaa8cbb25693affa6422e957fc4f914ab6` — the two new rules proved
+   against the tree.** The self-check proves a rule can compute a verdict from a
+   synthetic world; it cannot prove the **committed** package satisfies that rule,
+   and a package satisfying none of them would leave every synthetic case green.
+   Seven cases in `tests/ci/p1-28-evidence-manifest.test.ts` close that gap
+   against this repository, and three existing cases move with the rules rather
+   than around them. Executable, and named here for the same reason as (1).
+
+   **This is the head both local tiers were measured at.** The seal cannot be
+   inside the candidate it seals, and a tier run before this commit would report
+   a suite that does not contain those seven cases. The three executable paths
+   that differ between this commit and the candidate —
+   `.github/ci-baselines/unrun-test-tiers.json`,
+   `scripts/ci/build-p1-28-evidence-manifest.mjs` and
+   `tests/ci/p1-28-evidence-manifest.test.ts` — are declared on each local tier as
+   `measurementDrift`, and the gate compares that declared list against
+   `git diff --name-only 8f8c5cfa..6392ccb4`. None is under `apps/**` or
+   `supabase/**`, which is the only reason a measurement taken away from the
+   candidate is admissible at all.
+
+**One documentation-only successor sits between them, and is not hidden.**
+`333ca9c90abb2e20508262684c72d68e967a692d` carries the P1-27 run ledger as it
+stood mid-bootstrap, with two failures recorded against the unit tier. Both were
+the same case — the seal reconciles each local tier against a ledger read out of
+git at a **pinned** commit, and until a commit held a ledger with these figures
+there was nothing for it to read. `94e180008c81816d32003bfe8e44eab8226907dd`
+re-records the same run at `8f8c5cfa` with **0 failed**, and that is the ledger
+this package pins. Both are documentation-only, so the gate prints them rather
+than demanding they be named.
+
+**Three successors the previous candidate named are no longer successors of
+anything.** `1b9811c8f489cd40b24dd1677add0f0dbfecfd7e` (the packaging commit),
+`897209637c43af8db7633d7e8b91a3766b0933cc` (the seal's own test corrected) and
+`5e97dc9241179ca56d8aeb38599090072536e32d` (the seal bound to the repository) are
+all **ancestors** of this candidate now, and the gate refuses a recorded successor
+that is not in `git log <candidate>..HEAD`. They are kept in
+`closure-candidate.json` under `reFrozenFrom` rather than deleted, because
+removing the record of what was once named is the half-update this gate exists to
+catch.
+
 **The rule, and the single hole it cannot close.** Every commit in
-`git log 38afa5c2..HEAD` that touches an executable path — anything outside
+`git log 6392ccb4..HEAD` that touches an executable path — anything outside
 `docs/` that is not `*.md` — must appear in `closure-candidate.json` by its full
 40-character id, and the gate computes that range and refuses an unnamed one. A
 **documentation-only** successor may go unnamed, and the gate **prints** the ones
@@ -115,68 +177,83 @@ satisfied.
 
 ## The regression statement — what was re-run, and what was not
 
-**Re-run against the candidate, all five tiers:**
+**Two tiers were re-measured at this candidate. Three were not, and are recorded
+PENDING rather than restated.**
 
-| Tier                     | Tests       | Passed | Failed | Skipped | Files   | Provenance                                                             |
-| ------------------------ | ----------- | ------ | ------ | ------- | ------- | ---------------------------------------------------------------------- |
-| Root unit and foundation | 2475        | 2475   | **0**  | 0       | 97      | local **and** hosted, agreeing                                         |
-| Web component and DOM    | 2669        | 2669   | **0**  | 0       | 98      | local **and** hosted, agreeing; independently re-run in the clean room |
-| Backend integration      | 2004        | 2004   | **0**  | 0       | 86      | **hosted only**                                                        |
-| Database and RLS         | 1647        | 1647   | **0**  | 0       | 139     | **hosted only**                                                        |
-| Authenticated browser    | 370 planned | 366    | **0**  | 4       | 7 specs | **hosted only**                                                        |
+| Tier                     | Tests       | Passed | Failed | Skipped | Files   | State at THIS candidate                                      |
+| ------------------------ | ----------- | ------ | ------ | ------- | ------- | ------------------------------------------------------------ |
+| Root unit and foundation | 2542        | 2542   | **0**  | 0       | 98      | **measured here**, computed against the run ledger           |
+| Web component and DOM    | 2726        | 2726   | **0**  | 0       | 98      | **measured here**, computed against the run ledger           |
+| Backend integration      | 2004        | 2004   | **0**  | 0       | 86      | **PENDING** — figures are run `31750364479`'s, at `38afa5c2` |
+| Database and RLS         | 1647        | 1647   | **0**  | 0       | 139     | **PENDING** — figures are run `31750364479`'s, at `38afa5c2` |
+| Authenticated browser    | 370 planned | 366    | **0**  | 4       | 7 specs | **PENDING** — figures are run `31750364479`'s, at `38afa5c2` |
 
-**Total: 9161 automated cases at the candidate, 0 failures.**
+**Measured at this candidate: 5268 automated cases, 0 failures.** The other three
+rows are the superseded head's numbers, kept so a reader can fetch the same
+artefacts, and they are **not** a measurement of this commit. Adding all five
+together would produce a total nobody has ever observed at one head, so this page
+does not print one.
 
-### What was NOT measured locally, stated plainly
+### What was NOT measured here, stated plainly
 
-The **backend** and **database** tiers were **not run on this workstation**. Both
-need a running PostgreSQL with all 120 migrations applied, which this machine
-does not host. They are measured **hosted, at the candidate SHA**, and that is the
-only measurement claimed for them — the figures above come from
-`test-totals-backend.json` (job `94614564122`) and `test-totals-database.json`
-(job `94614564002`), not from a local run that did not happen.
+The **backend** and **database** tiers were **not run on this workstation** and
+cannot be: both need a running PostgreSQL with all 120 migrations applied, which
+this machine does not host. The **browser** tier needs the full acceptance stack.
+None of the three is takeable here at any candidate, so the re-freeze did not
+make them unavailable — it made the previously-available hosted measurement stop
+describing the code.
 
-The **browser** tier likewise runs only hosted; the figures are read out of the
-run's own Playwright report, not inferred.
+What **does** move and what does not, said precisely:
+
+- `supabase/**` is byte-identical between `38afa5c2` and this candidate, computed
+  by the same `git diff` the product-identity rule runs. The migrations, the
+  policies and the shape of the 1356-cell matrix therefore do not move. This
+  package still records the database tier as **PENDING**, because the tier also
+  executes tests that live outside `supabase/**` and an unchanged input is not a
+  fresh result.
+- `apps/web/src` changed in 20 files, six of them reception and appointment
+  surfaces the browser spec drives. That tier's 366 passes describe screens that
+  have since been edited, which is why it is the binding this re-freeze matters
+  most to.
 
 ### Where each figure is checked, and what "checked" means for each kind
 
-| Kind           | Tiers                      | What the gate does with the number                                                                                                                                                 |
-| -------------- | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **arithmetic** | all five                   | `passed + failed + skipped` must equal the declared total. The review set `passed: 3, failed: 812` beside `tests: 2475` and the first revision of the gate accepted it.            |
-| **computed**   | unit, web                  | the figures must equal the P1-27 run ledger's, read out of git at a **pinned commit**, and the tier may carry no figure the ledger does not write                                  |
-| **attested**   | backend, database, browser | cannot be computed from this repository at all; the gate requires a run id, a job id, the head the job ran at and the artefact name, and prints them as **attested, not computed** |
+| Kind                 | Tiers                      | What the gate does with the number                                                                                                                                                                             |
+| -------------------- | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **arithmetic**       | all five                   | `passed + failed + skipped` must equal the declared total. The review set `passed: 3, failed: 812` beside `tests: 2475` and the first revision of the gate accepted it.                                        |
+| **computed**         | unit, web                  | the figures must equal the P1-27 run ledger's, read out of git at a **pinned commit**, and the tier may carry no figure the ledger does not write                                                              |
+| **measurement head** | unit, web                  | the head the tier names must be executable-identical to the candidate, or a **named successor** carrying no product drift and declaring `measurementDrift` exactly equal to what `git diff` says               |
+| **pending**          | backend, database, browser | the record must declare `describesSupersededHead`, name a head this repository **contains** and can prove is an **ancestor** of the candidate, name what replaces it, and be listed in `pendingHostedBindings` |
 
 ### What the local record covers
 
 `docs/phase-1/phase-1-27/evidence/local-run-ledger.json` records the unit and web
-tiers at `cae8bdb0dee6352f6182105b36d1dd3b1d7bf896`, an ancestor of the candidate.
-The gate reads that ledger **as it stood at `ab5e3c4932a770eb82105dcf81b1ce1085946391`**,
-through `git show`, and requires `tests`, `passed`, `failed`, `skipped`, `files`
-and the measured head to match this package exactly. It is pinned to a commit
-because the ledger **moves**: `--record` rewrites it at whatever head it was last
-taken at, so a check against the working copy would go red on the next unrelated
-re-record and would then be relaxed rather than fixed.
+tiers at `8f8c5cfaa8cbb25693affa6422e957fc4f914ab6`, the second named machinery
+successor.
+The gate reads that ledger **out of git at the commit that carries it**, through
+`git show`, and requires `tests`, `passed`, `failed`, `skipped`, `files` and the
+measured head to match this package exactly. It is pinned to a commit because the
+ledger **moves**: `--record` rewrites it at whatever head it was last taken at, so
+a check against the working copy would go red on the next unrelated re-record and
+would then be relaxed rather than fixed.
 
-That **no executable path differs** between `cae8bdb0` and the candidate — the
-whole diff is two P1-27 evidence documents — is likewise **computed by the gate**
-now. The previous revision of this page asked the reader to "verify with
-`git diff --name-only cae8bdb0..38afa5c2`", which is an assertion with a suggested
-homework exercise attached.
+That the measurement head differs from the candidate by exactly three executable
+paths, none of them product paths, is **computed by the gate** and compared
+against the `measurementDrift` list the package declares. A previous revision of
+this page asked the reader to "verify with `git diff`", which is an assertion with
+a suggested homework exercise attached.
 
 `suites: 549` and `suites: 651` used to stand beside these figures and have been
 **removed**. The run ledger records no suite count, so there was nothing those
 numbers could be checked against and nothing that would have noticed them change.
 
-**A reader running the unit suite today will count more than 2475, and that is
-not drift.** The successors that package this evidence add QA-005's own gate
-test, so the run ledger has since been re-recorded at the packaging head and
-reports a larger unit tier over 98 files rather than 97. The figure in the table
-above is frozen at the candidate deliberately; the ledger tracks whichever head
-it was last taken at. The two are different measurements of different commits,
-and the seal's own test checks each against the head it names rather than
-against the other — an equality between a frozen figure and a moving one is
-exactly the confusion this package exists to prevent.
+**The hosted halves of these two tiers are pending as well.** Run `31750364479`
+reported 2475 over 97 files for the unit tier and 2669 over 98 files for the web
+tier, at `38afa5c2`. Those are a different commit and, for the unit tier, a
+different suite. They are cited in `hostedAttestation` and are not restated as
+this candidate's figures, so the two tiers declare
+`LOCAL_COMPUTED_HOSTED_PENDING` rather than `LOCAL_AND_HOSTED_AGREE` — nothing
+here claims two halves agree when only one of them has been taken.
 
 ### What no tier measures
 
@@ -188,9 +265,49 @@ the standing reason `OWNER ACCEPTANCE` is required and CI is not sufficient.
 
 ---
 
-## The authenticated browser tier — the numbers actually found
+## What is PENDING at this candidate
 
-Run **`31750364479`** · job **`94614564003`** · head_sha
+Eleven hosted bindings in this package describe `38afa5c2`, a head this candidate
+supersedes. Each names that head in its own record, is marked
+`describesSupersededHead`, and is listed by name in `pendingHostedBindings` — a
+list the gate **derives** from the documents' own `headSha` fields and refuses a
+difference from in either direction, so a pending binding cannot go unlisted and a
+listed one cannot be decorative.
+
+| Binding                            | What is awaited                                                     |
+| ---------------------------------- | ------------------------------------------------------------------- |
+| `tiers.unit.hostedAttestation`     | the hosted half of a tier whose local half **is** measured here     |
+| `tiers.web.hostedAttestation`      | the hosted half of a tier whose local half **is** measured here     |
+| `tiers.backend.hostedAttestation`  | the only measurement this tier can have                             |
+| `tiers.database.hostedAttestation` | the only measurement this tier can have                             |
+| `tiers.browser.hostedAttestation`  | the only measurement this tier can have                             |
+| `hostedCi`                         | the 21-check result, at this head                                   |
+| `browserByProject`                 | the per-project P1-28 spec result, at this head                     |
+| `codeql`                           | both analyses, at this head                                         |
+| `dependencySecurity`               | the audit, at this head                                             |
+| `productionBuild`                  | the build, at this head                                             |
+| `database`                         | the migration replay and the clean-room re-derivation, at this head |
+
+**Who takes it.** The phase coordinator, by running CI at the candidate.
+
+**One constraint this package cannot remove, stated so nobody discovers it
+later.** A binding leaves the pending state only when its `headSha` **is** the
+candidate. A run taken at a later head describes that head; if that is what is
+taken, the candidate must be re-frozen there and the local tiers re-measured —
+exactly what this cycle did. The alternative would be a rule that accepts a run at
+"some head close enough to the candidate", and there is no such thing: 37 product
+files were "close enough" last time.
+
+Everything below this line under _the superseded head_ is kept because it is
+fetchable and a reader may want to compare, **not** because it describes this
+commit.
+
+---
+
+## The authenticated browser tier — at the superseded head `38afa5c2`
+
+**These are not this candidate's numbers.** Run **`31750364479`** · job
+**`94614564003`** · head_sha
 **`38afa5c28e5b78d484a442cf6b8596fb2a5c34aa`** · conclusion **success**
 (11m 37s).
 
@@ -217,21 +334,22 @@ the run's own `playwright-report.json` and grouped by `projectName`:
 These are **hosted** figures. They are not the local Playwright numbers and are
 not a keyword count over the spec file.
 
-**A stale claim this package corrects.** Documents written before the tablet merge
-(`88af8acd`, merged as `4c6ccfe7`) state that this tier runs no P1-28 screen at a
-tablet viewport, citing `apps/web/playwright.config.ts`. That was true when
-written and is **false at this candidate**: the `authenticated-tablet` project's
-`testMatch` at `apps/web/playwright.config.ts:255` now names two specs —
-`administration` and `appointments-and-receptions` — and the run above executed
-47 P1-28 cases in that project. The P1-28 surface is observed at two viewports
-and two locales.
+**The one half of this that survives the re-freeze, and the half that does not.**
+The `authenticated-tablet` project's `testMatch` at
+`apps/web/playwright.config.ts:255` names two specs — `administration` and
+`appointments-and-receptions` — and that is a fact about the **config**, which is
+unchanged at this candidate: documents written before the tablet merge
+(`88af8acd`, merged as `4c6ccfe7`) that say otherwise remain wrong. The 47
+executed tablet cases are a fact about that **run**, and they are not carried
+forward.
 
 ---
 
-## Hosted CI at the candidate
+## Hosted CI at the superseded head `38afa5c2`
 
-Run **`31750364479`** — workflow **PR CI** (`.github/workflows/pr-ci.yml`), event
-`pull_request`, attempt 1, head_sha `38afa5c28e5b78d484a442cf6b8596fb2a5c34aa`.
+**Not at this candidate.** Run **`31750364479`** — workflow **PR CI**
+(`.github/workflows/pr-ci.yml`), event `pull_request`, attempt 1, head_sha
+`38afa5c28e5b78d484a442cf6b8596fb2a5c34aa`.
 
 **21 checks · 21 success · 0 failure · 0 pending.** Taken from
 `GET /repos/{owner}/{repo}/commits/{sha}/check-runs` — the per-commit endpoint,
@@ -448,23 +566,23 @@ put that to the test and it failed in the two ways it was built to prevent:
 
 - replacing the candidate with `deadbeef…` — forty hex characters naming no
   object in this repository — **in both halves** produced
-  `evidence manifest in sync … candidate deadbeef`, exit 0, and 37/37 green tests;
+  `evidence manifest in sync … candidate deadbeef`, exit 0, and every test green;
 - setting `tiers.unit.passed = 3, failed = 812` while leaving
   `provenance: "LOCAL_AND_HOSTED_AGREE"` also passed.
 
 Well-formedness is not existence, and two documents agreeing is not evidence
 about a repository. What the gate now computes, on every invocation:
 
-| Binding                  | How it is established                                                                                                                     |
-| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| the candidate **exists** | `git cat-file -e 38afa5c2^{commit}`                                                                                                       |
-| its **tree**             | `git rev-parse 38afa5c2^{tree}` must equal the recorded `bbae6c90dd51059be7ea949e0b5bca36cf17402d`                                        |
-| its **ancestry**         | `git merge-base --is-ancestor 38afa5c2 HEAD`                                                                                              |
-| **product identity**     | `git diff --name-only 38afa5c2..HEAD -- apps supabase` must be empty — computed, where the package used to assert it in a sentence        |
-| **successors**           | `git log 38afa5c2..HEAD`, every executable commit of which must be named by id; documentation-only ones are printed                       |
-| **local tier figures**   | `git show ab5e3c49:…/local-run-ledger.json`, matched field by field, plus no executable drift between the measured head and the candidate |
-| **hosted tier figures**  | not computable here, so required to be fetchable: run id, job id, head sha, artefact — and printed as **attested, not computed**          |
-| **documented claims**    | anchored sentences measured against the tree, and `PROTECTED_REPROOF` citations resolved into the files they name                         |
+| Binding                  | How it is established                                                                                                                                                                                                                                                              |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| the candidate **exists** | `git cat-file -e 6392ccb4^{commit}`                                                                                                                                                                                                                                                |
+| its **tree**             | `git rev-parse 6392ccb4^{tree}` must equal the recorded `9a4cd553e7fe1501b9a340a7c4d86d125bdc2ad3`                                                                                                                                                                                 |
+| its **ancestry**         | `git merge-base --is-ancestor 6392ccb4 HEAD`                                                                                                                                                                                                                                       |
+| **product identity**     | `git diff --name-only 6392ccb4..HEAD -- apps supabase` must be empty — computed, where the package used to assert it in a sentence                                                                                                                                                 |
+| **successors**           | `git log 6392ccb4..HEAD`, every executable commit of which must be named by id; documentation-only ones are printed                                                                                                                                                                |
+| **local tier figures**   | `git show 94e18000:…/local-run-ledger.json`, matched field by field, plus the measured head either executable-identical to the candidate or a named successor whose drift is declared path by path and compared against `git diff`                                                 |
+| **hosted tier figures**  | not computable here, so required to be fetchable: run id, job id, head sha, artefact. A head that is not the candidate must be declared superseded, must be a commit `git cat-file` resolves, must be an **ancestor** of the candidate, and must appear in `pendingHostedBindings` |
+| **documented claims**    | anchored sentences measured against the tree, and `PROTECTED_REPROOF` citations resolved into the files they name                                                                                                                                                                  |
 
 ### The eight rules, each of which can be made to fail
 
@@ -475,16 +593,16 @@ P1-27 sibling three ways and it exited 0 each time, because no test named the
 reporters and the real tree was sound — so a rule that always returns true and a
 rule that works produced identical output.
 
-| Rule             | What it refuses                                                                                                                                                                                                                       |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| digest **shape** | a digest that is not 64 lower-case hex, or repeats across different files                                                                                                                                                             |
-| digest **bytes** | a digest that is not the hash of the file it names — checked by an oracle that **does not call** `digest()`, because verifying a hash with the function that produced it is `f(x) === f(x)`                                           |
-| **reachability** | a sealed document no index cites; a cited document that was deleted; an exemption that outlived its file                                                                                                                              |
-| **candidate**    | a `FINAL_CODE_SHA` that is not 40 hex characters, or a candidate the prose half of this package does not state                                                                                                                        |
-| **blockers**     | an unclosed task this document fails to name, one recorded without a blocker or without an owner, or a closed task still presented as blocked                                                                                         |
-| **repository**   | a candidate that names no commit, a recorded tree that commit does not have, a candidate that is not an ancestor of HEAD, a product file changed after the freeze, an unnamed executable successor, a successor id in no commit range |
-| **tiers**        | figures that do not add up, a local figure the run ledger contradicts, a local figure the ledger cannot carry at all, a hosted figure with no run id, job id, head or artefact                                                        |
-| **claims**       | a sentence the candidate refutes — in a verdict cell, in the CI baseline or on this page — and a `PROTECTED_REPROOF` citation that is missing, out of range, or comment-only                                                          |
+| Rule             | What it refuses                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| digest **shape** | a digest that is not 64 lower-case hex, or repeats across different files                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| digest **bytes** | a digest that is not the hash of the file it names — checked by an oracle that **does not call** `digest()`, because verifying a hash with the function that produced it is `f(x) === f(x)`                                                                                                                                                                                                                                                                                                                                                              |
+| **reachability** | a sealed document no index cites; a cited document that was deleted; an exemption that outlived its file                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| **candidate**    | a `FINAL_CODE_SHA` that is not 40 hex characters, or a candidate the prose half of this package does not state                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| **blockers**     | an unclosed task this document fails to name, one recorded without a blocker or without an owner, or a closed task still presented as blocked                                                                                                                                                                                                                                                                                                                                                                                                            |
+| **repository**   | a candidate that names no commit, a recorded tree that commit does not have, a candidate that is not an ancestor of HEAD, a product file changed after the freeze, an unnamed executable successor, a successor id in no commit range                                                                                                                                                                                                                                                                                                                    |
+| **tiers**        | figures that do not add up, a local figure the run ledger contradicts, a local figure the ledger cannot carry at all, a measurement head that is neither identical to the candidate nor a named successor with its drift declared exactly, a hosted figure with no run id, job id, head or artefact, a superseded head that names no commit or is no ancestor, a pending binding the package does not list, a decorative pending marker on a binding that is in fact bound, and a tier claiming the two halves AGREE while its hosted half is superseded |
+| **claims**       | a sentence the candidate refutes — in a verdict cell, in the CI baseline or on this page — in **both** directions now: one that DENIES evidence the package records, and one that asserts an observation of this candidate while the package records none; and a `PROTECTED_REPROOF` citation that is missing, out of range, or comment-only                                                                                                                                                                                                             |
 
 #### The self-check was itself the defect, and is rebuilt
 
@@ -496,15 +614,18 @@ that **nothing in the file ever computed a candidate verdict from a repository**
 `WORLD_CHECK_CASES` now hands the **analysers** a synthetic world — a `git` that
 answers from a table, a candidate document, a verdict register, a
 `playwright.config.ts` — and each case passes only if the code derives the
-failure itself. It includes the case that must be **accepted**: the same tablet
-sentence, against a narrowed config, is true and is allowed.
+failure itself. Fifty-six known-bad worlds run on every invocation. Two of them are cases that must be **ACCEPTED**, because a table of only-bad inputs is satisfied by a `judge` that always returns false: the same tablet sentence against a narrowed config is true and is allowed, and a candidate whose hosted bindings are all pending, declared and computed is sound.
 
-#### The four falsifications, run against this tree
+#### The falsifications, run against this tree
 
 1. a candidate SHA naming no object → `the candidate … names no commit in this repository`;
 2. a recorded tree the commit does not have → `git rev-parse … is <other>`;
 3. a successor touching an executable path and not named → `unrecorded executable successor: <sha>`;
-4. a fabricated tier figure → `the package records 3; …local-run-ledger.json at ab5e3c49 records 2475`.
+4. a fabricated tier figure → `the package records 3; …local-run-ledger.json at 94e18000 records 2542`;
+5. a fabricated `measurementDrift` list → `declares measurementDrift [scripts/ci/never-existed.mjs]; git diff --name-only 8f8c5cfa..6392ccb4 computes […]`;
+6. a superseded head naming no commit here → `names no commit in this repository`;
+7. a pending marker on a binding that is bound → `is marked describesSupersededHead while the head it names IS the candidate`;
+8. a tier claiming both halves agree while its hosted half is superseded → `claims a hosted observation OF THE CANDIDATE while its attestation describes a head the candidate supersedes`.
 
 `tests/ci/p1-28-evidence-manifest.test.ts` drives each rule against fixtures in a
 temporary directory, so the repository is never mutated, and asserts that the
