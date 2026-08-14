@@ -85,10 +85,16 @@ are successors, and they are named by their full id rather than glossed:
    change. This commit touches `tests/ci/p1-28-evidence-manifest.test.ts`, so it
    is **executable** and is named here rather than filed as documentation.
 
-3. **The repository-binding commit** — the seal bound to `git` (see _The seal is
-   now bound to the repository_ below). It is named by id in
-   `closure-candidate.json`, recorded by the documentation-only commit that
-   follows it.
+3. **`5e97dc9241179ca56d8aeb38599090072536e32d` — the repository-binding
+   commit.** The seal bound to `git` (see _The seal is now bound to the
+   repository_ below), and the 32 refuted verdict cells re-derived.
+
+   **This entry is itself the proof of the rule it adds.** At that commit the
+   gate reported `unrecorded executable successor: 5e97dc92`, exit 1, because a
+   commit that adds executable code and is not named must fail. The
+   documentation-only commit that names it is what discharges the complaint —
+   and that commit, being documentation-only, is the one the gate prints rather
+   than demands.
 
 **The rule, and the single hole it cannot close.** Every commit in
 `git log 38afa5c2..HEAD` that touches an executable path — anything outside

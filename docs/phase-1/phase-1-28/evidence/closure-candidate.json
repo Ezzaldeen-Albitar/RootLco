@@ -39,6 +39,13 @@
       "kind": "evidence machinery and docs re-record",
       "what": "The seal's own test corrected to check each local tier against the head it names rather than against the other tier's head, plus the P1-27 local run ledger re-recorded, its closing values reconciled and its evidence package resealed.",
       "why": "check-p1-27-closing-values.mjs expires a local run record when any executable path changes since it was taken. The machinery commit above is such a change, so the record is re-taken rather than left to describe a head it no longer describes. This commit touches `tests/ci/p1-28-evidence-manifest.test.ts`, so it is executable and is named here rather than treated as documentation."
+    },
+    {
+      "commit": "5e97dc9241179ca56d8aeb38599090072536e32d",
+      "kind": "evidence machinery — the seal bound to the repository",
+      "what": "git-verified candidate existence, tree, ancestry, product identity and successor enumeration; tier figures matched against the P1-27 run ledger at a pinned commit or declared attested with a run and job id; the verdict register's claims and citations measured against the tree; the self-check rebuilt to drive the analysers over synthetic repositories; and the 32 refuted PROTECTED_REPROOF cells re-derived, with run (6) recorded in .github/ci-baselines/unrun-test-tiers.json.",
+      "why": "The first revision of this seal never invoked git. A review replaced the candidate with `deadbeef…` in both halves and the gate reported `evidence manifest in sync — candidate deadbeef`, exit 0, with 37/37 tests green; setting `tiers.unit.passed=3, failed=812` while keeping `provenance: LOCAL_AND_HOSTED_AGREE` also passed. THIS ENTRY IS ITSELF THE PROOF OF THE RULE IT ADDS: at that commit the gate reported `unrecorded executable successor: 5e97dc92`, exit 1, and it is this documentation-only commit that discharges it.",
+      "provedByFailingFirst": "node scripts/ci/build-p1-28-evidence-manifest.mjs --check at 5e97dc92 → exit 1, `unrecorded executable successor: 5e97dc9241179ca56d8aeb38599090072536e32d`"
     }
   ],
 
