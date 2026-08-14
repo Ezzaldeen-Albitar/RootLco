@@ -69,6 +69,7 @@
  * Exit:   0 written / in sync · 1 drifted, unreachable, unbound or self-check
  *         failed · 2 IO error.
  */
+import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readFileSync, readdirSync, writeFileSync, existsSync } from 'node:fs';
 import { join, posix, sep } from 'node:path';
@@ -82,6 +83,11 @@ export const MANIFEST_PATH = `${PHASE_DIR}/evidence/evidence-manifest.json`;
 export const CANDIDATE_PATH = `${PHASE_DIR}/evidence/closure-candidate.json`;
 export const PACKAGE_PATH = `${PHASE_DIR}/evidence/closure-evidence.md`;
 export const VERDICTS_PATH = `${PHASE_DIR}/task-matrix-verdicts.json`;
+
+/** Files outside the phase directory that the package makes checkable claims about. */
+export const PLAYWRIGHT_CONFIG = 'apps/web/playwright.config.ts';
+export const BASELINE_PATH = '.github/ci-baselines/unrun-test-tiers.json';
+export const PHASE_SPEC = 'authenticated/appointments-and-receptions.spec.ts';
 
 /**
  * The documents that index the phase: its canonical plan, its traceability
@@ -332,6 +338,603 @@ export function blockerCoverage(root = ROOT) {
     withoutOwner,
     withoutBlocker,
   };
+}
+
+/* ------------------------------------------------------------------ *
+ * The repository oracle
+ *
+ * The first revision of this file tested the candidate with
+ * `/^[0-9a-f]{40}$/` and compared the two halves of the package with each
+ * other. `git` was never invoked. A final review replaced the candidate with
+ * `deadbeef…` — forty hex characters naming no object in this repository — in
+ * BOTH halves and the gate printed "evidence manifest in sync … candidate
+ * deadbeef" and exited 0, while the docblock at the top of this very file
+ * described that exact failure as the thing P1-28 was built to prevent.
+ *
+ * Well-formedness is not existence, and agreement between two documents is not
+ * evidence about a repository. Everything below computes against `git`.
+ * ------------------------------------------------------------------ */
+
+/**
+ * A reader of the repository. Returns stdout, or `null` when git refuses.
+ *
+ * `null` rather than a throw because "this object does not exist" is the ANSWER
+ * to several of the questions below, not an error in asking them. Injectable so
+ * every rule that consumes it can be driven over a synthetic repository by
+ * `selfCheck` — the whole reason the previous self-check discovered nothing was
+ * that it drove `judge` over flags a human had already set to `false`, so no
+ * case ever asked whether anything computed `false` from a tree.
+ */
+export function gitReader(root = ROOT) {
+  return (args) => {
+    try {
+      return execFileSync('git', args, {
+        cwd: root,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      });
+    } catch {
+      return null;
+    }
+  };
+}
+
+/** A fake `git`, keyed by the exact argument vector. Used only by `selfCheck`. */
+export function fakeGit(table) {
+  return (args) => {
+    const key = args.join(' ');
+    return key in table ? table[key] : null;
+  };
+}
+
+const lines = (out) =>
+  String(out ?? '')
+    .split('\n')
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+/**
+ * A path that changes no executable behaviour.
+ *
+ * The P1-27 spelling exactly: `docs/` or `*.md`. Kept identical so a reader who
+ * knows one rule knows both, and so a successor cannot be documentation-only
+ * under one gate and executable under the other.
+ */
+export const isDocumentationPath = (path) => path.startsWith('docs/') || path.endsWith('.md');
+
+/**
+ * What the repository says about the candidate, its tree and its successors.
+ *
+ * An ANALYSIS, not a verdict, for the same reason `reachability` is one.
+ *
+ * ## On the successor rule, and the one hole it cannot close
+ *
+ * A commit cannot name itself: writing its own id into a file it contains
+ * changes the id. So "the recorded successors are EXACTLY `git log
+ * candidate..HEAD`" is not a rule any repository can satisfy. The checkable
+ * rule, and the one applied here, is the one that loses nothing:
+ *
+ *   every commit after the candidate that touches an EXECUTABLE path must be
+ *   named by its full id; a commit that touches only `docs/` and `*.md` may go
+ *   unnamed, and the gate PRINTS the ones that did.
+ *
+ * That leaves exactly one kind of unnamed commit — the documentation-only
+ * commit that carries this record — and it is reported rather than hidden. A
+ * successor that adds a line of code and is not named fails.
+ */
+export function repositoryBinding(candidateFile, git) {
+  const candidate = candidateFile.candidate ?? {};
+  const sha = candidate.FINAL_CODE_SHA ?? '';
+  const tree = candidate.FINAL_CODE_TREE ?? '';
+  const wellFormed = /^[0-9a-f]{40}$/.test(sha);
+
+  const exists = wellFormed && git(['cat-file', '-e', `${sha}^{commit}`]) !== null;
+  const actualTree = exists ? (lines(git(['rev-parse', `${sha}^{tree}`]))[0] ?? null) : null;
+  const isAncestorOfHead = exists && git(['merge-base', '--is-ancestor', sha, 'HEAD']) !== null;
+
+  const productDiff = isAncestorOfHead
+    ? lines(git(['diff', '--name-only', `${sha}..HEAD`, '--', 'apps', 'supabase']))
+    : [];
+
+  const commits = isAncestorOfHead
+    ? lines(git(['log', '--format=%H %s', `${sha}..HEAD`])).map((line) => {
+        const at = line.indexOf(' ');
+        const id = at === -1 ? line : line.slice(0, at);
+        const touched = git(['diff', '--name-only', `${id}^`, id]);
+        return {
+          sha: id,
+          subject: at === -1 ? '' : line.slice(at + 1),
+          // A commit whose diff cannot be taken (a root commit, an unreadable
+          // parent) is NOT assumed harmless: `paths: null` means unknown, and
+          // unknown must be recorded like any other executable successor.
+          paths: touched === null ? null : lines(touched),
+        };
+      })
+    : [];
+
+  const recorded = (candidateFile.successors ?? []).map((s) => String(s?.commit ?? ''));
+  const inRange = new Set(commits.map((c) => c.sha));
+
+  return {
+    sha,
+    tree,
+    wellFormed,
+    exists,
+    actualTree,
+    treeMatches: Boolean(actualTree) && actualTree === tree,
+    isAncestorOfHead,
+    productDiff,
+    commits,
+    recorded,
+    malformedSuccessors: recorded.filter((id) => !/^[0-9a-f]{40}$/.test(id)),
+    fabricatedSuccessors: recorded.filter((id) => /^[0-9a-f]{40}$/.test(id) && !inRange.has(id)),
+    unrecordedExecutable: commits
+      .filter(
+        (c) =>
+          !recorded.includes(c.sha) &&
+          (c.paths === null || c.paths.some((p) => !isDocumentationPath(p)))
+      )
+      .map((c) => c.sha),
+    unrecordedDocumentation: commits
+      .filter(
+        (c) =>
+          !recorded.includes(c.sha) &&
+          c.paths !== null &&
+          c.paths.every((p) => isDocumentationPath(p))
+      )
+      .map((c) => c.sha),
+  };
+}
+
+/**
+ * The five figure fields the P1-27 run ledger actually writes.
+ *
+ * A LOCAL tier may carry these and no other number. `suites: 549` stood in this
+ * package for the whole of its first revision and came from nowhere a reader
+ * could reach — the ledger does not record suite counts, so there was nothing
+ * to check it against and nothing that would have noticed it change.
+ */
+export const LEDGER_FIGURES = Object.freeze(['tests', 'passed', 'failed', 'skipped', 'files']);
+
+export const PROVENANCE_LOCAL = 'LOCAL_AND_HOSTED_AGREE';
+export const PROVENANCE_HOSTED = 'HOSTED_ARTEFACT_ATTESTED';
+
+/** `planned` for a browser tier, `tests` for a collected one. */
+const declaredTotal = (tier) => (typeof tier.planned === 'number' ? tier.planned : tier.tests);
+
+/**
+ * Every tier figure, checked against the thing it names.
+ *
+ * Three separate obligations, because they are three separate kinds of claim:
+ *
+ *   ARITHMETIC — `passed + failed + skipped` must be the declared total, for
+ *   every tier regardless of provenance. This is what caught the review's second
+ *   mutation: `passed: 3, failed: 812` beside `tests: 2475` was accepted by the
+ *   first revision because nothing added the three numbers up.
+ *
+ *   LOCAL — the figures must equal the run ledger's, read out of git at the
+ *   commit the tier names. Pinned to a commit rather than read from the working
+ *   tree because the ledger MOVES: `check-p1-27-closing-values.mjs --record`
+ *   rewrites it at whatever head it was last taken at, so a check against the
+ *   working copy would go red on the next unrelated re-record and be relaxed.
+ *   The measurement's own head is then required to differ from the candidate by
+ *   no executable path — COMPUTED here, where the package used to assert it in
+ *   a sentence beginning "Verify with `git diff`".
+ *
+ *   HOSTED — cannot be computed from this repository at all, and the gate says
+ *   so in those words. What it can require is that the claim is FETCHABLE: a run
+ *   id, a job id, the head the job ran at, and the artefact's name. A hosted
+ *   figure without those is an assertion; with them it is an attestation a later
+ *   reader can go and disagree with.
+ */
+export function tierBinding(candidateFile, git) {
+  const candidateSha = candidateFile.candidate?.FINAL_CODE_SHA ?? '';
+  const tiers = candidateFile.tiers ?? {};
+  const arithmetic = [];
+  const localProblems = [];
+  const hostedProblems = [];
+  const verifiedLocally = [];
+  const attested = [];
+
+  for (const [name, tier] of Object.entries(tiers)) {
+    const total = declaredTotal(tier);
+    const parts = (tier.passed ?? 0) + (tier.failed ?? 0) + (tier.skipped ?? 0);
+    if (typeof total !== 'number') {
+      arithmetic.push(
+        `${name}: declares neither \`tests\` nor \`planned\`, so nothing adds up to it`
+      );
+    } else if (total !== parts) {
+      arithmetic.push(
+        `${name}: declares ${total} but passed ${tier.passed} + failed ${tier.failed} + skipped ${tier.skipped} = ${parts}`
+      );
+    }
+
+    if (tier.provenance !== PROVENANCE_LOCAL && tier.provenance !== PROVENANCE_HOSTED) {
+      hostedProblems.push(
+        `${name}: provenance \`${tier.provenance}\` is neither ${PROVENANCE_LOCAL} nor ${PROVENANCE_HOSTED}`
+      );
+      continue;
+    }
+
+    const attestation = tier.hostedAttestation ?? {};
+    const missing = [];
+    for (const field of ['runId', 'jobId']) {
+      if (!Number.isInteger(attestation[field]) || attestation[field] <= 0) {
+        missing.push(`hostedAttestation.${field} is not a run/job id`);
+      }
+    }
+    if (attestation.headSha !== candidateSha) {
+      missing.push(
+        `hostedAttestation.headSha \`${attestation.headSha}\` is not the candidate ${candidateSha}`
+      );
+    }
+    if (!String(attestation.artefact ?? '').trim())
+      missing.push('hostedAttestation names no artefact');
+    if (missing.length > 0) hostedProblems.push(...missing.map((m) => `${name}: ${m}`));
+    else attested.push(`${name} — run ${attestation.runId}, job ${attestation.jobId}`);
+
+    if (tier.provenance !== PROVENANCE_LOCAL) continue;
+
+    const ledger = tier.localLedger ?? {};
+    const extras = Object.keys(tier).filter(
+      (key) => typeof tier[key] === 'number' && !LEDGER_FIGURES.includes(key)
+    );
+    if (extras.length > 0) {
+      localProblems.push(
+        `${name}: records ${extras.join(', ')}, which ${ledger.path ?? 'the run ledger'} does not carry, so nothing can check them`
+      );
+    }
+    if (!/^[0-9a-f]{40}$/.test(String(ledger.atCommit ?? '')) || !ledger.path || !ledger.tier) {
+      localProblems.push(
+        `${name}: claims a local measurement and names no ledger (path, tier, atCommit)`
+      );
+      continue;
+    }
+
+    const raw = git(['show', `${ledger.atCommit}:${ledger.path}`]);
+    if (raw === null) {
+      localProblems.push(
+        `${name}: ${ledger.path} does not exist at ${ledger.atCommit}, so the figures are checked against nothing`
+      );
+      continue;
+    }
+    let entry;
+    try {
+      entry = JSON.parse(raw)?.tiers?.[ledger.tier];
+    } catch {
+      entry = undefined;
+    }
+    if (!entry) {
+      localProblems.push(
+        `${name}: ${ledger.path} at ${ledger.atCommit} has no \`${ledger.tier}\` tier`
+      );
+      continue;
+    }
+    for (const field of LEDGER_FIGURES) {
+      if (tier[field] !== entry[field]) {
+        localProblems.push(
+          `${name}.${field}: the package records ${tier[field]}; ${ledger.path} at ${ledger.atCommit} records ${entry[field]}`
+        );
+      }
+    }
+    if (entry.measuredAtCommit !== tier.measuredAtCommit) {
+      localProblems.push(
+        `${name}: the package says it was measured at ${tier.measuredAtCommit}; the ledger entry says ${entry.measuredAtCommit}`
+      );
+      continue;
+    }
+    const drift = lines(
+      git(['diff', '--name-only', `${tier.measuredAtCommit}..${candidateSha}`])
+    ).filter((path) => !isDocumentationPath(path));
+    if (drift.length > 0) {
+      localProblems.push(
+        `${name}: measured at ${tier.measuredAtCommit}, and ${drift.length} executable path(s) differ between that commit and the candidate — ${drift.slice(0, 5).join(', ')}`
+      );
+      continue;
+    }
+    verifiedLocally.push(`${name} — ${ledger.path}@${ledger.atCommit.slice(0, 8)}`);
+  }
+
+  return { arithmetic, localProblems, hostedProblems, verifiedLocally, attested };
+}
+
+/**
+ * The figures the package lists item by item, added up.
+ *
+ * `hostedCi` enumerates 21 checks and then states 21; `browserByProject`
+ * enumerates three projects and then states 141. Neither total was derived from
+ * the list beneath it, so either could have been typed wrong or edited later.
+ * These are the only figures in the package a reader can check without leaving
+ * the file, which is exactly why they should be checked here.
+ */
+export function packageArithmetic(candidateFile) {
+  const problems = [];
+  const sha = candidateFile.candidate?.FINAL_CODE_SHA ?? '';
+
+  const ci = candidateFile.hostedCi ?? {};
+  const checks = Array.isArray(ci.checks) ? ci.checks : [];
+  if (ci.headSha !== sha) {
+    problems.push(`hostedCi.headSha \`${ci.headSha}\` is not the candidate ${sha}`);
+  }
+  if (ci.checksTotal !== checks.length) {
+    problems.push(`hostedCi declares ${ci.checksTotal} checks and lists ${checks.length}`);
+  }
+  const succeeded = checks.filter((c) => c?.conclusion === 'success').length;
+  if (ci.checksSuccess !== succeeded) {
+    problems.push(`hostedCi declares ${ci.checksSuccess} successes and lists ${succeeded}`);
+  }
+  if (ci.checksTotal !== (ci.checksSuccess ?? 0) + (ci.checksFailure ?? 0)) {
+    problems.push(
+      `hostedCi: ${ci.checksSuccess} success + ${ci.checksFailure} failure is not ${ci.checksTotal}`
+    );
+  }
+
+  const browser = candidateFile.browserByProject ?? {};
+  const projects = Object.entries(browser.projects ?? {});
+  if (browser.headSha !== sha) {
+    problems.push(`browserByProject.headSha \`${browser.headSha}\` is not the candidate ${sha}`);
+  }
+  const planned = projects.reduce((sum, [, p]) => sum + (p?.planned ?? 0), 0);
+  if (browser.total !== planned) {
+    problems.push(`browserByProject declares ${browser.total} and its projects plan ${planned}`);
+  }
+  for (const [project, p] of projects) {
+    const parts = (p?.passed ?? 0) + (p?.failed ?? 0) + (p?.skipped ?? 0);
+    if (p?.planned !== parts) {
+      problems.push(`browserByProject.${project}: planned ${p?.planned}, accounted ${parts}`);
+    }
+  }
+  return problems;
+}
+
+/* ------------------------------------------------------------------ *
+ * Claims the verdict register makes about the tree
+ * ------------------------------------------------------------------ */
+
+/**
+ * The spec names the `authenticated-tablet` project matches, read off the
+ * config's own `testMatch` literal.
+ *
+ * Returns `null` when the project or its `testMatch` is not there — an unknown
+ * answer, never a convenient one. The alternation is read as TEXT rather than
+ * compiled: a `RegExp` built from a file this script reads is a regex-injection
+ * flow, and nothing here needs the matching power.
+ */
+export function tabletProjectSpecs(source) {
+  const at = String(source ?? '').indexOf("name: 'authenticated-tablet'");
+  if (at < 0) return null;
+  const match = /testMatch:\s*\/([^\n]*?)\/[gimsuy]*\s*,/.exec(String(source).slice(at));
+  if (!match) return null;
+  const group = /\(([^)]*)\)/.exec(match[1]);
+  const names = (group ? group[1] : match[1])
+    .split('|')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  return { literal: match[1], names };
+}
+
+/**
+ * What is TRUE at this candidate, computed, for the claims below to be measured
+ * against.
+ *
+ * Split into a pure half and a reading half so `selfCheck` can drive the pure
+ * half over a synthetic `playwright.config.ts` — including a NARROWED one, where
+ * the tablet sentence becomes true again and must be accepted.
+ */
+export function worldFrom(candidateFile, tablet) {
+  const sha = candidateFile.candidate?.FINAL_CODE_SHA ?? '';
+  const ci = candidateFile.hostedCi ?? {};
+  const browser = candidateFile.browserByProject ?? {};
+
+  return {
+    hostedCiRecorded: ci.headSha === sha && Number(ci.checksTotal) > 0,
+    tabletMatchesOnlyAdministration: tablet !== null && tablet.names.join('|') === 'administration',
+    tabletNames: tablet?.names ?? [],
+    tabletObservedThisPhase:
+      browser.headSha === sha &&
+      Number(browser.projects?.['authenticated-tablet']?.passed ?? 0) > 0 &&
+      String(browser.spec ?? '') === PHASE_SPEC,
+    phaseSpecObservedHosted:
+      browser.headSha === sha &&
+      Number(browser.total ?? 0) > 0 &&
+      String(browser.spec ?? '') === PHASE_SPEC,
+  };
+}
+
+export function claimWorld(root, candidateFile) {
+  const configPath = join(root, PLAYWRIGHT_CONFIG.split(posix.sep).join(sep));
+  return worldFrom(
+    candidateFile,
+    existsSync(configPath) ? tabletProjectSpecs(readFileSync(configPath, 'utf8')) : null
+  );
+}
+
+/**
+ * Sentences a document may not carry while the repository says otherwise.
+ *
+ * This is the F4 class made mechanical. Thirty verdict rows told the Owner, in
+ * the present tense, that the tablet project observes no P1-28 screen and that
+ * no hosted-CI result exists for this head. Both were false at the candidate,
+ * and the citation beside the first one landed on a docblock DESCRIBING the
+ * state it was describing — so the citation appeared to confirm the claim.
+ * Nothing parsed these strings, so nothing could disagree with them.
+ *
+ * Each entry is a pattern plus the condition under which the repository REFUTES
+ * it. A claim is a violation only while its refutation holds: narrow the tablet
+ * project again and the sentence becomes legal again, because it becomes true
+ * again. A rule that banned the words outright would be a spell-checker.
+ */
+export const ANCHORED_CLAIMS = Object.freeze([
+  {
+    id: 'no-hosted-ci',
+    pattern: /no hosted-CI result is recorded for this head/i,
+    refutedWhen: (world) => world.hostedCiRecorded,
+    says: (_world, candidateFile) =>
+      `the package records hosted CI at the candidate — run ${candidateFile.hostedCi?.runId}, ` +
+      `${candidateFile.hostedCi?.checksTotal} checks, ${candidateFile.hostedCi?.checksSuccess} success`,
+  },
+  {
+    id: 'tablet-administration-only',
+    pattern: /(?:runs|matches)\s+`administration\.spec\.ts`\s+only/i,
+    refutedWhen: (world) => !world.tabletMatchesOnlyAdministration,
+    says: (world) =>
+      `${PLAYWRIGHT_CONFIG} matches ${world.tabletNames.join(', ') || 'nothing this reader could resolve'} in the authenticated-tablet project`,
+  },
+  {
+    id: 'tablet-unobserved',
+    pattern: /no P1-28 screen is observed at a tablet viewport/i,
+    refutedWhen: (world) => world.tabletObservedThisPhase,
+    says: (_world, candidateFile) =>
+      `the package records ${candidateFile.browserByProject?.projects?.['authenticated-tablet']?.passed} passed P1-28 cases in authenticated-tablet at the candidate`,
+  },
+  {
+    id: 'phase-spec-never-hosted',
+    pattern: /no hosted run has yet covered the seventh spec/i,
+    refutedWhen: (world) => world.phaseSpecObservedHosted,
+    says: (_world, candidateFile) =>
+      `the package records run ${candidateFile.browserByProject?.runId}, job ${candidateFile.browserByProject?.jobId} covering ${PHASE_SPEC} at the candidate`,
+  },
+  {
+    id: 'seventh-spec-unobserved',
+    pattern: /THE SEVENTH SPEC HAS NOT BEEN OBSERVED ON A HOSTED RUNNER/i,
+    refutedWhen: (world) => world.phaseSpecObservedHosted,
+    says: (_world, candidateFile) =>
+      `run ${candidateFile.browserByProject?.runId} / job ${candidateFile.browserByProject?.jobId} executed ${candidateFile.browserByProject?.total} cases of that spec at the candidate`,
+  },
+]);
+
+/** A `path:line` or `path:from-to` citation, repository-relative. */
+export const CITATION_PATTERN = /`([A-Za-z0-9._/-]+\.[A-Za-z0-9]+):(\d+)(?:-(\d+))?`/g;
+
+const SOURCE_FILE = /\.(?:ts|tsx|js|jsx|mjs|cjs|mts)$/;
+
+/**
+ * A line that carries no behaviour. Deliberately crude and deliberately
+ * one-sided: it can call a line of code a comment (a `*` at the start of a
+ * template literal) and never the reverse, so the rule below can demand more
+ * evidence than a citation offers and never less.
+ */
+const isCommentLine = (line) => {
+  const text = line.trim();
+  return text === '' || text.startsWith('//') || text.startsWith('*') || text.startsWith('/*');
+};
+
+/**
+ * Every claim and every citation the verdict register makes, judged.
+ *
+ * `contradictions` — an anchored claim the repository refutes, anywhere in any
+ * cell of any row. Register-wide because the stale sentence had already escaped
+ * `PROTECTED_REPROOF` into a `FINDING_IDS` cell.
+ *
+ * `citations` — restricted to `PROTECTED_REPROOF`, which is where the reproof
+ * argument is made and where every citation is already repository-relative. The
+ * other fields cite by short path (`appointments/page.tsx:38`) and resolving
+ * those belongs to `validate:p1-28-traceability`, not here; a rule that reported
+ * 281 unresolvable citations on its first run would be turned off.
+ *
+ * A citation must resolve, must lie inside the file, and — in a source file —
+ * must include at least one line that is not a comment. That last clause is the
+ * one that would have caught this: `apps/web/playwright.config.ts:225-233` is
+ * nine consecutive comment lines, and the docblock they sit in describes the
+ * PAST state, so it reads as confirmation of the sentence it was cited for.
+ */
+export function verdictClaims(verdicts, world, candidateFile, readLines) {
+  const contradictions = [];
+  const citations = [];
+
+  for (const [id, row] of Object.entries(verdicts ?? {})) {
+    for (const [field, cell] of Object.entries(row ?? {})) {
+      if (typeof cell !== 'string') continue;
+
+      for (const claim of ANCHORED_CLAIMS) {
+        if (claim.pattern.test(cell) && claim.refutedWhen(world)) {
+          contradictions.push(`${id}.${field}: ${claim.id} — ${claim.says(world, candidateFile)}`);
+        }
+      }
+
+      if (field !== 'PROTECTED_REPROOF') continue;
+      for (const [, file, from, to] of cell.matchAll(CITATION_PATTERN)) {
+        const start = Number(from);
+        const end = to ? Number(to) : start;
+        const source = readLines(file);
+        if (source === null) {
+          citations.push(
+            `${id}: cites \`${file}:${from}\`, which is not a file in this repository`
+          );
+          continue;
+        }
+        if (start < 1 || end < start || end > source.length) {
+          citations.push(
+            `${id}: cites \`${file}:${from}${to ? `-${to}` : ''}\`, and the file holds ${source.length} lines`
+          );
+          continue;
+        }
+        if (SOURCE_FILE.test(file) && source.slice(start - 1, end).every(isCommentLine)) {
+          citations.push(
+            `${id}: cites \`${file}:${from}${to ? `-${to}` : ''}\`, which is comment only — a docblock can describe a state the code no longer has, so it confirms a claim by sitting near it`
+          );
+        }
+      }
+    }
+  }
+  return { contradictions, citations };
+}
+
+/** Reads a file's lines, or `null` when it is not there. */
+export function lineReader(root = ROOT) {
+  const cache = new Map();
+  return (relative) => {
+    if (!cache.has(relative)) {
+      const target = join(root, relative.split(posix.sep).join(sep));
+      cache.set(relative, existsSync(target) ? readFileSync(target, 'utf8').split(/\r?\n/) : null);
+    }
+    return cache.get(relative);
+  };
+}
+
+/**
+ * The CI baseline's own prose, judged by the same anchored claims.
+ *
+ * `.github/ci-baselines/unrun-test-tiers.json` is the file a reader of a green
+ * pull request consults to learn what that green does not cover, and its
+ * `hostedObservation` field is printed verbatim into every job summary. It said
+ * the P1-28 browser spec had never run on a hosted runner for as long as the run
+ * that ran it was recorded three files away.
+ */
+export function baselineClaimsFrom(text, world, candidateFile) {
+  const problems = [];
+  for (const claim of ANCHORED_CLAIMS) {
+    if (claim.pattern.test(text) && claim.refutedWhen(world)) {
+      problems.push(`${BASELINE_PATH}: ${claim.id} — ${claim.says(world, candidateFile)}`);
+    }
+  }
+  return problems;
+}
+
+/**
+ * The same anchored claims applied to the CI baseline and to the prose half of
+ * the package.
+ *
+ * Both are documents a reader consults for exactly the facts these claims are
+ * about — the baseline is printed verbatim into every job summary, and
+ * `closure-evidence.md` is what an acceptance session rests on — so a sentence
+ * the candidate refutes belongs in neither. A HISTORICAL statement is still
+ * allowed and always was: write it in the past tense and the pattern stops
+ * matching, which is the discipline, not a loophole.
+ */
+export function baselineClaims(root, world, candidateFile) {
+  const problems = [];
+  for (const relative of [BASELINE_PATH, PACKAGE_PATH]) {
+    const target = join(root, relative.split(posix.sep).join(sep));
+    if (!existsSync(target)) {
+      problems.push(`${relative} is not in the tree`);
+      continue;
+    }
+    for (const problem of baselineClaimsFrom(readFileSync(target, 'utf8'), world, candidateFile)) {
+      problems.push(problem.replace(BASELINE_PATH, relative));
+    }
+  }
+  return problems;
 }
 
 export function buildManifest(root = ROOT) {
@@ -601,9 +1204,121 @@ export function reportBlockers(coverage, write = toStderr) {
 }
 
 /**
+ * Report a candidate the REPOSITORY does not support. Returns true when sound.
+ *
+ * Everything here is the answer to a question put to `git`. The rule above it
+ * (`reportCandidate`) asks whether the package agrees with itself; this asks
+ * whether either half is describing this repository at all.
+ */
+export function reportRepository(binding, write = toStderr) {
+  let sound = true;
+  if (!binding.wellFormed) return sound; // reportCandidate owns the shape complaint.
+
+  if (!binding.exists) {
+    sound = false;
+    write(
+      `::error::the candidate ${binding.sha} names no commit in this repository. Forty hex characters is a SHAPE, not an object; the first revision of this gate checked only the shape and accepted \`deadbeef…\`.\n`
+    );
+    return sound; // Nothing below can be asked about a commit that is not there.
+  }
+  if (!binding.treeMatches) {
+    sound = false;
+    write(
+      `::error::${CANDIDATE_PATH} records FINAL_CODE_TREE ${binding.tree}; \`git rev-parse ${binding.sha.slice(0, 8)}^{tree}\` is ${binding.actualTree}. The package names a tree that commit does not have.\n`
+    );
+  }
+  if (!binding.isAncestorOfHead) {
+    sound = false;
+    write(
+      `::error::the candidate ${binding.sha.slice(0, 8)} is not an ancestor of HEAD. A frozen candidate the current branch does not contain describes a tree nobody is looking at.\n`
+    );
+    return sound;
+  }
+  if (binding.productDiff.length > 0) {
+    sound = false;
+    write(
+      `::error::${binding.productDiff.length} product file(s) differ between the candidate and HEAD. Every figure in this package describes the candidate, so the candidate must be re-frozen and re-measured. This is COMPUTED from \`git diff --name-only ${binding.sha.slice(0, 8)}..HEAD -- apps supabase\`; the package used to assert it in a sentence.\n`
+    );
+    for (const path of binding.productDiff.slice(0, 20)) write(`  product file changed: ${path}\n`);
+  }
+  if (binding.malformedSuccessors.length > 0) {
+    sound = false;
+    write('::error::a successor is recorded without a 40-character commit id.\n');
+    for (const id of binding.malformedSuccessors) write(`  not a commit id: \`${id}\`\n`);
+  }
+  if (binding.fabricatedSuccessors.length > 0) {
+    sound = false;
+    write(
+      `::error::${CANDIDATE_PATH} records successors that are not in \`git log ${binding.sha.slice(0, 8)}..HEAD\`.\n`
+    );
+    for (const id of binding.fabricatedSuccessors)
+      write(`  not a successor of the candidate: ${id}\n`);
+  }
+  if (binding.unrecordedExecutable.length > 0) {
+    sound = false;
+    write(
+      `::error::a commit after the candidate changes an executable path and is not named in \`successors\`. A commit cannot name itself, so a DOCUMENTATION-ONLY successor may go unnamed and is printed instead; an executable one may not.\n`
+    );
+    for (const id of binding.unrecordedExecutable) {
+      const commit = binding.commits.find((c) => c.sha === id);
+      write(`  unrecorded executable successor: ${id} — ${commit?.subject ?? ''}\n`);
+    }
+  }
+  return sound;
+}
+
+/** Report tier figures that are checked against nothing. Returns true when sound. */
+export function reportTiers(binding, arithmetic, write = toStderr) {
+  let sound = true;
+  const all = [...binding.arithmetic, ...arithmetic];
+  if (all.length > 0) {
+    sound = false;
+    write(
+      '::error::a figure in this package does not add up to the figures beside it. `passed + failed + skipped` is the declared total, and a list of items is its own count.\n'
+    );
+    for (const problem of all) write(`  ${problem}\n`);
+  }
+  if (binding.localProblems.length > 0) {
+    sound = false;
+    write(
+      '::error::a tier claims a LOCAL measurement that the run ledger it names does not support. A figure copied into this package and checked against nothing is the P1-27 failure this package was written to prevent.\n'
+    );
+    for (const problem of binding.localProblems) write(`  ${problem}\n`);
+  }
+  if (binding.hostedProblems.length > 0) {
+    sound = false;
+    write(
+      '::error::a HOSTED tier figure cannot be computed from this repository, so the gate requires it to be FETCHABLE instead: a run id, a job id, the head the job ran at, and the artefact. Without those it is an assertion, not an attestation.\n'
+    );
+    for (const problem of binding.hostedProblems) write(`  ${problem}\n`);
+  }
+  return sound;
+}
+
+/** Report a documented claim the repository refutes. Returns true when sound. */
+export function reportClaims(claims, baseline, write = toStderr) {
+  let sound = true;
+  if (claims.contradictions.length > 0 || baseline.length > 0) {
+    sound = false;
+    write(
+      '::error::a record states, in the present tense, something this candidate refutes. Nothing parsed these sentences before, which is how thirty verdict rows went on telling the Owner that evidence did not exist.\n'
+    );
+    for (const problem of [...claims.contradictions, ...baseline]) write(`  ${problem}\n`);
+  }
+  if (claims.citations.length > 0) {
+    sound = false;
+    write(
+      '::error::a PROTECTED_REPROOF cell cites a line that does not support it. A citation is what a reader checks INSTEAD of the claim, so a stale one is worse than none.\n'
+    );
+    for (const problem of claims.citations) write(`  ${problem}\n`);
+  }
+  return sound;
+}
+
+/**
  * The ONLY place a verdict is taken. Every rule fires here or nowhere.
  *
- * All five run before the aggregate is formed, so one failure does not hide
+ * All eight run before the aggregate is formed, so one failure does not hide
  * another — a reader fixing a deleted citation should not then discover the
  * digest function was also wrong.
  */
@@ -613,13 +1328,27 @@ export function judge(inputs, write = toStderr) {
   const reachableOk = reportReachability(inputs.reachability, write);
   const candidateOk = reportCandidate(inputs.candidate, write);
   const blockersOk = reportBlockers(inputs.blockers, write);
+  const repositoryOk = reportRepository(inputs.repository, write);
+  const tiersOk = reportTiers(inputs.tiers, inputs.packageArithmetic ?? [], write);
+  const claimsOk = reportClaims(inputs.claims, inputs.baselineClaims ?? [], write);
   return {
     shapeOk,
     bytesOk,
     reachableOk,
     candidateOk,
     blockersOk,
-    sound: shapeOk && bytesOk && reachableOk && candidateOk && blockersOk,
+    repositoryOk,
+    tiersOk,
+    claimsOk,
+    sound:
+      shapeOk &&
+      bytesOk &&
+      reachableOk &&
+      candidateOk &&
+      blockersOk &&
+      repositoryOk &&
+      tiersOk &&
+      claimsOk,
   };
 }
 
@@ -656,12 +1385,182 @@ const SOUND_BLOCKERS = {
   withoutBlocker: [],
 };
 
+/* ---------------- the synthetic repository ---------------- *
+ *
+ * WHY THIS EXISTS, AND WHY THE TABLE BELOW IT WAS NOT ENOUGH.
+ *
+ * Every case in `SELF_CHECK_CASES` hands `judge` an ANALYSIS somebody wrote by
+ * hand — `{ dangling: ['…'] }` — and asks whether `judge` complains. That proves
+ * the reporters read their arguments. It cannot prove that anything ever
+ * computes such an argument from a repository, and it did not: the candidate
+ * rule was driven fifteen ways over hand-set flags while `git` was never invoked
+ * in this file, so a candidate naming no object passed every one of them.
+ *
+ * The cases below hand the ANALYSERS a synthetic world — a `git` that answers
+ * from a table, a candidate document, a verdict register, a `playwright.config`
+ * — and let them derive their own verdict from it. A rule that stops computing
+ * `false` from a bad world now fails here, in the gate, on every invocation.
+ * ---------------------------------------------------------- */
+
+const W = Object.freeze({
+  candidate: 'a'.repeat(40),
+  tree: 'b'.repeat(40),
+  executableSuccessor: 'c'.repeat(40),
+  documentationSuccessor: 'd'.repeat(40),
+  ledgerCommit: 'e'.repeat(40),
+  measuredAt: '1'.repeat(40),
+  stranger: '9'.repeat(40),
+});
+
+const SYNTHETIC_LEDGER = `${JSON.stringify({
+  tiers: {
+    unit: {
+      tests: 10,
+      passed: 10,
+      failed: 0,
+      skipped: 0,
+      files: 2,
+      measuredAtCommit: W.measuredAt,
+    },
+  },
+})}\n`;
+
+const SYNTHETIC_GIT_TABLE = Object.freeze({
+  [`cat-file -e ${W.candidate}^{commit}`]: '',
+  [`rev-parse ${W.candidate}^{tree}`]: `${W.tree}\n`,
+  [`merge-base --is-ancestor ${W.candidate} HEAD`]: '',
+  [`diff --name-only ${W.candidate}..HEAD -- apps supabase`]: '',
+  [`log --format=%H %s ${W.candidate}..HEAD`]: `${W.documentationSuccessor} docs: re-record the ledger\n${W.executableSuccessor} feat: the packaging machinery\n`,
+  [`diff --name-only ${W.executableSuccessor}^ ${W.executableSuccessor}`]:
+    'scripts/ci/build-p1-28-evidence-manifest.mjs\n',
+  [`diff --name-only ${W.documentationSuccessor}^ ${W.documentationSuccessor}`]:
+    'docs/phase-1/phase-1-28/evidence/closure-candidate.json\n',
+  [`show ${W.ledgerCommit}:docs/ledger.json`]: SYNTHETIC_LEDGER,
+  [`diff --name-only ${W.measuredAt}..${W.candidate}`]:
+    'docs/phase-1/phase-1-27/evidence/evidence-manifest.json\n',
+});
+
+const syntheticGit = (over = {}) => {
+  const table = { ...SYNTHETIC_GIT_TABLE, ...over };
+  for (const key of Object.keys(over)) if (over[key] === undefined) delete table[key];
+  return fakeGit(table);
+};
+
+/** A candidate document the synthetic repository supports in every particular. */
+const syntheticCandidate = (over = {}) => ({
+  candidate: { FINAL_CODE_SHA: W.candidate, FINAL_CODE_TREE: W.tree },
+  successors: [{ commit: W.executableSuccessor, kind: 'evidence machinery' }],
+  tiers: {
+    unit: {
+      tests: 10,
+      passed: 10,
+      failed: 0,
+      skipped: 0,
+      files: 2,
+      measuredAtCommit: W.measuredAt,
+      provenance: PROVENANCE_LOCAL,
+      localLedger: { path: 'docs/ledger.json', tier: 'unit', atCommit: W.ledgerCommit },
+      hostedAttestation: {
+        runId: 11,
+        jobId: 22,
+        headSha: W.candidate,
+        artefact: 'totals-unit.json',
+      },
+    },
+    browser: {
+      planned: 6,
+      passed: 5,
+      failed: 0,
+      skipped: 1,
+      provenance: PROVENANCE_HOSTED,
+      hostedAttestation: { runId: 11, jobId: 33, headSha: W.candidate, artefact: 'report.json' },
+    },
+  },
+  hostedCi: {
+    runId: 11,
+    headSha: W.candidate,
+    checksTotal: 2,
+    checksSuccess: 2,
+    checksFailure: 0,
+    checks: [
+      { name: 'ci-gate', conclusion: 'success' },
+      { name: 'CodeQL', conclusion: 'success' },
+    ],
+  },
+  browserByProject: {
+    spec: PHASE_SPEC,
+    runId: 11,
+    jobId: 33,
+    headSha: W.candidate,
+    total: 6,
+    projects: { 'authenticated-tablet': { planned: 6, passed: 6, failed: 0, skipped: 0 } },
+  },
+  ...over,
+});
+
+/** The tablet project as it stands at this candidate, and as it stood before. */
+const WIDE_CONFIG = [
+  "    name: 'authenticated-tablet',",
+  '    testMatch: /authenticated[\\\\/](administration|appointments-and-receptions)\\.spec\\.ts/,',
+].join('\n');
+const NARROW_CONFIG = [
+  "    name: 'authenticated-tablet',",
+  '    testMatch: /authenticated[\\\\/](administration)\\.spec\\.ts/,',
+].join('\n');
+
+const SYNTHETIC_FILES = Object.freeze({
+  'apps/web/playwright.config.ts': [
+    '/**',
+    ' * The tablet viewport. The match below once named administration alone.',
+    ' */',
+    "name: 'authenticated-tablet',",
+  ],
+});
+const syntheticLines = (relative) => SYNTHETIC_FILES[relative] ?? null;
+
+/** Judge inputs derived from a synthetic world by the real analysers. */
+function worldInputs({
+  candidateFile = syntheticCandidate(),
+  git = syntheticGit(),
+  verdicts = {},
+  config = WIDE_CONFIG,
+  baseline = '',
+} = {}) {
+  const world = worldFrom(candidateFile, tabletProjectSpecs(config));
+  return {
+    manifest: SOUND_MANIFEST,
+    digestMismatches: [],
+    reachability: SOUND_REACHABILITY,
+    candidate: {
+      sha: candidateFile.candidate?.FINAL_CODE_SHA ?? '',
+      tree: candidateFile.candidate?.FINAL_CODE_TREE ?? '',
+      shaWellFormed: true,
+      treeWellFormed: true,
+      shaInProse: true,
+      treeInProse: true,
+    },
+    blockers: SOUND_BLOCKERS,
+    repository: repositoryBinding(candidateFile, git),
+    tiers: tierBinding(candidateFile, git),
+    packageArithmetic: packageArithmetic(candidateFile),
+    claims: verdictClaims(verdicts, world, candidateFile, syntheticLines),
+    baselineClaims: baselineClaimsFrom(baseline, world, candidateFile),
+  };
+}
+
+const SOUND_WORLD = worldInputs();
+
 const inputs = (over = {}) => ({
   manifest: SOUND_MANIFEST,
   digestMismatches: [],
   reachability: SOUND_REACHABILITY,
   candidate: SOUND_CANDIDATE,
   blockers: SOUND_BLOCKERS,
+  repository: SOUND_WORLD.repository,
+  tiers: SOUND_WORLD.tiers,
+  packageArithmetic: [],
+  claims: { contradictions: [], citations: [] },
+  baselineClaims: [],
   ...over,
 });
 
@@ -800,6 +1699,245 @@ export const SELF_CHECK_CASES = [
 ];
 
 /**
+ * Known-bad WORLDS, each judged by the analysers rather than by hand.
+ *
+ * Nothing here sets a flag. Each case perturbs a repository, a document or a
+ * config, and the case passes only if the code derives the failure itself.
+ */
+export const WORLD_CHECK_CASES = [
+  {
+    name: 'a candidate the repository contains, with every binding it claims',
+    inputs: SOUND_WORLD,
+    expects: { repositoryOk: true, tiersOk: true, claimsOk: true, sound: true },
+    explains: false,
+  },
+  {
+    name: 'a candidate SHA that names no object in the repository',
+    inputs: worldInputs({
+      git: syntheticGit({ [`cat-file -e ${W.candidate}^{commit}`]: undefined }),
+    }),
+    expects: { repositoryOk: false, sound: false },
+    explains: true,
+  },
+  {
+    name: 'a recorded tree the candidate commit does not have',
+    inputs: worldInputs({
+      git: syntheticGit({ [`rev-parse ${W.candidate}^{tree}`]: `${W.stranger}\n` }),
+    }),
+    expects: { repositoryOk: false, sound: false },
+    explains: true,
+  },
+  {
+    name: 'a candidate that is not an ancestor of HEAD',
+    inputs: worldInputs({
+      git: syntheticGit({ [`merge-base --is-ancestor ${W.candidate} HEAD`]: undefined }),
+    }),
+    expects: { repositoryOk: false, sound: false },
+    explains: true,
+  },
+  {
+    name: 'a successor that changed a product file',
+    inputs: worldInputs({
+      git: syntheticGit({
+        [`diff --name-only ${W.candidate}..HEAD -- apps supabase`]:
+          'apps/web/src/features/receptions/api.ts\n',
+      }),
+    }),
+    expects: { repositoryOk: false, sound: false },
+    explains: true,
+  },
+  {
+    name: 'an executable successor the record does not name',
+    inputs: worldInputs({ candidateFile: syntheticCandidate({ successors: [] }) }),
+    expects: { repositoryOk: false, sound: false },
+    explains: true,
+  },
+  {
+    name: 'a documentation-only successor the record does not name — allowed, and printed',
+    inputs: SOUND_WORLD,
+    expects: { repositoryOk: true },
+    explains: false,
+  },
+  {
+    name: 'a successor id that is in no commit range',
+    inputs: worldInputs({
+      candidateFile: syntheticCandidate({
+        successors: [{ commit: W.executableSuccessor }, { commit: W.stranger }],
+      }),
+    }),
+    expects: { repositoryOk: false, sound: false },
+    explains: true,
+  },
+  {
+    name: 'a local tier figure the run ledger does not carry',
+    inputs: (() => {
+      const doc = syntheticCandidate();
+      doc.tiers.unit = { ...doc.tiers.unit, passed: 3, failed: 7 };
+      return worldInputs({ candidateFile: doc });
+    })(),
+    expects: { tiersOk: false, sound: false },
+    explains: true,
+  },
+  {
+    name: 'a tier whose parts do not add up to its total',
+    inputs: (() => {
+      const doc = syntheticCandidate();
+      doc.tiers.unit = { ...doc.tiers.unit, passed: 3, failed: 812 };
+      return worldInputs({ candidateFile: doc });
+    })(),
+    expects: { tiersOk: false, sound: false },
+    explains: true,
+  },
+  {
+    name: 'a local tier carrying a figure nothing can check',
+    inputs: (() => {
+      const doc = syntheticCandidate();
+      doc.tiers.unit = { ...doc.tiers.unit, suites: 549 };
+      return worldInputs({ candidateFile: doc });
+    })(),
+    expects: { tiersOk: false, sound: false },
+    explains: true,
+  },
+  {
+    name: 'a local tier whose ledger is not in the repository at the commit it names',
+    inputs: worldInputs({
+      git: syntheticGit({ [`show ${W.ledgerCommit}:docs/ledger.json`]: undefined }),
+    }),
+    expects: { tiersOk: false, sound: false },
+    explains: true,
+  },
+  {
+    name: 'a local measurement taken at a head that differs from the candidate by executable paths',
+    inputs: worldInputs({
+      git: syntheticGit({
+        [`diff --name-only ${W.measuredAt}..${W.candidate}`]:
+          'apps/web/src/x.tsx\nscripts/ci/y.mjs\n',
+      }),
+    }),
+    expects: { tiersOk: false, sound: false },
+    explains: true,
+  },
+  {
+    name: 'a hosted tier attested with no job id',
+    inputs: (() => {
+      const doc = syntheticCandidate();
+      doc.tiers.browser = {
+        ...doc.tiers.browser,
+        hostedAttestation: { runId: 11, headSha: W.candidate, artefact: 'report.json' },
+      };
+      return worldInputs({ candidateFile: doc });
+    })(),
+    expects: { tiersOk: false, sound: false },
+    explains: true,
+  },
+  {
+    name: 'a hosted tier attested at a head that is not the candidate',
+    inputs: (() => {
+      const doc = syntheticCandidate();
+      doc.tiers.browser = {
+        ...doc.tiers.browser,
+        hostedAttestation: { runId: 11, jobId: 33, headSha: W.stranger, artefact: 'report.json' },
+      };
+      return worldInputs({ candidateFile: doc });
+    })(),
+    expects: { tiersOk: false, sound: false },
+    explains: true,
+  },
+  {
+    name: 'a check list whose declared total is not its length',
+    inputs: (() => {
+      const doc = syntheticCandidate();
+      doc.hostedCi = { ...doc.hostedCi, checksTotal: 21, checksSuccess: 21 };
+      return worldInputs({ candidateFile: doc });
+    })(),
+    expects: { tiersOk: false, sound: false },
+    explains: true,
+  },
+  {
+    name: 'a verdict cell denying a hosted-CI result the package records',
+    inputs: worldInputs({
+      verdicts: {
+        'FE-001': { PROTECTED_REPROOF: 'No hosted-CI result is recorded for this head.' },
+      },
+    }),
+    expects: { claimsOk: false, sound: false },
+    explains: true,
+  },
+  {
+    name: 'a verdict cell saying the tablet project matches administration only, while it does not',
+    inputs: worldInputs({
+      verdicts: {
+        'FE-002': { FINDING_IDS: 'authenticated-tablet matches `administration.spec.ts` only.' },
+      },
+    }),
+    expects: { claimsOk: false, sound: false },
+    explains: true,
+  },
+  {
+    name: 'the SAME sentence against a narrowed config — true, and therefore allowed',
+    inputs: worldInputs({
+      config: NARROW_CONFIG,
+      candidateFile: syntheticCandidate({
+        browserByProject: {
+          spec: PHASE_SPEC,
+          runId: 11,
+          jobId: 33,
+          headSha: W.candidate,
+          total: 6,
+          projects: { 'authenticated-en': { planned: 6, passed: 6, failed: 0, skipped: 0 } },
+        },
+      }),
+      verdicts: {
+        'FE-002': {
+          FINDING_IDS:
+            'authenticated-tablet matches `administration.spec.ts` only, so no P1-28 screen is observed at a tablet viewport.',
+        },
+      },
+    }),
+    expects: { claimsOk: true },
+    explains: false,
+  },
+  {
+    name: 'a PROTECTED_REPROOF citation that lands on comment lines only',
+    inputs: worldInputs({
+      verdicts: { 'FE-003': { PROTECTED_REPROOF: 'see `apps/web/playwright.config.ts:1-3`' } },
+    }),
+    expects: { claimsOk: false, sound: false },
+    explains: true,
+  },
+  {
+    name: 'a PROTECTED_REPROOF citation that runs off the end of the file',
+    inputs: worldInputs({
+      verdicts: { 'FE-004': { PROTECTED_REPROOF: 'see `apps/web/playwright.config.ts:900-910`' } },
+    }),
+    expects: { claimsOk: false, sound: false },
+    explains: true,
+  },
+  {
+    name: 'a PROTECTED_REPROOF citation naming a file that is not there',
+    inputs: worldInputs({
+      verdicts: { 'FE-005': { PROTECTED_REPROOF: 'see `apps/web/gone.ts:1`' } },
+    }),
+    expects: { claimsOk: false, sound: false },
+    explains: true,
+  },
+  {
+    name: 'a PROTECTED_REPROOF citation that reaches a line of code',
+    inputs: worldInputs({
+      verdicts: { 'FE-006': { PROTECTED_REPROOF: 'see `apps/web/playwright.config.ts:4`' } },
+    }),
+    expects: { claimsOk: true },
+    explains: false,
+  },
+  {
+    name: 'the CI baseline still saying the phase spec has never run hosted',
+    inputs: worldInputs({ baseline: 'no hosted run has yet covered the seventh spec' }),
+    expects: { claimsOk: false, sound: false },
+    explains: true,
+  },
+];
+
+/**
  * Drive `judge` over the known-bad table. Returns the ways it failed to fail.
  *
  * This is what makes every rule above load-bearing. It is not a test — it runs
@@ -807,7 +1945,9 @@ export const SELF_CHECK_CASES = [
  * that defeated the P1-27 validator was made to the gate and the gate is what
  * has to notice.
  */
-export function selfCheck(cases = SELF_CHECK_CASES) {
+export const ALL_SELF_CHECK_CASES = [...SELF_CHECK_CASES, ...WORLD_CHECK_CASES];
+
+export function selfCheck(cases = ALL_SELF_CHECK_CASES) {
   const failures = [];
   for (const kase of cases) {
     const said = [];
@@ -846,14 +1986,26 @@ function main(argv) {
 
   let manifest;
   let sound;
+  let repository;
+  let tiers;
   try {
     manifest = buildManifest(ROOT);
+    const git = gitReader(ROOT);
+    const candidateFile = readJson(ROOT, CANDIDATE_PATH);
+    const world = claimWorld(ROOT, candidateFile);
+    repository = repositoryBinding(candidateFile, git);
+    tiers = tierBinding(candidateFile, git);
     sound = judge({
       manifest,
       digestMismatches: verifyDigestBytes(ROOT, manifest),
       reachability: reachability(ROOT),
       candidate: candidateBinding(ROOT),
       blockers: blockerCoverage(ROOT),
+      repository,
+      tiers,
+      packageArithmetic: packageArithmetic(candidateFile),
+      claims: verdictClaims(readJson(ROOT, VERDICTS_PATH), world, candidateFile, lineReader(ROOT)),
+      baselineClaims: baselineClaims(ROOT, world, candidateFile),
     }).sound;
   } catch (error) {
     process.stderr.write(`::error::cannot read the P1-28 evidence tree: ${error.message}\n`);
@@ -881,11 +2033,34 @@ function main(argv) {
   if (committed === rendered) {
     if (!sound) return 1;
     if (asJson) process.stdout.write(`${JSON.stringify({ ok: true, ...manifest }, null, 2)}\n`);
-    else
+    else {
       process.stdout.write(
         `evidence manifest in sync — ${manifest.fileCount} documents, every one reachable, ` +
           `candidate ${manifest.candidate.FINAL_CODE_SHA?.slice(0, 8)}\n`
       );
+      // Say WHAT was verified against the repository and what was merely
+      // attested, in the same breath. The first revision of this gate printed
+      // "candidate deadbeef" over a commit that did not exist, so a summary that
+      // does not name its evidence is the thing being corrected here.
+      process.stdout.write(
+        `  repository-verified: the candidate exists, its tree is ${repository.actualTree?.slice(0, 8)}, ` +
+          `it is an ancestor of HEAD, apps/** and supabase/** are byte-identical to HEAD, and ` +
+          `${repository.recorded.length} executable successor(s) are named\n`
+      );
+      if (repository.unrecordedDocumentation.length > 0) {
+        process.stdout.write(
+          `  documentation-only successors, unnamed because a commit cannot name itself: ` +
+            `${repository.unrecordedDocumentation.map((s) => s.slice(0, 8)).join(', ')}\n`
+        );
+      }
+      process.stdout.write(
+        `  tier figures COMPUTED against the run ledger: ${tiers.verifiedLocally.join('; ') || 'none'}\n`
+      );
+      process.stdout.write(
+        `  tier figures ATTESTED, NOT COMPUTED — this repository cannot verify them, only cite them: ` +
+          `${tiers.attested.join('; ') || 'none'}\n`
+      );
+    }
     return 0;
   }
 
