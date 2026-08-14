@@ -25,18 +25,24 @@
     }
   },
 
+  "successorRule": "Every commit in `git log 38afa5c2..HEAD` that touches an EXECUTABLE path — anything outside `docs/` that is not `*.md` — must appear below by its full 40-character id, and `build-p1-28-evidence-manifest.mjs` computes the range and refuses an unnamed one. A DOCUMENTATION-ONLY successor may go unnamed, and the gate prints the ones that did: a commit cannot write its own id into a file it contains, so 'the list is exactly `git log`' is not a rule any repository can satisfy. That is the one hole, it is exactly one commit wide, and it is reported rather than hidden.",
+
   "successors": [
     {
+      "commit": "1b9811c8f489cd40b24dd1677add0f0dbfecfd7e",
       "kind": "evidence machinery and package",
       "what": "P1-28-QA-005 itself: the evidence manifest generator and its gate, the gate's test, the command-register entries, the hosted-job wiring, and the two documents of this package. It adds no file under apps/** or supabase/** and changes none, so the measured product is the candidate's.",
       "why": "The packaging of a candidate cannot be inside the candidate it packages; a manifest that digested itself would have no fixed point, and a package written before the run it reports could not name the run."
     },
     {
-      "kind": "docs-only re-record",
-      "what": "The P1-27 local run ledger re-recorded at the packaging commit, the closing values reconciled, and the P1-27 evidence package resealed.",
-      "why": "check-p1-27-closing-values.mjs expires a local run record when any executable path changes since it was taken. The machinery commit above is such a change, so the record is re-taken rather than left to describe a head it no longer describes."
+      "commit": "897209637c43af8db7633d7e8b91a3766b0933cc",
+      "kind": "evidence machinery and docs re-record",
+      "what": "The seal's own test corrected to check each local tier against the head it names rather than against the other tier's head, plus the P1-27 local run ledger re-recorded, its closing values reconciled and its evidence package resealed.",
+      "why": "check-p1-27-closing-values.mjs expires a local run record when any executable path changes since it was taken. The machinery commit above is such a change, so the record is re-taken rather than left to describe a head it no longer describes. This commit touches `tests/ci/p1-28-evidence-manifest.test.ts`, so it is executable and is named here rather than treated as documentation."
     }
   ],
+
+  "howTierFiguresAreChecked": "Three obligations, because there are three kinds of claim. ARITHMETIC: `passed + failed + skipped` must equal the declared total, for every tier — the review set `passed: 3, failed: 812` beside `tests: 2475` and the first revision of the gate accepted it, because nothing added the three numbers up. LOCAL: the figures must equal the P1-27 run ledger's, read out of git at the commit named in `localLedger.atCommit`, and a LOCAL tier may carry no figure the ledger does not write — `suites` stood here for a whole revision and came from nowhere a reader could reach. HOSTED: cannot be computed from this repository at all, and the gate says so in those words; what it requires instead is that the claim be FETCHABLE — a run id, a job id, the head the job ran at, and the artefact — so a later reader can retrieve the same object and disagree.",
 
   "tiers": {
     "unit": {
@@ -46,11 +52,21 @@
       "failed": 0,
       "skipped": 0,
       "files": 97,
-      "suites": 549,
       "measuredAtCommit": "cae8bdb0dee6352f6182105b36d1dd3b1d7bf896",
       "provenance": "LOCAL_AND_HOSTED_AGREE",
-      "hostedArtefact": "evidence-unit-coverage / test-totals-unit.json (job 94614563908)",
-      "note": "The local record in docs/phase-1/phase-1-27/evidence/local-run-ledger.json was taken at cae8bdb0, an ancestor of the candidate. Only two P1-27 evidence documents differ between the two commits and no executable path does, so that measurement describes the candidate exactly. Verify with `git diff --name-only cae8bdb0..38afa5c2`. A READER RUNNING THE SUITE TODAY WILL SEE A LARGER NUMBER, and that is not drift: the successors listed above add QA-005's own gate test, so the run ledger has since been re-recorded at the packaging head and reports a bigger unit tier. This figure is frozen at the candidate on purpose; the ledger tracks the head it was last taken at, and the two are not the same thing."
+      "localLedger": {
+        "path": "docs/phase-1/phase-1-27/evidence/local-run-ledger.json",
+        "tier": "unit",
+        "atCommit": "ab5e3c4932a770eb82105dcf81b1ce1085946391",
+        "howChecked": "`git show ab5e3c49:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD when this measurement was taken, not as it stands now. Pinned to a commit because the ledger MOVES: `check-p1-27-closing-values.mjs --record` rewrites it at whatever head it was last taken at, so a check against the working copy would go red on the next unrelated re-record and would then be relaxed rather than fixed."
+      },
+      "hostedAttestation": {
+        "runId": 31750364479,
+        "jobId": 94614563908,
+        "headSha": "38afa5c28e5b78d484a442cf6b8596fb2a5c34aa",
+        "artefact": "evidence-unit-coverage / test-totals-unit.json"
+      },
+      "note": "The local record was taken at cae8bdb0, an ancestor of the candidate. That no EXECUTABLE path differs between cae8bdb0 and the candidate is now COMPUTED by the gate rather than asserted here — the whole diff is two P1-27 evidence documents. A READER RUNNING THE SUITE TODAY WILL SEE A LARGER NUMBER, and that is not drift: the successors above add QA-005's own gate test, so the ledger has since been re-recorded at a later head and reports a bigger unit tier. This figure is frozen at the candidate on purpose, which is exactly why it is checked against a PINNED ledger rather than the current one. `suites: 549` used to sit here and has been removed: the ledger records no suite count, so nothing could ever have checked it."
     },
     "web": {
       "label": "web component and DOM",
@@ -59,11 +75,22 @@
       "failed": 0,
       "skipped": 0,
       "files": 98,
-      "suites": 651,
       "measuredAtCommit": "cae8bdb0dee6352f6182105b36d1dd3b1d7bf896",
       "provenance": "LOCAL_AND_HOSTED_AGREE",
+      "localLedger": {
+        "path": "docs/phase-1/phase-1-27/evidence/local-run-ledger.json",
+        "tier": "web",
+        "atCommit": "ab5e3c4932a770eb82105dcf81b1ce1085946391",
+        "howChecked": "Same mechanism as the unit tier: the ledger read out of git at the commit that holds this measurement."
+      },
+      "hostedAttestation": {
+        "runId": 31750364479,
+        "jobId": 94614564128,
+        "headSha": "38afa5c28e5b78d484a442cf6b8596fb2a5c34aa",
+        "artefact": "evidence-web-quality / test-totals-web.json"
+      },
       "hostedArtefact": "evidence-web-quality / test-totals-web.json (job 94614564128); independently re-run in the clean room as clean-room-web-totals.json (job 94614564119), which reports the same 2669/2669/0 over the same 98 files",
-      "note": "Same ancestor reasoning as the unit tier."
+      "note": "Same ancestor reasoning as the unit tier, and the same removal of an uncheckable `suites` figure."
     },
     "backend": {
       "label": "backend integration, against a real PostgreSQL",
@@ -75,8 +102,14 @@
       "suites": 566,
       "measuredAtCommit": "38afa5c28e5b78d484a442cf6b8596fb2a5c34aa",
       "provenance": "HOSTED_ARTEFACT_ATTESTED",
+      "hostedAttestation": {
+        "runId": 31750364479,
+        "jobId": 94614564122,
+        "headSha": "38afa5c28e5b78d484a442cf6b8596fb2a5c34aa",
+        "artefact": "evidence-integration-tests / test-totals-backend.json"
+      },
       "hostedArtefact": "evidence-integration-tests / test-totals-backend.json (job 94614564122)",
-      "note": "NOT measured locally, and the package does not pretend otherwise: this tier needs a running PostgreSQL with every migration applied, which this workstation does not host. It is measured hosted, at the candidate SHA, and that is the only measurement claimed."
+      "note": "NOT measured locally, and the package does not pretend otherwise: this tier needs a running PostgreSQL with every migration applied, which this workstation does not host. It is measured hosted, at the candidate SHA, and that is the only measurement claimed. ATTESTED, NOT COMPUTED — this repository cannot verify these numbers, only cite the artefact they came from."
     },
     "database": {
       "label": "database and RLS",
@@ -88,8 +121,14 @@
       "suites": 552,
       "measuredAtCommit": "38afa5c28e5b78d484a442cf6b8596fb2a5c34aa",
       "provenance": "HOSTED_ARTEFACT_ATTESTED",
+      "hostedAttestation": {
+        "runId": 31750364479,
+        "jobId": 94614564002,
+        "headSha": "38afa5c28e5b78d484a442cf6b8596fb2a5c34aa",
+        "artefact": "evidence-security-matrix / test-totals-database.json"
+      },
       "hostedArtefact": "evidence-security-matrix / test-totals-database.json (job 94614564002)",
-      "note": "NOT measured locally, for the same reason as the backend tier."
+      "note": "NOT measured locally, for the same reason as the backend tier. ATTESTED, NOT COMPUTED."
     },
     "browser": {
       "label": "authenticated browser, against the running application, the running API and the real database under RLS",
@@ -100,8 +139,14 @@
       "flaky": 0,
       "measuredAtCommit": "38afa5c28e5b78d484a442cf6b8596fb2a5c34aa",
       "provenance": "HOSTED_ARTEFACT_ATTESTED",
+      "hostedAttestation": {
+        "runId": 31750364479,
+        "jobId": 94614564003,
+        "headSha": "38afa5c28e5b78d484a442cf6b8596fb2a5c34aa",
+        "artefact": "evidence-authenticated-browser / apps/web/playwright-report.json"
+      },
       "hostedArtefact": "evidence-authenticated-browser / apps/web/playwright-report.json (run 31750364479, job 94614564003)",
-      "note": "The four skips are two cases each in authenticated/accessibility.spec.ts under authenticated-en and authenticated-ar. NO P1-28 case is skipped."
+      "note": "The four skips are two cases each in authenticated/accessibility.spec.ts under authenticated-en and authenticated-ar. NO P1-28 case is skipped. ATTESTED, NOT COMPUTED."
     }
   },
 

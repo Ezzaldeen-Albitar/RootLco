@@ -52,13 +52,13 @@ quoted as a current one.
 ### What freezing means, and what it does not
 
 Every figure in this package describes **that commit**. Commits landing after it
-are successors, and they are listed rather than glossed:
+are successors, and they are named by their full id rather than glossed:
 
-1. **The packaging commit** — P1-28-QA-005 itself: this document, the candidate
-   record, the digest manifest, the generator and gate
-   (`scripts/ci/build-p1-28-evidence-manifest.mjs`), its test
-   (`tests/ci/p1-28-evidence-manifest.test.ts`), the command-register entries and
-   the hosted-job wiring.
+1. **`1b9811c8f489cd40b24dd1677add0f0dbfecfd7e` — the packaging commit.**
+   P1-28-QA-005 itself: this document, the candidate record, the digest manifest,
+   the generator and gate (`scripts/ci/build-p1-28-evidence-manifest.mjs`), its
+   test (`tests/ci/p1-28-evidence-manifest.test.ts`), the command-register
+   entries and the hosted-job wiring.
 
    **This successor is NOT a documentation-only recording, and does not claim to
    be.** P1-27's rule is that `DOCUMENTATION_ONLY_RECORDING` may be claimed only
@@ -70,17 +70,36 @@ are successors, and they are listed rather than glossed:
    git diff --name-only 38afa5c28e5b78d484a442cf6b8596fb2a5c34aa..HEAD -- apps supabase
    ```
 
-   returns **nothing**. No file under `apps/**` or `supabase/**` differs between
-   the candidate and any successor, so the product these measurements describe is
-   the product at the candidate. A successor that changes either tree invalidates
-   this package, and the candidate must be re-frozen and re-measured.
+   returns **nothing** — and that is now **run by the gate**, not offered to the
+   reader as an exercise. No file under `apps/**` or `supabase/**` differs
+   between the candidate and HEAD, so the product these measurements describe is
+   the product at the candidate. A successor that changes either tree fails
+   `validate:p1-28-evidence`, and the candidate must be re-frozen and re-measured.
 
-2. **The docs-only re-record** — the P1-27 local run ledger re-taken at the
-   packaging commit, its closing values reconciled and its evidence package
-   resealed. `check-p1-27-closing-values.mjs` expires a local run record when any
+2. **`897209637c43af8db7633d7e8b91a3766b0933cc` — the seal's own correction and
+   the docs re-record.** The seal's test was checking each local tier against the
+   other tier's head rather than against its own; and the P1-27 local run ledger
+   was re-taken, its closing values reconciled and its evidence package resealed.
+   `check-p1-27-closing-values.mjs` expires a local run record when any
    executable path has changed since it was taken, and successor (1) is such a
-   change, so the record is re-taken rather than left describing a head it no
-   longer describes.
+   change. This commit touches `tests/ci/p1-28-evidence-manifest.test.ts`, so it
+   is **executable** and is named here rather than filed as documentation.
+
+3. **The repository-binding commit** — the seal bound to `git` (see _The seal is
+   now bound to the repository_ below). It is named by id in
+   `closure-candidate.json`, recorded by the documentation-only commit that
+   follows it.
+
+**The rule, and the single hole it cannot close.** Every commit in
+`git log 38afa5c2..HEAD` that touches an executable path — anything outside
+`docs/` that is not `*.md` — must appear in `closure-candidate.json` by its full
+40-character id, and the gate computes that range and refuses an unnamed one. A
+**documentation-only** successor may go unnamed, and the gate **prints** the ones
+that did. The reason is arithmetic, not policy: a commit cannot write its own id
+into a file it contains, so "the recorded list is exactly `git log`" is not a
+rule any repository can satisfy. The hole is therefore exactly one commit wide,
+it is always the commit carrying this record, and it is reported rather than
+hidden.
 
 Why the candidate is a _code_ candidate rather than a head: recording the result
 of a run changes the tree, so a literal exact-head rule is stale the moment it is
@@ -114,13 +133,34 @@ only measurement claimed for them — the figures above come from
 The **browser** tier likewise runs only hosted; the figures are read out of the
 run's own Playwright report, not inferred.
 
+### Where each figure is checked, and what "checked" means for each kind
+
+| Kind           | Tiers                      | What the gate does with the number                                                                                                                                                 |
+| -------------- | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **arithmetic** | all five                   | `passed + failed + skipped` must equal the declared total. The review set `passed: 3, failed: 812` beside `tests: 2475` and the first revision of the gate accepted it.            |
+| **computed**   | unit, web                  | the figures must equal the P1-27 run ledger's, read out of git at a **pinned commit**, and the tier may carry no figure the ledger does not write                                  |
+| **attested**   | backend, database, browser | cannot be computed from this repository at all; the gate requires a run id, a job id, the head the job ran at and the artefact name, and prints them as **attested, not computed** |
+
 ### What the local record covers
 
 `docs/phase-1/phase-1-27/evidence/local-run-ledger.json` records the unit and web
 tiers at `cae8bdb0dee6352f6182105b36d1dd3b1d7bf896`, an ancestor of the candidate.
-Only two P1-27 evidence documents differ between that commit and the candidate and
-**no executable path does**, so the local measurement describes the candidate
-exactly. Verify with `git diff --name-only cae8bdb0..38afa5c2`.
+The gate reads that ledger **as it stood at `ab5e3c4932a770eb82105dcf81b1ce1085946391`**,
+through `git show`, and requires `tests`, `passed`, `failed`, `skipped`, `files`
+and the measured head to match this package exactly. It is pinned to a commit
+because the ledger **moves**: `--record` rewrites it at whatever head it was last
+taken at, so a check against the working copy would go red on the next unrelated
+re-record and would then be relaxed rather than fixed.
+
+That **no executable path differs** between `cae8bdb0` and the candidate — the
+whole diff is two P1-27 evidence documents — is likewise **computed by the gate**
+now. The previous revision of this page asked the reader to "verify with
+`git diff --name-only cae8bdb0..38afa5c2`", which is an assertion with a suggested
+homework exercise attached.
+
+`suites: 549` and `suites: 651` used to stand beside these figures and have been
+**removed**. The run ledger records no suite count, so there was nothing those
+numbers could be checked against and nothing that would have noticed them change.
 
 **A reader running the unit suite today will count more than 2475, and that is
 not drift.** The successors that package this evidence add QA-005's own gate
@@ -392,7 +432,35 @@ as a change.
 document is able to re-run the generator and commit both. It removes **silent**
 revision, not revision.
 
-### The five rules, each of which can be made to fail
+### The seal is now bound to the repository
+
+**The first revision of this seal never invoked `git`.** `candidateBinding`
+tested `FINAL_CODE_SHA` with `/^[0-9a-f]{40}$/` and compared the two halves of
+the package with each other; the tier figures were copied into
+`closure-candidate.json` and verified against nothing. A final material review
+put that to the test and it failed in the two ways it was built to prevent:
+
+- replacing the candidate with `deadbeef…` — forty hex characters naming no
+  object in this repository — **in both halves** produced
+  `evidence manifest in sync … candidate deadbeef`, exit 0, and 37/37 green tests;
+- setting `tiers.unit.passed = 3, failed = 812` while leaving
+  `provenance: "LOCAL_AND_HOSTED_AGREE"` also passed.
+
+Well-formedness is not existence, and two documents agreeing is not evidence
+about a repository. What the gate now computes, on every invocation:
+
+| Binding                  | How it is established                                                                                                                     |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| the candidate **exists** | `git cat-file -e 38afa5c2^{commit}`                                                                                                       |
+| its **tree**             | `git rev-parse 38afa5c2^{tree}` must equal the recorded `bbae6c90dd51059be7ea949e0b5bca36cf17402d`                                        |
+| its **ancestry**         | `git merge-base --is-ancestor 38afa5c2 HEAD`                                                                                              |
+| **product identity**     | `git diff --name-only 38afa5c2..HEAD -- apps supabase` must be empty — computed, where the package used to assert it in a sentence        |
+| **successors**           | `git log 38afa5c2..HEAD`, every executable commit of which must be named by id; documentation-only ones are printed                       |
+| **local tier figures**   | `git show ab5e3c49:…/local-run-ledger.json`, matched field by field, plus no executable drift between the measured head and the candidate |
+| **hosted tier figures**  | not computable here, so required to be fetchable: run id, job id, head sha, artefact — and printed as **attested, not computed**          |
+| **documented claims**    | anchored sentences measured against the tree, and `PROTECTED_REPROOF` citations resolved into the files they name                         |
+
+### The eight rules, each of which can be made to fail
 
 Every rule fires in exactly one function, `judge`, and the gate drives that
 function over a table of **known-bad inputs on every invocation, before it looks
@@ -401,18 +469,41 @@ P1-27 sibling three ways and it exited 0 each time, because no test named the
 reporters and the real tree was sound — so a rule that always returns true and a
 rule that works produced identical output.
 
-| Rule             | What it refuses                                                                                                                                                                             |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| digest **shape** | a digest that is not 64 lower-case hex, or repeats across different files                                                                                                                   |
-| digest **bytes** | a digest that is not the hash of the file it names — checked by an oracle that **does not call** `digest()`, because verifying a hash with the function that produced it is `f(x) === f(x)` |
-| **reachability** | a sealed document no index cites; a cited document that was deleted; an exemption that outlived its file                                                                                    |
-| **candidate**    | a `FINAL_CODE_SHA` that names no commit, or a candidate the prose half of this package does not state                                                                                       |
-| **blockers**     | an unclosed task this document fails to name, one recorded without a blocker or without an owner, or a closed task still presented as blocked                                               |
+| Rule             | What it refuses                                                                                                                                                                                                                       |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| digest **shape** | a digest that is not 64 lower-case hex, or repeats across different files                                                                                                                                                             |
+| digest **bytes** | a digest that is not the hash of the file it names — checked by an oracle that **does not call** `digest()`, because verifying a hash with the function that produced it is `f(x) === f(x)`                                           |
+| **reachability** | a sealed document no index cites; a cited document that was deleted; an exemption that outlived its file                                                                                                                              |
+| **candidate**    | a `FINAL_CODE_SHA` that is not 40 hex characters, or a candidate the prose half of this package does not state                                                                                                                        |
+| **blockers**     | an unclosed task this document fails to name, one recorded without a blocker or without an owner, or a closed task still presented as blocked                                                                                         |
+| **repository**   | a candidate that names no commit, a recorded tree that commit does not have, a candidate that is not an ancestor of HEAD, a product file changed after the freeze, an unnamed executable successor, a successor id in no commit range |
+| **tiers**        | figures that do not add up, a local figure the run ledger contradicts, a local figure the ledger cannot carry at all, a hosted figure with no run id, job id, head or artefact                                                        |
+| **claims**       | a sentence the candidate refutes — in a verdict cell, in the CI baseline or on this page — and a `PROTECTED_REPROOF` citation that is missing, out of range, or comment-only                                                          |
 
-`tests/ci/p1-28-evidence-manifest.test.ts` drives each of these against fixtures
-in a temporary directory, so the repository is never mutated, and asserts that
-the intact fixture is sound **before** each mutation — otherwise the proof would
-be two empty sets agreeing.
+#### The self-check was itself the defect, and is rebuilt
+
+The previous self-check handed `judge` an analysis a human had already written
+by hand — `{ dangling: ['…'] }` — and asked whether `judge` complained. Fifteen
+cases drove the candidate rule that way, and not one of them could have noticed
+that **nothing in the file ever computed a candidate verdict from a repository**.
+
+`WORLD_CHECK_CASES` now hands the **analysers** a synthetic world — a `git` that
+answers from a table, a candidate document, a verdict register, a
+`playwright.config.ts` — and each case passes only if the code derives the
+failure itself. It includes the case that must be **accepted**: the same tablet
+sentence, against a narrowed config, is true and is allowed.
+
+#### The four falsifications, run against this tree
+
+1. a candidate SHA naming no object → `the candidate … names no commit in this repository`;
+2. a recorded tree the commit does not have → `git rev-parse … is <other>`;
+3. a successor touching an executable path and not named → `unrecorded executable successor: <sha>`;
+4. a fabricated tier figure → `the package records 3; …local-run-ledger.json at ab5e3c49 records 2475`.
+
+`tests/ci/p1-28-evidence-manifest.test.ts` drives each rule against fixtures in a
+temporary directory, so the repository is never mutated, and asserts that the
+intact fixture is sound **before** each mutation — otherwise the proof would be
+two empty sets agreeing.
 
 ---
 

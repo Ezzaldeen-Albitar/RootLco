@@ -31,6 +31,7 @@ import {
 import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
+import { execFileSync } from 'node:child_process';
 import {
   assertNotSymlink,
   buildManifest,
@@ -43,7 +44,23 @@ import {
   judge,
   selfCheck,
   verifyDigestBytes,
+  gitReader,
+  fakeGit,
+  repositoryBinding,
+  tierBinding,
+  packageArithmetic,
+  tabletProjectSpecs,
+  worldFrom,
+  claimWorld,
+  verdictClaims,
+  lineReader,
+  baselineClaims,
+  isDocumentationPath,
+  LEDGER_FIGURES,
+  ANCHORED_CLAIMS,
   SELF_CHECK_CASES,
+  WORLD_CHECK_CASES,
+  ALL_SELF_CHECK_CASES,
   INDEX_SET,
   INTENTIONALLY_UNREFERENCED,
   PHASE_DIR,
@@ -51,6 +68,9 @@ import {
   CANDIDATE_PATH,
   PACKAGE_PATH,
   VERDICTS_PATH,
+  BASELINE_PATH,
+  PLAYWRIGHT_CONFIG,
+  PHASE_SPEC,
 } from '../../scripts/ci/build-p1-28-evidence-manifest.mjs';
 
 const ROOT = join(__dirname, '../..');
@@ -518,20 +538,283 @@ describe('P1-28-QA-005 — the candidate is bound, and both halves agree about i
     /*
      * The backend and database tiers need a running PostgreSQL. Claiming a local
      * figure for either would be the exact dishonesty this package exists to
-     * prevent, so their provenance must say hosted and nothing else.
+     * prevent, so their provenance must say hosted and nothing else — and a
+     * hosted figure must be FETCHABLE, because this repository cannot compute it.
      */
     const candidate = JSON.parse(readRepo(CANDIDATE_PATH)) as {
-      tiers: Record<string, { provenance: string; hostedArtefact?: string }>;
+      candidate: { FINAL_CODE_SHA: string };
+      tiers: Record<
+        string,
+        {
+          provenance: string;
+          hostedAttestation?: { runId: number; jobId: number; headSha: string; artefact: string };
+        }
+      >;
     };
     for (const tier of ['backend', 'database', 'browser']) {
       expect(candidate.tiers[tier]?.provenance, `${tier} overclaims its provenance`).toBe(
         'HOSTED_ARTEFACT_ATTESTED'
       );
-      expect(
-        candidate.tiers[tier]?.hostedArtefact ?? '',
-        `${tier} is hosted-attested and names no artefact`
-      ).toMatch(/job \d{6,}|run \d{6,}/);
     }
+    for (const [tier, row] of Object.entries(candidate.tiers)) {
+      const attestation = row.hostedAttestation;
+      expect(attestation, `${tier} carries no hosted attestation`).toBeDefined();
+      expect(Number.isInteger(attestation?.runId), `${tier} runId`).toBe(true);
+      expect(Number.isInteger(attestation?.jobId), `${tier} jobId`).toBe(true);
+      expect(attestation?.headSha, `${tier} is attested at a head that is not the candidate`).toBe(
+        candidate.candidate.FINAL_CODE_SHA
+      );
+      expect(
+        String(attestation?.artefact ?? '').length,
+        `${tier} names no artefact`
+      ).toBeGreaterThan(0);
+    }
+  });
+
+  it('carries no LOCAL figure the run ledger cannot carry', () => {
+    /*
+     * `suites: 549` stood in this package for a whole revision. The P1-27 run
+     * ledger records no suite count, so there was nothing to check it against
+     * and nothing that would have noticed it change — a number in an evidence
+     * package that no artefact carries is a number nobody measured.
+     */
+    const candidate = JSON.parse(readRepo(CANDIDATE_PATH)) as {
+      tiers: Record<string, Record<string, unknown>>;
+    };
+    for (const [name, tier] of Object.entries(candidate.tiers)) {
+      if (tier.provenance !== 'LOCAL_AND_HOSTED_AGREE') continue;
+      const numeric = Object.keys(tier).filter((key) => typeof tier[key] === 'number');
+      expect(numeric.sort(), `${name} carries a figure the ledger does not write`).toEqual(
+        [...LEDGER_FIGURES].sort()
+      );
+    }
+  });
+});
+
+describe('P1-28-QA-005 — the seal is bound to the REPOSITORY, not to its own prose', () => {
+  /*
+   * The finding this whole describe exists for. The first revision of the
+   * generator tested FINAL_CODE_SHA with /^[0-9a-f]{40}$/ and compared the two
+   * halves of the package with each other; `git` appeared nowhere in the file.
+   * Replacing the candidate with `deadbeef…` in BOTH halves produced
+   * "evidence manifest in sync … candidate deadbeef", exit 0, 37/37 green.
+   */
+  const candidateFile = JSON.parse(readRepo(CANDIDATE_PATH)) as Record<string, never>;
+  const git = gitReader(ROOT);
+  const binding = repositoryBinding(candidateFile, git) as unknown as {
+    sha: string;
+    tree: string;
+    exists: boolean;
+    actualTree: string;
+    treeMatches: boolean;
+    isAncestorOfHead: boolean;
+    productDiff: string[];
+    commits: { sha: string; paths: string[] | null }[];
+    recorded: string[];
+    fabricatedSuccessors: string[];
+    unrecordedExecutable: string[];
+    unrecordedDocumentation: string[];
+  };
+
+  it('names a commit this repository actually contains, and the tree that commit has', () => {
+    expect(binding.exists, `${binding.sha} names no object here`).toBe(true);
+    // The oracle: `git` asked directly, not through the generator's binding.
+    const actual = execFileSync('git', ['rev-parse', `${binding.sha}^{tree}`], {
+      cwd: ROOT,
+      encoding: 'utf8',
+    }).trim();
+    expect(binding.tree, 'the package records a tree the candidate does not have').toBe(actual);
+    expect(binding.treeMatches).toBe(true);
+    expect(binding.isAncestorOfHead, 'the candidate is not in this branch').toBe(true);
+  });
+
+  it('computes the product-identity claim instead of asserting it', () => {
+    const direct = execFileSync(
+      'git',
+      ['diff', '--name-only', `${binding.sha}..HEAD`, '--', 'apps', 'supabase'],
+      { cwd: ROOT, encoding: 'utf8' }
+    ).trim();
+    expect(direct, 'a product file changed after the freeze').toBe('');
+    expect(binding.productDiff).toEqual([]);
+  });
+
+  it('names every executable successor, and only documentation-only ones go unnamed', () => {
+    expect(binding.fabricatedSuccessors, 'a recorded successor is in no commit range').toEqual([]);
+    expect(binding.unrecordedExecutable, 'an executable successor is not named').toEqual([]);
+    expect(
+      binding.commits.length,
+      'the successor range is empty, so this measures nothing'
+    ).toBeGreaterThan(0);
+    for (const sha of binding.unrecordedDocumentation) {
+      const commit = binding.commits.find((c) => c.sha === sha);
+      expect(commit?.paths ?? [], `${sha} is unnamed and its paths are unknown`).not.toEqual([]);
+      for (const path of commit?.paths ?? []) {
+        expect(isDocumentationPath(path), `${sha} is unnamed and changed ${path}`).toBe(true);
+      }
+    }
+  });
+
+  it('fails on a SHA that names no object — the reproduced defect', () => {
+    const absent = fakeGit({}) as (args: string[]) => string | null;
+    const bad = repositoryBinding(candidateFile, absent) as unknown as { exists: boolean };
+    expect(bad.exists, 'a candidate naming no object was accepted').toBe(false);
+    expect(judge(soundInputsOver(ROOT, { repository: bad }), () => {}).repositoryOk).toBe(false);
+  });
+
+  it('fails on a tree the commit does not have', () => {
+    const wrong = repositoryBinding(
+      {
+        ...(candidateFile as object),
+        candidate: { FINAL_CODE_SHA: binding.sha, FINAL_CODE_TREE: 'f'.repeat(40) },
+      } as never,
+      git
+    ) as unknown as { treeMatches: boolean };
+    expect(wrong.treeMatches).toBe(false);
+    expect(judge(soundInputsOver(ROOT, { repository: wrong }), () => {}).repositoryOk).toBe(false);
+  });
+
+  it('fails on an executable successor that is not named', () => {
+    const unnamed = repositoryBinding(
+      { ...(candidateFile as object), successors: [] } as never,
+      git
+    ) as unknown as {
+      unrecordedExecutable: string[];
+    };
+    expect(
+      unnamed.unrecordedExecutable.length,
+      'no executable successor exists to hide'
+    ).toBeGreaterThan(0);
+    expect(judge(soundInputsOver(ROOT, { repository: unnamed }), () => {}).repositoryOk).toBe(
+      false
+    );
+  });
+
+  it('fails on a tier figure the run ledger contradicts', () => {
+    const doctored = JSON.parse(readRepo(CANDIDATE_PATH)) as {
+      tiers: { unit: { passed: number; failed: number } };
+    };
+    doctored.tiers.unit.passed = 3;
+    doctored.tiers.unit.failed = 2472;
+    const bad = tierBinding(doctored as never, git) as unknown as { localProblems: string[] };
+    expect(bad.localProblems.join(' '), 'a fabricated figure passed the ledger check').toContain(
+      'local-run-ledger.json'
+    );
+    expect(judge(soundInputsOver(ROOT, { tiers: bad }), () => {}).tiersOk).toBe(false);
+    // And the sound tree is not already failing, or the case above proves nothing.
+    expect(
+      (tierBinding(candidateFile, git) as unknown as { localProblems: string[] }).localProblems
+    ).toEqual([]);
+  });
+
+  it('adds the package up: the check list is its own count, the projects their own total', () => {
+    expect(packageArithmetic(candidateFile), 'a listed total disagrees with its list').toEqual([]);
+    const doctored = JSON.parse(readRepo(CANDIDATE_PATH)) as { hostedCi: { checksTotal: number } };
+    doctored.hostedCi.checksTotal = 99;
+    expect((packageArithmetic(doctored as never) as string[]).join(' ')).toContain('99');
+  });
+});
+
+describe('P1-28-QA-005 — a record may not state what the candidate refutes', () => {
+  const candidateFile = JSON.parse(readRepo(CANDIDATE_PATH)) as Record<string, never>;
+  const world = claimWorld(ROOT, candidateFile) as unknown as {
+    hostedCiRecorded: boolean;
+    tabletMatchesOnlyAdministration: boolean;
+    tabletNames: string[];
+    tabletObservedThisPhase: boolean;
+    phaseSpecObservedHosted: boolean;
+  };
+
+  it('reads the tablet project straight out of the config, not out of a sentence about it', () => {
+    const specs = tabletProjectSpecs(readRepo(PLAYWRIGHT_CONFIG)) as { names: string[] } | null;
+    expect(specs, `${PLAYWRIGHT_CONFIG} has no authenticated-tablet project`).not.toBeNull();
+    expect(specs?.names, 'the tablet project no longer names the P1-28 spec').toContain(
+      'appointments-and-receptions'
+    );
+    expect(world.tabletMatchesOnlyAdministration).toBe(false);
+    expect(world.hostedCiRecorded).toBe(true);
+    expect(world.tabletObservedThisPhase).toBe(true);
+    expect(world.phaseSpecObservedHosted).toBe(true);
+  });
+
+  it('reports a narrowed config honestly, so the rule is conditional and not a word ban', () => {
+    const narrowed = tabletProjectSpecs(
+      "name: 'authenticated-tablet',\n testMatch: /authenticated[\\\\/](administration)\\.spec\\.ts/,\n"
+    );
+    const narrowWorld = worldFrom(candidateFile, narrowed) as unknown as {
+      tabletMatchesOnlyAdministration: boolean;
+    };
+    expect(narrowWorld.tabletMatchesOnlyAdministration).toBe(true);
+  });
+
+  it('carries no verdict cell the repository refutes, and no unresolvable reproof citation', () => {
+    const verdicts = JSON.parse(readRepo(VERDICTS_PATH)) as Record<string, never>;
+    const claims = verdictClaims(verdicts, world as never, candidateFile, lineReader(ROOT)) as {
+      contradictions: string[];
+      citations: string[];
+    };
+    expect(claims.contradictions, 'a verdict cell states what this candidate refutes').toEqual([]);
+    expect(claims.citations, 'a PROTECTED_REPROOF citation does not resolve').toEqual([]);
+    expect(Object.keys(verdicts).length, 'nothing was scanned').toBe(35);
+  });
+
+  it('fails when a cell denies the hosted-CI result the package records', () => {
+    const claims = verdictClaims(
+      {
+        'FE-001': { PROTECTED_REPROOF: 'No hosted-CI result is recorded for this head.' },
+      } as never,
+      world as never,
+      candidateFile,
+      lineReader(ROOT)
+    ) as { contradictions: string[] };
+    expect(claims.contradictions.length).toBe(1);
+    expect(claims.contradictions[0]).toContain('no-hosted-ci');
+  });
+
+  it('fails a citation that lands only on comment lines — the stale one, exactly', () => {
+    /*
+     * `apps/web/playwright.config.ts:225-233` is nine consecutive comment lines
+     * of the tablet project's docblock, and that docblock DESCRIBES THE PAST.
+     * Thirty rows cited it for a claim the code two lines further down refutes,
+     * so the citation confirmed the sentence by sitting near it.
+     */
+    const claims = verdictClaims(
+      { 'FE-001': { PROTECTED_REPROOF: `see \`${PLAYWRIGHT_CONFIG}:225-233\`` } } as never,
+      world as never,
+      candidateFile,
+      lineReader(ROOT)
+    ) as { citations: string[] };
+    expect(claims.citations.length).toBe(1);
+    expect(claims.citations[0]).toContain('comment only');
+
+    // And the line the corrected cells cite is code, so the rule is not simply
+    // rejecting every citation into this file.
+    const good = verdictClaims(
+      { 'FE-001': { PROTECTED_REPROOF: `see \`${PLAYWRIGHT_CONFIG}:255\`` } } as never,
+      world as never,
+      candidateFile,
+      lineReader(ROOT)
+    ) as { citations: string[] };
+    expect(good.citations).toEqual([]);
+  });
+
+  it('holds the CI baseline to the same sentences it holds the register to', () => {
+    expect(
+      baselineClaims(ROOT, world as never, candidateFile),
+      `${BASELINE_PATH} is stale`
+    ).toEqual([]);
+    const baseline = readRepo(BASELINE_PATH);
+    expect(baseline, 'the closing observation is not recorded').toContain('31750364479');
+    expect(baseline).toContain('94614564003');
+    expect(baseline, 'the P1-28 spec is not named in the closing observation').toContain(
+      PHASE_SPEC
+    );
+    expect(
+      /no hosted run has yet covered the seventh spec/i.test(baseline),
+      'the retired sentence is still there'
+    ).toBe(false);
+    // The claim table is what makes that retirement enforceable rather than a
+    // one-off edit: every anchored claim must be refutable by the world.
+    expect(ANCHORED_CLAIMS.length).toBeGreaterThan(3);
   });
 });
 
@@ -663,12 +946,23 @@ describe('P1-28-QA-005 — every task that did not close is named, derived not l
  */
 function soundInputsOver(root: string, over: Record<string, unknown>): unknown {
   const built = buildManifest(root);
+  // The repository, tier and claim analyses belong to the REAL tree, not to a
+  // temporary fixture, so the fixture cases borrow the sound ones from the
+  // world table. A fixture case that left them undefined would be judging five
+  // rules while three threw.
+  const [firstWorld] = WORLD_CHECK_CASES as { inputs: Record<string, unknown> }[];
+  const world = firstWorld?.inputs ?? {};
   return {
     manifest: built,
     digestMismatches: verifyDigestBytes(root, built),
     reachability: reachability(root),
     candidate: candidateBinding(root),
     blockers: blockerCoverage(root),
+    repository: world.repository,
+    tiers: world.tiers,
+    packageArithmetic: [],
+    claims: { contradictions: [], citations: [] },
+    baselineClaims: [],
     ...over,
   };
 }
@@ -691,6 +985,9 @@ describe('P1-28-QA-005 — the validator can be made to fail, so its passing mea
     'reachableOk',
     'candidateOk',
     'blockersOk',
+    'repositoryOk',
+    'tiersOk',
+    'claimsOk',
     'sound',
   ] as const;
   interface KnownBad {
@@ -699,7 +996,7 @@ describe('P1-28-QA-005 — the validator can be made to fail, so its passing mea
     readonly expects: Record<string, boolean>;
     readonly explains: boolean;
   }
-  const cases = SELF_CHECK_CASES as unknown as KnownBad[];
+  const cases = ALL_SELF_CHECK_CASES as unknown as KnownBad[];
   const verdictOf = (inputs: unknown): Record<string, boolean> =>
     judge(inputs, () => {}) as unknown as Record<string, boolean>;
 
@@ -722,8 +1019,39 @@ describe('P1-28-QA-005 — the validator can be made to fail, so its passing mea
     expect(
       cases.filter((k) => k.expects.sound === true).length,
       'no sound input is exercised, so an always-false judge would pass'
-    ).toBe(1);
+    ).toBe(2);
     expect(cases.filter((k) => k.expects.sound === false).length).toBeGreaterThan(4);
+  });
+
+  it('drives the ANALYSERS over a synthetic world, not only judge over hand-set flags', () => {
+    /*
+     * THE DEFECT THE PREVIOUS SELF-CHECK WAS. Every case in SELF_CHECK_CASES
+     * hands `judge` an analysis a human already wrote — `{ dangling: ['…'] }` —
+     * which proves the reporters read their arguments and cannot prove that
+     * anything ever computes such an argument from a repository. It did not:
+     * fifteen cases drove the candidate rule while `git` was never invoked in
+     * the generator, so a candidate naming no object passed all fifteen.
+     *
+     * These cases hand the analysers a world and let them derive the verdict.
+     * The assertion below is what stops the table degenerating back: a world
+     * case whose inputs were hand-written would carry no analyser output.
+     */
+    expect(WORLD_CHECK_CASES.length, 'the world table is empty').toBeGreaterThan(10);
+    for (const kase of WORLD_CHECK_CASES as unknown as KnownBad[]) {
+      const derived = kase.inputs as Record<string, Record<string, unknown>>;
+      expect(
+        Array.isArray(derived.repository?.commits),
+        `${kase.name} has no derived commit range`
+      ).toBe(true);
+      expect(
+        Array.isArray(derived.tiers?.localProblems),
+        `${kase.name} has no derived tier analysis`
+      ).toBe(true);
+      expect(
+        Array.isArray(derived.claims?.citations),
+        `${kase.name} has no derived claim analysis`
+      ).toBe(true);
+    }
   });
 
   it('names which rule must fail, not merely that something must', () => {
