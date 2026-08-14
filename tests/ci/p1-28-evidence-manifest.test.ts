@@ -725,12 +725,50 @@ describe('P1-28-QA-005 — the seal is bound to the REPOSITORY, not to its own p
   });
 
   it('fails on an executable successor that is not named', () => {
+    /*
+     * Anchored on a SUPERSEDED candidate, and that is the point.
+     *
+     * This case used to clear `successors` on the CURRENT candidate and require
+     * the unnamed executable commits to be reported. It went vacuous the moment
+     * the candidate was re-frozen at the branch head: with the candidate as the
+     * newest commit touching an executable path there is, by construction,
+     * nothing executable after it to hide, and the anti-vacuity guard said so
+     * rather than letting the case pass on an empty set.
+     *
+     * The rule is unchanged and still bites; what had to move is the world it is
+     * asked about. `reFrozenFrom` records every candidate this package has named,
+     * and between any two of them there is executable history by definition —
+     * that is why the freeze moved. So the case reads the previous candidate out
+     * of the package rather than hard-coding one, and stays honest across every
+     * future re-freeze.
+     */
+    const superseded = String(
+      (
+        candidateFile as unknown as {
+          candidate: { reFrozenFrom: { history: { previousCandidate: string }[] } };
+        }
+      ).candidate.reFrozenFrom.history[0]?.previousCandidate ?? ''
+    );
+    expect(superseded, 'the package records no previous candidate to reason about').toMatch(
+      /^[0-9a-f]{40}$/
+    );
+
     const unnamed = repositoryBinding(
-      { ...(candidateFile as object), successors: [] } as never,
+      {
+        ...(candidateFile as object),
+        candidate: {
+          ...(candidateFile as unknown as { candidate: object }).candidate,
+          FINAL_CODE_SHA: superseded,
+        },
+        successors: [],
+      } as never,
       git
-    ) as unknown as {
-      unrecordedExecutable: string[];
-    };
+    ) as unknown as { unrecordedExecutable: string[]; commits: { sha: string }[] };
+
+    expect(
+      unnamed.commits.length,
+      'the superseded candidate has no successors, so this measures nothing'
+    ).toBeGreaterThan(0);
     expect(
       unnamed.unrecordedExecutable.length,
       'no executable successor exists to hide'
@@ -738,6 +776,12 @@ describe('P1-28-QA-005 — the seal is bound to the REPOSITORY, not to its own p
     expect(judge(soundInputsOver(ROOT, { repository: unnamed }), () => {}).repositoryOk).toBe(
       false
     );
+
+    // And the committed package, which names none because none exists, is sound.
+    const now = repositoryBinding(candidateFile, git) as unknown as {
+      unrecordedExecutable: string[];
+    };
+    expect(now.unrecordedExecutable, 'the current candidate has an unnamed successor').toEqual([]);
   });
 
   it('fails on a tier figure the run ledger contradicts', () => {
