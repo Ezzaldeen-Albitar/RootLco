@@ -932,7 +932,7 @@ interface Scratch {
   readonly document: (over?: Record<string, unknown>) => Record<string, unknown>;
 }
 
-function withScratchRepository<T>(use: (repo: Scratch) => T): T {
+function withScratchRepository<T>(inspect: (repo: Scratch) => T): T {
   const root = mkdtempSync(join(tmpdir(), 'rootlco-seal-world-'));
   try {
     const run = (...args: string[]): string =>
@@ -1020,7 +1020,7 @@ function withScratchRepository<T>(use: (repo: Scratch) => T): T {
 
     run('checkout', '--quiet', '--detach', branchHead);
 
-    return use({
+    return inspect({
       root,
       git: gitReader(root) as (args: string[]) => string | null,
       run,
