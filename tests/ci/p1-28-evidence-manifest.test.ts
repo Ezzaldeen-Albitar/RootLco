@@ -58,6 +58,7 @@ import {
   isDocumentationPath,
   pendingBinding,
   hostedBindingSites,
+  SUCCESSOR_MARKER,
   LEDGER_FIGURES,
   LOCAL_PROVENANCES,
   PENDING_PROVENANCES,
@@ -572,10 +573,23 @@ describe('P1-28-QA-005 — the candidate is bound, and both halves agree about i
             headSha: string;
             artefact: string;
             describesSupersededHead?: boolean;
+            describesProductIdenticalSuccessor?: boolean;
           };
         }
       >;
     };
+    /*
+     * Which bindings this REPOSITORY says are bound to the candidate's product.
+     * Computed, not read off the document: `pendingBinding` is the one place
+     * that asks git whether a cited head is contained, whether it descends from
+     * the candidate, and whether `git diff -- apps supabase` across it is empty —
+     * and it treats a diff git REFUSED to take as UNKNOWN rather than as empty.
+     * Deferring to it is what makes the rule below exactly as strict as the gate
+     * and not one condition looser.
+     */
+    const bound = new Set(
+      (pendingBinding(candidate as never, gitReader(ROOT)) as unknown as { bound: string[] }).bound
+    );
     for (const tier of ['backend', 'database', 'browser']) {
       expect(
         [PROVENANCE_HOSTED, PROVENANCE_HOSTED_PENDING].includes(
@@ -609,17 +623,166 @@ describe('P1-28-QA-005 — the candidate is bound, and both halves agree about i
           attestation?.headSha,
           `${tier} is PENDING and names the candidate as the head it describes`
         ).not.toBe(candidate.candidate.FINAL_CODE_SHA);
-      } else {
+      } else if (attestation?.headSha === candidate.candidate.FINAL_CODE_SHA) {
+        // Attested at the candidate itself. Nothing to declare, and declaring
+        // a successor over the candidate's own id is refused by the gate.
         expect(
-          attestation?.headSha,
-          `${tier} is attested at a head that is not the candidate`
-        ).toBe(candidate.candidate.FINAL_CODE_SHA);
+          attestation?.[SUCCESSOR_MARKER as 'describesProductIdenticalSuccessor'],
+          `${tier} names the candidate and declares a successor over it`
+        ).not.toBe(true);
+      } else {
+        /*
+         * RULE WIDENED A SECOND TIME, and to EXACTLY the gate's conditions.
+         *
+         * The first widening let a tier say "not measured here yet". This one
+         * lets a tier say "measured at a later head whose product is provably
+         * this one" — the escape the gate has implemented since the forward
+         * citation landed, and which this case predated. Without it the seal
+         * could never be bound at all: its own machinery cannot live inside the
+         * commit it seals, so hosted CI necessarily runs at a later head, and a
+         * test demanding the candidate EXACTLY made every hosted run force
+         * another re-freeze whose seal commit moved the head again.
+         *
+         * What is NOT widened is the evidence. The head must be declared, and
+         * `pendingBinding` must have COMPUTED it into the bound set — which it
+         * does only when the head is a commit this repository contains, DESCENDS
+         * from the candidate, and differs from it by no path under `apps/**` or
+         * `supabase/**`, with a refused diff counted as UNKNOWN. A head failing
+         * any one of those is absent from the set and fails here, which the
+         * mutations in the next case prove one condition at a time.
+         */
+        expect(
+          attestation?.describesProductIdenticalSuccessor,
+          `${tier} is attested at ${attestation?.headSha}, which is not the candidate, and does not declare ${SUCCESSOR_MARKER}`
+        ).toBe(true);
+        expect(
+          bound.has(`tiers.${tier}.hostedAttestation`),
+          `${tier} declares a product-identical successor at ${attestation?.headSha} that this repository does not bear out`
+        ).toBe(true);
       }
       expect(
         String(attestation?.artefact ?? '').length,
         `${tier} names no artefact`
       ).toBeGreaterThan(0);
     }
+  });
+
+  it('accepts a forward citation on the gate’s four conditions and on no fewer', () => {
+    /*
+     * THE MUTATIONS THAT PROVE THE WIDENING ABOVE IS NOT A RELAXATION.
+     *
+     * Four conditions make a forward citation admissible, and the case above
+     * defers all four to `pendingBinding` rather than restating them. Each is
+     * removed here on its own, and each must take THE SAME PREDICATE red. A case
+     * that only showed a sound package passing would be satisfied by a rule that
+     * always returns true — which is exactly how the previous exact-head
+     * assertion survived being wrong about the gate for a whole revision.
+     *
+     * These run on a repository built for the purpose rather than on the
+     * committed package, for two reasons. The freeze GUARANTEES no descendant of
+     * the real candidate carries product drift, so condition (4) has no witness
+     * here at all; and the committed package is legitimately PENDING between the
+     * push that carries this code and the run that binds it, so a case anchored
+     * on a bound package would fail on the very head that produces the binding.
+     */
+    withScratchRepository((repo) => {
+      /** The predicate the case above judges a non-pending tier by. */
+      const admissible = (
+        doc: Record<string, unknown>
+      ): { declared: boolean; computed: boolean } => {
+        const attestation = ((
+          doc.tiers as Record<string, { hostedAttestation?: Record<string, unknown> } | undefined>
+        ).unit?.hostedAttestation ?? {}) as Record<string, unknown>;
+        const analysis = pendingBinding(doc as never, repo.git) as unknown as { bound: string[] };
+        return {
+          declared: attestation[SUCCESSOR_MARKER] === true,
+          computed: new Set(analysis.bound).has('tiers.unit.hostedAttestation'),
+        };
+      };
+      const world = (
+        candidateSha: string,
+        runHead: string,
+        over: Record<string, unknown> = {}
+      ): Record<string, unknown> => ({
+        candidate: {
+          FINAL_CODE_SHA: candidateSha,
+          FINAL_CODE_TREE: repo.candidateTree,
+          baseBranch: 'develop',
+        },
+        tiers: {
+          unit: {
+            planned: 1,
+            passed: 1,
+            failed: 0,
+            skipped: 0,
+            provenance: PROVENANCE_HOSTED,
+            hostedAttestation: {
+              runId: 11,
+              jobId: 22,
+              headSha: runHead,
+              artefact: 'totals-unit.json',
+              [SUCCESSOR_MARKER]: true,
+              ...over,
+            },
+          },
+        },
+      });
+
+      // SOUND FIRST, or every mutation below removes something that was never
+      // there and four failing predicates would prove nothing.
+      const sound = admissible(world(repo.candidate, repo.branchHead));
+      expect(sound.declared, 'the sound world declares no forward citation').toBe(true);
+      expect(sound.computed, 'a product-identical successor run was refused').toBe(true);
+
+      // (1) THE DECLARATION. Without the marker the head is merely foreign, and
+      // the rule above refuses it before the repository is consulted at all.
+      const undeclared = world(repo.candidate, repo.branchHead, {
+        [SUCCESSOR_MARKER]: undefined,
+      });
+      expect(
+        admissible(undeclared).declared,
+        'an undeclared foreign head passed as a forward citation'
+      ).toBe(false);
+
+      // (2) CONTAINMENT. A head nobody can fetch is not a citation.
+      const absent = 'deadbeef'.repeat(5);
+      expect(repo.git(['cat-file', '-e', `${absent}^{commit}`]), 'the head exists after all').toBe(
+        null
+      );
+      expect(
+        admissible(world(repo.candidate, absent)).computed,
+        'a run at a head nobody can fetch was counted as bound'
+      ).toBe(false);
+
+      // (3) DESCENT. A run taken before this code existed cannot describe it.
+      expect(
+        admissible(world(repo.candidate, repo.previous)).computed,
+        'a run predating the candidate was counted as bound'
+      ).toBe(false);
+
+      // (4) PRODUCT IDENTITY — the condition the coordinator named, and the one
+      // the real repository cannot witness. Same run head, same descent, same
+      // declaration; only the candidate moves back one commit, so `apps/**` now
+      // differs across the range.
+      expect(
+        repo.run('diff', '--name-only', `${repo.previous}..${repo.branchHead}`, '--', 'apps'),
+        'the drifting world carries no product drift, so this case measures nothing'
+      ).not.toBe('');
+      const drifting = admissible(world(repo.previous, repo.branchHead));
+      expect(drifting.declared, 'the drifting world stopped declaring a forward citation').toBe(
+        true
+      );
+      expect(drifting.computed, 'a run measuring different software was counted as bound').toBe(
+        false
+      );
+      expect(
+        (
+          pendingBinding(world(repo.previous, repo.branchHead) as never, repo.git) as unknown as {
+            problems: string[];
+          }
+        ).problems.join(' ')
+      ).toContain('PRODUCT path(s) differ');
+    });
   });
 
   it('carries no LOCAL figure the run ledger cannot carry', () => {
@@ -849,10 +1012,32 @@ describe('P1-28-QA-005 — a re-freeze may not carry the old head’s numbers fo
     for (const site of sites) expect(site.name).toMatch(/^[A-Za-z]/);
   });
 
-  it('refuses a superseded head this repository does not contain', () => {
+  /*
+   * A `hostedCi` block carrying NEITHER marker, so a case below can add exactly
+   * the one it is about.
+   *
+   * The two cases that follow used to mutate the committed block in place. That
+   * worked only while the block was guaranteed to be backward-marked: once it is
+   * bound at a product-identical successor it carries the FORWARD marker, and
+   * adding `describesSupersededHead` on top produced "declares both" — a real
+   * rule, but not the rule either case is named for. Stripping both first makes
+   * each case exercise its own subject in either world.
+   */
+  const hostedCiWithoutMarkers = (): {
+    hostedCi: { headSha: string; describesSupersededHead?: boolean };
+  } => {
     const doctored = JSON.parse(readRepo(CANDIDATE_PATH)) as {
+      hostedCi: Record<string, unknown>;
+    };
+    delete doctored.hostedCi.describesSupersededHead;
+    delete doctored.hostedCi[SUCCESSOR_MARKER];
+    return doctored as unknown as {
       hostedCi: { headSha: string; describesSupersededHead?: boolean };
     };
+  };
+
+  it('refuses a superseded head this repository does not contain', () => {
+    const doctored = hostedCiWithoutMarkers();
     doctored.hostedCi.headSha = 'd'.repeat(40);
     doctored.hostedCi.describesSupersededHead = true;
     const bad = pendingBinding(doctored as never, git) as unknown as { problems: string[] };
@@ -862,11 +1047,8 @@ describe('P1-28-QA-005 — a re-freeze may not carry the old head’s numbers fo
   });
 
   it('refuses a binding that describes another head and does not say so', () => {
-    const doctored = JSON.parse(readRepo(CANDIDATE_PATH)) as {
-      hostedCi: { headSha: string; describesSupersededHead?: boolean };
-    };
+    const doctored = hostedCiWithoutMarkers();
     doctored.hostedCi.headSha = 'd'.repeat(40);
-    delete doctored.hostedCi.describesSupersededHead;
     expect(
       (packageArithmetic(doctored as never) as string[]).join(' '),
       'an undeclared foreign head was accepted'
@@ -888,16 +1070,80 @@ describe('P1-28-QA-005 — a re-freeze may not carry the old head’s numbers fo
     ).toContain('IS the candidate');
   });
 
-  it('refuses a tier that claims the two halves AGREE while its hosted half is superseded', () => {
-    const doctored = JSON.parse(readRepo(CANDIDATE_PATH)) as {
-      tiers: Record<string, { provenance: string }>;
+  /*
+   * The committed package with ONE named tier pushed back into the pending
+   * state, against a head this repository really does contain and really can
+   * prove is an ancestor: the candidate's own parent.
+   *
+   * CONSTRUCTED rather than found. This case used to search the committed
+   * package for a tier that was already pending, and guarded itself with
+   * `expect(pendingTier).toBeDefined()` so it could not pass on an empty set.
+   * The guard was right and the subject was wrong — a package with every
+   * binding bound is the SUCCESS state of this phase, and it made the case
+   * unsatisfiable rather than vacuous. The guard is kept and re-pointed: the
+   * pending world is now built, asserted SOUND, and only then mutated.
+   */
+  const withOnePendingTier = (
+    tier: string
+  ): { doc: Record<string, unknown>; superseded: string[] } => {
+    const doc = JSON.parse(readRepo(CANDIDATE_PATH)) as {
+      candidate: { FINAL_CODE_SHA: string };
+      tiers: Record<string, Record<string, unknown>>;
+      pendingHostedBindings?: Record<string, unknown>;
     };
-    const pendingTier = Object.entries(doctored.tiers).find(([, row]) =>
-      (PENDING_PROVENANCES as readonly string[]).includes(row.provenance)
+    const ancestor = String(git(['rev-parse', `${doc.candidate.FINAL_CODE_SHA}^`]) ?? '').trim();
+    expect(ancestor, 'the candidate has no parent, so no superseded head exists to cite').toMatch(
+      /^[0-9a-f]{40}$/
     );
-    expect(pendingTier, 'no tier is pending, so this case measures nothing').toBeDefined();
-    (pendingTier as [string, { provenance: string }])[1].provenance = PROVENANCE_LOCAL;
-    const bad = tierBinding(doctored as never, git) as unknown as { hostedProblems: string[] };
+    const row = doc.tiers[tier];
+    expect(
+      row,
+      `the package has no ${tier} tier to push back into the pending state`
+    ).toBeDefined();
+    (row as Record<string, unknown>).provenance = PROVENANCE_HOSTED_PENDING;
+    (row as Record<string, unknown>).hostedAttestation = {
+      runId: 1,
+      jobId: 2,
+      headSha: ancestor,
+      artefact: 'a run at the head this candidate supersedes',
+      describesSupersededHead: true,
+      supersededBy: 'a run at the candidate',
+    };
+    /*
+     * The declared list is set to what the documents' own `headSha` fields then
+     * compute, so this world carries no complaint about the LIST — a rule with
+     * its own cases above — and the only thing under test below is the tier's
+     * provenance. Computing it here is not the list rule vouching for itself:
+     * `pendingBinding` derives the set from the fields, and the assertion this
+     * feeds is about `hostedProblems`, not about the set.
+     */
+    const superseded = (pendingBinding(doc as never, git) as unknown as { superseded: string[] })
+      .superseded;
+    doc.pendingHostedBindings = {
+      ...(doc.pendingHostedBindings ?? {}),
+      awaits: 'a run at the candidate',
+      bindings: superseded,
+    };
+    return { doc: doc as unknown as Record<string, unknown>, superseded };
+  };
+
+  it('refuses a tier that claims the two halves AGREE while its hosted half is superseded', () => {
+    const { doc, superseded } = withOnePendingTier('browser');
+    expect(
+      superseded,
+      'the constructed world supersedes nothing, so this case measures nothing'
+    ).toContain('tiers.browser.hostedAttestation');
+
+    // SOUND BEFORE THE MUTATION, or a rule that always complains would pass.
+    const before = tierBinding(doc as never, git) as unknown as { hostedProblems: string[] };
+    expect(before.hostedProblems, 'the constructed pending world does not bind').toEqual([]);
+
+    (
+      (doc.tiers as Record<string, { provenance: string } | undefined>).browser as {
+        provenance: string;
+      }
+    ).provenance = PROVENANCE_LOCAL;
+    const bad = tierBinding(doc as never, git) as unknown as { hostedProblems: string[] };
     expect(bad.hostedProblems.join(' '), 'an overclaimed provenance was accepted').toContain(
       'OF THE CANDIDATE'
     );
@@ -1254,19 +1500,69 @@ describe('P1-28-QA-005 — a hosted run may be cited at a later head, and only a
       expect(problems.join(' ')).toContain('does not descend from the candidate');
     }));
 
-  it('leaves the backward citation exactly as it was — the committed package binds', () => {
-    // The one assertion here that is legitimately about THIS repository: the
-    // package as committed is pending, and every pending binding still binds.
+  it('leaves the backward citation exactly as it was — and the committed package binds', () => {
+    /*
+     * The one case here that is legitimately about THIS repository, and its
+     * subject has moved once.
+     *
+     * It used to assert that the committed package was PENDING and that every
+     * pending binding still bound, guarding itself with
+     * `supersededBindings.length > 0` so it could not pass on an empty set. That
+     * guard was correct and its subject became unreachable: binding the package
+     * is the point of this task, and a bound package supersedes nothing.
+     *
+     * BOTH HALVES ARE KEPT. What the committed package exercises — whatever that
+     * is on the head this runs at — must bind with no problems and must not be
+     * an empty set; and the BACKWARD path, which a bound package no longer
+     * exercises, is proved on a constructed world rather than dropped.
+     */
+    const git = gitReader(ROOT);
     const committed = JSON.parse(readRepo(CANDIDATE_PATH)) as Record<string, never>;
-    const sound = tierBinding(committed, gitReader(ROOT)) as unknown as {
+    const sound = tierBinding(committed, git) as unknown as {
+      hostedProblems: string[];
+      supersededBindings: string[];
+      boundBindings: string[];
+    };
+    expect(sound.hostedProblems, 'the committed package stopped binding').toEqual([]);
+    expect(
+      sound.supersededBindings.length + sound.boundBindings.length,
+      'the committed package exercises no hosted binding at all, so nothing is proved'
+    ).toBeGreaterThan(0);
+
+    // THE BACKWARD CITATION, constructed. `hostedCi` is pushed back onto the
+    // candidate's own parent — a head this repository contains and can prove is
+    // an ancestor — and must still bind, and must still be REPORTED as pending.
+    const backward = JSON.parse(readRepo(CANDIDATE_PATH)) as {
+      candidate: { FINAL_CODE_SHA: string };
+      hostedCi: Record<string, unknown>;
+      pendingHostedBindings?: Record<string, unknown>;
+    };
+    const ancestor = String(
+      git(['rev-parse', `${backward.candidate.FINAL_CODE_SHA}^`]) ?? ''
+    ).trim();
+    expect(ancestor, 'the candidate has no parent, so the backward path has no witness').toMatch(
+      /^[0-9a-f]{40}$/
+    );
+    delete backward.hostedCi[SUCCESSOR_MARKER];
+    backward.hostedCi.headSha = ancestor;
+    backward.hostedCi.describesSupersededHead = true;
+    backward.hostedCi.supersededBy = 'a run at the candidate';
+    const computed = (pendingBinding(backward as never, git) as unknown as { superseded: string[] })
+      .superseded;
+    backward.pendingHostedBindings = {
+      ...(backward.pendingHostedBindings ?? {}),
+      awaits: 'a run at the candidate',
+      bindings: computed,
+    };
+    const back = tierBinding(backward as never, git) as unknown as {
       hostedProblems: string[];
       supersededBindings: string[];
     };
-    expect(sound.hostedProblems, 'the committed PENDING package stopped binding').toEqual([]);
+    expect(back.hostedProblems, 'the backward citation stopped binding').toEqual([]);
     expect(
-      sound.supersededBindings.length,
-      'no superseded binding is exercised by the committed package'
-    ).toBeGreaterThan(0);
+      back.supersededBindings,
+      'the backward citation was not reported as superseded'
+    ).toContain('hostedCi');
   });
 });
 
@@ -1542,6 +1838,81 @@ describe('P1-28-QA-005 — a record may not state what the candidate refutes', (
     phaseSpecObservedHosted: boolean;
   };
 
+  interface ClaimWorld {
+    readonly hostedCiRecorded: boolean;
+    readonly tabletObservedThisPhase: boolean;
+    readonly phaseSpecObservedHosted: boolean;
+  }
+
+  /*
+   * The committed package with EVERY hosted binding repointed at one head, and
+   * the claim world that follows from it.
+   *
+   * WHY BOTH WORLDS ARE CONSTRUCTED. Whether the committed package is bound
+   * depends on whether hosted CI has run at a descendant of the current
+   * candidate yet, and BOTH states are legitimate and both occur in the ordinary
+   * life of this package: PENDING on the head that first carries a new
+   * candidate, BOUND on the head that records the run which measured it. The
+   * previous revision of these cases anchored on the pending state and asserted
+   * `hostedCiRecorded` was false — which was true when written, and made binding
+   * the package impossible without editing this file. Anchoring on the bound
+   * state instead would have the mirror-image fault. So neither is anchored on:
+   * each direction is built here, and the pair is required to disagree.
+   */
+  const repointedAt = (
+    headSha: string,
+    superseded: boolean
+  ): { doc: Record<string, unknown>; world: ClaimWorld } => {
+    const doc = JSON.parse(readRepo(CANDIDATE_PATH)) as Record<string, unknown>;
+    const sites = hostedBindingSites(doc as never) as unknown as {
+      name: string;
+      record: Record<string, unknown>;
+    }[];
+    expect(
+      sites.length,
+      'the package names no head at all, so neither world is built'
+    ).toBeGreaterThan(4);
+    for (const site of sites) {
+      delete site.record[SUCCESSOR_MARKER];
+      delete site.record.describesSupersededHead;
+      site.record.headSha = headSha;
+      if (superseded) {
+        site.record.describesSupersededHead = true;
+        site.record.supersededBy = 'a run at the candidate';
+      }
+    }
+    const bound = new Set(
+      (pendingBinding(doc as never, gitReader(ROOT)) as unknown as { bound: string[] }).bound
+    );
+    return {
+      doc,
+      world: worldFrom(
+        doc as never,
+        tabletProjectSpecs(readRepo(PLAYWRIGHT_CONFIG)),
+        bound
+      ) as unknown as ClaimWorld,
+    };
+  };
+
+  /** No observation of this candidate exists: every binding names its parent. */
+  const unbound = (): { doc: Record<string, unknown>; world: ClaimWorld } => {
+    const sha = (candidateFile as unknown as { candidate: { FINAL_CODE_SHA: string } }).candidate
+      .FINAL_CODE_SHA;
+    const ancestor = String(gitReader(ROOT)(['rev-parse', `${sha}^`]) ?? '').trim();
+    expect(ancestor, 'the candidate has no parent, so the unbound world has no head').toMatch(
+      /^[0-9a-f]{40}$/
+    );
+    return repointedAt(ancestor, true);
+  };
+
+  /** Every binding names the candidate itself. */
+  const boundToCandidate = (): { doc: Record<string, unknown>; world: ClaimWorld } =>
+    repointedAt(
+      (candidateFile as unknown as { candidate: { FINAL_CODE_SHA: string } }).candidate
+        .FINAL_CODE_SHA,
+      false
+    );
+
   it('reads the tablet project straight out of the config, not out of a sentence about it', () => {
     const specs = tabletProjectSpecs(readRepo(PLAYWRIGHT_CONFIG)) as { names: string[] } | null;
     expect(specs, `${PLAYWRIGHT_CONFIG} has no authenticated-tablet project`).not.toBeNull();
@@ -1552,21 +1923,47 @@ describe('P1-28-QA-005 — a record may not state what the candidate refutes', (
     /*
      * THE CONFIG AND THE RUN ARE TWO DIFFERENT FACTS, and the re-freeze split
      * them apart. `testMatch` naming the P1-28 spec is a property of the tree at
-     * this candidate and is asserted above. Whether that project has EXECUTED
-     * anything here is a property of a hosted run, and no run has been taken at
-     * this candidate — so the three world flags below are false, and the earlier
-     * revision of this case asserted all three were true. That assertion was
-     * correct while a run was bound and became a claim about a superseded head
-     * the moment the candidate moved, which is the whole failure this cycle is
-     * about. They are asserted false HERE, against the package's own pending
-     * declaration, so a run that gets bound without the package being updated
-     * fails this case rather than passing it quietly.
+     * this candidate and is asserted above, unconditionally. Whether that
+     * project has EXECUTED anything is a property of a hosted RUN, and the
+     * answer legitimately changes: it is no while a candidate is fresh and yes
+     * once the run that measured it is recorded.
+     *
+     * So the three run flags are not asserted to a constant in either
+     * direction — the previous revision asserted all three TRUE, then all three
+     * FALSE, and each was a claim about whichever head happened to be current.
+     * They are cross-checked instead against the package's OWN
+     * `pendingHostedBindings` declaration, which `worldFrom` never reads: it
+     * reads the set `pendingBinding` COMPUTES from the repository. Two
+     * independent derivations required to agree, and the gate separately refuses
+     * a difference between the declared list and the computed one, so neither
+     * side can drift alone.
      */
-    expect(world.hostedCiRecorded, 'the package now records hosted CI at this candidate').toBe(
-      false
+    const declaredPending = new Set(
+      (candidateFile as unknown as { pendingHostedBindings?: { bindings?: string[] } })
+        .pendingHostedBindings?.bindings ?? []
     );
-    expect(world.tabletObservedThisPhase).toBe(false);
-    expect(world.phaseSpecObservedHosted).toBe(false);
+    expect(
+      world.hostedCiRecorded,
+      'the computed world and the package’s own pending list disagree about hostedCi'
+    ).toBe(!declaredPending.has('hostedCi'));
+    expect(
+      world.phaseSpecObservedHosted,
+      'the computed world and the package’s own pending list disagree about browserByProject'
+    ).toBe(!declaredPending.has('browserByProject'));
+    expect(world.tabletObservedThisPhase).toBe(!declaredPending.has('browserByProject'));
+
+    /*
+     * And both answers must be REACHABLE, or the cross-check above is satisfied
+     * by a flag that is a constant. Each is derived from a world built here.
+     */
+    const no = unbound().world;
+    const yes = boundToCandidate().world;
+    expect(no.hostedCiRecorded, 'an unbound package still reports hosted CI').toBe(false);
+    expect(yes.hostedCiRecorded, 'a bound package reports no hosted CI').toBe(true);
+    expect(no.phaseSpecObservedHosted).toBe(false);
+    expect(yes.phaseSpecObservedHosted).toBe(true);
+    expect(no.tabletObservedThisPhase).toBe(false);
+    expect(yes.tabletObservedThisPhase).toBe(true);
   });
 
   it('reports a narrowed config honestly, so the rule is conditional and not a word ban', () => {
@@ -1592,37 +1989,34 @@ describe('P1-28-QA-005 — a record may not state what the candidate refutes', (
 
   it('fails when a cell denies a hosted-CI result the package records', () => {
     /*
-     * The rule is CONDITIONAL, and both halves of the condition are exercised
-     * here because the tree now sits on the other side of it. While a run is
-     * bound to the candidate, the denial is false and is refused. While none is
-     * — which is where this candidate stands, with eleven hosted bindings
-     * pending — the denial is TRUE and must be allowed, or the gate would be a
-     * word ban that forces a package to lie in the opposite direction.
+     * The rule is CONDITIONAL, and BOTH halves are exercised here — each against
+     * a world built for it, so neither half depends on which side of the
+     * condition the committed package happens to sit on today. While a run is
+     * bound, the denial is false and must be REFUSED. While none is, the denial
+     * is TRUE and must be ALLOWED, or the gate becomes a word ban that forces a
+     * package to lie in the opposite direction.
      */
-    const bound = { ...(candidateFile as object) } as {
-      candidate: { FINAL_CODE_SHA: string };
-      hostedCi: Record<string, unknown>;
-    };
-    bound.hostedCi = { ...bound.hostedCi, headSha: bound.candidate.FINAL_CODE_SHA };
-    const boundWorld = worldFrom(bound as never, null) as unknown as { hostedCiRecorded: boolean };
-    expect(boundWorld.hostedCiRecorded, 'the doctored world binds no run').toBe(true);
-
     const denial = {
       'FE-001': { PROTECTED_REPROOF: 'No hosted-CI result is recorded for this head.' },
     };
+
+    const yes = boundToCandidate();
+    expect(yes.world.hostedCiRecorded, 'the bound world binds no run').toBe(true);
     const refused = verdictClaims(
       denial as never,
-      boundWorld as never,
-      bound as never,
+      yes.world as never,
+      yes.doc as never,
       lineReader(ROOT)
     ) as { contradictions: string[] };
-    expect(refused.contradictions.length).toBe(1);
+    expect(refused.contradictions.length, 'a false denial was accepted').toBe(1);
     expect(refused.contradictions[0]).toContain('no-hosted-ci');
 
+    const no = unbound();
+    expect(no.world.hostedCiRecorded, 'the unbound world binds a run after all').toBe(false);
     const allowed = verdictClaims(
       denial as never,
-      world as never,
-      candidateFile,
+      no.world as never,
+      no.doc as never,
       lineReader(ROOT)
     ) as { contradictions: string[] };
     expect(allowed.contradictions, 'a true sentence was refused').toEqual([]);
@@ -1630,25 +2024,37 @@ describe('P1-28-QA-005 — a record may not state what the candidate refutes', (
 
   it('fails when a cell asserts an observation of a candidate the package has not measured', () => {
     /*
-     * THE SAME RULE, POINTED THE OTHER WAY — the half that did not exist until
-     * this cycle. Thirty-three cells were corrected to say the evidence EXISTS,
-     * and every one of them became an over-claim the moment the candidate was
-     * re-frozen ahead of the run that produced it. A gate that only refuses
-     * pessimism about its own evidence ratchets one way.
+     * THE SAME RULE, POINTED THE OTHER WAY. Thirty-three cells were once
+     * corrected to say the evidence EXISTS, and every one became an over-claim
+     * the moment the candidate was re-frozen ahead of the run that produced it.
+     * A gate that only refuses pessimism about its own evidence ratchets one
+     * way — so this half refuses the optimism, and, like the case above, is
+     * proved in BOTH directions rather than against whichever world is current.
      */
+    const overClaim = {
+      'FE-001': {
+        PROTECTED_REPROOF: 'THE TABLET VIEWPORT AND HOSTED CI ARE BOTH OBSERVED AT THIS CANDIDATE.',
+      },
+    };
+
+    const no = unbound();
     const claims = verdictClaims(
-      {
-        'FE-001': {
-          PROTECTED_REPROOF:
-            'THE TABLET VIEWPORT AND HOSTED CI ARE BOTH OBSERVED AT THIS CANDIDATE.',
-        },
-      } as never,
-      world as never,
-      candidateFile,
+      overClaim as never,
+      no.world as never,
+      no.doc as never,
       lineReader(ROOT)
     ) as { contradictions: string[] };
     expect(claims.contradictions.length, 'an over-claim was accepted').toBe(1);
     expect(claims.contradictions[0]).toContain('hosted-observed-at-this-candidate');
+
+    const yes = boundToCandidate();
+    const allowed = verdictClaims(
+      overClaim as never,
+      yes.world as never,
+      yes.doc as never,
+      lineReader(ROOT)
+    ) as { contradictions: string[] };
+    expect(allowed.contradictions, 'a true sentence was refused').toEqual([]);
   });
 
   it('fails a citation that lands only on comment lines — the stale one, exactly', () => {
