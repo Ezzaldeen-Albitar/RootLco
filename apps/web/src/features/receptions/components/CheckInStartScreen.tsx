@@ -2,6 +2,12 @@
 
 import Link from 'next/link';
 import { useCallback, useState, useTransition } from 'react';
+import { CursorPager } from '@/components/data-table/CursorPager';
+import {
+  membershipVerdict,
+  readCompleteness,
+  type MembershipVerdict,
+} from '@/components/data-table/read-completeness';
 import { INITIAL_REQUEST, type TableRequest } from '@/components/data-table/table-state';
 import { useServerTable, type ServerPage } from '@/components/data-table/use-server-table';
 import { RadioGroupField, SelectField, TextAreaField, TextField } from '@/components/forms/Field';
@@ -120,6 +126,23 @@ export interface WalkInHandoffStart {
  * else follows from the rows.
  */
 type HandoffState = { readonly vehicleId: string } | null;
+
+/**
+ * What the handoff notice says for each verdict, in both catalogues.
+ *
+ * `pending` covers both "the list has not answered yet" and "there is no
+ * handoff": in either case the only truthful sentence is the one that explains
+ * where the pre-selection came from, and the notice is not rendered at all
+ * without a handoff. `as const satisfies` so a fifth verdict fails to compile
+ * here rather than rendering a missing key.
+ */
+const HANDOFF_NOTICE_KEYS = {
+  present: 'receptions.checkIn.handoffApplied',
+  pending: 'receptions.checkIn.handoffApplied',
+  absent: 'receptions.checkIn.handoffVehicleMissing',
+  'unknown-truncated': 'receptions.checkIn.handoffVehicleUnconfirmed',
+  'unknown-unreadable': 'receptions.checkIn.handoffVehicleUnreadable',
+} as const satisfies Readonly<Record<MembershipVerdict, string>>;
 
 interface Props {
   readonly locale: Locale;
@@ -249,7 +272,23 @@ export function CheckInStartScreen({
     handoff === null || !vehiclesLoaded
       ? null
       : ((vehicleRows ?? []).find((row) => row.vehicleId === handoff.vehicleId) ?? null);
-  const handoffNotListed = handoff !== null && vehiclesLoaded && handoffVehicle === null;
+  /*
+   * Why the pre-selection is not there, told apart from whether it EXISTS.
+   *
+   * This used to be one boolean — the list answered and the row was not on it —
+   * which printed "that vehicle is not in this customer's list" for a customer
+   * whose twenty-sixth vehicle was the handed-over one, and for a list that
+   * never answered at all. `hasMore` and the read status separate the three, and
+   * the pager under the picker makes the truncated case reachable.
+   */
+  const handoffVerdict: MembershipVerdict =
+    handoff === null
+      ? 'pending'
+      : membershipVerdict(
+          vehicles.status,
+          vehicles.response,
+          (row) => row.vehicleId === handoff.vehicleId
+        );
   /** What the form actually submits: the explicit choice, else the handed-over row. */
   const effectiveVehicle = walkInVehicle ?? handoffVehicle;
 
@@ -512,12 +551,7 @@ export function CheckInStartScreen({
                 lang={locale}
                 className="rounded-md border border-border bg-surface-subtle p-3 text-caption text-text-secondary"
               >
-                {translate(
-                  messages,
-                  handoffNotListed
-                    ? 'receptions.checkIn.handoffVehicleMissing'
-                    : 'receptions.checkIn.handoffApplied'
-                )}
+                {translate(messages, HANDOFF_NOTICE_KEYS[handoffVerdict])}
               </p>
             ) : null}
             {!canSearchCustomers ? (
@@ -861,14 +895,28 @@ function VehicleChoice({
     );
   }
   const rows = table.response?.rows ?? [];
+  const completeness = readCompleteness(table.status, table.response?.hasMore);
   if (rows.length === 0) {
     return (
-      <p className="text-body text-text-secondary">
-        {/* Honest: this customer has no recorded vehicles. Linking one is a
-            CRM/Vehicle capability, and the sentence points there rather than
-            offering a control this screen does not have. */}
-        {translate(messages, 'receptions.checkIn.noCustomerVehicles')}
-      </p>
+      <div className="flex flex-col gap-2">
+        <p className="text-body text-text-secondary">
+          {/* "No recorded vehicles" is a claim about the SET, so it is only made
+              by a read that covered the set. Linking one is a CRM/Vehicle
+              capability, and the sentence points there rather than offering a
+              control this screen does not have. */}
+          {translate(
+            messages,
+            completeness === 'truncated'
+              ? 'receptions.checkIn.vehiclesTruncated'
+              : 'receptions.checkIn.noCustomerVehicles'
+          )}
+        </p>
+        <CursorPager
+          messages={messages}
+          table={table}
+          label={translate(messages, 'receptions.checkIn.vehiclePagerLabel')}
+        />
+      </div>
     );
   }
   return (
@@ -918,6 +966,18 @@ function VehicleChoice({
           );
         })}
       </ul>
+      {completeness === 'truncated' ? (
+        <p data-testid="checkin-vehicles-truncated" className="mt-1 text-caption text-text-muted">
+          {translate(messages, 'receptions.checkIn.vehiclesTruncated')}
+        </p>
+      ) : null}
+      <div className="mt-2">
+        <CursorPager
+          messages={messages}
+          table={table}
+          label={translate(messages, 'receptions.checkIn.vehiclePagerLabel')}
+        />
+      </div>
     </div>
   );
 }

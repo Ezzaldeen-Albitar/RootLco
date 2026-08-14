@@ -324,6 +324,11 @@ const ROUTES: readonly RouteCase[] = [
       convertReceptions: 'rec.reception.convert',
       closeReceptions: 'rec.reception.close',
       readWorkOrders: 'wo.work_order.read',
+      // `F8`. The inspection read-back turns an account identifier into a NAME
+      // through `iam.user-detail` — the check-in employee picker's own code, so
+      // this pairing also proves the wizard cannot resolve it from a reception
+      // permission it happens to hold.
+      readStaffDirectory: 'iam.user.read',
     },
   },
   {
@@ -388,11 +393,11 @@ describe('P1-28-SEC-001 — every capability comes from its OWN permission', () 
         expect(ALL_PERMISSIONS, `${code} is not in ALL_PERMISSIONS`).toContain(code);
       }
     }
-    // Anti-vacuity: the eight routes together decide twenty-five capabilities,
+    // Anti-vacuity: the eight routes together decide twenty-six capabilities,
     // and six of them decide at least one. Both halves are stated, so adding a
     // capability-free route can never weaken the first number.
     const total = ROUTES.reduce((sum, route) => sum + Object.keys(route.capabilities).length, 0);
-    expect(total).toBe(25);
+    expect(total).toBe(26);
     expect(ROUTES.length).toBe(8);
     expect(ROUTES.filter((route) => Object.keys(route.capabilities).length > 0)).toHaveLength(6);
   });

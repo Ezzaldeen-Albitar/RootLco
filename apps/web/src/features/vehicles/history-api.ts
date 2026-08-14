@@ -3,6 +3,7 @@
 import { z } from 'zod';
 import type { TableRequest } from '@/components/data-table/table-state';
 import type { ServerPage } from '@/components/data-table/use-server-table';
+import { hasExplicitUtcOffset } from '@/components/forms/instant';
 import { authorizedClient } from '@/lib/api/server-client';
 import type { ActionState } from '@/lib/forms/action-result';
 import { STATUS_BY_KIND, query, type CursorPage } from '@/lib/api/read-operation';
@@ -268,6 +269,27 @@ const odometerSchema = z
        */
       .refine((value) => !Number.isNaN(Date.parse(value)), {
         message: 'vehicles.odometer.error.observedAt',
+      })
+      /*
+       * The THIRD half, which neither the route nor the domain enforces.
+       *
+       * `ISO_DATETIME` makes the offset group OPTIONAL — `(Z|[+-]\d{2}:\d{2})?`
+       * — and `.min(16)` is satisfied by `2026-03-01T09:30` exactly. So a
+       * zoneless local time passed every check above and was bound into a
+       * `timestamptz`, where PostgreSQL resolved it against the SERVER's zone: a
+       * silent three-hour error for a branch at UTC+3, on the reading that
+       * establishes when custody began, and one that can invert the ordering of
+       * an append-only series.
+       *
+       * The appointment side already refuses this by name
+       * (`domain/appointment.ts:119` — "a real booking on the wrong hour"), and
+       * `components/forms/instant.ts` is that rule at a tier this feature can
+       * reach. Refusing it here is not a tightening AGAINST the server: the
+       * server accepts the value and stores the wrong moment, which is why the
+       * refusal has to happen before the request rather than after it.
+       */
+      .refine(hasExplicitUtcOffset, {
+        message: 'vehicles.odometer.error.observedAtOffset',
       }),
     captureMethod: z.enum(ODOMETER_CAPTURE_METHODS).optional(),
     /*

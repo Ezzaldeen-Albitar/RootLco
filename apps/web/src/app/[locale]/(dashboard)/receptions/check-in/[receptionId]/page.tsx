@@ -165,6 +165,12 @@ export default async function CheckInWizardPage({
         convertReceptions: holds(session.permissions, RECEPTION_PERMISSIONS.convert),
         closeReceptions: holds(session.permissions, RECEPTION_PERMISSIONS.close),
         readWorkOrders: holds(session.permissions, WORK_ORDER_READ_PERMISSION),
+        // The SAME code, and the same gate, as the receiving-employee name
+        // resolved a few lines above: `iam.user-detail` turns the inspection
+        // read-back's account identifiers into names (`F8`). Decided here rather
+        // than in the step, so a caller without it spends no request to be
+        // refused, and no component consults the session itself.
+        readStaffDirectory: holds(session.permissions, STAFF_DIRECTORY_PERMISSION),
       }}
       session={{ userId: session.userId, displayName: session.displayName }}
     />

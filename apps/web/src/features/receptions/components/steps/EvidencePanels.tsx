@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { INITIAL_REQUEST, type TableRequest } from '@/components/data-table/table-state';
 import { useServerTable } from '@/components/data-table/use-server-table';
 import {
@@ -25,6 +25,12 @@ import {
   sessionEvidenceOf,
   type SessionEvidence,
 } from '../../check-in/evidence';
+import {
+  RECEIVING_EMPLOYEE_NOTICE_KEYS,
+  resolveReceivingEmployee,
+  type ReceivingEmployee,
+} from '../../check-in/receiving-employee';
+import { readReceivingEmployeeIdentity } from '../../support-api';
 
 /**
  * The pieces every condition-evidence step renders (P1-28, Wave E).
@@ -128,6 +134,113 @@ function InstantOrRaw({ value, locale }: { readonly value: string; readonly loca
   );
 }
 
+/* ---------------------------------------------------------------------- *
+ * Accounts, resolved to names
+ * ---------------------------------------------------------------------- */
+
+/** What every `person` field on the page resolved to, keyed by account. */
+export type PersonNames = ReadonlyMap<string, ReceivingEmployee>;
+
+const NO_PEOPLE: PersonNames = new Map();
+
+/**
+ * The names behind the account identifiers a read-back is holding.
+ *
+ * One `iam.user-detail` read per DISTINCT identifier, and only for identifiers
+ * actually on the page — a read-back of twenty-five inspections opened by the
+ * same person costs one read, not twenty-five. The same operation the check-in
+ * employee picker already consumes and already discloses beside its control, so
+ * this widens nobody's access and adds no new disposition (`staff-directory.ts`
+ * names it as one of the three operations `iam.user.read` opens).
+ *
+ * Without the permission the hook makes no request at all and every identifier
+ * resolves to `denied` — the same posture every P1-28 route takes toward a gate
+ * it can decide itself, and one that keeps a rate-limited operation unspent.
+ *
+ * Nothing here ever yields the identifier. The four outcomes are
+ * `receiving-employee.ts`'s, unchanged, because they are the four states the
+ * platform genuinely has and the acknowledgement sheet already renders.
+ */
+export function usePersonNames(ids: readonly string[], canRead: boolean): PersonNames {
+  // The identifiers as ONE stable string, so the effect re-runs when the SET
+  // changes rather than on every render that rebuilds the array.
+  const key = canRead ? [...new Set(ids)].sort().join(',') : '';
+  const [held, setHeld] = useState<{ readonly key: string; readonly names: PersonNames }>({
+    key: '',
+    names: NO_PEOPLE,
+  });
+
+  useEffect(() => {
+    if (key === '') return;
+    let cancelled = false;
+    void (async () => {
+      const wanted = key.split(',');
+      const resolved = await Promise.all(
+        wanted.map(
+          async (id) =>
+            [id, resolveReceivingEmployee(await readReceivingEmployeeIdentity(id))] as const
+        )
+      );
+      // Awaited before the only state write, so this is not a synchronous
+      // setState inside an effect body.
+      if (!cancelled) setHeld({ key, names: new Map(resolved) });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [key]);
+
+  if (!canRead) return NO_PEOPLE;
+  return held.key === key ? held.names : NO_PEOPLE;
+}
+
+/**
+ * One account, as a name or as the reason there is not one.
+ *
+ * `undefined` — the read has not answered yet — is `unavailable` rather than a
+ * blank: "we have not asked" and "this identifier names nobody" are different
+ * facts, and F1 on the acknowledgement sheet was exactly the second printed for
+ * the first.
+ */
+function PersonName({
+  messages,
+  resolved,
+}: {
+  readonly messages: Messages;
+  readonly resolved: ReceivingEmployee | undefined;
+}) {
+  if (resolved === undefined) {
+    return (
+      <span className="text-text-secondary">
+        {translate(messages, RECEIVING_EMPLOYEE_NOTICE_KEYS.unavailable)}
+      </span>
+    );
+  }
+  if (resolved.status === 'named') return <>{resolved.displayName}</>;
+  return (
+    <span className="text-text-secondary">
+      {translate(messages, RECEIVING_EMPLOYEE_NOTICE_KEYS[resolved.status])}
+    </span>
+  );
+}
+
+/** The `person` identifiers a page of rows carries, for `usePersonNames`. */
+export function personIdsOf(
+  kind: EvidenceKind,
+  rows: readonly ConditionEvidenceEntry[]
+): readonly string[] {
+  const fields = rowFieldsFor(kind).filter((field) => field.kind === 'person');
+  if (fields.length === 0) return [];
+  const ids: string[] = [];
+  for (const row of rows) {
+    for (const field of fields) {
+      const value = primitiveField(row, field.field);
+      if (value !== null && value !== '') ids.push(value);
+    }
+  }
+  return ids;
+}
+
 /** One evidence kind's read-back, paged by `rec.reception-condition-evidence-list`. */
 export function useEvidenceTable(visitId: string, kind: EvidenceKind, loadKey: string) {
   const load = useCallback(
@@ -146,11 +259,21 @@ export function EvidenceReadBack({
   messages,
   kind,
   table,
+  people = NO_PEOPLE,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly kind: EvidenceKind;
   readonly table: ReturnType<typeof useEvidenceTable>;
+  /**
+   * Names for the `person` fields this kind carries, from `usePersonNames`.
+   *
+   * Defaulted so the seven kinds with no `person` field pass nothing, and so a
+   * caller that forgets renders the honest "could not be read" rather than the
+   * identifier — the failure mode of an omission is a cautious sentence, never a
+   * uuid on a screen.
+   */
+  readonly people?: PersonNames;
 }) {
   if (table.status !== 'idle') {
     return (
@@ -201,6 +324,11 @@ export function EvidenceReadBack({
                           translateDynamic(messages, `${field.vocabularyPrefix ?? ''}${value}`)
                         ) : field.kind === 'datetime' ? (
                           <InstantOrRaw value={value} locale={locale} />
+                        ) : field.kind === 'person' ? (
+                          // An ACCOUNT, so a name — or the reason there is not
+                          // one. Never the identifier: a dangling value rendered
+                          // where a person's name goes reads as a person.
+                          <PersonName messages={messages} resolved={people.get(value)} />
                         ) : field.kind === 'identifier' ? (
                           // A code, a uuid or an exact numeric rendered `::text`
                           // by the database. LTR and monospaced so it is read as

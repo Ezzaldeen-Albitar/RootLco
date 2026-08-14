@@ -111,6 +111,7 @@ const CAPABILITIES = {
   convertReceptions: true,
   closeReceptions: true,
   readWorkOrders: true,
+  readStaffDirectory: true,
 };
 
 const refresh = vi.fn(async () => {});

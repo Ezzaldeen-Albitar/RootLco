@@ -148,6 +148,7 @@ const CAPABILITIES = {
   convertReceptions: true,
   closeReceptions: true,
   readWorkOrders: true,
+  readStaffDirectory: true,
 };
 
 const SESSION = { userId: 'user-1', displayName: 'Front Desk' };
@@ -1038,5 +1039,269 @@ describe('the parties step', () => {
     expect(document.documentElement.dir).toBe('rtl');
     expect(await screen.findByText(AR['receptions.parties.rolesHeading']!)).toBeInTheDocument();
     expect(screen.getByText(AR['receptions.authorization.heading']!)).toBeInTheDocument();
+  });
+});
+
+/* --- F1: a truncated or failed read is never an established absence --------- */
+
+describe('F1 — the three states a paged read can report', () => {
+  const REQUESTER_ROLE = {
+    id: 'role-1',
+    partnerId: 'partner-1',
+    partnerDisplayName: 'Layla Haddad',
+    partnerDisplayNumber: null,
+    relationshipRole: 'service_requester',
+    validFrom: '2026-08-13T07:00:00.000Z',
+    validTo: null,
+    assignmentSource: null,
+    recordVersion: 1,
+  };
+
+  const OTHER_LINK = {
+    id: 'link-1',
+    vehicleId: 'veh-OTHER',
+    relationshipRole: 'owner',
+    validFrom: '2026-01-01',
+    validTo: null,
+    active: true,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    vehicleDisplayNumber: 'V-OTHER',
+    vin: null,
+    makeId: null,
+    modelId: null,
+    modelYear: null,
+    color: null,
+    vehicleLifecycleStatus: null,
+  };
+
+  const MATCHING_LINK = {
+    ...OTHER_LINK,
+    id: 'link-2',
+    vehicleId: 'veh-9',
+    vehicleDisplayNumber: 'V-9',
+  };
+
+  /** A page the server says is NOT the whole set. */
+  function truncated<Row>(rows: readonly Row[]) {
+    return { ...page(rows), nextCursor: 'cursor-2', hasMore: true };
+  }
+
+  /** A read that never answered. Note it reports `hasMore: false`. */
+  function unreadable() {
+    return {
+      status: 'error' as const,
+      rows: [],
+      nextCursor: null,
+      hasMore: false,
+      correlationId: 'corr-500',
+    };
+  }
+
+  describe('the confirmation step link verdict', () => {
+    beforeEach(() => {
+      listPartyRoles.mockResolvedValue(page([REQUESTER_ROLE]));
+    });
+
+    /*
+     * The verdict, WAITED for rather than read on the first render.
+     *
+     * The requester role is a separate read, and until it lands there is no
+     * requester to ask about — so the panel truthfully says the link could not
+     * be determined. Asserting on the first paint would assert that intermediate
+     * state for every case, and 'absent' and 'unknown' would be
+     * indistinguishable.
+     */
+    async function verdictReads(key: string): Promise<HTMLElement> {
+      // The read is waited for FIRST. The verdict is derived from a page that
+      // does not exist until this call resolves, and on the branches where the
+      // page carries no rows there is no later DOM mutation to wake a content
+      // wait — so asserting the sentence without this step is a latent flake
+      // that only shows on the failure branches.
+      await waitFor(() => expect(listCustomerVehicles).toHaveBeenCalled());
+      await waitFor(() =>
+        expect(screen.getByTestId('confirm-link-verdict')).toHaveTextContent(EN[key]!)
+      );
+      return screen.getByTestId('confirm-link-verdict');
+    }
+
+    it('states an absence only when the read covered the whole list', async () => {
+      // The control. Complete read, vehicle genuinely not linked.
+      listCustomerVehicles.mockResolvedValue(page([OTHER_LINK]));
+      renderLtr(<ConfirmationStep {...stepProps()} />);
+
+      await verdictReads('receptions.confirm.linkAbsent');
+    });
+
+    it('does NOT call it absent when the read stopped at a page boundary', async () => {
+      /*
+       * The defect, exactly as reproduced: a requester with more linked vehicles
+       * than one page holds, whose match is on page two. The old screen dropped
+       * `hasMore` and printed "No active link between this requester and this
+       * vehicle is recorded. That is a fact to note, not an error." — about the
+       * vehicle standing on the ramp.
+       */
+      listCustomerVehicles.mockResolvedValue(truncated([OTHER_LINK]));
+      renderLtr(<ConfirmationStep {...stepProps()} />);
+
+      const verdict = await verdictReads('receptions.confirm.linkTruncated');
+      expect(verdict).not.toHaveTextContent(EN['receptions.confirm.linkAbsent']!);
+    });
+
+    it('does NOT call it absent when the read failed', async () => {
+      // Every adapter reports `hasMore: false` on failure, so "nothing came
+      // back" and "there is nothing" are the same two fields at this layer.
+      listCustomerVehicles.mockResolvedValue(unreadable());
+      renderLtr(<ConfirmationStep {...stepProps()} />);
+
+      const verdict = await verdictReads('receptions.confirm.linkUnknown');
+      expect(verdict).not.toHaveTextContent(EN['receptions.confirm.linkAbsent']!);
+    });
+
+    it('still reports the link as recorded when the truncated page holds it', async () => {
+      // Finding the row is positive proof whatever else went unread, so
+      // truncation must not weaken a POSITIVE answer.
+      listCustomerVehicles.mockResolvedValue(truncated([MATCHING_LINK]));
+      renderLtr(<ConfirmationStep {...stepProps()} />);
+
+      await verdictReads('receptions.confirm.linkRecorded');
+    });
+
+    it('gives the operator a way to reach the pages the answer may be on', async () => {
+      // A notice with no control tells an operator their answer is somewhere
+      // they cannot go.
+      listCustomerVehicles.mockResolvedValue(truncated([OTHER_LINK]));
+      const user = userEvent.setup();
+      renderLtr(<ConfirmationStep {...stepProps()} />);
+      await verdictReads('receptions.confirm.linkTruncated');
+
+      const pager = screen.getByRole('navigation', {
+        name: EN['receptions.confirm.linkPagerLabel']!,
+      });
+      const next = within(pager).getByRole('button', { name: EN['table.nextPage']! });
+      expect(next).toBeEnabled();
+
+      listCustomerVehicles.mockResolvedValue(page([MATCHING_LINK]));
+      await user.click(next);
+
+      await waitFor(() =>
+        expect(screen.getByTestId('confirm-link-verdict')).toHaveTextContent(
+          EN['receptions.confirm.linkRecorded']!
+        )
+      );
+    });
+
+    it('offers no pager at all when the read covered the set', async () => {
+      // Anti-noise, and anti-vacuity for the case above: the control appears
+      // because there is somewhere to go, not on every render.
+      listCustomerVehicles.mockResolvedValue(page([OTHER_LINK]));
+      renderLtr(<ConfirmationStep {...stepProps()} />);
+      await verdictReads('receptions.confirm.linkAbsent');
+
+      expect(
+        screen.queryByRole('navigation', { name: EN['receptions.confirm.linkPagerLabel']! })
+      ).not.toBeInTheDocument();
+    });
+  });
+
+  describe('the walk-in handoff notice', () => {
+    async function vehicleChoices() {
+      const group = await screen.findByRole('group', {
+        name: EN['receptions.checkIn.vehicleLabel']!,
+      });
+      return within(group).getAllByRole('button');
+    }
+
+    const pressed = (buttons: readonly HTMLElement[]) =>
+      buttons.filter((button) => button.getAttribute('aria-pressed') === 'true');
+
+    const handoff = {
+      requester: {
+        id: 'partner-1',
+        displayName: 'Layla Haddad',
+        displayNumber: 'C-0001',
+        partyType: 'individual',
+      },
+      vehicleId: 'veh-9',
+    };
+
+    it('does not say the vehicle is absent from a list it only partly read', async () => {
+      /*
+       * A walk-in handoff whose vehicle is past the page boundary used to read
+       * "that vehicle is not in this customer's list", with no way to reach it.
+       */
+      listCustomerVehicles.mockResolvedValue(truncated([OTHER_LINK]));
+      renderLtr(<CheckInStartScreen {...startProps({ walkInHandoff: handoff })} />);
+
+      await waitFor(() =>
+        expect(screen.getByTestId('walk-in-handoff-notice')).toHaveTextContent(
+          EN['receptions.checkIn.handoffVehicleUnconfirmed']!
+        )
+      );
+      expect(screen.getByTestId('walk-in-handoff-notice')).not.toHaveTextContent(
+        EN['receptions.checkIn.handoffVehicleMissing']!
+      );
+    });
+
+    it('says nothing was learned when the vehicle list could not be read', async () => {
+      listCustomerVehicles.mockResolvedValue(unreadable());
+      renderLtr(<CheckInStartScreen {...startProps({ walkInHandoff: handoff })} />);
+
+      await waitFor(() =>
+        expect(screen.getByTestId('walk-in-handoff-notice')).toHaveTextContent(
+          EN['receptions.checkIn.handoffVehicleUnreadable']!
+        )
+      );
+    });
+
+    it('reaches the handed-over vehicle on the next page and selects it', async () => {
+      listCustomerVehicles.mockResolvedValue(truncated([OTHER_LINK]));
+      const user = userEvent.setup();
+      renderLtr(<CheckInStartScreen {...startProps({ walkInHandoff: handoff })} />);
+      await screen.findByTestId('walk-in-handoff-notice');
+
+      const pager = await screen.findByRole('navigation', {
+        name: EN['receptions.checkIn.vehiclePagerLabel']!,
+      });
+      listCustomerVehicles.mockResolvedValue(page([MATCHING_LINK]));
+      await user.click(within(pager).getByRole('button', { name: EN['table.nextPage']! }));
+
+      await waitFor(() =>
+        expect(screen.getByTestId('walk-in-handoff-notice')).toHaveTextContent(
+          EN['receptions.checkIn.handoffApplied']!
+        )
+      );
+      expect(pressed(await vehicleChoices())).toHaveLength(1);
+    });
+
+    it('states truncation beside the picker rather than presenting one page as the list', async () => {
+      listCustomerVehicles.mockResolvedValue(truncated([OTHER_LINK]));
+      renderLtr(<CheckInStartScreen {...startProps({ walkInHandoff: handoff })} />);
+
+      expect(await screen.findByTestId('checkin-vehicles-truncated')).toHaveTextContent(
+        EN['receptions.checkIn.vehiclesTruncated']!
+      );
+    });
+
+    it('says nothing about truncation when the read covered the set', async () => {
+      listCustomerVehicles.mockResolvedValue(page([MATCHING_LINK]));
+      renderLtr(<CheckInStartScreen {...startProps({ walkInHandoff: handoff })} />);
+      await screen.findByTestId('walk-in-handoff-notice');
+
+      expect(screen.queryByTestId('checkin-vehicles-truncated')).not.toBeInTheDocument();
+    });
+
+    it('renders both new sentences in Arabic, not as keys', async () => {
+      listCustomerVehicles.mockResolvedValue(truncated([OTHER_LINK]));
+      renderRtl(<CheckInStartScreen {...startProps({ walkInHandoff: handoff, messages: AR })} />);
+
+      await waitFor(() =>
+        expect(screen.getByTestId('walk-in-handoff-notice')).toHaveTextContent(
+          AR['receptions.checkIn.handoffVehicleUnconfirmed']!
+        )
+      );
+      expect(await screen.findByTestId('checkin-vehicles-truncated')).toHaveTextContent(
+        AR['receptions.checkIn.vehiclesTruncated']!
+      );
+    });
   });
 });

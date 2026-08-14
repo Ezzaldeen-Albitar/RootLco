@@ -740,6 +740,78 @@ describe('assignPlateAction — FE-022', () => {
   });
 });
 
+describe('recordOdometerAction — FE-023, and the offset rule (F2)', () => {
+  it('sends an instant that carries its offset', async () => {
+    const [method, path, body] = await sent(() =>
+      vehHistory.recordOdometerAction(
+        VEHICLE,
+        IDLE as never,
+        formOf({ value: '123456', unit: 'km', observedAt: '2026-03-01T09:30:00+03:00' })
+      )
+    );
+    expect(method).toBe('POST');
+    expect(path).toBe(`/api/v1/vehicles/${VEHICLE}/odometer-readings`);
+    expect(body.observedAt).toBe('2026-03-01T09:30:00+03:00');
+  });
+
+  /*
+   * The reproduction, exactly as the review stated it.
+   *
+   * `2026-03-01T09:30` is sixteen characters, so `.min(16)` is satisfied; the
+   * pattern's offset group is `(Z|[+-]\d{2}:\d{2})?` — OPTIONAL — so the regex
+   * matches; and `Date.parse` accepts it. Every check this schema had passed it,
+   * and the value went into a `timestamptz` where PostgreSQL resolved it against
+   * the SERVER's zone. Nothing 422s: the write SUCCEEDS and stores the wrong
+   * moment, which is why this refusal has to be made before the request.
+   */
+  it('refuses a moment with no offset, and never sends it', async () => {
+    const errors = await refused(() =>
+      vehHistory.recordOdometerAction(
+        VEHICLE,
+        IDLE as never,
+        formOf({ value: '123456', unit: 'km', observedAt: '2026-03-01T09:30' })
+      )
+    );
+    expect(errors.observedAt).toBe('vehicles.odometer.error.observedAtOffset');
+    expect(translatable(errors.observedAt)).toBe(true);
+  });
+
+  it('accepts every offset PostgreSQL does, and refuses the ones it does not', async () => {
+    // The ±15:59 cap is the database's own `timestamptz` limit. V8 parses
+    // `+16:00` happily, so without the cap the value sails past every guard in
+    // the product and dies in the database as an unmapped 22009.
+    for (const observedAt of [
+      '2026-03-01T09:30:00Z',
+      '2026-03-01T09:30:00+03:00',
+      '2026-03-01T09:30:00-11:30',
+      '2026-03-01T09:30:00+15:59',
+    ]) {
+      send.mockReset();
+      send.mockResolvedValue({ ok: true, data: {}, correlationId: 'corr-1' });
+      const [, , body] = await sent(() =>
+        vehHistory.recordOdometerAction(
+          VEHICLE,
+          IDLE as never,
+          formOf({ value: '123456', unit: 'km', observedAt })
+        )
+      );
+      expect(body.observedAt, observedAt).toBe(observedAt);
+    }
+
+    for (const observedAt of ['2026-03-01T09:30:00+16:00', '2026-03-01T09:30:00+03']) {
+      send.mockReset();
+      const errors = await refused(() =>
+        vehHistory.recordOdometerAction(
+          VEHICLE,
+          IDLE as never,
+          formOf({ value: '123456', unit: 'km', observedAt })
+        )
+      );
+      expect(Object.keys(errors), observedAt).toContain('observedAt');
+    }
+  });
+});
+
 describe('changeVehicleStatusAction — FE-019', () => {
   it('is a PATCH to the status sub-resource', async () => {
     const [method, path, body] = await sent(() =>

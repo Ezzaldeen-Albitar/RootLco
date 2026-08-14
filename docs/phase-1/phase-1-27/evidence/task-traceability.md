@@ -362,9 +362,9 @@ record.
 | `crm.address-add`                | `FE-008`      | `profile-actions.ts:130`    |
 | `crm.customer-status-set`        | CRM profile   | `governance-actions.ts:210` |
 | `crm.vehicle-link`               | `FE-025`      | `relations-api.ts:226`      |
-| `veh.vehicle-ownership-transfer` | `FE-021`      | `history-api.ts:213`        |
-| `veh.vehicle-plate-assign`       | `FE-022`      | `history-api.ts:156`        |
-| `veh.vehicle-odometer-record`    | `FE-023`      | `history-api.ts:379`        |
+| `veh.vehicle-ownership-transfer` | `FE-021`      | `history-api.ts:214`        |
+| `veh.vehicle-plate-assign`       | `FE-022`      | `history-api.ts:157`        |
+| `veh.vehicle-odometer-record`    | `FE-023`      | `history-api.ts:401`        |
 
 The earlier version of this section said "the other **seven** are simply not
 built". That was true when it was written and false by the time it was read,

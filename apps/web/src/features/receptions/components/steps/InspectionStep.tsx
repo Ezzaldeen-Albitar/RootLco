@@ -1,6 +1,8 @@
 'use client';
 
 import { useMemo, useState, useTransition } from 'react';
+import { CursorPager } from '@/components/data-table/CursorPager';
+import { readCompleteness } from '@/components/data-table/read-completeness';
 import { SelectField, TextField } from '@/components/forms/Field';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
 import type { Messages } from '@/i18n/get-messages';
@@ -32,7 +34,9 @@ import {
   SessionCaptureList,
   StepOutcome,
   WriteWithdrawn,
+  personIdsOf,
   useEvidenceTable,
+  usePersonNames,
 } from './EvidencePanels';
 
 /**
@@ -60,12 +64,23 @@ import {
  * stays open. That is stated rather than implied by a control that does not
  * exist.
  *
- * ## The inspector has no referent (G-EMP), and the road test has no contract
+ * ## The inspector is an ACCOUNT, shown by name (G-EMP), and the road test has
+ * no contract
  *
  * `rec.visual_inspections.inspector_id` is NOT NULL with **no foreign key**;
  * no employee master exists anywhere in the platform. The only identity that
  * resolves to a name is the signed-in user, which is what this step submits,
  * with the disposition stated beside the control and never a uuid to type.
+ *
+ * The READ-BACK used to print that identifier verbatim in a `<code>` element
+ * under the label "Inspector", beside a note claiming no name could be resolved
+ * for it — while the complaint arm one panel away joined a display name. The
+ * value is an `iam` account and `iam.user-detail` resolves it, which is what
+ * this phase already did twice for `receivingEmployeeId`. The field is now
+ * `kind: 'person'`, `usePersonNames` resolves each distinct identifier once, and
+ * the four honest outcomes are `receiving-employee.ts`'s: named, denied,
+ * unresolved (the identifier names no account — a state G-EMP permits), or
+ * unavailable. The identifier reaches the screen in none of them.
  *
  * Road test (`WF-10`) is an OPEN decision with no contract anywhere in the
  * platform — no operation, no report status, no agreed home. **No control here
@@ -119,6 +134,13 @@ export function InspectionStep({
    * Derived from the rows the read-back above is already holding — NOT a second
    * read. The list operation is `expensive-read` and the panel has just paid
    * for it.
+   *
+   * Which is exactly why an EMPTY derivation is not an observation. The read-back
+   * is one keyset page, the `in_progress` filter runs after it, and the notice
+   * that used to follow said "this visit has none" — about a visit whose open
+   * inspection was simply on the next page. `inspectionsRead` carries the read's
+   * own completeness alongside, so the notice states what was established rather
+   * than what happened to be in hand, and `CursorPager` reaches the rest.
    */
   const openInspections = useMemo(() => {
     const rows = inspections.response?.rows ?? [];
@@ -135,6 +157,23 @@ export function InspectionStep({
         };
       });
   }, [inspections.response, locale, messages]);
+
+  const inspectionsRead = readCompleteness(inspections.status, inspections.response?.hasMore);
+
+  /*
+   * The inspector as a NAME (`F8`).
+   *
+   * The read-back's `inspectorId` used to be rendered verbatim in a `<code>`
+   * element under the label "Inspector" — a bare account uuid beside a note
+   * saying no name could be resolved for it, while the complaint arm two panels
+   * away joined a display name. `iam.user-detail` resolves it, is already
+   * consumed by the check-in employee picker, and is already disclosed by the
+   * staff-directory notice, so nothing is widened here.
+   */
+  const inspectorNames = usePersonNames(
+    personIdsOf('inspection', inspections.response?.rows ?? []),
+    capabilities.readStaffDirectory
+  );
 
   const settle = async (result: ActionState, after: () => void) => {
     notifyActionResult(result, messages);
@@ -171,6 +210,12 @@ export function InspectionStep({
           messages={messages}
           kind="inspection"
           table={inspections}
+          people={inspectorNames}
+        />
+        <CursorPager
+          messages={messages}
+          table={inspections}
+          label={translate(messages, 'receptions.inspection.pagerLabel')}
         />
 
         {!canWrite ? (
@@ -242,7 +287,25 @@ export function InspectionStep({
             }
           />
         ) : openInspections.length === 0 ? (
-          <CoverageNotice locale={locale} messages={messages} kind="condition_item" />
+          inspectionsRead === 'complete' ? (
+            // Established: the read covered this visit's inspections and none is
+            // open. The coverage table's own sentence, as before.
+            <CoverageNotice locale={locale} messages={messages} kind="condition_item" />
+          ) : (
+            <p
+              data-testid="finding-inspections-unknown"
+              role="note"
+              className="rounded-md border border-border bg-surface-subtle p-3 text-body text-text-primary"
+              lang={locale}
+            >
+              {translate(
+                messages,
+                inspectionsRead === 'truncated'
+                  ? 'receptions.finding.inspectionsTruncated'
+                  : 'receptions.finding.inspectionsUnreadable'
+              )}
+            </p>
+          )
         ) : (
           <FindingForm
             messages={messages}

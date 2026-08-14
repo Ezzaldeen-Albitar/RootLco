@@ -99,6 +99,19 @@ export interface CheckInCapabilities {
    * vehicle. Held by neither `veh.vehicle.manage` nor `rec.reception.manage`.
    */
   readonly recordOdometer: boolean;
+  /**
+   * `iam.user.read` — may a step turn an account identifier into a NAME.
+   *
+   * The inspection read-back's `inspectorId` is an account, and the plan §7 rule
+   * is that the UI shows names and never identifiers. `iam.user-detail` is what
+   * resolves it — the same operation the check-in employee picker consumes and
+   * the staff-directory notice already discloses — so this is the picker's own
+   * code, resolved once here rather than consulted inside a step.
+   *
+   * Without it, nothing is claimed: the read is not issued and the field states
+   * that the name could not be resolved. It never falls back to the identifier.
+   */
+  readonly readStaffDirectory: boolean;
   /** `rec.reception.approve` — the decision that lets work begin (`FE-020`). */
   readonly approveReceptions: boolean;
   /** `rec.reception.convert` — turning an authorized visit into a work order (`FE-022`). */

@@ -2,6 +2,12 @@
 
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
+import { CursorPager } from '@/components/data-table/CursorPager';
+import {
+  membershipVerdict,
+  readCompleteness,
+  type MembershipVerdict,
+} from '@/components/data-table/read-completeness';
 import { INITIAL_REQUEST } from '@/components/data-table/table-state';
 import { useServerTable, type ServerPage } from '@/components/data-table/use-server-table';
 import { PartyLabel } from '@/components/party/PartyLabel';
@@ -45,11 +51,20 @@ import type { CheckInStepProps } from '../../check-in/wizard';
  *   - `veh.vehicle-relationship-list` and `crm.customer-vehicle-list` say, in
  *     both directions, whether the platform has the two RECORDED as related.
  *
- * ## "No recorded link" is a fact, not an error
+ * ## "No recorded link" is a fact, not an error — when the read EARNED it
  *
  * A walk-in customer may present a vehicle the platform has never linked to
  * them. The cross-check states what is recorded and stops; refusing to proceed
  * would invent a rule the backend does not have.
+ *
+ * That sentence is only true of a read that covered the list. This step used to
+ * print it off ONE page of twenty-five with `hasMore` discarded, so a requester
+ * with twenty-six linked vehicles whose match sat on page two was told, about
+ * the vehicle on the ramp, that no link is recorded. `membershipVerdict`
+ * separates the three answers the platform can actually give — recorded, not
+ * recorded (whole list read), and not established (page boundary, or a read that
+ * never answered) — and the pager below makes the third one reachable instead of
+ * merely announced.
  *
  * ## There is deliberately NO "Confirm" control here
  *
@@ -59,6 +74,25 @@ import type { CheckInStepProps } from '../../check-in/wizard';
  */
 
 const EMPTY_PAGE = { rows: [], nextCursor: null, hasMore: false } as const;
+
+/**
+ * What each verdict SAYS, in both catalogues.
+ *
+ * `as const satisfies` rather than an annotation: the annotation widens the
+ * values to `string` and `translate` takes `keyof Messages` precisely so a
+ * mistyped key is a compile error. The `satisfies` half keeps the other half of
+ * the guarantee — a verdict added to `MembershipVerdict` fails to compile here
+ * until it has been given something to say.
+ *
+ * `pending` is absent deliberately: it is rendered as the loading state, not as
+ * a sentence, and giving it one here would let a caller print it.
+ */
+const LINK_VERDICT_KEYS = {
+  present: 'receptions.confirm.linkRecorded',
+  absent: 'receptions.confirm.linkAbsent',
+  'unknown-truncated': 'receptions.confirm.linkTruncated',
+  'unknown-unreadable': 'receptions.confirm.linkUnknown',
+} as const satisfies Readonly<Record<Exclude<MembershipVerdict, 'pending'>, string>>;
 
 export function ConfirmationStep({
   locale,
@@ -166,11 +200,18 @@ export function ConfirmationStep({
     loadKey: `${requesterPartnerId ?? 'none'}:${readKey}`,
   });
 
-  const linkRecorded =
-    customerVehicles.status === 'idle' &&
-    (customerVehicles.response?.rows ?? []).some(
-      (row) => row.vehicleId === detail.vehicleId && row.active
-    );
+  /*
+   * Recorded / not recorded / not established — never two of the three.
+   *
+   * `present` is decided by the rows, so it survives a truncated page: finding
+   * the link is proof whatever else went unread. Everything else defers to the
+   * read's own completeness, which is why `hasMore` reaches this line at all.
+   */
+  const linkVerdict = membershipVerdict(
+    customerVehicles.status,
+    customerVehicles.response,
+    (row) => row.vehicleId === detail.vehicleId && row.active
+  );
 
   return (
     <div className="grid gap-4 lg:grid-cols-2">
@@ -233,22 +274,26 @@ export function ConfirmationStep({
         </h4>
 
         {capabilities.readCustomers && requesterPartnerId !== null ? (
-          customerVehicles.status === 'idle' ? (
-            <p className="mt-2 text-body text-text-secondary">
-              {translate(
-                messages,
-                linkRecorded ? 'receptions.confirm.linkRecorded' : 'receptions.confirm.linkAbsent'
-              )}
-            </p>
-          ) : customerVehicles.status === 'loading' ? (
+          linkVerdict === 'pending' ? (
             <LoadingState messages={messages} />
           ) : (
-            <p className="mt-2 text-body text-text-secondary">
-              {translate(messages, 'receptions.confirm.linkUnknown')}
-            </p>
+            <>
+              <p data-testid="confirm-link-verdict" className="mt-2 text-body text-text-secondary">
+                {translate(messages, LINK_VERDICT_KEYS[linkVerdict])}
+              </p>
+              {/* Announced AND reachable. A truncation notice with no control
+                  tells the operator their answer is somewhere they cannot go. */}
+              <div className="mt-2">
+                <CursorPager
+                  messages={messages}
+                  table={customerVehicles}
+                  label={translate(messages, 'receptions.confirm.linkPagerLabel')}
+                />
+              </div>
+            </>
           )
         ) : (
-          <p className="mt-2 text-body text-text-secondary">
+          <p data-testid="confirm-link-verdict" className="mt-2 text-body text-text-secondary">
             {translate(messages, 'receptions.confirm.linkUnknown')}
           </p>
         )}
@@ -271,7 +316,15 @@ export function ConfirmationStep({
           />
         ) : (relationships.response?.rows.length ?? 0) === 0 ? (
           <p className="mt-2 text-body text-text-secondary">
-            {translate(messages, 'receptions.confirm.relationshipsEmpty')}
+            {/* The same three states as the link above: an empty page is only
+                "none recorded" when the read covered the set. */}
+            {translate(
+              messages,
+              readCompleteness(relationships.status, relationships.response?.hasMore) ===
+                'truncated'
+                ? 'receptions.confirm.relationshipsTruncated'
+                : 'receptions.confirm.relationshipsEmpty'
+            )}
           </p>
         ) : (
           <ul className="mt-2 flex flex-col divide-y divide-border rounded-md border border-border">
@@ -300,6 +353,13 @@ export function ConfirmationStep({
             ))}
           </ul>
         )}
+        <div className="mt-2">
+          <CursorPager
+            messages={messages}
+            table={relationships}
+            label={translate(messages, 'receptions.confirm.relationshipsPagerLabel')}
+          />
+        </div>
       </section>
 
       <p className="text-caption text-text-muted lg:col-span-2" lang={locale}>

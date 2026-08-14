@@ -63,6 +63,13 @@
  * requested_from)` ascending. There is no sort parameter and no total.
  */
 
+import {
+  MAX_INSTANT_LENGTH,
+  hasExplicitUtcOffset,
+  validateInstant,
+  type InstantIssue,
+} from '@/components/forms/instant';
+
 /** One `apt.*` operation row, mirrored by the QA-001 harness. */
 export interface AppointmentOperationRow {
   readonly operationId: string;
@@ -390,41 +397,21 @@ export function canRecordNoShow(status: AppointmentStatus): boolean {
  * Windows — bounded instants with a MANDATORY explicit UTC offset
  * ------------------------------------------------------------------ */
 
-/** `z.string().min(1).max(64)` on both route schemas. */
-export const MAX_INSTANT_LENGTH = 64;
-
 /**
- * Mirror of the module domain's offset rule (`domain/appointment.ts:119`).
+ * The offset rule, re-exported from the tier both features can reach.
  *
- * A timezone-less local timestamp would be resolved against the SERVER zone —
- * for a branch calendar in another country, a real booking on the wrong hour —
- * so the backend refuses it, and this mirror lets the form say so beside the
- * field instead of surfacing an opaque 422. The displacement is capped at
- * ±15:59 because that is PostgreSQL's own `timestamptz` limit: V8 happily
- * parses `+16:00`, so without the cap the value would sail past every client
- * and server guard and die in the database as an unmapped `22009`.
+ * It was DEFINED here and mirrors the module domain's own refusal
+ * (`domain/appointment.ts:119`): a timezone-less local timestamp would be
+ * resolved against the SERVER zone — for a branch calendar in another country, a
+ * real booking on the wrong hour.
+ *
+ * It moved to `components/forms/instant.ts` because the reception odometer needs
+ * the identical rule and reaches it through the VEHICLES feature, which may
+ * never import this one. Nothing about the rule changed; every appointment
+ * screen and every appointment test still imports these four names from here.
+ * See that module for why the displacement is capped at ±15:59.
  */
-const EXPLICIT_OFFSET = /(?:Z|[+-](?:0\d|1[0-5]):[0-5]\d)$/;
-
-export function hasExplicitUtcOffset(value: string): boolean {
-  return EXPLICIT_OFFSET.test(value);
-}
-
-/**
- * The refusals this layer can decide locally about one instant. Stable tokens,
- * not translation keys — a screen maps them to its own catalogue entries, and a
- * token that reached an operator raw would be a defect in the screen.
- */
-export type InstantIssue = 'empty' | 'too_long' | 'missing_offset' | 'unparseable';
-
-export function validateInstant(value: string): InstantIssue | 'ok' {
-  const trimmed = value.trim();
-  if (trimmed.length === 0) return 'empty';
-  if (trimmed.length > MAX_INSTANT_LENGTH) return 'too_long';
-  if (!hasExplicitUtcOffset(trimmed)) return 'missing_offset';
-  if (Number.isNaN(Date.parse(trimmed))) return 'unparseable';
-  return 'ok';
-}
+export { MAX_INSTANT_LENGTH, hasExplicitUtcOffset, validateInstant, type InstantIssue };
 
 export type WindowIssue = InstantIssue | 'not_after_start';
 

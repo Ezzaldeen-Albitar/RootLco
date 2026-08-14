@@ -123,6 +123,7 @@ const CAPABILITIES = {
   convertReceptions: true,
   closeReceptions: true,
   readWorkOrders: true,
+  readStaffDirectory: true,
 };
 
 function stepProps(over: Partial<CheckInStepProps> = {}): CheckInStepProps {
@@ -568,6 +569,125 @@ describe('the refusal step (FE-019)', () => {
     expect(document.documentElement.dir).toBe('rtl');
     expect(await screen.findByTestId('refusal-not-exit')).toHaveTextContent(
       AR['receptions.refusal.notTheExit']!
+    );
+  });
+});
+
+/* --- F1/F8: what a truncated read may say, and who the inspector is --------- */
+
+describe('F1 — the refusal read-back never reports an unread page as an absence', () => {
+  const DECISION_ROW = {
+    kind: 'authorization' as const,
+    id: 'auth-1',
+    partnerId: 'partner-1',
+    partnerDisplayName: 'Layla Haddad',
+    authorizingRole: 'vehicle_owner',
+    decision: 'approved',
+    channel: 'in_person',
+    authorizedScope: null,
+    evidenceDocumentId: null,
+    occurredAt: '2026-08-13T08:30:00.000Z',
+    isStanding: false,
+  };
+
+  const REFUSAL_ROW = {
+    kind: 'refusal' as const,
+    id: 'ref-9',
+    partnerId: 'partner-2',
+    partnerDisplayName: 'Omar Nasser',
+    authorizingRole: null,
+    decision: 'declined',
+    channel: null,
+    authorizedScope: null,
+    evidenceDocumentId: null,
+    occurredAt: '2026-08-13T08:45:00.000Z',
+    isStanding: true,
+  };
+
+  function truncated<Row>(rows: readonly Row[]) {
+    return { ...page(rows), nextCursor: 'cursor-2', hasMore: true };
+  }
+
+  it('states the absence when the read covered the whole union', async () => {
+    // The control: a complete read holding decisions only. `receptions.refusal.empty`
+    // had ZERO assertions anywhere before this case.
+    listAuthorizations.mockResolvedValue(page([DECISION_ROW]));
+    renderLtr(<RefusalStep {...stepProps()} />);
+
+    await waitFor(() =>
+      expect(screen.getByTestId('refusal-read-back')).toHaveTextContent(
+        EN['receptions.refusal.empty']!
+      )
+    );
+  });
+
+  it('does not claim no refusal was recorded when the union was only partly read', async () => {
+    /*
+     * The defect. `listAuthorizations` pages a two-table UNION and this step's
+     * `kind === 'refusal'` filter runs AFTER the paging, so a page of decisions
+     * hid every refusal — while the screen printed "No refusal of an
+     * authorization has been recorded for this visit" about a visit whose
+     * standing refusal is what blocks approve and convert.
+     */
+    listAuthorizations.mockResolvedValue(truncated([DECISION_ROW]));
+    renderLtr(<RefusalStep {...stepProps()} />);
+
+    await waitFor(() =>
+      expect(screen.getByTestId('refusal-read-back')).toHaveTextContent(
+        EN['receptions.refusal.emptyTruncated']!
+      )
+    );
+    expect(screen.getByTestId('refusal-read-back')).not.toHaveTextContent(
+      EN['receptions.refusal.empty']!
+    );
+  });
+
+  it('reaches the refusal on the next page rather than only announcing it', async () => {
+    listAuthorizations.mockResolvedValue(truncated([DECISION_ROW]));
+    const user = userEvent.setup();
+    renderLtr(<RefusalStep {...stepProps()} />);
+    await screen.findByTestId('refusal-read-back');
+
+    const pager = screen.getByRole('navigation', { name: EN['receptions.refusal.pagerLabel']! });
+    listAuthorizations.mockResolvedValue(page([REFUSAL_ROW]));
+    await user.click(within(pager).getByRole('button', { name: EN['table.nextPage']! }));
+
+    await waitFor(() =>
+      expect(screen.getByText(EN['receptions.authorization.standing']!)).toBeInTheDocument()
+    );
+    expect(screen.queryByTestId('refusal-read-back')).not.toBeInTheDocument();
+  });
+
+  it('says more may exist even when this page DID hold a refusal', async () => {
+    // A visible refusal is not proof there is only one, and the standing one
+    // that blocks approval may be the one still unread.
+    listAuthorizations.mockResolvedValue(truncated([REFUSAL_ROW]));
+    renderLtr(<RefusalStep {...stepProps()} />);
+
+    expect(await screen.findByTestId('refusal-more-pages')).toHaveTextContent(
+      EN['receptions.refusal.morePages']!
+    );
+  });
+
+  it('offers no pager and no notice when the read covered the union', async () => {
+    listAuthorizations.mockResolvedValue(page([REFUSAL_ROW]));
+    renderLtr(<RefusalStep {...stepProps()} />);
+    await screen.findByText(EN['receptions.authorization.standing']!);
+
+    expect(screen.queryByTestId('refusal-more-pages')).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('navigation', { name: EN['receptions.refusal.pagerLabel']! })
+    ).not.toBeInTheDocument();
+  });
+
+  it('renders the truncated sentence in Arabic, not as a key', async () => {
+    listAuthorizations.mockResolvedValue(truncated([DECISION_ROW]));
+    renderRtl(<RefusalStep {...stepProps({ messages: ar })} />);
+
+    await waitFor(() =>
+      expect(screen.getByTestId('refusal-read-back')).toHaveTextContent(
+        AR['receptions.refusal.emptyTruncated']!
+      )
     );
   });
 });
