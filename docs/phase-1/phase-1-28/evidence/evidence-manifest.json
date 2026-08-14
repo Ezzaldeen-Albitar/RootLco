@@ -55,16 +55,16 @@
       "bytes": 2816
     },
     "docs/phase-1/phase-1-28/contract-archaeology.md": {
-      "sha256": "faa2673c449b376efdd9fad7f8694552f9f5f83da0387fe97d1a62a33c2d3688",
-      "bytes": 72028
+      "sha256": "cfdc479760d99b4420f3e2c5ca010dbb52207f89c3aa0eca7d16a4604f7d19b5",
+      "bytes": 76720
     },
     "docs/phase-1/phase-1-28/developer-guide.md": {
-      "sha256": "36271c9455913a58a9bba5738aa7d910c57bc0ba683382d26a6adb909c5618eb",
-      "bytes": 11079
+      "sha256": "7b006704d03fe7be81b3195277762076861de89791ffeeef515ff9fc9305adfb",
+      "bytes": 11687
     },
     "docs/phase-1/phase-1-28/evidence/change-log.md": {
-      "sha256": "429dc757ef85c8b75d759fedd20e5ffd60fdf21cf10ca21cd56ecd703006ceda",
-      "bytes": 29364
+      "sha256": "4a1610b2794e34681218b05dbc4fa096a367c1f7f78125805f81f748cd466b2b",
+      "bytes": 31946
     },
     "docs/phase-1/phase-1-28/evidence/closure-candidate.json": {
       "sha256": "1daa6ab576048d9741bf1dfef176098d1631f0833d94fc3972f0d8c03480c27a",
@@ -75,8 +75,8 @@
       "bytes": 33406
     },
     "docs/phase-1/phase-1-28/evidence/traceability.json": {
-      "sha256": "856f6c41cb7ac6e821f8bb94ae283062e557d590fdfd468159d01a7d5f5b1b33",
-      "bytes": 27544
+      "sha256": "600a8ae57e4a33b5c54d847befbcab82acb2a0d136d005cec777345c39c74ab1",
+      "bytes": 30544
     },
     "docs/phase-1/phase-1-28/evidence/traceability.md": {
       "sha256": "61d855f3e89138c54b0cf032a369c017ef85d51aea8fc2a9913eb1914433c217",
@@ -87,8 +87,8 @@
       "bytes": 13381
     },
     "docs/phase-1/phase-1-28/operator-guide.md": {
-      "sha256": "5fa404d010d7a5d3be023031912c986e03f4fcc57590bfd91e2d39e2c1365cb9",
-      "bytes": 15188
+      "sha256": "a5a1b18fcd1d82492696d7e52c93396d2b91cd20d3c44497060a1016532353ac",
+      "bytes": 15930
     },
     "docs/phase-1/phase-1-28/task-matrix-verdicts.json": {
       "sha256": "65626a56913536767ad2c966025138e2aad6e9870b4afb9cff11dd599a6985bc",

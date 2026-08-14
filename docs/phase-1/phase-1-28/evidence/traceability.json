@@ -16,6 +16,20 @@
     "CASE TITLES, the titles are matched against comment-stripped source, and a",
     "renamed case breaks the record instead of quietly hollowing it out.",
     "",
+    "EVERY PATH IN A `surface` IS REPOSITORY-RELATIVE AND IS RESOLVED. That",
+    "sentence used to be a promise this file made and the gate did not keep: the",
+    "checker tested `surface` for NON-EMPTINESS only, so pointing a task at",
+    "`NoSuchFile.tsx:4242` still reported zero disagreements — and seven surfaces",
+    "were in fact naming files that had never existed or had been renamed",
+    "(`IdentityStep`, `FuelStep`, `ComplaintStep`, `DamageStep`, `steps.ts`,",
+    "`ReceptionAcknowledgementScreen`, and a conversion section attributed to",
+    "`SummaryStep.tsx`). The gate now extracts every path-shaped token from each",
+    "surface, resolves it against the repository root — ONE root, which is why",
+    "these read `apps/web/src/...` rather than `features/...` — and, where a",
+    "`:LINE` is cited, requires that the file has that line and that the line is",
+    "not blank. Every task must resolve at least one path; a surface that names",
+    "no file is a surface nobody can check.",
+    "",
     "WHAT IS NOT HERE. No count that the tree can answer. The apt/rec surface",
     "figures, the task-category sizes, the reachability classification counts and",
     "the matrix totals are all derived by the gate and substituted into the",
@@ -55,97 +69,97 @@
   "tasks": {
     "FE-001": {
       "testId": "TC-P1-28-APT-001",
-      "surface": "features/appointments/components/AppointmentCalendarScreen.tsx behind app/[locale]/(dashboard)/appointments/page.tsx; the queue half is features/receptions/components/ReceptionQueueScreen.tsx."
+      "surface": "apps/web/src/features/appointments/components/AppointmentCalendarScreen.tsx behind apps/web/src/app/[locale]/(dashboard)/appointments/page.tsx; the queue half is apps/web/src/features/receptions/components/ReceptionQueueScreen.tsx."
     },
     "FE-002": {
       "testId": "TC-P1-28-APT-002",
-      "surface": "features/appointments/components/AppointmentBookingScreen.tsx behind appointments/new/page.tsx.",
+      "surface": "apps/web/src/features/appointments/components/AppointmentBookingScreen.tsx behind apps/web/src/app/[locale]/(dashboard)/appointments/new/page.tsx.",
       "decisionRef": "P1-28-OD-001"
     },
     "FE-003": {
       "testId": "TC-P1-28-APT-003",
-      "surface": "the confirm-by-rescheduling section of features/appointments/components/AppointmentDetailScreen.tsx."
+      "surface": "the confirm-by-rescheduling section of apps/web/src/features/appointments/components/AppointmentDetailScreen.tsx."
     },
     "FE-004": {
       "testId": "TC-P1-28-APT-004",
-      "surface": "the cancellation section of AppointmentDetailScreen.tsx, over apt.catalogue-cancellation-reason-list.",
+      "surface": "the cancellation section of apps/web/src/features/appointments/components/AppointmentDetailScreen.tsx, over apt.catalogue-cancellation-reason-list.",
       "decisionRef": "P1-28-OD-001"
     },
     "FE-005": {
       "testId": "TC-P1-28-APT-005",
-      "surface": "the no-show section of AppointmentDetailScreen.tsx."
+      "surface": "the no-show section of apps/web/src/features/appointments/components/AppointmentDetailScreen.tsx."
     },
     "FE-006": {
       "testId": "TC-P1-28-XD-001",
-      "surface": "features/receptions/intake/components/WalkInIntakeScreen.tsx and features/receptions/intake/intake-handoff.ts."
+      "surface": "apps/web/src/features/receptions/intake/components/WalkInIntakeScreen.tsx and apps/web/src/features/receptions/intake/intake-handoff.ts."
     },
     "FE-007": {
       "testId": "TC-P1-28-REC-001",
-      "surface": "features/receptions/components/CheckInStartScreen.tsx, features/receptions/check-in/wizard.ts and check-in/steps.ts."
+      "surface": "apps/web/src/features/receptions/components/CheckInStartScreen.tsx, apps/web/src/features/receptions/check-in/wizard.ts and the step registry apps/web/src/features/receptions/check-in/steps.tsx."
     },
     "FE-008": {
       "testId": "TC-P1-28-XD-002",
-      "surface": "features/receptions/components/steps/IdentityStep.tsx."
+      "surface": "apps/web/src/features/receptions/components/steps/ConfirmationStep.tsx — the wizard's first registered step."
     },
     "FE-009": {
       "testId": "TC-P1-28-REC-002",
-      "surface": "features/receptions/components/steps/PartiesStep.tsx."
+      "surface": "apps/web/src/features/receptions/components/steps/PartiesStep.tsx."
     },
     "FE-010": {
       "testId": "TC-P1-28-REC-003",
-      "surface": "features/receptions/components/steps/ComplaintStep.tsx."
+      "surface": "apps/web/src/features/receptions/components/steps/ComplaintsStep.tsx."
     },
     "FE-011": {
       "testId": "TC-P1-28-REC-004",
-      "surface": "features/receptions/components/steps/InspectionStep.tsx."
+      "surface": "apps/web/src/features/receptions/components/steps/InspectionStep.tsx."
     },
     "FE-012": {
       "testId": "TC-P1-28-REC-005",
-      "surface": "features/receptions/components/steps/DamageStep.tsx."
+      "surface": "apps/web/src/features/receptions/components/steps/DamageMapStep.tsx."
     },
     "FE-013": {
       "testId": "TC-P1-28-XD-003",
-      "surface": "features/receptions/components/steps/ReadingsStep.tsx, over the veh.* odometer operations."
+      "surface": "the odometer panel of apps/web/src/features/receptions/components/steps/ReadingsStep.tsx, over the veh.* odometer operations."
     },
     "FE-014": {
       "testId": "TC-P1-28-REC-006",
-      "surface": "features/receptions/components/steps/FuelStep.tsx.",
+      "surface": "capture is at check-in, on apps/web/src/features/receptions/components/CheckInStartScreen.tsx; there is no fuel STEP in the wizard registry and read-back is the FuelPanel of apps/web/src/features/receptions/components/steps/ReadingsStep.tsx:287, over apps/web/src/features/receptions/catalogue-api.ts.",
       "decisionRef": "P1-28-OD-001"
     },
     "FE-015": {
       "testId": "TC-P1-28-REC-007",
-      "surface": "features/receptions/components/steps/WarningLightsStep.tsx.",
+      "surface": "apps/web/src/features/receptions/components/steps/WarningLightsStep.tsx.",
       "decisionRef": "P1-28-OD-001"
     },
     "FE-016": {
       "testId": "TC-P1-28-REC-008",
-      "surface": "features/receptions/components/steps/ContentsStep.tsx."
+      "surface": "apps/web/src/features/receptions/components/steps/ContentsStep.tsx."
     },
     "FE-017": {
       "testId": "TC-P1-28-REC-009",
-      "surface": "features/receptions/media/* — the named-open-decision notice and nothing else.",
+      "surface": "apps/web/src/features/receptions/media/media-decision.ts rendered by apps/web/src/features/receptions/media/MediaDecisionNotice.tsx and registered as a step through apps/web/src/features/receptions/components/steps/MediaStep.tsx — the named-open-decision notice and nothing else.",
       "decisionRef": "P1-OD-025"
     },
     "FE-018": {
       "testId": "TC-P1-28-REC-010",
-      "surface": "features/receptions/components/steps/SignatureStep.tsx — attribution shown, nothing recorded.",
+      "surface": "apps/web/src/features/receptions/components/steps/SignatureStep.tsx — attribution shown, nothing recorded.",
       "decisionRef": "P1-OD-025"
     },
     "FE-019": {
       "testId": "TC-P1-28-REC-011",
-      "surface": "features/receptions/components/steps/RefusalStep.tsx."
+      "surface": "apps/web/src/features/receptions/components/steps/RefusalStep.tsx."
     },
     "FE-020": {
       "testId": "TC-P1-28-REC-012",
-      "surface": "features/receptions/components/steps/SummaryStep.tsx and the reception queue board."
+      "surface": "apps/web/src/features/receptions/components/steps/SummaryStep.tsx and the reception queue board apps/web/src/features/receptions/components/ReceptionQueueScreen.tsx."
     },
     "FE-021": {
       "testId": "TC-P1-28-REC-013",
-      "surface": "features/receptions/components/ReceptionAcknowledgementScreen.tsx, inside the shared print frame."
+      "surface": "apps/web/src/features/receptions/components/AcknowledgementDocument.tsx, inside the shared print frame."
     },
     "FE-022": {
       "testId": "TC-P1-28-XD-004",
-      "surface": "the conversion section of SummaryStep.tsx, reading wo.work-order-detail for the result."
+      "surface": "apps/web/src/features/receptions/components/steps/ConversionStep.tsx, reading wo.work-order-detail for the result through apps/web/src/features/receptions/work-order-api.ts."
     },
     "SEC-001": {
       "testId": "N/A — the plan binds none",
@@ -153,11 +167,11 @@
     },
     "SEC-002": {
       "testId": "N/A — the plan binds none",
-      "surface": "the composed iam.sensitive.view rows of composed-permissions.json and the two restricted wizard steps."
+      "surface": "the composed iam.sensitive.view rows of docs/phase-1/phase-1-28/composed-permissions.json and the two restricted wizard steps, apps/web/src/features/receptions/components/steps/ComplaintsStep.tsx and apps/web/src/features/receptions/components/steps/ContentsStep.tsx, over the ordered gate apps/web/src/features/receptions/check-in/sensitive.ts."
     },
     "SEC-003": {
       "testId": "N/A — the plan binds none",
-      "surface": "the no-scope-in-a-url rule of check-p1-28-access.mjs."
+      "surface": "the no-scope-in-a-url rule of scripts/ci/check-p1-28-access.mjs, and the typed branch-target value it forces through apps/web/src/features/appointments/components/BranchTargetFields.tsx."
     },
     "SEC-004": {
       "testId": "N/A — the plan binds none",
@@ -165,7 +179,7 @@
     },
     "QA-001": {
       "testId": "N/A — the plan binds none",
-      "surface": "apps/web/tests/p1-28-qa.test.ts and the per-screen DOM suites."
+      "surface": "apps/web/tests/p1-28-qa.test.ts over the drive corpus apps/web/tests/support/p1-28-drives.ts, and the per-screen DOM suites."
     },
     "QA-002": {
       "testId": "N/A — the plan binds none",
@@ -173,7 +187,7 @@
     },
     "QA-003": {
       "testId": "N/A — the plan binds none",
-      "surface": "the isolation cases of apps/web/tests/p1-28-security.test.ts and the browser isolation spec."
+      "surface": "the isolation cases of apps/web/tests/p1-28-security.test.ts and the route-layer negative controls of apps/web/tests/p1-28-permission-route-binding.test.ts."
     },
     "QA-004": {
       "testId": "N/A — the plan binds none",
@@ -181,11 +195,11 @@
     },
     "QA-005": {
       "testId": "N/A — the plan binds none",
-      "surface": "end-of-phase; the evidence package is sealed against the closing candidate."
+      "surface": "end-of-phase; scripts/ci/build-p1-28-evidence-manifest.mjs seals the package as docs/phase-1/phase-1-28/evidence/evidence-manifest.json against the closing candidate docs/phase-1/phase-1-28/evidence/closure-candidate.json."
     },
     "DO-001": {
       "testId": "N/A — the plan binds none",
-      "surface": "the P1-28 gate wiring in .github/workflows and scripts/ci/check-command-coverage.mjs."
+      "surface": "the P1-28 gate wiring in .github/workflows/_reusable-node-quality.yml and scripts/ci/check-command-coverage.mjs."
     },
     "DO-002": {
       "testId": "N/A — the plan binds none",
@@ -193,11 +207,11 @@
     },
     "DOC-001": {
       "testId": "N/A — the plan binds none",
-      "surface": "canonical-plan.md, contract-archaeology.md, this record and scripts/ci/check-p1-28-traceability.mjs."
+      "surface": "docs/phase-1/phase-1-28/canonical-plan.md, docs/phase-1/phase-1-28/contract-archaeology.md, this record at docs/phase-1/phase-1-28/evidence/traceability.json and scripts/ci/check-p1-28-traceability.mjs."
     },
     "DOC-002": {
       "testId": "N/A — the plan binds none",
-      "surface": "operator-guide.md, developer-guide.md and evidence/change-log.md."
+      "surface": "docs/phase-1/phase-1-28/operator-guide.md, docs/phase-1/phase-1-28/developer-guide.md and docs/phase-1/phase-1-28/evidence/change-log.md."
     }
   },
   "testIds": {

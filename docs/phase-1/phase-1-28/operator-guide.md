@@ -109,8 +109,13 @@ nothing to edit.
 
 Thirteen steps, in the order the desk works: confirmation of customer and
 vehicle, parties and authority, complaints, inspection findings, damage,
-readings, fuel, warning lights, contents, media, signatures, refusals, summary
-and approval, and finally the work order.
+readings, warning lights, contents, media, signatures, refusals, summary and
+approval, and finally the work order.
+
+**There is no fuel step.** The fuel level and state of charge are taken when the
+visit is opened, as above, and the readings step shows back what was taken. A
+sentence here listing a fourteenth step called "fuel" is the exact defect this
+page is checked for.
 
 Each step records what it is named after and nothing else. Where a step cannot
 honestly record something, it says which fact is missing and who has to supply
@@ -241,10 +246,11 @@ you the same work order. That is success, not an error.
 
 ## The catalogues this workshop has not been given yet
 
-Seven lists sit behind the screens above: appointment types, source channels,
+The workshop has seven of these lists: appointment types, source channels,
 cancellation reasons, visit reasons, fuel levels, warning-lamp codes and refusal
 reasons. **All seven ship empty, and nothing in this product can add an entry to
-any of them.**
+any of them.** Six of them sit behind a screen above; visit reasons sits behind
+none, and that is said plainly below rather than left for you to look for.
 
 That has consequences you will meet on your first day, so they are stated here
 rather than discovered:
@@ -253,7 +259,12 @@ rather than discovered:
   screen says so and does not let you submit.
 - **No appointment can be cancelled** until cancellation reasons exist, for the
   same reason.
-- The fuel, warning-lamp and refusal-reason steps work, and offer nothing.
+- The warning-lamp and refusal-reason **steps** work, and offer nothing. **The
+  fuel level is not a step**: it is a picker on the screen that opens the visit,
+  and it offers nothing for the same reason.
+- **Visit reasons are read by no screen at all.** The list exists and the
+  platform can serve it, but nothing in this release asks a visit for a reason,
+  so there is no field for it to fill and nowhere it would appear.
 
 None of this is a fault, and none of it is a setting somebody forgot. The
 capability to fill these lists exists in the system; **who is allowed to use it,

@@ -22,7 +22,6 @@ import {
   COMPLAINT_CATEGORIES,
   COMPLAINT_SEVERITIES,
   DAMAGE_MARK_TYPES,
-  EVIDENCE_KINDS,
   FINDING_CATEGORIES,
   FINDING_SEVERITIES,
   LEAK_TYPES,
@@ -64,7 +63,6 @@ import {
   type ReceptionCreateInput,
   type ReceptionCreated,
   type ReceptionDetail,
-  type ReceptionHistoryEntry,
   type ReceptionListCriteria,
   type ReceptionListEntry,
   type RefusalInput,
@@ -391,14 +389,26 @@ export async function listConditionEvidence(
   );
 }
 
-/** The status and custody ledgers of one visit, newest first (`rec.reception-history`). */
-export async function listReceptionHistory(
-  receptionId: string,
-  request: TableRequest,
-  cursor: string | null
-): Promise<ServerPage<ReceptionHistoryEntry>> {
-  return readVisitPage<ReceptionHistoryEntry>(receptionId, '/history', request, cursor);
-}
+/*
+ * `listReceptionHistory` is gone (`P1-28-F9`).
+ *
+ * It called `GET /receptions/{id}/history` — `rec.reception-history`, the
+ * visit's status and custody ledgers — and had ZERO production consumers: a
+ * repository-wide search over `apps/web/src` returned its own definition line
+ * and nothing else. No canonical P1-28 task binds that operation; the only
+ * `*-history` binding in the whole 35-task matrix is
+ * `veh.vehicle-odometer-history`, on `FE-013`, which is wired.
+ *
+ * Wiring it would have meant building a visit-ledger panel no task asks for,
+ * so the choice was between an unreachable adapter and an unbound screen. The
+ * precedent is `crm/customers/identity-api.ts`, where `listHistory` — the same
+ * shape, on the same kind of operation — was deleted one phase earlier under
+ * `P1-27-QA-002` rather than given coverage that would have tested an
+ * unreachable read.
+ *
+ * The operation itself is untouched and still published; what is recorded now
+ * is that no screen reaches it (`contract-archaeology.md`, row B9-B10).
+ */
 
 /* ------------------------------------------------------------------ *
  * Writes
@@ -692,7 +702,18 @@ async function closeVisit(
   return { status: 'success', correlationId: result.correlationId, attempt, closed: result.data };
 }
 
-/** The kind filter's own vocabulary, for the evidence list's filter control. */
-export async function conditionEvidenceKinds(): Promise<readonly string[]> {
-  return EVIDENCE_KINDS;
-}
+/*
+ * `conditionEvidenceKinds` is gone (`P1-28-F9`).
+ *
+ * It was an `async` re-export of the frozen `EVIDENCE_KINDS` constant, and its
+ * docblock said it was "for the evidence list's filter control". There is no
+ * filter control: `EvidencePanels` passes a FIXED kind per panel, and
+ * `SummaryStep` and the acknowledgement page pass `undefined`. So the sentence
+ * described a screen nobody built, and the function had zero consumers.
+ *
+ * It could not have earned coverage either — it issues no request, so there is
+ * no path, no body and no failure mapping to drive, which is why the QA-001
+ * drive corpus carried it as its one written exclusion. Anything that ever does
+ * need the vocabulary imports `EVIDENCE_KINDS` from `receptions-contract.ts`,
+ * where the contract test already holds it to the operation's own union.
+ */

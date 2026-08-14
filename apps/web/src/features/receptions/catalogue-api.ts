@@ -10,14 +10,19 @@ import {
 } from '@/lib/api/read-operation';
 
 /**
- * The four reception intake-catalogue reads (P1-28, Wave A; backend R3).
+ * The reception intake-catalogue reads this product consumes (P1-28, Wave A;
+ * backend R3).
  *
- * | operation                                | path                                        |
- * | ---------------------------------------- | ------------------------------------------- |
- * | `rec.catalogue-visit-reason-list`        | `/reception-catalogue/visit-reasons`        |
- * | `rec.catalogue-fuel-level-list`          | `/reception-catalogue/fuel-levels`          |
- * | `rec.catalogue-warning-light-code-list`  | `/reception-catalogue/warning-light-codes`  |
- * | `rec.catalogue-refusal-reason-list`      | `/reception-catalogue/refusal-reasons`      |
+ * | operation                                | path                                        | adapter |
+ * | ---------------------------------------- | ------------------------------------------- | ------- |
+ * | `rec.catalogue-fuel-level-list`          | `/reception-catalogue/fuel-levels`          | yes     |
+ * | `rec.catalogue-warning-light-code-list`  | `/reception-catalogue/warning-light-codes`  | yes     |
+ * | `rec.catalogue-refusal-reason-list`      | `/reception-catalogue/refusal-reasons`      | yes     |
+ * | `rec.catalogue-visit-reason-list`        | `/reception-catalogue/visit-reasons`        | NO      |
+ *
+ * R3 published four; three are consumed and the fourth is not — see the note
+ * where its adapter used to be. A row is listed here so the absence is a
+ * recorded decision rather than something a later reader has to notice.
  *
  * All `rec.reception.read`, `auditClass: none`, `low-risk-metadata`. Same
  * page-walking shape as the appointment catalogue adapter beside this feature
@@ -87,9 +92,24 @@ async function readCatalogue(path: string): Promise<IntakeCatalogueResult> {
   return { status: 'ok', options, truncated: true, correlationId };
 }
 
-export async function listVisitReasons(): Promise<IntakeCatalogueResult> {
-  return readCatalogue('/api/v1/reception-catalogue/visit-reasons');
-}
+/*
+ * `listVisitReasons` is gone (`P1-28-F9`).
+ *
+ * `rec.catalogue-visit-reason-list` is registered and R3 published it, and this
+ * adapter had ZERO production consumers — its own definition line and nothing
+ * else in `apps/web/src`. It is not merely unwired, it is UNWIRABLE in this
+ * release: no canonical P1-28 task binds the operation, and no apt/rec write
+ * takes a visit reason at all — `rec.reception-create`'s `.strict()` body is
+ * company, branch, vehicle, receiving employee, service requester, origin,
+ * odometer reading, fuel level and state of charge, and nothing else. There is
+ * no field for a reason to fill.
+ *
+ * So the choice was between an adapter no screen can reach and a screen no task
+ * binds. The precedent for deleting is `crm/customers/identity-api.ts`
+ * (`P1-27-QA-002`). The operation is untouched and still published; that no
+ * screen reads it is now recorded in `contract-archaeology.md` (row B12-B13)
+ * and stated to the operator in `operator-guide.md`.
+ */
 
 export async function listFuelLevels(): Promise<IntakeCatalogueResult> {
   return readCatalogue('/api/v1/reception-catalogue/fuel-levels');
