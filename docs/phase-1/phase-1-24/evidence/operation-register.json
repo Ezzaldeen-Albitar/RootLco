@@ -524,7 +524,7 @@
       "requiredEvidence": ["route", "service", "success", "authorization", "denial"],
       "providedEvidence": ["authorization", "denial", "route", "service", "success"],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-18-intake-catalogues.test.ts"],
+      "tests": ["tests/backend/p1-18-intake-catalogues.test.ts", "tests/ci/p1-28-matrix.test.ts"],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/appointment-catalogue/cancellation-reasons/route.ts"
     },
@@ -6435,6 +6435,7 @@
       "missingEvidence": [],
       "tests": [
         "tests/backend/p1-27-reception-reads.test.ts",
+        "tests/ci/p1-28-matrix.test.ts",
         "tests/foundation/p1-18-scoped-authorization.test.ts"
       ],
       "classification": "Covered",
