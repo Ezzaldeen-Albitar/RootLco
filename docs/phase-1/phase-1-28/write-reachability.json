@@ -1,0 +1,204 @@
+{
+  "$comment": [
+    "P1-28 write-reachability classification (SEC-004), checked by",
+    "scripts/ci/check-p1-28-write-reachability.mjs (validate:p1-28-write-reachability).",
+    "",
+    "The OPERATION LIST is not held here. It is derived at check time from the",
+    "P1-24 operation register: every apt.* / rec.* operation whose method is not",
+    "GET. An operation present in the register and absent here fails as UNWIRED —",
+    "that is INT-113, P1-27's dominant defect class, recurring.",
+    "",
+    "REACHABLE requires a real production mutation call site in apps/web/src that",
+    "something outside its own module CONSUMES. An adapter nobody imports is a",
+    "write nobody can invoke — Wave A landed the whole reception adapter surface",
+    "ahead of its screens, so the difference is not theoretical. Tests, comments,",
+    "docblocks and the generated lib/api/idempotent-operations.ts do not count and",
+    "are excluded by the checker. A path built by a helper (visitPath) counts: the",
+    "checker resolves such a helper by shape, not by name.",
+    "",
+    "NOT_YET_WIRED is the day-one allow-list: the phase's frontend waves have not",
+    "landed and no screen exists yet. Every entry requires a reason naming the",
+    "canonical-plan task that will wire it. The list only SHRINKS: the checker",
+    "refuses any NOT_YET_WIRED id that is not on its frozen day-one list, and",
+    "refuses an allow-listed operation that IS called — the wave that lands a",
+    "screen must flip the entry to REACHABLE in the same change.",
+    "",
+    "DELIBERATELY_ABSENT requires a decisionRef that RESOLVES against the",
+    "decisions recorded in canonical-plan.md section 7. Non-emptiness is not",
+    "enough: a fabricated reference reads exactly like an approved one, and one",
+    "was walked past an earlier version of this gate. The checker now reads the",
+    "plan and refuses any reference no decision heading there carries.",
+    "",
+    "Twenty-one operations carry it, all of them the intake-catalogue",
+    "management writes PR #227 registered: create, update and status-set across",
+    "the seven catalogues. They are absent from apps/web deliberately. The",
+    "35-task register is the OPERATOR surface and no canonical P1-28 task binds",
+    "a catalogue-administration screen, so who administers these catalogues and",
+    "through which surface is an Owner decision that has not been taken. It is",
+    "recorded as P1-28-OD-001, and this is the vocabulary's stated purpose: a",
+    "future Owner decision recorded AS a decision rather than parked as",
+    "not-yet-wired, which the frozen ratchet would refuse anyway."
+  ],
+  "operations": {
+    "apt.appointment-create": {
+      "classification": "REACHABLE",
+      "reason": "P1-28-FE-002: the booking screen at /appointments/new submits through the createAppointment adapter."
+    },
+    "apt.appointment-reschedule": {
+      "classification": "REACHABLE",
+      "reason": "P1-28-FE-003: the confirm-or-reschedule section of the appointment detail screen submits through the rescheduleAppointment adapter."
+    },
+    "apt.appointment-cancel": {
+      "classification": "REACHABLE",
+      "reason": "P1-28-FE-004: the cancellation dialog of the appointment detail screen submits through the cancelAppointment adapter with a catalogued reason."
+    },
+    "apt.appointment-no-show": {
+      "classification": "REACHABLE",
+      "reason": "P1-28-FE-005: the no-show dialog of the appointment detail screen submits through the recordAppointmentNoShow adapter."
+    },
+    "rec.reception-create": {
+      "classification": "REACHABLE"
+    },
+    "rec.reception-party-role": {
+      "classification": "REACHABLE",
+      "reason": "P1-28-FE-009: the parties step of the check-in wizard (apps/web/src/features/receptions/components/steps/PartiesStep.tsx) submits through assignPartyRole in apps/web/src/features/receptions/api.ts, which sends POST visitPath(receptionId, '/party-roles'). The gate resolves that helper by shape since the integration wave."
+    },
+    "rec.reception-authorization": {
+      "classification": "REACHABLE",
+      "reason": "P1-28-FE-009: the authorization panel of the same parties step (apps/web/src/features/receptions/components/steps/PartiesStep.tsx) submits through recordAuthorization in apps/web/src/features/receptions/api.ts, which sends POST visitPath(receptionId, '/authorizations')."
+    },
+    "rec.reception-condition-evidence": {
+      "classification": "REACHABLE",
+      "reason": "P1-28-FE-010/011/012/015/016: five condition-evidence wizard steps (apps/web/src/features/receptions/components/steps/{ComplaintsStep,InspectionStep,DamageMapStep,WarningLightsStep,ContentsStep}.tsx) submit through recordConditionEvidence in apps/web/src/features/receptions/api.ts, which sends POST visitPath(receptionId, '/condition-evidence'). All five are registered in apps/web/src/features/receptions/check-in/steps.tsx and rendered by the check-in wizard route. What an OPERATOR can record depends on the tenant's data, and the classification is REACHABLE because four kinds need none of it: complaint, inspection, leak and contents submit on an empty database. Three more are DATA-GATED and their controls appear only once the row they hang off exists — condition_item needs an open inspection (the same step opens one), damage_mark needs a registered damage_map, and warning_light needs a non-empty warning-lamp catalogue, which no operation in this product can populate. damage_map itself is BLOCKED outright: it requires a registered map-template document and the exact version drawn on, both NOT NULL foreign keys of rec.damage_maps into shared.documents / shared.document_versions. This clause used to read 'no operation registers a document', which is false — shared.attachment-upload-authorize is published and creates that row — and the true, stronger reason is that the chain cannot COMPLETE: no document category exists or can be created (so the call fails ERR-RES-001 for every tenant), the default storage provider refuses every signing call, and no version can ever leave pending. The three are recorded as DOCUMENT_CHAIN_BLOCKERS in apps/web/src/features/receptions/media/media-decision.ts and re-derived from the repository by apps/web/tests/p1-28-reception-media.test.ts, so a commit that closes one of them fails a case instead of quietly leaving a stale justification. P1-OD-025 governs whether the chain may exist at all — so damage_mark is unreachable in practice for the same reason, since the map it needs cannot be created here. None of this is stated as 'seven of eight kinds work': apps/web/src/features/receptions/check-in/evidence.ts carries the per-kind coverage table (four wired, three data_gated, one blocked) and every gated or blocked row names the statement the step puts on screen, which tests/reception-evidence.test.ts holds against the step sources in both directions."
+    },
+    "rec.reception-signature": {
+      "classification": "NOT_YET_WIRED",
+      "reason": "P1-28-FE-018 shipped its non-image half — the signature step states the block, lists the roles and purposes the operation records, and shows the visit's active parties — but records NO signature and deliberately contains no call to recordSignature. SignatureInput requires signatureDocumentId AND signatureDocumentVersionId, both required uuids naming a registered signature document and the exact version signed, and rec.signatures holds both as foreign keys into shared.documents / shared.document_versions. THIS REASON WAS CORRECTED: it previously read 'the published surface has shared.document-read and no operation that registers a document', which is false — shared.attachment-upload-authorize is published and creating the shared.documents row is the first thing it does, so the classification rested on a sentence one grep refutes. The true reason is that the chain cannot COMPLETE, for three independent facts recorded as DOCUMENT_CHAIN_BLOCKERS in apps/web/src/features/receptions/media/media-decision.ts and re-derived from the repository by apps/web/tests/p1-28-reception-media.test.ts: (a) shared.document_categories ships zero rows and no operation anywhere creates, amends or lists a category, so the authorize call fails ERR-RES-001 before it reaches storage — unlike the intake catalogues of P1-28-OD-001, where 21 management writes exist and only the surface is withheld, here there is no such thing as a configured tenant; (b) the default storage provider refuses every signing call with ERR-SYS-001 and the only alternative the composition root can build is the local fake, no production provider being provisioned while ADR-012 is open; (c) a registered version can never leave pending, because the initial-state guard refuses any other status and acceptance needs a clean scan record no application role may write. P1-OD-025 governs whether the chain may exist at all, and the no-upload-path gate rule refuses capture code in apps/web while it is open. Flipping this to REACHABLE would be a false claim of the INT-113 shape. tests/reception-readings-and-signoff.dom.test.tsx asserts the absence of any submit control on that step."
+    },
+    "rec.reception-refusal": {
+      "classification": "REACHABLE",
+      "reason": "P1-28-FE-019: the refusal step of the check-in wizard (apps/web/src/features/receptions/components/steps/RefusalStep.tsx) submits through recordRefusal in apps/web/src/features/receptions/api.ts, which sends POST visitPath(receptionId, '/refusals'). It is registered in apps/web/src/features/receptions/check-in/steps.tsx as `reception-refusal` and is distinct from the rec.reception-refuse EXIT command, which this step does not call and says so on screen."
+    },
+    "rec.reception-approve": {
+      "classification": "REACHABLE",
+      "reason": "P1-28-FE-020: the decision panel of the summary step (apps/web/src/features/receptions/components/steps/SummaryStep.tsx, registered in apps/web/src/features/receptions/check-in/steps.tsx) submits through approveReception in apps/web/src/features/receptions/api.ts, which sends POST visitPath(receptionId, '/approve') guarded by the If-Match the shell's rec.reception-detail read supplies."
+    },
+    "rec.reception-convert-to-work-order": {
+      "classification": "REACHABLE",
+      "reason": "P1-28-FE-022: the conversion step (apps/web/src/features/receptions/components/steps/ConversionStep.tsx, registered in apps/web/src/features/receptions/check-in/steps.tsx) submits through convertReceptionToWorkOrder in apps/web/src/features/receptions/api.ts, which sends POST visitPath(receptionId, '/convert-to-work-order'). A replay answers 200 with alreadyConverted: true and the step renders it as the success it is."
+    },
+    "rec.reception-close-without-work": {
+      "classification": "REACHABLE",
+      "reason": "P1-28-FE-020: the 'close without work' form of the summary step (apps/web/src/features/receptions/components/steps/SummaryStep.tsx) submits through closeReceptionWithoutWork in apps/web/src/features/receptions/api.ts, which forwards to closeVisit and sends POST visitPath(receptionId, '/close-without-work'). The gate resolves that path because closeVisit types its tail as a union of string literals, which Waves F/G taught it to enumerate."
+    },
+    "rec.reception-refuse": {
+      "classification": "REACHABLE",
+      "reason": "P1-28-FE-020: the 'refuse the visit' form of the same summary step (apps/web/src/features/receptions/components/steps/SummaryStep.tsx) submits through refuseReception in apps/web/src/features/receptions/api.ts, which forwards to closeVisit and sends POST visitPath(receptionId, '/refuse'). This is the terminal EXIT, not rec.reception-refusal, which appends refusal evidence and changes no status."
+    },
+    "apt.catalogue-appointment-type-create": {
+      "classification": "DELIBERATELY_ABSENT",
+      "decisionRef": "P1-28-OD-001",
+      "reason": "Catalogue apt.appointment_types — create. No administration screen exists in this product and no canonical P1-28 task binds one; the capability ships as API only, behind apt.catalogue.manage, which no seed grants to any role. Populating this catalogue is what would unblock FE-002, because appointmentTypeId is a required uuid on apt.appointment-create."
+    },
+    "apt.catalogue-appointment-type-update": {
+      "classification": "DELIBERATELY_ABSENT",
+      "decisionRef": "P1-28-OD-001",
+      "reason": "Catalogue apt.appointment_types — update. Same surface question as the create: an amend needs the same administration screen that has not been decided on, so no apps/web module calls it."
+    },
+    "apt.catalogue-appointment-type-status-set": {
+      "classification": "DELIBERATELY_ABSENT",
+      "decisionRef": "P1-28-OD-001",
+      "reason": "Catalogue apt.appointment_types — status set (retire or restore). Same surface question: the operator surface never withdraws a catalogue row, and the administration surface that would is undecided."
+    },
+    "apt.catalogue-cancellation-reason-create": {
+      "classification": "DELIBERATELY_ABSENT",
+      "decisionRef": "P1-28-OD-001",
+      "reason": "Catalogue apt.cancellation_reasons — create. No administration screen and no canonical task binding one; API only, behind apt.catalogue.manage, granted to no role. Populating this catalogue is what would unblock FE-004, because cancellationReasonId is mandatory on apt.appointment-cancel with no free-text alternative."
+    },
+    "apt.catalogue-cancellation-reason-update": {
+      "classification": "DELIBERATELY_ABSENT",
+      "decisionRef": "P1-28-OD-001",
+      "reason": "Catalogue apt.cancellation_reasons — update. Same surface question as its create; no apps/web module calls it."
+    },
+    "apt.catalogue-cancellation-reason-status-set": {
+      "classification": "DELIBERATELY_ABSENT",
+      "decisionRef": "P1-28-OD-001",
+      "reason": "Catalogue apt.cancellation_reasons — status set. Same surface question; retiring a reason is an administrative act with no decided surface."
+    },
+    "apt.catalogue-source-channel-create": {
+      "classification": "DELIBERATELY_ABSENT",
+      "decisionRef": "P1-28-OD-001",
+      "reason": "Catalogue apt.source_channels — create. No administration screen and no canonical task binding one; API only, behind apt.catalogue.manage. sourceChannelId is NULLABLE on apt.appointment-create, so an empty channel catalogue degrades FE-002 rather than blocking it — the emptiness is recorded on screen as an absence, not as an error."
+    },
+    "apt.catalogue-source-channel-update": {
+      "classification": "DELIBERATELY_ABSENT",
+      "decisionRef": "P1-28-OD-001",
+      "reason": "Catalogue apt.source_channels — update. Same surface question as its create; no apps/web module calls it."
+    },
+    "apt.catalogue-source-channel-status-set": {
+      "classification": "DELIBERATELY_ABSENT",
+      "decisionRef": "P1-28-OD-001",
+      "reason": "Catalogue apt.source_channels — status set. Same surface question; no apps/web module calls it."
+    },
+    "rec.catalogue-fuel-level-create": {
+      "classification": "DELIBERATELY_ABSENT",
+      "decisionRef": "P1-28-OD-001",
+      "reason": "Catalogue rec.fuel_levels — create. No administration screen and no canonical task binding one; API only, behind rec.catalogue.manage, granted to no role. Populating this catalogue answers ONE of FE-014's two blockers; the other is that no operation amends a created visit's fuelLevelId, which is a P1-18 contract gap and not this decision."
+    },
+    "rec.catalogue-fuel-level-update": {
+      "classification": "DELIBERATELY_ABSENT",
+      "decisionRef": "P1-28-OD-001",
+      "reason": "Catalogue rec.fuel_levels — update. Same surface question as its create; no apps/web module calls it."
+    },
+    "rec.catalogue-fuel-level-status-set": {
+      "classification": "DELIBERATELY_ABSENT",
+      "decisionRef": "P1-28-OD-001",
+      "reason": "Catalogue rec.fuel_levels — status set. Same surface question; no apps/web module calls it."
+    },
+    "rec.catalogue-refusal-reason-create": {
+      "classification": "DELIBERATELY_ABSENT",
+      "decisionRef": "P1-28-OD-001",
+      "reason": "Catalogue rec.refusal_reasons — create. No administration screen and no canonical task binding one; API only, behind rec.catalogue.manage. The refusal reason is OPTIONAL on rec.reception-refusal, so FE-019 degrades rather than blocks — which is exactly why FE-019 is PASS and FE-004 is not."
+    },
+    "rec.catalogue-refusal-reason-update": {
+      "classification": "DELIBERATELY_ABSENT",
+      "decisionRef": "P1-28-OD-001",
+      "reason": "Catalogue rec.refusal_reasons — update. Same surface question as its create; no apps/web module calls it."
+    },
+    "rec.catalogue-refusal-reason-status-set": {
+      "classification": "DELIBERATELY_ABSENT",
+      "decisionRef": "P1-28-OD-001",
+      "reason": "Catalogue rec.refusal_reasons — status set. Same surface question; no apps/web module calls it."
+    },
+    "rec.catalogue-visit-reason-create": {
+      "classification": "DELIBERATELY_ABSENT",
+      "decisionRef": "P1-28-OD-001",
+      "reason": "Catalogue rec.visit_reasons — create. No administration screen and no canonical task binding one; API only, behind rec.catalogue.manage, granted to no role."
+    },
+    "rec.catalogue-visit-reason-update": {
+      "classification": "DELIBERATELY_ABSENT",
+      "decisionRef": "P1-28-OD-001",
+      "reason": "Catalogue rec.visit_reasons — update. Same surface question as its create; no apps/web module calls it."
+    },
+    "rec.catalogue-visit-reason-status-set": {
+      "classification": "DELIBERATELY_ABSENT",
+      "decisionRef": "P1-28-OD-001",
+      "reason": "Catalogue rec.visit_reasons — status set. Same surface question; no apps/web module calls it."
+    },
+    "rec.catalogue-warning-light-code-create": {
+      "classification": "DELIBERATELY_ABSENT",
+      "decisionRef": "P1-28-OD-001",
+      "reason": "Catalogue rec.warning_light_codes — create. This is the operation RMC-11 said did not exist; it exists now, and the table is still empty because nothing in the product reaches it. That remaining half is this decision, and it is what keeps FE-015's warning_light evidence kind unusable in the product as shipped."
+    },
+    "rec.catalogue-warning-light-code-update": {
+      "classification": "DELIBERATELY_ABSENT",
+      "decisionRef": "P1-28-OD-001",
+      "reason": "Catalogue rec.warning_light_codes — update. Same surface question as its create; no apps/web module calls it."
+    },
+    "rec.catalogue-warning-light-code-status-set": {
+      "classification": "DELIBERATELY_ABSENT",
+      "decisionRef": "P1-28-OD-001",
+      "reason": "Catalogue rec.warning_light_codes — status set. Same surface question; no apps/web module calls it."
+    }
+  }
+}

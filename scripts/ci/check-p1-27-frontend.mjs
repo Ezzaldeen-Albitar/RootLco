@@ -97,13 +97,87 @@ import { pathToFileURL } from 'node:url';
  * re-derives the list from that document and fails if any of the three is
  * removed again.
  */
-export const SCAN_ROOTS = [
+export const PLAN_ROOTS = [
   join('apps', 'web', 'src', 'features', 'crm'),
   join('apps', 'web', 'src', 'features', 'vehicles'),
   join('apps', 'web', 'src', 'app', '[locale]', '(dashboard)'),
 ];
 
-/** Where the authority for `SCAN_ROOTS` is written down. */
+/**
+ * Trees a LATER phase opted into these rules, each with its own authority.
+ *
+ * `PLAN_ROOTS` is derived from P1-27's canonical plan and may not grow: the plan
+ * is a closed phase's sealed artefact, and adding a tree to it would be asserting
+ * that another phase's code is P1-27 Frontend work. That constraint used to end
+ * the argument — `UNCOLLECTED_PHASE_MODULES` below records the reasoning, and it
+ * is still correct about the plan.
+ *
+ * It was not correct about the RULES. `no-upload-path` and
+ * `no-invented-media-limit` enforce the `P1-OD-025` disposition, which is a
+ * standing product decision and not a P1-27 one; while the reception tree was
+ * collected by no root, both reported clean over a tree they had never opened
+ * and the only thing enforcing them there was one test file, which a single
+ * commit can delete alongside the code it guards
+ * (`apps/web/tests/p1-28-reception-media.test.ts` says so in its own docblock).
+ *
+ * So adoption is separated from the plan rather than smuggled into it: P1-28
+ * declares its Frontend tree in ITS canonical plan, this constant records the
+ * adoption with that document as the citation, and
+ * `tests/ci/p1-27-frontend-gate.test.ts` checks each half against its own
+ * authority. Neither document is made to say something it does not.
+ *
+ * @type {ReadonlyArray<{ root: string, authority: string, phase: string }>}
+ */
+export const ADOPTED_ROOTS = Object.freeze([
+  /*
+   * `P1-28-DO-001` and `P1-28-SEC-003`, which found the SAME omission
+   * independently and each added an entry for it.
+   *
+   * P1-28's plan §9 names THREE trees — `features/appointments`,
+   * `features/receptions` and `app/[locale]/(dashboard)` — and this constant
+   * recorded one of them. The dashboard tree is already a `PLAN_ROOT`, so the
+   * omission was `features/appointments` alone.
+   *
+   * Measured at the head that carried it: nine `.ts`/`.tsx` files — the whole
+   * appointment surface, including the two screens that build a branch-target
+   * query and the booking form that posts a company and a branch in its body —
+   * were collected by no root. Seven rules reported clean over a tree they had
+   * never opened, and the eighth (`no-client-asserted-scope`) was the only one
+   * whose premise genuinely does not hold there. That is the same shape the
+   * third `PLAN_ROOT` was added to fix — a gate contradicting its own authority
+   * — and it is fixed the same way: by citation, not by opinion.
+   *
+   * ## Why this is ONE entry and briefly was two
+   *
+   * The two waves ran on separate branches and were merged without the whole
+   * battery being re-run over the union, so `features/appointments` was adopted
+   * TWICE. `tests/ci/p1-28-devops-gate.test.ts` compares the adopted set with
+   * the set the plan owes as an equality and went red on the merge commit —
+   * correctly, and to nobody, because the merge was the first head on which the
+   * two changes existed together. A duplicate root is not harmless either:
+   * `SCAN_ROOTS` is walked per entry, so every rule judged the appointment tree
+   * twice and any violation there would have been reported twice.
+   *
+   * `tests/ci/p1-28-devops-gate.test.ts` derives the expected adopted set from
+   * the P1-28 plan's §9 sentence, so a fourth tree cannot be forgotten the same
+   * way and a third copy of an existing one cannot be added.
+   */
+  Object.freeze({
+    root: join('apps', 'web', 'src', 'features', 'appointments'),
+    authority: 'docs/phase-1/phase-1-28/canonical-plan.md',
+    phase: 'P1-28',
+  }),
+  Object.freeze({
+    root: join('apps', 'web', 'src', 'features', 'receptions'),
+    authority: 'docs/phase-1/phase-1-28/canonical-plan.md',
+    phase: 'P1-28',
+  }),
+]);
+
+/** Every tree the gate opens: the plan's three, plus every adopted tree. */
+export const SCAN_ROOTS = [...PLAN_ROOTS, ...ADOPTED_ROOTS.map((entry) => entry.root)];
+
+/** Where the authority for `PLAN_ROOTS` is written down. */
 export const ROOT_AUTHORITY = 'docs/phase-1/phase-1-27/canonical-plan.md';
 
 /**
@@ -121,10 +195,13 @@ export const ROOT_AUTHORITY = 'docs/phase-1/phase-1-27/canonical-plan.md';
  * ## Why the list used to be wrong, and why a list could not notice
  *
  * This constant WAS five directories, written by hand. Measured against the
- * imports the three scanned trees actually make, five was **5 of 14**. A
- * hand-written list can only fail when one of ITS entries goes missing; it can
- * never fail because something was never added, which is the failure that
- * happened. The largest omission was `components/data-table` — imported by 38
+ * imports the three trees scanned AT THAT TIME actually make, five was
+ * **5 of 14** — a historical figure, kept because it is what the argument rests
+ * on; two trees have been adopted since and a real run of this gate now reports
+ * 18 imported modules across five. A hand-written list can only fail when one of
+ * ITS entries goes missing; it can never fail because something was never added,
+ * which is the failure that happened. The largest omission was
+ * `components/data-table` — imported by 38
  * import statements across the scanned trees and holding `DataTable.tsx`, the
  * component that renders every customer and vehicle row an operator sees. It was
  * in neither this list nor the security suite's `MOVED_OUT`, which was a second
@@ -143,15 +220,25 @@ export const ROOT_AUTHORITY = 'docs/phase-1/phase-1-27/canonical-plan.md';
  * Because `SCAN_ROOTS` is not a free variable. It is bound in two directions by
  * documents this branch does not own:
  *
- *   - `canonical-plan.md` §9 (lines 327-329) names the three trees, and
- *     `tests/ci/p1-27-frontend-gate.test.ts` re-derives the expected root list
- *     from that text and asserts `SCAN_ROOTS` equals it — including that the
- *     plan declares exactly three. Adding a root without amending the plan makes
- *     the gate contradict its own authority, which is the defect the third root
- *     was added to fix, pointing the other way.
- *   - `check-p1-27-doc-counts.mjs` publishes `p1-27-frontend-gate` (69) and
- *     `p1-27-frontend-gate:trees` (3) as derived markers, and four documents
- *     carry them.
+ *   - P1-27's `canonical-plan.md` §9 names the three trees `PLAN_ROOTS` holds,
+ *     and `tests/ci/p1-27-frontend-gate.test.ts` re-derives that half of the
+ *     root list from the text and asserts `PLAN_ROOTS` equals it — including
+ *     that the plan declares exactly three. Adding a PLAN root without amending
+ *     the plan makes the gate contradict its own authority, which is the defect
+ *     the third root was added to fix, pointing the other way. `ADOPTED_ROOTS`
+ *     is the other half and is checked against P1-28's plan instead, which is
+ *     why `SCAN_ROOTS` is five while the P1-27 plan still names three.
+ *   - `check-p1-27-doc-counts.mjs` publishes `p1-27-frontend-gate` (the file
+ *     count) and `p1-27-frontend-gate:trees` (`SCAN_ROOTS.length`) as derived
+ *     markers, and four documents carry them —
+ *     `deliverable-manifest.md`, `open-decisions.md`,
+ *     `owner-acceptance-fail-remediation.md` and `risk-register.md`. A real run
+ *     of this gate at this head reports **123 files across 5 trees**, and those
+ *     are the values the four documents carry; this sentence used to name 69 and
+ *     3, which were the values when the second tree was adopted and had been
+ *     wrong since. The markers themselves are re-derived on every run, so the
+ *     documents cannot drift — only prose like this can, which is why the
+ *     numbers here now say which run produced them.
  *
  * And a wider widening is worse, not better: measured across the `.ts`/`.tsx`
  * files under `apps/web/src` that no root collects, a rule fires in
@@ -246,6 +333,24 @@ export const MODULE_DISPOSITION = Object.freeze({
   'apps/web/src/components/duplicates': 'in-surface',
   'apps/web/src/components/forms': 'in-surface',
   'apps/web/src/components/party': 'in-surface',
+  /**
+   * `action-notifications` — what a write's outcome becomes on screen. Newly
+   * visible when the P1-28 reception tree adopted these rules; operator-facing,
+   * so `in-surface` rather than transport.
+   */
+  'apps/web/src/components/notifications': 'in-surface',
+  /**
+   * The confirmation dialogs the appointment detail screen raises before it
+   * cancels an appointment or records a no-show — both terminal, both
+   * irreversible. Newly visible when the P1-28 appointment tree was adopted;
+   * operator-facing, so `in-surface`.   */
+  'apps/web/src/components/overlays': 'in-surface',
+  /**
+   * `PrintDocument`/`PrintTable` — the page geometry of the acknowledgement
+   * sheet a customer is handed. Newly visible with the adopted tree, and about
+   * as operator-facing as a surface gets.
+   */
+  'apps/web/src/components/print': 'in-surface',
   /** `Icon`, rendered inside P1-27 controls. */
   'apps/web/src/components/primitives': 'in-surface',
   /** `PageHeader`, and the locale switcher that carries table state across it. */
@@ -762,10 +867,37 @@ export const RULES = [
      * tree was added to `SCAN_ROOTS`. `assertedScopes()` carries the reasoning
      * and the boundary; the pattern is kept beside it so a reader can see which
      * names are in scope without following the function.
+     *
+     * ## `roots`, and why it is not an allow-list wearing a hat
+     *
+     * This rule's premise — "scope is resolved server-side" — is a fact about
+     * the CRM and Vehicle OPERATIONS, not about the platform. `rec.*` publishes
+     * the opposite contract: `rec.reception-create` takes `companyId` and
+     * `branchId` as REQUIRED body fields and `rec.reception-list` as a mandatory
+     * query pair, because a reception visit is authorized against the branch it
+     * is FOR (`P1-18-A-01`). A client sending them is not widening its own
+     * access — the server checks the operator's permission IN that scope and
+     * refuses — it is naming the resource, exactly as it names a vehicle.
+     *
+     * An `allow` entry would have been the wrong instrument, and this gate's own
+     * tests say so: `tests/ci/p1-27-frontend-gate.test.ts` asserts that NO rule
+     * carries an allowance, precisely so a false positive is answered with a
+     * distinction rather than an escape hatch. `allow` exempts FILES from a rule
+     * that applies to them; `roots` says where the rule's premise is true at all.
+     * The difference is visible the moment somebody adds a file: a new reception
+     * screen is not something anyone has to remember to list, and a new CRM or
+     * Vehicle screen is still caught.
+     *
+     * What the narrowing gives up is measured rather than waved away.
+     * `tenantId`/`tenant_id` is a published selector on NO operation anywhere, so
+     * the gate suite sweeps every tree outside `roots` for those two names
+     * specifically and fails if either appears in any position.
      */
     pattern: SCOPE_PATTERN,
     detect: (source) => assertedScopes(source).length > 0,
     what: 'asserts a scope to the API; scope is resolved server-side (displaying session scope is fine)',
+    /** The trees whose operations resolve scope server-side. See above. */
+    roots: PLAN_ROOTS.map((root) => root.split(sep).join('/')),
     allow: [],
   },
   {
@@ -955,6 +1087,19 @@ function allowed(relPath, allow) {
 }
 
 /**
+ * Is this file inside a tree the rule's premise holds over?
+ *
+ * A rule with no `roots` applies everywhere, which is the default and the case
+ * for seven of the eight. `no-client-asserted-scope` is the exception and its
+ * docblock carries the reason — the trees differ in what their OPERATIONS
+ * publish, not in how carefully they are written.
+ */
+export function inRuleScope(rule, relPath) {
+  if (!Array.isArray(rule.roots)) return true;
+  return rule.roots.some((root) => relPath === root || relPath.startsWith(`${root}/`));
+}
+
+/**
  * Does this rule fire on this source?
  *
  * A rule may carry a `detect` function instead of relying on its `pattern`.
@@ -1008,6 +1153,7 @@ export function evaluate(files) {
     let inspected = 0;
     for (const file of files) {
       if (allowed(file.path, rule.allow)) continue;
+      if (!inRuleScope(rule, file.path)) continue;
       inspected += 1;
       if (fires(rule, stripComments(file.source))) {
         failures.push(`${rule.id}: ${file.path} ${rule.what}`);

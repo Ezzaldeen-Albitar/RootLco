@@ -1,6 +1,8 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
+import type { ReactElement } from 'react';
 import { describe, expect, it } from 'vitest';
+import { ReadBoundary } from '@/features/administration/shared/components/ScreenStates';
 import {
   ADMINISTRATION_PERMISSIONS,
   PERMISSIONS,
@@ -244,5 +246,70 @@ describe('the administration source tree', () => {
     for (const file of files) {
       expect(code(file)).not.toContain('dangerouslySetInnerHTML');
     }
+  });
+});
+
+describe('ReadBoundary hands the correlation reference to every backend failure', () => {
+  /**
+   * ## The defect this pins
+   *
+   * `ReadBoundary` is the single failure surface of eleven Administration
+   * screens, and its `unavailable` branch rendered
+   * `<BackendUnavailableState messages={…} />` with the reference held in a
+   * local one line above and never passed. Every other backend branch beside it
+   * passed one.
+   *
+   * It survived every tier for a structural reason rather than a lucky one:
+   * `route-correlation-binding.test.ts` sweeps `src/app/**`, and
+   * `p1-28-observability.test.ts` sweeps the trees P1-28's plan §9 names. A
+   * shared boundary under `src/features/administration` is in neither corpus, so
+   * the one line that decides what eleven screens print when the platform is
+   * unreachable was governed by nothing at all.
+   *
+   * ## Why the element is INVOKED rather than the file scanned
+   *
+   * A source sweep for the word `correlationId` was green throughout — the word
+   * is in the file, three lines away from where it was needed. `P1-27-SEC-004`
+   * is the same lesson: a word being present in a file is not a value reaching a
+   * screen. So each branch is rendered and the prop is read off the node.
+   */
+  const messages = en as unknown as Parameters<typeof ReadBoundary>[0]['messages'];
+  const CORRELATION = 'a3f4c9d2-1b6e-4a80-9f52-77c0e4b1a9d3';
+
+  function propsOf(status: string): Record<string, unknown> {
+    const element = ReadBoundary({
+      state: { status, correlationId: CORRELATION } as never,
+      messages,
+      children: () => null,
+    }) as ReactElement<Record<string, unknown>>;
+    return element.props;
+  }
+
+  it('carries it on a refusal, a fault and an unreachable platform', () => {
+    for (const status of ['denied', 'unavailable', 'error']) {
+      expect(propsOf(status)['correlationId'], `${status} rendered no reference`).toBe(CORRELATION);
+    }
+  });
+
+  it('prints nothing on an ended session or a missing record', () => {
+    // The other direction. Neither is a fault, and a reference beside "your
+    // session ended" sends an operator to support about a working system.
+    for (const status of ['expired', 'not-found']) {
+      expect(propsOf(status)['correlationId'], `${status} invented a reference`).toBeUndefined();
+    }
+  });
+
+  it('is falsifiable — the boundary really does render five different states', () => {
+    // Without this the two cases above pass equally against a boundary that
+    // returned one component for everything.
+    const tags = ['denied', 'expired', 'unavailable', 'not-found', 'error'].map((status) => {
+      const element = ReadBoundary({
+        state: { status, correlationId: CORRELATION } as never,
+        messages,
+        children: () => null,
+      }) as ReactElement;
+      return element.type;
+    });
+    expect(new Set(tags).size).toBe(5);
   });
 });

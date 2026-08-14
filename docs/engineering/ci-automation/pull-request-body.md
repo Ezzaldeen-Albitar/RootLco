@@ -60,7 +60,7 @@ shaped the design:
 Counted precisely, because these numbers drifted once already and are now
 reconciled against the filesystem by `tests/ci/documented-counts.test.ts`:
 **10 reusable workflows**, **7 top-level workflows** (the six above plus the
-retained `ci.yml`), **1 composite action**, **46 scripts in `scripts/ci`**,
+retained `ci.yml`), **1 composite action**, **52 scripts in `scripts/ci`**,
 **14 baselines**, **25 documents** under `docs/engineering/ci-automation`, and
 **14 workflow-security rules**.
 

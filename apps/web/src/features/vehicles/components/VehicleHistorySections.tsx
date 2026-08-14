@@ -580,11 +580,14 @@ export function OdometerSection({
               optionKeyPrefix: 'vehicles.odometerUnit.',
             },
             {
+              // The same control as the reception step, and for the same
+              // reason: `kind: 'text'` let a zoneless local time through to a
+              // `timestamptz`, where the server's own zone decided what moment
+              // it meant. See `components/forms/instant.ts`.
               name: 'observedAt',
-              kind: 'text',
+              kind: 'instant',
               labelKey: 'vehicles.odometer.observedAt',
               required: true,
-              maxLength: 40,
               hintKey: 'vehicles.odometer.observedAtHint',
             },
             {

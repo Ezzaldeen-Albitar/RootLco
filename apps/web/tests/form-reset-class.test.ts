@@ -68,6 +68,11 @@ const SRC = join(process.cwd(), 'src');
 const ROOTS = [
   join(SRC, 'features', 'crm'),
   join(SRC, 'features', 'vehicles'),
+  // P1-28: the reception intake flow renders forms of exactly this class
+  // (a lifecycle select and a powertrain select inside `<form action={…}>`),
+  // so its tree joins the inventory rather than repeating the five-round
+  // history that built it.
+  join(SRC, 'features', 'receptions'),
   join(SRC, 'components', 'forms'),
   join(SRC, 'components', 'party'),
   join(SRC, 'components', 'duplicates'),

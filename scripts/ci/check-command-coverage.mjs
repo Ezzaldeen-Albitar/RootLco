@@ -243,6 +243,105 @@ export const REGISTER = Object.freeze([
     why: 'regenerates the canonical P1-27 task matrix',
   },
   {
+    name: 'validate:p1-28-matrix',
+    owner: ROOT,
+    tier: 'required',
+    // The P1-28 sibling of `validate:p1-27-matrix`, registered on DAY ONE of the
+    // phase rather than mid-phase: P1-27 built this authority only after 33
+    // adjudicated items had been counted as 42 canonical tasks. The universe is
+    // derived from `docs/phase-1/phase-1-28/canonical-plan.md` and this refuses
+    // any drift between the plan, the recorded verdicts and the committed matrix.
+    why: 'the 35-task P1-28 matrix still matches the canonical plan and the recorded verdicts',
+  },
+  {
+    name: 'matrix:p1-28',
+    owner: ROOT,
+    tier: 'informational',
+    // The writer, for the same reason `matrix:p1-27` is not required: a CI job
+    // that regenerated the matrix would repair the drift the check reports.
+    why: 'regenerates the canonical P1-28 task matrix',
+  },
+  {
+    name: 'validate:p1-28-evidence',
+    owner: ROOT,
+    tier: 'required',
+    // P1-28-QA-005. The `--check` half of `evidence:p1-28`. It seals the phase
+    // directory by digesting every file's BYTES, and it does two things its
+    // P1-27 sibling does not, because a digest cannot check either: it refuses a
+    // candidate the two halves of the closing package disagree about, and it
+    // DERIVES the unclosed-task set from task-matrix-verdicts.json so a task
+    // that stops being named in the package fails rather than reading like a
+    // task that closed. Named by a hosted job directly rather than riding the
+    // clean-room aggregate the way its P1-27 sibling still does.
+    why: 'every P1-28 evidence document is digested, the digests match the bytes, and the closing package binds its candidate and names every unclosed task',
+  },
+  {
+    name: 'evidence:p1-28',
+    owner: ROOT,
+    tier: 'informational',
+    // The writer, for the same reason `evidence:p1-27` is not required: a CI job
+    // that regenerated the manifest would repair the drift the check reports,
+    // resealing an edit instead of reporting it.
+    why: 'regenerates the P1-28 evidence digest manifest',
+  },
+  {
+    name: 'validate:p1-28-write-reachability',
+    owner: ROOT,
+    tier: 'required',
+    // The P1-28 sibling of `validate:p1-27-reachability` (SEC-004), built on
+    // DAY ONE: the crm/veh gate covers crm/veh only, so the apt/rec writes this
+    // phase consumes had no reachability authority at all. The operation list
+    // is derived from the P1-24 register; a write nobody can reach is either
+    // on a frozen, shrink-only allow-list with a recorded reason, or a
+    // violation — so INT-113 (declared-but-never-wired) cannot recur silently.
+    // Mutation-proved by tests/ci/p1-28-write-reachability.test.ts.
+    why: 'every canonical P1-28 apt/rec write is reachable, allow-listed with a reason, or deliberately absent',
+  },
+  {
+    name: 'validate:p1-28-access',
+    owner: ROOT,
+    tier: 'required',
+    // `P1-28-SEC-001` / `SEC-003`. SEC-004's gate asks whether an operation can
+    // be reached; this asks the two questions after it — whether the screen
+    // requires exactly the permission its operations require and no more, and
+    // whether anything in these trees puts a scope into a request. Both were
+    // enforced by test files alone before this, and a test can be deleted in the
+    // same commit as the code it guards. Mutation-proved by
+    // tests/ci/p1-28-access-gate.test.ts.
+    why: 'every P1-28 screen gates before it reads, consults only published codes, requires no more than its operations require, and asserts no scope in a URL',
+  },
+  {
+    name: 'validate:p1-28-version-sourcing',
+    owner: ROOT,
+    tier: 'required',
+    // QA-004's mechanical half. The canonical plan states the sourcing rule in
+    // one sentence — a version-guarded write takes its recordVersion from a
+    // READ or from the immediately prior command response — and until this gate
+    // that sentence had nothing behind it: a screen sending `version + 1` would
+    // satisfy every adapter test in the suite, because the adapter forwards
+    // whatever number it is handed, and approve answers sent + 1 or sent + 2
+    // depending on a state the screen does not control. The guarded operations
+    // are derived from the published contract, the adapters from the tree, and
+    // every If-Match argument is traced to a parameter or a server-stated
+    // recordVersion. Mutation-proved by tests/ci/p1-28-version-sourcing.test.ts.
+    why: 'every version-guarded P1-28 command sources its If-Match from a read or a command response, never from arithmetic or a cached guess',
+  },
+  {
+    name: 'validate:p1-28-traceability',
+    owner: ROOT,
+    tier: 'required',
+    // `P1-28-DOC-001`. The P1-28 sibling of `validate:p1-27-doc-counts`, and it
+    // exists for the same defect: a true sentence that stopped being true. This
+    // phase corrected its contract archaeology twice in one week — the second
+    // time because PR #227 overtook the first correction — so every figure a
+    // P1-28 document states about the platform is now a `derived:` marker this
+    // gate substitutes the tree's answer for. It also binds each canonical test
+    // id to quoted cases in comment-stripped source, so P1-27's twenty-nine
+    // declared-and-unbound ids cannot recur. Mutation-proved by
+    // tests/ci/p1-28-matrix.test.ts.
+    why: 'every P1-28 derived count matches the tree, every canonical test id resolves to real cases, and no withdrawn claim returns',
+  },
+  {
     name: 'evidence:p1-27',
     owner: ROOT,
     // `informational`, not `optional`. `optional` is not one of the four tiers
@@ -282,6 +381,19 @@ export const REGISTER = Object.freeze([
     tier: 'interactive',
     why: 'starts and stops real servers to prove two dev:all runs cannot duplicate the stack',
   },
+  {
+    name: 'acceptance:serve',
+    owner: ROOT,
+    tier: 'interactive',
+    // The Owner acceptance stack, and the reason it cannot be `next dev`: a
+    // development server compiles each route on first request, and a route
+    // bundle compiled without having run the API's IAM composition holds an
+    // unconfigured authenticator that refuses a valid bearer token. Measured
+    // twice — 200 on /receptions while /vehicles and /work-orders answered 401
+    // in the same process, with a different subset the second time — and every
+    // one of them answered 200 on a production build of the same tree.
+    why: 'builds both workspaces and serves them with next start: the Owner acceptance stack',
+  },
   // The Owner-acceptance tooling is `interactive` for the same reason `dev:*`
   // is: it needs a running local Supabase and refuses every other target, so a
   // hosted runner could not execute it even if a workflow asked. Requiring it
@@ -290,7 +402,19 @@ export const REGISTER = Object.freeze([
     name: 'acceptance:create-owner',
     owner: ROOT,
     tier: 'interactive',
-    why: 'creates the local-only Owner acceptance account and both synthetic tenants',
+    why: 'creates the local-only Owner acceptance account and all three synthetic tenants',
+  },
+  {
+    name: 'acceptance:provision-fixtures',
+    owner: ROOT,
+    tier: 'interactive',
+    // Not `required`, and not merely because it needs a database: it needs a
+    // RUNNING API, because every row it writes is written by an authenticated
+    // call to a published operation rather than by an INSERT. The browser tier
+    // provisions the same fixtures through the same module, so CI needs no step
+    // of its own; this command exists so a human can reach the configured
+    // workspace by hand.
+    why: 'configures the intake catalogues of the acceptance workspace through the published management contracts',
   },
   {
     name: 'acceptance:status-owner',

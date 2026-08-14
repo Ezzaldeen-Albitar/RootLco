@@ -301,6 +301,66 @@ jobs:
           npm run build:web
 
       - name: Start the API and wait for it to report itself ready
+        env:
+          # THE BROWSER TIER IS ONE OPERATOR AT MACHINE SPEED, AND THE READ
+          # BUDGET IS SIZED FOR A HUMAN.
+          #
+          # `apps/api/src/server/http/rate-limit.ts` rations two operations this
+          # tier leans on. `expensive-read` allows THIRTY `iam.user-list` reads
+          # per sixty seconds per OPERATOR; `auth-adjacent` allows TEN sign-ins
+          # per sixty seconds per CLIENT ADDRESS. Both numbers are right for the
+          # caller they describe. This job is not that caller: it drives three
+          # projects of page loads as ONE operator from ONE address, and
+          # `/administration/users` — which `shared-ux.spec.ts`,
+          # `drawer-and-restore.spec.ts`, `isolation.spec.ts` and
+          # `administration.spec.ts` all use as their screen — costs one
+          # `iam.user-list` on every render.
+          #
+          # MEASURED, not assumed. With a counting proxy in front of the API, one
+          # full local run of this tier makes 96 `iam.user-list` reads and peaks
+          # at 28 of them inside a single 60-second window — 93% of the budget,
+          # with the peak straddling the `authenticated-en`/`authenticated-ar`
+          # boundary, where one project's table-heavy tail meets the next one's
+          # table-heavy head. That local run takes 13.5 minutes against this
+          # job's 7.6, so the same work lands far denser here. At candidate
+          # `daca04f6` it landed over the line: `GET /api/v1/iam/users` answered
+          # 429, the users table did the right thing and rendered its documented
+          # "temporarily unavailable" state, and `administration.spec.ts:84`
+          # failed on a screen that had stopped being a table — in a spec P1-28
+          # never touched. The five sign-in refusals in the same run were the
+          # tier overspending `auth-adjacent`, and THAT was repaired where it
+          # belonged, in the specs, by signing each principal in once per project
+          # instead of once per case: the same measurement now shows 19 sign-ins
+          # in a whole run and a busiest minute of 4 against a limit of 10.
+          #
+          # This half cannot be repaired that way. The reads are not repetition;
+          # they are 96 distinct renders of screens the cases genuinely need.
+          # Trimming a few would buy headroom until the next spec is added or the
+          # runner gets faster — a deterministic failure converted into a latent
+          # one, which is the shape this repository keeps getting caught by.
+          #
+          # So the tier is given a budget that matches what it is, using the
+          # product's own documented switch, in the tier's own environment.
+          # `docs/standards/rate-limiting-standard.md` §1 states it plainly —
+          # "Enforcement is switchable via `RATE_LIMIT_ENABLED` (default
+          # `true`)" — and this is the same escape hatch, used the same way, as
+          # `ROOTLCO_ENABLE_GALLERY` in `apps/web/playwright.config.ts`: the
+          # production default is met, the documented opt-out is taken for the
+          # one environment that cannot live inside it, and the reason is written
+          # down where the next reader will find it.
+          #
+          # WHAT THIS DOES NOT COST. No spec under `apps/web/tests/e2e/**` asserts
+          # a 429 or names `ERR-RTE-001`, so nothing here is asserted less. The
+          # limiter itself stays proved by `tests/foundation/rate-limit.test.ts`
+          # and by `tests/backend/p1-24-read-path-shape.test.ts:460`, which spends
+          # a whole window against the running API and requires `ERR-RTE-001` —
+          # both of which run in jobs this gate already waits for.
+          #
+          # WHERE IT IS DELIBERATELY NOT SET: the local acceptance stack. `npm run
+          # acceptance:serve` sets nothing of the kind, so the Owner meets the
+          # product as configured. A person clicking through screens never
+          # approaches thirty reads a minute; only a browser suite does.
+          RATE_LIMIT_ENABLED: 'false'
         run: |
           set -euo pipefail
           # `next start` against the production build, not `next dev`: a dev
@@ -322,6 +382,30 @@ jobs:
           echo "::error::The API never reported ready. Its output follows."
           cat api.log
           exit 1
+
+      - name: Provision the configured workspace
+        run: |
+          set -euo pipefail
+          # The CONFIGURED half of the P1-28 evidence. Tenant A deliberately
+          # stays empty, because production ships with no catalogue rows and the
+          # truthful "not configured" sentences are themselves a deliverable the
+          # suite asserts. This provisions a THIRD tenant whose seven intake
+          # catalogues hold one deterministic synthetic row each — created at run
+          # time by authenticated POSTs to the published management contracts,
+          # never seeded into `supabase/` or `apps/`, which the permanent
+          # no-fake-data policy forbids.
+          #
+          # It runs AFTER the API reports ready because every row is created
+          # through that API, not against the database.
+          #
+          # Without this step the configured-workspace cases fail here while
+          # passing locally, which is exactly how this step came to exist.
+          #
+          # `--release-open-visits` is the browser tier's own flag: one vehicle
+          # may hold one open visit, so a re-run would silently exercise the
+          # RESUME path instead of the create path it means to prove — a green
+          # result for a journey nobody tested.
+          npm run acceptance:provision-fixtures -- --release-open-visits
 
       - name: The authenticated browser tier
         env:

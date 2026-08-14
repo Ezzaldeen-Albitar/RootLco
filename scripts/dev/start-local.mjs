@@ -1,11 +1,37 @@
 #!/usr/bin/env node
 /**
- * The owner-visible local development launcher.
+ * The owner-visible local launcher, in either of two modes.
  *
- *     npm run dev:all
+ *     npm run dev:all            development — next dev, compiled on demand
+ *     npm run acceptance:serve   production  — next build, then next start
  *
- * Running it twice is safe. The second run adopts the stack the first one
+ * Running either twice is safe. The second run adopts the stack the first one
  * started and exits 0.
+ *
+ * ## Why there is a production mode — the false 401
+ *
+ * `next dev` compiles a route bundle the first time that route is requested.
+ * The API's authenticator is a module-level singleton installed as a SIDE
+ * EFFECT of composing the IAM module inside the login handler, so a route
+ * bundle Next compiled on demand WITHOUT having run that composition still
+ * holds the unconfigured authenticator — which fails closed.
+ *
+ * Measured twice on this checkout, ONE valid owner bearer token, ONE process:
+ * `GET /api/v1/receptions` answered 200 while `GET /api/v1/vehicles` and
+ * `GET /api/v1/work-orders` answered 401 `ERR-IAM-002`; a second `next dev`
+ * process refused a completely different subset. On a production `next build`
+ * plus `next start` of the same tree, every one of them answered 200.
+ *
+ * The Owner acceptance environment is started by this launcher. In development
+ * mode it can therefore refuse authenticated reads on an arbitrary subset of
+ * routes and manufacture product defects that do not exist. The acceptance
+ * stack must be the production mode; `next dev` stays untouched for ordinary
+ * development, where compile-on-demand is the entire point.
+ *
+ * Everything else in this file is mode-agnostic on purpose. The lock, the
+ * process discovery, the enumerated plan, the readiness rule and the state file
+ * are ONE implementation serving both modes — a second launcher that could also
+ * spawn is exactly the duplicate-stack defect this file was rebuilt to prevent.
  *
  * ## The defect this was rebuilt around — `P1-26-F-063`
  *
@@ -62,8 +88,18 @@ import {
 import { acquireLock, releaseLock } from './launcher-lock.mjs';
 import { buildState, readState, writeStateAtomic } from './runtime-state.mjs';
 import { maySpawn, planLocalStack } from './local-stack-plan.mjs';
+import {
+  DEVELOPMENT,
+  PRODUCTION,
+  describeMode,
+  nextSubcommandFor,
+  parseModeArgv,
+} from './launch-mode.mjs';
 
 const root = repoRoot();
+
+/** The production build directory. `next build` and `next start` both use it. */
+const PRODUCTION_DIST_DIR = '.next';
 
 /**
  * A production build sitting in the directory `next dev` is about to use.
@@ -75,10 +111,27 @@ const holdsProductionBuild = (dir) => existsSync(`${dir}/BUILD_ID`);
 /**
  * Clears a contaminated development build directory — only ever when we are
  * about to start that tier, so nothing is reading it.
- * @param {string} workspace
+ *
+ * Two things it must NOT do, both of which it would have done if this were
+ * still a one-line existence check:
+ *
+ * 1. **Never in production mode.** The directory it clears is the one the
+ *    production build was just written into. Clearing it there would delete the
+ *    thing about to be served.
+ * 2. **Never for a tier whose development server reads somewhere else.** The
+ *    web tier develops into `.next-dev`, so its `.next` is not in its way at
+ *    all — and since the production acceptance stack lives in `.next`, wiping
+ *    it on every `dev:all` would silently force a full rebuild before the next
+ *    acceptance session. The API tier's development server does use `.next`,
+ *    so for that tier the clear is still exactly right.
+ *
+ * @param {'api'|'web'} workspace
+ * @param {string} mode
  */
-function clearStaleProductionBuild(workspace) {
-  const dir = `${root}/apps/${workspace}/.next`;
+function clearStaleProductionBuild(workspace, mode) {
+  if (mode !== DEVELOPMENT) return null;
+  if (TIERS[workspace].devDistDir !== PRODUCTION_DIST_DIR) return null;
+  const dir = `${root}/apps/${workspace}/${PRODUCTION_DIST_DIR}`;
   if (!holdsProductionBuild(dir)) return null;
   rmSync(dir, { recursive: true, force: true });
   return dir;
@@ -121,36 +174,54 @@ const TIERS = {
     port: API_PORT,
     origin: API_ORIGIN,
     readyPath: API_READY_PATH,
-    env: {},
+    // The API's development server has no isolated directory of its own, so it
+    // shares `.next` with the production build — which is why the stale-build
+    // clear below still applies to this tier and not to the web one.
+    devDistDir: PRODUCTION_DIST_DIR,
+    env: { development: {}, production: {} },
   },
   web: {
     label: 'web',
     port: WEB_PORT,
     origin: WEB_ORIGIN,
     readyPath: WEB_READY_PATH,
-    env: { ROOTLCO_DIST_DIR: DEV_DIST_DIR },
+    devDistDir: DEV_DIST_DIR,
+    // Development is redirected to `.next-dev` (`P1-26-F-055`). Production is
+    // deliberately NOT — `next build` and `next start` must agree on `.next`,
+    // which is also what Docker, the browser suite and CI use.
+    env: { development: { ROOTLCO_DIST_DIR: DEV_DIST_DIR }, production: {} },
   },
 };
 
-/** The exact argv a tier is started with. Also what ownership matches on. */
-export function tierArgs(tier) {
+/**
+ * The exact argv a tier is started with. Also what ownership matches on.
+ *
+ * The subcommand is the ONLY difference between the two modes here, and it is
+ * derived from the mode rather than branched on, so a third caller cannot
+ * invent a spelling. It is also what `nextModeOfCommand` reads back off the
+ * live process, which is how `dev:status` reports a mode it can prove.
+ */
+export function tierArgs(tier, mode) {
   const { port } = TIERS[tier];
-  return [nextEntry(tier), 'dev', `apps/${tier}`, '--hostname', DEV_HOST, '--port', String(port)];
+  return [
+    nextEntry(tier),
+    nextSubcommandFor(mode),
+    `apps/${tier}`,
+    '--hostname',
+    DEV_HOST,
+    '--port',
+    String(port),
+  ];
 }
 
-function launch(tier) {
-  const spec = TIERS[tier];
-  const child = spawn(process.execPath, tierArgs(tier), {
-    cwd: root,
-    env: {
-      ...process.env,
-      PORT: String(spec.port),
-      NEXT_TELEMETRY_DISABLED: '1',
-      ...spec.env,
-    },
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
-  const prefix = `[${spec.label}] `;
+/** The argv that produces the build `next start` will serve. */
+function buildArgs(tier) {
+  return [nextEntry(tier), 'build', `apps/${tier}`];
+}
+
+/** stdout and stderr, one line at a time, tagged with the tier they came from. */
+function forwardOutput(child, label) {
+  const prefix = `[${label}] `;
   const forward = (stream, out) =>
     stream.on('data', (chunk) => {
       for (const line of chunk.toString().split(/\r?\n/))
@@ -158,7 +229,72 @@ function launch(tier) {
     });
   forward(child.stdout, process.stdout);
   forward(child.stderr, process.stderr);
+}
+
+function tierEnv(tier, mode) {
+  const spec = TIERS[tier];
+  return {
+    ...process.env,
+    PORT: String(spec.port),
+    NEXT_TELEMETRY_DISABLED: '1',
+    ...spec.env[mode],
+  };
+}
+
+function launch(tier, mode) {
+  const spec = TIERS[tier];
+  const child = spawn(process.execPath, tierArgs(tier, mode), {
+    cwd: root,
+    env: tierEnv(tier, mode),
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  forwardOutput(child, spec.label);
   return child;
+}
+
+/**
+ * Compiles one tier for production, and REFUSES to continue if it fails.
+ *
+ * Awaited, never fire-and-forget. A failed build that is not waited for leaves
+ * `next start` serving whatever was in `.next` from an earlier commit — a stack
+ * that is up, answers every probe, and is not the tree anybody asked about.
+ * That is the same class of wrong answer as the false 401.
+ *
+ * There is deliberately no `--skip-build` escape hatch. An acceptance
+ * environment serving a build nobody can date is worse than a slow one, and the
+ * fast path already exists: it is called development mode.
+ */
+function buildTier(tier) {
+  return new Promise((resolve, reject) => {
+    const spec = TIERS[tier];
+    console.log(`  building ${spec.label} for production…`);
+    const child = spawn(process.execPath, buildArgs(tier), {
+      cwd: root,
+      env: tierEnv(tier, PRODUCTION),
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    forwardOutput(child, `${spec.label} build`);
+    child.on('error', reject);
+    child.on('exit', (code) => {
+      if (code === 0) {
+        // `BUILD_ID` is written by `next build` and by nothing else, so its
+        // presence is the proof that a build really landed. A zero exit code is
+        // the build's own claim about itself.
+        const dir = `${root}/apps/${tier}/${PRODUCTION_DIST_DIR}`;
+        if (!holdsProductionBuild(dir)) {
+          reject(
+            new Error(
+              `${spec.label} build exited 0 but wrote no BUILD_ID to ${dir}. Refusing to serve a build that is not there.`
+            )
+          );
+          return;
+        }
+        resolve();
+        return;
+      }
+      reject(new Error(`${spec.label} production build failed with exit code ${code}`));
+    });
+  });
 }
 
 /**
@@ -198,8 +334,16 @@ async function answers(url) {
   }
 }
 
-/** Everything the decision needs, gathered once. */
-async function surveyStack() {
+/**
+ * Everything the decision needs, gathered once.
+ *
+ * The requested `mode` travels in the survey rather than as a second argument
+ * to `planLocalStack`, because the plan's whole contract is "one pure function,
+ * facts in, one enumerated verdict out". Which mode was asked for is one of the
+ * facts, and the tiers report which mode they are actually SERVING, so the plan
+ * can compare the two without asking anything itself.
+ */
+async function surveyStack(mode) {
   const listeners = listenersOnPorts([API_PORT, WEB_PORT]);
   const table = processTable();
   const api = classifyPort({
@@ -220,7 +364,24 @@ async function surveyStack() {
     api.state === 'owned' ? await answers(`${API_ORIGIN}${API_READY_PATH}`) : false;
   const webHealthy =
     web.state === 'owned' ? await answers(`${WEB_ORIGIN}${WEB_READY_PATH}`) : false;
-  return { listeners, table, api, web, apiHealthy, webHealthy };
+  return { listeners, table, api, web, apiHealthy, webHealthy, mode };
+}
+
+/**
+ * The mode line, printed everywhere a stack is reported.
+ *
+ * It is the answer to the question whose wrong answer cost this phase a false
+ * 401 diagnosis, so it is never left to be inferred from which command was
+ * typed. Where a live stack is being described the mode is read back off the
+ * running processes; where one is being started it is the mode we started.
+ */
+function printMode(mode, { observed = false } = {}) {
+  console.log('');
+  console.log(`  MODE: ${describeMode(mode)}`);
+  if (observed) console.log("        read from the running processes' own command lines");
+  if (mode === DEVELOPMENT) {
+    console.log('        NOT the Owner acceptance configuration — see npm run acceptance:serve.');
+  }
 }
 
 function printOrigins({ apiStatus, webStatus }) {
@@ -268,6 +429,38 @@ function reportRefusal(blocked) {
   console.error('');
 }
 
+/**
+ * The stack is ours, from this checkout, and serving the OTHER mode.
+ *
+ * Nothing is killed and nothing is started. A `next dev` stack answers every
+ * readiness probe a `next start` stack answers, so silently adopting one would
+ * report the acceptance environment as up while handing the Owner the exact
+ * compile-on-demand refusals the production mode exists to remove.
+ */
+function reportModeMismatch(plan) {
+  console.error('');
+  console.error('RootLco will not start: the running stack is serving a different mode.');
+  console.error('');
+  console.error(`  asked for   ${describeMode(plan.mode)}`);
+  for (const { tier, running, detail } of plan.mismatched) {
+    console.error(`  ${tier} is running ${describeMode(running)}`);
+    console.error(`    owning pid   ${detail.ownerPid}`);
+    console.error(`    command line ${detail.command}`);
+  }
+  console.error('');
+  console.error('  A mode is a property of the whole stack, not of one tier, and the two are');
+  console.error('  not interchangeable: a development server compiles each route on first');
+  console.error('  request, which is what makes an authenticated read fail on some routes and');
+  console.error('  not others. Adopting half of one would produce a stack nobody can reproduce.');
+  console.error('');
+  console.error('  Stop it and start the mode you want:');
+  console.error('');
+  console.error('    npm run dev:stop');
+  console.error('    npm run acceptance:serve      # production, for Owner acceptance');
+  console.error('    npm run dev:all               # development');
+  console.error('');
+}
+
 /** Stops one verified-ours listener whose server is not answering. */
 async function stopUnhealthyOwned(tier, detail) {
   const pids = [detail.ownerPid, detail.pid].filter(
@@ -307,6 +500,11 @@ function reportAdopted(survey, { repairState }) {
   console.log('');
   console.log(`  API pid ${survey.api.ownerPid} (listener ${survey.api.pid})`);
   console.log(`  Web pid ${survey.web.ownerPid} (listener ${survey.web.pid})`);
+  // The mode of an ADOPTED stack is whatever the running processes say it is.
+  // The plan has already refused anything that disagrees with what was asked
+  // for, so these two are the same fact — but this one is the measured one.
+  const observed = survey.api.mode ?? survey.web.mode ?? survey.mode;
+  printMode(observed, { observed: true });
   if (repairState) {
     const existing = readState(STATE_FILE);
     writeStateAtomic(
@@ -314,6 +512,7 @@ function reportAdopted(survey, { repairState }) {
       buildState({
         checkout: root,
         launcherPid: null,
+        mode: observed,
         api: {
           pid: survey.api.ownerPid,
           listenerPid: survey.api.pid,
@@ -345,11 +544,32 @@ function reportAdopted(survey, { repairState }) {
 }
 
 async function main() {
+  // The mode is settled BEFORE anything else happens, and an argument this
+  // launcher does not recognise stops it. `dev:all --produciton` quietly
+  // starting a development stack would leave an operator certain they were
+  // looking at a production build — the single belief this whole mode exists to
+  // make impossible.
+  const { mode, errors } = parseModeArgv(process.argv.slice(2));
+  if (errors.length > 0) {
+    console.error('');
+    console.error('RootLco will not start: the command line was not understood.');
+    for (const error of errors) console.error(`  ${error}`);
+    console.error('');
+    console.error('    npm run dev:all               development');
+    console.error('    npm run acceptance:serve      production');
+    console.error('');
+    process.exitCode = 1;
+    return;
+  }
+
+  console.log('');
+  console.log(`RootLco local stack — ${describeMode(mode)}`);
+
   warnOnContradictingEnvLocal();
 
   const lock = acquireLock(LOCK_FILE, {
     checkout: root,
-    command: 'npm run dev:all',
+    command: mode === PRODUCTION ? 'npm run acceptance:serve' : 'npm run dev:all',
   });
   if (!lock.acquired) {
     // Another launcher is mid-flight. Do NOT spawn: that is exactly how two
@@ -364,7 +584,7 @@ async function main() {
     }
     let held;
     try {
-      held = await surveyStack();
+      held = await surveyStack(mode);
     } catch {
       held = null;
     }
@@ -384,7 +604,7 @@ async function main() {
   try {
     let survey;
     try {
-      survey = await surveyStack();
+      survey = await surveyStack(mode);
     } catch (error) {
       if (error instanceof DiscoveryFailure) {
         console.error('');
@@ -403,6 +623,16 @@ async function main() {
 
     if (plan.decision === 'REFUSE_UNRELATED') {
       reportRefusal(plan.blocked);
+      process.exitCode = 1;
+      return;
+    }
+
+    if (plan.decision === 'REFUSE_MODE_MISMATCH') {
+      // Also an early return above the spawn, for the same reason the two either
+      // side of it are: adopting a stack in the other mode would report the
+      // acceptance environment as up while serving the configuration that
+      // manufactures 401s.
+      reportModeMismatch(plan);
       process.exitCode = 1;
       return;
     }
@@ -453,24 +683,51 @@ async function main() {
     }
 
     for (const tier of toStart) {
-      const cleared = clearStaleProductionBuild(tier);
+      const cleared = clearStaleProductionBuild(tier, mode);
       if (cleared) {
         console.log(`Cleared a production build left in ${cleared} — see P1-26-F-055.`);
       }
     }
-    if (toStart.includes('web') && holdsProductionBuild(`${root}/apps/web/.next`)) {
+    if (
+      mode === DEVELOPMENT &&
+      toStart.includes('web') &&
+      holdsProductionBuild(`${root}/apps/web/${PRODUCTION_DIST_DIR}`)
+    ) {
       console.log(
-        `apps/web/.next holds a production build; development will use ${DEV_DIST_DIR} and leave it alone.`
+        `apps/web/${PRODUCTION_DIST_DIR} holds a production build; development will use ${DEV_DIST_DIR} and leave it alone.`
       );
     }
 
+    // THE ENVIRONMENT IS SETTLED BEFORE THE BUILD, NOT BEFORE THE SPAWN.
+    //
+    // Every `NEXT_PUBLIC_*` value is inlined by Next during `next build`, so in
+    // production mode a variable set after the build reaches nothing. Setting
+    // these three afterwards would produce a stack that is up, answers every
+    // probe, and has the wrong API origin baked into the client bundle.
     const gallery = process.env.ROOTLCO_ENABLE_GALLERY ?? 'true';
     process.env.ROOTLCO_ENABLE_GALLERY = gallery;
     process.env.NEXT_PUBLIC_API_BASE_URL ??= API_ORIGIN;
+    if (mode === PRODUCTION) {
+      // `local` is what keeps the session cookie unmarked `Secure`. The schema
+      // in `apps/web/src/lib/env.ts` defaults to `production` deliberately — the
+      // unsafe mode is the one you have to ask for — and a `Secure` cookie is
+      // discarded in silence by a browser on a plain-HTTP origin, so the Owner
+      // would sign in successfully and land back on the login page. It is a
+      // BUILD-time value, which is why it is set here and not at start.
+      process.env.NEXT_PUBLIC_APP_ENV ??= 'local';
+      console.log('');
+      console.log(`  NEXT_PUBLIC_API_BASE_URL  ${process.env.NEXT_PUBLIC_API_BASE_URL}`);
+      console.log(`  NEXT_PUBLIC_APP_ENV       ${process.env.NEXT_PUBLIC_APP_ENV}`);
+      console.log(
+        '  Both are inlined by next build, so they are fixed for the life of this stack.'
+      );
+      console.log('');
+      for (const tier of toStart) await buildTier(tier);
+    }
 
     /** @type {Record<string, import('node:child_process').ChildProcess>} */
     const children = {};
-    for (const tier of toStart) children[tier] = launch(tier);
+    for (const tier of toStart) children[tier] = launch(tier, mode);
 
     mkdirSync(join(root, '.local'), { recursive: true });
 
@@ -503,7 +760,11 @@ async function main() {
 
     const describe = (tier) =>
       children[tier]
-        ? { pid: children[tier].pid, acquisition: 'spawned', command: tierArgs(tier).join(' ') }
+        ? {
+            pid: children[tier].pid,
+            acquisition: 'spawned',
+            command: tierArgs(tier, mode).join(' '),
+          }
         : {
             pid: (tier === 'api' ? survey.api : survey.web).ownerPid,
             listenerPid: (tier === 'api' ? survey.api : survey.web).pid,
@@ -516,6 +777,7 @@ async function main() {
       buildState({
         checkout: root,
         launcherPid: process.pid,
+        mode,
         api: { ...describe('api'), port: API_PORT },
         web: { ...describe('web'), port: WEB_PORT },
         origin: { api: API_ORIGIN, web: WEB_ORIGIN },
@@ -524,6 +786,7 @@ async function main() {
 
     console.log('');
     console.log('RootLco local stack is up.');
+    printMode(mode);
     printOrigins({ apiStatus, webStatus });
     console.log(
       `  Gallery: ${gallery === 'true' ? `${WEB_ORIGIN}/en/gallery` : 'disabled (set ROOTLCO_ENABLE_GALLERY=true)'}`
@@ -534,8 +797,14 @@ async function main() {
         ' Next treats it and the loopback literal as different origins in development.'
     );
     console.log('');
-    console.log('  Running "npm run dev:all" again is safe — it will adopt this stack.');
+    const again = mode === PRODUCTION ? 'npm run acceptance:serve' : 'npm run dev:all';
+    console.log(`  Running "${again}" again is safe — it will adopt this stack.`);
     console.log('  Stop with Ctrl+C here, or "npm run dev:stop" from another terminal.');
+    if (mode === PRODUCTION) {
+      console.log('');
+      console.log('  This is a BUILD. Code changes do not appear until it is stopped and');
+      console.log('  started again — that is the property the acceptance environment needs.');
+    }
 
     // The launcher stays attached for the children it owns, so the lock stays
     // held until it exits.

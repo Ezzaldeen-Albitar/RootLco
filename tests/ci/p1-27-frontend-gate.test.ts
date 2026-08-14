@@ -3,6 +3,7 @@ import { dirname, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
+  ADOPTED_ROOTS,
   EXPORT_CONSTRUCTS,
   EXPORT_INNOCENT,
   FILE_ACCESS_CONSTRUCTS,
@@ -10,6 +11,7 @@ import {
   INVENTED_MEDIA_LIMIT_CONSTRUCTS,
   INVENTED_MEDIA_LIMIT_INNOCENT,
   MODULE_DISPOSITION,
+  PLAN_ROOTS,
   ROOT_AUTHORITY,
   RULES,
   SCAN_ROOTS,
@@ -22,6 +24,7 @@ import {
   evaluateModuleDispositions,
   fires,
   importedModuleDirectories,
+  inRuleScope,
   literalMask,
   moduleSourceRoot,
   selfTest,
@@ -761,7 +764,7 @@ describe('a rule that measures nothing is a failure, not a pass', () => {
   });
 });
 
-describe('the scan roots are ALL THREE of this phase’s trees', () => {
+describe('the scan roots are ALL THREE of this phase’s trees, plus every adopted one', () => {
   /**
    * The plan is the authority, and it is re-read here rather than remembered.
    *
@@ -774,13 +777,28 @@ describe('the scan roots are ALL THREE of this phase’s trees', () => {
    * Deriving the expected set from the plan is what makes this case fail if the
    * third tree is removed again — a hard-coded list of three would be one more
    * thing somebody could edit in the same commit as the constant.
+   *
+   * ## Two halves, two authorities, checked separately
+   *
+   * `SCAN_ROOTS` is now `PLAN_ROOTS` plus `ADOPTED_ROOTS`. The plan half is
+   * still derived from `canonical-plan.md` and still has to be exactly the three
+   * that document declares — a later phase may NOT quietly add itself to a
+   * closed phase's plan, which is precisely what the split prevents.
+   *
+   * The adopted half is a different claim: a later phase declaring its own tree
+   * in its own plan and opting into these rules. Each entry names its authority
+   * and is checked against that document instead, so neither plan is made to say
+   * something it does not.
    */
   const plan = readFileSync(join(REPO_ROOT, ROOT_AUTHORITY), 'utf8');
   const declaredInPlan = [...plan.matchAll(/`(apps\/web\/src\/[^`]*?)\/\*\*`/g)]
     .map((m) => m[1] as string)
     .filter((path, index, all) => all.indexOf(path) === index)
     .sort();
-  const roots = SCAN_ROOTS.map((r: string) => r.split(/[\\/]/).join('/')).sort();
+  const posix = (path: string) => path.split(/[\\/]/).join('/');
+  const planRoots = PLAN_ROOTS.map(posix).sort();
+  const adoptedRoots = ADOPTED_ROOTS.map((entry: { root: string }) => posix(entry.root)).sort();
+  const roots = SCAN_ROOTS.map(posix).sort();
 
   it('reads the plan at all, so nothing below can pass over an empty list', () => {
     expect(plan.length).toBeGreaterThan(2000);
@@ -788,8 +806,95 @@ describe('the scan roots are ALL THREE of this phase’s trees', () => {
   });
 
   it('scans exactly the trees the canonical plan declares Frontend work lives in', () => {
-    expect(roots, `${ROOT_AUTHORITY} and SCAN_ROOTS disagree about the Frontend surface`).toEqual(
-      declaredInPlan
+    expect(
+      planRoots,
+      `${ROOT_AUTHORITY} and PLAN_ROOTS disagree about the Frontend surface`
+    ).toEqual(declaredInPlan);
+    // And no adopted tree has crept into the plan half.
+    for (const adopted of adoptedRoots) {
+      expect(planRoots, `${adopted} was added to the plan half`).not.toContain(adopted);
+    }
+  });
+
+  it('opens every tree — the plan’s three and the adopted one', () => {
+    expect(roots).toEqual([...planRoots, ...adoptedRoots].sort());
+    expect(roots.length).toBe(planRoots.length + adoptedRoots.length);
+  });
+
+  it('every adopted tree names an authority document that exists and declares it', () => {
+    /*
+     * The whole point of the split: an adoption is a citation, not an opinion.
+     * The phase's OWN plan has to name the tree, exactly as P1-27's plan names
+     * its three, or the entry is an assertion with nothing behind it.
+     */
+    expect(ADOPTED_ROOTS.length).toBeGreaterThan(0);
+    for (const entry of ADOPTED_ROOTS as readonly {
+      root: string;
+      authority: string;
+      phase: string;
+    }[]) {
+      const authority = join(REPO_ROOT, entry.authority);
+      expect(existsSync(authority), `${entry.authority} does not exist`).toBe(true);
+      const document = readFileSync(authority, 'utf8');
+      expect(
+        document.includes(posix(entry.root)),
+        `${entry.authority} never names ${posix(entry.root)}`
+      ).toBe(true);
+    }
+  });
+
+  it('narrows exactly ONE rule to the plan trees, and every other rule reads the adopted one', () => {
+    /*
+     * `rec.*` publishes `companyId`/`branchId` as a required resource selector
+     * (`P1-18-A-01`), so `no-client-asserted-scope`'s premise is false in the
+     * reception tree. That narrowing is expressed as the rule's `roots` and NOT
+     * as an `allow` entry — an allowance exempts files from a rule that applies
+     * to them, and the cases above forbid one for exactly that reason.
+     *
+     * One rule may carry `roots`, and it is that one. A second appearing here is
+     * a widening of the blind spot, which has to be argued rather than noticed
+     * later; and every other rule — `no-upload-path` and
+     * `no-invented-media-limit` above all — must reach the adopted tree, which
+     * is what O2 was about.
+     */
+    const scoped = (RULES as readonly { id: string; roots?: readonly string[] }[]).filter(
+      (rule) => rule.roots !== undefined
+    );
+    expect(scoped.map((rule) => rule.id)).toEqual(['no-client-asserted-scope']);
+    expect(scoped[0]?.roots).toEqual(PLAN_ROOTS.map(posix));
+
+    // Measured through `inRuleScope`, not re-derived: a reception file is out of
+    // the scope rule's reach and inside every other rule's.
+    const receptionFile = `${adoptedRoots[0]}/api.ts`;
+    for (const rule of RULES as readonly { id: string }[]) {
+      expect(inRuleScope(rule, receptionFile), rule.id).toBe(
+        rule.id !== 'no-client-asserted-scope'
+      );
+      expect(inRuleScope(rule, 'apps/web/src/features/crm/customers/api.ts'), rule.id).toBe(true);
+    }
+  });
+
+  it('sweeps the narrowed-out tree for the ONE scope name that is never a selector', () => {
+    /*
+     * What the narrowing gives up, measured. `companyId`/`branchId` are a
+     * published selector on `rec.*`; `tenantId`/`tenant_id` is a selector on
+     * nothing, anywhere — it is resolved from the session and never sent. So the
+     * tree the scope rule does not read is swept for those two names in any
+     * position, which is the half of the rule that still holds there.
+     */
+    const files = ADOPTED_ROOTS.flatMap((entry: { root: string }) =>
+      listSources(join(REPO_ROOT, entry.root)).map((path) => ({
+        path: relative(REPO_ROOT, path).split(sep).join('/'),
+        source: stripComments(readFileSync(path, 'utf8')),
+      }))
+    );
+    // Anti-vacuity: a walk that returned nothing would make the sweep silent.
+    expect(files.length, 'the adopted tree holds no source to sweep').toBeGreaterThan(10);
+    const offenders = files
+      .filter(({ source }) => /\btenantId\b|\btenant_id\b/.test(source))
+      .map(({ path }) => path);
+    expect(offenders, 'the adopted tree names a tenant scope the client must never send').toEqual(
+      []
     );
   });
 
@@ -973,7 +1078,7 @@ describe('the phase modules outside every scan root are DERIVED, not listed', ()
     const derived = importedModuleDirectories(scanned);
     // Anti-vacuity: the derivation really read something. A regex that matched
     // nothing would make the equality below a comparison of two empty sets.
-    expect(derived.length, 'no module import was discovered — the derivation is broken').toBe(15);
+    expect(derived.length, 'no module import was discovered — the derivation is broken').toBe(18);
     expect(
       derived,
       'a module the scanned trees import has no recorded disposition, or a recorded module is ' +
@@ -1039,7 +1144,7 @@ describe('the phase modules outside every scan root are DERIVED, not listed', ()
   });
 
   it('is a live set of modules that exist and are not collected', () => {
-    expect(UNCOLLECTED_PHASE_MODULES.length).toBe(13);
+    expect(UNCOLLECTED_PHASE_MODULES.length).toBe(16);
     for (const dir of UNCOLLECTED_PHASE_MODULES) {
       // `moduleSourceRoot`, not `existsSync`: `apps/web/src/lib/page-metadata`
       // is a FILE, and dropping it to avoid an `ENOENT` would be precisely the

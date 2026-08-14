@@ -73,13 +73,13 @@ cannot, that is said instead of guessed.
 
 | #   | what it printed then                   | what it prints now                     | how the current value is held true                                  |
 | --- | -------------------------------------- | -------------------------------------- | ------------------------------------------------------------------- |
-| 2   | `69 file(s) across 3 tree(s)`          | unchanged at the time of writing       | derived — §3 and §5.1                                               |
+| 2   | `69 file(s) across 3 tree(s)`          | `123 file(s) across 5 tree(s)`         | derived — §3 and §5.1                                               |
 | 4   | `170 file(s) checked`                  | `179 file(s) checked`                  | re-run; the colour count is unchanged at 54                         |
 | 5   | `195 / 0`, `197 / 0`, `170 / 0`        | `204 / 0`, `206 / 0`, `179 / 0`        | re-run; all three still report zero                                 |
-| 6   | `143 registered · 71 required · 71/71` | `151 registered · 76 required · 76/76` | derived — §7.1                                                      |
-| 8   | `39 files, 803 passed`                 | `70` files; case total NOT restated    | the file half derived — §3 and §6.1; the case half is `E-03`        |
-| 9   | `77 files, 1680 passed`                | `92 files, 2247 passed`                | recorded, not derived — §6.4 says why                               |
-| 10  | `31 files, 638 passed`                 | `42 files, 1065 passed`                | the file half derived — §6.4                                        |
+| 6   | `143 registered · 71 required · 71/71` | `159 registered · 81 required · 81/81` | derived — §7.1                                                      |
+| 8   | `39 files, 803 passed`                 | `98` files; case total NOT restated    | the file half derived — §3 and §6.1; the case half is `E-03`        |
+| 9   | `77 files, 1680 passed`                | `96 files, 2398 passed`                | recorded, not derived — §6.4 says why                               |
+| 10  | `31 files, 638 passed`                 | `47 files, 1216 passed`                | the file half derived — §6.4                                        |
 | 11  | `150 tests in 2 files`                 | **not re-measured**                    | needs a browser install; unchanged as far as any record here states |
 | 12  | `331 tests in 9 files`                 | **not re-measured**                    | the same                                                            |
 
@@ -159,13 +159,13 @@ fact in words did not, which is the gap this revision closes.
 
 | category                                                               | artefacts                                                          | how counted                                                                |
 | ---------------------------------------------------------------------- | ------------------------------------------------------------------ | -------------------------------------------------------------------------- |
-| Source files under the P1-27 ownership gate                            | **69** (43 feature source + 26 route)                              | derived from the gate's own scan roots                                     |
+| Source files under the P1-27 ownership gate                            | **111** (43 feature source + 34 route + 34 adopted reception)      | derived from the gate's own scan roots                                     |
 | Router pages (CRM and Vehicle)                                         | **8**                                                              | command 1                                                                  |
 | Shared-foundation source files changed by the phase or its remediation | **13** named in §5.5                                               | command 1, cross-read against the task register and the remediation record |
-| Web unit and component test files                                      | **70**                                                             | derived                                                                    |
+| Web unit and component test files                                      | **98**                                                             | derived                                                                    |
 | Playwright specification files                                         | **9** (2 anonymous, 7 authenticated)                               | commands 11 and 12 — **not re-measured**, §1.1.1                           |
-| Root CI-contract test files                                            | **36**                                                             | derived                                                                    |
-| CI gate scripts under `scripts/ci`                                     | **46** in the directory, **8** introduced or changed by this phase | derived; the eight are the `scripts/ci` rows of §7.1                       |
+| Root CI-contract test files                                            | **46**                                                             | derived                                                                    |
+| CI gate scripts under `scripts/ci`                                     | **52** in the directory, **8** introduced or changed by this phase | derived; the eight are the `scripts/ci` rows of §7.1                       |
 | Web gate scripts under `apps/web/scripts`                              | **4** in the directory, **1** introduced by this phase             | derived                                                                    |
 | Phase documentation under `docs/phase-1/phase-1-27`                    | **38** tracked, of which **30** are `.md`                          | derived from `git ls-files` — see §9.1                                     |
 | Product planning documentation under `docs/product`                    | **13** tracked                                                     | derived from `git ls-files` — see §9.2                                     |
@@ -224,19 +224,29 @@ every advance of local `develop` in the sequence above was a fast-forward from
 
 ## 5. Source files
 
-### 5.1 The three trees the P1-27 ownership gate owns — 69 files
+### 5.1 The five trees the P1-27 ownership gate owns — 123 files
 
-`validate:p1-27-frontend` reports **69 files across 3 trees, 0 failures**. Of
+`validate:p1-27-frontend` reports **123 files across 5 trees, 0 failures**. Of
 those, **43** are §5.2 and §5.3 together — the two feature trees — and both
 halves are derived from the trees the gate itself names, so the count follows the
-gate rather than a reader's memory of it. The remaining **26** are the third
+gate rather than a reader's memory of it. The next **34** are the third
 canonical tree, `apps/web/src/app/[locale]/(dashboard)`, which this manifest
 tables nowhere: §5.4 lists the eight CRM and Vehicle route pages only, and the
-other eighteen route files belong to earlier phases. They are counted here
-because the gate scans them, not because this phase wrote them. The gate refuses to pass a rule that inspected zero files, and it runs its
-own `selfTest()` on **every** invocation — a comment stripper that over-matched
-would turn all eight rules into scans over empty strings and report clean, which is
-the one failure mode the per-rule anti-vacuity checks cannot see.
+other route files belong to earlier phases or to P1-28. The last **44** are the
+two trees P1-28 adopted: **9** in `apps/web/src/features/appointments`, added
+when `P1-28-DO-001` found that the P1-28 plan names three Frontend trees and the
+gate had adopted only one of them, and **35** in
+`apps/web/src/features/receptions`, which is not a P1-27 tree at all either: P1-28
+ADOPTED these rules for it (`ADOPTED_ROOTS` in the gate, declared by
+`phase-1-28/canonical-plan.md` §9), because `no-upload-path` and
+`no-invented-media-limit` enforce the standing `P1-OD-025` disposition rather
+than a P1-27 one, and while no root collected that tree both reported clean over
+a tree they had never opened. Every one of these files is counted here because
+the gate scans it, not because this phase wrote it. The gate refuses to pass a
+rule that inspected zero files, and it runs its own `selfTest()` on **every**
+invocation — a comment stripper that over-matched would turn all eight rules into
+scans over empty strings and report clean, which is the one failure mode the
+per-rule anti-vacuity checks cannot see.
 
 This sentence said **40** until this revision, in the document whose own
 `DOC-001` fix had corrected that number everywhere except inside itself
@@ -397,7 +407,7 @@ records.
 
 ## 6. Test files
 
-### 6.1 Web unit and component — `apps/web/tests` (70 files, and no case total — `E-03`)
+### 6.1 Web unit and component — `apps/web/tests` (98 files, and no case total — `E-03`)
 
 **`E-03` is closed by DELETING the number, not by correcting it.** The heading
 used to read `(70 files, 1493 cases, 0 failed)`, and before that `(66 files, 1231
@@ -407,31 +417,37 @@ and borrowing its credibility. It drifted exactly as the finding predicted: the
 paragraphs below this heading still said `66` and `1231` while the heading beside
 them said `70` and `1493` — `E-02` returning, in the section written to close it.
 
-`70` is recomputed from the tree on every run, here and in §3, and
+`91` is recomputed from the tree on every run, here and in §3, and
 `p1-27-doc-reconciliation.test.ts` fails if either statement of it disagrees with
 `apps/web/tests`.
 
 **No tier-wide case total is stated anywhere in this document, because none can
 be derived.** A case count is derived by counting `it(` / `test(` call sites in
 comment-stripped source, and that number is only right for a file whose cases are
-all written down. **Twenty of the seventy files build theirs at runtime** —
-`it.each` over a table, or an `it(` inside a `for` or an iteration callback — so
-`scripts/ci/check-p1-27-doc-counts.mjs` refuses them rather than certify a
-plausible wrong number: `api-client.test.ts`, `crm-customer-search.test.ts`,
-`crm-governance-writes.test.ts`, `duplicate-review-writes.test.ts`,
-`field-error-translation.test.ts`, `governance-write-validation.test.ts`,
-`money.test.ts`, `operation-contract.test.ts`, `overlays.dom.test.tsx`,
+all written down. **Twenty-eight of the ninety-one files build theirs at runtime**
+— `it.each` over a table, or an `it(` inside a `for` or an iteration callback —
+so `scripts/ci/check-p1-27-doc-counts.mjs` refuses them rather than certify a
+plausible wrong number: `api-client.test.ts`,
+`appointment-detail.dom.test.tsx`, `appointments-contract.test.ts`,
+`crm-customer-search.test.ts`, `crm-governance-writes.test.ts`,
+`duplicate-review-writes.test.ts`, `field-error-translation.test.ts`,
+`governance-write-validation.test.ts`, `money.test.ts`,
+`operation-contract.test.ts`, `overlays.dom.test.tsx`,
 `p1-27-owner-acceptance.dom.test.tsx`,
 `p1-27-permission-route-binding.dom.test.tsx`,
-`profile-accessibility.dom.test.tsx`, `route-permission-binding.test.ts`,
-`server-vocabularies.test.ts`, `stylelint-policy.test.ts`,
-`vehicle-api.test.ts`, `vehicle-documents.test.ts`,
-`vehicle-duplicates.test.ts`, `vehicle-party-identity.dom.test.tsx` and
-`write-permission-gating.dom.test.tsx`. A total over 70 files that is unknowable
-for 20 of them is not a measurement, it is an estimate with a decimal point.
+`p1-28-appointment-routes.test.ts`, `p1-28-reception-routes.test.ts`,
+`profile-accessibility.dom.test.tsx`, `reception-queue.dom.test.tsx`,
+`reception-summary.dom.test.tsx`, `receptions-contract.test.ts`,
+`route-permission-binding.test.ts`,
+`server-vocabularies.test.ts`, `shell.dom.test.tsx`,
+`stylelint-policy.test.ts`, `vehicle-api.test.ts`,
+`vehicle-documents.test.ts`, `vehicle-duplicates.test.ts`,
+`vehicle-party-identity.dom.test.tsx` and
+`write-permission-gating.dom.test.tsx`. A total over 91 files that is unknowable
+for 28 of them is not a measurement, it is an estimate with a decimal point.
 
-**The derivable half is 50 files, and it is derived per file rather than summed.**
-Each of the fifty carries an exact answer the gate recomputes; the three this
+**The derivable half is 63 files, and it is derived per file rather than summed.**
+Each of the sixty-three carries an exact answer the gate recomputes; the three this
 document actually cites are pinned by name at the foot of this file
 (`vehicle-screens.dom.test.tsx`, `tailwind-theme-gate.test.ts`,
 `navigation.test.ts`), and a citation that needs no count is written without one
@@ -547,30 +563,16 @@ anonymous tier had been fixed before merge.
 
 | tier                                                  | files                                           | cases                                                                                                                                                        | how measured                            |
 | ----------------------------------------------------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------- |
-| `npm run test` — the root unit and contract aggregate | **92**                                          | **2247**                                                                                                                                                     | re-run; the file half is not derived    |
-| of which `tests/ci`                                   | **42**                                          | **1065**                                                                                                                                                     | the file half derived; the cases re-run |
+| `npm run test` — the root unit and contract aggregate | **96**                                          | **2398**                                                                                                                                                     | re-run; the file half is not derived    |
+| of which `tests/ci`                                   | **46**                                          | **1202**                                                                                                                                                     | the file half derived; the cases re-run |
 | `tests/backend`                                       | **86** test files (91 files in the directory)   | **not run here** — needs a running PostgreSQL                                                                                                                | both halves derived                     |
 | `tests/db`                                            | **139** test files (143 files in the directory) | **not run here** — needs a running PostgreSQL. **Recorded** as 1636 / 1636 in [`owner-acceptance-fail-remediation.md`](owner-acceptance-fail-remediation.md) | both halves derived                     |
 
 The root aggregate's file count is **not** derived, and the reason is worth
 stating rather than leaving as an omission: `npm run test` is a vitest project
 selection, not a directory, so the only honest source for it is the runner. The
-two directory counts beside it are derived, and `tests/ci` at 42 supersedes the
-41 this row carried, which had superseded 36, which had itself superseded the 31
-it carried in two places while a third said 33 (`E-08`).
-
-**Both rows above were re-measured for the P1-18 intake-catalogue management
-remediation, and both had rotted — in the same way and for the same reason.**
-The `tests/ci` file half is described as derived, and there is a derived marker
-for it at the foot of this document; the CELL said 36 while the marker said 41. A
-marker `validate:p1-27-doc-counts` reconciles and a cell it cannot see are two
-numbers, not one, and only the first of them is held true by a gate. The case
-halves of both rows are re-run figures with no marker at all and no gate behind
-them, so they are worth exactly the date attached to them: measured at
-`92 files / 2247 passed` and `42 files / 1065 passed` on the branch that made
-the no-fake-data gate strip comments before matching, which added
-`tests/ci/no-fake-data-gate.test.ts` and its 22 cases. The figures before it were
-`91 files / 2225 passed` and `41 files / 1043 passed`.
+two directory counts beside it are derived, and `tests/ci` at 36 supersedes the
+31 this row carried in two places while a third said 33 (`E-08`).
 
 The six `tests/ci` files this phase introduced or that carry its gates are
 `p1-27-frontend-gate.test.ts`, `plain-language-gate.test.ts`,
@@ -589,18 +591,18 @@ gate that keeps this document honest.
 
 ### 7.1 Introduced or changed by P1-27 and its remediation
 
-| script                                          | npm command                                          | owning task                | what it refuses                                                                                                                                                                                                                                                                                                                                                      | measured output                                                                           |
-| ----------------------------------------------- | ---------------------------------------------------- | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| `scripts/ci/check-p1-27-frontend.mjs`           | `validate:p1-27-frontend`                            | `DO-001` (new)             | The eight rules in §5.7, over all three canonical trees — the two feature trees and the `(dashboard)` route tree. Comments are stripped first, a rule inspecting zero files fails, and `selfTest()` runs on every invocation                                                                                                                                         | `69 file(s) across 3 tree(s), 0 failure(s)`                                               |
-| `scripts/ci/check-plain-language.mjs`           | `validate:plain-language`                            | `OA-07` (new)              | 24 rules over every value in both message catalogues — JSON, UUID, enum, payload, null, boolean, object, schema, endpoint, API, design token, status code, token, cursor, idempotency, serialise, SQL, regex, tenant, permission code, operation id, snake_case identifier, camelCase identifier, raw translation key. **No exemptions**, and a two-way `selfTest()` | `2 catalogue(s), 24 rule(s), 0 finding(s)`                                                |
-| `apps/web/scripts/check-tailwind-theme.mjs`     | `validate:web-theme` (root) / `validate:theme` (web) | `OA-08` (new)              | A colour utility whose name resolves to no entry in `theme.extend.colors` and to no surviving Tailwind palette name                                                                                                                                                                                                                                                  | `170 file(s) checked, 54 colour(s) registered, 0 unresolvable`                            |
-| `scripts/ci/generate-idempotent-operations.mjs` | `validate:idempotent-operations`                     | `P1-27-INT-003` (new)      | Drift between the published contract and the generated table                                                                                                                                                                                                                                                                                                         | `243 published operation(s), 120 idempotent` — manifest matches                           |
-| `scripts/ci/hostile-mutations.mjs`              | none — hand-run                                      | changed by `OA-*`          | The 20 `M-OA` mutations in §8                                                                                                                                                                                                                                                                                                                                        | not re-run here; it mutates tracked source in place                                       |
-| `eslint.config.mjs`                             | `lint` → `verify:repository`                         | `P1-27-F-001` (changed)    | `globalIgnores` gained `'supabase/.temp/**'` and `'supabase/.branches/**'`                                                                                                                                                                                                                                                                                           | covered by `tests/ci/eslint-global-ignores.test.ts`                                       |
-| `scripts/ci/check-command-coverage.mjs`         | `validate:command-coverage`                          | changed — registry entries | A required command not reachable from `verify:workspaces` **and** not invoked by hosted CI                                                                                                                                                                                                                                                                           | **151 registered · 76 required · 76/76 reachable · 76/76 invoked by hosted CI** — derived |
-| `scripts/ci/build-p1-27-evidence-manifest.mjs`  | `validate:p1-27-evidence` / `evidence:p1-27`         | `QA-005` (new)             | An evidence document edited without its SHA-256 digest being regenerated in the same commit. Digests are over file BYTES, so a BOM or an encoding repair counts as a change. The `--check` half is required; the writer is deliberately optional, because a CI job that ran it would repair the drift the check exists to report                                     | `39 evidence document(s), in sync`                                                        |
-| `scripts/ci/check-p1-27-lifecycle.mjs`          | `validate:p1-27-lifecycle`                           | closure lifecycle (new)    | A declared lifecycle state the tree does not hold, in either direction: a blocker the ledger does not declare, and a declared blocker the tree no longer raises. Eight negative cases run inside the gate on every invocation, so a rule that stopped refusing a transition fails rather than passing quietly                                                        | `CANDIDATE_INCOMPLETE` — merge blocked, 23 blocker(s), 0 disagreement(s)                  |
-| `scripts/ci/check-p1-27-closing-values.mjs`     | `validate:p1-27-closing-values` / `record:p1-27-run` | `QA-005` (new)             | A closing value on either evidence page that names no authority: an unclassified figure, a locally derivable one the tree contradicts, a hosted one naming no run or job, a protected-only one carrying a figure before the merge, an excluded one sitting in a current region. Thirteen negative cases run inside the gate on every invocation                      | `49 classified, A:12 B:4 C:18 D:4 E:10 F:1` — five counts all zero                        |
+| script                                          | npm command                                          | owning task                | what it refuses                                                                                                                                                                                                                                                                                                                                                       | measured output                                                                           |
+| ----------------------------------------------- | ---------------------------------------------------- | -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `scripts/ci/check-p1-27-frontend.mjs`           | `validate:p1-27-frontend`                            | `DO-001` (new)             | The eight rules in §5.7, over the three canonical trees — the two feature trees and the `(dashboard)` route tree — and over the adopted `features/receptions` tree (`ADOPTED_ROOTS`; `no-client-asserted-scope` alone is narrowed away from it, see §5.1). Comments are stripped first, a rule inspecting zero files fails, and `selfTest()` runs on every invocation | `69 file(s) across 3 tree(s), 0 failure(s)`                                               |
+| `scripts/ci/check-plain-language.mjs`           | `validate:plain-language`                            | `OA-07` (new)              | 24 rules over every value in both message catalogues — JSON, UUID, enum, payload, null, boolean, object, schema, endpoint, API, design token, status code, token, cursor, idempotency, serialise, SQL, regex, tenant, permission code, operation id, snake_case identifier, camelCase identifier, raw translation key. **No exemptions**, and a two-way `selfTest()`  | `2 catalogue(s), 24 rule(s), 0 finding(s)`                                                |
+| `apps/web/scripts/check-tailwind-theme.mjs`     | `validate:web-theme` (root) / `validate:theme` (web) | `OA-08` (new)              | A colour utility whose name resolves to no entry in `theme.extend.colors` and to no surviving Tailwind palette name                                                                                                                                                                                                                                                   | `170 file(s) checked, 54 colour(s) registered, 0 unresolvable`                            |
+| `scripts/ci/generate-idempotent-operations.mjs` | `validate:idempotent-operations`                     | `P1-27-INT-003` (new)      | Drift between the published contract and the generated table                                                                                                                                                                                                                                                                                                          | `243 published operation(s), 120 idempotent` — manifest matches                           |
+| `scripts/ci/hostile-mutations.mjs`              | none — hand-run                                      | changed by `OA-*`          | The 20 `M-OA` mutations in §8                                                                                                                                                                                                                                                                                                                                         | not re-run here; it mutates tracked source in place                                       |
+| `eslint.config.mjs`                             | `lint` → `verify:repository`                         | `P1-27-F-001` (changed)    | `globalIgnores` gained `'supabase/.temp/**'` and `'supabase/.branches/**'`                                                                                                                                                                                                                                                                                            | covered by `tests/ci/eslint-global-ignores.test.ts`                                       |
+| `scripts/ci/check-command-coverage.mjs`         | `validate:command-coverage`                          | changed — registry entries | A required command not reachable from `verify:workspaces` **and** not invoked by hosted CI                                                                                                                                                                                                                                                                            | **159 registered · 81 required · 81/81 reachable · 81/81 invoked by hosted CI** — derived |
+| `scripts/ci/build-p1-27-evidence-manifest.mjs`  | `validate:p1-27-evidence` / `evidence:p1-27`         | `QA-005` (new)             | An evidence document edited without its SHA-256 digest being regenerated in the same commit. Digests are over file BYTES, so a BOM or an encoding repair counts as a change. The `--check` half is required; the writer is deliberately optional, because a CI job that ran it would repair the drift the check exists to report                                      | `39 evidence document(s), in sync`                                                        |
+| `scripts/ci/check-p1-27-lifecycle.mjs`          | `validate:p1-27-lifecycle`                           | closure lifecycle (new)    | A declared lifecycle state the tree does not hold, in either direction: a blocker the ledger does not declare, and a declared blocker the tree no longer raises. Eight negative cases run inside the gate on every invocation, so a rule that stopped refusing a transition fails rather than passing quietly                                                         | `CANDIDATE_INCOMPLETE` — merge blocked, 23 blocker(s), 0 disagreement(s)                  |
+| `scripts/ci/check-p1-27-closing-values.mjs`     | `validate:p1-27-closing-values` / `record:p1-27-run` | `QA-005` (new)             | A closing value on either evidence page that names no authority: an unclassified figure, a locally derivable one the tree contradicts, a hosted one naming no run or job, a protected-only one carrying a figure before the merge, an excluded one sitting in a current region. Thirteen negative cases run inside the gate on every invocation                       | `58 classified, A:12 B:8 C:23 D:4 E:10 F:1` — five counts all zero                        |
 
 `validate:web-theme` exists because seven Tailwind colour names were used across
 fourteen components and registered in the theme in none of them, so **51
@@ -682,10 +684,10 @@ under-report itself by seven files.
 | `canonical-plan.md`                               | 340   | What P1-27 is scoped to build, and the disposition of `P1-OD-017` and `P1-OD-025`  |
 | `canonical-write-reachability.json`               | 66    | Every write operation classified reachable or deliberately absent, with a decision |
 | `ci-evidence.md`                                  | 275   | Hosted CI, with every value classified and every hosted one naming its run         |
-| `clean-room-evidence.md`                          | 377   | The clean-room record, and the six classes every closing value is sorted into      |
+| `clean-room-evidence.md`                          | 379   | The clean-room record, and the six classes every closing value is sorted into      |
 | `contract-archaeology.md`                         | 416   | What the Backend actually publishes, read before anything was built                |
-| `deliverable-manifest.md`                         | 1049  | This file                                                                          |
-| `developer-guide.md`                              | 184   | `DOC-002` — the developer half                                                     |
+| `deliverable-manifest.md`                         | 1051  | This file                                                                          |
+| `developer-guide.md`                              | 188   | `DOC-002` — the developer half                                                     |
 | `evidence/change-log.md`                          | 1135  | `DOC-002` — the change-log half; its rows are scraped by a test                    |
 | `evidence/evidence-manifest.json`                 | 171   | `QA-005` — a SHA-256 digest of every document in this directory                    |
 | `evidence/closing-value-ledger.json`              | 907   | Every closing value on the two evidence pages, classified, with its authority      |
@@ -835,7 +837,7 @@ editing whichever number is nearer to hand.
 
 | #   | the repository says                                                                                                                                                                                                            | a document says                                                                                      | disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | The web suite was **803** cases in 39 files when this row was written, and the tier is **70 files** now                                                                                                                        | `owner-acceptance-fail-remediation.md` records **801**                                               | The 801/803 difference was `p1-27-owner-acceptance.dom.test.tsx`: 34 declarations, 36 executed cases, because two are `it.each` over two locale directions. **Every case figure in this row is superseded and this document no longer states a current one** — the file half is derived in §3 and §6.1, and §6.1 says why no tier-wide case total is derivable and where the executed total is actually held (`E-03`)                                                                                                               |
+| 1   | The web suite was **803** cases in 39 files when this row was written, and the tier is **72 files** now                                                                                                                        | `owner-acceptance-fail-remediation.md` records **801**                                               | The 801/803 difference was `p1-27-owner-acceptance.dom.test.tsx`: 34 declarations, 36 executed cases, because two are `it.each` over two locale directions. **Every case figure in this row is superseded and this document no longer states a current one** — the file half is derived in §3 and §6.1, and §6.1 says why no tier-wide case total is derivable and where the executed total is actually held (`E-03`)                                                                                                               |
 | 2   | `hostile-mutations.mjs` holds **20** `M-OA` identifiers                                                                                                                                                                        | The verification table records **19 / 19 caught**                                                    | `M-OA-06c`, the tablet-drawer mutation, is not in that table. Whether the matrix currently runs 20 / 20 is **not established** here — §13                                                                                                                                                                                                                                                                                                                                                                                           |
 | 3   | `findings.md` puts the remaining `P1-27-INT-006` cursor sites at **10**                                                                                                                                                        | `findings/p1-27-int-006-cursor-precision.md` and `canonical-plan.md` §4.1 both say **16**            | 10 is current. The six vehicle-module sites were closed by `P1-27-INT-008`; the two subordinate documents pre-date that closure                                                                                                                                                                                                                                                                                                                                                                                                     |
 | 4   | `crm.duplicate-scan` is not called by any file in `apps/web/src`; the duplicate warning is delivered on the **creation response**                                                                                              | `canonical-plan.md` §7 says `FE-003`'s warning "uses `crm.duplicate-list`"                           | The plan is stale. `task-register.md` and `findings.md` are correct. The gate's allow-list entry for `creation-actions.ts` under `no-duplicate-scan-on-a-queue` is currently **vacuous** — nothing there matches                                                                                                                                                                                                                                                                                                                    |
@@ -855,7 +857,7 @@ editing whichever number is nearer to hand.
 | That the five merges in §4 are two-parent merge commits                                    | A `git` command, which this document's own production rules forbid. `owner-acceptance-fail-remediation.md` states it for #200 and #201; nothing in the repository states it for #198, #199 or #202                                                                                                                                                                                                                        |
 | The pull-request number and hosted-CI result of **#199** and **#202**                      | The GitHub pull-request records, or a document in `docs/phase-1/phase-1-27/` naming them. The reflog establishes the branch, its head, the resulting `develop` SHA and the commit subjects — which is what §4.1 states their scope from — and no more                                                                                                                                                                     |
 | Whether the `M-OA` matrix currently runs 20 / 20                                           | `node scripts/ci/hostile-mutations.mjs --only=M-OA`, not run here because it mutates tracked source in place                                                                                                                                                                                                                                                                                                              |
-| Current case counts for `tests/backend` (86 files) and `tests/db` (139 files)              | A running local PostgreSQL. The 1636 / 1636 figure is recorded, not re-measured here                                                                                                                                                                                                                                                                                                                                      |
+| Current case counts for `tests/backend` (85 files) and `tests/db` (139 files)              | A running local PostgreSQL. The 1636 / 1636 figure is recorded, not re-measured here                                                                                                                                                                                                                                                                                                                                      |
 | Any definition — statement, owner, decision-maker or date — for `P1-OD-017` or `P1-OD-025` | The canonical Word documents outside the repository. `docs/` holds dispositions only; no file in `docs/` is a `P1-OD-###` register                                                                                                                                                                                                                                                                                        |
 | A release group for this phase                                                             | No P1-25, P1-26 or P1-27 document records one. The Backend phases carry "Release 3 — Backend Foundation"; nothing extends that to the Frontend phases                                                                                                                                                                                                                                                                     |
 | Any **global `RSK-##`** allocation for P1-27                                               | The phase allocates none. A phase risk register was written into the working tree while this manifest was being produced — untracked, §1.3 — and carries document-local `P1-27-R-##` identifiers only. The highest-numbered risk with a definition anywhere in `docs/` is still `RSK-27`; `RSK-31`, `RSK-44`, `RSK-45` and `RSK-52` are mentions without definitions. Issuing a global number is the register owner's act |
@@ -928,14 +930,14 @@ Two claims that look wrong and are right, recorded so nobody "corrects" them:
 
 ### 15.2 Where two documents contradicted each other, and which side was wrong
 
-| #   | the disagreement                                                                                                                                                                                                                                                        | settled against the repository                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | `open-decisions.md` §0.1: "`P1-OD-042` is merely the highest `P1-OD-` identifier _referenced_ anywhere in `docs/`". Its own §`P1-27-OD-001` says `provider-evaluation.md` §10 suggests **`P1-OD-043`**                                                                  | **§0.1 was wrong**, and the document refuted itself. `P1-OD-043` is referenced at `docs/product/vehicle-catalogue/provider-evaluation.md:486`. §0.1 and the closing table now say "highest number `docs/` treats as an existing decision", which is what is true — and the conclusion is unchanged and stronger                                                                                                                                                                                                |
-| 2   | `evidence/task-traceability.md` §1: "**#202 is named by no P1-27 evidence document.** The only record of it is `deliverable-manifest.md` §4". `risk-register.md` §9: "It is **not** undocumented … `open-decisions.md:15-17` and `:806` name it again"                  | **The traceability document was wrong.** #202 is named in four P1-27 documents. What is genuinely absent is #202 from `owner-acceptance-fail-remediation.md`, and its **hosted-CI result** from everywhere. §1 now says that instead                                                                                                                                                                                                                                                                           |
-| 3   | `open-decisions.md` §`P1-27-OD-002` cited four records for the fourteen-section count. **Three of the four line numbers pointed at unrelated lines** — `risk-register.md:190` is about `P1-OD-` identifiers, `deliverable-manifest.md:579` about acceptance permissions | **The citations were wrong, the claim was right.** Corrected to `risk-register.md:213-218`, `evidence/task-traceability.md:233`, `deliverable-manifest.md:608`. All five records still repeat the count and **none lists a single section**                                                                                                                                                                                                                                                                    |
-| 4   | This manifest §4 said no repository document names PR **#199** or **#202**; `open-decisions.md`, `risk-register.md` and `evidence/task-traceability.md` all name #202                                                                                                   | **The manifest was imprecise.** The claim is true of **tracked** documents only; the four that name #202 are the four §1.3 records as untracked. Both rows now say so. Separately: `#199` and `#202` do appear in four P1-18 documents — as **workflow run numbers**, not pull requests                                                                                                                                                                                                                        |
-| 5   | `risk-register.md` §4 and §9 cited `open-decisions.md:86-91` and `:798`                                                                                                                                                                                                 | Both moved when §0.1 was corrected. Re-pointed to `:93-98` and `:806`                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| 6   | This manifest §6.4: "`tests/backend` 85 files present", "`tests/db` 139 files present"                                                                                                                                                                                  | **85 and 139 were the _test_ file counts at this reconciliation; 90 and 143 files were present.** This row itself said 138 and 142 (`E-09`), and all four numbers are derived now, here and in `risk-register.md` §6.4 — which is why they moved rather than rotted: the `tests/backend` pair reads **86 / 91** at this head, the P1-18 intake-catalogue management remediation having added one suite. The quoted claim is left as it was written; being derived is what keeps the live figures above it true |
+| #   | the disagreement                                                                                                                                                                                                                                                        | settled against the repository                                                                                                                                                                                                                                                                                  |
+| --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | `open-decisions.md` §0.1: "`P1-OD-042` is merely the highest `P1-OD-` identifier _referenced_ anywhere in `docs/`". Its own §`P1-27-OD-001` says `provider-evaluation.md` §10 suggests **`P1-OD-043`**                                                                  | **§0.1 was wrong**, and the document refuted itself. `P1-OD-043` is referenced at `docs/product/vehicle-catalogue/provider-evaluation.md:486`. §0.1 and the closing table now say "highest number `docs/` treats as an existing decision", which is what is true — and the conclusion is unchanged and stronger |
+| 2   | `evidence/task-traceability.md` §1: "**#202 is named by no P1-27 evidence document.** The only record of it is `deliverable-manifest.md` §4". `risk-register.md` §9: "It is **not** undocumented … `open-decisions.md:15-17` and `:806` name it again"                  | **The traceability document was wrong.** #202 is named in four P1-27 documents. What is genuinely absent is #202 from `owner-acceptance-fail-remediation.md`, and its **hosted-CI result** from everywhere. §1 now says that instead                                                                            |
+| 3   | `open-decisions.md` §`P1-27-OD-002` cited four records for the fourteen-section count. **Three of the four line numbers pointed at unrelated lines** — `risk-register.md:190` is about `P1-OD-` identifiers, `deliverable-manifest.md:579` about acceptance permissions | **The citations were wrong, the claim was right.** Corrected to `risk-register.md:213-218`, `evidence/task-traceability.md:233`, `deliverable-manifest.md:608`. All five records still repeat the count and **none lists a single section**                                                                     |
+| 4   | This manifest §4 said no repository document names PR **#199** or **#202**; `open-decisions.md`, `risk-register.md` and `evidence/task-traceability.md` all name #202                                                                                                   | **The manifest was imprecise.** The claim is true of **tracked** documents only; the four that name #202 are the four §1.3 records as untracked. Both rows now say so. Separately: `#199` and `#202` do appear in four P1-18 documents — as **workflow run numbers**, not pull requests                         |
+| 5   | `risk-register.md` §4 and §9 cited `open-decisions.md:86-91` and `:798`                                                                                                                                                                                                 | Both moved when §0.1 was corrected. Re-pointed to `:93-98` and `:806`                                                                                                                                                                                                                                           |
+| 6   | This manifest §6.4: "`tests/backend` 85 files present", "`tests/db` 139 files present"                                                                                                                                                                                  | **85 and 139 are the _test_ file counts; 90 and 143 files are present.** This row itself said 138 and 142 (`E-09`), and all four numbers are derived now, here and in `risk-register.md` §6.4                                                                                                                   |
 
 ### 15.3 The four questions this reconciliation was asked, answered
 
@@ -969,9 +971,9 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
      an earlier revision put them in the label column and broke two other gates
      whose regexes read the label and the number as adjacent cells. -->
 
-<!-- derived: files apps/web/tests = 70 -->
-<!-- derived: files tests/ci = 42 -->
-<!-- derived: files scripts/ci = 46 -->
+<!-- derived: files apps/web/tests = 98 -->
+<!-- derived: files tests/ci = 48 -->
+<!-- derived: files scripts/ci = 52 -->
 <!-- derived: files apps/web/scripts = 4 -->
 <!-- derived: files supabase/migrations = 120 -->
 <!-- derived: files tests/db = 139 -->
@@ -980,15 +982,15 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
 <!-- derived: files tests/backend:all = 91 -->
 <!-- derived: files apps/web/src/features/crm = 20 -->
 <!-- derived: files apps/web/src/features/vehicles = 23 -->
-<!-- derived: files p1-27-frontend-gate = 69 -->
-<!-- derived: files p1-27-frontend-gate:trees = 3 -->
+<!-- derived: files p1-27-frontend-gate = 123 -->
+<!-- derived: files p1-27-frontend-gate:trees = 5 -->
 <!-- derived: tracked docs/phase-1/phase-1-27 = 41 -->
 <!-- derived: tracked docs/phase-1/phase-1-27:md = 31 -->
 <!-- derived: tracked docs/product = 13 -->
-<!-- derived: commands registered = 151 -->
-<!-- derived: commands required = 76 -->
-<!-- derived: commands reachable = 76 -->
-<!-- derived: commands hosted-ci = 76 -->
+<!-- derived: commands registered = 161 -->
+<!-- derived: commands required = 82 -->
+<!-- derived: commands reachable = 82 -->
+<!-- derived: commands hosted-ci = 82 -->
 <!-- derived: cases vehicle-screens.dom.test.tsx = 40 -->
 <!-- derived: cases tailwind-theme-gate.test.ts = 8 -->
 <!-- derived: cases navigation.test.ts = 22 -->
@@ -1000,11 +1002,11 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
 <!-- derived: lines docs/phase-1/phase-1-27/canonical-plan.md = 340 -->
 <!-- derived: lines docs/phase-1/phase-1-27/canonical-write-reachability.json = 66 -->
 <!-- derived: lines docs/phase-1/phase-1-27/ci-evidence.md = 275 -->
-<!-- derived: lines docs/phase-1/phase-1-27/clean-room-evidence.md = 377 -->
+<!-- derived: lines docs/phase-1/phase-1-27/clean-room-evidence.md = 379 -->
 <!-- derived: lines docs/phase-1/phase-1-27/closure-record.md = 114 -->
 <!-- derived: lines docs/phase-1/phase-1-27/contract-archaeology.md = 416 -->
-<!-- derived: lines docs/phase-1/phase-1-27/deliverable-manifest.md = 1049 -->
-<!-- derived: lines docs/phase-1/phase-1-27/developer-guide.md = 184 -->
+<!-- derived: lines docs/phase-1/phase-1-27/deliverable-manifest.md = 1051 -->
+<!-- derived: lines docs/phase-1/phase-1-27/developer-guide.md = 188 -->
 <!-- derived: lines docs/phase-1/phase-1-27/evidence/change-log.md = 1135 -->
 <!-- derived: lines docs/phase-1/phase-1-27/evidence/evidence-manifest.json = 171 -->
 <!-- derived: lines docs/phase-1/phase-1-27/evidence/closing-value-ledger.json = 907 -->

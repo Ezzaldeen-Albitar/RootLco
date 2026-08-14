@@ -9,7 +9,7 @@ import {
   imposeRestrictionAction,
 } from '@/features/crm/customers/governance-actions';
 import { requiresIdempotencyKey, resolveOperation } from '@/lib/api/operation-contract';
-import { companyFilterQuery, query } from '@/lib/api/read-operation';
+import { branchTargetQuery, companyFilterQuery, query } from '@/lib/api/read-operation';
 import {
   carriableSearchParams,
   FORBIDDEN_URL_KEYS,
@@ -530,6 +530,53 @@ describe('P1-27-SEC-001 — permission and resolved scope', () => {
     expect(() => query({ branchId: 'b1' })).toThrow(/branchId/);
     // And it does not over-reach: a real search criterion goes through.
     expect(query({ name: 'ali' })).toBe('?name=ali');
+  });
+
+  it('emits the mandatory branch-target pair through the dedicated parameter', () => {
+    // P1-28: the branch-calendar reads REQUIRE `companyId` and `branchId` —
+    // their `.strict()` schemas name both as mandatory, and the pair is the
+    // `authorizationTarget` the server decides against. The pair is a claim
+    // about the RESOURCE, so it travels; everything else rides behind it as an
+    // ordinary filter, with empties dropped exactly as `query()` drops them.
+    expect(branchTargetQuery({ companyId: 'c1', branchId: 'b1' })).toBe(
+      '?companyId=c1&branchId=b1'
+    );
+    expect(
+      branchTargetQuery(
+        { companyId: 'c1', branchId: 'b1' },
+        { status: 'requested', cursor: null, from: '', limit: 25 }
+      )
+    ).toBe('?companyId=c1&branchId=b1&status=requested&limit=25');
+  });
+
+  it('refuses a branch target with a missing or blank half', () => {
+    // Both halves or neither. An undefined half would be serialised by
+    // URLSearchParams as the literal string "undefined" and a blank one is a
+    // 422 far from its cause — each is a coding error, said at the call site
+    // rather than shipped to the backend to be refused there.
+    expect(() => branchTargetQuery({ companyId: '', branchId: 'b1' })).toThrow(/companyId/);
+    expect(() => branchTargetQuery({ companyId: 'c1', branchId: '   ' })).toThrow(/branchId/);
+    expect(() => branchTargetQuery({ companyId: 'c1' } as never)).toThrow(/branchId/);
+    expect(() => branchTargetQuery(undefined as never)).toThrow(/companyId/);
+  });
+
+  it('still refuses scope keys hidden among the filters behind a branch target', () => {
+    // The new door keeps the old guard: `P1-27-SEC-001` must hold through
+    // `branchTargetQuery` exactly as it holds through `query()`. Tenant above
+    // all — no operation anywhere accepts a client-supplied tenant — and the
+    // target pair itself has ONE door, so a duplicate among the ordinary
+    // filters is refused rather than silently preferring one of the two.
+    const target = { companyId: 'c1', branchId: 'b1' };
+    expect(() => branchTargetQuery(target, { tenantId: 't1' })).toThrow(/tenantId/);
+    expect(() => branchTargetQuery(target, { tenant_id: 't1' })).toThrow(/tenant_id/);
+    expect(() => branchTargetQuery(target, { companyId: 'c2' })).toThrow(/companyId/);
+    expect(() => branchTargetQuery(target, { branchId: 'b2' })).toThrow(/branchId/);
+    expect(() => branchTargetQuery(target, { company_id: 'c2' })).toThrow(/company_id/);
+    expect(() => branchTargetQuery(target, { branch_id: 'b2' })).toThrow(/branch_id/);
+    // And an ordinary criterion still rides through beside the pair.
+    expect(branchTargetQuery(target, { vehicleId: 'v1' })).toBe(
+      '?companyId=c1&branchId=b1&vehicleId=v1'
+    );
   });
 
   it('gates every CRM and vehicle route on a permission before it reads', () => {

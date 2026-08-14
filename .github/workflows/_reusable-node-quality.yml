@@ -261,6 +261,36 @@ jobs:
           # UUIDs, no permission codes, no snake_case identifiers, no raw
           # translation keys — in either language.
           npm run validate:plain-language
+          # The 35-task P1-28 register, derived from its canonical plan rather
+          # than maintained beside it. P1-27 counted 33 adjudicated items as 42
+          # canonical tasks and nine tasks appeared in no status table for four
+          # adversarial rounds, so this authority exists from day one — and it
+          # is named by a hosted job from day one too, rather than riding only
+          # the aggregate the way its P1-27 sibling still does.
+          npm run validate:p1-28-matrix
+          # The record against the tree (P1-28-DOC-001). The archaeology was
+          # corrected on one day and went stale again four days later, because
+          # PR #227 published a catalogue-management surface three of its rows
+          # had just finished saying could not exist — and nothing failed,
+          # because every figure in it was hand-written. Every P1-28 number is
+          # a derived claim now, and this substitutes the tree's answer for it.
+          # Named here beside its sibling rather than riding the clean-room
+          # aggregate alone, for the reason `tests/ci/p1-28-devops-gate.test.ts`
+          # gives: a gate a developer meets forty minutes late is a gate they
+          # meet after the next commit.
+          npm run validate:p1-28-traceability
+          # P1-28-QA-005. The closing seal: every file in the phase directory
+          # digested over its BYTES, the candidate bound in both halves of the
+          # closing package, and the unclosed-task set DERIVED from the verdicts
+          # file rather than listed — so a task that quietly stops being named in
+          # the package fails here instead of reading like a task that closed.
+          # Named directly, beside its two siblings. `validate:p1-27-evidence`
+          # reaches hosted CI only through `verify:policies` -> `verify:workspaces`
+          # in the clean room, which is the slowest job in the pull request; a
+          # gate a developer meets forty minutes late is a gate they meet after
+          # the next commit. It still rides that path too — this is an additional
+          # naming, not a replacement.
+          npm run validate:p1-28-evidence
 
       # =======================================================================
       # Changed-file ownership — P1-27-DO-003.
@@ -589,6 +619,32 @@ jobs:
           # P1-27 mutation must be reachable from a real production call site,
           # or carry an approved decision saying why it is not.
           npm run validate:p1-27-reachability
+          # The apt/rec twin (P1-28-SEC-004). The line above derives its
+          # canonical list from the crm/veh operations alone, so the fourteen
+          # appointment and reception writes P1-28 consumes had no reachability
+          # authority named by any hosted job — INT-113's exact precondition,
+          # one domain over. It rode the clean-room aggregate and nothing else,
+          # and the clean room is the slowest job in the pull request; a gate a
+          # developer meets forty minutes late is a gate they meet after the
+          # next commit. Named here so it fails beside its sibling.
+          npm run validate:p1-28-write-reachability
+          # The other two P1-28 gates, for the same reason and found the same
+          # way. `tests/ci/p1-28-devops-gate.test.ts` used to hold a HAND LIST of
+          # two gates and assert that each was named by a hosted job; the command
+          # register meanwhile carried FOUR `validate:p1-28-*` entries at tier
+          # `required`, and the two the list omitted rode `verify:workspaces` in
+          # the clean room and nothing else. A hand list cannot fail because
+          # something was never added to it, which is the failure that happened.
+          # That test now derives its set from the register by phase prefix, so
+          # these two are named here rather than being invisible to it.
+          #
+          # Least privilege, resolved scope and scope hygiene over the same
+          # trees (P1-28-SEC-001/003).
+          npm run validate:p1-28-access
+          # Every version-guarded command sources its If-Match from a read or a
+          # command response, never from arithmetic or a cached guess
+          # (P1-28-QA-004).
+          npm run validate:p1-28-version-sourcing
 
       - name: Web component tier
         if: inputs.task == 'web-quality'

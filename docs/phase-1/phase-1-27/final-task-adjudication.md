@@ -592,7 +592,7 @@ So the prohibited list is satisfied structurally rather than by redaction luck.
 No password, token, customer identifier, request body or query string can be
 logged by a P1-27 surface, because no P1-27 surface logs — and the
 `no-console-output` rule in `validate:p1-27-frontend` is what keeps it that way
-across all three trees the gate now scans. **A VIN in particular is never written
+across all five trees the gate now scans. **A VIN in particular is never written
 to a log**: it is `internal`-classified, it appears in no `report()` call, and
 there is no `report()` call in either feature tree to add one to. One correction
 now that the gate's reach is wider: the third gate tree does hold a single

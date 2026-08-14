@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
 import { renderLtr, renderRtl } from './render';
+import { composeInstant } from '@/components/forms/instant';
 import type { OdometerReadingEntry, PlateHistoryEntry } from '@/features/vehicles/history-contract';
 
 /**
@@ -374,9 +375,26 @@ describe('an odometer reading can be corrected', () => {
     screen.getByRole('combobox', { name: en['vehicles.odometer.correctionReason'] });
   const readingBox = () =>
     screen.getByRole('spinbutton', { name: en['vehicles.odometer.reading'] });
+  /*
+   * `getByLabelText`, not `getByRole('textbox')` — `datetime-local` exposes NO
+   * implicit ARIA role, which is one way of noticing this is no longer a box an
+   * operator can type an unzoned string into (`F2`). Anchored, because a
+   * required field's label carries a trailing asterisk that `getByLabelText`
+   * sees: it does not honour `aria-hidden`.
+   */
   const observedBox = () =>
-    screen.getByRole('textbox', { name: en['vehicles.odometer.observedAt'] });
+    screen.getByLabelText(new RegExp(`^${en['vehicles.odometer.observedAt']}`));
   const submit = () => screen.getByRole('button', { name: en['vehicles.odometer.record'] });
+
+  /** The local wall time typed, and the instant the form composes from it. */
+  const OBSERVED_LOCAL = '2026-03-05T09:30';
+  /*
+   * DERIVED, never hard-coded. The composed offset is the RUNNER's zone, so a
+   * literal here would assert a machine rather than the behaviour, and would be
+   * wrong on any other machine. What is actually under test is asserted
+   * separately: the value carries an explicit offset.
+   */
+  const observedInstant = () => composeInstant(OBSERVED_LOCAL) as string;
 
   /** Fills the three fields every reading needs, correction or not. */
   async function enterReading(user: ReturnType<typeof userEvent.setup>, value: string) {
@@ -385,7 +403,7 @@ describe('an odometer reading can be corrected', () => {
       screen.getByRole('combobox', { name: en['vehicles.odometer.unit'] }),
       'km'
     );
-    await user.type(observedBox(), '2026-03-05T09:30:00Z');
+    await user.type(observedBox(), OBSERVED_LOCAL);
   }
 
   it('offers the prior readings by value and time, and never by id', async () => {
@@ -456,7 +474,55 @@ describe('an odometer reading can be corrected', () => {
 
     await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
     const [, , body] = send.mock.calls[0] as [string, string, Record<string, unknown>];
-    expect(body).toEqual({ value: 190000, unit: 'km', observedAt: '2026-03-05T09:30:00Z' });
+    expect(body).toEqual({ value: 190000, unit: 'km', observedAt: observedInstant() });
+    /*
+     * `F2`, asserted as the property rather than as a string. The operator typed
+     * a wall time with no zone in it at all; what leaves the browser carries an
+     * offset, because a zoneless value bound to a `timestamptz` is resolved
+     * against the SERVER's zone — a silent error of however many hours separate
+     * the two, on the reading that dates the record.
+     */
+    expect(body.observedAt).toMatch(/(?:Z|[+-](?:0\d|1[0-5]):[0-5]\d)$/);
+    expect(body.observedAt).not.toBe(OBSERVED_LOCAL);
+  });
+
+  it('cannot hold a moment the offset rule would reject, and refuses an incomplete one', async () => {
+    /*
+     * `F2`, from the control's side. The field used to be `kind: 'text'`, so
+     * `2026-03-01T09:30` — a wall time with no zone — was a value the operator
+     * could type and the schema would accept. A `datetime-local` input applies
+     * the spec's own value sanitisation: anything that is not a complete local
+     * date-time becomes the empty string, so there is no partial state for the
+     * composition to turn into an unzoned instant.
+     *
+     * The remaining failure is therefore an EMPTY moment, and nothing is sent.
+     * (The rule for a browser with no `datetime-local` — where the control
+     * degrades to a text box and the operator CAN type a wrong shape — is
+     * `instantFieldError`, unit-tested in `record-form.dom.test.tsx` because no
+     * DOM environment can reproduce that fallback.)
+     */
+    const user = await open();
+    await user.type(readingBox(), '190000');
+    await user.selectOptions(
+      screen.getByRole('combobox', { name: en['vehicles.odometer.unit'] }),
+      'km'
+    );
+    await user.type(observedBox(), '2026-03-05T09');
+    expect(observedBox()).toHaveValue('');
+
+    await user.click(submit());
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('shows the operator the instant it will send, offset included', async () => {
+    // The composed value is on screen, so which clock is being recorded is never
+    // a secret — and a browser in the wrong zone is visible rather than silent.
+    const user = await open();
+    await user.type(observedBox(), OBSERVED_LOCAL);
+
+    const shown = await screen.findByText(observedInstant());
+    expect(shown).toBeInTheDocument();
+    expect(observedInstant()).toMatch(/(?:Z|[+-](?:0\d|1[0-5]):[0-5]\d)$/);
   });
 
   it('sends both values when a prior reading and a reason are chosen', async () => {
@@ -551,7 +617,9 @@ describe('an odometer reading can be corrected', () => {
     await waitFor(() => expect(priorSelect()).toHaveValue(TOO_HIGH.id));
     expect(reasonSelect()).toHaveValue('possible_rollover');
     expect(readingBox()).toHaveValue(118000);
-    expect(observedBox()).toHaveValue('2026-03-05T09:30:00Z');
+    // The control holds the LOCAL wall time; the composed instant is what would
+    // have been sent, and both survive a failed write.
+    expect(observedBox()).toHaveValue(OBSERVED_LOCAL);
   });
 
   it('shows the correction in the history in words, with the original still listed', async () => {

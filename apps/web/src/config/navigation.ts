@@ -82,6 +82,8 @@ export type IconName =
    */
   | 'duplicate-review'
   | 'appointments'
+  /** A clipboard with a check: a vehicle received and recorded. */
+  | 'receptions'
   | 'work-orders'
   | 'technicians'
   | 'catalog'
@@ -116,13 +118,59 @@ export const NAVIGATION: readonly NavigationGroup[] = Object.freeze([
         status: 'available',
         scope: 'branch',
       },
+      /*
+       * Walk-in intake — landed with `P1-28-FE-006`. Gated on
+       * `crm.customer.read` because every operation the screen calls is a CRM
+       * or Vehicle one: its first step is a customer search, and an operator
+       * who cannot search customers cannot use anything after it. Gating it
+       * on a code no operation behind it requires is the defect `P1-26-F-011`
+       * and `P1-26-F-029` both recorded.
+       */
+      {
+        key: 'walk-in',
+        labelKey: 'nav.walkIn',
+        icon: 'customers',
+        href: '/reception/walk-in',
+        permission: 'crm.customer.read',
+        status: 'available',
+        scope: 'branch',
+      },
+      /*
+       * Built in P1-28 (`P1-28-FE-001`): the branch calendar lives at
+       * `/appointments`, with booking and the per-appointment lifecycle
+       * commands beneath it. The entry flipped to `available` in the SAME
+       * change that landed the screen — `navigation.test.ts` pins the
+       * planned/available sets so the flip edits both together — and it is
+       * gated on `apt.appointment.read`, the code `apt.appointment-list`
+       * and `-detail` actually register (seeded by P1-18 remediation R2,
+       * PR #220).
+       *
+       * The Reception entry below landed WITH its first screen — the P1-28
+       * Wave D check-in wizard (`P1-28-FE-007`) at `/receptions/check-in` —
+       * gated on `rec.reception.read` because the board and the resume path
+       * are both reads, and the create form states its own
+       * `rec.reception.manage` denial inside the page. Wave G moved the href
+       * to the branch board at `/receptions`, which is what the wizard's own
+       * comment said would happen when the board landed: the module's landing
+       * screen is what the workshop is holding, and checking a vehicle in is
+       * an action taken from it.
+       */
       {
         key: 'appointments',
         labelKey: 'nav.appointments',
         icon: 'appointments',
         href: '/appointments',
         permission: 'apt.appointment.read',
-        status: 'planned',
+        status: 'available',
+        scope: 'branch',
+      },
+      {
+        key: 'receptions',
+        labelKey: 'nav.receptions',
+        icon: 'receptions',
+        href: '/receptions',
+        permission: 'rec.reception.read',
+        status: 'available',
         scope: 'branch',
       },
       {
