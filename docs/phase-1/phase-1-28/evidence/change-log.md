@@ -196,16 +196,25 @@ classification cannot be entered without a reviewer seeing the number move.
   came from, because P1-27 shipped a closing page pinning a head 47 commits behind
   the tree it described and it went on reading like evidence.
 
-  **The candidate has been re-frozen once, and the seal is why.** Three
-  finding-fix waves changed 37 files under `apps/**` after `38afa5c2` was frozen;
-  the gate COMPUTED the product diff, found it non-empty and refused the package.
-  The candidate is now `6392ccb4321b004ed12e5d04ad583298da3303dd`. The two local
-  tiers were re-measured against it — root unit 2559 and web 2726, 0 failures,
-  5285 cases — and the three hosted-only tiers could not be, because a hosted run
-  is taken by CI at a head and this workstation cannot take one. Those three, and
-  eight other hosted bindings, are recorded PENDING at this candidate rather than
-  restated from the head they were measured at; the coordinator binds them with an
-  exact-head run.
+  **The candidate has been re-frozen twice, for two different reasons.** The
+  first was forced and the seal is why: three finding-fix waves changed 37 files
+  under `apps/**` after `38afa5c2` was frozen, the gate COMPUTED the product
+  diff, found it non-empty and refused the package. The second was deliberate and
+  cost nothing —
+  `git diff --name-only 6392ccb4..b5e9919b -- apps supabase` is **empty**, so no
+  product file had moved and only the seal's own machinery had. Twelve commits
+  had accumulated after `6392ccb4`, five of them executable and every one a
+  repair to the seal; each forced a reseal and any further repair would force
+  another, while the package described a commit ever further behind the tree
+  hosted CI exercises. The candidate is now
+  `b5e9919b0006a68fa694d650336c62f17095173c`, the successor list is empty, and
+  the two local tiers were re-measured **at it** — root unit 2559 and web 2726, 0
+  failures, 5285 cases. The three hosted-only tiers still could not be, because a
+  hosted run is taken by CI at a head and this workstation cannot take one. Those
+  three, and eight other hosted bindings, remain PENDING rather than restated
+  from the head they were measured at; the coordinator binds them with an
+  exact-head run. Re-freezing moved what the package is about; it manufactured no
+  observation of it.
 
   **The exact-head rule was itself a circularity, and it is removed.** The
   seal’s own machinery cannot live inside the commit it seals, so hosted CI
