@@ -61,9 +61,14 @@ hosted figure is produced by a GitHub-hosted runner at a head, and this
 workstation cannot take one at any candidate — the backend and database tiers
 need a running PostgreSQL it does not host, the browser tier needs the full
 acceptance stack, and hosted CI, CodeQL, the dependency audit and the production
-build are properties of a **run**, not of a checkout. So **every hosted binding
-in this package is recorded PENDING at this candidate**; see
-[What is PENDING at this candidate](#what-is-pending-at-this-candidate).
+build are properties of a **run**, not of a checkout. Moving the candidate moves
+what the package is _about_; it never manufactures an observation of it.
+
+**The hosted half has since been taken, separately.** Eleven bindings stood
+PENDING when this candidate was frozen. Hosted CI has now run at
+`81cbd44bae5f8f64091416019458b3d2b514503e` — the documentation-only commit that
+carries the freeze — and **all eleven are bound**; see
+[What was PENDING, and what bound it](#what-was-pending-and-what-bound-it).
 
 **On the two names, before anything else.** `FINAL_CODE_SHA` and
 `FINAL_CODE_TREE` are the names this package was commissioned under. They are
@@ -168,12 +173,13 @@ half-update this gate exists to catch. The three the candidate before _them_
 named — `1b9811c8`, `89720963` and `5e97dc92` — are recorded in the same
 place for the same reason.
 
-**What the re-freeze did NOT buy.** Not one hosted figure. A hosted run is taken
-by CI at a head and this workstation cannot take one at any candidate, so every
-hosted binding in this package is **PENDING** again, at `55b932cb`. Moving the
-candidate moves what the package is _about_; it does not manufacture an
-observation of it, and a reader who finds this section reassuring should read the
-pending table below before concluding anything.
+**What the re-freeze itself did NOT buy.** Not one hosted figure. A hosted run is
+taken by CI at a head and this workstation cannot take one at any candidate, so
+at the moment of each re-freeze every hosted binding was still **PENDING**. That
+is worth keeping on the page now that the bindings are closed, because the two
+acts are independent and only one of them is evidence: re-freezing changed what
+the package is _about_, and a **separate** hosted run — not this section — is
+what made the package able to say anything about it.
 
 **The rule, and the single hole it cannot close.** Every commit in
 `git log 7b1252ed..HEAD` that touches an executable path — anything outside
@@ -192,24 +198,40 @@ satisfied.
 
 ---
 
-## The regression statement — what was re-run, and what was not
+## The regression statement — all five tiers, and where each was taken
 
-**Two tiers were re-measured at this candidate. Three were not, and are recorded
-PENDING rather than restated.**
+**All five tiers carry a measurement of this candidate's product. Two carry two —
+a local one at the candidate itself and a hosted one at the product-identical
+successor — and they agree.**
 
-| Tier                     | Tests       | Passed | Failed | Skipped | Files   | State at THIS candidate                                      |
-| ------------------------ | ----------- | ------ | ------ | ------- | ------- | ------------------------------------------------------------ |
-| Root unit and foundation | 2560        | 2560   | **0**  | 0       | 98      | **measured here**, computed against the run ledger           |
-| Web component and DOM    | 2726        | 2726   | **0**  | 0       | 98      | **measured here**, computed against the run ledger           |
-| Backend integration      | 2004        | 2004   | **0**  | 0       | 86      | **PENDING** — figures are run `31776114127`'s, at `55b932cb` |
-| Database and RLS         | 1647        | 1647   | **0**  | 0       | 139     | **PENDING** — figures are run `31776114127`'s, at `55b932cb` |
-| Authenticated browser    | 370 planned | 366    | **0**  | 4       | 7 specs | **PENDING** — figures are run `31776114127`'s, at `55b932cb` |
+| Tier                     | Tests       | Passed | Failed | Skipped | Files   | Where it was taken                                              |
+| ------------------------ | ----------- | ------ | ------ | ------- | ------- | --------------------------------------------------------------- |
+| Root unit and foundation | 2560        | 2560   | **0**  | 0       | 98      | **local** at `7b1252ed` **and hosted** job `94714715510`        |
+| Web component and DOM    | 2726        | 2726   | **0**  | 0       | 98      | **local** at `7b1252ed` **and hosted** job `94714715522`        |
+| Backend integration      | 2004        | 2004   | **0**  | 0       | 86      | **hosted** job `94714715651` — not takeable on this workstation |
+| Database and RLS         | 1647        | 1647   | **0**  | 0       | 139     | **hosted** job `94714715750` — not takeable on this workstation |
+| Authenticated browser    | 370 planned | 365    | **0**  | 5       | 7 specs | **hosted** job `94714715648` — not takeable on this workstation |
 
-**Measured at this candidate: 5286 automated cases, 0 failures.** The other three
-rows are the superseded head's numbers, kept so a reader can fetch the same
-artefacts, and they are **not** a measurement of this commit. Adding all five
-together would produce a total nobody has ever observed at one head, so this page
-does not print one.
+**One run, one head, all five tiers: 9307 cases planned, 9302 passed, 0 failed, 5
+skipped.** That total is printed here for the first time, and only because it is
+now true of a single observation: every one of the five hosted jobs above belongs
+to run `31783658759` at head `81cbd44b`. While three tiers were pending, adding
+the five together would have produced a number nobody had ever observed at one
+head, and this page said so and refused to print one.
+
+**The browser skip count moved, 4 → 5, and it is not a code change.** The
+candidate touches nothing under `apps/**`. The extra skip is
+`a dialog traps focus and returns it, signed in` in
+`authenticated/accessibility.spec.ts` under `authenticated-en`, and it is a
+**conditional** skip taken inside the test body: the case opens
+`/en/administration/users`, counts the dialog openers, and calls
+`test.skip(true, 'this screen exposes no dialog opener for the current permission
+set')` when it finds none. Its condition is about the acceptance workspace the run
+provisioned, not about the tree, so it can differ run to run at an identical
+commit — and it did. It is recorded rather than smoothed over, because a moving
+skip count is exactly the shape that hides a case which measured nothing.
+**No P1-28 case is skipped**, which is checked per test entry, not inferred: all
+141 entries owned by the phase spec carry status `expected`.
 
 The unit figure **moved, 2559 → 2560**, and it moved because of the candidate
 itself: one case was added to `tests/ci/p1-28-evidence-manifest.test.ts`. That
@@ -218,41 +240,35 @@ value is reconciled where it actually lives rather than only in the tier record 
 **both** of its twins in `closing-value-ledger.json`, the `locator` line and the
 `value`. A locator left at the old text is a binding that resolves to nothing.
 
-### What was NOT measured here, stated plainly
+### What is measured here, and what is measured only on a runner
 
-The **backend** and **database** tiers were **not run on this workstation** and
-cannot be: both need a running PostgreSQL with all 120 migrations applied, which
-this machine does not host. The **browser** tier needs the full acceptance stack.
-None of the three is takeable here at any candidate, so the re-freeze did not
-make them unavailable — it made the previously-available hosted measurement stop
-describing the code.
+The **backend** and **database** tiers are **not runnable on this workstation**
+and never were: both need a running PostgreSQL with all 120 migrations applied,
+which this machine does not host. The **browser** tier needs the full acceptance
+stack. That has not changed and is why none of the three carries a local half.
+What changed is that their hosted half now describes **this** code.
 
-What **does** move and what does not, said precisely — and this time the honest
-answer is _almost nothing_, which is exactly why it must not be read as a
-measurement:
+Two arguments this page used to make, and no longer needs to:
 
-- This candidate changes **one file**, `tests/ci/p1-28-evidence-manifest.test.ts`.
-  Nothing under `apps/**` or `supabase/**` differs between `55b932cb` and here,
-  computed by the same `git diff` the product-identity rule runs. So the
-  application the browser tier drives, the migrations the database tier applies
-  and the routes the backend tier calls are all byte-identical.
-- **That still does not make the three hosted figures this candidate's.** A run
-  is taken at a head, and `55b932cb` is a head this candidate supersedes. An
-  unchanged input is not a fresh result, and the moment this package starts
-  converting "nothing relevant changed" into "therefore it passes" is the moment
-  it stops being evidence. The one file that _did_ change is a file the unit tier
-  executes — which is precisely why the unit tier was re-run and the others were
-  not restated.
+- `supabase/**` is byte-identical across every head this package has cited, so
+  the migrations, the policies and the shape of the 1356-cell matrix could not
+  have moved. That reasoning was sound and was **deliberately not** converted
+  into a measurement, because the database tier also executes tests outside
+  `supabase/**` and an unchanged input is not a fresh result. The tier has now
+  been executed, so the inference is retired rather than relied on.
+- The same for the dependency audit: `package.json` and `package-lock.json` were
+  unchanged, and the page declined to call that a result. The audit has now been
+  run.
 
 ### Where each figure is checked, and what "checked" means for each kind
 
-| Kind                 | Tiers                      | What the gate does with the number                                                                                                                                                                                                                                                                                             |
-| -------------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **arithmetic**       | all five                   | `passed + failed + skipped` must equal the declared total. The review set `passed: 3, failed: 812` beside `tests: 2475` and the first revision of the gate accepted it.                                                                                                                                                        |
-| **computed**         | unit, web                  | the figures must equal the P1-27 run ledger's, read out of git at a **pinned commit**, and the tier may carry no figure the ledger does not write                                                                                                                                                                              |
-| **measurement head** | unit, web                  | the head the tier names must be executable-identical to the candidate, or a **named successor** carrying no product drift and declaring `measurementDrift` exactly equal to what `git diff` says. Both tiers name the candidate itself, so the first branch applies and a declared drift would be REFUSED                      |
-| **pending**          | backend, database, browser | the record must declare `describesSupersededHead`, name a head this repository **contains** and can prove is an **ancestor** of the candidate, name what replaces it, and be listed in `pendingHostedBindings`                                                                                                                 |
-| **run head**         | any hosted binding         | a run cited at a head that is not the candidate must declare `describesProductIdenticalSuccessor`, and that head must be **contained** in this repository, **descend** from the candidate, and differ from it by **no** path under `apps/**` or `supabase/**` — computed, and a diff git refuses to take is UNKNOWN, not empty |
+| Kind                 | Tiers                      | What the gate does with the number                                                                                                                                                                                                                                                                                                                                                                  |
+| -------------------- | -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **arithmetic**       | all five                   | `passed + failed + skipped` must equal the declared total. The review set `passed: 3, failed: 812` beside `tests: 2475` and the first revision of the gate accepted it.                                                                                                                                                                                                                             |
+| **computed**         | unit, web                  | the figures must equal the P1-27 run ledger's, read out of git at a **pinned commit**, and the tier may carry no figure the ledger does not write                                                                                                                                                                                                                                                   |
+| **measurement head** | unit, web                  | the head the tier names must be executable-identical to the candidate, or a **named successor** carrying no product drift and declaring `measurementDrift` exactly equal to what `git diff` says. Both tiers name the candidate itself, so the first branch applies and a declared drift would be REFUSED                                                                                           |
+| **pending**          | none, now                  | the rule is unchanged and still fires: a record describing a head the candidate **supersedes** must declare `describesSupersededHead`, name a head this repository **contains** and can prove is an **ancestor**, name what replaces it, and appear in `pendingHostedBindings` — a list the gate **derives** and compares in both directions, so it is empty by computation rather than by deletion |
+| **run head**         | all eleven hosted bindings | a run cited at a head that is not the candidate must declare `describesProductIdenticalSuccessor`, and that head must be **contained** in this repository, **descend** from the candidate, and differ from it by **no** path under `apps/**` or `supabase/**` — computed, and a diff git refuses to take is UNKNOWN, not empty                                                                      |
 
 ### What the local record covers
 
@@ -279,16 +295,25 @@ that policed it is unchanged and still fires.
 **removed**. The run ledger records no suite count, so there was nothing those
 numbers could be checked against and nothing that would have noticed them change.
 
-**The hosted halves of these two tiers are pending as well.** Run `31776114127`
-reported **2559 over 98 files** for the unit tier (job `94691823490`) and **2726
-over 98 files** for the web tier (job `94691823379`), at `55b932cb`. The web
-figure is the same number this candidate measured locally and the unit figure is
-one case short of it — that head predates the case this candidate adds — and
-_neither_ is restated here as this candidate's. They are cited in
-`hostedAttestation`, so the two tiers declare `LOCAL_COMPUTED_HOSTED_PENDING`
-rather than `LOCAL_AND_HOSTED_AGREE`: nothing on this page claims two halves
-agree when only one of them has been taken at this head, and an equal number
-taken at a different commit is not agreement.
+**The hosted halves of these two tiers have now been taken, and they agree.** Job
+`94714715510` reports **2560 over 98 files** for the unit tier and job
+`94714715522` reports **2726 over 98 files** for the web tier — the same figures
+the run ledger records, produced by GitHub-hosted runners on clean checkouts that
+share nothing with this workstation. Both tiers therefore declare
+`LOCAL_AND_HOSTED_AGREE`, which the gate refuses unless both halves exist: a tier
+asserting agreement while its hosted half describes a superseded head is one of
+the falsifications run against this tree.
+
+The unit tier is the one worth watching, because it is the only figure that
+**moved** with the candidate: 2559 at the superseded head `55b932cb`, 2560 here.
+The difference is the case `7b1252ed` adds, and it appears in the hosted reading
+as well as the local one — which is the agreement being worth something rather
+than two copies of one number.
+
+The web tier is measured a **third** time. `hosted-clean-room` (job
+`94714715543`) re-derives it independently at the same head, from its own
+checkout and its own install, and `clean-room-web-totals.json` reports the
+identical **2726 over 98 files**.
 
 ### What no tier measures
 
@@ -300,30 +325,33 @@ the standing reason `OWNER ACCEPTANCE` is required and CI is not sufficient.
 
 ---
 
-## What is PENDING at this candidate
+## What was PENDING, and what bound it
 
-Eleven hosted bindings in this package describe `55b932cb`, a head this candidate
-supersedes. Each names that head in its own record, is marked
-`describesSupersededHead`, and is listed by name in `pendingHostedBindings` — a
-list the gate **derives** from the documents' own `headSha` fields and refuses a
-difference from in either direction, so a pending binding cannot go unlisted and a
-listed one cannot be decorative.
+Eleven hosted bindings in this package stood PENDING when this candidate was
+frozen. **All eleven are now bound**, to hosted CI at
+`81cbd44bae5f8f64091416019458b3d2b514503e`.
 
-| Binding                            | What is awaited                                                     |
-| ---------------------------------- | ------------------------------------------------------------------- |
-| `tiers.unit.hostedAttestation`     | the hosted half of a tier whose local half **is** measured here     |
-| `tiers.web.hostedAttestation`      | the hosted half of a tier whose local half **is** measured here     |
-| `tiers.backend.hostedAttestation`  | the only measurement this tier can have                             |
-| `tiers.database.hostedAttestation` | the only measurement this tier can have                             |
-| `tiers.browser.hostedAttestation`  | the only measurement this tier can have                             |
-| `hostedCi`                         | the 21-check result, at this head                                   |
-| `browserByProject`                 | the per-project P1-28 spec result, at this head                     |
-| `codeql`                           | both analyses, at this head                                         |
-| `dependencySecurity`               | the audit, at this head                                             |
-| `productionBuild`                  | the build, at this head                                             |
-| `database`                         | the migration replay and the clean-room re-derivation, at this head |
+| Binding                            | Bound to                                              |
+| ---------------------------------- | ----------------------------------------------------- |
+| `tiers.unit.hostedAttestation`     | run `31783658759` · job `94714715510`                 |
+| `tiers.web.hostedAttestation`      | run `31783658759` · job `94714715522`                 |
+| `tiers.backend.hostedAttestation`  | run `31783658759` · job `94714715651`                 |
+| `tiers.database.hostedAttestation` | run `31783658759` · job `94714715750`                 |
+| `tiers.browser.hostedAttestation`  | run `31783658759` · job `94714715648`                 |
+| `hostedCi`                         | runs `31783658759` and `31783658604` — 21 checks      |
+| `browserByProject`                 | run `31783658759` · job `94714715648`                 |
+| `codeql`                           | analyses `1618296034` and `1618288471`                |
+| `dependencySecurity`               | run `31783658759` · job `94714715417`                 |
+| `productionBuild`                  | run `31783658759` · job `94714715555`                 |
+| `database`                         | run `31783658759` · jobs `94714715656`, `94714715543` |
 
-**Who takes it.** The phase coordinator, by running CI at a head that **descends
+`pendingHostedBindings.bindings` is now `[]`. **That emptiness is computed, not
+declared:** the gate derives the pending set from the documents' own `headSha`
+fields and refuses a difference in either direction, so a binding that quietly
+described another head would repopulate the list, and a name left in the list
+after being bound would fail as an unpaid debt that has been paid.
+
+**Who took it.** The phase coordinator, by running CI at a head that **descends
 from** this candidate — in practice the head this branch is pushed to.
 
 **Not "at the candidate", and that is measured rather than assumed.**
@@ -349,42 +377,75 @@ say which:
    be byte-identical to the candidate's, and which the binding declares as
    `describesProductIdenticalSuccessor`.
 
-The second is the local rule's escape on the local rule's evidence. It is not a
-rule that accepts a run at "some head close enough to the candidate" — there is
-no such thing, and 37 product files were "close enough" last time. It accepts a
-run at a head whose **product is the same product**, computed by `git diff` on
-every invocation, and it names that head in the record so a reader sees which
-commit was exercised. A run at a head the candidate **supersedes** is refused by
-it and stays where it was: `describesSupersededHead`, an ancestor, pending.
+All eleven took the second route, and the repository is what says they may:
 
-Everything below this line under _the superseded head_ is kept because it is
-fetchable and a reader may want to compare, **not** because it describes this
-commit.
+```text
+git merge-base --is-ancestor 7b1252edebb5d7f48451213c71ab832cb44e46b5 81cbd44bae5f8f64091416019458b3d2b514503e
+git diff --name-only 7b1252edebb5d7f48451213c71ab832cb44e46b5..81cbd44bae5f8f64091416019458b3d2b514503e -- apps supabase
+```
+
+The first holds; the second returns **nothing**. `81cbd44b` is the
+documentation-only commit that carries this freeze and it changes no file outside
+`docs/` at all, so what CI exercised is this candidate's software.
+
+This is the local rule's escape on the local rule's evidence. It is **not** a rule
+that accepts a run at "some head close enough to the candidate" — there is no such
+thing, and 37 product files were "close enough" once. A run at a head the
+candidate **supersedes** is still refused by it and still stays
+`describesSupersededHead`, an ancestor, pending; so is a run at a head this
+repository does not contain, and so is a run at a descendant whose product differs
+by one path.
+
+**Route 1 is sound and unreachable, which is measured rather than assumed.**
+`GET /repos/{owner}/{repo}/commits/{sha}/check-runs` returns `total_count: 0` for
+`7b1252ed`, and returned `0` for `3c75f49a` and every other candidate this package
+has named. CI runs at pushed heads; the record that names a candidate lands after
+it.
+
+What the two superseded citations said — `55b932cb` and, before it, `38afa5c2` —
+is kept in `supersededObservations` in `closure-candidate.json`, because deleting
+the record of what was once claimed is the half-update this gate exists to catch.
 
 ---
 
-## The authenticated browser tier — at the superseded head `55b932cb`
+## The authenticated browser tier · job `94714715648`
 
-**These are not this candidate's numbers.** Run **`31776114127`** · job
-**`94691823437`** · head_sha
-**`55b932cbd3e6a844457d452d64726a96a097415b`** · conclusion **success**
-(12m 51s).
+Run **`31783658759`** · job **`94714715648`** · head_sha
+**`81cbd44bae5f8f64091416019458b3d2b514503e`** · conclusion **success**.
 
-**Whole tier**, read from the report's own `stats` block: 370 planned · **366
-passed** · **0 failed** · 4 skipped · **0 flaky**.
+**Whole tier**, read from the report's own `stats` block: 370 planned · **365
+passed** · **0 failed** · **5 skipped** · **0 flaky**.
 
-The four skips are two cases each in `authenticated/accessibility.spec.ts` under
-`authenticated-en` and `authenticated-ar` — the customer profile and the vehicle
-profile. **No P1-28 case is skipped**, and that is checked rather than restated:
-all 141 entries owned by the phase spec carry status `expected`. It matters
-because a skipped test still counts toward a tier's executed total, and that is
-how a "0 uncovered" number gets reported over a case that measured nothing.
+**Five, not the four the superseded runs reported — and the fifth is worth the
+paragraph.** All five sit in `authenticated/accessibility.spec.ts`. Four are the
+pair repeated under `authenticated-en` and `authenticated-ar`: the customer
+profile and the vehicle profile. The fifth is
+`a dialog traps focus and returns it, signed in`, under `authenticated-en` only.
+
+It is a **conditional** skip taken inside the test body, not a `.skip` in the
+source: the case opens `/en/administration/users`, counts the buttons that could
+open a dialog, and calls
+`test.skip(true, 'this screen exposes no dialog opener for the current permission
+set')` when it finds none. Its condition is a fact about the **acceptance
+workspace the run provisioned** — which identity, holding which permissions — and
+not about the tree. This candidate changes one file, under `tests/ci`, and
+nothing under `apps/**`; the same commit's code produced four skips at `55b932cb`
+and five here. So the count can move between runs at an identical product, and it
+did.
+
+It is recorded rather than smoothed over, because a moving skip count is exactly
+the shape that hides a case which measured nothing: a skipped test still counts
+toward a tier's executed total, and that is how a "0 uncovered" number gets
+reported over a case that asserted nothing at all.
+
+**No P1-28 case is skipped**, and that is checked rather than restated: all 141
+entries owned by the phase spec carry status `expected`.
 
 Whole-tier shape by project, for the same reason:
 
 | Project                | Planned | Expected | Skipped |
 | ---------------------- | ------- | -------- | ------- |
-| `authenticated-en`     | 152     | 150      | 2       |
+| `authenticated-en`     | 152     | 149      | 3       |
 | `authenticated-ar`     | 152     | 150      | 2       |
 | `authenticated-tablet` | 65      | 65       | 0       |
 | `auth-setup`           | 1       | 1        | 0       |
@@ -403,71 +464,77 @@ the run's own `playwright-report.json` and grouped by `projectName`:
 These are **hosted** figures. They are not the local Playwright numbers and are
 not a keyword count over the spec file.
 
-**The one half of this that survives the re-freeze, and the half that does not.**
-The `authenticated-tablet` project's `testMatch` at
+**Both halves of the tablet fact now hold at this product.** The
+`authenticated-tablet` project's `testMatch` at
 `apps/web/playwright.config.ts:255` names two specs — `administration` and
-`appointments-and-receptions` — and that is a fact about the **config**, which is
-unchanged at this candidate: documents written before the tablet merge
-(`88af8acd`, merged as `4c6ccfe7`) that say otherwise remain wrong. The 47
-executed tablet cases are a fact about that **run**, and they are not carried
-forward.
+`appointments-and-receptions` — which is a fact about the **config**, unchanged
+at this candidate: documents written before the tablet merge (`88af8acd`, merged
+as `4c6ccfe7`) that say otherwise remain wrong. The 47 executed tablet cases were
+a fact about a **run** at a superseded head, and are now a fact about a run at
+this candidate's product.
 
 ---
 
-## Hosted CI at the superseded head `55b932cb`
+## Hosted CI · 21 checks at `81cbd44b`
 
-**Not at this candidate.** head_sha
-`55b932cbd3e6a844457d452d64726a96a097415b`.
-
-**21 checks · 21 success · 0 failure · 0 pending.** Taken from
+**21 checks · 21 success · 0 failure · 0 pending**, at head_sha
+`81cbd44bae5f8f64091416019458b3d2b514503e`. Taken from
 `GET /repos/{owner}/{repo}/commits/{sha}/check-runs?per_page=100` — the
 per-commit endpoint, because `/actions/runs` does not list every check — and the
 conclusions were counted from that response rather than read off a run-level
 verdict.
 
-**Twenty-one checks, two workflow runs, and the previous revision of this page
-was wrong about it.** `PR CI` (run `31776114127`, `.github/workflows/pr-ci.yml`,
-event `pull_request`, attempt 1) contributes sixteen. `CI` (run `31776113899`,
-`.github/workflows/ci.yml`, same event, same attempt, same head) contributes
-four. The `CodeQL` check is published by the github-advanced-security app and
-carries **no** Actions run id at all — its `details_url` is `/runs/{id}`, not
+**Twenty-one checks, two workflow runs, and an earlier revision of this page was
+wrong about it.** `PR CI` (run `31783658759`, `.github/workflows/pr-ci.yml`,
+event `pull_request`, attempt 1) contributes **seventeen**, including the
+required `ci-gate`. `CI` (run `31783658604`, `.github/workflows/ci.yml`, same
+event, same attempt, same head) contributes **four**. The `CodeQL` check is
+published by the github-advanced-security app and carries **no** Actions run id
+at all — its `details_url` is `/runs/{id}`, not
 `/actions/runs/{run}/job/{job}` — so it names none, and its analyses are cited
 below instead. Each row therefore carries the run it belongs to, parsed from that
 row's own `details_url`.
 
+**One check had to be read twice, and this page says so.** `CodeQL` first
+completed **`neutral`** at 08:24:02 with _"1 configuration not found"_, because
+only the `actions` analysis had uploaded by then and the `javascript-typescript`
+job was still running. It flipped to **`success`** once analysis `1618296034`
+arrived at 08:26:03. A `neutral` conclusion is **not** a success and was not
+recorded as one; the check was allowed to settle and then read again.
+
 | Check                                                   | Job id        | Run           | Conclusion |
 | ------------------------------------------------------- | ------------- | ------------- | ---------- |
-| `ci-gate` — **the single required check**               | `94694744607` | `31776114127` | success    |
-| `CodeQL`                                                | `94691951821` | —             | success    |
-| `application-build / build`                             | `94691823535` | `31776114127` | success    |
-| `code-security / code-security (javascript-typescript)` | `94691823511` | `31776114127` | success    |
-| `integration-tests / integration-tests`                 | `94691823497` | `31776114127` | success    |
-| `container-security / container-security`               | `94691823491` | `31776114127` | success    |
-| `unit-tests-coverage / unit-coverage`                   | `94691823490` | `31776114127` | success    |
-| `database-security / security-matrix`                   | `94691823478` | `31776114127` | success    |
-| `code-security / code-security (actions)`               | `94691823472` | `31776114127` | success    |
-| `secret-scan / secret-scan`                             | `94691823467` | `31776114127` | success    |
-| `database-migration-replay / migration-replay`          | `94691823456` | `31776114127` | success    |
-| `authenticated-browser / authenticated-browser`         | `94691823437` | `31776114127` | success    |
-| `hosted-clean-room / hosted-clean-room`                 | `94691823382` | `31776114127` | success    |
-| `Web quality / web-quality`                             | `94691823379` | `31776114127` | success    |
-| `dependency-security / dependency-security`             | `94691823349` | `31776114127` | success    |
-| `static-quality / static-quality`                       | `94691823323` | `31776114127` | success    |
-| `change-detection`                                      | `94691771384` | `31776114127` | success    |
-| `Docker build validation`                               | `94691770636` | `31776113899` | success    |
-| `Secret and sensitive-file scan`                        | `94691770620` | `31776113899` | success    |
-| `Database migrations and RLS tests`                     | `94691770588` | `31776113899` | success    |
-| `Lint, types, tests, build`                             | `94691770541` | `31776113899` | success    |
+| `ci-gate` — **the single required check**               | `94718462967` | `31783658759` | success    |
+| `CodeQL`                                                | `94714889097` | —             | success    |
+| `application-build / build`                             | `94714715555` | `31783658759` | success    |
+| `code-security / code-security (javascript-typescript)` | `94714715655` | `31783658759` | success    |
+| `integration-tests / integration-tests`                 | `94714715651` | `31783658759` | success    |
+| `container-security / container-security`               | `94714715645` | `31783658759` | success    |
+| `unit-tests-coverage / unit-coverage`                   | `94714715510` | `31783658759` | success    |
+| `database-security / security-matrix`                   | `94714715750` | `31783658759` | success    |
+| `code-security / code-security (actions)`               | `94714715672` | `31783658759` | success    |
+| `secret-scan / secret-scan`                             | `94714715514` | `31783658759` | success    |
+| `database-migration-replay / migration-replay`          | `94714715656` | `31783658759` | success    |
+| `authenticated-browser / authenticated-browser`         | `94714715648` | `31783658759` | success    |
+| `hosted-clean-room / hosted-clean-room`                 | `94714715543` | `31783658759` | success    |
+| `Web quality / web-quality`                             | `94714715522` | `31783658759` | success    |
+| `dependency-security / dependency-security`             | `94714715417` | `31783658759` | success    |
+| `static-quality / static-quality`                       | `94714715494` | `31783658759` | success    |
+| `change-detection`                                      | `94714648151` | `31783658759` | success    |
+| `Docker build validation`                               | `94714647077` | `31783658604` | success    |
+| `Secret and sensitive-file scan`                        | `94714647017` | `31783658604` | success    |
+| `Database migrations and RLS tests`                     | `94714647112` | `31783658604` | success    |
+| `Lint, types, tests, build`                             | `94714647118` | `31783658604` | success    |
 
 ### CodeQL
 
-Two analyses at that head, ref `refs/pull/226/head`, selected by matching each
-analysis's own `commit_sha` rather than by taking the two most recent:
+Two analyses at this exact head, ref `refs/pull/226/head`, selected by matching
+each analysis's own `commit_sha` rather than by taking the two most recent:
 
 | Analysis     | Language                | Rules | Results |
 | ------------ | ----------------------- | ----- | ------- |
-| `1617851873` | `javascript-typescript` | 201   | **0**   |
-| `1617844311` | `actions`               | 27    | **0**   |
+| `1618296034` | `javascript-typescript` | 201   | **0**   |
+| `1618288471` | `actions`               | 27    | **0**   |
 
 Open alerts repository-wide: **0**.
 
@@ -475,11 +542,17 @@ Open alerts repository-wide: **0**.
 **diff-informed**. Two analyses returned 0 results and the repository carries 0
 open alerts on any analysed ref, but a pull-request analysis does not by itself
 establish the repository ceiling — only a run on a protected ref does. It is
-recorded here as the pull-request result it is. **And it does not describe this
-candidate**: CodeQL reads `scripts/**` and `tests/**` as well as `apps/**`, and
-the one file this candidate changes lives under `tests/ci`.
+recorded here as the pull-request result it is.
 
-### Dependency security · job `94691823349`
+**Why this one matters to this branch in particular.** The candidate two commits
+back, `3c75f49a`, existed _because_ of a CodeQL HIGH: `js/file-system-race` at
+`scripts/ci/check-p1-28-traceability.mjs:330`, where `existsSync` then `statSync`
+then `readFileSync` asked three questions about a path that could stop being a
+file between them — and the answer is what a sealed record quotes. Analysis
+`1618296034` is a `javascript-typescript` analysis at a head containing that fix,
+and it returns 0 results over the same 201 rules that reported it.
+
+### Dependency security · job `94714715417`
 
 Production vulnerabilities **0** · development vulnerabilities **0** · critical,
 high, moderate and low all **0** across **830** resolved dependencies (68
@@ -487,18 +560,20 @@ production, 706 development, 145 optional). `dependency-policy.json` reports
 `ok: true` with 0 blocking advisories on either side and 0 waived; licence policy
 clean, no prohibited licence.
 
-### Production build · job `94691823535`
+### Production build · job `94714715555`
 
 Build **ok**, no failures and no warnings. 239 routes in the manifest against 237
 route files on disk; 6249 files emitted; standalone server 37 476 308 bytes
 against a committed baseline of 34 367 299, ×1.0905.
 
-These figures are byte-for-byte what run `31750364479` reported at `38afa5c2`,
-which is the one shape a reader should distrust — so the artefact's provenance
-was checked rather than assumed: `GET /actions/artifacts/9209932237` reports
-`workflow_run.head_sha` = `55b932cb`.
+These figures are byte-for-byte what both superseded runs reported, and an
+identical number arriving from a different head is the one shape a reader should
+distrust — so the artefact's provenance was checked rather than assumed:
+`GET /actions/artifacts/9212659547` reports `workflow_run.head_sha` = `81cbd44b`.
+Here the identity is expected: the candidate changes one file under `tests/ci`,
+which the production build does not compile.
 
-### Database · jobs `94691823456` and `94691823382`
+### Database · jobs `94714715656` and `94714715543`
 
 `database-migration-replay` applied all **120** migrations in the tree to an
 empty database — `migrationsInTree` 120, `migrationsApplied` 120, 0 failures —
@@ -719,6 +794,37 @@ that **nothing in the file ever computed a candidate verdict from a repository**
 answers from a table, a candidate document, a verdict register, a
 `playwright.config.ts` — and each case passes only if the code derives the
 failure itself. Seventy-two known-bad worlds run on every invocation. Two of them are cases that must be **ACCEPTED**, because a table of only-bad inputs is satisfied by a `judge` that always returns false: the same tablet sentence against a narrowed config is true and is allowed, and a candidate whose hosted bindings are all pending, declared and computed is sound.
+
+#### The property that makes a candidate bindable at all
+
+**`tests/ci/p1-28-evidence-manifest.test.ts` passes 79/79 with this package
+PENDING and 79/79 with it BOUND.** That sentence is the load-bearing one on this
+page, and it was not true until `7b1252ed`.
+
+The seal's own suite must be indifferent to which of the two states the package
+is in, because **both states are ordinary and both recur**. A package is PENDING
+on the head that first carries a new candidate — no run has been taken at a
+descendant of it yet. It is BOUND on the head that records the run which
+measured it. Every cycle of this phase passes through both, in that order.
+
+A test that hard-codes either state makes the other unreachable. That is not a
+theoretical risk: this file previously asserted `hostedCiRecorded === false`,
+_searched_ the committed package for a pending tier, and required
+`supersededBindings.length > 0`. Four of its cases were **structurally
+unsatisfiable** the moment anything was bound — no package can be both bound and
+pending — so binding and freezing had become **mutually exclusive**, and a phase
+whose seal cannot be bound and frozen at once can never close. The suite was
+green, the gate was correct, and the phase was stuck; nothing reported it,
+because a test that cannot pass in a state you never reach looks exactly like a
+test that passes.
+
+What removed it was not a relaxation. Every rule kept its strength and moved its
+subject: conditions are delegated to `pendingBinding` so the test cannot drift
+looser than the gate; anti-vacuity guards are re-pointed onto **constructed**
+worlds and each is asserted sound before it is mutated; and world flags are
+cross-checked against the package's own declaration, which `worldFrom` never
+reads. If a future change makes this suite pass in only one of the two states,
+that is a defect in the suite — **not** a fact about the package.
 
 #### The falsifications, run against this tree
 

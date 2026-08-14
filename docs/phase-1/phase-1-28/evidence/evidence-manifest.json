@@ -17,31 +17,31 @@
       "passed": 2560,
       "failed": 0,
       "skipped": 0,
-      "provenance": "LOCAL_COMPUTED_HOSTED_PENDING"
+      "provenance": "LOCAL_AND_HOSTED_AGREE"
     },
     "web": {
       "passed": 2726,
       "failed": 0,
       "skipped": 0,
-      "provenance": "LOCAL_COMPUTED_HOSTED_PENDING"
+      "provenance": "LOCAL_AND_HOSTED_AGREE"
     },
     "backend": {
       "passed": 2004,
       "failed": 0,
       "skipped": 0,
-      "provenance": "HOSTED_PENDING_AT_CANDIDATE"
+      "provenance": "HOSTED_ARTEFACT_ATTESTED"
     },
     "database": {
       "passed": 1647,
       "failed": 0,
       "skipped": 0,
-      "provenance": "HOSTED_PENDING_AT_CANDIDATE"
+      "provenance": "HOSTED_ARTEFACT_ATTESTED"
     },
     "browser": {
-      "passed": 366,
+      "passed": 365,
       "failed": 0,
-      "skipped": 4,
-      "provenance": "HOSTED_PENDING_AT_CANDIDATE"
+      "skipped": 5,
+      "provenance": "HOSTED_ARTEFACT_ATTESTED"
     }
   },
   "fileCount": 14,
@@ -63,16 +63,16 @@
       "bytes": 11687
     },
     "docs/phase-1/phase-1-28/evidence/change-log.md": {
-      "sha256": "3072f690a518c288f7088398a6c6e80fc0532f28ed77e671b8a7d57bb7667035",
-      "bytes": 35998
+      "sha256": "7edc16d1c4185f0dcd3d119321d5edb79b7fc982cea05062b2c88b75ed0645e1",
+      "bytes": 37290
     },
     "docs/phase-1/phase-1-28/evidence/closure-candidate.json": {
-      "sha256": "387e48f145b0f6cfb6261dd74c2b73db810f6b3fc23fd439748e719e676f5bab",
-      "bytes": 48260
+      "sha256": "05cfea3e70e70b1fc66fcd2947cc05901d79bedf026444f4c6e061e4bbd02dda",
+      "bytes": 54644
     },
     "docs/phase-1/phase-1-28/evidence/closure-evidence.md": {
-      "sha256": "c53e1cf76fea0a13fd9887688eebf48f81cf2a37bafda8b0d69d15c09df5e7f1",
-      "bytes": 59278
+      "sha256": "6dd6c7c58e95bcb1facb92387cb9ccbf94387dbd58ad61d8b0e83c8a86aefd12",
+      "bytes": 66081
     },
     "docs/phase-1/phase-1-28/evidence/traceability.json": {
       "sha256": "600a8ae57e4a33b5c54d847befbcab82acb2a0d136d005cec777345c39c74ab1",

@@ -241,6 +241,26 @@ classification cannot be entered without a reviewer seeing the number move.
   `clean-room-evidence.md` and BOTH of its twins in `closing-value-ledger.json`,
   the `locator` line and the `value`.
 
+  **All eleven are now bound**, to runs 31783658759 and 31783658604 at
+  `81cbd44b` — the documentation-only commit carrying that freeze, product-
+  identical to the candidate by a computed diff. 21 checks, 21 success, 0
+  failure, none pending; all five tiers in one run at one head: 9307 planned,
+  9302 passed, 0 failed, 5 skipped, none of them a P1-28 case.
+  `pendingHostedBindings.bindings` is empty BY DERIVATION, not by deletion, and
+  both superseded citations — `55b932cb` and `38afa5c2` — are kept in
+  `supersededObservations`.
+
+  Two things that run reported and this package refuses to smooth over. The
+  BROWSER SKIP COUNT MOVED, 4 to 5, at a product the gate computes to be
+  identical: the extra skip is `a dialog traps focus and returns it, signed in`,
+  a CONDITIONAL skip taken inside the test body when
+  `/en/administration/users` exposes no dialog opener for the acting permission
+  set — a fact about the provisioned workspace, not about the tree, so it can
+  differ run to run at one commit. And the CodeQL check first completed
+  `neutral` ("1 configuration not found") because only the `actions` analysis
+  had uploaded; it flipped to `success` when the `javascript-typescript`
+  analysis arrived. A `neutral` is not a success and was not recorded as one.
+
   **The exact-head rule was itself a circularity, and it is removed.** The
   seal’s own machinery cannot live inside the commit it seals, so hosted CI
   necessarily runs at a later head; under a rule that demanded the candidate
