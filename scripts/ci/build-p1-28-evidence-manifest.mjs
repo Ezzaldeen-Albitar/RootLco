@@ -499,6 +499,153 @@ export const LEDGER_FIGURES = Object.freeze(['tests', 'passed', 'failed', 'skipp
 export const PROVENANCE_LOCAL = 'LOCAL_AND_HOSTED_AGREE';
 export const PROVENANCE_HOSTED = 'HOSTED_ARTEFACT_ATTESTED';
 
+/**
+ * The two PENDING provenances, and why a state for "not measured yet" had to
+ * exist rather than being expressed by leaving the old numbers in place.
+ *
+ * A candidate is re-frozen whenever a fix touches a product file, and the hosted
+ * observation of the OLD candidate does not travel with it: run 31750364479
+ * describes `38afa5c2…`, and after three fix waves that commit is not the code
+ * this package is about. Before these two states existed the package had exactly
+ * two options — restate the superseded figures as though they had been taken
+ * here, or fabricate a run id — and the first is the P1-27 failure this whole
+ * gate was written to prevent.
+ *
+ *   `LOCAL_COMPUTED_HOSTED_PENDING` — the local half is measured and COMPUTED
+ *   against the run ledger exactly as `LOCAL_AND_HOSTED_AGREE` requires; the
+ *   hosted half has not been taken at this candidate, so the tier may not claim
+ *   the two AGREE. Nothing about the local obligation is relaxed.
+ *
+ *   `HOSTED_PENDING_AT_CANDIDATE` — no measurement of this tier exists at this
+ *   candidate at all. The figures shown are the superseded head's and the
+ *   attestation must say so, name that head, and name what is awaited.
+ *
+ * Both are STRICTLY MORE demanding than silence: a pending tier must carry an
+ * attestation marked `describesSupersededHead`, that head must be a commit this
+ * repository contains AND an ancestor of the candidate, and every such binding
+ * must appear in the package's `pendingHostedBindings` list — which the gate
+ * computes and compares, so a pending binding cannot go unlisted and a listed
+ * one cannot be decorative.
+ */
+export const PROVENANCE_LOCAL_PENDING = 'LOCAL_COMPUTED_HOSTED_PENDING';
+export const PROVENANCE_HOSTED_PENDING = 'HOSTED_PENDING_AT_CANDIDATE';
+
+/** Provenances whose local half must be computed against the run ledger. */
+export const LOCAL_PROVENANCES = Object.freeze([PROVENANCE_LOCAL, PROVENANCE_LOCAL_PENDING]);
+/** Provenances that claim no hosted observation of the candidate. */
+export const PENDING_PROVENANCES = Object.freeze([
+  PROVENANCE_LOCAL_PENDING,
+  PROVENANCE_HOSTED_PENDING,
+]);
+/** Every provenance a tier may declare. */
+export const ALL_PROVENANCES = Object.freeze([
+  PROVENANCE_LOCAL,
+  PROVENANCE_HOSTED,
+  PROVENANCE_LOCAL_PENDING,
+  PROVENANCE_HOSTED_PENDING,
+]);
+
+/** A path this package calls PRODUCT — the two trees the freeze is about. */
+export const isProductPath = (path) => path.startsWith('apps/') || path.startsWith('supabase/');
+
+/**
+ * Every block in the package that names the head it describes.
+ *
+ * Derived by looking for a `headSha` key rather than from a list of block names,
+ * because a list is exactly what a new block would be added outside of. Anything
+ * that names a head is checked against the candidate; anything that names none
+ * is some other rule's complaint.
+ */
+export function hostedBindingSites(candidateFile) {
+  const sites = [];
+  for (const [name, tier] of Object.entries(candidateFile.tiers ?? {})) {
+    if (tier?.hostedAttestation && typeof tier.hostedAttestation === 'object') {
+      sites.push({ name: `tiers.${name}.hostedAttestation`, record: tier.hostedAttestation });
+    }
+  }
+  for (const [key, value] of Object.entries(candidateFile)) {
+    if (key === 'tiers' || key === 'candidate') continue;
+    if (value && typeof value === 'object' && !Array.isArray(value) && 'headSha' in value) {
+      sites.push({ name: key, record: value });
+    }
+  }
+  return sites;
+}
+
+/**
+ * Which hosted bindings describe a head this candidate supersedes, and whether
+ * the package says so.
+ *
+ * COMPUTED in both directions. `superseded` is derived from the documents' own
+ * `headSha` fields; `pendingHostedBindings.bindings` is what the package
+ * declares; a difference either way is refused. A binding that quietly describes
+ * another head is the defect; a declaration naming a binding that is in fact
+ * bound is the inverse and reads as an unpaid debt that has been paid.
+ */
+export function pendingBinding(candidateFile, git) {
+  const candidateSha = candidateFile.candidate?.FINAL_CODE_SHA ?? '';
+  const problems = [];
+  const superseded = [];
+
+  for (const { name, record } of hostedBindingSites(candidateFile)) {
+    const head = String(record.headSha ?? '');
+    const marked = record.describesSupersededHead === true;
+    if (head === candidateSha && candidateSha !== '') {
+      if (marked) {
+        problems.push(
+          `${name}: is marked describesSupersededHead while the head it names IS the candidate, so the marker excuses nothing`
+        );
+      }
+      continue;
+    }
+    superseded.push(name);
+    if (!marked) continue; // tierBinding / packageArithmetic own the undeclared case.
+    if (!/^[0-9a-f]{40}$/.test(head)) {
+      problems.push(`${name}: declares a superseded head \`${head}\` that is not a commit id`);
+      continue;
+    }
+    if (git(['cat-file', '-e', `${head}^{commit}`]) === null) {
+      problems.push(
+        `${name}: declares superseded head ${head}, which names no commit in this repository — a head nobody can fetch is not a citation`
+      );
+      continue;
+    }
+    if (git(['merge-base', '--is-ancestor', head, candidateSha]) === null) {
+      problems.push(
+        `${name}: declares superseded head ${head.slice(0, 8)}, which is not an ancestor of the candidate, so it is not a head this candidate supersedes`
+      );
+      continue;
+    }
+    if (!String(record.supersededBy ?? '').trim()) {
+      problems.push(
+        `${name}: describes a superseded head and says nothing about what replaces it — \`supersededBy\` must name the observation that is awaited`
+      );
+    }
+  }
+
+  const declaredBlock = candidateFile.pendingHostedBindings;
+  const declared = Array.isArray(declaredBlock?.bindings)
+    ? [...declaredBlock.bindings].map(String).sort()
+    : null;
+  const computed = [...superseded].sort();
+
+  if (declared === null) {
+    if (computed.length > 0) {
+      problems.push(
+        `pendingHostedBindings: ${computed.length} binding(s) describe a head other than the candidate and the package declares no pending list — ${computed.join(', ')}`
+      );
+    }
+  } else if (declared.join('|') !== computed.join('|')) {
+    problems.push(
+      `pendingHostedBindings declares [${declared.join(', ') || 'none'}]; the package's own headSha fields compute [${computed.join(', ') || 'none'}]`
+    );
+  } else if (computed.length > 0 && !String(declaredBlock?.awaits ?? '').trim()) {
+    problems.push('pendingHostedBindings names no observation that is awaited');
+  }
+
+  return { problems, superseded: computed, declared: declared ?? [] };
+}
+
 /** `planned` for a browser tier, `tests` for a collected one. */
 const declaredTotal = (tier) => (typeof tier.planned === 'number' ? tier.planned : tier.tests);
 
@@ -535,6 +682,7 @@ export function tierBinding(candidateFile, git) {
   const hostedProblems = [];
   const verifiedLocally = [];
   const attested = [];
+  const pending = [];
 
   for (const [name, tier] of Object.entries(tiers)) {
     const total = declaredTotal(tier);
@@ -549,12 +697,13 @@ export function tierBinding(candidateFile, git) {
       );
     }
 
-    if (tier.provenance !== PROVENANCE_LOCAL && tier.provenance !== PROVENANCE_HOSTED) {
+    if (!ALL_PROVENANCES.includes(tier.provenance)) {
       hostedProblems.push(
-        `${name}: provenance \`${tier.provenance}\` is neither ${PROVENANCE_LOCAL} nor ${PROVENANCE_HOSTED}`
+        `${name}: provenance \`${tier.provenance}\` is none of ${ALL_PROVENANCES.join(', ')}`
       );
       continue;
     }
+    const isPending = PENDING_PROVENANCES.includes(tier.provenance);
 
     const attestation = tier.hostedAttestation ?? {};
     const missing = [];
@@ -563,7 +712,20 @@ export function tierBinding(candidateFile, git) {
         missing.push(`hostedAttestation.${field} is not a run/job id`);
       }
     }
-    if (attestation.headSha !== candidateSha) {
+    if (isPending) {
+      // A PENDING tier still has to cite something a reader can fetch — the
+      // superseded run — and it has to say that is what it is citing. Silence
+      // here would let "pending" mean "the numbers are from somewhere".
+      if (attestation.describesSupersededHead !== true) {
+        missing.push(
+          `provenance is ${tier.provenance} and its attestation does not declare \`describesSupersededHead\`, so the head these figures belong to is unstated`
+        );
+      }
+    } else if (attestation.describesSupersededHead === true) {
+      missing.push(
+        `provenance \`${tier.provenance}\` claims a hosted observation OF THE CANDIDATE while its attestation describes a head the candidate supersedes`
+      );
+    } else if (attestation.headSha !== candidateSha) {
       missing.push(
         `hostedAttestation.headSha \`${attestation.headSha}\` is not the candidate ${candidateSha}`
       );
@@ -571,9 +733,13 @@ export function tierBinding(candidateFile, git) {
     if (!String(attestation.artefact ?? '').trim())
       missing.push('hostedAttestation names no artefact');
     if (missing.length > 0) hostedProblems.push(...missing.map((m) => `${name}: ${m}`));
-    else attested.push(`${name} — run ${attestation.runId}, job ${attestation.jobId}`);
+    else if (isPending) {
+      pending.push(
+        `${name} — awaiting a run at the candidate; cites superseded run ${attestation.runId}, job ${attestation.jobId} at ${String(attestation.headSha).slice(0, 8)}`
+      );
+    } else attested.push(`${name} — run ${attestation.runId}, job ${attestation.jobId}`);
 
-    if (tier.provenance !== PROVENANCE_LOCAL) continue;
+    if (!LOCAL_PROVENANCES.includes(tier.provenance)) continue;
 
     const ledger = tier.localLedger ?? {};
     const extras = Object.keys(tier).filter(
@@ -626,16 +792,83 @@ export function tierBinding(candidateFile, git) {
     const drift = lines(
       git(['diff', '--name-only', `${tier.measuredAtCommit}..${candidateSha}`])
     ).filter((path) => !isDocumentationPath(path));
-    if (drift.length > 0) {
-      localProblems.push(
-        `${name}: measured at ${tier.measuredAtCommit}, and ${drift.length} executable path(s) differ between that commit and the candidate — ${drift.slice(0, 5).join(', ')}`
-      );
+    const declaredDrift = Array.isArray(tier.measurementDrift)
+      ? [...tier.measurementDrift].map(String).sort()
+      : null;
+
+    if (drift.length === 0) {
+      if (declaredDrift !== null) {
+        localProblems.push(
+          `${name}: declares measurementDrift while no executable path differs between ${tier.measuredAtCommit.slice(0, 8)} and the candidate — a decorative field beside a figure is the thing this package is against`
+        );
+        continue;
+      }
+      verifiedLocally.push(`${name} — ${ledger.path}@${ledger.atCommit.slice(0, 8)}`);
       continue;
     }
-    verifiedLocally.push(`${name} — ${ledger.path}@${ledger.atCommit.slice(0, 8)}`);
+
+    /*
+     * The measurement head is not executable-identical to the candidate.
+     *
+     * There is exactly one admissible reason, and it is the shape this package
+     * has always had: the seal cannot be inside the candidate it seals, so its
+     * machinery lands as a NAMED successor, and the tiers are then re-run at
+     * that successor because a tier run before it would describe a suite that no
+     * longer exists. What must not be admissible is a measurement from anywhere
+     * else, so all four of these are required together:
+     *
+     *   the measurement head is a successor NAMED in `successors` (a
+     *   documentation-only successor could not have changed an executable path,
+     *   so this is the machinery commit or nothing);
+     *   no PRODUCT path is in the drift — the freeze is about apps/** and
+     *   supabase/**, and a product difference makes the figure a measurement of
+     *   different software;
+     *   the package DECLARES the drift, path by path; and
+     *   the declared list is exactly the computed one.
+     *
+     * The reader is then told what differed instead of being told nothing.
+     */
+    const named = (candidateFile.successors ?? []).some(
+      (s) => String(s?.commit ?? '') === tier.measuredAtCommit
+    );
+    const productDrift = drift.filter(isProductPath);
+    const computed = [...drift].sort();
+
+    if (!named) {
+      localProblems.push(
+        `${name}: measured at ${tier.measuredAtCommit.slice(0, 8)}, and ${drift.length} executable path(s) differ between that commit and the candidate — ${computed.slice(0, 5).join(', ')}. A measurement head that is not a NAMED successor of the candidate must be executable-identical to it.`
+      );
+    } else if (productDrift.length > 0) {
+      localProblems.push(
+        `${name}: measured at the named successor ${tier.measuredAtCommit.slice(0, 8)}, and ${productDrift.length} PRODUCT path(s) differ from the candidate — ${productDrift.slice(0, 5).join(', ')}. That is a measurement of different software, not of this candidate.`
+      );
+    } else if (declaredDrift === null) {
+      localProblems.push(
+        `${name}: measured at the named successor ${tier.measuredAtCommit.slice(0, 8)} and declares no \`measurementDrift\`, so a reader is not told which ${drift.length} executable path(s) the measured tree carried that the candidate does not`
+      );
+    } else if (declaredDrift.join('|') !== computed.join('|')) {
+      localProblems.push(
+        `${name}: declares measurementDrift [${declaredDrift.join(', ')}]; \`git diff --name-only ${tier.measuredAtCommit.slice(0, 8)}..${candidateSha.slice(0, 8)}\` computes [${computed.join(', ')}]`
+      );
+    } else {
+      verifiedLocally.push(
+        `${name} — ${ledger.path}@${ledger.atCommit.slice(0, 8)}, measured at named successor ${tier.measuredAtCommit.slice(0, 8)} with ${computed.length} declared non-product path(s) of drift`
+      );
+    }
   }
 
-  return { arithmetic, localProblems, hostedProblems, verifiedLocally, attested };
+  const pendingAnalysis = pendingBinding(candidateFile, git);
+  hostedProblems.push(...pendingAnalysis.problems);
+
+  return {
+    arithmetic,
+    localProblems,
+    hostedProblems,
+    verifiedLocally,
+    attested,
+    pending,
+    supersededBindings: pendingAnalysis.superseded,
+  };
 }
 
 /**
@@ -653,8 +886,10 @@ export function packageArithmetic(candidateFile) {
 
   const ci = candidateFile.hostedCi ?? {};
   const checks = Array.isArray(ci.checks) ? ci.checks : [];
-  if (ci.headSha !== sha) {
-    problems.push(`hostedCi.headSha \`${ci.headSha}\` is not the candidate ${sha}`);
+  if (ci.headSha !== sha && ci.describesSupersededHead !== true) {
+    problems.push(
+      `hostedCi.headSha \`${ci.headSha}\` is not the candidate ${sha}, and it does not declare \`describesSupersededHead\``
+    );
   }
   if (ci.checksTotal !== checks.length) {
     problems.push(`hostedCi declares ${ci.checksTotal} checks and lists ${checks.length}`);
@@ -671,8 +906,10 @@ export function packageArithmetic(candidateFile) {
 
   const browser = candidateFile.browserByProject ?? {};
   const projects = Object.entries(browser.projects ?? {});
-  if (browser.headSha !== sha) {
-    problems.push(`browserByProject.headSha \`${browser.headSha}\` is not the candidate ${sha}`);
+  if (browser.headSha !== sha && browser.describesSupersededHead !== true) {
+    problems.push(
+      `browserByProject.headSha \`${browser.headSha}\` is not the candidate ${sha}, and it does not declare \`describesSupersededHead\``
+    );
   }
   const planned = projects.reduce((sum, [, p]) => sum + (p?.planned ?? 0), 0);
   if (browser.total !== planned) {
@@ -726,8 +963,20 @@ export function worldFrom(candidateFile, tablet) {
   const ci = candidateFile.hostedCi ?? {};
   const browser = candidateFile.browserByProject ?? {};
 
+  const tierRows = Object.values(candidateFile.tiers ?? {});
+
   return {
     hostedCiRecorded: ci.headSha === sha && Number(ci.checksTotal) > 0,
+    /*
+     * How many tiers the package itself says were NOT measured at this candidate
+     * at all. `LOCAL_COMPUTED_HOSTED_PENDING` is deliberately NOT counted: that
+     * tier WAS re-run here and only its hosted half is outstanding, so counting
+     * it would make the refutation below say something false in the other
+     * direction. The anchored claim this feeds is about tiers with no
+     * measurement of this candidate, and that is exactly what this counts.
+     */
+    unmeasuredTierCount: tierRows.filter((t) => t?.provenance === PROVENANCE_HOSTED_PENDING).length,
+    tierCount: tierRows.length,
     tabletMatchesOnlyAdministration: tablet !== null && tablet.names.join('|') === 'administration',
     tabletNames: tablet?.names ?? [],
     tabletObservedThisPhase:
@@ -800,6 +1049,45 @@ export const ANCHORED_CLAIMS = Object.freeze([
     refutedWhen: (world) => world.phaseSpecObservedHosted,
     says: (_world, candidateFile) =>
       `run ${candidateFile.browserByProject?.runId} / job ${candidateFile.browserByProject?.jobId} executed ${candidateFile.browserByProject?.total} cases of that spec at the candidate`,
+  },
+
+  /* -------------------------------------------------------------- *
+   * The same rule pointed the OTHER way.
+   *
+   * Every claim above bans a sentence that DENIES evidence which exists. That
+   * caught thirty verdict rows and it is exactly half of the failure: when the
+   * candidate is re-frozen after a fix wave, the hosted observation stays behind
+   * on the head it was taken at, and the thirty-three cells that were corrected
+   * to say the evidence EXISTS become the over-claim. A gate that only refuses
+   * pessimism about its own evidence is a gate that ratchets one way.
+   *
+   * So these three ban a sentence asserting an observation OF THIS CANDIDATE
+   * while the package itself records none. They are refuted by the same computed
+   * world the negative ones read, and they go quiet the moment a run at the
+   * candidate is bound — which is the discipline, not a word ban.
+   * -------------------------------------------------------------- */
+  {
+    id: 'hosted-observed-at-this-candidate',
+    pattern: /OBSERVED AT THIS CANDIDATE/i,
+    refutedWhen: (world) => !world.hostedCiRecorded,
+    says: (_world, candidateFile) =>
+      `the package records no hosted CI at the candidate ${String(candidateFile.candidate?.FINAL_CODE_SHA ?? '').slice(0, 8)} — ` +
+      `hostedCi describes ${String(candidateFile.hostedCi?.headSha ?? 'no head').slice(0, 8)}, a head this candidate supersedes`,
+  },
+  {
+    id: 'browser-tier-bound-at-candidate',
+    pattern: /browser tier IS observed and bound/i,
+    refutedWhen: (world) => !world.phaseSpecObservedHosted,
+    says: (_world, candidateFile) =>
+      `browserByProject describes ${String(candidateFile.browserByProject?.headSha ?? 'no head').slice(0, 8)}, not the candidate ` +
+      `${String(candidateFile.candidate?.FINAL_CODE_SHA ?? '').slice(0, 8)}, so no browser result is bound to this head`,
+  },
+  {
+    id: 'every-tier-re-run-here',
+    pattern: /all five tiers (?:were )?re-run against the (?:frozen )?candidate/i,
+    refutedWhen: (world) => world.unmeasuredTierCount > 0,
+    says: (world) =>
+      `${world.unmeasuredTierCount} of ${world.tierCount} tiers carry no measurement of this candidate at all — their figures are a superseded head's`,
   },
 ]);
 
@@ -1288,7 +1576,7 @@ export function reportTiers(binding, arithmetic, write = toStderr) {
   if (binding.hostedProblems.length > 0) {
     sound = false;
     write(
-      '::error::a HOSTED tier figure cannot be computed from this repository, so the gate requires it to be FETCHABLE instead: a run id, a job id, the head the job ran at, and the artefact. Without those it is an assertion, not an attestation.\n'
+      '::error::a HOSTED figure cannot be computed from this repository, so the gate requires it to be FETCHABLE instead: a run id, a job id, the head the job ran at, and the artefact. Without those it is an assertion, not an attestation. And a figure taken at a head this candidate SUPERSEDES may be cited only while it says so, names a head this repository contains, and is listed in `pendingHostedBindings`.\n'
     );
     for (const problem of binding.hostedProblems) write(`  ${problem}\n`);
   }
@@ -1410,20 +1698,21 @@ const W = Object.freeze({
   ledgerCommit: 'e'.repeat(40),
   measuredAt: '1'.repeat(40),
   stranger: '9'.repeat(40),
+  /** A head the candidate supersedes: a real ancestor, and not the candidate. */
+  supersededHead: '7'.repeat(40),
+  /** A ledger commit whose entry was measured at the machinery successor. */
+  driftLedgerCommit: '8'.repeat(40),
 });
 
-const SYNTHETIC_LEDGER = `${JSON.stringify({
-  tiers: {
-    unit: {
-      tests: 10,
-      passed: 10,
-      failed: 0,
-      skipped: 0,
-      files: 2,
-      measuredAtCommit: W.measuredAt,
+const ledgerAt = (head) =>
+  `${JSON.stringify({
+    tiers: {
+      unit: { tests: 10, passed: 10, failed: 0, skipped: 0, files: 2, measuredAtCommit: head },
     },
-  },
-})}\n`;
+  })}\n`;
+
+const SYNTHETIC_LEDGER = ledgerAt(W.measuredAt);
+const SYNTHETIC_DRIFT_LEDGER = ledgerAt(W.executableSuccessor);
 
 const SYNTHETIC_GIT_TABLE = Object.freeze({
   [`cat-file -e ${W.candidate}^{commit}`]: '',
@@ -1438,6 +1727,14 @@ const SYNTHETIC_GIT_TABLE = Object.freeze({
   [`show ${W.ledgerCommit}:docs/ledger.json`]: SYNTHETIC_LEDGER,
   [`diff --name-only ${W.measuredAt}..${W.candidate}`]:
     'docs/phase-1/phase-1-27/evidence/evidence-manifest.json\n',
+  /* The machinery successor: a measurement taken AFTER the seal landed. */
+  [`show ${W.driftLedgerCommit}:docs/ledger.json`]: SYNTHETIC_DRIFT_LEDGER,
+  [`diff --name-only ${W.executableSuccessor}..${W.candidate}`]:
+    'scripts/ci/build-p1-28-evidence-manifest.mjs\n',
+  /* A head the candidate supersedes: it exists, and it is an ancestor. */
+  [`cat-file -e ${W.supersededHead}^{commit}`]: '',
+  [`merge-base --is-ancestor ${W.supersededHead} ${W.candidate}`]: '',
+  [`cat-file -e ${W.stranger}^{commit}`]: '',
 });
 
 const syntheticGit = (over = {}) => {
@@ -1497,6 +1794,64 @@ const syntheticCandidate = (over = {}) => ({
   },
   ...over,
 });
+
+/**
+ * A candidate whose local tier was measured at the NAMED machinery successor.
+ *
+ * The shape this package actually has after a re-freeze: the seal's own
+ * generator and test cannot be inside the candidate they seal, so they land
+ * after it, and a tier run before them would report a suite that no longer
+ * exists. The measurement is therefore taken at that successor and the drift is
+ * declared path by path.
+ */
+const driftCandidate = (over = {}) => {
+  const doc = syntheticCandidate();
+  doc.tiers.unit = {
+    ...doc.tiers.unit,
+    measuredAtCommit: W.executableSuccessor,
+    localLedger: { path: 'docs/ledger.json', tier: 'unit', atCommit: W.driftLedgerCommit },
+    measurementDrift: ['scripts/ci/build-p1-28-evidence-manifest.mjs'],
+  };
+  if (over.unit) doc.tiers.unit = { ...doc.tiers.unit, ...over.unit };
+  return doc;
+};
+
+/**
+ * A candidate whose hosted observations all describe a head it supersedes.
+ *
+ * The state a re-freeze produces: three fix waves change product files, the
+ * candidate moves, and the hosted run stays behind on the commit it measured.
+ */
+const pendingCandidate = (over = {}) => {
+  const doc = syntheticCandidate();
+  const superseded = {
+    describesSupersededHead: true,
+    headSha: W.supersededHead,
+    supersededBy: 'an exact-head CI run at the candidate',
+  };
+  doc.tiers.unit = {
+    ...doc.tiers.unit,
+    provenance: PROVENANCE_LOCAL_PENDING,
+    hostedAttestation: { ...doc.tiers.unit.hostedAttestation, ...superseded },
+  };
+  doc.tiers.browser = {
+    ...doc.tiers.browser,
+    provenance: PROVENANCE_HOSTED_PENDING,
+    hostedAttestation: { ...doc.tiers.browser.hostedAttestation, ...superseded },
+  };
+  doc.hostedCi = { ...doc.hostedCi, ...superseded };
+  doc.browserByProject = { ...doc.browserByProject, ...superseded };
+  doc.pendingHostedBindings = {
+    awaits: 'a CI run whose head is the candidate',
+    bindings: [
+      'browserByProject',
+      'hostedCi',
+      'tiers.browser.hostedAttestation',
+      'tiers.unit.hostedAttestation',
+    ],
+  };
+  return { ...doc, ...over };
+};
 
 /** The tablet project as it stands at this candidate, and as it stood before. */
 const WIDE_CONFIG = [
@@ -1935,6 +2290,182 @@ export const WORLD_CHECK_CASES = [
     expects: { claimsOk: false, sound: false },
     explains: true,
   },
+
+  /* ---- the measurement head, after a re-freeze ---- */
+  {
+    name: 'a local measurement at a NAMED successor, drift declared and computed — allowed',
+    inputs: worldInputs({ candidateFile: driftCandidate() }),
+    expects: { tiersOk: true },
+    explains: false,
+  },
+  {
+    name: 'a local measurement at a named successor whose declared drift is not the computed one',
+    inputs: worldInputs({
+      candidateFile: driftCandidate({
+        unit: { measurementDrift: ['scripts/ci/something-else.mjs'] },
+      }),
+    }),
+    expects: { tiersOk: false, sound: false },
+    explains: true,
+  },
+  {
+    name: 'a local measurement at a named successor that declares no drift at all',
+    inputs: worldInputs({
+      candidateFile: driftCandidate({ unit: { measurementDrift: undefined } }),
+    }),
+    expects: { tiersOk: false, sound: false },
+    explains: true,
+  },
+  {
+    name: 'a local measurement at a named successor whose drift reaches a PRODUCT file',
+    inputs: worldInputs({
+      candidateFile: driftCandidate({
+        unit: { measurementDrift: ['apps/web/src/features/receptions/api.ts'] },
+      }),
+      git: syntheticGit({
+        [`diff --name-only ${W.executableSuccessor}..${W.candidate}`]:
+          'apps/web/src/features/receptions/api.ts\n',
+      }),
+    }),
+    expects: { tiersOk: false, sound: false },
+    explains: true,
+  },
+  {
+    name: 'a tier declaring measurementDrift while nothing executable differs',
+    inputs: (() => {
+      const doc = syntheticCandidate();
+      doc.tiers.unit = { ...doc.tiers.unit, measurementDrift: ['scripts/ci/invented.mjs'] };
+      return worldInputs({ candidateFile: doc });
+    })(),
+    expects: { tiersOk: false, sound: false },
+    explains: true,
+  },
+
+  /* ---- the hosted half, when no run at the candidate exists yet ---- */
+  {
+    name: 'every hosted binding pending at the candidate, declared and computed — allowed',
+    inputs: worldInputs({ candidateFile: pendingCandidate() }),
+    expects: { tiersOk: true },
+    explains: false,
+  },
+  {
+    name: 'a pending tier whose attestation does not say which head its figures belong to',
+    inputs: (() => {
+      const doc = pendingCandidate();
+      const { describesSupersededHead: _drop, ...rest } = doc.tiers.browser.hostedAttestation;
+      doc.tiers.browser = { ...doc.tiers.browser, hostedAttestation: rest };
+      return worldInputs({ candidateFile: doc });
+    })(),
+    expects: { tiersOk: false, sound: false },
+    explains: true,
+  },
+  {
+    name: 'a tier claiming the hosted and local halves AGREE while its attestation is superseded',
+    inputs: (() => {
+      const doc = pendingCandidate();
+      doc.tiers.unit = { ...doc.tiers.unit, provenance: PROVENANCE_LOCAL };
+      return worldInputs({ candidateFile: doc });
+    })(),
+    expects: { tiersOk: false, sound: false },
+    explains: true,
+  },
+  {
+    name: 'a superseded binding the pending list does not name',
+    inputs: worldInputs({
+      candidateFile: pendingCandidate({
+        pendingHostedBindings: {
+          awaits: 'a CI run whose head is the candidate',
+          bindings: ['hostedCi'],
+        },
+      }),
+    }),
+    expects: { tiersOk: false, sound: false },
+    explains: true,
+  },
+  {
+    name: 'a superseded head that names no commit in this repository',
+    inputs: worldInputs({
+      candidateFile: pendingCandidate(),
+      git: syntheticGit({ [`cat-file -e ${W.supersededHead}^{commit}`]: undefined }),
+    }),
+    expects: { tiersOk: false, sound: false },
+    explains: true,
+  },
+  {
+    name: 'a superseded head that is not an ancestor of the candidate',
+    inputs: worldInputs({
+      candidateFile: pendingCandidate(),
+      git: syntheticGit({
+        [`merge-base --is-ancestor ${W.supersededHead} ${W.candidate}`]: undefined,
+      }),
+    }),
+    expects: { tiersOk: false, sound: false },
+    explains: true,
+  },
+  {
+    name: 'a binding marked superseded while the head it names IS the candidate',
+    inputs: (() => {
+      const doc = syntheticCandidate();
+      doc.hostedCi = { ...doc.hostedCi, describesSupersededHead: true };
+      return worldInputs({ candidateFile: doc });
+    })(),
+    expects: { tiersOk: false, sound: false },
+    explains: true,
+  },
+  {
+    name: 'a pending binding that names nothing to replace it',
+    inputs: (() => {
+      const doc = pendingCandidate();
+      const { supersededBy: _drop, ...rest } = doc.hostedCi;
+      doc.hostedCi = rest;
+      return worldInputs({ candidateFile: doc });
+    })(),
+    expects: { tiersOk: false, sound: false },
+    explains: true,
+  },
+
+  /* ---- the anchored claims, pointed the other way ---- */
+  {
+    name: 'a verdict cell saying hosted CI is OBSERVED AT THIS CANDIDATE while none is recorded',
+    inputs: worldInputs({
+      candidateFile: pendingCandidate(),
+      verdicts: {
+        'FE-007': {
+          PROTECTED_REPROOF:
+            'THE TABLET VIEWPORT AND HOSTED CI ARE BOTH OBSERVED AT THIS CANDIDATE.',
+        },
+      },
+    }),
+    expects: { claimsOk: false, sound: false },
+    explains: true,
+  },
+  {
+    name: 'the SAME sentence while a run at the candidate IS recorded — true, and allowed',
+    inputs: worldInputs({
+      verdicts: {
+        'FE-007': {
+          PROTECTED_REPROOF:
+            'THE TABLET VIEWPORT AND HOSTED CI ARE BOTH OBSERVED AT THIS CANDIDATE.',
+        },
+      },
+    }),
+    expects: { claimsOk: true },
+    explains: false,
+  },
+  {
+    name: 'a record saying all five tiers were re-run here while two are recorded pending',
+    inputs: worldInputs({
+      candidateFile: pendingCandidate(),
+      verdicts: {
+        'QA-005': {
+          PRODUCTION_TEST_EVIDENCE:
+            'All five tiers re-run against the frozen candidate, 0 failures.',
+        },
+      },
+    }),
+    expects: { claimsOk: false, sound: false },
+    explains: true,
+  },
 ];
 
 /**
@@ -2059,6 +2590,14 @@ function main(argv) {
       process.stdout.write(
         `  tier figures ATTESTED, NOT COMPUTED — this repository cannot verify them, only cite them: ` +
           `${tiers.attested.join('; ') || 'none'}\n`
+      );
+      process.stdout.write(
+        `  tier figures PENDING at this candidate — no hosted observation of this head exists yet: ` +
+          `${tiers.pending.join('; ') || 'none'}\n`
+      );
+      process.stdout.write(
+        `  hosted bindings that describe a SUPERSEDED head, declared and computed: ` +
+          `${tiers.supersededBindings.join(', ') || 'none'}\n`
       );
     }
     return 0;

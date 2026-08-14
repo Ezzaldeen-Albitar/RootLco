@@ -56,7 +56,14 @@ import {
   lineReader,
   baselineClaims,
   isDocumentationPath,
+  pendingBinding,
+  hostedBindingSites,
   LEDGER_FIGURES,
+  LOCAL_PROVENANCES,
+  PENDING_PROVENANCES,
+  PROVENANCE_LOCAL,
+  PROVENANCE_HOSTED,
+  PROVENANCE_HOSTED_PENDING,
   ANCHORED_CLAIMS,
   SELF_CHECK_CASES,
   WORLD_CHECK_CASES,
@@ -506,7 +513,19 @@ describe('P1-28-QA-005 — the candidate is bound, and both halves agree about i
     for (const tier of ['unit', 'web']) {
       const recorded = candidate.tiers[tier];
       const measured = ledger.tiers[tier];
-      expect(recorded?.provenance, `${tier} claims no provenance`).toBe('LOCAL_AND_HOSTED_AGREE');
+      /*
+       * RULE WIDENED, and only on the HOSTED half. A local tier may declare
+       * `LOCAL_AND_HOSTED_AGREE` or `LOCAL_COMPUTED_HOSTED_PENDING`; the second
+       * exists because a re-freeze moves the candidate ahead of the hosted run
+       * that measured the previous one, and a tier may not go on saying the two
+       * halves AGREE when only one of them has been taken here. Every LOCAL
+       * obligation below is unchanged — the figures are still checked against
+       * the run ledger at the head the tier names.
+       */
+      expect(
+        (LOCAL_PROVENANCES as readonly string[]).includes(String(recorded?.provenance)),
+        `${tier} claims a provenance that is not a local one: ${recorded?.provenance}`
+      ).toBe(true);
       expect(recorded?.measuredAtCommit, `${tier} names no head`).toMatch(/^[0-9a-f]{40}$/);
       expect(measured?.measuredAtCommit, `the ${tier} run ledger names no head`).toMatch(
         /^[0-9a-f]{40}$/
@@ -547,23 +566,55 @@ describe('P1-28-QA-005 — the candidate is bound, and both halves agree about i
         string,
         {
           provenance: string;
-          hostedAttestation?: { runId: number; jobId: number; headSha: string; artefact: string };
+          hostedAttestation?: {
+            runId: number;
+            jobId: number;
+            headSha: string;
+            artefact: string;
+            describesSupersededHead?: boolean;
+          };
         }
       >;
     };
     for (const tier of ['backend', 'database', 'browser']) {
-      expect(candidate.tiers[tier]?.provenance, `${tier} overclaims its provenance`).toBe(
-        'HOSTED_ARTEFACT_ATTESTED'
-      );
+      expect(
+        [PROVENANCE_HOSTED, PROVENANCE_HOSTED_PENDING].includes(
+          candidate.tiers[tier]?.provenance as string
+        ),
+        `${tier} overclaims its provenance: ${candidate.tiers[tier]?.provenance}`
+      ).toBe(true);
     }
     for (const [tier, row] of Object.entries(candidate.tiers)) {
       const attestation = row.hostedAttestation;
       expect(attestation, `${tier} carries no hosted attestation`).toBeDefined();
       expect(Number.isInteger(attestation?.runId), `${tier} runId`).toBe(true);
       expect(Number.isInteger(attestation?.jobId), `${tier} jobId`).toBe(true);
-      expect(attestation?.headSha, `${tier} is attested at a head that is not the candidate`).toBe(
-        candidate.candidate.FINAL_CODE_SHA
-      );
+      /*
+       * RULE WIDENED, in exactly one direction and with a stricter obligation
+       * attached. A tier that CLAIMS a hosted observation of this candidate must
+       * still be attested at the candidate and nothing else. A tier whose
+       * provenance says PENDING must instead declare, in the attestation itself,
+       * that the head it names is one the candidate supersedes — and
+       * `pendingBinding` then requires that head to be a commit this repository
+       * contains and an ancestor of the candidate, and requires the binding to
+       * appear in `pendingHostedBindings`. Silence is not an option in either
+       * branch; what changed is that "not measured here yet" became sayable.
+       */
+      if ((PENDING_PROVENANCES as readonly string[]).includes(row.provenance)) {
+        expect(
+          attestation?.describesSupersededHead,
+          `${tier} is PENDING and does not say which head its figures belong to`
+        ).toBe(true);
+        expect(
+          attestation?.headSha,
+          `${tier} is PENDING and names the candidate as the head it describes`
+        ).not.toBe(candidate.candidate.FINAL_CODE_SHA);
+      } else {
+        expect(
+          attestation?.headSha,
+          `${tier} is attested at a head that is not the candidate`
+        ).toBe(candidate.candidate.FINAL_CODE_SHA);
+      }
       expect(
         String(attestation?.artefact ?? '').length,
         `${tier} names no artefact`
@@ -711,6 +762,126 @@ describe('P1-28-QA-005 — the seal is bound to the REPOSITORY, not to its own p
     const doctored = JSON.parse(readRepo(CANDIDATE_PATH)) as { hostedCi: { checksTotal: number } };
     doctored.hostedCi.checksTotal = 99;
     expect((packageArithmetic(doctored as never) as string[]).join(' ')).toContain('99');
+  });
+});
+
+describe('P1-28-QA-005 — a re-freeze may not carry the old head’s numbers forward', () => {
+  /*
+   * THE FINDING THIS DESCRIBE EXISTS FOR, and it is the seal catching itself.
+   *
+   * Three fix waves changed 37 product files after the previous candidate was
+   * frozen. The gate refused the package — `37 product file(s) differ between
+   * the candidate and HEAD` — which is exactly what it was built to do. What it
+   * could NOT then express was the state that follows: the candidate moves, and
+   * the hosted run does not move with it, because a hosted run is taken by CI at
+   * a head and this workstation cannot take one at all.
+   *
+   * The package had two ways to say that and both were dishonest: restate run
+   * 31750364479's figures as though they described the new candidate, or invent
+   * a run id. So a third state exists now, and everything below is the price of
+   * it — a pending binding must name the head it really describes, that head
+   * must be a commit this repository CONTAINS and an ancestor of the candidate,
+   * and every such binding must appear in the package's own pending list, which
+   * the gate computes rather than reads.
+   */
+  const candidateFile = JSON.parse(readRepo(CANDIDATE_PATH)) as Record<string, never>;
+  const git = gitReader(ROOT);
+  const analysis = pendingBinding(candidateFile, git) as unknown as {
+    problems: string[];
+    superseded: string[];
+    declared: string[];
+  };
+
+  it('agrees with itself about which bindings are pending, computed from their own heads', () => {
+    expect(analysis.problems, 'the pending declaration does not describe this package').toEqual([]);
+    expect(analysis.declared.slice().sort()).toEqual(analysis.superseded.slice().sort());
+  });
+
+  it('finds every block that names a head, rather than a list of block names', () => {
+    const sites = hostedBindingSites(candidateFile) as unknown as { name: string }[];
+    // Non-vacuity: a package with no hosted binding would satisfy every rule
+    // above by having nothing to check.
+    expect(sites.length, 'no hosted binding was found at all').toBeGreaterThan(4);
+    for (const site of sites) expect(site.name).toMatch(/^[A-Za-z]/);
+  });
+
+  it('refuses a superseded head this repository does not contain', () => {
+    const doctored = JSON.parse(readRepo(CANDIDATE_PATH)) as {
+      hostedCi: { headSha: string; describesSupersededHead?: boolean };
+    };
+    doctored.hostedCi.headSha = 'd'.repeat(40);
+    doctored.hostedCi.describesSupersededHead = true;
+    const bad = pendingBinding(doctored as never, git) as unknown as { problems: string[] };
+    expect(bad.problems.join(' '), 'an unfetchable head passed as a citation').toContain(
+      'names no commit in this repository'
+    );
+  });
+
+  it('refuses a binding that describes another head and does not say so', () => {
+    const doctored = JSON.parse(readRepo(CANDIDATE_PATH)) as {
+      hostedCi: { headSha: string; describesSupersededHead?: boolean };
+    };
+    doctored.hostedCi.headSha = 'd'.repeat(40);
+    delete doctored.hostedCi.describesSupersededHead;
+    expect(
+      (packageArithmetic(doctored as never) as string[]).join(' '),
+      'an undeclared foreign head was accepted'
+    ).toContain('describesSupersededHead');
+  });
+
+  it('refuses a marker on a binding that is in fact bound to the candidate', () => {
+    const doctored = JSON.parse(readRepo(CANDIDATE_PATH)) as {
+      candidate: { FINAL_CODE_SHA: string };
+      hostedCi: { headSha: string; describesSupersededHead?: boolean };
+    };
+    doctored.hostedCi.headSha = doctored.candidate.FINAL_CODE_SHA;
+    doctored.hostedCi.describesSupersededHead = true;
+    expect(
+      (pendingBinding(doctored as never, git) as unknown as { problems: string[] }).problems.join(
+        ' '
+      ),
+      'a decorative pending marker was accepted'
+    ).toContain('IS the candidate');
+  });
+
+  it('refuses a tier that claims the two halves AGREE while its hosted half is superseded', () => {
+    const doctored = JSON.parse(readRepo(CANDIDATE_PATH)) as {
+      tiers: Record<string, { provenance: string }>;
+    };
+    const pendingTier = Object.entries(doctored.tiers).find(([, row]) =>
+      (PENDING_PROVENANCES as readonly string[]).includes(row.provenance)
+    );
+    expect(pendingTier, 'no tier is pending, so this case measures nothing').toBeDefined();
+    (pendingTier as [string, { provenance: string }])[1].provenance = PROVENANCE_LOCAL;
+    const bad = tierBinding(doctored as never, git) as unknown as { hostedProblems: string[] };
+    expect(bad.hostedProblems.join(' '), 'an overclaimed provenance was accepted').toContain(
+      'OF THE CANDIDATE'
+    );
+    expect(judge(soundInputsOver(ROOT, { tiers: bad }), () => {}).tiersOk).toBe(false);
+  });
+
+  it('declares the measurement drift the repository computes, and refuses any other list', () => {
+    /*
+     * The seal cannot be inside the candidate it seals, so its generator and its
+     * test land as a NAMED successor — and a tier run before them would report a
+     * suite that no longer exists. The measurement is therefore taken at that
+     * successor, and the ONLY thing that makes it admissible is that the package
+     * says which executable paths differ and the repository agrees, path by path.
+     */
+    const sound = tierBinding(candidateFile, git) as unknown as { localProblems: string[] };
+    expect(sound.localProblems, 'the committed tier figures do not bind').toEqual([]);
+
+    const doctored = JSON.parse(readRepo(CANDIDATE_PATH)) as {
+      tiers: Record<string, { provenance: string; measurementDrift?: string[] }>;
+    };
+    const local = Object.entries(doctored.tiers).filter(([, row]) =>
+      (LOCAL_PROVENANCES as readonly string[]).includes(row.provenance)
+    );
+    expect(local.length, 'no local tier exists to measure').toBeGreaterThan(0);
+    for (const [, row] of local) row.measurementDrift = ['scripts/ci/never-existed.mjs'];
+    const bad = tierBinding(doctored as never, git) as unknown as { localProblems: string[] };
+    expect(bad.localProblems.length, 'a fabricated drift list was accepted').toBeGreaterThan(0);
+    expect(judge(soundInputsOver(ROOT, { tiers: bad }), () => {}).tiersOk).toBe(false);
   });
 });
 
