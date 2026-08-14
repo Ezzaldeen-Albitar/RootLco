@@ -7,15 +7,13 @@
     "unit": {
       "command": "npx vitest run --reporter=json",
       "tests": 2542,
-      "passed": 2540,
-      "failed": 2,
+      "passed": 2542,
+      "failed": 0,
       "skipped": 0,
       "files": 98,
-      "measuredAtCommit": "e2dd8b8d8ba6ce124c464409fbe827ceea82b1fc",
-      "dirtyExecutablePaths": [
-        "tests/ci/p1-28-evidence-manifest.test.ts"
-      ],
-      "measuredAt": "2026-08-14T02:34:51.468Z"
+      "measuredAtCommit": "8f8c5cfaa8cbb25693affa6422e957fc4f914ab6",
+      "dirtyExecutablePaths": [],
+      "measuredAt": "2026-08-14T02:47:33.410Z"
     },
     "web": {
       "command": "npm run test --workspace @rootlco/web -- --reporter=json",
@@ -24,9 +22,9 @@
       "failed": 0,
       "skipped": 0,
       "files": 98,
-      "measuredAtCommit": "e2dd8b8d8ba6ce124c464409fbe827ceea82b1fc",
+      "measuredAtCommit": "8f8c5cfaa8cbb25693affa6422e957fc4f914ab6",
       "dirtyExecutablePaths": [],
-      "measuredAt": "2026-08-14T02:30:26.904Z"
+      "measuredAt": "2026-08-14T02:44:12.725Z"
     }
   }
 }
