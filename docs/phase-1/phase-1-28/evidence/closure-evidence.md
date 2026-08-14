@@ -80,10 +80,33 @@ quoted as a current one.
 
 ### What freezing means, and what it does not
 
-Every **local** figure in this package describes **that commit** — not a
-successor of it, and not an average of both. The candidate is the newest commit
-on this branch that touches an executable path, so **the successor list is
-empty**, and every commit after it carries this record and nothing else.
+Every **local** figure in this package describes **that commit**, or a named
+successor of it whose drift from it is declared path by path — and this package
+now carries exactly one such successor, for a reason the candidate could not have
+anticipated.
+
+**`3f80bc2d03234d940c6e10d0c7c148264644927a` — the base subtraction made to
+survive this branch's own merge.** The successor rule subtracts the base branch
+so a checkout does not count the base's commits as this phase's. That presumes
+the base does not CONTAIN the candidate — and merging inverts the presumption.
+Once PR #226 landed, `origin/develop` contained the whole branch, so subtracting
+it removed every genuine successor and the range collapsed to empty. The
+protected-develop reproof went red on two jobs, both of them this suite's own
+anti-vacuity guards refusing to pass on an empty set. The guards were right; the
+rule beneath them had stopped being true.
+
+The subtrahend is now the base **as it stood**, which a merge names in its first
+parent — true of a pull request's merge ref and of the merge commit on the
+protected branch alike. Computed, not argued:
+`git log bf81eecb --not 7b1252ed 64b8d849` yields **0** commits where
+`git log bf81eecb --not 7b1252ed 280cb2bd` yields the **3** that are this
+branch's; for the superseded candidate the same pair is **0** against **6**.
+
+This successor is executable and is named here rather than filed as
+documentation. `git diff --name-only 7b1252ed..3f80bc2d -- apps supabase`
+returns **nothing**, and the two executable paths it does touch — the seal and
+the seal's own suite — are declared on each local tier as `measurementDrift` and
+compared against `git diff` by the gate.
 
 That was not true until now, and the difference is worth stating because it is
 what the re-freeze bought. The previous candidate,
@@ -100,9 +123,11 @@ re-anchored so that re-freezing cannot make it vacuous, a CodeQL HIGH in the
 citation resolver where `existsSync` then `statSync` then `readFileSync` asked
 whether a path was a readable file and then read it, and the repair this
 candidate carries — and **each was answered by moving the candidate rather than
-by growing a successor list**. That is the rule this package now follows: while
-the product is provably unchanged, the candidate follows the newest executable
-commit, and `reFrozenFrom` carries what each move was for.
+by growing a successor list**, and `reFrozenFrom` carries what each move was for.
+That rule ended at the merge: once the candidate is on a protected branch it is
+what shipped, and a repair to the seal after it is a **successor** of shipped
+code, not a reason to re-point the record at something else. The one named above
+is the first of those.
 
 ### Why this one moved: the seal's own tests could not survive being bound
 
@@ -283,13 +308,15 @@ ledger **moves**: `--record` rewrites it at whatever head it was last taken at, 
 a check against the working copy would go red on the next unrelated re-record and
 would then be relaxed rather than fixed.
 
-Neither tier declares `measurementDrift`, because the measurement head and the
-candidate are the **same commit** and nothing differs between them. That absence
-is **checked, not assumed**: the gate refuses a `measurementDrift` field when
-`git diff` computes no drift, exactly as it refuses a missing one when there is
-drift to declare. Earlier revisions of this page measured at a named successor
-and declared three executable paths; the re-freeze removed the need, and the rule
-that policed it is unchanged and still fires.
+Both tiers declare `measurementDrift` — `scripts/ci/build-p1-28-evidence-manifest.mjs`
+and `tests/ci/p1-28-evidence-manifest.test.ts` — because the measurement head is
+the named successor above rather than the candidate itself, and a tier run before
+it would report a suite that does not contain its seven new cases. The list is
+**checked, not asserted**: the gate computes
+`git diff --name-only 3f80bc2d..7b1252ed`, refuses any other list, refuses a
+missing one while there is drift, and refuses a declared one while there is none.
+Neither path is under `apps/**` or `supabase/**`, which is the only reason a
+measurement taken away from the candidate is admissible at all.
 
 `suites: 549` and `suites: 651` used to stand beside these figures and have been
 **removed**. The run ledger records no suite count, so there was nothing those

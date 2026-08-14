@@ -75,22 +75,31 @@
     "what": "EMPTY, and that is the point of the re-freeze. The candidate IS the newest commit touching an executable path, so nothing executable follows it and there is nothing to name. Commits after it carry this record and are DOCUMENTATION-ONLY; the gate PRINTS them rather than demanding they be named, because a commit cannot write its own id into a file it contains.",
     "whatWouldFailThis": "Any commit after the candidate that touches a path outside `docs/` which is not `*.md`. The gate computes the range with `git log <head under test> --not <candidate> <base>` and refuses an unnamed executable one, so re-freezing does not disarm the rule - it empties the list the rule reads."
   },
-  "successors": [],
+  "successors": [
+    {
+      "commit": "3f80bc2d03234d940c6e10d0c7c148264644927a",
+      "kind": "evidence machinery — the base subtraction made to survive this branch merging",
+      "what": "The subtrahend becomes the base as it STOOD — a merge names it in its first parent — rather than the base as it is now, which after the merge contains the whole branch and so removed every genuine successor. The parent classification gains one narrow fallback for the post-merge shape where BOTH parents carry the candidate: base first, merged head second. A base that has absorbed the candidate is reported rather than refused. Four known-bad worlds (72 → 76) and seven tree-level cases; sixteen mutations, all observed red.",
+      "why": "The protected-develop reproof failed on two jobs, both on this suite’s own anti-vacuity guards refusing to pass on an empty set: `the successor range is empty, so this measures nothing` and `the superseded candidate has no successors`. The guards were right and the rule beneath them had stopped being true. Computed rather than argued: `git log bf81eecb --not 7b1252ed 64b8d849` yields 0 commits, where `git log bf81eecb --not 7b1252ed 280cb2bd` — the merge’s own first parent — yields the 3 that are this branch’s. For the superseded candidate the same pair is 0 against 6.",
+      "productIdentity": "`git diff --name-only 7b1252edebb5d7f48451213c71ab832cb44e46b5..3f80bc2d03234d940c6e10d0c7c148264644927a -- apps supabase` returns nothing. The two executable paths it touches are the seal and the seal’s own suite.",
+      "measurementHead": "This is the head both LOCAL tiers are measured at. The executable paths that differ between it and the candidate are declared on each tier as measurementDrift and compared against git diff by the gate."
+    }
+  ],
   "howTierFiguresAreChecked": "Four obligations, because there are four kinds of claim. ARITHMETIC: `passed + failed + skipped` must equal the declared total, for every tier — the review set `passed: 3, failed: 812` beside `tests: 2475` and the first revision of the gate accepted it, because nothing added the three numbers up. LOCAL: the figures must equal the P1-27 run ledger’s, read out of git at the commit named in `localLedger.atCommit`, and a LOCAL tier may carry no figure the ledger does not write. MEASUREMENT HEAD: the head a local tier names must be executable-identical to the candidate, or a NAMED successor of it carrying no product drift and declaring `measurementDrift` exactly equal to what `git diff --name-only <head>..<candidate>` computes. Both local tiers now name the candidate ITSELF, so the first branch applies and neither declares drift. HOSTED: cannot be computed from this repository at all, and the gate says so in those words; what it requires instead is that the claim be FETCHABLE — a run id, a job id, the head the job ran at, and the artefact — and, when that head is not the candidate, that the record SAY WHICH OF TWO THINGS IT IS — a head the candidate SUPERSEDES, marked `describesSupersededHead`, proved an ancestor and listed in `pendingHostedBindings`; or a head that DESCENDS from the candidate, marked `describesProductIdenticalSuccessor`, whose apps/** and supabase/** `git diff` computes to be identical to the candidate's. Either way the head must be a commit this repository contains.",
   "tiers": {
     "unit": {
       "label": "root unit and foundation",
-      "tests": 2560,
-      "passed": 2560,
+      "tests": 2567,
+      "passed": 2567,
       "failed": 0,
       "skipped": 0,
       "files": 98,
-      "measuredAtCommit": "7b1252edebb5d7f48451213c71ab832cb44e46b5",
+      "measuredAtCommit": "3f80bc2d03234d940c6e10d0c7c148264644927a",
       "provenance": "LOCAL_AND_HOSTED_AGREE",
       "localLedger": {
         "path": "docs/phase-1/phase-1-27/evidence/local-run-ledger.json",
         "tier": "unit",
-        "atCommit": "5dce31c0a6f7d7d3779db2fbad0ef57b97420aa1",
+        "atCommit": "aa3cade439cf6b11eb5ccedc0eb1697f18558ef2",
         "howChecked": "`git show 5dce31c0:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD when this measurement was committed, not as it stands now. Pinned to a commit because the ledger MOVES: `check-p1-27-closing-values.mjs --record` rewrites it at whatever head it was last taken at, so a check against the working copy would go red on the next unrelated re-record and would then be relaxed rather than fixed."
       },
       "hostedAttestation": {
@@ -102,7 +111,10 @@
         "whyThisHead": "The seal’s own record cannot live inside the commit it seals, so hosted CI necessarily runs at a later head. `81cbd44b` is a DOCUMENTATION-ONLY descendant of the candidate: `git merge-base --is-ancestor 7b1252ed 81cbd44b` holds and `git diff --name-only 7b1252ed..81cbd44b -- apps supabase` is EMPTY, both recomputed by the gate on every invocation, and a diff git refuses to take counts as UNKNOWN rather than as empty."
       },
       "note": "BOTH HALVES TAKEN, and they agree. The LOCAL half was measured at the candidate itself and COMPUTED against the run ledger at the commit named above. The HOSTED half is run 31783658759 job 94714715510 at 81cbd44b, whose `test-totals-unit.json` reports total 2560, executed 2560, passed 2560, failed 0, pending 0, todo 0 over 98 files and 561 suites, with an empty `failures` array — the same figures, taken by a GitHub-hosted runner on a clean checkout rather than on this workstation. THE HOSTED FIGURE MOVED WITH THE CANDIDATE: it was 2559 at 55b932cb, and 2560 here, because the candidate adds one case to tests/ci/p1-28-evidence-manifest.test.ts. `suites: 561` is deliberately NOT recorded as a tier figure: the run ledger carries no suite count, so nothing here could check it, and the gate refuses a tier figure the ledger cannot carry.",
-      "measurementNote": "Measured AT THE CANDIDATE. No executable path differs between the measurement head and the candidate because they are the same commit, so this tier declares no `measurementDrift` - and the gate REFUSES a `measurementDrift` field when nothing differs, so the absence is checked rather than assumed."
+      "measurementDrift": [
+        "scripts/ci/build-p1-28-evidence-manifest.mjs",
+        "tests/ci/p1-28-evidence-manifest.test.ts"
+      ]
     },
     "web": {
       "label": "web component and DOM",
@@ -111,12 +123,12 @@
       "failed": 0,
       "skipped": 0,
       "files": 98,
-      "measuredAtCommit": "7b1252edebb5d7f48451213c71ab832cb44e46b5",
+      "measuredAtCommit": "3f80bc2d03234d940c6e10d0c7c148264644927a",
       "provenance": "LOCAL_AND_HOSTED_AGREE",
       "localLedger": {
         "path": "docs/phase-1/phase-1-27/evidence/local-run-ledger.json",
         "tier": "web",
-        "atCommit": "5dce31c0a6f7d7d3779db2fbad0ef57b97420aa1",
+        "atCommit": "aa3cade439cf6b11eb5ccedc0eb1697f18558ef2",
         "howChecked": "`git show 5dce31c0:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD when this measurement was committed, not as it stands now. Pinned to a commit because the ledger MOVES: `check-p1-27-closing-values.mjs --record` rewrites it at whatever head it was last taken at, so a check against the working copy would go red on the next unrelated re-record and would then be relaxed rather than fixed."
       },
       "hostedAttestation": {
@@ -128,7 +140,10 @@
         "whyThisHead": "The same computed descent and the same empty product diff as the unit tier — 81cbd44b contains the candidate and differs from it by no path under apps/** or supabase/**."
       },
       "note": "BOTH HALVES TAKEN, and this tier is measured THREE times. The LOCAL half was measured at the candidate. The HOSTED half is run 31783658759 job 94714715522 at 81cbd44b, reporting total 2726, passed 2726, failed 0, pending 0 over 98 files and 663 suites. The hosted CLEAN ROOM (job 94714715543) re-derived the same tier independently at the same head, from a fresh checkout and a fresh install, and reported the identical 2726 over 98 files in `clean-room-web-totals.json`. Two of the three runners share nothing with this workstation.",
-      "measurementNote": "Measured AT THE CANDIDATE. No executable path differs between the measurement head and the candidate because they are the same commit, so this tier declares no `measurementDrift` - and the gate REFUSES a `measurementDrift` field when nothing differs, so the absence is checked rather than assumed."
+      "measurementDrift": [
+        "scripts/ci/build-p1-28-evidence-manifest.mjs",
+        "tests/ci/p1-28-evidence-manifest.test.ts"
+      ]
     },
     "backend": {
       "label": "backend integration, against a real PostgreSQL",
