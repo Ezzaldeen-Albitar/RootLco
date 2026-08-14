@@ -885,6 +885,412 @@ describe('P1-28-QA-005 — a re-freeze may not carry the old head’s numbers fo
   });
 });
 
+describe('P1-28-QA-005 — a hosted run may be cited at a later head, and only at an identical one', () => {
+  /*
+   * THE CIRCULARITY THIS CLOSES.
+   *
+   * The seal clears a hosted binding only when the run's head is the candidate.
+   * But the seal's own machinery cannot be inside the commit it seals — writing
+   * it there changes that commit — so the machinery lands AFTER the candidate
+   * and hosted CI necessarily runs at a later head. Under the exact-head rule
+   * every hosted run forced another re-freeze, whose seal commit moved the head
+   * again: an unbounded loop, and one this package walked into.
+   *
+   * The local half already had the answer. A tier may be measured at a named
+   * executable successor while `git diff` COMPUTES that no product path differs,
+   * because the claim is about the PRODUCT and the product is provably the same.
+   * The hosted half is now allowed the same escape on the same evidence — and
+   * these cases are the mutations that prove it is not a relaxation. Every one
+   * uses REAL commits of this repository: `HEAD` genuinely descends from the
+   * candidate with an empty product diff, and `38afa5c2` is genuinely an
+   * ancestor of it whose product differs by 37 files.
+   */
+  const git = gitReader(ROOT);
+  const candidateFile = JSON.parse(readRepo(CANDIDATE_PATH)) as {
+    candidate: { FINAL_CODE_SHA: string };
+  };
+  const CANDIDATE = candidateFile.candidate.FINAL_CODE_SHA;
+  const HEAD = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: ROOT, encoding: 'utf8' }).trim();
+  /** The head this candidate superseded: a real ancestor, product-different. */
+  const OLD_CANDIDATE = '38afa5c28e5b78d484a442cf6b8596fb2a5c34aa';
+
+  /** The committed package with every hosted binding re-cited at `runHead`. */
+  const citedAt = (runHead: string, candidateSha = CANDIDATE): Record<string, unknown> => {
+    const doc = JSON.parse(readRepo(CANDIDATE_PATH)) as {
+      candidate: { FINAL_CODE_SHA: string };
+      tiers: Record<string, Record<string, unknown>>;
+      pendingHostedBindings?: unknown;
+      [key: string]: unknown;
+    };
+    doc.candidate = { ...doc.candidate, FINAL_CODE_SHA: candidateSha };
+    const forward = { headSha: runHead, describesProductIdenticalSuccessor: true };
+    for (const row of Object.values(doc.tiers)) {
+      const attestation = row.hostedAttestation as Record<string, unknown>;
+      const { describesSupersededHead: _drop, supersededBy: _also, ...rest } = attestation;
+      row.provenance = (LOCAL_PROVENANCES as readonly string[]).includes(String(row.provenance))
+        ? PROVENANCE_LOCAL
+        : PROVENANCE_HOSTED;
+      row.hostedAttestation = { ...rest, ...forward };
+    }
+    for (const [key, value] of Object.entries(doc)) {
+      if (key === 'tiers' || key === 'candidate') continue;
+      if (value && typeof value === 'object' && !Array.isArray(value) && 'headSha' in value) {
+        const {
+          describesSupersededHead: _drop,
+          supersededBy: _also,
+          ...rest
+        } = value as Record<string, unknown>;
+        doc[key] = { ...rest, ...forward };
+      }
+    }
+    delete doc.pendingHostedBindings;
+    return doc as Record<string, unknown>;
+  };
+
+  const hostedOf = (doc: Record<string, unknown>): string[] =>
+    (tierBinding(doc as never, git) as unknown as { hostedProblems: string[] }).hostedProblems;
+
+  it('is a hostile world: the real repository disagrees with the naive reading', () => {
+    // Anti-vacuity. If HEAD were the candidate, or `38afa5c2` were not an
+    // ancestor whose product differs, every case below would prove nothing.
+    expect(HEAD, 'HEAD is the candidate, so no forward citation is exercised').not.toBe(CANDIDATE);
+    expect(
+      execFileSync('git', ['merge-base', '--is-ancestor', CANDIDATE, HEAD], { cwd: ROOT })
+    ).toBeDefined();
+    expect(
+      execFileSync(
+        'git',
+        ['diff', '--name-only', `${CANDIDATE}..${HEAD}`, '--', 'apps', 'supabase'],
+        {
+          cwd: ROOT,
+          encoding: 'utf8',
+        }
+      ).trim(),
+      'HEAD is not product-identical to the candidate'
+    ).toBe('');
+    expect(
+      execFileSync(
+        'git',
+        ['diff', '--name-only', `${OLD_CANDIDATE}..${HEAD}`, '--', 'apps', 'supabase'],
+        { cwd: ROOT, encoding: 'utf8' }
+      ).trim().length,
+      'the superseded head is product-identical, so the product mutation is vacuous'
+    ).toBeGreaterThan(0);
+  });
+
+  it('ACCEPTS a run at a descendant head whose product diff is empty', () => {
+    const doc = citedAt(HEAD);
+    expect(hostedOf(doc), 'a product-identical successor run was refused').toEqual([]);
+    const analysis = pendingBinding(doc as never, git) as unknown as {
+      problems: string[];
+      bound: string[];
+      superseded: string[];
+      boundAtSuccessor: string[];
+    };
+    expect(analysis.problems).toEqual([]);
+    expect(analysis.superseded, 'a bound successor was filed as pending').toEqual([]);
+    expect(analysis.bound.length, 'nothing was bound, so nothing was proved').toBeGreaterThan(5);
+    expect(analysis.boundAtSuccessor.join(' ')).toContain(HEAD.slice(0, 8));
+    // And the record may then say so: the claim world reads the same computed set.
+    const world = worldFrom(doc as never, null, new Set(analysis.bound)) as unknown as {
+      hostedCiRecorded: boolean;
+      phaseSpecObservedHosted: boolean;
+    };
+    expect(world.hostedCiRecorded, 'a bound run is still reported as no result').toBe(true);
+    expect(world.phaseSpecObservedHosted).toBe(true);
+  });
+
+  it('REFUSES the same head when a product file differs from the candidate', () => {
+    // The identical citation, against the head this candidate superseded: the
+    // run head still exists and still descends from it, and 37 product files
+    // differ. Only the product identity changed, and only it is being tested.
+    const doc = citedAt(HEAD, OLD_CANDIDATE);
+    const problems = hostedOf(doc);
+    expect(problems.length, 'a run measuring different software was accepted').toBeGreaterThan(0);
+    expect(problems.join(' ')).toContain('PRODUCT path(s) differ');
+    expect(
+      judge(soundInputsOver(ROOT, { tiers: tierBinding(doc as never, git) }), () => {}).tiersOk
+    ).toBe(false);
+  });
+
+  it('REFUSES a run head this repository does not contain', () => {
+    const absent = 'deadbeef'.repeat(5);
+    expect(
+      () =>
+        execFileSync('git', ['cat-file', '-e', `${absent}^{commit}`], {
+          cwd: ROOT,
+          stdio: 'ignore',
+        }),
+      'the chosen head exists after all'
+    ).toThrow();
+    const problems = hostedOf(citedAt(absent));
+    expect(problems.length, 'a run at a head nobody can fetch was accepted').toBeGreaterThan(0);
+    expect(problems.join(' ')).toContain('names no commit in this repository');
+  });
+
+  it('REFUSES a run head that is an ANCESTOR of the candidate', () => {
+    // A run taken before this code existed cannot describe it. The backward
+    // citation is not forbidden — it is `describesSupersededHead`, and the
+    // committed package uses it — but it may not wear the forward marker.
+    const problems = hostedOf(citedAt(OLD_CANDIDATE));
+    expect(problems.length, 'a run that predates the candidate was accepted').toBeGreaterThan(0);
+    expect(problems.join(' ')).toContain('does not descend from the candidate');
+  });
+
+  it('leaves the backward citation exactly as it was — the committed package still binds', () => {
+    const sound = tierBinding(candidateFile as never, git) as unknown as {
+      hostedProblems: string[];
+      supersededBindings: string[];
+    };
+    expect(sound.hostedProblems, 'the committed PENDING package stopped binding').toEqual([]);
+    expect(
+      sound.supersededBindings.length,
+      'no superseded binding is exercised by the committed package'
+    ).toBeGreaterThan(0);
+  });
+});
+
+describe('P1-28-QA-005 — a merge-ref checkout does not make the base branch a successor', () => {
+  /*
+   * THE FALSE POSITIVE THIS CLOSES, reported by hosted CI against this branch.
+   *
+   * `actions/checkout` defaults, for a `pull_request` event, to the pull
+   * request's MERGE REF — a synthetic merge of this branch with its base. Under
+   * it `git log candidate..HEAD` sweeps in the BASE BRANCH's history, and
+   * `0c89647de1a661105ec3a612955789989da58a0d` — a develop commit authored by
+   * another session, absent from this branch — was reported as an executable
+   * successor this package had failed to name. The same ref would have made
+   * `git diff candidate..HEAD -- apps supabase` report the base's product
+   * changes as a broken freeze.
+   *
+   * The world below is that world, built out of REAL commit objects: a base tip
+   * this branch does not contain, and a merge of it with this branch's head.
+   * Only the base POINTER is injected; every reachability question is answered
+   * by git against the real object graph.
+   */
+  const git = gitReader(ROOT);
+  const candidateFile = JSON.parse(readRepo(CANDIDATE_PATH)) as {
+    candidate: { FINAL_CODE_SHA: string; baseBranch: string };
+  };
+  const CANDIDATE = candidateFile.candidate.FINAL_CODE_SHA;
+  const HEAD = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: ROOT, encoding: 'utf8' }).trim();
+  const BASE_REF = `refs/remotes/origin/${candidateFile.candidate.baseBranch}`;
+
+  /*
+   * Fixed identity and dates, so the two probe objects are CONTENT-ADDRESSED to
+   * the same ids on every run: the world is created once and re-created as a
+   * no-op, rather than littering the object store on every invocation.
+   */
+  const plumbing = (args: string[]): string =>
+    execFileSync('git', args, {
+      cwd: ROOT,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        GIT_AUTHOR_NAME: 'probe',
+        GIT_AUTHOR_EMAIL: 'probe@local',
+        GIT_COMMITTER_NAME: 'probe',
+        GIT_COMMITTER_EMAIL: 'probe@local',
+        GIT_AUTHOR_DATE: '2000-01-01T00:00:00+0000',
+        GIT_COMMITTER_DATE: '2000-01-01T00:00:00+0000',
+      },
+    }).trim();
+
+  // A base tip carrying the SUPERSEDED head's tree: it differs from this branch
+  // by executable AND product paths, which is what makes both hazards visible.
+  const foreignTree = plumbing(['rev-parse', '38afa5c28e5b78d484a442cf6b8596fb2a5c34aa^{tree}']);
+  const baseTip = plumbing([
+    'commit-tree',
+    foreignTree,
+    '-p',
+    BASE_REF,
+    '-m',
+    'probe: a base-branch commit this branch does not contain',
+  ]);
+  const mergeRef = plumbing([
+    'commit-tree',
+    foreignTree,
+    '-p',
+    baseTip,
+    '-p',
+    HEAD,
+    '-m',
+    'probe: the pull request merge ref',
+  ]);
+
+  /** Real git, with the checkout standing at the merge ref and the base moved. */
+  const asMergeRef =
+    (over: Record<string, string | null> = {}) =>
+    (args: string[]): string | null => {
+      const key = args.join(' ');
+      if (key in over) return over[key] ?? null;
+      if (key === 'rev-list --parents -n 1 HEAD') return `${mergeRef} ${baseTip} ${HEAD}\n`;
+      if (key === `rev-parse --verify --quiet ${BASE_REF}^{commit}`) return `${baseTip}\n`;
+      return git(args);
+    };
+
+  interface Binding {
+    readonly baseResolved: boolean;
+    readonly baseRef: string | null;
+    readonly baseSha: string | null;
+    readonly phaseHead: string | null;
+    readonly checkoutHead: string | null;
+    readonly unwrappedMergeRef: string | null;
+    readonly productDiff: string[];
+    readonly commits: { sha: string; paths: string[] | null }[];
+    readonly unrecordedExecutable: string[];
+  }
+
+  it('is a hostile world: the naive range and diff both take the base branch in', () => {
+    const swept = plumbing(['log', '--format=%H', `${CANDIDATE}..${mergeRef}`]).split('\n');
+    expect(swept, 'the merge-ref range does not contain the foreign base commit').toContain(
+      baseTip
+    );
+    expect(
+      plumbing(['diff', '--name-only', `${CANDIDATE}..${mergeRef}`, '--', 'apps', 'supabase'])
+        .length,
+      'the merge-ref product diff is empty, so it demonstrates no hazard'
+    ).toBeGreaterThan(0);
+  });
+
+  it('judges the branch, not the merge: no base commit is a successor of this phase', () => {
+    const bound = repositoryBinding(candidateFile as never, asMergeRef()) as unknown as Binding;
+    expect(bound.unwrappedMergeRef, 'the merge ref was not recognised').toBe(mergeRef);
+    expect(bound.checkoutHead).toBe(mergeRef);
+    expect(bound.phaseHead, 'the head under test is not this branch').toBe(HEAD);
+    expect(bound.baseSha).toBe(baseTip);
+    expect(
+      bound.commits.map((c) => c.sha),
+      'a base-branch commit is being judged as this phase’s successor'
+    ).not.toContain(baseTip);
+    // DERIVED, not a literal: the range this branch actually adds after the
+    // freeze. A number here would go stale on the next commit and be relaxed.
+    const branchOnly = plumbing(['log', '--format=%H', `${CANDIDATE}..${HEAD}`]).split('\n');
+    expect(
+      bound.commits.map((c) => c.sha),
+      'the merge-ref range is not this branch’s own range'
+    ).toEqual(branchOnly);
+    expect(bound.productDiff, 'the base’s product changes were read as a broken freeze').toEqual(
+      []
+    );
+    expect(bound.unrecordedExecutable, 'an unnamed executable successor was invented').toEqual([]);
+    expect(judge(soundInputsOver(ROOT, { repository: bound }), () => {}).repositoryOk).toBe(true);
+  });
+
+  it('still FAILS when this branch’s own executable successor is unnamed', () => {
+    // The correction must not have bought its silence by silencing the rule.
+    const sound = repositoryBinding(candidateFile as never, asMergeRef()) as unknown as Binding;
+    const executable = sound.commits
+      .filter((c) => c.paths === null || c.paths.some((p) => !isDocumentationPath(p)))
+      .map((c) => c.sha);
+    expect(executable.length, 'no executable successor exists to hide').toBeGreaterThan(0);
+
+    const bad = repositoryBinding(
+      { ...(candidateFile as object), successors: [] } as never,
+      asMergeRef()
+    ) as unknown as Binding;
+    expect(bad.unrecordedExecutable, 'an executable successor was not reported').toEqual(
+      executable
+    );
+    expect(judge(soundInputsOver(ROOT, { repository: bad }), () => {}).repositoryOk).toBe(false);
+  });
+
+  it('does NOT unwrap a merge that carries content of its own', () => {
+    /*
+     * The one thing the unwrap must never do. A merge ref previews a merge and
+     * introduces nothing; a merge that resolved a conflict carries content
+     * neither parent has, and stepping past it would step past that content.
+     * Its combined diff is non-empty, so it is judged as the commit it is.
+     */
+    const evil = repositoryBinding(
+      candidateFile as never,
+      asMergeRef({
+        [`diff-tree --cc --name-only --no-commit-id ${mergeRef}`]: 'apps/web/src/x.tsx\n',
+      })
+    ) as unknown as Binding & { evilMergePaths: string[] };
+    expect(evil.unwrappedMergeRef, 'an evil merge was unwrapped past').toBeNull();
+    expect(evil.phaseHead).toBe(mergeRef);
+    expect(evil.evilMergePaths).toEqual(['apps/web/src/x.tsx']);
+  });
+
+  it('subtracts the base even when the checkout is NOT unwrappable', () => {
+    /*
+     * The second, independent subtraction, and the world that makes it
+     * load-bearing. This merge carries a tree neither parent has, so the unwrap
+     * declines it and the head under test IS the merge — exactly as it should
+     * be. The base branch is still in that range, and `--not <base>` is the only
+     * thing that keeps develop's own commits from being read as this phase's.
+     */
+    const ownTree = plumbing(['rev-parse', `${CANDIDATE}^{tree}`]);
+    const evilMerge = plumbing([
+      'commit-tree',
+      ownTree,
+      '-p',
+      HEAD,
+      '-p',
+      baseTip,
+      '-m',
+      'probe: a merge carrying a tree neither parent has',
+    ]);
+    const swept = plumbing(['log', '--format=%H', `${CANDIDATE}..${evilMerge}`]).split('\n');
+    expect(swept, 'the range does not contain the foreign base commit').toContain(baseTip);
+
+    const named = {
+      ...(candidateFile as object),
+      successors: [
+        ...((candidateFile as unknown as { successors: unknown[] }).successors ?? []),
+        { commit: evilMerge, kind: 'probe' },
+      ],
+    };
+    const bound = repositoryBinding(named as never, (args: string[]) => {
+      const key = args.join(' ');
+      if (key === 'rev-list --parents -n 1 HEAD') return `${evilMerge} ${HEAD} ${baseTip}\n`;
+      if (key === `rev-parse --verify --quiet ${BASE_REF}^{commit}`) return `${baseTip}\n`;
+      return git(args);
+    }) as unknown as Binding & { evilMergePaths: string[] };
+
+    expect(bound.unwrappedMergeRef, 'a merge with its own content was unwrapped').toBeNull();
+    expect(bound.phaseHead, 'the head under test is not the checkout').toBe(evilMerge);
+    expect(
+      bound.evilMergePaths.length,
+      'the merge carries no content, so it is not this world'
+    ).toBeGreaterThan(0);
+    expect(
+      bound.commits.map((c) => c.sha),
+      'a base-branch commit survived into this phase’s successor range'
+    ).not.toContain(baseTip);
+    expect(
+      bound.unrecordedExecutable,
+      'a base commit was reported as an unnamed successor'
+    ).toEqual([]);
+  });
+
+  it('fails CLOSED when the base branch cannot be resolved at all', () => {
+    // A shallow CI clone cannot see the base. "I could not tell" is not "there
+    // are none", and a gate that reported none would be reporting a guess.
+    const blind = repositoryBinding(candidateFile as never, (args: string[]) =>
+      args[0] === 'rev-parse' && args.includes('--verify') ? null : git(args)
+    ) as unknown as Binding;
+    expect(blind.baseResolved, 'an unresolvable base was treated as resolved').toBe(false);
+    expect(blind.commits, 'a successor set was computed with no base to subtract').toEqual([]);
+    const said: string[] = [];
+    expect(
+      judge(soundInputsOver(ROOT, { repository: blind }), (l: string) => said.push(l)).repositoryOk
+    ).toBe(false);
+    expect(said.join(' '), 'the refusal does not say what could not be resolved').toContain(
+      BASE_REF
+    );
+  });
+
+  it('resolves the base in the checkout this workstation actually has', () => {
+    const honest = repositoryBinding(candidateFile as never, git) as unknown as Binding;
+    expect(honest.baseResolved).toBe(true);
+    expect(honest.baseRef).toBe(BASE_REF);
+    expect(honest.unwrappedMergeRef, 'an ordinary checkout was treated as a merge ref').toBeNull();
+    expect(honest.phaseHead).toBe(HEAD);
+  });
+});
+
 describe('P1-28-QA-005 — a record may not state what the candidate refutes', () => {
   const candidateFile = JSON.parse(readRepo(CANDIDATE_PATH)) as Record<string, never>;
   const world = claimWorld(ROOT, candidateFile) as unknown as {

@@ -403,6 +403,81 @@ const lines = (out) =>
 export const isDocumentationPath = (path) => path.startsWith('docs/') || path.endsWith('.md');
 
 /**
+ * The forms a base branch may take in a checkout, in the order they are tried.
+ *
+ * A remote-tracking ref first, because that is what a CI clone has and what is
+ * CURRENT; the local branch second, because that is what a workstation has; the
+ * bare name last, so a base given as a tag or a raw commit id still resolves.
+ */
+export const BASE_REF_FORMS = Object.freeze([
+  (branch) => `refs/remotes/origin/${branch}`,
+  (branch) => `refs/heads/${branch}`,
+  (branch) => branch,
+]);
+
+/**
+ * The base branch, resolved to a commit — or an honest `null`.
+ *
+ * `attempted` is returned so a failure names what was looked for. "The base
+ * could not be resolved" sends a reader to guess; "tried
+ * refs/remotes/origin/develop, refs/heads/develop, develop" sends them to fetch
+ * one of three things.
+ */
+export function resolveBaseRef(git, baseBranch) {
+  const branch = String(baseBranch ?? '').trim();
+  const attempted = [];
+  if (branch === '') return { branch, attempted, ref: null, sha: null };
+  for (const form of BASE_REF_FORMS) {
+    const ref = form(branch);
+    attempted.push(ref);
+    const sha = lines(git(['rev-parse', '--verify', '--quiet', `${ref}^{commit}`]))[0] ?? null;
+    if (sha !== null && /^[0-9a-f]{40}$/.test(sha)) return { branch, attempted, ref, sha };
+  }
+  return { branch, attempted, ref: null, sha: null };
+}
+
+/**
+ * The head THIS BRANCH contributes, which is not always the checked-out commit.
+ *
+ * Returns the checkout unchanged in every case but one: a two-parent HEAD with
+ * exactly one parent contained in the base branch, exactly one parent
+ * descending from the candidate, and NO content of its own. That is the shape
+ * of a pull request's merge ref, and under it the branch is the second of those
+ * parents. Every other shape — an octopus merge, a merge whose parents are both
+ * in the base, a merge that resolved a conflict and so carries content neither
+ * parent has — is left alone, because the honest failure of this function is to
+ * decline to unwrap, never to unwrap the wrong thing.
+ *
+ * `evilMergePaths` is returned rather than swallowed: a merge that was NOT
+ * unwrapped because it carries its own content is a fact a reader wants.
+ */
+export function phaseHead(git, candidateSha, baseSha) {
+  const row = lines(git(['rev-list', '--parents', '-n', '1', 'HEAD']))[0] ?? '';
+  const ids = row.split(/\s+/).filter(Boolean);
+  const checkout = ids[0] ?? null;
+  const parents = ids.slice(1);
+  const plain = { head: checkout, checkout, mergeRef: null, baseSide: null, evilMergePaths: [] };
+  if (checkout === null || parents.length !== 2 || !baseSha || !candidateSha) return plain;
+
+  const inBase = parents.filter((p) => git(['merge-base', '--is-ancestor', p, baseSha]) !== null);
+  const branchSide = parents.filter(
+    (p) => !inBase.includes(p) && git(['merge-base', '--is-ancestor', candidateSha, p]) !== null
+  );
+  if (inBase.length !== 1 || branchSide.length !== 1) return plain;
+
+  const combined = lines(git(['diff-tree', '--cc', '--name-only', '--no-commit-id', checkout]));
+  if (combined.length > 0) return { ...plain, evilMergePaths: combined };
+
+  return {
+    head: branchSide[0],
+    checkout,
+    mergeRef: checkout,
+    baseSide: inBase[0],
+    evilMergePaths: [],
+  };
+}
+
+/**
  * What the repository says about the candidate, its tree and its successors.
  *
  * An ANALYSIS, not a verdict, for the same reason `reachability` is one.
@@ -421,6 +496,40 @@ export const isDocumentationPath = (path) => path.startsWith('docs/') || path.en
  * That leaves exactly one kind of unnamed commit — the documentation-only
  * commit that carries this record — and it is reported rather than hidden. A
  * successor that adds a line of code and is not named fails.
+ *
+ * ## On WHOSE commits these are: the merge-ref hazard
+ *
+ * `HEAD` is not always this branch. `actions/checkout` defaults, for a
+ * `pull_request` event, to the pull request's MERGE REF — a synthetic commit
+ * merging this branch with its base — and this repository has been bitten by
+ * that default before. Under it, `git log candidate..HEAD` sweeps in the BASE
+ * BRANCH's own history, and every commit develop has taken since the freeze
+ * reads as an unnamed executable successor of a candidate it has nothing to do
+ * with. That is exactly what happened: hosted CI reported
+ * `0c89647de1a661105ec3a612955789989da58a0d` — a develop commit, authored by
+ * another session, absent from this branch — as a successor this package failed
+ * to name. The same ref would poison `git diff candidate..HEAD -- apps
+ * supabase`, where the base's product changes would read as a broken freeze.
+ *
+ * The successor set is "what THIS BRANCH added after the candidate", so it is
+ * computed that way, in two independent subtractions:
+ *
+ *   the base branch is RESOLVED to a commit and excluded from the range
+ *   (`--not <base>`), so a base commit can never be a successor of this phase;
+ *   and
+ *
+ *   when the checkout is a synthetic merge of this branch with its base — HEAD
+ *   is a two-parent commit, one parent contained in the base, the other
+ *   descending from the candidate, and the merge introduces no content of its
+ *   own — the head under test is that other parent, and the gate PRINTS the
+ *   substitution rather than performing it quietly. The combined-diff condition
+ *   is what stops an EVIL merge being unwrapped past: a merge carrying content
+ *   neither parent has is not a preview of anything and is left to be judged as
+ *   the commit it is.
+ *
+ * Both subtractions fail CLOSED. A base branch this checkout cannot resolve
+ * makes the successor set UNKNOWN, and unknown is not none: a shallow clone that
+ * cannot see the base is reported and refused, never waved through.
  */
 export function repositoryBinding(candidateFile, git) {
   const candidate = candidateFile.candidate ?? {};
@@ -428,16 +537,24 @@ export function repositoryBinding(candidateFile, git) {
   const tree = candidate.FINAL_CODE_TREE ?? '';
   const wellFormed = /^[0-9a-f]{40}$/.test(sha);
 
+  const base = resolveBaseRef(git, String(candidate.baseBranch ?? ''));
+  const head = phaseHead(git, sha, base.sha);
+  const baseResolved = Boolean(base.sha);
+
   const exists = wellFormed && git(['cat-file', '-e', `${sha}^{commit}`]) !== null;
   const actualTree = exists ? (lines(git(['rev-parse', `${sha}^{tree}`]))[0] ?? null) : null;
-  const isAncestorOfHead = exists && git(['merge-base', '--is-ancestor', sha, 'HEAD']) !== null;
+  const isAncestorOfHead =
+    exists &&
+    baseResolved &&
+    Boolean(head.head) &&
+    git(['merge-base', '--is-ancestor', sha, head.head]) !== null;
 
   const productDiff = isAncestorOfHead
-    ? lines(git(['diff', '--name-only', `${sha}..HEAD`, '--', 'apps', 'supabase']))
+    ? lines(git(['diff', '--name-only', `${sha}..${head.head}`, '--', 'apps', 'supabase']))
     : [];
 
   const commits = isAncestorOfHead
-    ? lines(git(['log', '--format=%H %s', `${sha}..HEAD`])).map((line) => {
+    ? lines(git(['log', '--format=%H %s', head.head, '--not', sha, base.sha])).map((line) => {
         const at = line.indexOf(' ');
         const id = at === -1 ? line : line.slice(0, at);
         const touched = git(['diff', '--name-only', `${id}^`, id]);
@@ -462,6 +579,16 @@ export function repositoryBinding(candidateFile, git) {
     exists,
     actualTree,
     treeMatches: Boolean(actualTree) && actualTree === tree,
+    baseBranch: base.branch,
+    baseRef: base.ref,
+    baseSha: base.sha,
+    baseAttempted: base.attempted,
+    baseResolved,
+    phaseHead: head.head,
+    checkoutHead: head.checkout,
+    unwrappedMergeRef: head.mergeRef,
+    mergeRefBaseSide: head.baseSide,
+    evilMergePaths: head.evilMergePaths,
     isAncestorOfHead,
     productDiff,
     commits,
@@ -549,6 +676,20 @@ export const ALL_PROVENANCES = Object.freeze([
 export const isProductPath = (path) => path.startsWith('apps/') || path.startsWith('supabase/');
 
 /**
+ * The declaration a hosted binding makes when its run was taken AFTER the
+ * candidate, at a head whose product is provably the same.
+ *
+ * A marker rather than an inference, for the reason every other rule here is
+ * written down: without it a `headSha` that is not the candidate is silent about
+ * WHY, and a reader would have to run `git diff` to learn whether they are
+ * looking at a forward citation, a stale one, or a typo. With it the package
+ * states which of the two escapes it is taking, and the gate computes whether
+ * the repository bears it out. A binding that declares nothing is refused
+ * exactly as before.
+ */
+export const SUCCESSOR_MARKER = 'describesProductIdenticalSuccessor';
+
+/**
  * Every block in the package that names the head it describes.
  *
  * Derived by looking for a `headSha` key rather than from a list of block names,
@@ -573,29 +714,134 @@ export function hostedBindingSites(candidateFile) {
 }
 
 /**
- * Which hosted bindings describe a head this candidate supersedes, and whether
- * the package says so.
+ * Which hosted bindings describe a head this candidate supersedes, which are
+ * BOUND to it, and whether the package says so.
  *
  * COMPUTED in both directions. `superseded` is derived from the documents' own
  * `headSha` fields; `pendingHostedBindings.bindings` is what the package
  * declares; a difference either way is refused. A binding that quietly describes
  * another head is the defect; a declaration naming a binding that is in fact
  * bound is the inverse and reads as an unpaid debt that has been paid.
+ *
+ * A head that is not the candidate is one of exactly two things, and the package
+ * must say which:
+ *
+ *   BEHIND it — `describesSupersededHead`. The run predates this code, so it
+ *   describes a head the candidate supersedes and the binding is PENDING. The
+ *   head must be a commit this repository contains and an ANCESTOR of the
+ *   candidate, and it must name what replaces it.
+ *
+ *   AHEAD of it — `describesProductIdenticalSuccessor`. The run was taken after
+ *   the candidate at a head that CONTAINS it and whose `apps/**` and
+ *   `supabase/**` this repository computes to be byte-identical to it. The
+ *   binding is BOUND: it describes this product, at a commit the reader is told.
+ *
+ * Nothing else passes. An undeclared head, a head this repository does not
+ * contain, a head that is neither ancestor nor descendant, and a descendant
+ * whose product differs are all refused — which is what makes the second escape
+ * an escape from the CIRCULARITY (the seal cannot live inside the commit it
+ * seals) rather than an escape from the evidence.
  */
 export function pendingBinding(candidateFile, git) {
   const candidateSha = candidateFile.candidate?.FINAL_CODE_SHA ?? '';
   const problems = [];
   const superseded = [];
+  const bound = [];
+  const boundAtSuccessor = [];
 
   for (const { name, record } of hostedBindingSites(candidateFile)) {
     const head = String(record.headSha ?? '');
     const marked = record.describesSupersededHead === true;
+    const forward = record[SUCCESSOR_MARKER] === true;
     if (head === candidateSha && candidateSha !== '') {
       if (marked) {
         problems.push(
           `${name}: is marked describesSupersededHead while the head it names IS the candidate, so the marker excuses nothing`
         );
+        continue;
       }
+      if (forward) {
+        problems.push(
+          `${name}: is marked ${SUCCESSOR_MARKER} while the head it names IS the candidate, so there is no successor to declare`
+        );
+        continue;
+      }
+      bound.push(name);
+      continue;
+    }
+    if (marked && forward) {
+      problems.push(
+        `${name}: declares both describesSupersededHead and ${SUCCESSOR_MARKER}; one head cannot both precede and follow the candidate`
+      );
+      continue;
+    }
+    if (forward) {
+      /*
+       * THE FORWARD CITATION, and why it is not a relaxation.
+       *
+       * The seal's own machinery cannot be inside the candidate it seals, so it
+       * lands after it and the hosted run is taken at a later head. Under the
+       * rule that a hosted binding must name the candidate EXACTLY, every such
+       * run would force another re-freeze, whose seal commit would move the head
+       * again — an unbounded loop, and one this package walked into.
+       *
+       * The local half already solved this: a tier may be measured at a named
+       * executable successor while `git diff` COMPUTES that no product path
+       * differs. The claim is about the PRODUCT, and the product is provably the
+       * same. The hosted half is allowed the same escape on the same evidence
+       * and at the same rigour — every one of these is computed, none asserted:
+       *
+       *   the run head is a commit THIS repository contains;
+       *   it DESCENDS from the candidate, so it cannot be a run that predates
+       *   the code it is offered as evidence for (an ancestor stays exactly
+       *   where it was: the `describesSupersededHead` path, which is unchanged);
+       *   `git diff --name-only <candidate>..<runHead> -- apps supabase` is
+       *   EMPTY, and a diff git refuses to take is UNKNOWN, never empty; and
+       *   the binding names that head in `headSha`, so a reader sees which
+       *   commit was exercised rather than being told "the candidate" over a run
+       *   that touched a different commit.
+       */
+      if (!/^[0-9a-f]{40}$/.test(head)) {
+        problems.push(`${name}: declares a successor run head \`${head}\` that is not a commit id`);
+        continue;
+      }
+      if (git(['cat-file', '-e', `${head}^{commit}`]) === null) {
+        problems.push(
+          `${name}: cites a run at ${head}, which names no commit in this repository — a head nobody can fetch is not a citation`
+        );
+        continue;
+      }
+      if (git(['merge-base', '--is-ancestor', candidateSha, head]) === null) {
+        problems.push(
+          `${name}: cites a run at ${head.slice(0, 8)}, which does not descend from the candidate ${candidateSha.slice(0, 8)}. A run that does not contain this code cannot describe it; a run at a head the candidate SUPERSEDES must say \`describesSupersededHead\` instead.`
+        );
+        continue;
+      }
+      const diff = git([
+        'diff',
+        '--name-only',
+        `${candidateSha}..${head}`,
+        '--',
+        'apps',
+        'supabase',
+      ]);
+      if (diff === null) {
+        problems.push(
+          `${name}: \`git diff --name-only ${candidateSha.slice(0, 8)}..${head.slice(0, 8)} -- apps supabase\` could not be taken, so product identity is UNKNOWN — and unknown is not identical`
+        );
+        continue;
+      }
+      const productDrift = lines(diff);
+      if (productDrift.length > 0) {
+        problems.push(
+          `${name}: cites a run at ${head.slice(0, 8)}, where ${productDrift.length} PRODUCT path(s) differ from the candidate — ${productDrift.slice(0, 5).join(', ')}. That run measured different software.`
+        );
+        continue;
+      }
+      bound.push(name);
+      boundAtSuccessor.push(
+        `${name} — run head ${head.slice(0, 8)}, product-identical to the candidate`
+      );
       continue;
     }
     superseded.push(name);
@@ -643,7 +889,13 @@ export function pendingBinding(candidateFile, git) {
     problems.push('pendingHostedBindings names no observation that is awaited');
   }
 
-  return { problems, superseded: computed, declared: declared ?? [] };
+  return {
+    problems,
+    superseded: computed,
+    declared: declared ?? [],
+    bound: [...bound].sort(),
+    boundAtSuccessor: [...boundAtSuccessor].sort(),
+  };
 }
 
 /** `planned` for a browser tier, `tests` for a collected one. */
@@ -677,6 +929,11 @@ const declaredTotal = (tier) => (typeof tier.planned === 'number' ? tier.planned
 export function tierBinding(candidateFile, git) {
   const candidateSha = candidateFile.candidate?.FINAL_CODE_SHA ?? '';
   const tiers = candidateFile.tiers ?? {};
+  // Computed first, because whether a tier's hosted half is BOUND is a question
+  // about the repository — containment, descent and product identity — and this
+  // is the one place that asks it.
+  const pendingAnalysis = pendingBinding(candidateFile, git);
+  const boundSites = new Set(pendingAnalysis.bound);
   const arithmetic = [];
   const localProblems = [];
   const hostedProblems = [];
@@ -726,9 +983,18 @@ export function tierBinding(candidateFile, git) {
         `provenance \`${tier.provenance}\` claims a hosted observation OF THE CANDIDATE while its attestation describes a head the candidate supersedes`
       );
     } else if (attestation.headSha !== candidateSha) {
-      missing.push(
-        `hostedAttestation.headSha \`${attestation.headSha}\` is not the candidate ${candidateSha}`
-      );
+      // A run taken at a product-identical DESCENDANT is a run at this code, and
+      // it must say so. `pendingBinding` owns whether the repository bears the
+      // declaration out; this owns the undeclared case, exactly as before.
+      if (attestation[SUCCESSOR_MARKER] !== true) {
+        missing.push(
+          `hostedAttestation.headSha \`${attestation.headSha}\` is not the candidate ${candidateSha}`
+        );
+      } else if (!boundSites.has(`tiers.${name}.hostedAttestation`)) {
+        missing.push(
+          `hostedAttestation declares a product-identical successor run head \`${attestation.headSha}\` that the repository does not bear out`
+        );
+      }
     }
     if (!String(attestation.artefact ?? '').trim())
       missing.push('hostedAttestation names no artefact');
@@ -737,7 +1003,13 @@ export function tierBinding(candidateFile, git) {
       pending.push(
         `${name} — awaiting a run at the candidate; cites superseded run ${attestation.runId}, job ${attestation.jobId} at ${String(attestation.headSha).slice(0, 8)}`
       );
-    } else attested.push(`${name} — run ${attestation.runId}, job ${attestation.jobId}`);
+    } else
+      attested.push(
+        `${name} — run ${attestation.runId}, job ${attestation.jobId}` +
+          (attestation.headSha === candidateSha
+            ? ''
+            : ` at the product-identical successor ${String(attestation.headSha).slice(0, 8)}`)
+      );
 
     if (!LOCAL_PROVENANCES.includes(tier.provenance)) continue;
 
@@ -857,7 +1129,6 @@ export function tierBinding(candidateFile, git) {
     }
   }
 
-  const pendingAnalysis = pendingBinding(candidateFile, git);
   hostedProblems.push(...pendingAnalysis.problems);
 
   return {
@@ -868,6 +1139,8 @@ export function tierBinding(candidateFile, git) {
     attested,
     pending,
     supersededBindings: pendingAnalysis.superseded,
+    boundBindings: pendingAnalysis.bound,
+    boundAtSuccessor: pendingAnalysis.boundAtSuccessor,
   };
 }
 
@@ -886,9 +1159,9 @@ export function packageArithmetic(candidateFile) {
 
   const ci = candidateFile.hostedCi ?? {};
   const checks = Array.isArray(ci.checks) ? ci.checks : [];
-  if (ci.headSha !== sha && ci.describesSupersededHead !== true) {
+  if (ci.headSha !== sha && ci.describesSupersededHead !== true && ci[SUCCESSOR_MARKER] !== true) {
     problems.push(
-      `hostedCi.headSha \`${ci.headSha}\` is not the candidate ${sha}, and it does not declare \`describesSupersededHead\``
+      `hostedCi.headSha \`${ci.headSha}\` is not the candidate ${sha}, and it declares neither \`describesSupersededHead\` nor \`${SUCCESSOR_MARKER}\``
     );
   }
   if (ci.checksTotal !== checks.length) {
@@ -906,9 +1179,13 @@ export function packageArithmetic(candidateFile) {
 
   const browser = candidateFile.browserByProject ?? {};
   const projects = Object.entries(browser.projects ?? {});
-  if (browser.headSha !== sha && browser.describesSupersededHead !== true) {
+  if (
+    browser.headSha !== sha &&
+    browser.describesSupersededHead !== true &&
+    browser[SUCCESSOR_MARKER] !== true
+  ) {
     problems.push(
-      `browserByProject.headSha \`${browser.headSha}\` is not the candidate ${sha}, and it does not declare \`describesSupersededHead\``
+      `browserByProject.headSha \`${browser.headSha}\` is not the candidate ${sha}, and it declares neither \`describesSupersededHead\` nor \`${SUCCESSOR_MARKER}\``
     );
   }
   const planned = projects.reduce((sum, [, p]) => sum + (p?.planned ?? 0), 0);
@@ -957,16 +1234,33 @@ export function tabletProjectSpecs(source) {
  * Split into a pure half and a reading half so `selfCheck` can drive the pure
  * half over a synthetic `playwright.config.ts` — including a NARROWED one, where
  * the tablet sentence becomes true again and must be accepted.
+ *
+ * @param {Record<string, any>} candidateFile
+ * @param {{ names: string[] } | null} tablet
+ * @param {Set<string> | null} [boundSites] which named blocks are bound to this
+ *   candidate's product, as `pendingBinding` COMPUTES it. Omitted means "not
+ *   computed", and falls back to the stricter `headSha === candidate`.
  */
-export function worldFrom(candidateFile, tablet) {
+export function worldFrom(candidateFile, tablet, boundSites = null) {
   const sha = candidateFile.candidate?.FINAL_CODE_SHA ?? '';
   const ci = candidateFile.hostedCi ?? {};
   const browser = candidateFile.browserByProject ?? {};
 
   const tierRows = Object.values(candidateFile.tiers ?? {});
 
+  /*
+   * Whether a block is bound to THIS CODE, which is not the same question as
+   * whether it names this COMMIT. `pendingBinding` computes it — a head that is
+   * the candidate, or a product-identical descendant the repository bears out —
+   * and passes the answer in. With no answer available the question falls back
+   * to the stricter of the two, `headSha === candidate`, so a caller that
+   * cannot compute the world never gets the more generous reading by default.
+   */
+  const isBound = (block, name) =>
+    boundSites === null ? block.headSha === sha : boundSites.has(name);
+
   return {
-    hostedCiRecorded: ci.headSha === sha && Number(ci.checksTotal) > 0,
+    hostedCiRecorded: isBound(ci, 'hostedCi') && Number(ci.checksTotal) > 0,
     /*
      * How many tiers the package itself says were NOT measured at this candidate
      * at all. `LOCAL_COMPUTED_HOSTED_PENDING` is deliberately NOT counted: that
@@ -980,21 +1274,22 @@ export function worldFrom(candidateFile, tablet) {
     tabletMatchesOnlyAdministration: tablet !== null && tablet.names.join('|') === 'administration',
     tabletNames: tablet?.names ?? [],
     tabletObservedThisPhase:
-      browser.headSha === sha &&
+      isBound(browser, 'browserByProject') &&
       Number(browser.projects?.['authenticated-tablet']?.passed ?? 0) > 0 &&
       String(browser.spec ?? '') === PHASE_SPEC,
     phaseSpecObservedHosted:
-      browser.headSha === sha &&
+      isBound(browser, 'browserByProject') &&
       Number(browser.total ?? 0) > 0 &&
       String(browser.spec ?? '') === PHASE_SPEC,
   };
 }
 
-export function claimWorld(root, candidateFile) {
+export function claimWorld(root, candidateFile, git = gitReader(root)) {
   const configPath = join(root, PLAYWRIGHT_CONFIG.split(posix.sep).join(sep));
   return worldFrom(
     candidateFile,
-    existsSync(configPath) ? tabletProjectSpecs(readFileSync(configPath, 'utf8')) : null
+    existsSync(configPath) ? tabletProjectSpecs(readFileSync(configPath, 'utf8')) : null,
+    new Set(pendingBinding(candidateFile, git).bound)
   );
 }
 
@@ -1071,16 +1366,16 @@ export const ANCHORED_CLAIMS = Object.freeze([
     pattern: /OBSERVED AT THIS CANDIDATE/i,
     refutedWhen: (world) => !world.hostedCiRecorded,
     says: (_world, candidateFile) =>
-      `the package records no hosted CI at the candidate ${String(candidateFile.candidate?.FINAL_CODE_SHA ?? '').slice(0, 8)} — ` +
-      `hostedCi describes ${String(candidateFile.hostedCi?.headSha ?? 'no head').slice(0, 8)}, a head this candidate supersedes`,
+      `the package records no hosted CI bound to the candidate ${String(candidateFile.candidate?.FINAL_CODE_SHA ?? '').slice(0, 8)} — ` +
+      `hostedCi describes ${String(candidateFile.hostedCi?.headSha ?? 'no head').slice(0, 8)}, which is neither the candidate nor a successor whose product this repository computes to be identical to it`,
   },
   {
     id: 'browser-tier-bound-at-candidate',
     pattern: /browser tier IS observed and bound/i,
     refutedWhen: (world) => !world.phaseSpecObservedHosted,
     says: (_world, candidateFile) =>
-      `browserByProject describes ${String(candidateFile.browserByProject?.headSha ?? 'no head').slice(0, 8)}, not the candidate ` +
-      `${String(candidateFile.candidate?.FINAL_CODE_SHA ?? '').slice(0, 8)}, so no browser result is bound to this head`,
+      `browserByProject describes ${String(candidateFile.browserByProject?.headSha ?? 'no head').slice(0, 8)}, which this package does not bind to the candidate ` +
+      `${String(candidateFile.candidate?.FINAL_CODE_SHA ?? '').slice(0, 8)}, so no browser result is bound to this code`,
   },
   {
     id: 'every-tier-re-run-here',
@@ -1515,17 +1810,38 @@ export function reportRepository(binding, write = toStderr) {
       `::error::${CANDIDATE_PATH} records FINAL_CODE_TREE ${binding.tree}; \`git rev-parse ${binding.sha.slice(0, 8)}^{tree}\` is ${binding.actualTree}. The package names a tree that commit does not have.\n`
     );
   }
+  /*
+   * The successor set is "what this branch added after the candidate", and it
+   * cannot be computed without the base branch. A checkout that cannot see the
+   * base is refused rather than credited: "I could not tell" is not "there are
+   * none", and the whole reason this rule exists is that a merge-ref checkout
+   * made the BASE's commits look like this phase's.
+   */
+  if (!binding.baseResolved) {
+    sound = false;
+    write(
+      `::error::the base branch \`${binding.baseBranch || '(unnamed)'}\` could not be resolved in this checkout, so the successor set is UNKNOWN and this gate fails closed. Tried ${(binding.baseAttempted ?? []).join(', ') || 'nothing — the package names no baseBranch'}. A shallow clone cannot see the base; fetch it (\`fetch-depth: 0\`) or record the base this candidate sits on.\n`
+    );
+    return sound;
+  }
+  if (binding.evilMergePaths.length > 0) {
+    // Not a failure by itself — the merge is judged as an ordinary commit
+    // below — but a reader must be told the unwrap was declined and why.
+    write(
+      `::notice::HEAD is a merge with ${binding.evilMergePaths.length} path(s) of its own, so it is NOT treated as a merge-ref preview of this branch: ${binding.evilMergePaths.slice(0, 5).join(', ')}\n`
+    );
+  }
   if (!binding.isAncestorOfHead) {
     sound = false;
     write(
-      `::error::the candidate ${binding.sha.slice(0, 8)} is not an ancestor of HEAD. A frozen candidate the current branch does not contain describes a tree nobody is looking at.\n`
+      `::error::the candidate ${binding.sha.slice(0, 8)} is not an ancestor of ${String(binding.phaseHead ?? 'the head under test').slice(0, 8)}. A frozen candidate the current branch does not contain describes a tree nobody is looking at.\n`
     );
     return sound;
   }
   if (binding.productDiff.length > 0) {
     sound = false;
     write(
-      `::error::${binding.productDiff.length} product file(s) differ between the candidate and HEAD. Every figure in this package describes the candidate, so the candidate must be re-frozen and re-measured. This is COMPUTED from \`git diff --name-only ${binding.sha.slice(0, 8)}..HEAD -- apps supabase\`; the package used to assert it in a sentence.\n`
+      `::error::${binding.productDiff.length} product file(s) differ between the candidate and ${String(binding.phaseHead).slice(0, 8)}. Every figure in this package describes the candidate, so the candidate must be re-frozen and re-measured. This is COMPUTED from \`git diff --name-only ${binding.sha.slice(0, 8)}..${String(binding.phaseHead).slice(0, 8)} -- apps supabase\`; the package used to assert it in a sentence.\n`
     );
     for (const path of binding.productDiff.slice(0, 20)) write(`  product file changed: ${path}\n`);
   }
@@ -1537,7 +1853,7 @@ export function reportRepository(binding, write = toStderr) {
   if (binding.fabricatedSuccessors.length > 0) {
     sound = false;
     write(
-      `::error::${CANDIDATE_PATH} records successors that are not in \`git log ${binding.sha.slice(0, 8)}..HEAD\`.\n`
+      `::error::${CANDIDATE_PATH} records successors that are not in \`git log ${String(binding.phaseHead).slice(0, 8)} --not ${binding.sha.slice(0, 8)} ${String(binding.baseSha).slice(0, 8)}\`.\n`
     );
     for (const id of binding.fabricatedSuccessors)
       write(`  not a successor of the candidate: ${id}\n`);
@@ -1576,7 +1892,7 @@ export function reportTiers(binding, arithmetic, write = toStderr) {
   if (binding.hostedProblems.length > 0) {
     sound = false;
     write(
-      '::error::a HOSTED figure cannot be computed from this repository, so the gate requires it to be FETCHABLE instead: a run id, a job id, the head the job ran at, and the artefact. Without those it is an assertion, not an attestation. And a figure taken at a head this candidate SUPERSEDES may be cited only while it says so, names a head this repository contains, and is listed in `pendingHostedBindings`.\n'
+      '::error::a HOSTED figure cannot be computed from this repository, so the gate requires it to be FETCHABLE instead: a run id, a job id, the head the job ran at, and the artefact. Without those it is an assertion, not an attestation. A figure taken at a head this candidate SUPERSEDES may be cited only while it says so, names a head this repository contains, and is listed in `pendingHostedBindings`; a figure taken at a head that DESCENDS from the candidate may be cited only while it says so and `git diff -- apps supabase` computes that head to be product-identical to the candidate.\n'
     );
     for (const problem of binding.hostedProblems) write(`  ${problem}\n`);
   }
@@ -1702,6 +2018,14 @@ const W = Object.freeze({
   supersededHead: '7'.repeat(40),
   /** A ledger commit whose entry was measured at the machinery successor. */
   driftLedgerCommit: '8'.repeat(40),
+  /** This branch's own tip — the head under test when the checkout is honest. */
+  branchHead: '2'.repeat(40),
+  /** The base branch's tip, which the candidate does not contain. */
+  baseTip: '3'.repeat(40),
+  /** A pull request's merge ref: this branch merged with the base, synthetically. */
+  mergeRef: '4'.repeat(40),
+  /** A hosted run taken at a DESCENDANT of the candidate, product-identical. */
+  runHead: '6'.repeat(40),
 });
 
 const ledgerAt = (head) =>
@@ -1717,9 +2041,12 @@ const SYNTHETIC_DRIFT_LEDGER = ledgerAt(W.executableSuccessor);
 const SYNTHETIC_GIT_TABLE = Object.freeze({
   [`cat-file -e ${W.candidate}^{commit}`]: '',
   [`rev-parse ${W.candidate}^{tree}`]: `${W.tree}\n`,
-  [`merge-base --is-ancestor ${W.candidate} HEAD`]: '',
-  [`diff --name-only ${W.candidate}..HEAD -- apps supabase`]: '',
-  [`log --format=%H %s ${W.candidate}..HEAD`]: `${W.documentationSuccessor} docs: re-record the ledger\n${W.executableSuccessor} feat: the packaging machinery\n`,
+  /* The base branch, and an ordinary single-parent checkout of this branch. */
+  [`rev-parse --verify --quiet refs/remotes/origin/develop^{commit}`]: `${W.baseTip}\n`,
+  [`rev-list --parents -n 1 HEAD`]: `${W.branchHead} ${W.documentationSuccessor}\n`,
+  [`merge-base --is-ancestor ${W.candidate} ${W.branchHead}`]: '',
+  [`diff --name-only ${W.candidate}..${W.branchHead} -- apps supabase`]: '',
+  [`log --format=%H %s ${W.branchHead} --not ${W.candidate} ${W.baseTip}`]: `${W.documentationSuccessor} docs: re-record the ledger\n${W.executableSuccessor} feat: the packaging machinery\n`,
   [`diff --name-only ${W.executableSuccessor}^ ${W.executableSuccessor}`]:
     'scripts/ci/build-p1-28-evidence-manifest.mjs\n',
   [`diff --name-only ${W.documentationSuccessor}^ ${W.documentationSuccessor}`]:
@@ -1735,6 +2062,30 @@ const SYNTHETIC_GIT_TABLE = Object.freeze({
   [`cat-file -e ${W.supersededHead}^{commit}`]: '',
   [`merge-base --is-ancestor ${W.supersededHead} ${W.candidate}`]: '',
   [`cat-file -e ${W.stranger}^{commit}`]: '',
+  /*
+   * A hosted run taken AFTER the candidate: the commit exists, it descends from
+   * the candidate, and no product path differs. `''` and not `undefined`, because
+   * an empty diff and a diff git refused to take are different answers and the
+   * rule must be able to tell them apart.
+   */
+  [`cat-file -e ${W.runHead}^{commit}`]: '',
+  [`merge-base --is-ancestor ${W.candidate} ${W.runHead}`]: '',
+  [`diff --name-only ${W.candidate}..${W.runHead} -- apps supabase`]: '',
+});
+
+/**
+ * The same repository, checked out at the pull request's MERGE REF.
+ *
+ * HEAD is a two-parent commit: the base tip, which this branch does not contain,
+ * and this branch's own head. Nothing else is keyed at the merge ref, so a rule
+ * that failed to unwrap it would be asking `git` about a commit the table does
+ * not answer for — and would go red rather than quietly right.
+ */
+const MERGE_REF_GIT = Object.freeze({
+  [`rev-list --parents -n 1 HEAD`]: `${W.mergeRef} ${W.baseTip} ${W.branchHead}\n`,
+  [`merge-base --is-ancestor ${W.baseTip} ${W.baseTip}`]: '',
+  [`merge-base --is-ancestor ${W.branchHead} ${W.baseTip}`]: undefined,
+  [`diff-tree --cc --name-only --no-commit-id ${W.mergeRef}`]: '',
 });
 
 const syntheticGit = (over = {}) => {
@@ -1745,7 +2096,7 @@ const syntheticGit = (over = {}) => {
 
 /** A candidate document the synthetic repository supports in every particular. */
 const syntheticCandidate = (over = {}) => ({
-  candidate: { FINAL_CODE_SHA: W.candidate, FINAL_CODE_TREE: W.tree },
+  candidate: { FINAL_CODE_SHA: W.candidate, FINAL_CODE_TREE: W.tree, baseBranch: 'develop' },
   successors: [{ commit: W.executableSuccessor, kind: 'evidence machinery' }],
   tiers: {
     unit: {
@@ -1817,6 +2168,31 @@ const driftCandidate = (over = {}) => {
 };
 
 /**
+ * A candidate whose hosted observations were all taken at a DESCENDANT head.
+ *
+ * The state this rule exists for: the seal's machinery lands after the candidate
+ * it seals, so the branch head is not the candidate and the hosted run is taken
+ * there. Every binding names that head and declares what it is; nothing here is
+ * marked pending, because a run at a product-identical descendant IS a run at
+ * this code.
+ */
+const successorRunCandidate = (over = {}) => {
+  const doc = syntheticCandidate();
+  const forward = { headSha: W.runHead, [SUCCESSOR_MARKER]: true };
+  doc.tiers.unit = {
+    ...doc.tiers.unit,
+    hostedAttestation: { ...doc.tiers.unit.hostedAttestation, ...forward },
+  };
+  doc.tiers.browser = {
+    ...doc.tiers.browser,
+    hostedAttestation: { ...doc.tiers.browser.hostedAttestation, ...forward },
+  };
+  doc.hostedCi = { ...doc.hostedCi, ...forward };
+  doc.browserByProject = { ...doc.browserByProject, ...forward };
+  return { ...doc, ...over };
+};
+
+/**
  * A candidate whose hosted observations all describe a head it supersedes.
  *
  * The state a re-freeze produces: three fix waves change product files, the
@@ -1881,7 +2257,13 @@ function worldInputs({
   config = WIDE_CONFIG,
   baseline = '',
 } = {}) {
-  const world = worldFrom(candidateFile, tabletProjectSpecs(config));
+  // The claim world reads the SAME computed binding set the tier rule does, so a
+  // record may say a tier is observed here exactly when the repository agrees.
+  const world = worldFrom(
+    candidateFile,
+    tabletProjectSpecs(config),
+    new Set(pendingBinding(candidateFile, git).bound)
+  );
   return {
     manifest: SOUND_MANIFEST,
     digestMismatches: [],
@@ -2083,9 +2465,9 @@ export const WORLD_CHECK_CASES = [
     explains: true,
   },
   {
-    name: 'a candidate that is not an ancestor of HEAD',
+    name: 'a candidate that is not an ancestor of the head under test',
     inputs: worldInputs({
-      git: syntheticGit({ [`merge-base --is-ancestor ${W.candidate} HEAD`]: undefined }),
+      git: syntheticGit({ [`merge-base --is-ancestor ${W.candidate} ${W.branchHead}`]: undefined }),
     }),
     expects: { repositoryOk: false, sound: false },
     explains: true,
@@ -2094,7 +2476,7 @@ export const WORLD_CHECK_CASES = [
     name: 'a successor that changed a product file',
     inputs: worldInputs({
       git: syntheticGit({
-        [`diff --name-only ${W.candidate}..HEAD -- apps supabase`]:
+        [`diff --name-only ${W.candidate}..${W.branchHead} -- apps supabase`]:
           'apps/web/src/features/receptions/api.ts\n',
       }),
     }),
@@ -2424,6 +2806,126 @@ export const WORLD_CHECK_CASES = [
     explains: true,
   },
 
+  /* ---- the hosted half, when the run was taken at a LATER head ---- *
+   *
+   * The circularity these four close: the seal's own machinery cannot be inside
+   * the candidate it seals, so hosted CI necessarily runs at a successor. Under
+   * a rule that demanded the candidate exactly, every hosted run would force
+   * another re-freeze whose seal commit moved the head again, for ever. The
+   * escape is the local rule's, on the local rule's evidence — the product is
+   * computed identical — and it is closed in all three directions below.
+   */
+  {
+    name: 'a hosted run taken at a DESCENDANT head whose product is identical — allowed',
+    inputs: worldInputs({ candidateFile: successorRunCandidate() }),
+    expects: { tiersOk: true, claimsOk: true },
+    explains: false,
+  },
+  {
+    name: 'the same descendant head, with one PRODUCT file changed since the candidate',
+    inputs: worldInputs({
+      candidateFile: successorRunCandidate(),
+      git: syntheticGit({
+        [`diff --name-only ${W.candidate}..${W.runHead} -- apps supabase`]:
+          'apps/web/src/features/receptions/api.ts\n',
+      }),
+    }),
+    expects: { tiersOk: false, sound: false },
+    explains: true,
+  },
+  {
+    name: 'a run head this repository does not contain',
+    inputs: worldInputs({
+      candidateFile: successorRunCandidate(),
+      git: syntheticGit({ [`cat-file -e ${W.runHead}^{commit}`]: undefined }),
+    }),
+    expects: { tiersOk: false, sound: false },
+    explains: true,
+  },
+  {
+    name: 'a run head that is an ANCESTOR of the candidate, cited as though it followed it',
+    inputs: worldInputs({
+      candidateFile: successorRunCandidate(),
+      git: syntheticGit({
+        [`merge-base --is-ancestor ${W.candidate} ${W.runHead}`]: undefined,
+        [`merge-base --is-ancestor ${W.runHead} ${W.candidate}`]: '',
+      }),
+    }),
+    expects: { tiersOk: false, sound: false },
+    explains: true,
+  },
+  {
+    name: 'a product diff between candidate and run head that git refuses to take',
+    inputs: worldInputs({
+      candidateFile: successorRunCandidate(),
+      git: syntheticGit({
+        [`diff --name-only ${W.candidate}..${W.runHead} -- apps supabase`]: undefined,
+      }),
+    }),
+    expects: { tiersOk: false, sound: false },
+    explains: true,
+  },
+  {
+    name: 'a binding declaring both that its head precedes and that it follows the candidate',
+    inputs: (() => {
+      const doc = successorRunCandidate();
+      doc.hostedCi = { ...doc.hostedCi, describesSupersededHead: true };
+      return worldInputs({ candidateFile: doc });
+    })(),
+    expects: { tiersOk: false, sound: false },
+    explains: true,
+  },
+  {
+    name: 'a binding marked a successor while the head it names IS the candidate',
+    inputs: (() => {
+      const doc = syntheticCandidate();
+      doc.hostedCi = { ...doc.hostedCi, [SUCCESSOR_MARKER]: true };
+      return worldInputs({ candidateFile: doc });
+    })(),
+    expects: { tiersOk: false, sound: false },
+    explains: true,
+  },
+
+  /* ---- whose commits these are: the base branch, and the merge ref ---- */
+  {
+    name: 'a checkout that is the pull request MERGE REF — judged as this branch, not as the merge',
+    inputs: worldInputs({ git: syntheticGit(MERGE_REF_GIT) }),
+    expects: { repositoryOk: true },
+    explains: false,
+  },
+  {
+    name: 'a merge-ref checkout carrying content of its own — not unwrapped, and said so',
+    inputs: worldInputs({
+      git: syntheticGit({
+        ...MERGE_REF_GIT,
+        [`diff-tree --cc --name-only --no-commit-id ${W.mergeRef}`]:
+          'apps/web/src/features/receptions/api.ts\n',
+      }),
+    }),
+    expects: { repositoryOk: false, sound: false },
+    explains: true,
+  },
+  {
+    name: 'a base branch this checkout cannot resolve — unknown is not none',
+    inputs: worldInputs({
+      git: syntheticGit({
+        [`rev-parse --verify --quiet refs/remotes/origin/develop^{commit}`]: undefined,
+      }),
+    }),
+    expects: { repositoryOk: false, sound: false },
+    explains: true,
+  },
+  {
+    name: 'a package that names no base branch at all',
+    inputs: worldInputs({
+      candidateFile: syntheticCandidate({
+        candidate: { FINAL_CODE_SHA: W.candidate, FINAL_CODE_TREE: W.tree },
+      }),
+    }),
+    expects: { repositoryOk: false, sound: false },
+    explains: true,
+  },
+
   /* ---- the anchored claims, pointed the other way ---- */
   {
     name: 'a verdict cell saying hosted CI is OBSERVED AT THIS CANDIDATE while none is recorded',
@@ -2523,7 +3025,7 @@ function main(argv) {
     manifest = buildManifest(ROOT);
     const git = gitReader(ROOT);
     const candidateFile = readJson(ROOT, CANDIDATE_PATH);
-    const world = claimWorld(ROOT, candidateFile);
+    const world = claimWorld(ROOT, candidateFile, git);
     repository = repositoryBinding(candidateFile, git);
     tiers = tierBinding(candidateFile, git);
     sound = judge({
@@ -2575,9 +3077,22 @@ function main(argv) {
       // does not name its evidence is the thing being corrected here.
       process.stdout.write(
         `  repository-verified: the candidate exists, its tree is ${repository.actualTree?.slice(0, 8)}, ` +
-          `it is an ancestor of HEAD, apps/** and supabase/** are byte-identical to HEAD, and ` +
+          `it is an ancestor of ${String(repository.phaseHead).slice(0, 8)}, apps/** and supabase/** are byte-identical to it, and ` +
           `${repository.recorded.length} executable successor(s) are named\n`
       );
+      process.stdout.write(
+        `  successor set computed as \`git log ${String(repository.phaseHead).slice(0, 8)} --not ${repository.sha.slice(0, 8)} ${String(repository.baseSha).slice(0, 8)}\` — ` +
+          `base ${repository.baseBranch} resolved at ${repository.baseRef}\n`
+      );
+      if (repository.unwrappedMergeRef) {
+        // Said out loud, because the head being judged is then not the commit
+        // that is checked out, and a reader must not have to infer that.
+        process.stdout.write(
+          `  the checkout ${String(repository.checkoutHead).slice(0, 8)} is a merge of this branch with its base ` +
+            `${String(repository.mergeRefBaseSide).slice(0, 8)} and carries no content of its own, so the head under test is ` +
+            `this branch's own ${String(repository.phaseHead).slice(0, 8)}\n`
+        );
+      }
       if (repository.unrecordedDocumentation.length > 0) {
         process.stdout.write(
           `  documentation-only successors, unnamed because a commit cannot name itself: ` +
@@ -2598,6 +3113,10 @@ function main(argv) {
       process.stdout.write(
         `  hosted bindings that describe a SUPERSEDED head, declared and computed: ` +
           `${tiers.supersededBindings.join(', ') || 'none'}\n`
+      );
+      process.stdout.write(
+        `  hosted bindings taken at a DESCENDANT head, computed product-identical to the candidate: ` +
+          `${tiers.boundAtSuccessor.join('; ') || 'none'}\n`
       );
     }
     return 0;
