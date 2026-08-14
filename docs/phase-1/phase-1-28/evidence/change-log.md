@@ -200,8 +200,8 @@ classification cannot be entered without a reviewer seeing the number move.
   finding-fix waves changed 37 files under `apps/**` after `38afa5c2` was frozen;
   the gate COMPUTED the product diff, found it non-empty and refused the package.
   The candidate is now `6392ccb4321b004ed12e5d04ad583298da3303dd`. The two local
-  tiers were re-measured against it — root unit 2555 and web 2726, 0 failures,
-  5281 cases — and the three hosted-only tiers could not be, because a hosted run
+  tiers were re-measured against it — root unit 2559 and web 2726, 0 failures,
+  5285 cases — and the three hosted-only tiers could not be, because a hosted run
   is taken by CI at a head and this workstation cannot take one. Those three, and
   eight other hosted bindings, are recorded PENDING at this candidate rather than
   restated from the head they were measured at; the coordinator binds them with an
@@ -233,7 +233,7 @@ classification cannot be entered without a reviewer seeing the number move.
   package name it, with a blocker and an owner.
 
   And it is proved able to fail rather than asserted to be: eight rules fire in
-  one function, the gate drives that function over sixty-seven known-bad worlds on
+  one function, the gate drives that function over seventy-two known-bad worlds on
   every invocation before it reads the tree, and
   `tests/ci/p1-28-evidence-manifest.test.ts` shows a single edited byte in a
   packaged document turning the check red — using an oracle that never calls

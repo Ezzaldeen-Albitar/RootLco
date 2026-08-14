@@ -53,19 +53,27 @@
       "what": "Two corrections to the seal. HOSTED: a binding may cite a run taken at a head that is NOT the candidate provided it declares `describesProductIdenticalSuccessor` and the gate COMPUTES all of — that head is a commit this repository contains, it DESCENDS from the candidate, `git diff --name-only <candidate>..<runHead> -- apps supabase` is EMPTY (a diff git refuses to take is UNKNOWN, never empty), and `headSha` names that head so a reader sees which commit was exercised. An ancestor head is refused by it and stays on the `describesSupersededHead` path, and a binding may not wear both markers. SUCCESSORS: the set is what THIS BRANCH added after the freeze, computed in two independent subtractions — the base branch is resolved to a commit and excluded from the range, and a checkout that is a synthetic merge of this branch with its base is judged as the branch side of that merge, but only when the merge carries no content of its own. Both fail closed: a base this checkout cannot resolve makes the successor set UNKNOWN and is refused. It adds eleven known-bad worlds and twelve tree-level cases; it adds no file under apps/** or supabase/** and changes none.",
       "why": "TWO defects, both of which made the gate say something false about itself. (1) A hosted binding cleared only when its headSha WAS the candidate — and the seal's own machinery cannot live inside the commit it seals, so hosted CI necessarily runs at a later head. Every hosted run therefore forced another re-freeze whose seal commit moved the head again, without end. (2) `actions/checkout` defaults for a pull_request to the MERGE REF, so `git log <candidate>..HEAD` swept in the base branch's own history: hosted CI reported 0c89647de1a661105ec3a612955789989da58a0d — a develop commit authored by another session, absent from this branch — as an unnamed executable successor of this candidate, and the same ref would have made the product-identity diff report the base's changes as a broken freeze.",
       "provedByFailingFirst": "Nine mutations of the seal, applied one at a time and each observed red before being reverted: the descent check, the product-identity check, the containment check, the refused-diff check, the undeclared-head check, the base subtraction, the merge-ref unwrap, the fail-closed base, and the evil-merge guard. Every one of the fifty-six known-bad worlds and seven tree-level cases that stood before this commit still fails.",
-      "measurementHead": "This is the head both LOCAL tiers were measured at. A tier run before it would report a suite that does not include its twelve cases. The three executable paths that differ between it and the candidate are what both tiers declare as `measurementDrift`."
+      "measurementHead": "NOT the measurement head. It was, until the successor below landed."
+    },
+    {
+      "commit": "d37452ea888d4442f161295bc472df39d21ad15d",
+      "kind": "evidence machinery — the merge-ref rule made independent of the checkout, and the tests with it",
+      "what": "THE SEAL: `phaseHead` classifies a merge's parents by which one contains the CANDIDATE rather than by which one is contained in the base, so it needs no base ref to run and the base is RECOVERED from the merge ref's other parent when nothing names one; the base-ref cross-check requires only that one of the two commits contains the other, because a merge ref is computed by the forge while a remote-tracking ref is a snapshot that may sit either side of it; and a `git log` or `git diff` that REFUSED to run is captured as UNKNOWN and refused, where `lines(null)` had made a refusal read as `no successors` and `no product file differs`. THE TESTS: both suites are rebuilt against a repository each case creates and tears down — a base branch, a candidate with product content before and after it, an executable successor, a documentation successor, a clean merge ref and a merge carrying a tree neither parent has — so no case reads the ambient `HEAD` and none skips. Five known-bad worlds are added, taking the table from 67 to 72; the seal's own suite goes from 74 cases to 78.",
+      "why": "Hosted CI took three of this suite's own cases red at 10e2ce3e, and the failure output identifies the cause exactly: `unwrappedMergeRef` returned `ac60f35d…` where a case expected null, and that field is written ONLY on the success path of `phaseHead` — unreachable while `baseSha` was falsy. The base ref resolved, the unwrap fired and the subtraction happened; `ac60f35d` is the pull request's own merge ref. What failed was three tests that asked the ambient repository for `HEAD` and built their worlds around it: on a workstation that is this branch's tip, under `actions/checkout` on a pull_request it is the merge ref. A case whose verdict depends on which refs the machine carries is measuring the machine. The seal changes are the hardening the report was right to ask for, one of which — the stale-ref relation — was found by reproducing the CI condition against this repository rather than reasoned about.",
+      "provedByFailingFirst": "Thirteen mutations of the seal, applied one at a time and each observed red before being reverted: the four forward-citation checks, the undeclared-head check, the base subtraction, the merge-ref unwrap, the fail-closed base, the evil-merge guard, the base recovery, the UNKNOWN range, the UNKNOWN product diff, and the one-directional cross-check. Every one of the 67 known-bad worlds that stood before this commit is retained and still fails. The whole `tests/ci` suite was also run with this checkout's HEAD detached at a real merge ref built over this branch — 1376 cases, all green — which is the condition the hosted job runs in.",
+      "measurementHead": "This is the head both LOCAL tiers were measured at. A tier run before it would report a suite that does not include its cases. The three executable paths that differ between it and the candidate are what both tiers declare as `measurementDrift`."
     }
   ],
   "howTierFiguresAreChecked": "Four obligations, because there are four kinds of claim. ARITHMETIC: `passed + failed + skipped` must equal the declared total, for every tier — the review set `passed: 3, failed: 812` beside `tests: 2475` and the first revision of the gate accepted it, because nothing added the three numbers up. LOCAL: the figures must equal the P1-27 run ledger’s, read out of git at the commit named in `localLedger.atCommit`, and a LOCAL tier may carry no figure the ledger does not write. MEASUREMENT HEAD: the head a local tier names must be executable-identical to the candidate, or a NAMED successor of it carrying no product drift and declaring `measurementDrift` exactly equal to what `git diff --name-only <head>..<candidate>` computes. HOSTED: cannot be computed from this repository at all, and the gate says so in those words; what it requires instead is that the claim be FETCHABLE — a run id, a job id, the head the job ran at, and the artefact — and, when that head is not the candidate, that the record SAY WHICH OF TWO THINGS IT IS — a head the candidate SUPERSEDES, marked `describesSupersededHead`, proved an ancestor and listed in `pendingHostedBindings`; or a head that DESCENDS from the candidate, marked `describesProductIdenticalSuccessor`, whose apps/** and supabase/** `git diff` computes to be identical to the candidate's. Either way the head must be a commit this repository contains.",
   "tiers": {
     "unit": {
       "label": "root unit and foundation",
-      "tests": 2555,
-      "passed": 2555,
+      "tests": 2559,
+      "passed": 2559,
       "failed": 0,
       "skipped": 0,
       "files": 98,
-      "measuredAtCommit": "f4ba407485a916a2848f2de7bf6df090d18840b1",
+      "measuredAtCommit": "d37452ea888d4442f161295bc472df39d21ad15d",
       "measurementDrift": [
         ".github/ci-baselines/unrun-test-tiers.json",
         "scripts/ci/build-p1-28-evidence-manifest.mjs",
@@ -75,7 +83,7 @@
       "localLedger": {
         "path": "docs/phase-1/phase-1-27/evidence/local-run-ledger.json",
         "tier": "unit",
-        "atCommit": "d41c90980e63ecd7132861473b324a48938f3a5d",
+        "atCommit": "b63fbd622eac49ffec5c21ca4884a22d178c2ee4",
         "howChecked": "`git show 94e18000:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD when this measurement was committed, not as it stands now. Pinned to a commit because the ledger MOVES: `check-p1-27-closing-values.mjs --record` rewrites it at whatever head it was last taken at, so a check against the working copy would go red on the next unrelated re-record and would then be relaxed rather than fixed."
       },
       "hostedAttestation": {
@@ -95,7 +103,7 @@
       "failed": 0,
       "skipped": 0,
       "files": 98,
-      "measuredAtCommit": "f4ba407485a916a2848f2de7bf6df090d18840b1",
+      "measuredAtCommit": "d37452ea888d4442f161295bc472df39d21ad15d",
       "measurementDrift": [
         ".github/ci-baselines/unrun-test-tiers.json",
         "scripts/ci/build-p1-28-evidence-manifest.mjs",
@@ -105,7 +113,7 @@
       "localLedger": {
         "path": "docs/phase-1/phase-1-27/evidence/local-run-ledger.json",
         "tier": "web",
-        "atCommit": "d41c90980e63ecd7132861473b324a48938f3a5d",
+        "atCommit": "b63fbd622eac49ffec5c21ca4884a22d178c2ee4",
         "howChecked": "`git show 94e18000:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD when this measurement was committed, not as it stands now. Pinned to a commit because the ledger MOVES: `check-p1-27-closing-values.mjs --record` rewrites it at whatever head it was last taken at, so a check against the working copy would go red on the next unrelated re-record and would then be relaxed rather than fixed."
       },
       "hostedAttestation": {

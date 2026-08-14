@@ -14,7 +14,7 @@
   },
   "tierTotals": {
     "unit": {
-      "passed": 2555,
+      "passed": 2559,
       "failed": 0,
       "skipped": 0,
       "provenance": "LOCAL_COMPUTED_HOSTED_PENDING"
@@ -63,16 +63,16 @@
       "bytes": 11687
     },
     "docs/phase-1/phase-1-28/evidence/change-log.md": {
-      "sha256": "76564ab8a656e9e463311beb5a69839d4ea137cef43ed8b9201b5a94bbfdc236",
+      "sha256": "53add73612bf98d6fa3b874680f757ad6151ec757dc7962fee2eedd1a142c0cd",
       "bytes": 33635
     },
     "docs/phase-1/phase-1-28/evidence/closure-candidate.json": {
-      "sha256": "2500713279f943aed667fc619e47a8314e43b5e8785f32194d8feab7dce39933",
-      "bytes": 38459
+      "sha256": "86382f5548611c6348e7c1d2fad5bb53dcf97683315b95990e74d504261a7cb5",
+      "bytes": 41452
     },
     "docs/phase-1/phase-1-28/evidence/closure-evidence.md": {
-      "sha256": "2afd533c88ae41595b298812551e17500faf81f323aa62161a5904b0d268957d",
-      "bytes": 57040
+      "sha256": "ff0e1c3175b24a5fe921524bd54cc6325645e3c343e14a3aa9335c17a470d69c",
+      "bytes": 60584
     },
     "docs/phase-1/phase-1-28/evidence/traceability.json": {
       "sha256": "600a8ae57e4a33b5c54d847befbcab82acb2a0d136d005cec777345c39c74ab1",
@@ -91,11 +91,11 @@
       "bytes": 15930
     },
     "docs/phase-1/phase-1-28/task-matrix-verdicts.json": {
-      "sha256": "31cc6df74fad6eaf2992a972345832dab85d02682966fc0d6e3de2372b6f1602",
+      "sha256": "95fe00ab9f3ee254ac808ee671571a3085644e6e11864ab2c0cdcaefe033a5bd",
       "bytes": 361961
     },
     "docs/phase-1/phase-1-28/task-matrix.json": {
-      "sha256": "929a77394d453f2064104756429c3b21ae5e68207334c4d1bbf0cd4a55def3a9",
+      "sha256": "1d62ffb5b40714832da2cb02ea089523237bc994c9d7040aa79f932871f1f8c0",
       "bytes": 380251
     },
     "docs/phase-1/phase-1-28/write-reachability.json": {
