@@ -902,9 +902,24 @@ describe('P1-28-QA-005 — a record may not state what the candidate refutes', (
       'appointments-and-receptions'
     );
     expect(world.tabletMatchesOnlyAdministration).toBe(false);
-    expect(world.hostedCiRecorded).toBe(true);
-    expect(world.tabletObservedThisPhase).toBe(true);
-    expect(world.phaseSpecObservedHosted).toBe(true);
+    /*
+     * THE CONFIG AND THE RUN ARE TWO DIFFERENT FACTS, and the re-freeze split
+     * them apart. `testMatch` naming the P1-28 spec is a property of the tree at
+     * this candidate and is asserted above. Whether that project has EXECUTED
+     * anything here is a property of a hosted run, and no run has been taken at
+     * this candidate — so the three world flags below are false, and the earlier
+     * revision of this case asserted all three were true. That assertion was
+     * correct while a run was bound and became a claim about a superseded head
+     * the moment the candidate moved, which is the whole failure this cycle is
+     * about. They are asserted false HERE, against the package's own pending
+     * declaration, so a run that gets bound without the package being updated
+     * fails this case rather than passing it quietly.
+     */
+    expect(world.hostedCiRecorded, 'the package now records hosted CI at this candidate').toBe(
+      false
+    );
+    expect(world.tabletObservedThisPhase).toBe(false);
+    expect(world.phaseSpecObservedHosted).toBe(false);
   });
 
   it('reports a narrowed config honestly, so the rule is conditional and not a word ban', () => {
@@ -928,17 +943,65 @@ describe('P1-28-QA-005 — a record may not state what the candidate refutes', (
     expect(Object.keys(verdicts).length, 'nothing was scanned').toBe(35);
   });
 
-  it('fails when a cell denies the hosted-CI result the package records', () => {
+  it('fails when a cell denies a hosted-CI result the package records', () => {
+    /*
+     * The rule is CONDITIONAL, and both halves of the condition are exercised
+     * here because the tree now sits on the other side of it. While a run is
+     * bound to the candidate, the denial is false and is refused. While none is
+     * — which is where this candidate stands, with eleven hosted bindings
+     * pending — the denial is TRUE and must be allowed, or the gate would be a
+     * word ban that forces a package to lie in the opposite direction.
+     */
+    const bound = { ...(candidateFile as object) } as {
+      candidate: { FINAL_CODE_SHA: string };
+      hostedCi: Record<string, unknown>;
+    };
+    bound.hostedCi = { ...bound.hostedCi, headSha: bound.candidate.FINAL_CODE_SHA };
+    const boundWorld = worldFrom(bound as never, null) as unknown as { hostedCiRecorded: boolean };
+    expect(boundWorld.hostedCiRecorded, 'the doctored world binds no run').toBe(true);
+
+    const denial = {
+      'FE-001': { PROTECTED_REPROOF: 'No hosted-CI result is recorded for this head.' },
+    };
+    const refused = verdictClaims(
+      denial as never,
+      boundWorld as never,
+      bound as never,
+      lineReader(ROOT)
+    ) as { contradictions: string[] };
+    expect(refused.contradictions.length).toBe(1);
+    expect(refused.contradictions[0]).toContain('no-hosted-ci');
+
+    const allowed = verdictClaims(
+      denial as never,
+      world as never,
+      candidateFile,
+      lineReader(ROOT)
+    ) as { contradictions: string[] };
+    expect(allowed.contradictions, 'a true sentence was refused').toEqual([]);
+  });
+
+  it('fails when a cell asserts an observation of a candidate the package has not measured', () => {
+    /*
+     * THE SAME RULE, POINTED THE OTHER WAY — the half that did not exist until
+     * this cycle. Thirty-three cells were corrected to say the evidence EXISTS,
+     * and every one of them became an over-claim the moment the candidate was
+     * re-frozen ahead of the run that produced it. A gate that only refuses
+     * pessimism about its own evidence ratchets one way.
+     */
     const claims = verdictClaims(
       {
-        'FE-001': { PROTECTED_REPROOF: 'No hosted-CI result is recorded for this head.' },
+        'FE-001': {
+          PROTECTED_REPROOF:
+            'THE TABLET VIEWPORT AND HOSTED CI ARE BOTH OBSERVED AT THIS CANDIDATE.',
+        },
       } as never,
       world as never,
       candidateFile,
       lineReader(ROOT)
     ) as { contradictions: string[] };
-    expect(claims.contradictions.length).toBe(1);
-    expect(claims.contradictions[0]).toContain('no-hosted-ci');
+    expect(claims.contradictions.length, 'an over-claim was accepted').toBe(1);
+    expect(claims.contradictions[0]).toContain('hosted-observed-at-this-candidate');
   });
 
   it('fails a citation that lands only on comment lines — the stale one, exactly', () => {
