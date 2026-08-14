@@ -484,8 +484,24 @@ export function phaseHead(git, candidateSha, baseSha) {
   const carries = parents.filter(
     (p) => git(['merge-base', '--is-ancestor', candidateSha, p]) !== null
   );
-  if (carries.length !== 1) return plain;
-  const branchSide = carries[0];
+  /*
+   * Ordinarily exactly one parent carries the candidate and that parent is this
+   * branch. After the branch has MERGED, both do — the base absorbed it — and
+   * the candidate can no longer discriminate. The forge convention then does:
+   * a merge created by merging a head INTO a base puts the BASE FIRST and the
+   * merged head second, which holds for a pull request's merge ref and for the
+   * merge commit that lands on the protected branch alike.
+   *
+   * The fallback is deliberately narrow. It fires only when the candidate is
+   * ambiguous, never in place of it, so a local `merge develop into my branch`
+   * — where the first parent is the branch, and where the candidate IS still
+   * discriminating — is unaffected. When neither parent carries the candidate
+   * this is not a merge of this phase's work at all, and nothing is unwrapped.
+   */
+  let branchSide;
+  if (carries.length === 1) branchSide = carries[0];
+  else if (carries.length === parents.length) branchSide = parents[1];
+  else return plain;
   const baseSide = parents.find((p) => p !== branchSide) ?? null;
   if (baseSide === null) return plain;
 
@@ -595,9 +611,51 @@ export function repositoryBinding(candidateFile, git) {
    * filtered clone may carry no `refs/remotes/origin/<base>` at all, and a merge
    * ref names its base side in its parent list whether or not any ref does.
    */
-  const baseSha = base.sha ?? head.baseSide;
-  const baseFrom = base.sha ? base.ref : head.baseSide ? "the merge ref's base-side parent" : null;
+  /*
+   * The base as it STOOD, not the base as it is now — and the difference is
+   * what a merge makes.
+   *
+   * The subtraction exists so a checkout does not count the base branch's own
+   * commits as successors of the candidate. It presumes the base does not
+   * contain the candidate. The moment this branch MERGES, that presumption
+   * inverts: `origin/develop` then contains the whole branch, so subtracting it
+   * removes every genuine successor and the range collapses to empty — which is
+   * exactly what the protected-branch reproof reported, and what the two
+   * anti-vacuity guards refused to pass on.
+   *
+   * A merge names its own base in its first parent: the base as it stood before
+   * this branch landed. That is the honest subtrahend both before the merge (a
+   * pull request's merge ref names the base tip it previewed against) and after
+   * it (the merge commit names the develop it was merged into). It is preferred
+   * over the resolved ref for the same reason the ref is only a cross-check in
+   * `phaseHead`: a ref is a moving snapshot, a parent is a fact about the commit
+   * under test.
+   */
+  const baseSha = head.baseSide ?? base.sha;
+  const baseFrom = head.baseSide
+    ? "the merge's own base-side parent — the base as it stood"
+    : base.sha
+      ? base.ref
+      : null;
   const baseResolved = Boolean(baseSha);
+  /*
+   * Whether the base already contains the candidate — reported, NOT refused.
+   *
+   * It looks alarming and is not. The subtrahend answers one question: what did
+   * THIS line of work add on top of the base it sits on? A branch cut from a
+   * base that has already absorbed the candidate added exactly its own commits,
+   * and subtracting that base is what says so. Nothing is hidden by it either:
+   * the product-identity check is taken over the whole span from the candidate
+   * to the head under test, not over this range, so a product file that moved
+   * inside the absorbed history still fails.
+   *
+   * What this flag exists for is the reader. "0 successors" means something
+   * different on a branch cut after the merge than it does before it, and the
+   * gate says which it is looking at rather than leaving the number to be
+   * misread.
+   */
+  const baseAbsorbedCandidate =
+    baseResolved && wellFormed && git(['merge-base', '--is-ancestor', sha, baseSha]) !== null;
 
   const exists = wellFormed && git(['cat-file', '-e', `${sha}^{commit}`]) !== null;
   const actualTree = exists ? (lines(git(['rev-parse', `${sha}^{tree}`]))[0] ?? null) : null;
@@ -654,6 +712,7 @@ export function repositoryBinding(candidateFile, git) {
     baseRef: base.ref,
     baseSha,
     baseFrom,
+    baseAbsorbedCandidate,
     baseAttempted: base.attempted,
     baseResolved,
     phaseHead: head.head,
@@ -2126,6 +2185,8 @@ const W = Object.freeze({
   mergeRef: '4'.repeat(40),
   /** A hosted run taken at a DESCENDANT of the candidate, product-identical. */
   runHead: '6'.repeat(40),
+  /** The base branch AFTER this branch merged into it: it contains the candidate. */
+  mergedBase: '5'.repeat(40),
 });
 
 const ledgerAt = (head) =>
@@ -3053,6 +3114,72 @@ export const WORLD_CHECK_CASES = [
     expects: { repositoryOk: false, sound: false },
     explains: true,
   },
+  /* ---- after this branch has MERGED into its base ---- *
+   *
+   * The shape that took the protected-branch reproof red. The base subtraction
+   * presumes the base does not contain the candidate; the merge inverts that,
+   * and subtracting the base as it is NOW removes every genuine successor. The
+   * base as it STOOD is in the merge's first parent, and these three worlds are
+   * what hold the seal to reading it from there.
+   */
+  {
+    name: 'the merge commit on the protected branch, base subtracted as it STOOD — allowed',
+    inputs: worldInputs({
+      git: syntheticGit({
+        // `origin/develop` is now the merge itself and contains the candidate.
+        [`rev-parse --verify --quiet refs/remotes/origin/develop^{commit}`]: `${W.mergedBase}\n`,
+        [`rev-list --parents -n 1 HEAD`]: `${W.mergeRef} ${W.baseTip} ${W.branchHead}\n`,
+        [`merge-base --is-ancestor ${W.candidate} ${W.baseTip}`]: undefined,
+        [`merge-base --is-ancestor ${W.baseTip} ${W.mergedBase}`]: '',
+        [`diff-tree --cc --name-only --no-commit-id ${W.mergeRef}`]: '',
+      }),
+    }),
+    expects: { repositoryOk: true },
+    explains: false,
+  },
+  {
+    name: 'a re-merge where BOTH parents carry the candidate — the base is the first parent',
+    inputs: worldInputs({
+      git: syntheticGit({
+        [`rev-parse --verify --quiet refs/remotes/origin/develop^{commit}`]: `${W.mergedBase}\n`,
+        [`rev-list --parents -n 1 HEAD`]: `${W.mergeRef} ${W.mergedBase} ${W.branchHead}\n`,
+        [`merge-base --is-ancestor ${W.candidate} ${W.mergedBase}`]: '',
+        [`merge-base --is-ancestor ${W.mergedBase} ${W.mergedBase}`]: '',
+        [`diff-tree --cc --name-only --no-commit-id ${W.mergeRef}`]: '',
+        [`log --format=%H %s ${W.branchHead} --not ${W.candidate} ${W.mergedBase}`]: `${W.documentationSuccessor} docs: re-record the ledger\n${W.executableSuccessor} feat: the packaging machinery\n`,
+      }),
+    }),
+    expects: { repositoryOk: true },
+    explains: false,
+  },
+  {
+    name: 'a branch cut from a base that has ABSORBED the candidate — its own additions',
+    inputs: worldInputs({
+      git: syntheticGit({
+        [`rev-parse --verify --quiet refs/remotes/origin/develop^{commit}`]: `${W.mergedBase}\n`,
+        [`merge-base --is-ancestor ${W.candidate} ${W.mergedBase}`]: '',
+        [`log --format=%H %s ${W.branchHead} --not ${W.candidate} ${W.mergedBase}`]: `${W.documentationSuccessor} docs: re-record the ledger\n${W.executableSuccessor} feat: the packaging machinery\n`,
+      }),
+    }),
+    expects: { repositoryOk: true },
+    explains: false,
+  },
+  {
+    name: 'a merge on the protected branch that carries content of its own — not stepped past',
+    inputs: worldInputs({
+      git: syntheticGit({
+        [`rev-parse --verify --quiet refs/remotes/origin/develop^{commit}`]: `${W.mergedBase}\n`,
+        [`rev-list --parents -n 1 HEAD`]: `${W.mergeRef} ${W.baseTip} ${W.branchHead}\n`,
+        [`merge-base --is-ancestor ${W.candidate} ${W.baseTip}`]: undefined,
+        [`merge-base --is-ancestor ${W.baseTip} ${W.mergedBase}`]: '',
+        [`diff-tree --cc --name-only --no-commit-id ${W.mergeRef}`]:
+          'apps/web/src/features/receptions/api.ts\n',
+      }),
+    }),
+    expects: { repositoryOk: false, sound: false },
+    explains: true,
+  },
+
   {
     name: 'a product diff between the candidate and the head under test that git refuses to take',
     inputs: worldInputs({
