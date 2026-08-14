@@ -33,13 +33,13 @@ the candidate, and refuses either half that fails to name an unclosed task.
 
 ## The frozen candidate
 
-| Binding           | Value                                                                                       |
-| ----------------- | ------------------------------------------------------------------------------------------- |
-| `FINAL_CODE_SHA`  | `3c75f49a01e35b507461bf0929b0046e7140860a`                                                  |
-| `FINAL_CODE_TREE` | `f1f92927f93e4fd55d47fcc475d9311b21cf79f0`                                                  |
-| Branch            | `feature/p1-28-appointment-vehicle-reception-frontend`                                      |
-| Pull request      | **#226** (draft), base `develop`, 110 commits ahead                                         |
-| Subject           | `chore(p1-28): regenerate the operation register and evidence seal after the finding fixes` |
+| Binding           | Value                                                                  |
+| ----------------- | ---------------------------------------------------------------------- |
+| `FINAL_CODE_SHA`  | `7b1252edebb5d7f48451213c71ab832cb44e46b5`                             |
+| `FINAL_CODE_TREE` | `1ef831d2ecfcf94d07b73857b7448c3b424faca3`                             |
+| Branch            | `feature/p1-28-appointment-vehicle-reception-frontend`                 |
+| Pull request      | **#226**, base `develop`, 130 commits ahead                            |
+| Subject           | `fix(p1-28): let the seal's own tests survive the package being bound` |
 
 ### This candidate is a RE-FREEZE, and the seal is why
 
@@ -90,20 +90,58 @@ callback parameter as a React Hook. Each repair forced a reseal, and any further
 repair would have forced another, while the package went on describing a commit
 ever further behind the tree hosted CI actually exercises.
 
-Two more repairs have landed since — the unnamed-successor falsification
-re-anchored so that re-freezing cannot make it vacuous, and a CodeQL HIGH in the
+Three more repairs have landed since — the unnamed-successor falsification
+re-anchored so that re-freezing cannot make it vacuous, a CodeQL HIGH in the
 citation resolver where `existsSync` then `statSync` then `readFileSync` asked
-whether a path was a readable file and then read it — and **each was answered by
-moving the candidate rather than by growing a successor list**. That is the rule
-this package now follows: while the product is provably unchanged, the candidate
-follows the newest executable commit, and `reFrozenFrom` carries what each move
-was for.
+whether a path was a readable file and then read it, and the repair this
+candidate carries — and **each was answered by moving the candidate rather than
+by growing a successor list**. That is the rule this package now follows: while
+the product is provably unchanged, the candidate follows the newest executable
+commit, and `reFrozenFrom` carries what each move was for.
 
-**Re-freezing at the head ends that, and it costs nothing, which is checkable
-rather than asserted:**
+### Why this one moved: the seal's own tests could not survive being bound
+
+Hosted CI ran at `55b932cb`, a documentation-only descendant of the previous
+candidate `3c75f49a`, and every condition the gate imposes on a forward citation
+held. The eleven hosted bindings were bindable for the first time — and binding
+them took **eight** cases of `tests/ci/p1-28-evidence-manifest.test.ts` red.
+
+That file predated the forward-citation rule and had encoded _"nothing is bound
+yet"_ as though it were a rule of its own. It demanded that a non-pending tier
+name the candidate **exactly**, with no forward branch at all; it **searched**
+the package for a pending tier and guarded itself with
+`expect(pendingTier).toBeDefined()`; it asserted `supersededBindings.length > 0`;
+and it asserted three world flags to the constant `false`. Four of the eight were
+**structurally unsatisfiable** the moment anything was bound, because no package
+can be both bound and pending at once.
+
+`7b1252ed` fixes the tests, not the rules, and the distinction is the whole
+point:
+
+- the tier rule now defers all four conditions to `pendingBinding` — the one
+  place that asks `git` — so it is exactly as strict as the gate and not one
+  condition looser;
+- both anti-vacuity guards are **kept** and re-pointed onto **constructed**
+  worlds, each asserted sound before it is mutated;
+- the world flags are cross-checked against the package's own
+  `pendingHostedBindings` declaration, which `worldFrom` never reads.
+
+The file now passes **in both worlds** — 79/79 with the package pending and
+79/79 with it bound — which is the property that lets a candidate be bound at
+all. Nothing was removed: 72 known-bad worlds still run on every invocation and
+`selfCheck` still reports 0 failures.
+
+**What it cost.** The two local tiers, re-measured here — and the unit tier
+**moved, 2559 → 2560**, because the fix adds one case. And it cost the eleven
+bindings that had just been bound: `55b932cb` is now a head this candidate
+supersedes, so all eleven returned to **PENDING**. That is the rule working, not
+a regression — a run at an ancestor cannot describe this code.
+
+**Re-freezing at the head ends the treadmill, and it costs nothing in product
+terms, which is checkable rather than asserted:**
 
 ```text
-git diff --name-only 6392ccb4321b004ed12e5d04ad583298da3303dd..3c75f49a01e35b507461bf0929b0046e7140860a -- apps supabase
+git diff --name-only 6392ccb4321b004ed12e5d04ad583298da3303dd..7b1252edebb5d7f48451213c71ab832cb44e46b5 -- apps supabase
 ```
 
 returns **nothing**. Not one file under `apps/**` or `supabase/**` differs
@@ -113,14 +151,15 @@ re-freeze across a **non**-empty product diff would be the opposite of this — 
 would be re-pointing the record at software nobody had measured — and that is the
 case the gate refuses and did refuse, at `38afa5c2`.
 
-**What the seven once-named successors are now.**
+**What the eight once-named successors are now.**
 `e2dd8b8d8ba6ce124c464409fbe827ceea82b1fc`,
 `8f8c5cfaa8cbb25693affa6422e957fc4f914ab6`,
 `f4ba407485a916a2848f2de7bf6df090d18840b1`,
 `d37452ea888d4442f161295bc472df39d21ad15d`,
 `34b3fca5706ea037c46f4a1d16f5dfe2c4d194b1`,
-`b5e9919b0006a68fa694d650336c62f17095173c` and
-`3c75f49a01e35b507461bf0929b0046e7140860a` — the last of which **is** the
+`b5e9919b0006a68fa694d650336c62f17095173c`,
+`3c75f49a01e35b507461bf0929b0046e7140860a` and
+`7b1252edebb5d7f48451213c71ab832cb44e46b5` — the last of which **is** the
 candidate — are all **ancestors** of it, so they are successors of nothing and
 the gate refuses a recorded successor that is not in the computed range. They are
 kept in `closure-candidate.json` under `reFrozenFrom`, with what each one did
@@ -131,14 +170,13 @@ place for the same reason.
 
 **What the re-freeze did NOT buy.** Not one hosted figure. A hosted run is taken
 by CI at a head and this workstation cannot take one at any candidate, so every
-hosted binding in this package remains **PENDING**, and every superseded-head
-citation for `38afa5c2` stands exactly as it stood. Moving the candidate moves
-what the package is _about_; it does not manufacture an observation of it, and a
-reader who finds this section reassuring should read the pending table below
-before concluding anything.
+hosted binding in this package is **PENDING** again, at `55b932cb`. Moving the
+candidate moves what the package is _about_; it does not manufacture an
+observation of it, and a reader who finds this section reassuring should read the
+pending table below before concluding anything.
 
 **The rule, and the single hole it cannot close.** Every commit in
-`git log 3c75f49a..HEAD` that touches an executable path — anything outside
+`git log 7b1252ed..HEAD` that touches an executable path — anything outside
 `docs/` that is not `*.md` — must appear in `closure-candidate.json` by its full
 40-character id, and the gate computes that range and refuses an unnamed one. A
 **documentation-only** successor may go unnamed, and the gate **prints** the ones
@@ -161,17 +199,24 @@ PENDING rather than restated.**
 
 | Tier                     | Tests       | Passed | Failed | Skipped | Files   | State at THIS candidate                                      |
 | ------------------------ | ----------- | ------ | ------ | ------- | ------- | ------------------------------------------------------------ |
-| Root unit and foundation | 2559        | 2559   | **0**  | 0       | 98      | **measured here**, computed against the run ledger           |
+| Root unit and foundation | 2560        | 2560   | **0**  | 0       | 98      | **measured here**, computed against the run ledger           |
 | Web component and DOM    | 2726        | 2726   | **0**  | 0       | 98      | **measured here**, computed against the run ledger           |
-| Backend integration      | 2004        | 2004   | **0**  | 0       | 86      | **PENDING** — figures are run `31750364479`'s, at `38afa5c2` |
-| Database and RLS         | 1647        | 1647   | **0**  | 0       | 139     | **PENDING** — figures are run `31750364479`'s, at `38afa5c2` |
-| Authenticated browser    | 370 planned | 366    | **0**  | 4       | 7 specs | **PENDING** — figures are run `31750364479`'s, at `38afa5c2` |
+| Backend integration      | 2004        | 2004   | **0**  | 0       | 86      | **PENDING** — figures are run `31776114127`'s, at `55b932cb` |
+| Database and RLS         | 1647        | 1647   | **0**  | 0       | 139     | **PENDING** — figures are run `31776114127`'s, at `55b932cb` |
+| Authenticated browser    | 370 planned | 366    | **0**  | 4       | 7 specs | **PENDING** — figures are run `31776114127`'s, at `55b932cb` |
 
-**Measured at this candidate: 5285 automated cases, 0 failures.** The other three
+**Measured at this candidate: 5286 automated cases, 0 failures.** The other three
 rows are the superseded head's numbers, kept so a reader can fetch the same
 artefacts, and they are **not** a measurement of this commit. Adding all five
 together would produce a total nobody has ever observed at one head, so this page
 does not print one.
+
+The unit figure **moved, 2559 → 2560**, and it moved because of the candidate
+itself: one case was added to `tests/ci/p1-28-evidence-manifest.test.ts`. That
+value is reconciled where it actually lives rather than only in the tier record —
+`CR-A-UNIT-TESTS-ROW` in `docs/phase-1/phase-1-27/clean-room-evidence.md`, and
+**both** of its twins in `closing-value-ledger.json`, the `locator` line and the
+`value`. A locator left at the old text is a binding that resolves to nothing.
 
 ### What was NOT measured here, stated plainly
 
@@ -182,18 +227,22 @@ None of the three is takeable here at any candidate, so the re-freeze did not
 make them unavailable — it made the previously-available hosted measurement stop
 describing the code.
 
-What **does** move and what does not, said precisely:
+What **does** move and what does not, said precisely — and this time the honest
+answer is _almost nothing_, which is exactly why it must not be read as a
+measurement:
 
-- `supabase/**` is byte-identical between `38afa5c2` and this candidate, computed
-  by the same `git diff` the product-identity rule runs. The migrations, the
-  policies and the shape of the 1356-cell matrix therefore do not move. This
-  package still records the database tier as **PENDING**, because the tier also
-  executes tests that live outside `supabase/**` and an unchanged input is not a
-  fresh result.
-- `apps/web/src` changed in 20 files, six of them reception and appointment
-  surfaces the browser spec drives. That tier's 366 passes describe screens that
-  have since been edited, which is why it is the binding this re-freeze matters
-  most to.
+- This candidate changes **one file**, `tests/ci/p1-28-evidence-manifest.test.ts`.
+  Nothing under `apps/**` or `supabase/**` differs between `55b932cb` and here,
+  computed by the same `git diff` the product-identity rule runs. So the
+  application the browser tier drives, the migrations the database tier applies
+  and the routes the backend tier calls are all byte-identical.
+- **That still does not make the three hosted figures this candidate's.** A run
+  is taken at a head, and `55b932cb` is a head this candidate supersedes. An
+  unchanged input is not a fresh result, and the moment this package starts
+  converting "nothing relevant changed" into "therefore it passes" is the moment
+  it stops being evidence. The one file that _did_ change is a file the unit tier
+  executes — which is precisely why the unit tier was re-run and the others were
+  not restated.
 
 ### Where each figure is checked, and what "checked" means for each kind
 
@@ -208,8 +257,8 @@ What **does** move and what does not, said precisely:
 ### What the local record covers
 
 `docs/phase-1/phase-1-27/evidence/local-run-ledger.json` records the unit and web
-tiers at `3c75f49a01e35b507461bf0929b0046e7140860a` — **the candidate itself** —
-and `042349f0dd58130bf2983322d7c0de3ed0ec3da7` is the commit that carries that
+tiers at `7b1252edebb5d7f48451213c71ab832cb44e46b5` — **the candidate itself** —
+and `5dce31c0a6f7d7d3779db2fbad0ef57b97420aa1` is the commit that carries that
 record.
 The gate reads that ledger **out of git at the commit that carries it**, through
 `git show`, and requires `tests`, `passed`, `failed`, `skipped`, `files` and the
@@ -230,13 +279,16 @@ that policed it is unchanged and still fires.
 **removed**. The run ledger records no suite count, so there was nothing those
 numbers could be checked against and nothing that would have noticed them change.
 
-**The hosted halves of these two tiers are pending as well.** Run `31750364479`
-reported 2475 over 97 files for the unit tier and 2669 over 98 files for the web
-tier, at `38afa5c2`. Those are a different commit and, for the unit tier, a
-different suite. They are cited in `hostedAttestation` and are not restated as
-this candidate's figures, so the two tiers declare
-`LOCAL_COMPUTED_HOSTED_PENDING` rather than `LOCAL_AND_HOSTED_AGREE` — nothing
-here claims two halves agree when only one of them has been taken.
+**The hosted halves of these two tiers are pending as well.** Run `31776114127`
+reported **2559 over 98 files** for the unit tier (job `94691823490`) and **2726
+over 98 files** for the web tier (job `94691823379`), at `55b932cb`. The web
+figure is the same number this candidate measured locally and the unit figure is
+one case short of it — that head predates the case this candidate adds — and
+_neither_ is restated here as this candidate's. They are cited in
+`hostedAttestation`, so the two tiers declare `LOCAL_COMPUTED_HOSTED_PENDING`
+rather than `LOCAL_AND_HOSTED_AGREE`: nothing on this page claims two halves
+agree when only one of them has been taken at this head, and an equal number
+taken at a different commit is not agreement.
 
 ### What no tier measures
 
@@ -250,7 +302,7 @@ the standing reason `OWNER ACCEPTANCE` is required and CI is not sufficient.
 
 ## What is PENDING at this candidate
 
-Eleven hosted bindings in this package describe `38afa5c2`, a head this candidate
+Eleven hosted bindings in this package describe `55b932cb`, a head this candidate
 supersedes. Each names that head in its own record, is marked
 `describesSupersededHead`, and is listed by name in `pendingHostedBindings` — a
 list the gate **derives** from the documents' own `headSha` fields and refuses a
@@ -271,7 +323,15 @@ listed one cannot be decorative.
 | `productionBuild`                  | the build, at this head                                             |
 | `database`                         | the migration replay and the clean-room re-derivation, at this head |
 
-**Who takes it.** The phase coordinator, by running CI at the candidate.
+**Who takes it.** The phase coordinator, by running CI at a head that **descends
+from** this candidate — in practice the head this branch is pushed to.
+
+**Not "at the candidate", and that is measured rather than assumed.**
+`GET /repos/{owner}/{repo}/commits/{sha}/check-runs` returns `total_count: 0` for
+`7b1252ed`, and returned `0` for `3c75f49a` and every other candidate this
+package has named. CI runs at pushed heads; the record that names a candidate
+lands after it. Route 1 below is therefore sound and unreachable, and route 2 is
+the one every binding actually takes.
 
 **The constraint, and the circularity it used to carry.** A binding left the
 pending state only when its `headSha` **was** the candidate — and the seal's own
@@ -303,21 +363,31 @@ commit.
 
 ---
 
-## The authenticated browser tier — at the superseded head `38afa5c2`
+## The authenticated browser tier — at the superseded head `55b932cb`
 
-**These are not this candidate's numbers.** Run **`31750364479`** · job
-**`94614564003`** · head_sha
-**`38afa5c28e5b78d484a442cf6b8596fb2a5c34aa`** · conclusion **success**
-(11m 37s).
+**These are not this candidate's numbers.** Run **`31776114127`** · job
+**`94691823437`** · head_sha
+**`55b932cbd3e6a844457d452d64726a96a097415b`** · conclusion **success**
+(12m 51s).
 
-**Whole tier:** 370 planned · **366 passed** · **0 failed** · 4 skipped · **0
-flaky**.
+**Whole tier**, read from the report's own `stats` block: 370 planned · **366
+passed** · **0 failed** · 4 skipped · **0 flaky**.
 
 The four skips are two cases each in `authenticated/accessibility.spec.ts` under
-`authenticated-en` and `authenticated-ar`. **No P1-28 case is skipped** — which
-matters, because a skipped test still counts toward a tier's executed total, and
-that is how a "0 uncovered" number gets reported over a case that measured
-nothing.
+`authenticated-en` and `authenticated-ar` — the customer profile and the vehicle
+profile. **No P1-28 case is skipped**, and that is checked rather than restated:
+all 141 entries owned by the phase spec carry status `expected`. It matters
+because a skipped test still counts toward a tier's executed total, and that is
+how a "0 uncovered" number gets reported over a case that measured nothing.
+
+Whole-tier shape by project, for the same reason:
+
+| Project                | Planned | Expected | Skipped |
+| ---------------------- | ------- | -------- | ------- |
+| `authenticated-en`     | 152     | 150      | 2       |
+| `authenticated-ar`     | 152     | 150      | 2       |
+| `authenticated-tablet` | 65      | 65       | 0       |
+| `auth-setup`           | 1       | 1        | 0       |
 
 **The P1-28 spec specifically** —
 `authenticated/appointments-and-receptions.spec.ts`, read per test entry out of
@@ -344,48 +414,60 @@ forward.
 
 ---
 
-## Hosted CI at the superseded head `38afa5c2`
+## Hosted CI at the superseded head `55b932cb`
 
-**Not at this candidate.** Run **`31750364479`** — workflow **PR CI**
-(`.github/workflows/pr-ci.yml`), event `pull_request`, attempt 1, head_sha
-`38afa5c28e5b78d484a442cf6b8596fb2a5c34aa`.
+**Not at this candidate.** head_sha
+`55b932cbd3e6a844457d452d64726a96a097415b`.
 
 **21 checks · 21 success · 0 failure · 0 pending.** Taken from
-`GET /repos/{owner}/{repo}/commits/{sha}/check-runs` — the per-commit endpoint,
-because `/actions/runs` does not list every check.
+`GET /repos/{owner}/{repo}/commits/{sha}/check-runs?per_page=100` — the
+per-commit endpoint, because `/actions/runs` does not list every check — and the
+conclusions were counted from that response rather than read off a run-level
+verdict.
 
-| Check                                                   | Job id        | Conclusion |
-| ------------------------------------------------------- | ------------- | ---------- |
-| `ci-gate` — **the single required check**               | `94617578352` | success    |
-| `CodeQL`                                                | `94614731700` | success    |
-| `code-security / code-security (actions)`               | `94614564183` | success    |
-| `Web quality / web-quality`                             | `94614564128` | success    |
-| `integration-tests / integration-tests`                 | `94614564122` | success    |
-| `hosted-clean-room / hosted-clean-room`                 | `94614564119` | success    |
-| `code-security / code-security (javascript-typescript)` | `94614564116` | success    |
-| `secret-scan / secret-scan`                             | `94614564097` | success    |
-| `container-security / container-security`               | `94614564067` | success    |
-| `dependency-security / dependency-security`             | `94614564057` | success    |
-| `static-quality / static-quality`                       | `94614564036` | success    |
-| `authenticated-browser / authenticated-browser`         | `94614564003` | success    |
-| `database-security / security-matrix`                   | `94614564002` | success    |
-| `database-migration-replay / migration-replay`          | `94614563937` | success    |
-| `unit-tests-coverage / unit-coverage`                   | `94614563908` | success    |
-| `application-build / build`                             | `94614563886` | success    |
-| `change-detection`                                      | `94614500823` | success    |
-| `Lint, types, tests, build`                             | `94614499574` | success    |
-| `Secret and sensitive-file scan`                        | `94614499549` | success    |
-| `Database migrations and RLS tests`                     | `94614499541` | success    |
-| `Docker build validation`                               | `94614499502` | success    |
+**Twenty-one checks, two workflow runs, and the previous revision of this page
+was wrong about it.** `PR CI` (run `31776114127`, `.github/workflows/pr-ci.yml`,
+event `pull_request`, attempt 1) contributes sixteen. `CI` (run `31776113899`,
+`.github/workflows/ci.yml`, same event, same attempt, same head) contributes
+four. The `CodeQL` check is published by the github-advanced-security app and
+carries **no** Actions run id at all — its `details_url` is `/runs/{id}`, not
+`/actions/runs/{run}/job/{job}` — so it names none, and its analyses are cited
+below instead. Each row therefore carries the run it belongs to, parsed from that
+row's own `details_url`.
+
+| Check                                                   | Job id        | Run           | Conclusion |
+| ------------------------------------------------------- | ------------- | ------------- | ---------- |
+| `ci-gate` — **the single required check**               | `94694744607` | `31776114127` | success    |
+| `CodeQL`                                                | `94691951821` | —             | success    |
+| `application-build / build`                             | `94691823535` | `31776114127` | success    |
+| `code-security / code-security (javascript-typescript)` | `94691823511` | `31776114127` | success    |
+| `integration-tests / integration-tests`                 | `94691823497` | `31776114127` | success    |
+| `container-security / container-security`               | `94691823491` | `31776114127` | success    |
+| `unit-tests-coverage / unit-coverage`                   | `94691823490` | `31776114127` | success    |
+| `database-security / security-matrix`                   | `94691823478` | `31776114127` | success    |
+| `code-security / code-security (actions)`               | `94691823472` | `31776114127` | success    |
+| `secret-scan / secret-scan`                             | `94691823467` | `31776114127` | success    |
+| `database-migration-replay / migration-replay`          | `94691823456` | `31776114127` | success    |
+| `authenticated-browser / authenticated-browser`         | `94691823437` | `31776114127` | success    |
+| `hosted-clean-room / hosted-clean-room`                 | `94691823382` | `31776114127` | success    |
+| `Web quality / web-quality`                             | `94691823379` | `31776114127` | success    |
+| `dependency-security / dependency-security`             | `94691823349` | `31776114127` | success    |
+| `static-quality / static-quality`                       | `94691823323` | `31776114127` | success    |
+| `change-detection`                                      | `94691771384` | `31776114127` | success    |
+| `Docker build validation`                               | `94691770636` | `31776113899` | success    |
+| `Secret and sensitive-file scan`                        | `94691770620` | `31776113899` | success    |
+| `Database migrations and RLS tests`                     | `94691770588` | `31776113899` | success    |
+| `Lint, types, tests, build`                             | `94691770541` | `31776113899` | success    |
 
 ### CodeQL
 
-Two analyses at this exact head, ref `refs/pull/226/head`:
+Two analyses at that head, ref `refs/pull/226/head`, selected by matching each
+analysis's own `commit_sha` rather than by taking the two most recent:
 
 | Analysis     | Language                | Rules | Results |
 | ------------ | ----------------------- | ----- | ------- |
-| `1616577501` | `javascript-typescript` | 201   | **0**   |
-| `1616569830` | `actions`               | 27    | **0**   |
+| `1617851873` | `javascript-typescript` | 201   | **0**   |
+| `1617844311` | `actions`               | 27    | **0**   |
 
 Open alerts repository-wide: **0**.
 
@@ -393,25 +475,46 @@ Open alerts repository-wide: **0**.
 **diff-informed**. Two analyses returned 0 results and the repository carries 0
 open alerts on any analysed ref, but a pull-request analysis does not by itself
 establish the repository ceiling — only a run on a protected ref does. It is
-recorded here as the pull-request result it is.
+recorded here as the pull-request result it is. **And it does not describe this
+candidate**: CodeQL reads `scripts/**` and `tests/**` as well as `apps/**`, and
+the one file this candidate changes lives under `tests/ci`.
 
-### Dependency security · job `94614564057`
+### Dependency security · job `94691823349`
 
 Production vulnerabilities **0** · development vulnerabilities **0** · critical,
-high, moderate and low all **0** across **830** resolved dependencies. Licence
-policy clean; no prohibited licence.
+high, moderate and low all **0** across **830** resolved dependencies (68
+production, 706 development, 145 optional). `dependency-policy.json` reports
+`ok: true` with 0 blocking advisories on either side and 0 waived; licence policy
+clean, no prohibited licence.
 
-### Production build · job `94614563886`
+### Production build · job `94691823535`
 
-Build **ok**. 239 routes in the manifest against 237 route files on disk; 6249
-files emitted; standalone server 37 476 308 bytes, ×1.0905 against the committed
-baseline.
+Build **ok**, no failures and no warnings. 239 routes in the manifest against 237
+route files on disk; 6249 files emitted; standalone server 37 476 308 bytes
+against a committed baseline of 34 367 299, ×1.0905.
 
-### Database · jobs `94614563937` and `94614564119`
+These figures are byte-for-byte what run `31750364479` reported at `38afa5c2`,
+which is the one shape a reader should distrust — so the artefact's provenance
+was checked rather than assumed: `GET /actions/artifacts/9209932237` reports
+`workflow_run.head_sha` = `55b932cb`.
 
-120 migrations applied to an empty database; 242 tables, 631 policies, a
-1356-cell RLS matrix, **0** `SECURITY DEFINER` functions. The clean room
-re-applies them at the exact SHA and re-derives the same matrix independently.
+### Database · jobs `94691823456` and `94691823382`
+
+`database-migration-replay` applied all **120** migrations in the tree to an
+empty database — `migrationsInTree` 120, `migrationsApplied` 120, 0 failures —
+and recorded **242** tables, 516 functions, **631** policies, 543 triggers and
+**0** `SECURITY DEFINER` functions. Seven tables hold rows and every one is a
+structural catalogue (`iam.permissions`, `inv.units_of_measure`,
+`sal.payment_methods` and the four `wo.*` state and transition tables); no
+business table is populated, which is the standing no-fake-data policy holding.
+
+`hosted-clean-room` re-applied them at the exact SHA from its own checkout and
+re-derived the RLS matrix independently: **1356 cells** over 113 tables in 7
+schemas, `ok: true`, 0 failures, 0 advisories. The two agree on the schema hash
+to the character —
+`f6b4f023d9e6b1e7d823dac4e5550379202a216ab1ae1fe9e5a2826703061f79` from the
+replay, and the same value in the clean room's `schema-hash-before.txt` **and**
+`schema-hash-after.txt`.
 
 ---
 
@@ -574,13 +677,13 @@ about a repository. What the gate now computes, on every invocation:
 
 | Binding                  | How it is established                                                                                                                                                                                                                                                                                                                                                                    |
 | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| the candidate **exists** | `git cat-file -e 3c75f49a^{commit}`                                                                                                                                                                                                                                                                                                                                                      |
-| its **tree**             | `git rev-parse 3c75f49a^{tree}` must equal the recorded `f1f92927f93e4fd55d47fcc475d9311b21cf79f0`                                                                                                                                                                                                                                                                                       |
+| the candidate **exists** | `git cat-file -e 7b1252ed^{commit}`                                                                                                                                                                                                                                                                                                                                                      |
+| its **tree**             | `git rev-parse 7b1252ed^{tree}` must equal the recorded `1ef831d2ecfcf94d07b73857b7448c3b424faca3`                                                                                                                                                                                                                                                                                       |
 | the **base branch**      | `git rev-parse --verify refs/remotes/origin/develop^{commit}`, tried before `refs/heads/develop` and the bare name, and RECOVERED from the merge ref's own base-side parent when no ref resolves. A base that can be found neither way makes the successor set UNKNOWN and the gate fails **closed**                                                                                     |
 | the **head under test**  | `git rev-list --parents -n 1 HEAD`. Ordinarily HEAD itself; when HEAD is a two-parent merge with one parent that CONTAINS the candidate and one that does not, and no content of its own, this branch's side of that merge — printed, never substituted quietly. Classified by the candidate, so it needs no base ref; cross-checked against one when there is one                       |
-| its **ancestry**         | `git merge-base --is-ancestor 3c75f49a <head under test>`                                                                                                                                                                                                                                                                                                                                |
-| **product identity**     | `git diff --name-only 3c75f49a..<head under test> -- apps supabase` must be empty — computed, where the package used to assert it in a sentence                                                                                                                                                                                                                                          |
-| **successors**           | `git log <head under test> --not 3c75f49a <base>`, every executable commit of which must be named by id; documentation-only ones are printed. The list is EMPTY at this candidate, which is the newest commit touching an executable path. The base is subtracted because a commit `develop` took after the freeze is not this phase's                                                   |
+| its **ancestry**         | `git merge-base --is-ancestor 7b1252ed <head under test>`                                                                                                                                                                                                                                                                                                                                |
+| **product identity**     | `git diff --name-only 7b1252ed..<head under test> -- apps supabase` must be empty — computed, where the package used to assert it in a sentence                                                                                                                                                                                                                                          |
+| **successors**           | `git log <head under test> --not 7b1252ed <base>`, every executable commit of which must be named by id; documentation-only ones are printed. The list is EMPTY at this candidate, which is the newest commit touching an executable path. The base is subtracted because a commit `develop` took after the freeze is not this phase's                                                   |
 | **local tier figures**   | `git show <ledger commit>:…/local-run-ledger.json`, matched field by field, plus the measured head either executable-identical to the candidate or a named successor whose drift is declared path by path and compared against `git diff`                                                                                                                                                |
 | **hosted tier figures**  | not computable here, so required to be fetchable: run id, job id, head sha, artefact. A head that is not the candidate must declare which of the two it is — an **ancestor**, superseded, listed in `pendingHostedBindings`; or a **descendant** whose `apps/**` and `supabase/**` `git diff` computes to be identical to the candidate's — and must be a commit `git cat-file` resolves |
 | **documented claims**    | anchored sentences measured against the tree, and `PROTECTED_REPROOF` citations resolved into the files they name                                                                                                                                                                                                                                                                        |
@@ -622,8 +725,8 @@ failure itself. Seventy-two known-bad worlds run on every invocation. Two of the
 1. a candidate SHA naming no object → `the candidate … names no commit in this repository`;
 2. a recorded tree the commit does not have → `git rev-parse … is <other>`;
 3. a successor touching an executable path and not named → `unrecorded executable successor: <sha>`;
-4. a fabricated tier figure → `the package records 3; …local-run-ledger.json at b63fbd62 records 2559`;
-5. a fabricated `measurementDrift` list → `declares measurementDrift [scripts/ci/never-existed.mjs]; git diff --name-only <measured head>..3c75f49a computes […]`;
+4. a fabricated tier figure → `the package records 3; …local-run-ledger.json at 5dce31c0 records 2560`;
+5. a fabricated `measurementDrift` list → `declares measurementDrift [scripts/ci/never-existed.mjs]; git diff --name-only <measured head>..7b1252ed computes […]`;
 6. a superseded head naming no commit here → `names no commit in this repository`;
 7. a pending marker on a binding that is bound → `is marked describesSupersededHead while the head it names IS the candidate`;
 8. a tier claiming both halves agree while its hosted half is superseded → `claims a hosted observation OF THE CANDIDATE while its attestation describes a head the candidate supersedes`;

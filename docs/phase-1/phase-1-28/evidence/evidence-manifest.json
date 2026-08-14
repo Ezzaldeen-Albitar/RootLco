@@ -6,15 +6,15 @@
   "whatThisDoesNotProve": "This is not a tamper-proof seal. Anyone able to edit a document is able to re-run the generator and commit both. It removes SILENT revision, not revision.",
   "selfExclusion": "This manifest is the only path excluded from its own digest set, because a file containing its own hash has no fixed point. tests/ci/p1-28-evidence-manifest.test.ts asserts the exclusion is exactly this one path.",
   "candidate": {
-    "FINAL_CODE_SHA": "3c75f49a01e35b507461bf0929b0046e7140860a",
-    "FINAL_CODE_TREE": "f1f92927f93e4fd55d47fcc475d9311b21cf79f0",
+    "FINAL_CODE_SHA": "7b1252edebb5d7f48451213c71ab832cb44e46b5",
+    "FINAL_CODE_TREE": "1ef831d2ecfcf94d07b73857b7448c3b424faca3",
     "pullRequest": 226,
     "recordedIn": "docs/phase-1/phase-1-28/evidence/closure-candidate.json",
     "restatedIn": "docs/phase-1/phase-1-28/evidence/closure-evidence.md"
   },
   "tierTotals": {
     "unit": {
-      "passed": 2559,
+      "passed": 2560,
       "failed": 0,
       "skipped": 0,
       "provenance": "LOCAL_COMPUTED_HOSTED_PENDING"
@@ -63,16 +63,16 @@
       "bytes": 11687
     },
     "docs/phase-1/phase-1-28/evidence/change-log.md": {
-      "sha256": "cca9397a11efe4a9a4cb53658a76bda3a489b62e09beca84fcbdca5f198ad2fd",
-      "bytes": 34241
+      "sha256": "3072f690a518c288f7088398a6c6e80fc0532f28ed77e671b8a7d57bb7667035",
+      "bytes": 35998
     },
     "docs/phase-1/phase-1-28/evidence/closure-candidate.json": {
-      "sha256": "7add88b8cc73764a5e7a949cfaa09642b96ed9e5904f531d69cca8dbe67fafe0",
-      "bytes": 38415
+      "sha256": "387e48f145b0f6cfb6261dd74c2b73db810f6b3fc23fd439748e719e676f5bab",
+      "bytes": 48260
     },
     "docs/phase-1/phase-1-28/evidence/closure-evidence.md": {
-      "sha256": "f4e7bbc6bfbf00cc0373f15d909cb27b877b2c8e57da9f997487588ecd243632",
-      "bytes": 52580
+      "sha256": "c53e1cf76fea0a13fd9887688eebf48f81cf2a37bafda8b0d69d15c09df5e7f1",
+      "bytes": 59278
     },
     "docs/phase-1/phase-1-28/evidence/traceability.json": {
       "sha256": "600a8ae57e4a33b5c54d847befbcab82acb2a0d136d005cec777345c39c74ab1",

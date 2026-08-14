@@ -207,14 +207,39 @@ classification cannot be entered without a reviewer seeing the number move.
   repair to the seal; each forced a reseal and any further repair would force
   another, while the package described a commit ever further behind the tree
   hosted CI exercises. The candidate is now
-  `3c75f49a01e35b507461bf0929b0046e7140860a`, the successor list is empty, and
-  the two local tiers were re-measured **at it** — root unit 2559 and web 2726, 0
-  failures, 5285 cases. The three hosted-only tiers still could not be, because a
+  `7b1252edebb5d7f48451213c71ab832cb44e46b5`, the successor list is empty, and
+  the two local tiers were re-measured **at it** — root unit 2560 and web 2726, 0
+  failures, 5286 cases. The three hosted-only tiers still could not be, because a
   hosted run is taken by CI at a head and this workstation cannot take one. Those
   three, and eight other hosted bindings, remain PENDING rather than restated
-  from the head they were measured at; the coordinator binds them with an
-  exact-head run. Re-freezing moved what the package is about; it manufactured no
-  observation of it.
+  from the head they were measured at. Re-freezing moved what the package is
+  about; it manufactured no observation of it.
+
+  **The seal's own tests could not survive the package being bound, and that is
+  what the current candidate fixes.** Hosted CI ran at `55b932cb`, a
+  documentation-only descendant of the previous candidate, and every condition
+  the gate imposes on a forward citation held — so the eleven bindings were
+  bindable for the first time. Binding them took EIGHT cases of
+  `tests/ci/p1-28-evidence-manifest.test.ts` red, because that file predated the
+  forward-citation rule and had encoded "nothing is bound yet" as though it were
+  a rule: it demanded a non-pending tier name the candidate EXACTLY, it SEARCHED
+  the package for a pending tier, it asserted `supersededBindings.length > 0`,
+  and it asserted three world flags to the constant `false`. Four were
+  structurally unsatisfiable the moment anything was bound. The fix widens the
+  tests, not the rules — the tier rule now defers all four conditions to
+  `pendingBinding`, the one place that asks git; both anti-vacuity guards are
+  kept and re-pointed onto CONSTRUCTED worlds, each asserted sound before it is
+  mutated; and the world flags are cross-checked against the package's own
+  pending declaration, which `worldFrom` never reads. The file passes in BOTH
+  worlds, 79/79 either way, which is the property that lets a candidate be bound
+  at all. 72 known-bad worlds, `selfCheck` 0 failures, nothing removed.
+
+  That fix is executable, so the candidate moved to it and the eleven bindings
+  returned to PENDING at `55b932cb` — a run at an ancestor cannot describe this
+  code. The unit tier moved 2559 -> 2560 with it, and the moved value is
+  reconciled where it lives: `CR-A-UNIT-TESTS-ROW` in P1-27's
+  `clean-room-evidence.md` and BOTH of its twins in `closing-value-ledger.json`,
+  the `locator` line and the `value`.
 
   **The exact-head rule was itself a circularity, and it is removed.** The
   seal’s own machinery cannot live inside the commit it seals, so hosted CI
@@ -305,10 +330,10 @@ later**, when the tablet merge widened the match; the sentence is corrected
 rather than left standing, because a documented gap that has closed is a reader
 being told to expect less evidence than exists. `apps/web/playwright.config.ts:255`
 now matches this phase's spec as well, at 1024×768 — a fact about the CONFIG,
-unchanged at the current candidate. The run that executed **47 P1-28 cases in
-that project** measured `38afa5c2`, a head the candidate now supersedes, so the
-EXECUTION half of this correction is PENDING again and the package records it as
-such rather than restating it. The numbers are recorded once, in
+unchanged at the current candidate. The most recent run that executed **47 P1-28
+cases in that project** measured `55b932cb`, a head the candidate now supersedes,
+so the EXECUTION half of this correction is PENDING again and the package records
+it as such rather than restating it. The numbers are recorded once, in
 `docs/phase-1/phase-1-28/evidence/closure-evidence.md`, and are not restated
 here.
 
