@@ -78,7 +78,7 @@
  * Usage:  node scripts/ci/check-p1-28-traceability.mjs [--json out.json]
  * Exit:   0 clean · 1 the record disagrees with the tree · 2 the check could not run.
  */
-import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join, posix, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -324,10 +324,17 @@ export function surfaceCitations(surface) {
  */
 export function resolveCitation(root, citation) {
   const absolute = native(root, citation.path);
-  if (!existsSync(absolute)) return 'names no file at this head';
-  if (!statSync(absolute).isFile()) return 'names a directory, not a file';
+  let contents;
+  try {
+    contents = readFileSync(absolute, 'utf8');
+  } catch (error) {
+    const code = /** @type {NodeJS.ErrnoException} */ (error).code;
+    if (code === 'ENOENT') return 'names no file at this head';
+    if (code === 'EISDIR') return 'names a directory, not a file';
+    throw error;
+  }
   if (citation.line === null) return null;
-  const lines = readFileSync(absolute, 'utf8').split(/\r?\n/);
+  const lines = contents.split(/\r?\n/);
   if (citation.line < 1 || citation.line > lines.length) {
     return `cites line ${citation.line} and that file has ${lines.length}`;
   }
