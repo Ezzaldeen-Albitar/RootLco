@@ -70,6 +70,7 @@ const { CHECK_IN_STEPS } = await import('@/features/receptions/check-in/steps');
 const { APPOINTMENT_OPERATIONS } = await import('@/features/appointments/appointments-contract');
 const { RECEPTION_OPERATIONS } = await import('@/features/receptions/receptions-contract');
 const { conflictKindOf, nextVersionAfter } = await import('@/features/receptions/check-in/closure');
+const { EVIDENCE_ROW_FIELDS } = await import('@/features/receptions/check-in/evidence');
 
 /** An `ok` page every read adapter accepts, whatever its row shape. */
 const OK_PAGE = {
@@ -1306,5 +1307,113 @@ describe('P1-28-QA-004 — where the record version comes from', () => {
     expect(fs.existsSync(join(root, 'scripts', 'ci', 'check-p1-28-version-sourcing.mjs'))).toBe(
       true
     );
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * F8 — no P1-28 surface renders a bare identifier where a name belongs
+ * ------------------------------------------------------------------ */
+
+/**
+ * The plan's §7 rule, made mechanical: **the UI shows names, never UUIDs.**
+ *
+ * This phase applied it to `receivingEmployeeId` twice and then shipped
+ * `inspectorId` inside a `<code>` element under the label "Inspector", beside a
+ * note saying no name could be resolved for it — while the complaint arm one
+ * panel away joined a display name. A rule applied by hand, twice, and missed
+ * once is a rule that needs a check.
+ *
+ * The check is deliberately narrow: it is about identifiers naming a PERSON, not
+ * about every identifier. An odometer reading id or a correlation reference is a
+ * record reference and belongs on screen exactly as it arrived. So the sweep
+ * matches names a person is behind, and asserts two things about them — that the
+ * evidence table never types one as a raw identifier, and that no component
+ * renders one inside the monospaced element this product uses for tokens.
+ */
+const PERSON_ID = new RegExp(
+  '\\b\\w*(inspector|employee|user|actor|technician|partner|customer|requester|reporter|' +
+    'signer|witness|approver|owner|driver|staff)\\w*Id\\b',
+  'i'
+);
+
+/** Every `.tsx` under the two feature trees, with its comments stripped. */
+function p1_28ComponentSources(): readonly { readonly file: string; readonly body: string }[] {
+  const out: { file: string; body: string }[] = [];
+  const walk = (dir: string) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        walk(full);
+        continue;
+      }
+      if (!entry.name.endsWith('.tsx')) continue;
+      out.push({ file: full, body: stripComments(readFileSync(full, 'utf8')) });
+    }
+  };
+  for (const root of FEATURE_ROOTS) walk(root);
+  return out;
+}
+
+/**
+ * Every `<code>…</code>` body in a source, as text.
+ *
+ * `<code>` is this product's one element for "a token, rendered exactly as it
+ * arrived" — the evidence read-back, the correlation reference and the visit's
+ * odometer reference all use it — which makes it the precise place a person's
+ * identifier must never appear.
+ */
+function codeBodies(body: string): readonly string[] {
+  return [...body.matchAll(/<code\b[^>]*>([\s\S]*?)<\/code>/g)].map((match) => match[1] ?? '');
+}
+
+describe('F8 — a person is shown by name, never by identifier', () => {
+  it('is not vacuous: the sweep can see the elements it judges', () => {
+    // If the walk found no components, or none of them rendered a `<code>` at
+    // all, every assertion below would pass while measuring nothing.
+    const sources = p1_28ComponentSources();
+    expect(sources.length).toBeGreaterThan(10);
+    expect(sources.filter((source) => codeBodies(source.body).length > 0).length).toBeGreaterThan(
+      0
+    );
+  });
+
+  it('is not vacuous: the pattern recognises the field it was written for', () => {
+    // The exact value that shipped, and a value that must NOT be caught.
+    expect(PERSON_ID.test('inspectorId')).toBe(true);
+    expect(PERSON_ID.test('receivingEmployeeId')).toBe(true);
+    expect(PERSON_ID.test('reportedByPartnerId')).toBe(true);
+    expect(PERSON_ID.test('odometerReadingId')).toBe(false);
+    expect(PERSON_ID.test('correlationId')).toBe(false);
+    expect(PERSON_ID.test('evidenceDocumentId')).toBe(false);
+  });
+
+  it('types no person-bearing evidence field as a raw identifier', () => {
+    const offenders: string[] = [];
+    for (const [kind, fields] of Object.entries(EVIDENCE_ROW_FIELDS)) {
+      for (const field of fields) {
+        if (!PERSON_ID.test(field.field)) continue;
+        if (field.kind === 'identifier') offenders.push(`${kind}.${field.field}`);
+      }
+    }
+    expect(offenders, 'a person rendered as a token rather than resolved to a name').toEqual([]);
+  });
+
+  it('has at least one person field, so the rule above is about something', () => {
+    const people = Object.values(EVIDENCE_ROW_FIELDS)
+      .flat()
+      .filter((field) => field.kind === 'person');
+    expect(people.length).toBeGreaterThan(0);
+    // And every one of them names an account, which is what makes it resolvable.
+    for (const field of people) expect(field.field, field.labelKey).toMatch(PERSON_ID);
+  });
+
+  it('renders no person identifier inside a monospaced token element', () => {
+    const offenders: string[] = [];
+    for (const { file, body } of p1_28ComponentSources()) {
+      for (const inner of codeBodies(body)) {
+        if (PERSON_ID.test(inner)) offenders.push(`${file}: ${inner.trim().slice(0, 60)}`);
+      }
+    }
+    expect(offenders, 'a person identifier rendered where a name belongs').toEqual([]);
   });
 });

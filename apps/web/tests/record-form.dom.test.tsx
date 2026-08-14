@@ -2,8 +2,14 @@ import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
+import ar from '../src/i18n/messages/ar.json';
 import { renderLtr } from './render';
 import { RecordForm } from '@/components/forms/RecordForm';
+import {
+  composeInstant,
+  instantFieldError,
+  toLocalDateTimeValue,
+} from '@/components/forms/instant';
 import type { ActionState } from '@/lib/forms/action-result';
 
 /**
@@ -277,5 +283,126 @@ describe('RecordForm renders a select option that has no translation key', () =>
         READING_A.value
       )
     );
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * `instant` — a moment, submitted with its offset (F2)
+ * ------------------------------------------------------------------ */
+
+describe('the instant field submits an offset-bearing moment, never what was typed', () => {
+  const INSTANT_FIELDS = [
+    {
+      name: 'observedAt',
+      kind: 'instant' as const,
+      labelKey: 'vehicles.odometer.observedAt',
+      required: true,
+    },
+  ];
+
+  function renderInstant(action: (previous: ActionState, form: FormData) => Promise<ActionState>) {
+    return renderLtr(
+      <RecordForm
+        messages={en}
+        fields={INSTANT_FIELDS}
+        action={action}
+        submitKey="form.submit"
+        titleKey="crm.customers.notes.add"
+      />
+    );
+  }
+
+  const OBSERVED_LABEL = new RegExp(`^${en['vehicles.odometer.observedAt']}`);
+
+  it('sends the composed instant under the field name, and never the local value', async () => {
+    /*
+     * The whole point of the kind. The operator sees and types a wall time with
+     * no zone in it; the submitted form receives ONE value for `observedAt` and
+     * it is the composed instant. The two inputs share a name only in
+     * appearance — the visible one has none — so the zoneless value cannot be
+     * submitted even as a duplicate.
+     */
+    const seen: string[] = [];
+    const action = vi.fn(async (_previous: ActionState, form: FormData): Promise<ActionState> => {
+      for (const value of form.getAll('observedAt')) seen.push(String(value));
+      return { status: 'success', messageKey: 'form.saved', attempt: 1 };
+    });
+    const user = userEvent.setup();
+    renderInstant(action);
+
+    await user.type(screen.getByLabelText(OBSERVED_LABEL), '2026-03-05T09:30');
+    await user.click(screen.getByRole('button', { name: en['form.submit'] }));
+
+    await waitFor(() => expect(action).toHaveBeenCalled());
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toMatch(/^2026-03-05T09:30:00(?:Z|[+-](?:0\d|1[0-5]):[0-5]\d)$/);
+    expect(seen[0]).not.toBe('2026-03-05T09:30');
+    // Derived rather than literal: the offset composed is the runner's own zone.
+    expect(seen[0]).toBe(composeInstant('2026-03-05T09:30'));
+  });
+
+  it('shows the operator the instant it will send', async () => {
+    const user = userEvent.setup();
+    renderInstant(vi.fn(async (): Promise<ActionState> => ({ status: 'idle' })));
+
+    await user.type(screen.getByLabelText(OBSERVED_LABEL), '2026-03-05T09:30');
+    expect(screen.getByText(composeInstant('2026-03-05T09:30') as string)).toBeInTheDocument();
+  });
+
+  it('seeds the control from a stored instant rather than showing an empty box', () => {
+    // The control accepts no offset at all, so an instant seeded straight in is
+    // dropped by the browser and an edit form opens blank on a record that
+    // exists. `seedValues` converts it to the same MOMENT on this clock.
+    renderLtr(
+      <RecordForm
+        messages={en}
+        fields={INSTANT_FIELDS}
+        action={vi.fn(async (): Promise<ActionState> => ({ status: 'idle' }))}
+        submitKey="form.submit"
+        titleKey="crm.customers.notes.add"
+        initialValues={{ observedAt: '2026-03-05T09:30:00Z' }}
+      />
+    );
+    const box = screen.getByLabelText(OBSERVED_LABEL);
+    expect(box).toHaveValue(toLocalDateTimeValue('2026-03-05T09:30:00Z'));
+    expect(box).not.toHaveValue('');
+  });
+});
+
+describe('instantFieldError — the rule for a browser with no date-time control', () => {
+  /*
+   * The date-time control sanitises anything that is not a complete local
+   * date-time to the empty string, so on a browser that implements it the wrong
+   * shape cannot exist. A browser that does NOT implement it degrades the
+   * control to a plain TEXT box, silently, and then the operator can type
+   * whatever they like into the field that dates the record — including
+   * `2026-03-01T09:30:00Z`, which is exactly what this field's old hint asked
+   * for. No DOM environment can reproduce that degradation, so the rule is
+   * asserted directly rather than through a control that cannot express it.
+   */
+  it('refuses a value that is not a local date and time, by name', () => {
+    for (const typed of ['2026-03-01T09:30:00Z', '2026-03-01 09:30', '2026-03-01', 'tomorrow']) {
+      expect(instantFieldError(typed, true), typed).toBe('field.instantNeedsOffset');
+    }
+  });
+
+  it('accepts a local date and time, because the composition attaches the offset', () => {
+    for (const typed of ['2026-03-01T09:30', '2026-03-01T09:30:15', '  2026-03-01T09:30  ']) {
+      expect(instantFieldError(typed, true), typed).toBeNull();
+    }
+  });
+
+  it('separates empty-and-required from empty-and-optional', () => {
+    expect(instantFieldError('', true)).toBe('field.required');
+    expect(instantFieldError('   ', true)).toBe('field.required');
+    expect(instantFieldError('', false)).toBeNull();
+  });
+
+  it('never names a key that is missing from either catalogue', () => {
+    // A refusal an operator reads as a raw key is the same defect as no refusal.
+    for (const key of ['field.instantNeedsOffset', 'field.required']) {
+      expect(key in (en as Record<string, string>), key).toBe(true);
+      expect(key in (ar as Record<string, string>), key).toBe(true);
+    }
   });
 });

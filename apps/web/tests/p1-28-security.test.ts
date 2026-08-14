@@ -771,6 +771,7 @@ function fullCapabilities(over: Partial<CheckInCapabilities>): CheckInCapabiliti
     convertReceptions: true,
     closeReceptions: true,
     readWorkOrders: true,
+    readStaffDirectory: true,
     ...over,
   };
 }

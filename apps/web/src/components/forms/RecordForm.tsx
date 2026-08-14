@@ -4,6 +4,7 @@ import { useActionState, useId, useState, type ReactNode } from 'react';
 import { invalid, type ActionState } from '@/lib/forms/action-result';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
+import { composeInstant, instantFieldError, toLocalDateTimeValue } from './instant';
 
 /**
  * The "record something against this record" form, written once.
@@ -35,7 +36,24 @@ import { translate, translateDynamic } from '@/i18n/get-messages';
  * no CRM screen changed and there is exactly one copy.
  */
 
-export type FieldKind = 'text' | 'textarea' | 'select' | 'checkbox' | 'number' | 'date';
+/**
+ * `instant` is the one kind whose SUBMITTED value is not what the operator
+ * typed.
+ *
+ * Every other kind hands the control's own value to `FormData`. An instant
+ * cannot: a `timestamptz` field needs an explicit UTC offset, a browser's
+ * `datetime-local` control emits none, and the two facts together are how
+ * `2026-03-01T09:30` reached `veh.vehicle_odometer_readings` and was resolved
+ * against the server's zone — a silent three-hour error on the record that
+ * establishes when custody began.
+ *
+ * So the control renders `datetime-local` for entry and submits, through a
+ * hidden input of the same name, the offset-bearing instant `composeInstant`
+ * builds from it. The composed value is printed beside the field: what is being
+ * sent is never a secret, and it is the only way an operator can see that their
+ * clock is the one being recorded.
+ */
+export type FieldKind = 'text' | 'textarea' | 'select' | 'checkbox' | 'number' | 'date' | 'instant';
 
 /**
  * One `select` choice.
@@ -148,6 +166,117 @@ interface Props {
 
 const EMPTY: ActionState = { status: 'idle' };
 
+/**
+ * A moment, entered on the operator's clock and submitted with its offset.
+ *
+ * Two inputs, one name. The visible `datetime-local` is what the operator uses
+ * and carries no zone at all; the hidden input beside it is what the form
+ * SUBMITS, and it is the composed instant. Only the hidden one has `name`, so
+ * `FormData` receives exactly one value for the field and it is never the
+ * zoneless one.
+ *
+ * `type="datetime-local"` rather than a text box with a format hint: the hint
+ * was `2026-03-01T09:30:00Z`, the operator typed `2026-03-01T09:30`, and the
+ * schema took it. A control that cannot express the wrong shape is a stronger
+ * guarantee than a sentence asking for the right one.
+ *
+ * The composed value is shown under the control. An operator recording custody
+ * of a vehicle is entitled to see which clock is being written down, and this
+ * line is also what makes a wrong browser zone visible instead of silent.
+ */
+function InstantField({
+  id,
+  messages,
+  name,
+  required,
+  value,
+  invalid: isInvalid,
+  describedBy,
+  onChange,
+}: {
+  readonly id: string;
+  readonly messages: Messages;
+  readonly name: string;
+  readonly required: boolean;
+  /** The LOCAL wall time held in form state — never what is submitted. */
+  readonly value: string;
+  readonly invalid: boolean;
+  readonly describedBy: string | undefined;
+  readonly onChange: (next: string) => void;
+}) {
+  const composed = value.trim() === '' ? null : composeInstant(value);
+  return (
+    <>
+      <input
+        id={id}
+        type="datetime-local"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        required={required}
+        aria-invalid={isInvalid ? true : undefined}
+        aria-describedby={
+          [describedBy, composed === null ? null : `${id}-composed`].filter(Boolean).join(' ') ||
+          undefined
+        }
+        className="mt-1 w-full rounded-md border border-border bg-surface px-2 py-1.5 text-body text-text-primary"
+      />
+      <input type="hidden" name={name} value={composed ?? ''} />
+      {composed === null ? null : (
+        <p id={`${id}-composed`} className="mt-1 text-caption text-text-muted">
+          {translate(messages, 'field.instantComposed')}{' '}
+          <span dir="ltr" className="font-mono">
+            {composed}
+          </span>
+        </p>
+      )}
+    </>
+  );
+}
+
+/**
+ * Starting values, with any `instant` seed turned back into a local wall time.
+ *
+ * An `initialValues` entry for an instant field is an offset-bearing instant —
+ * that is what the record stores and what the caller has. The control is a
+ * `datetime-local`, which only accepts a zoneless local value, so a raw instant
+ * seeded straight in is silently dropped by the browser and the operator sees an
+ * empty box on a form that is meant to be editing something.
+ */
+function seedValues(
+  fields: readonly FieldSpec[],
+  initialValues: Record<string, string> | undefined
+): Record<string, string> {
+  const seeded: Record<string, string> = { ...(initialValues ?? {}) };
+  for (const field of fields) {
+    if (field.kind !== 'instant') continue;
+    const value = seeded[field.name];
+    if (value !== undefined && value !== '') seeded[field.name] = toLocalDateTimeValue(value);
+  }
+  return seeded;
+}
+
+/**
+ * The refusals `instant` fields decide locally, before a request is spent.
+ *
+ * Each is named against the field that caused it, because a 422 that reaches no
+ * field is a refusal the operator cannot act on — the platform publishes
+ * `violations` while the client reads `errors` (`P1-27-INT-028`), so a server
+ * field error currently lands nowhere. `instantFieldError` carries the rule and
+ * the reason it is needed even though the control prevents the shape.
+ */
+function instantErrors(
+  fields: readonly FieldSpec[],
+  values: Record<string, string>
+): Record<string, string> | null {
+  const errors: Record<string, string> = {};
+  for (const field of fields) {
+    if (field.kind !== 'instant') continue;
+    const error = instantFieldError(values[field.name] ?? '', field.required === true);
+    if (error !== null) errors[field.name] = error;
+  }
+  return Object.keys(errors).length > 0 ? errors : null;
+}
+
 export function RecordForm({
   messages,
   fields,
@@ -160,7 +289,9 @@ export function RecordForm({
   prelude,
   guard,
 }: Props) {
-  const [values, setValues] = useState<Record<string, string>>(initialValues ?? {});
+  const [values, setValues] = useState<Record<string, string>>(() =>
+    seedValues(fields, initialValues)
+  );
   // Per-instance, because the vehicle profile renders more than one of these on
   // one screen. The id used to be `record-${field.name}`, which is stable and
   // therefore duplicated across instances — two `id="record-effectiveDate"`
@@ -169,8 +300,11 @@ export function RecordForm({
   const instance = useId();
   const [state, submit, pending] = useActionState(async (previous: ActionState, form: FormData) => {
     // Before the action, so a form missing its `prelude` control never spends a
-    // rate-limit slot on a request the server would answer 422.
-    const blocked = guard?.();
+    // rate-limit slot on a request the server would answer 422. The instant
+    // rule joins it for the same reason and one more: an offsetless instant is
+    // not refused by the server at all — it is ACCEPTED and resolved against the
+    // server's own zone.
+    const blocked = guard?.() ?? instantErrors(fields, values);
     if (blocked) return invalid(blocked, (previous.attempt ?? 0) + 1);
     const result = await action(previous, form);
     if (result.status === 'success') {
@@ -304,6 +438,17 @@ export function RecordForm({
                   onChange={(event) => set(field.name, event.target.checked ? 'on' : '')}
                   aria-describedby={describedBy}
                   className="mt-2 size-4 accent-primary"
+                />
+              ) : field.kind === 'instant' ? (
+                <InstantField
+                  id={id}
+                  messages={messages}
+                  name={field.name}
+                  required={field.required === true}
+                  value={values[field.name] ?? ''}
+                  invalid={errorKey !== undefined}
+                  describedBy={describedBy}
+                  onChange={(next) => set(field.name, next)}
                 />
               ) : field.kind === 'textarea' ? (
                 <textarea

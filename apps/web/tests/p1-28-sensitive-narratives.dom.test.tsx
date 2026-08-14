@@ -84,6 +84,7 @@ const HELD = {
   convertReceptions: true,
   closeReceptions: true,
   readWorkOrders: true,
+  readStaffDirectory: true,
 };
 
 function stepProps(over: Partial<CheckInStepProps> = {}): CheckInStepProps {

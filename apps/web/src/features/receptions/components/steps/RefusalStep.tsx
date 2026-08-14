@@ -1,6 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useState, useTransition } from 'react';
+import { CursorPager } from '@/components/data-table/CursorPager';
+import { readCompleteness } from '@/components/data-table/read-completeness';
 import { INITIAL_REQUEST, type TableRequest } from '@/components/data-table/table-state';
 import { useServerTable } from '@/components/data-table/use-server-table';
 import { CheckboxField, SelectField } from '@/components/forms/Field';
@@ -76,6 +78,12 @@ import {
  * `intake_step` or `other` refusal is recorded and is not re-readable from this
  * product — stated plainly, because an empty list would otherwise read as "none
  * were recorded".
+ *
+ * And an empty list is not the same claim as a covered one. The union is paged
+ * BEFORE this step's `kind === 'refusal'` filter runs, so twenty-five decisions
+ * fill a page and leave every refusal on the next one. The empty branch
+ * therefore reports what the READ established — nothing recorded, or nothing
+ * seen yet — and a pager reaches the pages the filter never saw.
  */
 
 const IDLE: ActionState = { status: 'idle' };
@@ -119,7 +127,20 @@ export function RefusalStep({
   const [pending, startTransition] = useTransition();
 
   const canWrite = !writesLocked && capabilities.manageSignatures;
+  /*
+   * The filter runs AFTER paging, which is why the empty case cannot be stated
+   * as an absence.
+   *
+   * `listAuthorizations` pages a two-table UNION — decisions and refusals — so a
+   * page of twenty-five is twenty-five rows of BOTH, and twenty-five decisions
+   * push every refusal onto page two. The old copy printed "No refusal of an
+   * authorization has been recorded for this visit" over that page, about a
+   * visit whose standing refusal is what blocks approve and convert. So the
+   * empty branch now asks the READ whether it covered the set, and the pager
+   * below reaches the rows the filter could not.
+   */
   const rows = (table.response?.rows ?? []).filter((row) => row.kind === 'refusal');
+  const completeness = readCompleteness(table.status, table.response?.hasMore);
 
   const submit = () => {
     const nextAttempt = (state.attempt ?? 0) + 1;
@@ -196,8 +217,13 @@ export function RefusalStep({
             onRetry={table.refresh}
           />
         ) : rows.length === 0 ? (
-          <p className="text-body text-text-secondary">
-            {translate(messages, 'receptions.refusal.empty')}
+          <p data-testid="refusal-read-back" className="text-body text-text-secondary">
+            {translate(
+              messages,
+              completeness === 'truncated'
+                ? 'receptions.refusal.emptyTruncated'
+                : 'receptions.refusal.empty'
+            )}
           </p>
         ) : (
           <ul className="flex flex-col divide-y divide-border rounded-md border border-border">
@@ -226,6 +252,16 @@ export function RefusalStep({
             ))}
           </ul>
         )}
+        {table.status === 'idle' && completeness === 'truncated' && rows.length > 0 ? (
+          <p data-testid="refusal-more-pages" className="text-caption text-text-muted">
+            {translate(messages, 'receptions.refusal.morePages')}
+          </p>
+        ) : null}
+        <CursorPager
+          messages={messages}
+          table={table}
+          label={translate(messages, 'receptions.refusal.pagerLabel')}
+        />
       </EvidenceSection>
 
       <EvidenceSection

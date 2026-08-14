@@ -53,6 +53,20 @@ vi.mock('@/lib/customers/directory', () => ({
   searchCustomerDirectory: (...args: unknown[]) => searchCustomerDirectory(...args),
 }));
 
+/*
+ * The staff directory read (`F8`).
+ *
+ * The inspection read-back turns `inspectorId` into a NAME through
+ * `iam.user-detail`, so this suite now reaches a Server Action. Unmocked it
+ * throws `cookies was called outside a request scope` from inside an effect —
+ * an unhandled rejection Vitest reports at file level, which is a failing suite
+ * whose individual cases all pass.
+ */
+const readReceivingEmployeeIdentity = vi.fn();
+vi.mock('@/features/receptions/support-api', () => ({
+  readReceivingEmployeeIdentity: (...args: unknown[]) => readReceivingEmployeeIdentity(...args),
+}));
+
 const { ComplaintsStep } = await import('@/features/receptions/components/steps/ComplaintsStep');
 const { InspectionStep } = await import('@/features/receptions/components/steps/InspectionStep');
 const { DamageMapStep } = await import('@/features/receptions/components/steps/DamageMapStep');
@@ -118,6 +132,7 @@ const CAPABILITIES = {
   convertReceptions: true,
   closeReceptions: true,
   readWorkOrders: true,
+  readStaffDirectory: true,
 };
 
 function stepProps(over: Partial<CheckInStepProps> = {}): CheckInStepProps {
@@ -160,6 +175,11 @@ beforeEach(() => {
   listFuelLevels.mockResolvedValue(EMPTY_CATALOGUE);
   listRefusalReasons.mockResolvedValue(EMPTY_CATALOGUE);
   searchCustomerDirectory.mockResolvedValue(page([]));
+  readReceivingEmployeeIdentity.mockResolvedValue({
+    status: 'ok',
+    data: { id: 'user-77', displayName: 'Nadia Suleiman' },
+    correlationId: 'corr-user',
+  });
 });
 
 /* --- FE-010: customer complaints ------------------------------------------- */
@@ -1022,5 +1042,210 @@ describe('the contents step (FE-016)', () => {
     expect(
       await screen.findByText(AR['receptions.evidence.restrictedReadBack']!)
     ).toBeInTheDocument();
+  });
+});
+
+/* --- F1: the inspection read-back is one page, and says so ------------------ */
+
+describe('F1 — an unread page is never "this visit has none"', () => {
+  /** Routes the list operation by kind, and marks the answer as truncated. */
+  function evidenceTruncated(rows: Partial<Record<string, readonly unknown[]>>) {
+    listConditionEvidence.mockImplementation((_visitId: string, kind: string) =>
+      Promise.resolve(page(rows[kind] ?? [], true))
+    );
+  }
+
+  function evidenceUnreadable() {
+    listConditionEvidence.mockImplementation(() =>
+      Promise.resolve({
+        status: 'error' as const,
+        rows: [],
+        nextCursor: null,
+        hasMore: false,
+        correlationId: 'corr-500',
+      })
+    );
+  }
+
+  it('says none is open only when the read covered this visit', async () => {
+    // The control, unchanged: a complete read holding one completed header.
+    evidenceByKind({
+      inspection: [{ ...OPEN_INSPECTION, inspectionStatus: 'completed', completedAt: 'x' }],
+    });
+    renderLtr(<InspectionStep {...stepProps()} />);
+
+    expect(await screen.findByTestId('evidence-notice-condition_item')).toHaveTextContent(
+      EN['receptions.evidence.inspectionRequired']!
+    );
+    expect(screen.queryByTestId('finding-inspections-unknown')).not.toBeInTheDocument();
+  });
+
+  it('does not claim none is open when the read stopped at a page boundary', async () => {
+    /*
+     * The coverage sentence is "A finding is recorded against an open
+     * inspection, and this visit has none." — a claim about the VISIT, made off
+     * one keyset page with the `in_progress` filter applied after it. An open
+     * inspection on page two made that sentence false.
+     */
+    evidenceTruncated({
+      inspection: [{ ...OPEN_INSPECTION, inspectionStatus: 'completed', completedAt: 'x' }],
+    });
+    renderLtr(<InspectionStep {...stepProps()} />);
+
+    expect(await screen.findByTestId('finding-inspections-unknown')).toHaveTextContent(
+      EN['receptions.finding.inspectionsTruncated']!
+    );
+    expect(screen.queryByTestId('evidence-notice-condition_item')).not.toBeInTheDocument();
+  });
+
+  it('does not claim none is open when the read failed', async () => {
+    evidenceUnreadable();
+    renderLtr(<InspectionStep {...stepProps()} />);
+
+    expect(await screen.findByTestId('finding-inspections-unknown')).toHaveTextContent(
+      EN['receptions.finding.inspectionsUnreadable']!
+    );
+    expect(screen.queryByTestId('evidence-notice-condition_item')).not.toBeInTheDocument();
+  });
+
+  it('reaches the open inspection on the next page and offers the finding form', async () => {
+    evidenceTruncated({
+      inspection: [{ ...OPEN_INSPECTION, inspectionStatus: 'completed', completedAt: 'x' }],
+    });
+    const user = userEvent.setup();
+    renderLtr(<InspectionStep {...stepProps()} />);
+    await screen.findByTestId('finding-inspections-unknown');
+
+    const pager = screen.getByRole('navigation', {
+      name: EN['receptions.inspection.pagerLabel']!,
+    });
+    evidenceByKind({ inspection: [OPEN_INSPECTION] });
+    await user.click(within(pager).getByRole('button', { name: EN['table.nextPage']! }));
+
+    expect(
+      await screen.findByRole('button', { name: EN['receptions.finding.record']! })
+    ).toBeInTheDocument();
+  });
+
+  it('renders the truncated sentence in Arabic, not as a key', async () => {
+    evidenceTruncated({
+      inspection: [{ ...OPEN_INSPECTION, inspectionStatus: 'completed', completedAt: 'x' }],
+    });
+    renderRtl(<InspectionStep {...stepProps({ messages: ar })} />);
+
+    expect(await screen.findByTestId('finding-inspections-unknown')).toHaveTextContent(
+      AR['receptions.finding.inspectionsTruncated']!
+    );
+  });
+});
+
+/* --- F8: the inspector is a person, shown by name --------------------------- */
+
+describe('F8 — the inspection read-back shows a name, never an account identifier', () => {
+  const INSPECTOR_ID = '6f4d1b3e-6a2c-4a1e-9f2b-6d4c1b3e6a2c';
+  const INSPECTION_ROW = { ...OPEN_INSPECTION, inspectorId: INSPECTOR_ID };
+
+  /** The read-back list, scoped away from the form beside it. */
+  async function readBack(): Promise<HTMLElement> {
+    return within(
+      await screen.findByRole('region', { name: EN['receptions.inspection.heading']! })
+    ).findByRole('list');
+  }
+
+  it('resolves the account and renders the name', async () => {
+    readReceivingEmployeeIdentity.mockResolvedValue({
+      status: 'ok',
+      data: { id: INSPECTOR_ID, displayName: 'Nadia Suleiman' },
+      correlationId: 'corr-user',
+    });
+    evidenceByKind({ inspection: [INSPECTION_ROW] });
+    renderLtr(<InspectionStep {...stepProps()} />);
+
+    expect(await screen.findByText('Nadia Suleiman')).toBeInTheDocument();
+    // The identifier is nowhere on the surface, in any element.
+    expect(screen.queryByText(INSPECTOR_ID)).not.toBeInTheDocument();
+    await waitFor(() => expect(readReceivingEmployeeIdentity).toHaveBeenCalledWith(INSPECTOR_ID));
+  });
+
+  it('reads each distinct account once, however many rows carry it', async () => {
+    readReceivingEmployeeIdentity.mockResolvedValue({
+      status: 'ok',
+      data: { id: INSPECTOR_ID, displayName: 'Nadia Suleiman' },
+      correlationId: 'corr-user',
+    });
+    evidenceByKind({
+      inspection: [
+        INSPECTION_ROW,
+        { ...INSPECTION_ROW, id: 'insp-2' },
+        { ...INSPECTION_ROW, id: 'insp-3' },
+      ],
+    });
+    renderLtr(<InspectionStep {...stepProps()} />);
+
+    await waitFor(() => expect(readReceivingEmployeeIdentity).toHaveBeenCalled());
+    // The list operation is `expensive-read`; three rows by one person are one
+    // directory read, not three.
+    expect(readReceivingEmployeeIdentity.mock.calls).toHaveLength(1);
+  });
+
+  it('says the identifier names nobody rather than printing it, on a 404', async () => {
+    // `inspector_id` has NO foreign key (G-EMP), so this is a state the database
+    // permits — and the one case where showing the value would read as a person.
+    readReceivingEmployeeIdentity.mockResolvedValue({
+      status: 'not-found',
+      data: null,
+      correlationId: 'corr-404',
+    });
+    evidenceByKind({ inspection: [INSPECTION_ROW] });
+    renderLtr(<InspectionStep {...stepProps()} />);
+
+    const list = await readBack();
+    await waitFor(() =>
+      expect(list).toHaveTextContent(EN['receptions.wizard.receivingEmployeeUnresolved']!)
+    );
+    expect(screen.queryByText(INSPECTOR_ID)).not.toBeInTheDocument();
+  });
+
+  it('says the read did not answer rather than printing the identifier', async () => {
+    readReceivingEmployeeIdentity.mockResolvedValue({
+      status: 'error',
+      data: null,
+      correlationId: 'corr-500',
+    });
+    evidenceByKind({ inspection: [INSPECTION_ROW] });
+    renderLtr(<InspectionStep {...stepProps()} />);
+
+    const list = await readBack();
+    await waitFor(() =>
+      expect(list).toHaveTextContent(EN['receptions.wizard.receivingEmployeeUnavailable']!)
+    );
+    expect(screen.queryByText(INSPECTOR_ID)).not.toBeInTheDocument();
+  });
+
+  it('spends no directory request without the permission, and still shows no identifier', async () => {
+    evidenceByKind({ inspection: [INSPECTION_ROW] });
+    renderLtr(
+      <InspectionStep
+        {...stepProps({ capabilities: { ...CAPABILITIES, readStaffDirectory: false } })}
+      />
+    );
+
+    const list = await readBack();
+    await waitFor(() =>
+      expect(list).toHaveTextContent(EN['receptions.wizard.receivingEmployeeUnavailable']!)
+    );
+    expect(readReceivingEmployeeIdentity).not.toHaveBeenCalled();
+    expect(screen.queryByText(INSPECTOR_ID)).not.toBeInTheDocument();
+  });
+
+  it('states the disposition without claiming no name can be resolved', async () => {
+    // The note beside the control used to end "no other name can be resolved for
+    // this field", which the list above it now contradicts.
+    evidenceByKind({ inspection: [INSPECTION_ROW] });
+    renderLtr(<InspectionStep {...stepProps()} />);
+
+    const note = await screen.findByText(EN['receptions.inspection.inspectorNote']!);
+    expect(note).toBeInTheDocument();
+    expect(note.textContent).not.toMatch(/no other name can be resolved/i);
   });
 });

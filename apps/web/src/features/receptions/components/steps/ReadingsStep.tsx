@@ -241,11 +241,17 @@ function OdometerPanel({
               optionKeyPrefix: 'vehicles.odometerUnit.',
             },
             {
+              // A moment, not a string. This was `kind: 'text'` with a hint
+              // showing the right shape, and the operator could type
+              // `2026-03-01T09:30` — no zone — which the schema accepted and
+              // PostgreSQL then resolved against the SERVER's zone. On the
+              // reading that establishes when custody began, that is a silent
+              // three-hour error for a branch at UTC+3. The control now composes
+              // the operator's own offset and prints what it will send.
               name: 'observedAt',
-              kind: 'text',
+              kind: 'instant',
               labelKey: 'vehicles.odometer.observedAt',
               required: true,
-              maxLength: 40,
               hintKey: 'vehicles.odometer.observedAtHint',
             },
             {

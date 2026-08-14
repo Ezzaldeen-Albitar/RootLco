@@ -214,6 +214,7 @@ const CAPABILITIES = {
   convertReceptions: true,
   closeReceptions: true,
   readWorkOrders: true,
+  readStaffDirectory: true,
 };
 
 /** The operator the referent-less identity fields (G-EMP) name. */

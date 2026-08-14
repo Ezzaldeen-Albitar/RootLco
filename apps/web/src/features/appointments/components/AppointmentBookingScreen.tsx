@@ -2,6 +2,8 @@
 
 import { useActionState, useCallback, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { CursorPager } from '@/components/data-table/CursorPager';
+import { readCompleteness } from '@/components/data-table/read-completeness';
 import { INITIAL_REQUEST, type TableRequest } from '@/components/data-table/table-state';
 import { useServerTable } from '@/components/data-table/use-server-table';
 import { SelectField } from '@/components/forms/Field';
@@ -369,6 +371,16 @@ function CataloguePicker({
  * newest link first, history rows included with their state named, and a
  * vehicle whose live identity is gone shown by bare reference rather than a
  * resurrected one.
+ *
+ * ## One page of ten was every vehicle this picker could offer
+ *
+ * The read is cursor-paginated at ten and the list rendered `rows` and stopped,
+ * so a customer's eleventh linked vehicle could not be selected AT ALL — the
+ * booking simply could not be made for it, with nothing on screen saying why.
+ * The empty branch had the same defect in words: "no vehicles are linked to this
+ * customer" is a claim about the SET, and only a read that covered the set may
+ * make it. Both now consult `readCompleteness`, and `CursorPager` reaches the
+ * rest.
  */
 function VehiclePicker({
   locale,
@@ -391,6 +403,7 @@ function VehiclePicker({
   const table = useServerTable<CustomerVehicleEntry>(load, {
     initial: { ...INITIAL_REQUEST, pageSize: 10 },
   });
+  const completeness = readCompleteness(table.status, table.response?.hasMore);
 
   const labelOf = useMemo(
     () =>
@@ -479,33 +492,62 @@ function VehiclePicker({
         table.response.rows.length === 0 ? (
           // A true statement about THIS customer, with the true next step: the
           // link is made on the vehicle's own profile, which is another
-          // screen's capability rather than a control invented here.
-          <p role="status" className="text-supporting text-text-secondary" lang={locale}>
-            {translate(messages, 'appointments.book.noVehicles')}
+          // screen's capability rather than a control invented here. Only made
+          // when the read covered the set — otherwise it is a page boundary
+          // described as an empty garage.
+          <p
+            role="status"
+            data-testid="booking-vehicles-empty"
+            className="text-supporting text-text-secondary"
+            lang={locale}
+          >
+            {translate(
+              messages,
+              completeness === 'truncated'
+                ? 'appointments.book.vehiclesTruncated'
+                : 'appointments.book.noVehicles'
+            )}
           </p>
         ) : (
-          <ul className="flex flex-col divide-y divide-border rounded-md border border-border">
-            {table.response.rows.map((entry) => (
-              <li key={entry.id}>
-                <button
-                  type="button"
-                  onClick={() => onChange({ vehicleId: entry.vehicleId, label: labelOf(entry) })}
-                  className="flex w-full items-center justify-between gap-3 px-3 py-2 text-start transition-colors duration-fast ease-standard hover:bg-surface-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
-                >
-                  <span dir="ltr" className="font-mono text-body text-text-primary">
-                    {labelOf(entry)}
-                  </span>
-                  {entry.active ? null : (
-                    <span className="text-caption text-text-muted">
-                      {translate(messages, 'appointments.book.vehicleFormerLink')}
+          <>
+            <ul className="flex flex-col divide-y divide-border rounded-md border border-border">
+              {table.response.rows.map((entry) => (
+                <li key={entry.id}>
+                  <button
+                    type="button"
+                    onClick={() => onChange({ vehicleId: entry.vehicleId, label: labelOf(entry) })}
+                    className="flex w-full items-center justify-between gap-3 px-3 py-2 text-start transition-colors duration-fast ease-standard hover:bg-surface-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+                  >
+                    <span dir="ltr" className="font-mono text-body text-text-primary">
+                      {labelOf(entry)}
                     </span>
-                  )}
-                </button>
-              </li>
-            ))}
-          </ul>
+                    {entry.active ? null : (
+                      <span className="text-caption text-text-muted">
+                        {translate(messages, 'appointments.book.vehicleFormerLink')}
+                      </span>
+                    )}
+                  </button>
+                </li>
+              ))}
+            </ul>
+            {completeness === 'truncated' ? (
+              <p
+                data-testid="booking-vehicles-truncated"
+                className="text-caption text-text-muted"
+                lang={locale}
+              >
+                {translate(messages, 'appointments.book.vehiclesTruncated')}
+              </p>
+            ) : null}
+          </>
         )
       ) : null}
+
+      <CursorPager
+        messages={messages}
+        table={table}
+        label={translate(messages, 'appointments.book.vehiclePagerLabel')}
+      />
     </div>
   );
 }

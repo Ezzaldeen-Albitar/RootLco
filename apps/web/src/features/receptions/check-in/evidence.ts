@@ -183,7 +183,23 @@ export function isRestrictedNarrative(kind: EvidenceKind): boolean {
  * The published union payload, mirrored field for field
  * ------------------------------------------------------------------ */
 
-export type EvidenceFieldKind = 'text' | 'vocabulary' | 'datetime' | 'identifier';
+/**
+ * `person` is `identifier` with the one thing that makes an identifier readable.
+ *
+ * `inspectorId` was `identifier`, so the read-back rendered a bare account uuid
+ * inside a `<code>` element under the label "Inspector" — beside a note claiming
+ * "no other name can be resolved for this field", while the complaint arm two
+ * rows above joined `reportedByPartnerDisplayName` and showed a person. The plan
+ * §7 rule is one sentence: **the UI shows names, never UUIDs**, and this phase
+ * had already applied it twice to `receivingEmployeeId`
+ * (`check-in/receiving-employee.ts`) through the same `iam.user-detail` read the
+ * check-in employee picker already consumes and already discloses.
+ *
+ * A `person` field therefore names an ACCOUNT to resolve, never a value to
+ * print. `EvidenceReadBack` resolves it and renders one of the four honest
+ * outcomes; the identifier reaches no screen in any of them.
+ */
+export type EvidenceFieldKind = 'text' | 'vocabulary' | 'datetime' | 'identifier' | 'person';
 
 export interface EvidenceRowField {
   /** The key the union publishes, camelCase, exactly as flattened into the row. */
@@ -233,7 +249,7 @@ export const EVIDENCE_ROW_FIELDS: Readonly<Record<EvidenceKind, readonly Evidenc
       kind: 'vocabulary',
       vocabularyPrefix: 'receptions.inspectionStatus.',
     },
-    { field: 'inspectorId', labelKey: 'receptions.inspection.inspector', kind: 'identifier' },
+    { field: 'inspectorId', labelKey: 'receptions.inspection.inspector', kind: 'person' },
     { field: 'startedAt', labelKey: 'receptions.inspection.startedAt', kind: 'datetime' },
     { field: 'completedAt', labelKey: 'receptions.inspection.completedAt', kind: 'datetime' },
   ],

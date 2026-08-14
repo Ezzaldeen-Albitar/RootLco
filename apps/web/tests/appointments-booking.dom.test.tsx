@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import en from '../src/i18n/messages/en.json';
@@ -317,5 +317,108 @@ describe('both directions', () => {
     expect(
       screen.getByRole('button', { name: ar['appointments.book.submit'] })
     ).toBeInTheDocument();
+  });
+});
+
+describe('F1 — one page of ten was every vehicle this picker could offer', () => {
+  const ELEVENTH = {
+    ...VEHICLE_ENTRY,
+    id: 'link-11',
+    vehicleId: '99999999-9999-4999-8999-999999999999',
+    vehicleDisplayNumber: 'V-0111',
+  };
+
+  function pageOf(rows: readonly unknown[], hasMore = false) {
+    return {
+      status: 'ok' as const,
+      rows,
+      nextCursor: hasMore ? 'cursor-2' : null,
+      hasMore,
+      correlationId: null,
+    };
+  }
+
+  it('does not present one page as the customer whole list', async () => {
+    // The read is cursor-paginated at ten. Rendering the rows and stopping made
+    // an eleventh linked vehicle unselectable, with nothing on screen saying so.
+    listCustomerVehicles.mockResolvedValue(pageOf([VEHICLE_ENTRY], true));
+    const user = userEvent.setup();
+    renderScreen();
+    await chooseCustomer(user);
+
+    expect(await screen.findByTestId('booking-vehicles-truncated')).toHaveTextContent(
+      en['appointments.book.vehiclesTruncated']
+    );
+  });
+
+  it('reaches the vehicle on the next page and books against it', async () => {
+    listCustomerVehicles.mockResolvedValue(pageOf([VEHICLE_ENTRY], true));
+    const user = userEvent.setup();
+    renderScreen();
+    await chooseCustomer(user);
+    await screen.findByTestId('booking-vehicles-truncated');
+
+    const pager = screen.getByRole('navigation', {
+      name: en['appointments.book.vehiclePagerLabel'],
+    });
+    listCustomerVehicles.mockResolvedValue(pageOf([ELEVENTH]));
+    await user.click(within(pager).getByRole('button', { name: en['table.nextPage'] }));
+
+    // The row that could not be selected at all before is now selectable.
+    await user.click(await screen.findByRole('button', { name: /V-0111/ }));
+    await waitFor(() => expect(screen.getByTestId('vehicle-picker')).toHaveTextContent('V-0111'));
+    expect(
+      within(screen.getByTestId('vehicle-picker')).getByRole('button', {
+        name: en['appointments.book.vehicleChange'],
+      })
+    ).toBeInTheDocument();
+  });
+
+  it('does not call the garage empty when the read stopped at a page boundary', async () => {
+    // A truncated page holding no rows is not "no vehicles are linked to this
+    // customer" — that is a claim about the SET.
+    listCustomerVehicles.mockResolvedValue(pageOf([], true));
+    const user = userEvent.setup();
+    renderScreen();
+    await chooseCustomer(user);
+
+    const empty = await screen.findByTestId('booking-vehicles-empty');
+    expect(empty).toHaveTextContent(en['appointments.book.vehiclesTruncated']);
+    expect(empty).not.toHaveTextContent(en['appointments.book.noVehicles']);
+  });
+
+  it('offers no pager and no notice when the read covered the set', async () => {
+    listCustomerVehicles.mockResolvedValue(pageOf([VEHICLE_ENTRY]));
+    const user = userEvent.setup();
+    renderScreen();
+    await chooseCustomer(user);
+    await screen.findByRole('button', { name: /V-0100/ });
+
+    expect(screen.queryByTestId('booking-vehicles-truncated')).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('navigation', { name: en['appointments.book.vehiclePagerLabel'] })
+    ).not.toBeInTheDocument();
+  });
+
+  it('renders the truncation sentence in Arabic, not as a key', async () => {
+    listCustomerVehicles.mockResolvedValue(pageOf([VEHICLE_ENTRY], true));
+    const user = userEvent.setup();
+    renderRtl(
+      <AppointmentBookingScreen
+        locale="ar"
+        messages={ar}
+        companyIds={['11111111-1111-4111-8111-111111111111']}
+        branchIds={['22222222-2222-4222-8222-222222222222']}
+        types={TYPES}
+        channels={CHANNELS}
+      />
+    );
+    await user.type(screen.getByLabelText(ar['crm.customers.column.name']), 'Nadia');
+    await user.click(screen.getByRole('button', { name: ar['customerSelector.search'] }));
+    await user.click(await screen.findByRole('button', { name: /Nadia Khoury/ }));
+
+    expect(await screen.findByTestId('booking-vehicles-truncated')).toHaveTextContent(
+      ar['appointments.book.vehiclesTruncated']
+    );
   });
 });
