@@ -35,8 +35,8 @@ the candidate, and refuses either half that fails to name an unclosed task.
 
 | Binding           | Value                                                                                       |
 | ----------------- | ------------------------------------------------------------------------------------------- |
-| `FINAL_CODE_SHA`  | `b5e9919b0006a68fa694d650336c62f17095173c`                                                  |
-| `FINAL_CODE_TREE` | `0a144045e8adc717490f379c43b1805927d48192`                                                  |
+| `FINAL_CODE_SHA`  | `3c75f49a01e35b507461bf0929b0046e7140860a`                                                  |
+| `FINAL_CODE_TREE` | `f1f92927f93e4fd55d47fcc475d9311b21cf79f0`                                                  |
 | Branch            | `feature/p1-28-appointment-vehicle-reception-frontend`                                      |
 | Pull request      | **#226** (draft), base `develop`, 110 commits ahead                                         |
 | Subject           | `chore(p1-28): regenerate the operation register and evidence seal after the finding fixes` |
@@ -90,11 +90,20 @@ callback parameter as a React Hook. Each repair forced a reseal, and any further
 repair would have forced another, while the package went on describing a commit
 ever further behind the tree hosted CI actually exercises.
 
+Two more repairs have landed since — the unnamed-successor falsification
+re-anchored so that re-freezing cannot make it vacuous, and a CodeQL HIGH in the
+citation resolver where `existsSync` then `statSync` then `readFileSync` asked
+whether a path was a readable file and then read it — and **each was answered by
+moving the candidate rather than by growing a successor list**. That is the rule
+this package now follows: while the product is provably unchanged, the candidate
+follows the newest executable commit, and `reFrozenFrom` carries what each move
+was for.
+
 **Re-freezing at the head ends that, and it costs nothing, which is checkable
 rather than asserted:**
 
 ```text
-git diff --name-only 6392ccb4321b004ed12e5d04ad583298da3303dd..b5e9919b0006a68fa694d650336c62f17095173c -- apps supabase
+git diff --name-only 6392ccb4321b004ed12e5d04ad583298da3303dd..3c75f49a01e35b507461bf0929b0046e7140860a -- apps supabase
 ```
 
 returns **nothing**. Not one file under `apps/**` or `supabase/**` differs
@@ -104,13 +113,14 @@ re-freeze across a **non**-empty product diff would be the opposite of this — 
 would be re-pointing the record at software nobody had measured — and that is the
 case the gate refuses and did refuse, at `38afa5c2`.
 
-**What the six once-named successors are now.**
+**What the seven once-named successors are now.**
 `e2dd8b8d8ba6ce124c464409fbe827ceea82b1fc`,
 `8f8c5cfaa8cbb25693affa6422e957fc4f914ab6`,
 `f4ba407485a916a2848f2de7bf6df090d18840b1`,
 `d37452ea888d4442f161295bc472df39d21ad15d`,
-`34b3fca5706ea037c46f4a1d16f5dfe2c4d194b1` and
-`b5e9919b0006a68fa694d650336c62f17095173c` — the last of which **is** the
+`34b3fca5706ea037c46f4a1d16f5dfe2c4d194b1`,
+`b5e9919b0006a68fa694d650336c62f17095173c` and
+`3c75f49a01e35b507461bf0929b0046e7140860a` — the last of which **is** the
 candidate — are all **ancestors** of it, so they are successors of nothing and
 the gate refuses a recorded successor that is not in the computed range. They are
 kept in `closure-candidate.json` under `reFrozenFrom`, with what each one did
@@ -128,7 +138,7 @@ reader who finds this section reassuring should read the pending table below
 before concluding anything.
 
 **The rule, and the single hole it cannot close.** Every commit in
-`git log b5e9919b..HEAD` that touches an executable path — anything outside
+`git log 3c75f49a..HEAD` that touches an executable path — anything outside
 `docs/` that is not `*.md` — must appear in `closure-candidate.json` by its full
 40-character id, and the gate computes that range and refuses an unnamed one. A
 **documentation-only** successor may go unnamed, and the gate **prints** the ones
@@ -198,7 +208,7 @@ What **does** move and what does not, said precisely:
 ### What the local record covers
 
 `docs/phase-1/phase-1-27/evidence/local-run-ledger.json` records the unit and web
-tiers at `b5e9919b0006a68fa694d650336c62f17095173c` — **the candidate itself** —
+tiers at `3c75f49a01e35b507461bf0929b0046e7140860a` — **the candidate itself** —
 and `042349f0dd58130bf2983322d7c0de3ed0ec3da7` is the commit that carries that
 record.
 The gate reads that ledger **out of git at the commit that carries it**, through
@@ -564,13 +574,13 @@ about a repository. What the gate now computes, on every invocation:
 
 | Binding                  | How it is established                                                                                                                                                                                                                                                                                                                                                                    |
 | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| the candidate **exists** | `git cat-file -e b5e9919b^{commit}`                                                                                                                                                                                                                                                                                                                                                      |
-| its **tree**             | `git rev-parse b5e9919b^{tree}` must equal the recorded `0a144045e8adc717490f379c43b1805927d48192`                                                                                                                                                                                                                                                                                       |
+| the candidate **exists** | `git cat-file -e 3c75f49a^{commit}`                                                                                                                                                                                                                                                                                                                                                      |
+| its **tree**             | `git rev-parse 3c75f49a^{tree}` must equal the recorded `f1f92927f93e4fd55d47fcc475d9311b21cf79f0`                                                                                                                                                                                                                                                                                       |
 | the **base branch**      | `git rev-parse --verify refs/remotes/origin/develop^{commit}`, tried before `refs/heads/develop` and the bare name, and RECOVERED from the merge ref's own base-side parent when no ref resolves. A base that can be found neither way makes the successor set UNKNOWN and the gate fails **closed**                                                                                     |
 | the **head under test**  | `git rev-list --parents -n 1 HEAD`. Ordinarily HEAD itself; when HEAD is a two-parent merge with one parent that CONTAINS the candidate and one that does not, and no content of its own, this branch's side of that merge — printed, never substituted quietly. Classified by the candidate, so it needs no base ref; cross-checked against one when there is one                       |
-| its **ancestry**         | `git merge-base --is-ancestor b5e9919b <head under test>`                                                                                                                                                                                                                                                                                                                                |
-| **product identity**     | `git diff --name-only b5e9919b..<head under test> -- apps supabase` must be empty — computed, where the package used to assert it in a sentence                                                                                                                                                                                                                                          |
-| **successors**           | `git log <head under test> --not b5e9919b <base>`, every executable commit of which must be named by id; documentation-only ones are printed. The list is EMPTY at this candidate, which is the newest commit touching an executable path. The base is subtracted because a commit `develop` took after the freeze is not this phase's                                                   |
+| its **ancestry**         | `git merge-base --is-ancestor 3c75f49a <head under test>`                                                                                                                                                                                                                                                                                                                                |
+| **product identity**     | `git diff --name-only 3c75f49a..<head under test> -- apps supabase` must be empty — computed, where the package used to assert it in a sentence                                                                                                                                                                                                                                          |
+| **successors**           | `git log <head under test> --not 3c75f49a <base>`, every executable commit of which must be named by id; documentation-only ones are printed. The list is EMPTY at this candidate, which is the newest commit touching an executable path. The base is subtracted because a commit `develop` took after the freeze is not this phase's                                                   |
 | **local tier figures**   | `git show <ledger commit>:…/local-run-ledger.json`, matched field by field, plus the measured head either executable-identical to the candidate or a named successor whose drift is declared path by path and compared against `git diff`                                                                                                                                                |
 | **hosted tier figures**  | not computable here, so required to be fetchable: run id, job id, head sha, artefact. A head that is not the candidate must declare which of the two it is — an **ancestor**, superseded, listed in `pendingHostedBindings`; or a **descendant** whose `apps/**` and `supabase/**` `git diff` computes to be identical to the candidate's — and must be a commit `git cat-file` resolves |
 | **documented claims**    | anchored sentences measured against the tree, and `PROTECTED_REPROOF` citations resolved into the files they name                                                                                                                                                                                                                                                                        |
@@ -613,7 +623,7 @@ failure itself. Seventy-two known-bad worlds run on every invocation. Two of the
 2. a recorded tree the commit does not have → `git rev-parse … is <other>`;
 3. a successor touching an executable path and not named → `unrecorded executable successor: <sha>`;
 4. a fabricated tier figure → `the package records 3; …local-run-ledger.json at b63fbd62 records 2559`;
-5. a fabricated `measurementDrift` list → `declares measurementDrift [scripts/ci/never-existed.mjs]; git diff --name-only <measured head>..b5e9919b computes […]`;
+5. a fabricated `measurementDrift` list → `declares measurementDrift [scripts/ci/never-existed.mjs]; git diff --name-only <measured head>..3c75f49a computes […]`;
 6. a superseded head naming no commit here → `names no commit in this repository`;
 7. a pending marker on a binding that is bound → `is marked describesSupersededHead while the head it names IS the candidate`;
 8. a tier claiming both halves agree while its hosted half is superseded → `claims a hosted observation OF THE CANDIDATE while its attestation describes a head the candidate supersedes`;

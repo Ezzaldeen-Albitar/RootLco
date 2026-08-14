@@ -5,19 +5,27 @@
   "howToCheck": "npm run validate:p1-28-evidence",
   "whatThisIsNot": "This is not a tamper-proof seal and not a hosted observation. The digests in evidence-manifest.json remove SILENT revision, not revision. NO HOSTED FIGURE IN THIS PACKAGE WAS TAKEN AT THIS CANDIDATE, and re-freezing the candidate did not change that. Every one of them comes from run 31750364479, which measured 38afa5c28e5b78d484a442cf6b8596fb2a5c34aa — a head three fix waves have since superseded — and each is recorded PENDING here, marked `describesSupersededHead`, and listed in `pendingHostedBindings`. What a later reader can do with them is fetch the same objects and see what that head did; what nobody may do with them is read them as a measurement of this candidate.",
   "candidate": {
-    "FINAL_CODE_SHA": "b5e9919b0006a68fa694d650336c62f17095173c",
-    "FINAL_CODE_TREE": "0a144045e8adc717490f379c43b1805927d48192",
+    "FINAL_CODE_SHA": "3c75f49a01e35b507461bf0929b0046e7140860a",
+    "FINAL_CODE_TREE": "f1f92927f93e4fd55d47fcc475d9311b21cf79f0",
     "branch": "feature/p1-28-appointment-vehicle-reception-frontend",
     "pullRequest": 226,
     "baseBranch": "develop",
-    "commitsAheadOfDevelop": 124,
-    "subject": "fix(p1-28): anchor the unnamed-successor falsification on a superseded candidate",
+    "commitsAheadOfDevelop": 127,
+    "subject": "fix(ci): resolve a citation with one read, not a check then a use",
     "whatFreezingMeans": "Every LOCAL figure in this package describes THIS commit. Commits that land after it are DOCUMENTATION-ONLY: each is required to leave apps/** and supabase/** byte-identical, and the successor list is empty because nothing executable follows this candidate. A successor that changes a product tree invalidates this package and the candidate must be re-frozen and re-measured, which is recorded in `reFrozenFrom` below for every candidate this package has named.",
-    "productIdentityCheck": "git diff --name-only b5e9919b0006a68fa694d650336c62f17095173c..HEAD -- apps supabase",
+    "productIdentityCheck": "git diff --name-only 3c75f49a01e35b507461bf0929b0046e7140860a..HEAD -- apps supabase",
     "productIdentityExpectation": "empty output — no product file differs between the candidate and any successor",
     "reFrozenFrom": {
       "what": "Every candidate this package has named, most recent first. Kept rather than overwritten: deleting the record of what was once frozen is the half-update this gate exists to catch.",
       "history": [
+        {
+          "previousCandidate": "b5e9919b0006a68fa694d650336c62f17095173c",
+          "previousTree": "0a144045e8adc717490f379c43b1805927d48192",
+          "whyItMoved": "A CodeQL HIGH landed against the citation resolver this package commissioned: `js/file-system-race` at `scripts/ci/check-p1-28-traceability.mjs`, where `existsSync` then `statSync` then `readFileSync` asked whether a path was a readable file and then read it — and the answer a sealed record quotes could have changed between the question and the read. `3c75f49a01e35b507461bf0929b0046e7140860a` resolves it with ONE `readFileSync`, carrying the distinction in the FAILURE instead (`ENOENT` -> names no file at this head, `EISDIR` -> names a directory, not a file, anything else rethrown), and drops `statSync` from the import. The return strings are unchanged, so the gate still derives 27 claims across 8 documents with 0 disagreements.",
+          "whyReFrozenRatherThanNamed": "Both were open and the choice was deliberate. `git diff --name-only b5e9919b..3c75f49a -- apps supabase` is EMPTY and the only executable path that differs is `scripts/ci/check-p1-28-traceability.mjs`, so this commit COULD have been named an executable successor with that path declared as `measurementDrift`. Naming it was rejected for three reasons. First, the drift apparatus exists for the case where a re-freeze is IMPOSSIBLE because a product path moved; using it when the front door is open weakens what it means when it is used. Second, the invariant that the candidate IS the newest commit touching an executable path is the strongest true statement this package can make, and it is what ended the reseal treadmill — naming would re-open that accumulation one commit at a time and pose the same fork at every future repair. Third, nothing is lost: what this commit did and why is recorded here with the fidelity a successor entry would have carried. Neither choice made any known-bad world vacuous; that was checked before choosing, and is not why the choice was made.",
+          "whatThisCostAndWhatItDidNot": "It cost the two local tiers, re-measured here at the new candidate. It bought no hosted figure: every hosted binding remains PENDING and every superseded-head citation for 38afa5c2 stands exactly as it stood.",
+          "supersededSuccessorRecord": "That candidate named no executable successor at the moment it was superseded; `3c75f49a01e35b507461bf0929b0046e7140860a` is now the candidate itself."
+        },
         {
           "previousCandidate": "34b3fca5706ea037c46f4a1d16f5dfe2c4d194b1",
           "previousTree": "55efcf20b50403e219da414f894e06bb16d54017",
@@ -62,12 +70,12 @@
       "failed": 0,
       "skipped": 0,
       "files": 98,
-      "measuredAtCommit": "b5e9919b0006a68fa694d650336c62f17095173c",
+      "measuredAtCommit": "3c75f49a01e35b507461bf0929b0046e7140860a",
       "provenance": "LOCAL_COMPUTED_HOSTED_PENDING",
       "localLedger": {
         "path": "docs/phase-1/phase-1-27/evidence/local-run-ledger.json",
         "tier": "unit",
-        "atCommit": "f94c19c6bbd5105c9baa8f35e3e52e25b8451533",
+        "atCommit": "c16c1a555bb7a490adcc79de5f1f339c2461f5c1",
         "howChecked": "`git show 94e18000:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD when this measurement was committed, not as it stands now. Pinned to a commit because the ledger MOVES: `check-p1-27-closing-values.mjs --record` rewrites it at whatever head it was last taken at, so a check against the working copy would go red on the next unrelated re-record and would then be relaxed rather than fixed."
       },
       "hostedAttestation": {
@@ -76,7 +84,7 @@
         "headSha": "38afa5c28e5b78d484a442cf6b8596fb2a5c34aa",
         "artefact": "evidence-unit-coverage / test-totals-unit.json",
         "describesSupersededHead": true,
-        "supersededBy": "an exact-head CI run at the candidate b5e9919b0006a68fa694d650336c62f17095173c, taken by the phase coordinator"
+        "supersededBy": "an exact-head CI run at the candidate 3c75f49a01e35b507461bf0929b0046e7140860a, taken by the phase coordinator"
       },
       "note": "MEASURED HERE, at the named machinery successor 8f8c5cfa, and COMPUTED against the run ledger at the commit named above. The three executable paths that differ between that head and the candidate are declared in `measurementDrift` and the gate compares the declared list against `git diff`; none is under apps/** or supabase/**, so the software measured is the candidate’s. The HOSTED half of this tier is PENDING: `hostedAttestation` cites run 31750364479 job 94614563908, which measured 38afa5c2 and reported 2475 over 97 files. That is a different commit and a different suite, and it is recorded as such rather than restated here.",
       "measurementNote": "Measured AT THE CANDIDATE. No executable path differs between the measurement head and the candidate because they are the same commit, so this tier declares no `measurementDrift` - and the gate REFUSES a `measurementDrift` field when nothing differs, so the absence is checked rather than assumed."
@@ -88,12 +96,12 @@
       "failed": 0,
       "skipped": 0,
       "files": 98,
-      "measuredAtCommit": "b5e9919b0006a68fa694d650336c62f17095173c",
+      "measuredAtCommit": "3c75f49a01e35b507461bf0929b0046e7140860a",
       "provenance": "LOCAL_COMPUTED_HOSTED_PENDING",
       "localLedger": {
         "path": "docs/phase-1/phase-1-27/evidence/local-run-ledger.json",
         "tier": "web",
-        "atCommit": "f94c19c6bbd5105c9baa8f35e3e52e25b8451533",
+        "atCommit": "c16c1a555bb7a490adcc79de5f1f339c2461f5c1",
         "howChecked": "`git show 94e18000:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD when this measurement was committed, not as it stands now. Pinned to a commit because the ledger MOVES: `check-p1-27-closing-values.mjs --record` rewrites it at whatever head it was last taken at, so a check against the working copy would go red on the next unrelated re-record and would then be relaxed rather than fixed."
       },
       "hostedAttestation": {
@@ -102,7 +110,7 @@
         "headSha": "38afa5c28e5b78d484a442cf6b8596fb2a5c34aa",
         "artefact": "evidence-web-quality / test-totals-web.json",
         "describesSupersededHead": true,
-        "supersededBy": "an exact-head CI run at the candidate b5e9919b0006a68fa694d650336c62f17095173c, taken by the phase coordinator"
+        "supersededBy": "an exact-head CI run at the candidate 3c75f49a01e35b507461bf0929b0046e7140860a, taken by the phase coordinator"
       },
       "note": "Same mechanism, same measurement head and the same declared drift as the unit tier. The HOSTED half is PENDING for the same reason: run 31750364479 job 94614564128 reported 2669 over 98 files at 38afa5c2, and the hosted clean room (job 94614564119) independently reproduced that figure AT THAT HEAD. Neither is a measurement of this candidate.",
       "measurementNote": "Measured AT THE CANDIDATE. No executable path differs between the measurement head and the candidate because they are the same commit, so this tier declares no `measurementDrift` - and the gate REFUSES a `measurementDrift` field when nothing differs, so the absence is checked rather than assumed."
@@ -123,7 +131,7 @@
         "headSha": "38afa5c28e5b78d484a442cf6b8596fb2a5c34aa",
         "artefact": "evidence-integration-tests / test-totals-backend.json",
         "describesSupersededHead": true,
-        "supersededBy": "an exact-head CI run at the candidate b5e9919b0006a68fa694d650336c62f17095173c, taken by the phase coordinator"
+        "supersededBy": "an exact-head CI run at the candidate 3c75f49a01e35b507461bf0929b0046e7140860a, taken by the phase coordinator"
       },
       "note": "NOT MEASURED AT THIS CANDIDATE, and not measurable here at all: this tier needs a running PostgreSQL with every migration applied, which this workstation does not host. The figures above are run 31750364479’s, taken at 38afa5c2 — a head this candidate supersedes — and `measuredAtCommit` names that head rather than the candidate. What this tier is at the candidate is UNKNOWN until the coordinator’s exact-head run."
     },
@@ -143,7 +151,7 @@
         "headSha": "38afa5c28e5b78d484a442cf6b8596fb2a5c34aa",
         "artefact": "evidence-security-matrix / test-totals-database.json",
         "describesSupersededHead": true,
-        "supersededBy": "an exact-head CI run at the candidate b5e9919b0006a68fa694d650336c62f17095173c, taken by the phase coordinator"
+        "supersededBy": "an exact-head CI run at the candidate 3c75f49a01e35b507461bf0929b0046e7140860a, taken by the phase coordinator"
       },
       "note": "NOT MEASURED AT THIS CANDIDATE, for the same reason as the backend tier. The figures are run 31750364479’s at 38afa5c2. NOTE what does not move: the three fix waves changed no file under supabase/**, so the migrations, policies and RLS matrix this tier measures are byte-identical between that head and the candidate — but this package does not convert that observation into a measurement, because the tier also executes tests that live outside supabase/**."
     },
@@ -161,7 +169,7 @@
         "headSha": "38afa5c28e5b78d484a442cf6b8596fb2a5c34aa",
         "artefact": "evidence-authenticated-browser / apps/web/playwright-report.json",
         "describesSupersededHead": true,
-        "supersededBy": "an exact-head CI run at the candidate b5e9919b0006a68fa694d650336c62f17095173c, taken by the phase coordinator"
+        "supersededBy": "an exact-head CI run at the candidate 3c75f49a01e35b507461bf0929b0046e7140860a, taken by the phase coordinator"
       },
       "note": "NOT MEASURED AT THIS CANDIDATE. This is the tier the re-freeze matters most to: the three fix waves changed 20 files under apps/web/src, six of them reception and appointment surfaces this spec drives, so run 31750364479’s 366 passes describe screens that have since been edited. The four skips were two cases each in authenticated/accessibility.spec.ts under authenticated-en and authenticated-ar, and no P1-28 case was skipped, AT THAT HEAD. Nothing here is claimed for this candidate."
     }
@@ -196,7 +204,7 @@
     "howTaken": "Read per test entry out of the run's own playwright-report.json, grouped by `projectName` and the owning spec file. NOT inferred from a keyword count and not copied from a local run.",
     "note": "AT 38afa5c2, NOT AT THE CANDIDATE. Read per test entry out of that run’s own playwright-report.json, grouped by `projectName` and the owning spec file — not inferred from a keyword count and not copied from a local run. The tablet project observes this phase at 1024x768 (apps/web/playwright.config.ts:254-260) and its testMatch at :255 names `(administration|appointments-and-receptions)`; that is a fact about the CONFIG and is unchanged at the candidate. The 141 executed cases are a fact about that RUN and are not.",
     "describesSupersededHead": true,
-    "supersededBy": "an exact-head CI run at the candidate b5e9919b0006a68fa694d650336c62f17095173c, taken by the phase coordinator"
+    "supersededBy": "an exact-head CI run at the candidate 3c75f49a01e35b507461bf0929b0046e7140860a, taken by the phase coordinator"
   },
   "hostedCi": {
     "runId": 31750364479,
@@ -318,7 +326,7 @@
       }
     ],
     "describesSupersededHead": true,
-    "supersededBy": "an exact-head CI run at the candidate b5e9919b0006a68fa694d650336c62f17095173c, taken by the phase coordinator"
+    "supersededBy": "an exact-head CI run at the candidate 3c75f49a01e35b507461bf0929b0046e7140860a, taken by the phase coordinator"
   },
   "codeql": {
     "headSha": "38afa5c28e5b78d484a442cf6b8596fb2a5c34aa",
@@ -340,7 +348,7 @@
     "openAlertsRepositoryWide": 0,
     "whatThisDoesNotProve": "A CodeQL run on a pull request is DIFF-INFORMED. Two analyses at this head each returned 0 results and the repository carries 0 open alerts on any analysed ref, but a pull-request analysis does not by itself establish the repository ceiling; only a run on a protected ref does. This is recorded as the pull-request result it is. AND IT DOES NOT DESCRIBE THIS CANDIDATE. Both analyses ran at 38afa5c2; 37 product files have changed since, so the repository ceiling and the diff-informed result alike are unmeasured at the candidate.",
     "describesSupersededHead": true,
-    "supersededBy": "an exact-head CI run at the candidate b5e9919b0006a68fa694d650336c62f17095173c, taken by the phase coordinator"
+    "supersededBy": "an exact-head CI run at the candidate 3c75f49a01e35b507461bf0929b0046e7140860a, taken by the phase coordinator"
   },
   "dependencySecurity": {
     "jobId": 94614564057,
@@ -354,7 +362,7 @@
     "headSha": "38afa5c28e5b78d484a442cf6b8596fb2a5c34aa",
     "artefact": "dependency-security job summary",
     "describesSupersededHead": true,
-    "supersededBy": "an exact-head CI run at the candidate b5e9919b0006a68fa694d650336c62f17095173c, taken by the phase coordinator",
+    "supersededBy": "an exact-head CI run at the candidate 3c75f49a01e35b507461bf0929b0046e7140860a, taken by the phase coordinator",
     "note": "Taken at 38afa5c2. No fix wave touched package.json or package-lock.json, so the dependency graph is byte-identical at the candidate — but the audit itself has not been re-run here, and this package does not convert an unchanged input into a fresh result."
   },
   "productionBuild": {
@@ -369,7 +377,7 @@
     "headSha": "38afa5c28e5b78d484a442cf6b8596fb2a5c34aa",
     "artefact": "application-build job summary",
     "describesSupersededHead": true,
-    "supersededBy": "an exact-head CI run at the candidate b5e9919b0006a68fa694d650336c62f17095173c, taken by the phase coordinator",
+    "supersededBy": "an exact-head CI run at the candidate 3c75f49a01e35b507461bf0929b0046e7140860a, taken by the phase coordinator",
     "note": "Taken at 38afa5c2. The fix waves changed 20 files under apps/web/src, so the emitted file count and the standalone size are NOT expected to be identical at the candidate. UNMEASURED here."
   },
   "database": {
@@ -385,7 +393,7 @@
     "headSha": "38afa5c28e5b78d484a442cf6b8596fb2a5c34aa",
     "artefact": "database-migration-replay and hosted-clean-room job summaries",
     "describesSupersededHead": true,
-    "supersededBy": "an exact-head CI run at the candidate b5e9919b0006a68fa694d650336c62f17095173c, taken by the phase coordinator"
+    "supersededBy": "an exact-head CI run at the candidate 3c75f49a01e35b507461bf0929b0046e7140860a, taken by the phase coordinator"
   },
   "taskMatrix": {
     "source": "docs/phase-1/phase-1-28/task-matrix-verdicts.json",
@@ -441,9 +449,9 @@
   },
   "pendingHostedBindings": {
     "what": "Every binding in this package that describes a head other than the candidate, listed by name. The gate DERIVES this set from the documents’ own `headSha` fields and refuses a difference in either direction, so a pending binding cannot go unlisted and a listed one cannot be decorative.",
-    "awaits": "an exact-head CI run at the candidate b5e9919b0006a68fa694d650336c62f17095173c, taken by the phase coordinator",
+    "awaits": "an exact-head CI run at the candidate 3c75f49a01e35b507461bf0929b0046e7140860a, taken by the phase coordinator",
     "whyNoneCanBeTakenHere": "A hosted figure is produced by a GitHub-hosted runner. This workstation can run the unit and web tiers and nothing else in this list: the backend and database tiers need a running PostgreSQL it does not host, the browser tier needs the full acceptance stack, and hosted CI, CodeQL, the dependency audit and the production build are properties of a RUN, not of a checkout.",
-    "whatTheCoordinatorMustDo": "Run CI and bind the real figures. A binding leaves the pending state in exactly two ways and must declare which: (1) its `headSha` IS the candidate b5e9919b0006a68fa694d650336c62f17095173c; or (2) its `headSha` is a commit this repository CONTAINS, which DESCENDS from the candidate, whose apps/** and supabase/** the gate COMPUTES to be byte-identical to the candidate's, and which the binding marks `describesProductIdenticalSuccessor`. The second exists because the seal's own machinery cannot live inside the commit it seals, so hosted CI necessarily runs at a later head; under the old rule every hosted run forced another re-freeze whose seal commit moved the head again. What is still refused is a run at a head the candidate SUPERSEDES (that stays `describesSupersededHead`, and stays pending), a run at a head this repository does not contain, and a run at a descendant whose product differs — in which case the candidate must be re-frozen there and the local tiers re-measured, exactly as this cycle did.",
+    "whatTheCoordinatorMustDo": "Run CI and bind the real figures. A binding leaves the pending state in exactly two ways and must declare which: (1) its `headSha` IS the candidate 3c75f49a01e35b507461bf0929b0046e7140860a; or (2) its `headSha` is a commit this repository CONTAINS, which DESCENDS from the candidate, whose apps/** and supabase/** the gate COMPUTES to be byte-identical to the candidate's, and which the binding marks `describesProductIdenticalSuccessor`. The second exists because the seal's own machinery cannot live inside the commit it seals, so hosted CI necessarily runs at a later head; under the old rule every hosted run forced another re-freeze whose seal commit moved the head again. What is still refused is a run at a head the candidate SUPERSEDES (that stays `describesSupersededHead`, and stays pending), a run at a head this repository does not contain, and a run at a descendant whose product differs — in which case the candidate must be re-frozen there and the local tiers re-measured, exactly as this cycle did.",
     "bindings": [
       "browserByProject",
       "codeql",

@@ -6,8 +6,8 @@
   "whatThisDoesNotProve": "This is not a tamper-proof seal. Anyone able to edit a document is able to re-run the generator and commit both. It removes SILENT revision, not revision.",
   "selfExclusion": "This manifest is the only path excluded from its own digest set, because a file containing its own hash has no fixed point. tests/ci/p1-28-evidence-manifest.test.ts asserts the exclusion is exactly this one path.",
   "candidate": {
-    "FINAL_CODE_SHA": "b5e9919b0006a68fa694d650336c62f17095173c",
-    "FINAL_CODE_TREE": "0a144045e8adc717490f379c43b1805927d48192",
+    "FINAL_CODE_SHA": "3c75f49a01e35b507461bf0929b0046e7140860a",
+    "FINAL_CODE_TREE": "f1f92927f93e4fd55d47fcc475d9311b21cf79f0",
     "pullRequest": 226,
     "recordedIn": "docs/phase-1/phase-1-28/evidence/closure-candidate.json",
     "restatedIn": "docs/phase-1/phase-1-28/evidence/closure-evidence.md"
@@ -63,16 +63,16 @@
       "bytes": 11687
     },
     "docs/phase-1/phase-1-28/evidence/change-log.md": {
-      "sha256": "399445ad4f7e86210aa566980c7105a9cd116578630d9f9ea15121a1e688fac7",
+      "sha256": "cca9397a11efe4a9a4cb53658a76bda3a489b62e09beca84fcbdca5f198ad2fd",
       "bytes": 34241
     },
     "docs/phase-1/phase-1-28/evidence/closure-candidate.json": {
-      "sha256": "bf18d4bfb6512716bb2ca706cf5451980b44e122286ec2acd61c24a61aac6480",
-      "bytes": 35929
+      "sha256": "7add88b8cc73764a5e7a949cfaa09642b96ed9e5904f531d69cca8dbe67fafe0",
+      "bytes": 38415
     },
     "docs/phase-1/phase-1-28/evidence/closure-evidence.md": {
-      "sha256": "734ee715f2c243114c300e41bce46c4000bdf21ad452249ccdf1803b2d377ff3",
-      "bytes": 51964
+      "sha256": "f4e7bbc6bfbf00cc0373f15d909cb27b877b2c8e57da9f997487588ecd243632",
+      "bytes": 52580
     },
     "docs/phase-1/phase-1-28/evidence/traceability.json": {
       "sha256": "600a8ae57e4a33b5c54d847befbcab82acb2a0d136d005cec777345c39c74ab1",
@@ -91,11 +91,11 @@
       "bytes": 15930
     },
     "docs/phase-1/phase-1-28/task-matrix-verdicts.json": {
-      "sha256": "c8f9eb5c24cfa050c28b84a771af0a932f19efb19ee40cb42ae7c7058ddf22ee",
+      "sha256": "23d25efdecbb60c9321302fb1bfcfc92616f00f4b7a15a2e145b52de304467ac",
       "bytes": 365666
     },
     "docs/phase-1/phase-1-28/task-matrix.json": {
-      "sha256": "357cb8f2d55d34aed3d94fb46d148a4a85e2ad6e4de412c20511eeab3378089e",
+      "sha256": "81e1d28ac7278c4935a4a278448306f0690f60f471d5342bfcce886778126552",
       "bytes": 383956
     },
     "docs/phase-1/phase-1-28/write-reachability.json": {

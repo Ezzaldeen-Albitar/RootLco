@@ -201,13 +201,13 @@ classification cannot be entered without a reviewer seeing the number move.
   under `apps/**` after `38afa5c2` was frozen, the gate COMPUTED the product
   diff, found it non-empty and refused the package. The second was deliberate and
   cost nothing —
-  `git diff --name-only 6392ccb4..b5e9919b -- apps supabase` is **empty**, so no
+  `git diff --name-only 6392ccb4..3c75f49a -- apps supabase` is **empty**, so no
   product file had moved and only the seal's own machinery had. Twelve commits
   had accumulated after `6392ccb4`, five of them executable and every one a
   repair to the seal; each forced a reseal and any further repair would force
   another, while the package described a commit ever further behind the tree
   hosted CI exercises. The candidate is now
-  `b5e9919b0006a68fa694d650336c62f17095173c`, the successor list is empty, and
+  `3c75f49a01e35b507461bf0929b0046e7140860a`, the successor list is empty, and
   the two local tiers were re-measured **at it** — root unit 2559 and web 2726, 0
   failures, 5285 cases. The three hosted-only tiers still could not be, because a
   hosted run is taken by CI at a head and this workstation cannot take one. Those
