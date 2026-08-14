@@ -22,7 +22,15 @@
  * ## What it proves, one clause per axis DOC-001 owns
  *
  *   1. **Task mapping** — the record accounts for every canonical task in
- *      `canonical-plan.md` §5, and for no other id.
+ *      `canonical-plan.md` §5, and for no other id, and every task's
+ *      `surface` RESOLVES: each path-shaped token in it names a file that
+ *      exists at this head, and a cited `:LINE` names a line that file has and
+ *      that is not blank. This clause used to test the field for
+ *      non-emptiness alone, and a final review found seven surfaces naming
+ *      files that had been renamed or had never existed — while the record's
+ *      own `$comment` promised that "a citation here names a FILE" and that a
+ *      rename "breaks the record instead of quietly hollowing it out". A
+ *      surface pointed at `NoSuchFile.tsx:4242` reported zero disagreements.
  *   2. **Operation catalogue** — every operation a §5 row binds is registered in
  *      the P1-24 operation register AT THIS HEAD. A `[MISSING Rn]` marker for a
  *      remediation that has landed fails here rather than ageing in prose.
@@ -70,7 +78,7 @@
  * Usage:  node scripts/ci/check-p1-28-traceability.mjs [--json out.json]
  * Exit:   0 clean · 1 the record disagrees with the tree · 2 the check could not run.
  */
-import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { join, posix, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -270,6 +278,64 @@ export function boundOperations(root = ROOT) {
 }
 
 /* ------------------------------------------------------------------ *
+ * Implementation surfaces — the citation half nobody was checking
+ * ------------------------------------------------------------------ */
+
+/**
+ * A path-shaped token inside a `surface` sentence, with an optional `:LINE`.
+ *
+ * ## Why a regex over prose rather than a `surfaceFiles` array
+ *
+ * A parallel array would be a second place to write the same fact, and the two
+ * drift: the sentence a reader believes would stay unchecked while the array
+ * beside it stayed green. So the SENTENCE is the citation, and the sentence is
+ * what gets resolved.
+ *
+ * ## What it deliberately does not match
+ *
+ * A P1-24 operation id is dotted and looks like a path to a careless pattern —
+ * `apt.catalogue-cancellation-reason-list`, `rec.reception-condition-evidence`,
+ * `veh.*`, `iam.sensitive.view`. None of them ends in a source extension, and
+ * the extension is what anchors the END of a match, so none of them is read as
+ * a file. Trailing sentence punctuation is excluded for the same reason: the
+ * match stops at the extension (or at the line number), never after it.
+ *
+ * The leading lookbehind stops a path inside brackets from swallowing its
+ * delimiter — `(apps/web/...)` cites `apps/web/...`, not `(apps/web/...`.
+ */
+export const SURFACE_PATH =
+  /(?<![\w@./\\-])([A-Za-z0-9_@.][A-Za-z0-9_@.()[\]-]*(?:\/[A-Za-z0-9_@.()[\]-]+)*\.(?:tsx|jsx|json|yaml|mjs|cjs|ts|js|md|sql|yml|css))(?::(\d+))?(?![\w-])/g;
+
+/** Every `{ path, line }` a surface sentence cites, in the order it cites them. */
+export function surfaceCitations(surface) {
+  return [...String(surface ?? '').matchAll(SURFACE_PATH)].map((match) => ({
+    path: match[1],
+    line: match[2] === undefined ? null : Number(match[2]),
+  }));
+}
+
+/**
+ * Why a citation does not resolve, or `null` when it does.
+ *
+ * Repository-relative and nothing else. A second root (`apps/web/src`) would
+ * make `features/...` resolve too, and would also make "which root did this
+ * resolve under" a question the record cannot answer — so the record spells
+ * `apps/web/src/...` out and this reader has exactly one place to look.
+ */
+export function resolveCitation(root, citation) {
+  const absolute = native(root, citation.path);
+  if (!existsSync(absolute)) return 'names no file at this head';
+  if (!statSync(absolute).isFile()) return 'names a directory, not a file';
+  if (citation.line === null) return null;
+  const lines = readFileSync(absolute, 'utf8').split(/\r?\n/);
+  if (citation.line < 1 || citation.line > lines.length) {
+    return `cites line ${citation.line} and that file has ${lines.length}`;
+  }
+  if (lines[citation.line - 1].trim() === '') return `cites line ${citation.line}, which is blank`;
+  return null;
+}
+
+/* ------------------------------------------------------------------ *
  * Derived markers
  * ------------------------------------------------------------------ */
 
@@ -434,9 +500,41 @@ export function checkRecord(root = ROOT, injected = {}) {
     if (!canonical.includes(id))
       problems.push(`the record carries ${id}, which is no canonical task`);
   }
+  let resolved = 0;
   for (const [id, entry] of Object.entries(record.tasks ?? {})) {
     if (!String(entry.testId ?? '').trim()) problems.push(`${id} records no test id`);
-    if (!String(entry.surface ?? '').trim()) problems.push(`${id} names no implementation surface`);
+    if (!String(entry.surface ?? '').trim()) {
+      problems.push(`${id} names no implementation surface`);
+      continue;
+    }
+    /*
+     * Non-emptiness was the whole of this clause, and non-emptiness is what a
+     * surface naming `IdentityStep.tsx` — a file that never existed — passes.
+     * Resolution is what the record's own `$comment` claims for it.
+     */
+    const citations = surfaceCitations(entry.surface);
+    if (citations.length === 0) {
+      problems.push(
+        `${id} names a surface that cites no file — a sentence with no path in it is a ` +
+          'surface nobody can check, which is the state this clause exists to end'
+      );
+      continue;
+    }
+    for (const citation of citations) {
+      const why = resolveCitation(root, citation);
+      if (why === null) {
+        resolved += 1;
+        continue;
+      }
+      problems.push(`${id} names \`${citation.path}\` as its surface, and that citation ${why}`);
+    }
+  }
+  /*
+   * Anti-vacuity for the clause itself: a record whose every surface stopped
+   * citing a path would satisfy every loop above by iterating over nothing.
+   */
+  if (Object.keys(record.tasks ?? {}).length > 0 && resolved === 0) {
+    problems.push('no task surface resolved to a file — the surface check inspected nothing');
   }
 
   /* --- 2. operation catalogue ------------------------------------------ */

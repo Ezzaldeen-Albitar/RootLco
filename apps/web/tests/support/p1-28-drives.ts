@@ -140,12 +140,6 @@ export const READ_DRIVES: readonly AdapterDrive[] = Object.freeze([
     channel: 'get',
     call: () => recApi.listConditionEvidence(VISIT, 'complaint', REQUEST, null),
   },
-  {
-    name: 'listReceptionHistory',
-    channel: 'get',
-    call: () => recApi.listReceptionHistory(VISIT, REQUEST, null),
-  },
-  { name: 'listVisitReasons', channel: 'get', call: () => recCatalogue.listVisitReasons() },
   { name: 'listFuelLevels', channel: 'get', call: () => recCatalogue.listFuelLevels() },
   {
     name: 'listWarningLightCodes',
@@ -357,12 +351,19 @@ export const DRIVES: readonly AdapterDrive[] = Object.freeze([...READ_DRIVES, ..
  * longer means anything.
  */
 export const NOT_DRIVEN: ReadonlyMap<string, string> = new Map([
-  [
-    'conditionEvidenceKinds',
-    'returns the frozen EVIDENCE_KINDS vocabulary and issues no request at all, ' +
-      'so there is no path, no body and no failure mapping to drive. Its vocabulary ' +
-      'is asserted against the contract in receptions-contract.test.ts.',
-  ],
+  /*
+   * Empty, and that is the point.
+   *
+   * Its one entry was `conditionEvidenceKinds`, excluded because it issued no
+   * request and so had no path, no body and no failure mapping to drive. An
+   * adapter that cannot be driven and that nothing calls is not an adapter, and
+   * `P1-28-F9` deleted it rather than keeping the exclusion — the vocabulary is
+   * `EVIDENCE_KINDS` in `receptions-contract.ts` and always was.
+   *
+   * The map stays because the exclusion MECHANISM is worth having: the day an
+   * adapter genuinely cannot be driven, the reason belongs written down and
+   * checked, not discovered as a hole in the sweep.
+   */
 ]);
 
 /** Source with comments removed. `https://` is not a comment start. */

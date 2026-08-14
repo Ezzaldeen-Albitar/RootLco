@@ -132,6 +132,15 @@ handful of sentences this phase has already had to withdraw once, and requires
 every canonical `TC-P1-28-*` id to resolve to quoted cases in comment-stripped
 source.
 
+It also RESOLVES the implementation surface of every task. Each path in a
+`tasks.*.surface` sentence of `evidence/traceability.json` is repository-relative
+(`apps/web/src/...`, not `features/...`), must name a file that exists, and — if
+it cites `:LINE` — must name a line that file has and that is not blank. Rename a
+component and the record fails in the same commit. That clause used to test the
+field for non-emptiness, and seven citations were found naming files that had
+been renamed or had never been written; the failure mode of a record is a
+citation nobody resolves, not a field nobody fills.
+
 ## Traps, in the order they cost time
 
 **A seam is not covered by the suites on either side of it.** The walk-in intake

@@ -21,6 +21,8 @@ import {
   deriveCounts,
   declaredTestIds,
   boundOperations,
+  resolveCitation,
+  surfaceCitations,
   SUPERSEDED,
   RECORD_PATH,
 } from '../../scripts/ci/check-p1-28-traceability.mjs';
@@ -357,6 +359,20 @@ const proofOf = (draft: typeof record, id: string, index = 0) => {
   return proof;
 };
 
+/**
+ * The task row for `id` and its surface, or a thrown error.
+ *
+ * Same reason as `entryOf`: a surface mutation applied to a row that is not
+ * there leaves the gate reporting exactly what it reported unmutated.
+ */
+const taskOf = (draft: typeof record, id: string) => {
+  const row = draft.tasks[id];
+  if (!row) throw new Error(`${id} is not in the record; this mutation would prove nothing`);
+  const surface = row['surface'];
+  if (surface === undefined) throw new Error(`${id} records no surface to mutate`);
+  return { row, surface };
+};
+
 /** Moves a declared total, refusing to invent one the record does not declare. */
 const shift = (draft: typeof record, name: string, by: number) => {
   const current = draft.totals[name];
@@ -406,6 +422,111 @@ describe('the phase record is synchronized with the tree', () => {
     expect(record.totals.unbound, 'an unbound id must be recorded as a gap, not left silent').toBe(
       0
     );
+  });
+});
+
+describe('every task surface resolves against the tree', () => {
+  /*
+   * The clause that used to be `if (!entry.surface.trim())`.
+   *
+   * A final material review found SEVEN citations naming files that had been
+   * renamed or had never existed — `IdentityStep.tsx` and `FuelStep.tsx` among
+   * them — while the record's own `$comment` promised that a citation "names a
+   * FILE" and that a rename "breaks the record instead of quietly hollowing it
+   * out". Non-emptiness passes every one of them, and a surface pointed at
+   * `NoSuchFile.tsx:4242` reported zero disagreements.
+   */
+  it('resolves every path every surface cites, and cites more than a handful', () => {
+    let cited = 0;
+    for (const id of Object.keys(record.tasks)) {
+      const citations = surfaceCitations(taskOf(record, id).surface);
+      expect(citations.length, `${id} cites no file at all`).toBeGreaterThan(0);
+      for (const citation of citations) {
+        cited += 1;
+        expect(resolveCitation(ROOT, citation), `${id} cites ${citation.path}`).toBeNull();
+      }
+    }
+    // Anti-vacuity: 35 tasks that each cited one path would still be a thin
+    // record, and a tokeniser that silently stopped matching would read as one.
+    expect(cited, 'the record cites too few files to be a surface map').toBeGreaterThan(40);
+  });
+
+  it('refuses a surface path that names nothing, with or without a line', () => {
+    const dead = 'apps/web/src/features/receptions/components/steps/NoSuchFile.tsx';
+    for (const surface of [`${dead}.`, `${dead}:4242.`]) {
+      const problems = mutate((draft) => {
+        taskOf(draft, 'FE-009').row['surface'] = surface;
+      });
+      expect(problems.join('\n')).toContain('names no file at this head');
+    }
+  });
+
+  it('refuses a line the cited file does not have, and a line that is blank', () => {
+    // `FE-014` is the one surface that cites a LINE, because "there is no fuel
+    // step, the panel lives inside the readings step" is a claim about a place
+    // in a file rather than about a file.
+    const at = (line: number) =>
+      mutate((draft) => {
+        const found = taskOf(draft, 'FE-014');
+        found.row['surface'] = found.surface.replace(
+          /ReadingsStep\.tsx:\d+/,
+          `ReadingsStep.tsx:${line}`
+        );
+      }).join('\n');
+
+    const source = readFileSync(
+      join(ROOT, 'apps/web/src/features/receptions/components/steps/ReadingsStep.tsx'),
+      'utf8'
+    ).split(/\r?\n/);
+    const blank = source.findIndex((line) => line.trim() === '') + 1;
+    expect(blank, 'the file has no blank line — this case would prove nothing').toBeGreaterThan(0);
+
+    expect(at(source.length + 1)).toContain('and that file has');
+    expect(at(blank)).toContain('which is blank');
+  });
+
+  it('refuses a surface that cites no file, and a record where none does', () => {
+    const one = mutate((draft) => {
+      taskOf(draft, 'FE-020').row['surface'] = 'the summary step and the reception queue board.';
+    });
+    expect(one.join('\n')).toContain('cites no file');
+
+    const none = mutate((draft) => {
+      for (const id of Object.keys(draft.tasks)) {
+        taskOf(draft, id).row['surface'] = 'somewhere in the tree.';
+      }
+    });
+    expect(none.join('\n')).toContain('the surface check inspected nothing');
+  });
+
+  it('refuses a citation that resolves to a directory', () => {
+    // Unreachable through the tokeniser — the token must end in a source
+    // extension and no directory here does — so the rule is driven directly
+    // rather than left as a branch nobody has ever seen refuse.
+    expect(resolveCitation(ROOT, { path: 'scripts/ci', line: null })).toContain('a directory');
+  });
+
+  it('reads an operation id as prose and a bracketed route as a path', () => {
+    /*
+     * The seventh scanner in this repository to read prose as code would be the
+     * one that took `apt.catalogue-cancellation-reason-list` for a file. The
+     * extension anchors the END of a match, so a dotted operation id is not a
+     * path — and a Next.js route segment (`[locale]`, `(dashboard)`) is.
+     */
+    expect(
+      surfaceCitations(
+        'over apt.catalogue-cancellation-reason-list, veh.*, iam.sensitive.view and rec.reception-detail'
+      )
+    ).toEqual([]);
+    expect(
+      surfaceCitations('behind apps/web/src/app/[locale]/(dashboard)/appointments/page.tsx.')
+    ).toEqual([
+      { path: 'apps/web/src/app/[locale]/(dashboard)/appointments/page.tsx', line: null },
+    ]);
+    // A path inside brackets cites the path, not the bracket.
+    expect(surfaceCitations('(apps/web/src/features/receptions/api.ts)')).toEqual([
+      { path: 'apps/web/src/features/receptions/api.ts', line: null },
+    ]);
   });
 });
 

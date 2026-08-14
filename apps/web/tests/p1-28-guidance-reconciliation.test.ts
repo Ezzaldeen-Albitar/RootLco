@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { APPOINTMENT_PERMISSIONS } from '@/features/appointments/appointments-contract';
 import { RECEPTION_PERMISSIONS } from '@/features/receptions/receptions-contract';
 import { EVIDENCE_KIND_COVERAGE } from '@/features/receptions/check-in/evidence';
+import { CHECK_IN_STEPS } from '@/features/receptions/check-in/steps';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
 
@@ -128,6 +129,112 @@ describe('the appointment sentences', () => {
       .map((entry) => entry.name)
       .sort();
     expect(entries).toEqual(['[appointmentId]', 'new', 'page.tsx']);
+  });
+});
+
+/**
+ * The words the guide uses for each registered step, in registry order.
+ *
+ * The KEYS are held to `CHECK_IN_STEPS` and the VALUES are joined into the
+ * sentence the guide must contain, so the enumeration is derived on both sides:
+ * add a step and this map fails; rename the guide's words and the sentence
+ * fails; write a step the registry does not have and the sentence fails.
+ *
+ * It is a map rather than the steps' own title keys because the guide is
+ * written for the person at the desk and the step headings are written for the
+ * screen ("Customer concerns" on the tab, "complaints" in the sentence). Pinning
+ * one to the other would have forced the guide to read like a menu.
+ */
+const GUIDE_STEP_WORDS: ReadonlyMap<string, string> = new Map([
+  ['confirm-identities', 'confirmation of customer and vehicle'],
+  ['parties-and-authorization', 'parties and authority'],
+  ['condition-complaints', 'complaints'],
+  ['condition-inspection', 'inspection findings'],
+  ['condition-damage', 'damage'],
+  ['condition-readings', 'readings'],
+  ['condition-warning-lights', 'warning lights'],
+  ['condition-contents', 'contents'],
+  ['media-and-photographs', 'media'],
+  ['reception-signature', 'signatures'],
+  ['reception-refusal', 'refusals'],
+  ['summary-and-approval', 'summary and approval'],
+  ['convert-to-work-order', 'the work order'],
+]);
+
+const NUMBER_WORDS = [
+  'zero',
+  'one',
+  'two',
+  'three',
+  'four',
+  'five',
+  'six',
+  'seven',
+  'eight',
+  'nine',
+  'ten',
+  'eleven',
+  'twelve',
+  'thirteen',
+  'fourteen',
+  'fifteen',
+];
+
+/** The guide as one line, because markdown hard-wraps a sentence mid-clause. */
+const OPERATOR_FLAT = OPERATOR.replace(/\s+/g, ' ');
+
+describe('the check-in step enumeration is the registry, counted and in order', () => {
+  /*
+   * The one enumerated sequence on the page, and it was outside this harness.
+   *
+   * The guide said "Thirteen steps" and then listed FOURTEEN, one of which —
+   * "fuel" — is not a step at all: there is no `receptions.steps.fuel*` key in
+   * either catalogue, and the fuel level is a picker on the screen that opens
+   * the visit, shown back read-only inside Arrival readings. Everything else on
+   * this page was pinned to an imported fact; a list of names was not, so the
+   * count and the list could disagree with each other on one screen.
+   */
+  it('names exactly the registered steps, in registry order', () => {
+    expect(CHECK_IN_STEPS.length, 'the registry is empty — this case is vacuous').toBeGreaterThan(
+      0
+    );
+    expect(
+      [...GUIDE_STEP_WORDS.keys()],
+      'the guide word list and the step registry disagree'
+    ).toEqual(CHECK_IN_STEPS.map((step) => step.id));
+  });
+
+  it('states the count the registry holds, as a word', () => {
+    const word = NUMBER_WORDS[CHECK_IN_STEPS.length] ?? '';
+    expect(word, `no number word for ${CHECK_IN_STEPS.length} steps`).not.toBe('');
+    const capitalised = `${word.slice(0, 1).toUpperCase()}${word.slice(1)} steps`;
+    expect(OPERATOR_FLAT, `the guide does not say "${capitalised}"`).toContain(capitalised);
+  });
+
+  it('enumerates them in the guide, and enumerates nothing else', () => {
+    /*
+     * Built here and matched against the page, never read out of it. The
+     * connectives are the guide's own, so the assertion fails on an inserted
+     * item, a dropped item and a reordering alike — which is what "the list
+     * agrees with the count" has to mean to be worth checking.
+     */
+    const words = [...GUIDE_STEP_WORDS.values()];
+    const sentence = `${words.slice(0, -1).join(', ')}, and finally ${words[words.length - 1]}`;
+    expect(OPERATOR_FLAT, `the guide does not enumerate: ${sentence}`).toContain(sentence);
+  });
+
+  it('has no fuel step to enumerate — in the registry or in either catalogue', () => {
+    expect(CHECK_IN_STEPS.some((step) => /fuel/i.test(step.id))).toBe(false);
+    for (const [name, catalogue] of [
+      ['en', en],
+      ['ar', ar],
+    ] as const) {
+      const keys = Object.keys(catalogue).filter((key) => /^receptions\.steps\.fuel/.test(key));
+      expect(keys, `${name} declares a fuel step key`).toEqual([]);
+    }
+    // And the guide says so where a reader would otherwise infer one.
+    expect(OPERATOR_FLAT).toContain('**There is no fuel step.**');
+    expect(OPERATOR_FLAT).toContain('**The fuel level is not a step**');
   });
 });
 

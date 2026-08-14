@@ -441,6 +441,47 @@ the failure this mode exists to prevent.
   because a guide that only has to exist passes while describing a product
   nobody built.
 
+## The record's own citations, and three reads nothing called
+
+A final material review read the sealed records against the tree and found the
+citation half of `P1-28-DOC-001` had never been checked at all.
+
+- **Seven `surface` citations named files that had been renamed or had never
+  existed** — `IdentityStep.tsx` and `FuelStep.tsx` were never written,
+  `ComplaintStep`/`DamageStep`/`ReceptionAcknowledgementScreen`/`steps.ts` had
+  been renamed, and `FE-022`'s conversion was attributed to `SummaryStep.tsx`
+  when it lives in `ConversionStep.tsx`. `traceability.json`'s own header
+  promised that "a citation here names a FILE" and that a rename "breaks the
+  record instead of quietly hollowing it out"; the gate tested the field for
+  NON-EMPTINESS, so a surface pointed at `NoSuchFile.tsx:4242` reported zero
+  disagreements. Every path in every surface is now repository-relative and
+  RESOLVED against the filesystem, with the line checked where one is cited, and
+  a task whose surface names no file at all fails. `tests/ci/p1-28-matrix.test.ts`
+  drives each refusal.
+
+- **The operator guide said thirteen steps and listed fourteen**, the extra one
+  being a "fuel" step that does not exist: there is no `receptions.steps.fuel*`
+  key in either catalogue, and the fuel level is a picker on the screen that
+  opens the visit, shown back read-only inside Arrival readings. The same page
+  said so correctly two paragraphs earlier and then contradicted itself again in
+  the catalogue section. The one enumerated sequence on the page was the one
+  thing outside the reconciliation harness; it now derives the count AND the
+  ordered list from `CHECK_IN_STEPS` and fails on an inserted, dropped or
+  reordered item.
+
+- **Three read adapters had zero production consumers** — `listReceptionHistory`
+  (`rec.reception-history`), `listVisitReasons`
+  (`rec.catalogue-visit-reason-list`) and `conditionEvidenceKinds`, whose
+  docblock described a filter control nobody built. No canonical task binds
+  either operation, and a visit reason has no field to fill in any apt/rec
+  write, so wiring them would have meant screens no task binds. All three are
+  deleted, on the `crm/customers/identity-api.ts` precedent (`P1-27-QA-002`);
+  the QA-001 drive corpus lost the two entries and its one exclusion with them.
+  The operations themselves are untouched and still published — unconsumed is a
+  different fact from missing, and `contract-archaeology.md` rows B9-B10 and
+  B12-B13 now say which one applies instead of claiming the phase consumes all
+  six reception reads.
+
 ---
 
 ## What is deliberately NOT in this release

@@ -588,14 +588,23 @@ describe('the helpers this gate is built on', () => {
 
     /*
      * What the old boundary would have reported on that same mutation, measured
-     * rather than asserted: the next EXPORTED function after `refuseReception`
-     * is `conditionEvidenceKinds`, and everything between them — including
-     * `closeVisit` — mentions `ifMatch`.
+     * rather than asserted: everything from `refuseReception` to the next
+     * EXPORTED function — or, since `P1-28-F9` deleted the unreachable
+     * `conditionEvidenceKinds` that used to follow it, to the end of the module
+     * — still mentions `ifMatch`, because the shared `closeVisit` helper sits
+     * inside that span. The neighbour is not named here for that reason: the
+     * claim is about the SPAN, and naming whatever happens to come next made
+     * this case fail for a deletion it was never about.
      */
-    const nextExport = mutated.indexOf('export async function conditionEvidenceKinds');
     const refuse = mutated.indexOf('export async function refuseReception');
-    expect(nextExport).toBeGreaterThan(refuse);
-    expect(/\bifMatch\b/.test(mutated.slice(refuse, nextExport))).toBe(true);
+    expect(refuse).toBeGreaterThan(-1);
+    const following = mutated.slice(refuse + 'export async function refuseReception'.length);
+    const next = following.search(/^export (?:async )?function /m);
+    const span = next === -1 ? following : following.slice(0, next);
+    expect(span, 'the span to the next export is empty — this measurement is vacuous').toContain(
+      'closeVisit'
+    );
+    expect(/\bifMatch\b/.test(span)).toBe(true);
   });
 
   it('does not read a DECLARATION as a call to itself', () => {

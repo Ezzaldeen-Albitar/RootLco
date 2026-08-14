@@ -230,6 +230,64 @@ function administrativeAptRec(): readonly string[] {
   return ids.sort();
 }
 
+/**
+ * Published OPERATOR reads this product deliberately does not consume, each
+ * with the reason it is not consumed (`P1-28-F9`).
+ *
+ * ## Why this list exists at all
+ *
+ * The sweep below asserts that every published operator operation is reached by
+ * an adapter, and that is the right default: an unreached operation is usually
+ * a screen somebody forgot. But three adapters shipped in this phase with ZERO
+ * production consumers — a definition line and nothing else in `apps/web/src` —
+ * and the sweep was green over all three, because the drive corpus called them.
+ * A drive is not a consumer. So "reached" meant "reached by a test", which is
+ * the `INT-113` shape read backwards.
+ *
+ * The two operations below were deleted rather than given a screen no canonical
+ * task binds. That makes them genuinely unreached, and the honest record of that
+ * is a checked exception, not a green sweep.
+ *
+ * ## Why it cannot become a parking place
+ *
+ * Every entry is corroborated OUTSIDE this file, by the same rule that justifies
+ * the exclusion: the operation must be bound by NO canonical task in the
+ * generated 35-task matrix. Bind it in `canonical-plan.md` §5 and the exclusion
+ * becomes illegal in the same commit. Each entry must also still be published,
+ * must be a READ (an unconsumed WRITE belongs in the SEC-004 manifest against a
+ * recorded decision, never here), and must really be unreached.
+ */
+const UNCONSUMED_READS: ReadonlyMap<string, string> = new Map([
+  [
+    'rec.reception-history',
+    "the visit's status and custody ledger. No canonical task binds it — the only " +
+      '*-history binding in the matrix is veh.vehicle-odometer-history, on FE-013 — and the ' +
+      'adapter that called it had no production consumer, so it was deleted on the ' +
+      'crm/customers/identity-api.ts precedent (P1-27-QA-002).',
+  ],
+  [
+    'rec.catalogue-visit-reason-list',
+    'no canonical task binds it AND no apt/rec write takes a visit reason: ' +
+      "rec.reception-create's strict body is company, branch, vehicle, receiving employee, " +
+      'service requester, origin, odometer reading, fuel level and state of charge. There is ' +
+      'no field for a reason to fill, so this read is not unwired but unwirable in this release.',
+  ],
+]);
+
+/** Every operation id any canonical task binds, qualifiers dropped. */
+function canonicallyBoundOperations(): ReadonlySet<string> {
+  const matrix = repoJson<{
+    readonly tasks: readonly { readonly CANONICAL_BACKEND_OPERATIONS?: readonly string[] }[];
+  }>('docs', 'phase-1', 'phase-1-28', 'task-matrix.json');
+  const ids = new Set<string>();
+  for (const task of matrix.tasks) {
+    for (const binding of task.CANONICAL_BACKEND_OPERATIONS ?? []) {
+      ids.add(binding.replace(/\s*\[[^\]]*\]\s*$/, '').trim());
+    }
+  }
+  return ids;
+}
+
 /* ================================================================== *
  * QA-001 — the contract mirror, and the coverage it claims
  * ================================================================== */
@@ -336,12 +394,26 @@ describe('P1-28-QA-001 — every adapter is executed, and this file proves it', 
 
     const published = publishedAptRec();
     const administrative = new Set(administrativeAptRec());
-    const operator = published.filter((id) => !administrative.has(id));
+    const operator = published.filter((id) => !administrative.has(id) && !UNCONSUMED_READS.has(id));
 
     const unreached = operator.filter((id) => !reached.has(id));
     expect(
       unreached,
       `these published operations are reached by no adapter:\n  ${unreached.join('\n  ')}`
+    ).toEqual([]);
+
+    /*
+     * The declared-unconsumed reads, from the other side and on the same terms
+     * as the administration surface: excluded above, asserted UNREACHED here.
+     * If an adapter ever calls one, whoever wired it must delete the entry in
+     * the same change rather than leave a screen the record says does not
+     * exist.
+     */
+    const reachedUnconsumed = [...reached].filter((id) => UNCONSUMED_READS.has(id)).sort();
+    expect(
+      reachedUnconsumed,
+      'an adapter reaches an operation this phase records as consumed by nothing; ' +
+        'wire it against a canonical task and drop the exclusion, or do not wire it'
     ).toEqual([]);
 
     /*
@@ -364,6 +436,37 @@ describe('P1-28-QA-001 — every adapter is executed, and this file proves it', 
     expect(published.length).toBeGreaterThan(25);
     expect(administrative.size).toBe(28);
     expect(operator.length).toBeGreaterThan(25);
+  });
+
+  it('lets no unconsumed-read exclusion rest on this file’s own judgement', () => {
+    /*
+     * Excluding an operation from a completeness sweep is the move that hides an
+     * INT-113, so each exclusion is corroborated by a fact this file does not
+     * own: the canonical plan binds it to no task. Bind it in §5 and the
+     * generated matrix carries it, and this case fails.
+     */
+    const published = new Set(publishedAptRec());
+    const bound = canonicallyBoundOperations();
+    const reads = new Set(
+      PUBLISHED_OPERATIONS.filter((op) => op.method === 'GET').map((op) => op.operationId)
+    );
+
+    expect(UNCONSUMED_READS.size, 'the corroboration below would be vacuous').toBeGreaterThan(0);
+    expect(
+      bound.size,
+      'the matrix binds no operation — this corroboration is vacuous'
+    ).toBeGreaterThan(10);
+
+    for (const [id, reason] of UNCONSUMED_READS) {
+      expect(published.has(id), `${id} is excluded and the contract publishes no such id`).toBe(
+        true
+      );
+      expect(reads.has(id), `${id} is excluded as a read and is not a GET`).toBe(true);
+      expect(bound.has(id), `${id} is excluded as unbound and a canonical task binds it`).toBe(
+        false
+      );
+      expect(reason.trim().length, `${id} is excluded with no reason`).toBeGreaterThan(40);
+    }
   });
 
   it('records the withheld administration surface as a DECISION, not as an omission', () => {

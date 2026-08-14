@@ -41,7 +41,6 @@ const readReception = vi.fn();
 const listPartyRoles = vi.fn();
 const listAuthorizations = vi.fn();
 const listConditionEvidence = vi.fn();
-const listReceptionHistory = vi.fn();
 const assignPartyRole = vi.fn();
 const recordAuthorization = vi.fn();
 const recordConditionEvidence = vi.fn();
@@ -70,7 +69,6 @@ vi.mock('@/features/receptions/api', () => ({
   listPartyRoles: (...args: unknown[]) => listPartyRoles(...args),
   listAuthorizations: (...args: unknown[]) => listAuthorizations(...args),
   listConditionEvidence: (...args: unknown[]) => listConditionEvidence(...args),
-  listReceptionHistory: (...args: unknown[]) => listReceptionHistory(...args),
   assignPartyRole: (...args: unknown[]) => assignPartyRole(...args),
   recordAuthorization: (...args: unknown[]) => recordAuthorization(...args),
   recordConditionEvidence: (...args: unknown[]) => recordConditionEvidence(...args),
@@ -82,13 +80,11 @@ vi.mock('@/features/receptions/api', () => ({
   refuseReception: (...args: unknown[]) => refuseReception(...args),
 }));
 
-const listVisitReasons = vi.fn();
 const listFuelLevels = vi.fn();
 const listWarningLightCodes = vi.fn();
 const listRefusalReasons = vi.fn();
 
 vi.mock('@/features/receptions/catalogue-api', () => ({
-  listVisitReasons: (...args: unknown[]) => listVisitReasons(...args),
   listFuelLevels: (...args: unknown[]) => listFuelLevels(...args),
   listWarningLightCodes: (...args: unknown[]) => listWarningLightCodes(...args),
   listRefusalReasons: (...args: unknown[]) => listRefusalReasons(...args),
@@ -246,7 +242,6 @@ beforeEach(() => {
   listPartyRoles.mockResolvedValue(page([]));
   listAuthorizations.mockResolvedValue(page([]));
   listConditionEvidence.mockResolvedValue(page([]));
-  listReceptionHistory.mockResolvedValue(page([]));
   listVehicleRelationshipEntries.mockResolvedValue(page([]));
   /*
    * The four intake catalogues answer EMPTY, not undefined. Every one of them is
@@ -255,7 +250,6 @@ beforeEach(() => {
    * sweep needs the steps to render, not to throw.
    */
   const catalogue = { status: 'ok' as const, options: [], truncated: false, correlationId: null };
-  listVisitReasons.mockResolvedValue(catalogue);
   listFuelLevels.mockResolvedValue(catalogue);
   listWarningLightCodes.mockResolvedValue(catalogue);
   listRefusalReasons.mockResolvedValue(catalogue);
