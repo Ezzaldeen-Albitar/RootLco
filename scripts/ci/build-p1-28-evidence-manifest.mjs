@@ -795,7 +795,63 @@ export function repositoryBinding(candidateFile, git) {
       });
 
   const recorded = (candidateFile.successors ?? []).map((s) => String(s?.commit ?? ''));
+  const absorbed = (candidateFile.absorbedSuccessors ?? []).map((s) => String(s?.commit ?? ''));
   const inRange = new Set(commits.map((c) => c.sha));
+  const absorbedProblems = [];
+
+  for (const id of absorbed) {
+    if (!/^[0-9a-f]{40}$/.test(id)) {
+      absorbedProblems.push(`absorbed successor \`${id}\` is not a 40-character commit id`);
+      continue;
+    }
+    if (recorded.includes(id)) {
+      absorbedProblems.push(
+        `absorbed successor ${id.slice(0, 8)} is also listed as a current successor`
+      );
+      continue;
+    }
+    if (inRange.has(id)) {
+      absorbedProblems.push(
+        `absorbed successor ${id.slice(0, 8)} is in the current branch range and must remain in \`successors\``
+      );
+      continue;
+    }
+    if (git(['cat-file', '-e', `${id}^{commit}`]) === null) {
+      absorbedProblems.push(`absorbed successor ${id} names no commit this repository can inspect`);
+      continue;
+    }
+    const afterCandidate = ancestry(git, sha, id);
+    const insideBase = baseSha ? ancestry(git, id, baseSha) : null;
+    if (afterCandidate === null || insideBase === null) {
+      absorbedProblems.push(
+        `Git could not prove absorbed successor ${id.slice(0, 8)} lies between the candidate and the resolved base`
+      );
+      continue;
+    }
+    if (!afterCandidate || !insideBase) {
+      absorbedProblems.push(
+        `absorbed successor ${id.slice(0, 8)} is not contained between candidate ${sha.slice(0, 8)} and base ${String(baseSha).slice(0, 8)}`
+      );
+      continue;
+    }
+    const productRaw = git(['diff', '--name-only', `${sha}..${id}`, '--', 'apps', 'supabase']);
+    if (productRaw === null) {
+      absorbedProblems.push(
+        `product identity for absorbed successor ${id.slice(0, 8)} is UNKNOWN because Git refused the diff`
+      );
+      continue;
+    }
+    const changed = lines(productRaw);
+    if (changed.length > 0) {
+      absorbedProblems.push(
+        `absorbed successor ${id.slice(0, 8)} differs from the candidate at ${changed.length} product path(s): ${changed.slice(0, 5).join(', ')}`
+      );
+    }
+  }
+
+  if (new Set(absorbed).size !== absorbed.length) {
+    absorbedProblems.push('absorbedSuccessors contains a duplicate commit id');
+  }
 
   return {
     sha,
@@ -824,6 +880,8 @@ export function repositoryBinding(candidateFile, git) {
     rangeUnknown,
     commits,
     recorded,
+    absorbed,
+    absorbedProblems,
     malformedSuccessors: recorded.filter((id) => !/^[0-9a-f]{40}$/.test(id)),
     fabricatedSuccessors: recorded.filter((id) => /^[0-9a-f]{40}$/.test(id) && !inRange.has(id)),
     unrecordedExecutable: commits
@@ -1320,9 +1378,10 @@ export function tierBinding(candidateFile, git) {
      * longer exists. What must not be admissible is a measurement from anywhere
      * else, so all four of these are required together:
      *
-     *   the measurement head is a successor NAMED in `successors` (a
-     *   documentation-only successor could not have changed an executable path,
-     *   so this is the machinery commit or nothing);
+     *   the measurement head is named either in the CURRENT `successors` range
+     *   or in `absorbedSuccessors`, whose separate repository check proves it
+     *   lies between the candidate and the resolved base (a later remediation
+     *   branch must not invalidate the pinned measurement it inherited);
      *   no PRODUCT path is in the drift — the freeze is about apps/** and
      *   supabase/**, and a product difference makes the figure a measurement of
      *   different software;
@@ -1331,15 +1390,19 @@ export function tierBinding(candidateFile, git) {
      *
      * The reader is then told what differed instead of being told nothing.
      */
-    const named = (candidateFile.successors ?? []).some(
+    const namedCurrent = (candidateFile.successors ?? []).some(
       (s) => String(s?.commit ?? '') === tier.measuredAtCommit
     );
+    const namedAbsorbed = (candidateFile.absorbedSuccessors ?? []).some(
+      (s) => String(s?.commit ?? '') === tier.measuredAtCommit
+    );
+    const named = namedCurrent || namedAbsorbed;
     const productDrift = drift.filter(isProductPath);
     const computed = [...drift].sort();
 
     if (!named) {
       localProblems.push(
-        `${name}: measured at ${tier.measuredAtCommit.slice(0, 8)}, and ${drift.length} executable path(s) differ between that commit and the candidate — ${computed.slice(0, 5).join(', ')}. A measurement head that is not a NAMED successor of the candidate must be executable-identical to it.`
+        `${name}: measured at ${tier.measuredAtCommit.slice(0, 8)}, and ${drift.length} executable path(s) differ between that commit and the candidate — ${computed.slice(0, 5).join(', ')}. A measurement head that is neither a NAMED current successor nor a base-absorbed successor must be executable-identical to the candidate.`
       );
     } else if (productDrift.length > 0) {
       localProblems.push(
@@ -2120,6 +2183,13 @@ export function reportRepository(binding, write = toStderr) {
     );
     for (const id of binding.fabricatedSuccessors)
       write(`  not a successor of the candidate: ${id}\n`);
+  }
+  if ((binding.absorbedProblems ?? []).length > 0) {
+    sound = false;
+    write(
+      '::error::an `absorbedSuccessors` entry is not proven historical base ancestry. Absorbed entries may preserve pinned measurement heads, but they never satisfy current-branch successor coverage and must lie product-identically between the candidate and the resolved base.\n'
+    );
+    for (const problem of binding.absorbedProblems ?? []) write(`  ${problem}\n`);
   }
   if (binding.unrecordedExecutable.length > 0) {
     sound = false;

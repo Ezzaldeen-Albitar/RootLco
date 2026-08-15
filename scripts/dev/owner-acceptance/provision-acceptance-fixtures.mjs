@@ -31,13 +31,16 @@ import { fileURLToPath } from 'node:url';
 import { GuardFailure, IDS, NAMES, assertLocalTarget, reconstructPassword } from './context.mjs';
 import {
   FixtureFailure,
+  INTAKE_CATALOGUE_FIXTURES,
   PARTY_FIXTURE,
   provisionAcceptanceFixtures,
+  reconstructFixtureUuid,
   releaseOpenVisits,
 } from './acceptance-fixtures.mjs';
 import { API_ORIGIN } from '../dev-config.mjs';
 
-const HERE = dirname(fileURLToPath(import.meta.url));
+const THIS_FILE = fileURLToPath(import.meta.url);
+const HERE = dirname(THIS_FILE);
 const REPO_ROOT = resolve(HERE, '..', '..', '..');
 const HANDOFF = join(REPO_ROOT, '.local', 'owner-acceptance-account.json');
 
@@ -63,6 +66,56 @@ const API = process.env.ROOTLCO_API_BASE_URL ?? API_ORIGIN;
 const RELEASE_OPEN_VISITS = process.argv.includes('--release-open-visits');
 
 const log = (message) => console.log(message);
+
+/**
+ * Builds the exact allow-listed document the browser tier may read.
+ *
+ * This repeats the API-boundary validation at the file boundary deliberately:
+ * a later caller cannot make a raw response persist merely by bypassing the
+ * provisioning helpers. Every identifier is rebuilt from the UUID alphabet;
+ * all human-readable values come from repository constants; response-only
+ * fields such as `created` and the release count are not persisted.
+ */
+export function composeFixtureManifest(result, provisionedAt = new Date()) {
+  if (!(provisionedAt instanceof Date) || Number.isNaN(provisionedAt.valueOf())) {
+    throw new FixtureFailure('the fixture manifest timestamp is not a valid Date.');
+  }
+
+  const catalogues = {};
+  for (const fixture of INTAKE_CATALOGUE_FIXTURES) {
+    const row = result?.catalogues?.[fixture.key];
+    if (row?.code !== fixture.code || row?.name !== fixture.name) {
+      throw new FixtureFailure(`${fixture.key} is not the configured catalogue fixture.`);
+    }
+    catalogues[fixture.key] = {
+      id: reconstructFixtureUuid(row.id, `${fixture.key} catalogue id`),
+      code: fixture.code,
+      name: fixture.name,
+    };
+  }
+
+  const customerDisplayName = `${PARTY_FIXTURE.givenName} ${PARTY_FIXTURE.familyName}`;
+  if (result?.displayName !== customerDisplayName) {
+    throw new FixtureFailure('the configured customer display name did not match the fixture.');
+  }
+
+  return {
+    warning:
+      'LOCAL DEVELOPMENT ONLY. Synthetic acceptance fixtures, written through the ' +
+      'published management contracts. Never commit this file.',
+    provisionedAt: provisionedAt.toISOString(),
+    tenantId: IDS.tenantC,
+    tenantName: NAMES.tenantNameC,
+    companyId: IDS.companyC,
+    branchId: IDS.branchC,
+    operatorEmail: NAMES.configuredEmail,
+    catalogues,
+    customerId: reconstructFixtureUuid(result.customerId, 'the manifest customer id'),
+    customerDisplayName,
+    vehicleId: reconstructFixtureUuid(result.vehicleId, 'the manifest vehicle id'),
+    vehicleDisplayNumber: PARTY_FIXTURE.vehicleDisplayNumber,
+  };
+}
 
 /**
  * The configured workspace's operator, rebuilt from constants.
@@ -142,31 +195,7 @@ async function main() {
   }
 
   mkdirSync(dirname(MANIFEST), { recursive: true });
-  writeFileSync(
-    MANIFEST,
-    JSON.stringify(
-      {
-        warning:
-          'LOCAL DEVELOPMENT ONLY. Synthetic acceptance fixtures, written through the ' +
-          'published management contracts. Never commit this file.',
-        provisionedAt: new Date().toISOString(),
-        tenantId: IDS.tenantC,
-        tenantName: NAMES.tenantNameC,
-        companyId: IDS.companyC,
-        branchId: IDS.branchC,
-        operatorEmail: NAMES.configuredEmail,
-        catalogues: result.catalogues,
-        customerId: result.customerId,
-        customerDisplayName: result.displayName,
-        vehicleId: result.vehicleId,
-        vehicleDisplayNumber: PARTY_FIXTURE.vehicleDisplayNumber,
-        openVisitsReleased: released,
-      },
-      null,
-      2
-    ) + '\n',
-    'utf8'
-  );
+  writeFileSync(MANIFEST, JSON.stringify(composeFixtureManifest(result), null, 2) + '\n', 'utf8');
 
   log('');
   log(`  catalogues configured  ${Object.keys(result.catalogues).length} of 7`);
@@ -181,11 +210,13 @@ async function main() {
   log('  LOCAL DEVELOPMENT ONLY. These rows are removed by `npm run acceptance:reset-owner`.');
 }
 
-main().catch((error) => {
-  if (error instanceof GuardFailure || error instanceof FixtureFailure) {
-    console.error(`\n${error.message}\n`);
-    process.exit(2);
-  }
-  console.error(error);
-  process.exit(1);
-});
+if (process.argv[1] && resolve(process.argv[1]) === THIS_FILE) {
+  main().catch((error) => {
+    if (error instanceof GuardFailure || error instanceof FixtureFailure) {
+      console.error(`\n${error.message}\n`);
+      process.exit(2);
+    }
+    console.error(error);
+    process.exit(1);
+  });
+}

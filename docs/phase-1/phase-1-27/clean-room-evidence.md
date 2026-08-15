@@ -163,8 +163,8 @@ different tree is not evidence about this one.
 | Web test files under `apps/web/tests`       | 98    | a walk of the tree                                                 |
 | Web tier — tests executed                   | 2726  | `--record web`, from the `vitest` JSON report                      |
 | Web tier — files the run reported           | 98    | the same report, cross-checked against the walk above              |
-| Root unit tier — tests executed             | 2575  | `--record unit`, from the `vitest` JSON report                     |
-| Root unit tier — files the run reported     | 98    | the same report, cross-checked against the tier's include rule      |
+| Root unit tier — tests executed             | 2592  | `--record unit`, from the `vitest` JSON report                     |
+| Root unit tier — files the run reported     | 99    | the same report, cross-checked against the tier's include rule      |
 | Committed web floor (`minTests`)            | 2500  | `.github/ci-baselines/test-count-baseline.json`                    |
 | Committed unit floor (`minTests`)           | 1050  | the same baseline                                                  |
 | Migrations on disk                          | 120   | a walk of `supabase/migrations`                                    |

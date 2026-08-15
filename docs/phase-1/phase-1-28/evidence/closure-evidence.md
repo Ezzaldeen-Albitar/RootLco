@@ -65,11 +65,12 @@ build are properties of a **run**, not of a checkout. Moving the candidate moves
 what the package is _about_; it never manufactures an observation of it.
 
 **The hosted half has since been taken, separately.** Eleven bindings stood
-PENDING when this candidate was frozen. Nine remain bound to hosted CI at
-`81cbd44bae5f8f64091416019458b3d2b514503e`; the unit and web tiers are bound to
-exact remediation run `31877658859` at
-`b12b9f0ff527d6b782cb47bfdd91996d1797499f`.
-**All eleven are bound**; see
+PENDING when this candidate was frozen. Nine now cite exact remediation PR CI
+run `31885987461` at `1a186a7bcb7d0b97bb771753dacb584535692455`,
+including all five tiers and both CodeQL analyses. The aggregate hosted-CI and
+production-build records remain fetchable at product-identical `81cbd44b`,
+because the exact remediation workflow legitimately skipped those two
+change-classified build jobs. **All eleven are bound**; see
 [What was PENDING, and what bound it](#what-was-pending-and-what-bound-it).
 
 **On the two names, before anything else.** `FINAL_CODE_SHA` and
@@ -84,8 +85,62 @@ quoted as a current one.
 
 Every **local** figure in this package describes **that commit**, or a named
 successor of it whose drift from it is declared path by path. The successor set
-is now non-empty: five full ids name the post-candidate evidence machinery, while
-the product diff under `apps/**` and `supabase/**` remains empty.
+is non-empty: three full ids name the executable changes on the current remediation
+branch, while the product diff under `apps/**` and `supabase/**` remains empty.
+
+**`3187f18c82a9b3113b876ec035c9a2324117ee84` — the acceptance-manifest
+network boundary.** Protected CodeQL policy found `js/http-to-file-access` in
+the local acceptance-fixture command: catalogue, customer and vehicle response
+objects flowed into `JSON.stringify` and then `writeFileSync`. The repository
+ceiling is **0**, so this is repaired rather than dismissed or added to the
+ceiling. Every identifier that reaches the manifest is rebuilt character by
+character from a fixed UUID alphabet; every label comes from repository-owned
+fixture constants; malformed pages, ambiguous customers, mismatched vehicles
+and invalid relationships fail closed; newly created records are re-read before
+their ids are bound; and the unused response-derived release count is not
+persisted. Fifteen focused cases prove the boundary and the exact manifest
+allow-list. The change touches only `scripts/dev/owner-acceptance/**` and
+`tests/ci/**`; the frozen product trees remain byte-identical.
+
+**`a2095925f13e11f7fdbc04264db69ecf88939568` — the absorbed-measurement
+boundary.** The PR #229 local measurement at `eeba15d7` remains valid and
+product-identical after that head becomes protected-base ancestry, but it is no
+longer in the current successor range. The seal now gives that history a
+separate, fail-closed vocabulary: every `absorbedSuccessors` id must be proven
+between the candidate and the resolved base and product-identical to the
+candidate. It may preserve an already pinned measurement head, but it can never
+cover an unnamed current successor. Two real scratch worlds prove the valid and
+hostile forms. The change touches only the seal and its own suite.
+
+Both local tiers were then measured at that exact executable head and recorded
+in P1-27 ledger commit
+`6ea6bfdcb4f6a867ebc7190740fda0ce5b521474`: unit **2592/2592** over **99**
+files and web **2726/2726** over **98** files, with **0 failed**. These are a
+newer local observation than the then-bound package figures, but they were
+superseded by the test-only `ea045d88` correction below before a matching hosted
+run existed.
+
+**`ea045d88fd88843c82c8ecd7273b0772f65417f6` — the strict-type test
+correction.** Exact-head CI run `31884032641` found that the new boundary suite
+passed at runtime but did not satisfy the repository-wide strict TypeScript
+check: four assertions indexed a JavaScript-inferred empty object and two mock
+body assertions dropped their existing optional `RequestInit` guard. This
+successor types the hostile-field assertion boundary and retains optional
+chaining. The suite remains **15/15**, and no runtime fixture behavior, case
+count, product path or database path changes. Both authoritative local tiers
+were re-taken at this exact executable head and committed in P1-27 ledger commit
+`2e0f2191db4c118e766e9ca4b8ffff981b63d7c6`: unit **2592/2592** over **99**
+files and web **2726/2726** over **98** files, with **0 failed** and no dirty
+executable paths. Exact-head PR CI run `31885987461` at `1a186a7b` reproduced
+the same two figures; the local and hosted halves are now bound together.
+
+The five successors below were current on PR #229. They are now ancestors of
+protected `develop`, so the current branch calculation correctly excludes them:
+`git log ea045d88 --not 7b1252ed 0a91918b` contains `ea045d88`, `a2095925` and
+`3187f18c`. They remain
+recorded in `closure-candidate.json` under `absorbedSuccessors`, with their full
+history, rather than being deleted or falsely retained in the current
+`successors` range.
 
 **`3f80bc2d03234d940c6e10d0c7c148264644927a` — the base subtraction made to
 survive this branch's own merge.** The successor rule subtracts the base branch
@@ -123,7 +178,7 @@ The suite constructs real scratch repositories for the eleven required worlds,
 including both parent orders, an advanced protected first-parent line, a
 second-parent-only reachability trap, a sound empty range whose two anti-vacuity
 guards are observed red, a real product mutation, and Git command refusal. It is
-94/94, while the gate's embedded self-check is 82 worlds: 66 analyzer-derived
+96/96, while the gate's embedded self-check is 82 worlds: 66 analyzer-derived
 worlds plus 16 reporter cases.
 
 **`eeba15d70e355c3a9e66dbc5d5053e8e92966d72` — the lint-clean measurement
@@ -182,8 +237,8 @@ point:
 - the world flags are cross-checked against the package's own
   `pendingHostedBindings` declaration, which `worldFrom` never reads.
 
-The committed bound package now passes **94/94**, and the pending/forward-binding
-states remain fixture-proved inside that same run. Nothing was removed: 82
+The committed bound package now passes **96/96**, and the pending/forward-binding
+and absorbed-history states remain fixture-proved inside that same run. Nothing was removed: 82
 self-check worlds run on every invocation and `selfCheck` reports 0 failures.
 
 **What it cost.** The two local tiers, re-measured here — and the unit tier
@@ -231,10 +286,11 @@ acts are independent and only one of them is evidence: re-freezing changed what
 the package is _about_, and a **separate** hosted run — not this section — is
 what made the package able to say anything about it.
 
-**The rule, and the single hole it cannot close.** Every commit in
-`git log 7b1252ed..HEAD` that touches an executable path — anything outside
-`docs/` that is not `*.md` — must appear in `closure-candidate.json` by its full
-40-character id, and the gate computes that range and refuses an unnamed one. A
+**The rule, and the single hole it cannot close.** Every commit in the computed
+`git log <head under test> --not 7b1252ed <historical base>` range that touches
+an executable path — anything outside `docs/` that is not `*.md` — must appear
+in `closure-candidate.json` by its full 40-character id, and the gate refuses an
+unnamed one. A
 **documentation-only** successor may go unnamed, and the gate **prints** the ones
 that did. The reason is arithmetic, not policy: a commit cannot write its own id
 into a file it contains, so "the recorded list is exactly `git log`" is not a
@@ -256,19 +312,17 @@ product-identical successor — and their pinned figures agree.**
 
 | Tier                     | Tests       | Passed | Failed | Skipped | Files   | Where it was taken                                              |
 | ------------------------ | ----------- | ------ | ------ | ------- | ------- | --------------------------------------------------------------- |
-| Root unit and foundation | 2575        | 2575   | **0**  | 0       | 98      | **local** at `eeba15d7` **and hosted** job `94995683335`        |
-| Web component and DOM    | 2726        | 2726   | **0**  | 0       | 98      | **local** at `eeba15d7` **and hosted** job `94995683404`        |
-| Backend integration      | 2004        | 2004   | **0**  | 0       | 86      | **hosted** job `94714715651` — not takeable on this workstation |
-| Database and RLS         | 1647        | 1647   | **0**  | 0       | 139     | **hosted** job `94714715750` — not takeable on this workstation |
-| Authenticated browser    | 370 planned | 365    | **0**  | 5       | 7 specs | **hosted** job `94714715648` — not takeable on this workstation |
+| Root unit and foundation | 2592        | 2592   | **0**  | 0       | 99      | **local** at `ea045d88` **and hosted** job `95015291732`        |
+| Web component and DOM    | 2726        | 2726   | **0**  | 0       | 98      | **local** at `ea045d88` **and hosted** job `95015291673`        |
+| Backend integration      | 2004        | 2004   | **0**  | 0       | 86      | **hosted** job `95015291834` — not takeable on this workstation |
+| Database and RLS         | 1647        | 1647   | **0**  | 0       | 139     | **hosted** job `95015291738` — not takeable on this workstation |
+| Authenticated browser    | 370 planned | 366    | **0**  | 4       | 7 specs | **hosted** job `95015291803` — not takeable on this workstation |
 
-The earlier all-five hosted observation remains **9307 cases planned, 9302
-passed, 0 failed, 5 skipped** at run `31783658759`, head `81cbd44b`. It is kept
-as that run's aggregate, not silently recomputed with the later unit figure. The
-unit and web rows above are instead bound to run `31877658859` at `b12b9f0f`,
-whose executable tree is the same one measured locally at `eeba15d7`; mixing its
-2575 unit figure with the older run's four figures and calling the sum one
-observation would be the provenance error this package exists to prevent.
+Exact remediation run `31885987461` at `1a186a7b` is one all-five observation:
+**9339 cases planned, 9335 passed, 0 failed, 4 skipped**. The local unit and web
+figures come from ledger commit `2e0f2191`; their hosted artefacts at the same
+run match field for field. The earlier 9307/9302/0/5 aggregate remains preserved
+in history rather than being mixed into the current observation.
 
 **The browser skip count moved, 4 → 5, and it is not a code change.** The
 candidate touches nothing under `apps/**`. The extra skip is
@@ -285,8 +339,9 @@ skip count is exactly the shape that hides a case which measured nothing.
 141 entries owned by the phase spec carry status `expected`.
 
 The unit figure moved **2559 → 2560** at the candidate because one case was added
-to `tests/ci/p1-28-evidence-manifest.test.ts`, then **2560 → 2567 → 2575** at
-named measurement successors as the seal's hostile-world suite grew. That value is
+to `tests/ci/p1-28-evidence-manifest.test.ts`, then **2560 → 2567 → 2575 →
+2592** at named measurement successors as the seal and acceptance-boundary suites
+grew. That value is
 reconciled where it actually lives rather than only in the tier record —
 `CR-A-UNIT-TESTS-ROW` in `docs/phase-1/phase-1-27/clean-room-evidence.md`, and
 **both** of its twins in `closing-value-ledger.json`, the `locator` line and the
@@ -318,17 +373,17 @@ Two arguments this page used to make, and no longer needs to:
 | -------------------- | -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **arithmetic**       | all five                   | `passed + failed + skipped` must equal the declared total. The review set `passed: 3, failed: 812` beside `tests: 2475` and the first revision of the gate accepted it.                                                                                                                                                                                                                             |
 | **computed**         | unit, web                  | the figures must equal the P1-27 run ledger's, read out of git at a **pinned commit**, and the tier may carry no figure the ledger does not write                                                                                                                                                                                                                                                   |
-| **measurement head** | unit, web                  | the head the tier names must be executable-identical to the candidate, or a **named successor** carrying no product drift and declaring `measurementDrift` exactly equal to what `git diff` says. Both package measurements are bound at `eeba15d7`, the lint-clean remediation executable head                                                                                                     |
+| **measurement head** | unit, web                  | the head the tier names must be executable-identical to the candidate, or a **named successor** carrying no product drift and declaring `measurementDrift` exactly equal to what `git diff` says. Both package measurements are bound at `ea045d88`, the latest executable remediation head                                                                                                         |
 | **pending**          | none, now                  | the rule is unchanged and still fires: a record describing a head the candidate **supersedes** must declare `describesSupersededHead`, name a head this repository **contains** and can prove is an **ancestor**, name what replaces it, and appear in `pendingHostedBindings` — a list the gate **derives** and compares in both directions, so it is empty by computation rather than by deletion |
 | **run head**         | all eleven hosted bindings | a run cited at a head that is not the candidate must declare `describesProductIdenticalSuccessor`, and that head must be **contained** in this repository, **descend** from the candidate, and differ from it by **no** path under `apps/**` or `supabase/**` — computed, and a diff git refuses to take is UNKNOWN, not empty                                                                      |
 
 ### What the local record covers
 
-The package's bound local record at `9c173ff4eff3dc516b9d9778527ac98649582ebe`
-was taken at named successor `eeba15d70e355c3a9e66dbc5d5053e8e92966d72`:
-unit 2575/2575 and web 2726/2726, 0 failed and 98 files in each. It was committed
-after the executable measurement head, in the required order. Exact remediation
-CI then observed the same executable tree at `b12b9f0f`.
+The package's bound local record at `2e0f2191db4c118e766e9ca4b8ffff981b63d7c6`
+was taken at named successor `ea045d88fd88843c82c8ecd7273b0772f65417f6`:
+unit 2592/2592 over 99 files and web 2726/2726 over 98 files, with 0 failed. It
+was committed after the executable measurement head, in the required order.
+Exact remediation PR CI then observed the same executable tree at `1a186a7b`.
 The gate reads that ledger **out of git at the commit that carries it**, through
 `git show`, and requires `tests`, `passed`, `failed`, `skipped`, `files` and the
 measured head to match this package exactly. It is pinned to a commit because the
@@ -336,18 +391,19 @@ ledger **moves**: `--record` rewrites it at whatever head it was last taken at, 
 a check against the working copy would go red on the next unrelated re-record and
 would then be relaxed rather than fixed.
 
-Both tiers declare the three paths Git computes between that bound measurement
-head and the candidate: the ownership profile, the seal, and the seal suite. The
-list is **checked, not asserted**; a missing, invented, or product path is refused.
+Both tiers declare the six paths Git computes between that bound measurement
+head and the candidate: the ownership profile, the seal, both acceptance-fixture
+commands, the acceptance-boundary suite and the seal suite. The list is
+**checked, not asserted**; a missing, invented, or product path is refused.
 
 `suites: 549` and `suites: 651` used to stand beside these figures and have been
 **removed**. The run ledger records no suite count, so there was nothing those
 numbers could be checked against and nothing that would have noticed them change.
 
 **The hosted halves of these two pinned measurements have been taken, and they
-agree.** Run `31877658859`, job `94995683335`, reports **2575 over 98 files** for
-the unit tier; job `94995683404` reports **2726 over 98 files** for the web tier,
-both at `b12b9f0f`. Those are the same figures the pinned `9c173ff4` ledger
+agree.** Run `31885987461`, job `95015291732`, reports **2592 over 99 files** for
+the unit tier; job `95015291673` reports **2726 over 98 files** for the web tier,
+both at `1a186a7b`. Those are the same figures the pinned `2e0f2191` ledger
 records, produced by GitHub-hosted runners on clean
 checkouts that share nothing with this workstation. Both tiers therefore declare
 `LOCAL_AND_HOSTED_AGREE`, which the gate refuses unless both halves exist: a tier
@@ -356,13 +412,13 @@ the falsifications run against this tree.
 
 The unit tier is the one worth watching: 2559 at the superseded head `55b932cb`,
 2560 at the product candidate, 2567 at the first post-merge measurement
-successor, and 2575 at the lint-clean remediation head. The last is now bound on
-both sides by local ledger `9c173ff4` and hosted run `31877658859`; keeping those
-states separate is the agreement being worth something rather than two copies of
-one number.
+successor, 2575 at the lint-clean remediation head, and 2592 at the acceptance
+boundary head. The last is now bound on both sides by local ledger `2e0f2191` and
+hosted run `31885987461`; keeping those states separate is the agreement being
+worth something rather than two copies of one number.
 
 The web tier is measured a **third** time. `hosted-clean-room` (job
-`94995683364`, artefact `9245335777`) re-derives it independently at the same head, from its own
+`95015291709`, artefact `9247462978`) re-derives it independently at the same head, from its own
 checkout and its own install, and `clean-room-web-totals.json` reports the
 identical **2726 over 98 files**.
 
@@ -379,24 +435,23 @@ the standing reason `OWNER ACCEPTANCE` is required and CI is not sufficient.
 ## What was PENDING, and what bound it
 
 Eleven hosted bindings in this package stood PENDING when this candidate was
-frozen. **All eleven are now bound**: nine to hosted CI at
-`81cbd44bae5f8f64091416019458b3d2b514503e`, and the unit and web tiers to exact
-remediation run `31877658859` at the product-identical, executable-matching head
-`b12b9f0ff527d6b782cb47bfdd91996d1797499f`.
+frozen. **All eleven are now bound**: nine, including all five tiers, to exact
+remediation run `31885987461` at `1a186a7b`; the aggregate hosted-CI and
+production-build records remain at fetchable product-identical `81cbd44b`.
 
 | Binding                            | Bound to                                              |
 | ---------------------------------- | ----------------------------------------------------- |
-| `tiers.unit.hostedAttestation`     | run `31877658859` · job `94995683335`                 |
-| `tiers.web.hostedAttestation`      | run `31877658859` · job `94995683404`                 |
-| `tiers.backend.hostedAttestation`  | run `31783658759` · job `94714715651`                 |
-| `tiers.database.hostedAttestation` | run `31783658759` · job `94714715750`                 |
-| `tiers.browser.hostedAttestation`  | run `31783658759` · job `94714715648`                 |
+| `tiers.unit.hostedAttestation`     | run `31885987461` · job `95015291732`                 |
+| `tiers.web.hostedAttestation`      | run `31885987461` · job `95015291673`                 |
+| `tiers.backend.hostedAttestation`  | run `31885987461` · job `95015291834`                 |
+| `tiers.database.hostedAttestation` | run `31885987461` · job `95015291738`                 |
+| `tiers.browser.hostedAttestation`  | run `31885987461` · job `95015291803`                 |
 | `hostedCi`                         | runs `31783658759` and `31783658604` — 21 checks      |
-| `browserByProject`                 | run `31783658759` · job `94714715648`                 |
-| `codeql`                           | analyses `1618296034` and `1618288471`                |
-| `dependencySecurity`               | run `31783658759` · job `94714715417`                 |
+| `browserByProject`                 | run `31885987461` · job `95015291803`                 |
+| `codeql`                           | analyses `1623406974` and `1623403842`                |
+| `dependencySecurity`               | run `31885987461` · job `95015291777`                 |
 | `productionBuild`                  | run `31783658759` · job `94714715555`                 |
-| `database`                         | run `31783658759` · jobs `94714715656`, `94714715543` |
+| `database`                         | run `31885987461` · jobs `95015291721`, `95015291709` |
 
 `pendingHostedBindings.bindings` is now `[]`. **That emptiness is computed, not
 declared:** the gate derives the pending set from the documents' own `headSha`
@@ -461,35 +516,18 @@ the record of what was once claimed is the half-update this gate exists to catch
 
 ---
 
-## The authenticated browser tier · job `94714715648`
+## The authenticated browser tier · job `95015291803`
 
-Run **`31783658759`** · job **`94714715648`** · head_sha
-**`81cbd44bae5f8f64091416019458b3d2b514503e`** · conclusion **success**.
+Run **`31885987461`** · job **`95015291803`** · head_sha
+**`1a186a7bcb7d0b97bb771753dacb584535692455`** · conclusion **success**.
 
-**Whole tier**, read from the report's own `stats` block: 370 planned · **365
-passed** · **0 failed** · **5 skipped** · **0 flaky**.
+**Whole tier**, read from the report's own `stats` block: 370 planned · **366
+passed** · **0 failed** · **4 skipped** · **0 flaky**.
 
-**Five, not the four the superseded runs reported — and the fifth is worth the
-paragraph.** All five sit in `authenticated/accessibility.spec.ts`. Four are the
-pair repeated under `authenticated-en` and `authenticated-ar`: the customer
-profile and the vehicle profile. The fifth is
-`a dialog traps focus and returns it, signed in`, under `authenticated-en` only.
-
-It is a **conditional** skip taken inside the test body, not a `.skip` in the
-source: the case opens `/en/administration/users`, counts the buttons that could
-open a dialog, and calls
-`test.skip(true, 'this screen exposes no dialog opener for the current permission
-set')` when it finds none. Its condition is a fact about the **acceptance
-workspace the run provisioned** — which identity, holding which permissions — and
-not about the tree. This candidate changes one file, under `tests/ci`, and
-nothing under `apps/**`; the same commit's code produced four skips at `55b932cb`
-and five here. So the count can move between runs at an identical product, and it
-did.
-
-It is recorded rather than smoothed over, because a moving skip count is exactly
-the shape that hides a case which measured nothing: a skipped test still counts
-toward a tier's executed total, and that is how a "0 uncovered" number gets
-reported over a case that asserted nothing at all.
+All four skips sit in `authenticated/accessibility.spec.ts`: the customer-profile
+and vehicle-profile cases repeated under `authenticated-en` and
+`authenticated-ar`. The count is taken from this run's report rather than carried
+forward from the previous five-skip workspace observation.
 
 **No P1-28 case is skipped**, and that is checked rather than restated: all 141
 entries owned by the phase spec carry status `expected`.
@@ -498,7 +536,7 @@ Whole-tier shape by project, for the same reason:
 
 | Project                | Planned | Expected | Skipped |
 | ---------------------- | ------- | -------- | ------- |
-| `authenticated-en`     | 152     | 149      | 3       |
+| `authenticated-en`     | 152     | 150      | 2       |
 | `authenticated-ar`     | 152     | 150      | 2       |
 | `authenticated-tablet` | 65      | 65       | 0       |
 | `auth-setup`           | 1       | 1        | 0       |
@@ -581,13 +619,13 @@ recorded as one; the check was allowed to settle and then read again.
 
 ### CodeQL
 
-Two analyses at this exact head, ref `refs/pull/226/head`, selected by matching
+Two analyses at the exact remediation evidence head, ref `refs/pull/230/head`, selected by matching
 each analysis's own `commit_sha` rather than by taking the two most recent:
 
 | Analysis     | Language                | Rules | Results |
 | ------------ | ----------------------- | ----- | ------- |
-| `1618296034` | `javascript-typescript` | 201   | **0**   |
-| `1618288471` | `actions`               | 27    | **0**   |
+| `1623406974` | `javascript-typescript` | 201   | **0**   |
+| `1623403842` | `actions`               | 27    | **0**   |
 
 Open alerts repository-wide: **0**.
 
@@ -597,15 +635,13 @@ open alerts on any analysed ref, but a pull-request analysis does not by itself
 establish the repository ceiling — only a run on a protected ref does. It is
 recorded here as the pull-request result it is.
 
-**Why this one matters to this branch in particular.** The candidate two commits
-back, `3c75f49a`, existed _because_ of a CodeQL HIGH: `js/file-system-race` at
-`scripts/ci/check-p1-28-traceability.mjs:330`, where `existsSync` then `statSync`
-then `readFileSync` asked three questions about a path that could stop being a
-file between them — and the answer is what a sealed record quotes. Analysis
-`1618296034` is a `javascript-typescript` analysis at a head containing that fix,
-and it returns 0 results over the same 201 rules that reported it.
+**Why this one matters to this branch in particular.** This remediation exists
+because protected CodeQL reported `js/http-to-file-access` at the local
+acceptance-fixture sink. Analysis `1623406974` runs at a head containing the
+canonicalization boundary and returns 0 results over all 201 JavaScript/TypeScript
+rules; the repository-wide alert query independently returns 0 open alerts.
 
-### Dependency security · job `94714715417`
+### Dependency security · job `95015291777`
 
 Production vulnerabilities **0** · development vulnerabilities **0** · critical,
 high, moderate and low all **0** across **830** resolved dependencies (68
@@ -626,7 +662,7 @@ distrust — so the artefact's provenance was checked rather than assumed:
 Here the identity is expected: the candidate changes one file under `tests/ci`,
 which the production build does not compile.
 
-### Database · jobs `94714715656` and `94714715543`
+### Database · jobs `95015291721` and `95015291709`
 
 `database-migration-replay` applied all **120** migrations in the tree to an
 empty database — `migrationsInTree` 120, `migrationsApplied` 120, 0 failures —
@@ -803,18 +839,18 @@ put that to the test and it failed in the two ways it was built to prevent:
 Well-formedness is not existence, and two documents agreeing is not evidence
 about a repository. What the gate now computes, on every invocation:
 
-| Binding                  | How it is established                                                                                                                                                                                                                                                                                                                                                                    |
-| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| the candidate **exists** | `git cat-file -e 7b1252ed^{commit}`                                                                                                                                                                                                                                                                                                                                                      |
-| its **tree**             | `git rev-parse 7b1252ed^{tree}` must equal the recorded `1ef831d2ecfcf94d07b73857b7448c3b424faca3`                                                                                                                                                                                                                                                                                       |
-| the **base branch**      | `git rev-parse --verify refs/remotes/origin/develop^{commit}`, tried before `refs/heads/develop` and the bare name, and RECOVERED from the merge ref's own base-side parent when no ref resolves. A base that can be found neither way makes the successor set UNKNOWN and the gate fails **closed**                                                                                     |
-| the **head under test**  | `git rev-list --parents -n 1 HEAD`. Ordinarily HEAD itself. A two-parent merge is unwrapped only after tri-state ancestry, exact-base/first-parent-line identification where both parents carry the candidate, and a successful empty combined diff. Ambiguous ancestry, a stale base that identifies no parent, or any refused Git command is UNKNOWN and fails closed                  |
-| its **ancestry**         | `git merge-base --is-ancestor 7b1252ed <head under test>`                                                                                                                                                                                                                                                                                                                                |
-| **product identity**     | `git diff --name-only 7b1252ed..<head under test> -- apps supabase` must be empty — computed, where the package used to assert it in a sentence                                                                                                                                                                                                                                          |
-| **successors**           | `git log <head under test> --not 7b1252ed <historical base>`, every executable commit of which must be named by id; documentation-only ones are printed. Five executable successors are named. On a protected merge the historical base comes from the merge topology rather than moving `origin/develop`, so genuine successors survive subtraction                                     |
-| **local tier figures**   | `git show <ledger commit>:…/local-run-ledger.json`, matched field by field, plus the measured head either executable-identical to the candidate or a named successor whose drift is declared path by path and compared against `git diff`                                                                                                                                                |
-| **hosted tier figures**  | not computable here, so required to be fetchable: run id, job id, head sha, artefact. A head that is not the candidate must declare which of the two it is — an **ancestor**, superseded, listed in `pendingHostedBindings`; or a **descendant** whose `apps/**` and `supabase/**` `git diff` computes to be identical to the candidate's — and must be a commit `git cat-file` resolves |
-| **documented claims**    | anchored sentences measured against the tree, and `PROTECTED_REPROOF` citations resolved into the files they name                                                                                                                                                                                                                                                                        |
+| Binding                  | How it is established                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| the candidate **exists** | `git cat-file -e 7b1252ed^{commit}`                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| its **tree**             | `git rev-parse 7b1252ed^{tree}` must equal the recorded `1ef831d2ecfcf94d07b73857b7448c3b424faca3`                                                                                                                                                                                                                                                                                                                                                                 |
+| the **base branch**      | `git rev-parse --verify refs/remotes/origin/develop^{commit}`, tried before `refs/heads/develop` and the bare name, and RECOVERED from the merge ref's own base-side parent when no ref resolves. A base that can be found neither way makes the successor set UNKNOWN and the gate fails **closed**                                                                                                                                                               |
+| the **head under test**  | `git rev-list --parents -n 1 HEAD`. Ordinarily HEAD itself. A two-parent merge is unwrapped only after tri-state ancestry, exact-base/first-parent-line identification where both parents carry the candidate, and a successful empty combined diff. Ambiguous ancestry, a stale base that identifies no parent, or any refused Git command is UNKNOWN and fails closed                                                                                            |
+| its **ancestry**         | `git merge-base --is-ancestor 7b1252ed <head under test>`                                                                                                                                                                                                                                                                                                                                                                                                          |
+| **product identity**     | `git diff --name-only 7b1252ed..<head under test> -- apps supabase` must be empty — computed, where the package used to assert it in a sentence                                                                                                                                                                                                                                                                                                                    |
+| **successors**           | `git log <head under test> --not 7b1252ed <historical base>`, every executable commit of which must be named by id; documentation-only ones are printed. Three executable successors are named on this branch; five earlier successors are protected-base ancestors retained separately as absorbed history. On a protected merge the historical base comes from the merge topology rather than moving `origin/develop`, so genuine successors survive subtraction |
+| **local tier figures**   | `git show <ledger commit>:…/local-run-ledger.json`, matched field by field, plus the measured head either executable-identical to the candidate or a named successor whose drift is declared path by path and compared against `git diff`                                                                                                                                                                                                                          |
+| **hosted tier figures**  | not computable here, so required to be fetchable: run id, job id, head sha, artefact. A head that is not the candidate must declare which of the two it is — an **ancestor**, superseded, listed in `pendingHostedBindings`; or a **descendant** whose `apps/**` and `supabase/**` `git diff` computes to be identical to the candidate's — and must be a commit `git cat-file` resolves                                                                           |
+| **documented claims**    | anchored sentences measured against the tree, and `PROTECTED_REPROOF` citations resolved into the files they name                                                                                                                                                                                                                                                                                                                                                  |
 
 ### The eight rules, each of which can be made to fail
 
@@ -853,7 +889,7 @@ always returns false.
 
 #### The property that makes a candidate bindable at all
 
-**`tests/ci/p1-28-evidence-manifest.test.ts` passes 94/94 with this package
+**`tests/ci/p1-28-evidence-manifest.test.ts` passes 96/96 with this package
 BOUND, while pending and forward-binding worlds are constructed and proved in
 that same run.**
 
