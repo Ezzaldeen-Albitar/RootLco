@@ -1462,6 +1462,8 @@ interface Binding {
   readonly productDiffUnknown: boolean;
   readonly rangeUnknown: boolean;
   readonly commits: { sha: string; paths: string[] | null }[];
+  readonly absorbed: string[];
+  readonly absorbedProblems: string[];
   readonly unrecordedExecutable: string[];
 }
 
@@ -2181,6 +2183,51 @@ describe('P1-28-QA-005 — the base subtraction survives this branch MERGING int
       expect(named.unrecordedExecutable).toEqual([]);
       expect(named.productDiff).toEqual([]);
       expect(judge(soundInputsOver(ROOT, { repository: named }), () => {}).repositoryOk).toBe(true);
+    }));
+
+  it('keeps base-absorbed measurement heads without letting them cover current successors', () =>
+    withScratchRepository((repo) => {
+      repo.checkout(repo.remediation);
+      repo.setBaseRef(repo.landed);
+      const bound = bindingOfRepo(repo, {
+        ...repo.document(),
+        successors: [{ commit: repo.remediation, kind: 'current remediation' }],
+        absorbedSuccessors: [{ commit: repo.successor, kind: 'prior measurement head' }],
+      });
+
+      expect(bound.commits.map((commit) => commit.sha)).toEqual([repo.remediation]);
+      expect(bound.absorbed).toEqual([repo.successor]);
+      expect(bound.absorbedProblems).toEqual([]);
+      expect(bound.unrecordedExecutable).toEqual([]);
+      expect(judge(soundInputsOver(ROOT, { repository: bound }), () => {}).repositoryOk).toBe(true);
+
+      const currentUnnamed = bindingOfRepo(repo, {
+        ...repo.document(),
+        successors: [],
+        absorbedSuccessors: [
+          { commit: repo.successor, kind: 'prior measurement head' },
+          { commit: repo.remediation, kind: 'misclassified current work' },
+        ],
+      });
+      expect(currentUnnamed.unrecordedExecutable).toEqual([repo.remediation]);
+      expect(currentUnnamed.absorbedProblems.join('\n')).toContain('current branch range');
+      expect(
+        judge(soundInputsOver(ROOT, { repository: currentUnnamed }), () => {}).repositoryOk
+      ).toBe(false);
+    }));
+
+  it('fails closed when an absorbed successor is not actually inside base ancestry', () =>
+    withScratchRepository((repo) => {
+      repo.checkout(repo.remediation);
+      repo.setBaseRef(repo.landed);
+      const bad = bindingOfRepo(repo, {
+        ...repo.document(),
+        successors: [{ commit: repo.remediation, kind: 'current remediation' }],
+        absorbedSuccessors: [{ commit: repo.reMerge, kind: 'not in the resolved base' }],
+      });
+
+      expect(bad.absorbedProblems.join('\n')).toContain('not contained between candidate');
+      expect(judge(soundInputsOver(ROOT, { repository: bad }), () => {}).repositoryOk).toBe(false);
     }));
 
   it('makes BOTH anti-vacuity guards fire on a sound, genuinely empty range', () =>
