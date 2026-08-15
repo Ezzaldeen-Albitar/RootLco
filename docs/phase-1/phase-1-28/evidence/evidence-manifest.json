@@ -14,7 +14,7 @@
   },
   "tierTotals": {
     "unit": {
-      "passed": 2567,
+      "passed": 2575,
       "failed": 0,
       "skipped": 0,
       "provenance": "LOCAL_AND_HOSTED_AGREE"
@@ -63,16 +63,16 @@
       "bytes": 11687
     },
     "docs/phase-1/phase-1-28/evidence/change-log.md": {
-      "sha256": "3080cd8c9552dbbe04cfa077498b863ab7ad84bec932b61bc3cf2ac6ebca3537",
-      "bytes": 38748
+      "sha256": "40788d46dee2573bbe60d82a33cf24adf04d2f4a30eed42753d7ac61edbf18d3",
+      "bytes": 39077
     },
     "docs/phase-1/phase-1-28/evidence/closure-candidate.json": {
-      "sha256": "e0ad2bdd2c244bd2c1bd7cdbd7fe4229055c21d3cc363bcb803b3d8363e972a8",
-      "bytes": 60167
+      "sha256": "e1eb93f719ac17e173809057c6fdd4d48f94194d0f45bc5bcbfcf4f9fbf96803",
+      "bytes": 59895
     },
     "docs/phase-1/phase-1-28/evidence/closure-evidence.md": {
-      "sha256": "0c2c67fc59ba1c8c94b70cec5d55303d301813728cce29aa0528c7d2d4af5ecb",
-      "bytes": 69522
+      "sha256": "5cbbb914ccabc340419254c661cf334c70117b141882db5095d4f47b948e4c87",
+      "bytes": 69437
     },
     "docs/phase-1/phase-1-28/evidence/traceability.json": {
       "sha256": "600a8ae57e4a33b5c54d847befbcab82acb2a0d136d005cec777345c39c74ab1",

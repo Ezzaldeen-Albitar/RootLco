@@ -65,9 +65,10 @@ build are properties of a **run**, not of a checkout. Moving the candidate moves
 what the package is _about_; it never manufactures an observation of it.
 
 **The hosted half has since been taken, separately.** Eleven bindings stood
-PENDING when this candidate was frozen. Ten are bound to hosted CI at
-`81cbd44bae5f8f64091416019458b3d2b514503e`; the unit tier is bound to the later
-executable-matching run at `830bef33a8be3c825bca81dd8d74755255e6a00f`.
+PENDING when this candidate was frozen. Nine remain bound to hosted CI at
+`81cbd44bae5f8f64091416019458b3d2b514503e`; the unit and web tiers are bound to
+exact remediation run `31877658859` at
+`b12b9f0ff527d6b782cb47bfdd91996d1797499f`.
 **All eleven are bound**; see
 [What was PENDING, and what bound it](#what-was-pending-and-what-bound-it).
 
@@ -255,8 +256,8 @@ product-identical successor — and their pinned figures agree.**
 
 | Tier                     | Tests       | Passed | Failed | Skipped | Files   | Where it was taken                                              |
 | ------------------------ | ----------- | ------ | ------ | ------- | ------- | --------------------------------------------------------------- |
-| Root unit and foundation | 2567        | 2567   | **0**  | 0       | 98      | **local** at `27ea8f25` **and hosted** job `94747840397`        |
-| Web component and DOM    | 2726        | 2726   | **0**  | 0       | 98      | **local** at `27ea8f25` **and hosted** job `94714715522`        |
+| Root unit and foundation | 2575        | 2575   | **0**  | 0       | 98      | **local** at `eeba15d7` **and hosted** job `94995683335`        |
+| Web component and DOM    | 2726        | 2726   | **0**  | 0       | 98      | **local** at `eeba15d7` **and hosted** job `94995683404`        |
 | Backend integration      | 2004        | 2004   | **0**  | 0       | 86      | **hosted** job `94714715651` — not takeable on this workstation |
 | Database and RLS         | 1647        | 1647   | **0**  | 0       | 139     | **hosted** job `94714715750` — not takeable on this workstation |
 | Authenticated browser    | 370 planned | 365    | **0**  | 5       | 7 specs | **hosted** job `94714715648` — not takeable on this workstation |
@@ -264,10 +265,10 @@ product-identical successor — and their pinned figures agree.**
 The earlier all-five hosted observation remains **9307 cases planned, 9302
 passed, 0 failed, 5 skipped** at run `31783658759`, head `81cbd44b`. It is kept
 as that run's aggregate, not silently recomputed with the later unit figure. The
-unit row above is instead bound to run `31794269201` at `830bef33`, whose
-executable tree is the same one measured locally at `27ea8f25`; mixing its 2567
-with the other run's four figures and calling the sum one observation would be
-the provenance error this package exists to prevent.
+unit and web rows above are instead bound to run `31877658859` at `b12b9f0f`,
+whose executable tree is the same one measured locally at `eeba15d7`; mixing its
+2575 unit figure with the older run's four figures and calling the sum one
+observation would be the provenance error this package exists to prevent.
 
 **The browser skip count moved, 4 → 5, and it is not a code change.** The
 candidate touches nothing under `apps/**`. The extra skip is
@@ -284,8 +285,8 @@ skip count is exactly the shape that hides a case which measured nothing.
 141 entries owned by the phase spec carry status `expected`.
 
 The unit figure moved **2559 → 2560** at the candidate because one case was added
-to `tests/ci/p1-28-evidence-manifest.test.ts`, then **2560 → 2567** at the named
-measurement successor as the seal's hostile-world suite grew. That value is
+to `tests/ci/p1-28-evidence-manifest.test.ts`, then **2560 → 2567 → 2575** at
+named measurement successors as the seal's hostile-world suite grew. That value is
 reconciled where it actually lives rather than only in the tier record —
 `CR-A-UNIT-TESTS-ROW` in `docs/phase-1/phase-1-27/clean-room-evidence.md`, and
 **both** of its twins in `closing-value-ledger.json`, the `locator` line and the
@@ -317,19 +318,17 @@ Two arguments this page used to make, and no longer needs to:
 | -------------------- | -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **arithmetic**       | all five                   | `passed + failed + skipped` must equal the declared total. The review set `passed: 3, failed: 812` beside `tests: 2475` and the first revision of the gate accepted it.                                                                                                                                                                                                                             |
 | **computed**         | unit, web                  | the figures must equal the P1-27 run ledger's, read out of git at a **pinned commit**, and the tier may carry no figure the ledger does not write                                                                                                                                                                                                                                                   |
-| **measurement head** | unit, web                  | the head the tier names must be executable-identical to the candidate, or a **named successor** carrying no product drift and declaring `measurementDrift` exactly equal to what `git diff` says. The currently bound package measurement is at `27ea8f25`; the remediation re-run is recorded separately at `eeba15d7` before hosted rebinding                                                     |
+| **measurement head** | unit, web                  | the head the tier names must be executable-identical to the candidate, or a **named successor** carrying no product drift and declaring `measurementDrift` exactly equal to what `git diff` says. Both package measurements are bound at `eeba15d7`, the lint-clean remediation executable head                                                                                                     |
 | **pending**          | none, now                  | the rule is unchanged and still fires: a record describing a head the candidate **supersedes** must declare `describesSupersededHead`, name a head this repository **contains** and can prove is an **ancestor**, name what replaces it, and appear in `pendingHostedBindings` — a list the gate **derives** and compares in both directions, so it is empty by computation rather than by deletion |
 | **run head**         | all eleven hosted bindings | a run cited at a head that is not the candidate must declare `describesProductIdenticalSuccessor`, and that head must be **contained** in this repository, **descend** from the candidate, and differ from it by **no** path under `apps/**` or `supabase/**` — computed, and a diff git refuses to take is UNKNOWN, not empty                                                                      |
 
 ### What the local record covers
 
-The package's bound local record at `ca19414914a44f986ab60500bf0c34aacf0c5056`
-records unit 2567/2567 and web 2726/2726 at the named successor
-`27ea8f25083df44e5444dc5071528b0469e372f3`. The remediation ledger is re-taken
-at `eeba15d70e355c3a9e66dbc5d5053e8e92966d72` and committed in
-`9c173ff4eff3dc516b9d9778527ac98649582ebe`: unit 2575/2575, web 2726/2726,
-0 failed and 98 files in each. It is deliberately not presented as the package's
-bound hosted/local pair until hosted CI observes the same evidence code.
+The package's bound local record at `9c173ff4eff3dc516b9d9778527ac98649582ebe`
+was taken at named successor `eeba15d70e355c3a9e66dbc5d5053e8e92966d72`:
+unit 2575/2575 and web 2726/2726, 0 failed and 98 files in each. It was committed
+after the executable measurement head, in the required order. Exact remediation
+CI then observed the same executable tree at `b12b9f0f`.
 The gate reads that ledger **out of git at the commit that carries it**, through
 `git show`, and requires `tests`, `passed`, `failed`, `skipped`, `files` and the
 measured head to match this package exactly. It is pinned to a commit because the
@@ -346,24 +345,24 @@ list is **checked, not asserted**; a missing, invented, or product path is refus
 numbers could be checked against and nothing that would have noticed them change.
 
 **The hosted halves of these two pinned measurements have been taken, and they
-agree.** Run `31794269201`, job `94747840397`, reports **2567 over 98 files** for
-the unit tier at `830bef33`; run `31783658759`, job `94714715522`, reports
-**2726 over 98 files** for the web tier at `81cbd44b`. Those are the same figures
-the pinned `ca194149` ledger records, produced by GitHub-hosted runners on clean
+agree.** Run `31877658859`, job `94995683335`, reports **2575 over 98 files** for
+the unit tier; job `94995683404` reports **2726 over 98 files** for the web tier,
+both at `b12b9f0f`. Those are the same figures the pinned `9c173ff4` ledger
+records, produced by GitHub-hosted runners on clean
 checkouts that share nothing with this workstation. Both tiers therefore declare
 `LOCAL_AND_HOSTED_AGREE`, which the gate refuses unless both halves exist: a tier
 asserting agreement while its hosted half describes a superseded head is one of
 the falsifications run against this tree.
 
 The unit tier is the one worth watching: 2559 at the superseded head `55b932cb`,
-2560 at the product candidate, 2567 at the pinned measurement successor, and
-2575 in the current remediation ledger. The first three are historical bound
-observations; the fourth remains a local-only re-run until the new hosted run is
-recorded. Keeping those states separate is the agreement being worth something
-rather than two copies of one number.
+2560 at the product candidate, 2567 at the first post-merge measurement
+successor, and 2575 at the lint-clean remediation head. The last is now bound on
+both sides by local ledger `9c173ff4` and hosted run `31877658859`; keeping those
+states separate is the agreement being worth something rather than two copies of
+one number.
 
 The web tier is measured a **third** time. `hosted-clean-room` (job
-`94714715543`) re-derives it independently at the same head, from its own
+`94995683364`, artefact `9245335777`) re-derives it independently at the same head, from its own
 checkout and its own install, and `clean-room-web-totals.json` reports the
 identical **2726 over 98 files**.
 
@@ -380,15 +379,15 @@ the standing reason `OWNER ACCEPTANCE` is required and CI is not sufficient.
 ## What was PENDING, and what bound it
 
 Eleven hosted bindings in this package stood PENDING when this candidate was
-frozen. **All eleven are now bound**: ten to hosted CI at
-`81cbd44bae5f8f64091416019458b3d2b514503e`, and the unit tier to the later
-product-identical, executable-matching head
-`830bef33a8be3c825bca81dd8d74755255e6a00f`.
+frozen. **All eleven are now bound**: nine to hosted CI at
+`81cbd44bae5f8f64091416019458b3d2b514503e`, and the unit and web tiers to exact
+remediation run `31877658859` at the product-identical, executable-matching head
+`b12b9f0ff527d6b782cb47bfdd91996d1797499f`.
 
 | Binding                            | Bound to                                              |
 | ---------------------------------- | ----------------------------------------------------- |
-| `tiers.unit.hostedAttestation`     | run `31794269201` · job `94747840397`                 |
-| `tiers.web.hostedAttestation`      | run `31783658759` · job `94714715522`                 |
+| `tiers.unit.hostedAttestation`     | run `31877658859` · job `94995683335`                 |
+| `tiers.web.hostedAttestation`      | run `31877658859` · job `94995683404`                 |
 | `tiers.backend.hostedAttestation`  | run `31783658759` · job `94714715651`                 |
 | `tiers.database.hostedAttestation` | run `31783658759` · job `94714715750`                 |
 | `tiers.browser.hostedAttestation`  | run `31783658759` · job `94714715648`                 |

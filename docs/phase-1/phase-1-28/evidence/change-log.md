@@ -50,6 +50,12 @@ The lint-clean executable head is `eeba15d7`: it removes the retired
 re-recorded there after the executable commit, with 2575/2575 root tests and
 2726/2726 web tests, 0 failed and 98 files in each.
 
+Exact remediation head `b12b9f0f` then passed 21/21 hosted checks in PR CI run
+`31877658859` and CI run `31877658813`. The package binds unit job `94995683335`
+and web job `94995683404` to that executable-identical head; CodeQL, dependency
+security, authenticated browser, hosted clean room and `ci-gate` all concluded
+success.
+
 ## Before the first screen — the day-one authority
 
 P1-27 spent five adversarial rounds paying for a task register that did not exist
