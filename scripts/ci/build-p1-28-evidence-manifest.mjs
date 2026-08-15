@@ -69,7 +69,7 @@
  * Exit:   0 written / in sync · 1 drifted, unreachable, unbound or self-check
  *         failed · 2 IO error.
  */
-import { execFileSync, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readFileSync, readdirSync, writeFileSync, existsSync } from 'node:fs';
 import { join, posix, sep } from 'node:path';
