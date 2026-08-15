@@ -26,7 +26,7 @@ a later reader needs is why the product is shaped this way.
 
 ---
 
-## Protected CodeQL policy remediation (`3187f18c`–`a2095925`, PR pending)
+## Protected CodeQL policy remediation (`3187f18c`–`ea045d88`, PR #230)
 
 The protected reproof after PR #229 exposed the pre-existing repository-wide
 `js/http-to-file-access` finding in
@@ -57,6 +57,19 @@ Both local tiers were then re-recorded at that exact executable head in P1-27
 ledger commit `6ea6bfdc`: unit 2592/2592 over 99 files and web 2726/2726 over
 98 files, with 0 failures. The bound P1-28 tier pair remains unchanged until a
 matching hosted run exists.
+
+The first exact-head CI run for PR #230 (`31884032641`) exposed a strict-type
+defect in the new boundary suite rather than a runtime fixture defect. At
+`ea045d88`, four hostile-field assertions explicitly type the JavaScript result
+as a string-keyed record and two mocked POST-body assertions keep their optional
+`RequestInit` guard. Root typecheck and the focused 15-case suite pass; no case,
+runtime fixture behavior, product path or database path changes.
+
+Both authoritative local tiers were then re-recorded at `ea045d88` and committed
+in P1-27 ledger commit `2e0f2191`: unit 2592/2592 over 99 files and web 2726/2726
+over 98 files, with 0 failures. This replaces the earlier `a2095925` local
+observation; the package moves the paired local/hosted tier figures only when a
+matching hosted run for the current executable tree exists.
 
 ## Post-merge QA-005 seal remediation (`50a86014`–`eeba15d7`, PR #229)
 

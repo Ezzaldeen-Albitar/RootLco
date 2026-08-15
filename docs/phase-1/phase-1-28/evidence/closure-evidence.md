@@ -84,7 +84,7 @@ quoted as a current one.
 
 Every **local** figure in this package describes **that commit**, or a named
 successor of it whose drift from it is declared path by path. The successor set
-is non-empty: two full ids name the executable changes on the current remediation
+is non-empty: three full ids name the executable changes on the current remediation
 branch, while the product diff under `apps/**` and `supabase/**` remains empty.
 
 **`3187f18c82a9b3113b876ec035c9a2324117ee84` — the acceptance-manifest
@@ -115,14 +115,29 @@ Both local tiers were then measured at that exact executable head and recorded
 in P1-27 ledger commit
 `6ea6bfdcb4f6a867ebc7190740fda0ce5b521474`: unit **2592/2592** over **99**
 files and web **2726/2726** over **98** files, with **0 failed**. These are a
-newer local observation, not yet the bound package figures: until hosted CI
-measures the same executable tree, the bound local/hosted pair remains the
-honest `eeba15d7`/`b12b9f0f` observation below.
+newer local observation than the bound package figures, but they were superseded
+by the test-only `ea045d88` correction below before a matching hosted run
+existed. The bound local/hosted pair therefore remains the honest
+`eeba15d7`/`b12b9f0f` observation below until both halves can move together.
+
+**`ea045d88fd88843c82c8ecd7273b0772f65417f6` — the strict-type test
+correction.** Exact-head CI run `31884032641` found that the new boundary suite
+passed at runtime but did not satisfy the repository-wide strict TypeScript
+check: four assertions indexed a JavaScript-inferred empty object and two mock
+body assertions dropped their existing optional `RequestInit` guard. This
+successor types the hostile-field assertion boundary and retains optional
+chaining. The suite remains **15/15**, and no runtime fixture behavior, case
+count, product path or database path changes. Both authoritative local tiers
+were re-taken at this exact executable head and committed in P1-27 ledger commit
+`2e0f2191db4c118e766e9ca4b8ffff981b63d7c6`: unit **2592/2592** over **99**
+files and web **2726/2726** over **98** files, with **0 failed** and no dirty
+executable paths. This local observation moves into the paired tier record when
+hosted CI has measured the same executable tree.
 
 The five successors below were current on PR #229. They are now ancestors of
 protected `develop`, so the current branch calculation correctly excludes them:
-`git log a2095925 --not 7b1252ed 0a91918b` contains `a2095925` and `3187f18c`.
-They remain
+`git log ea045d88 --not 7b1252ed 0a91918b` contains `ea045d88`, `a2095925` and
+`3187f18c`. They remain
 recorded in `closure-candidate.json` under `absorbedSuccessors`, with their full
 history, rather than being deleted or falsely retained in the current
 `successors` range.
@@ -852,7 +867,7 @@ about a repository. What the gate now computes, on every invocation:
 | the **head under test**  | `git rev-list --parents -n 1 HEAD`. Ordinarily HEAD itself. A two-parent merge is unwrapped only after tri-state ancestry, exact-base/first-parent-line identification where both parents carry the candidate, and a successful empty combined diff. Ambiguous ancestry, a stale base that identifies no parent, or any refused Git command is UNKNOWN and fails closed                                                                                          |
 | its **ancestry**         | `git merge-base --is-ancestor 7b1252ed <head under test>`                                                                                                                                                                                                                                                                                                                                                                                                        |
 | **product identity**     | `git diff --name-only 7b1252ed..<head under test> -- apps supabase` must be empty — computed, where the package used to assert it in a sentence                                                                                                                                                                                                                                                                                                                  |
-| **successors**           | `git log <head under test> --not 7b1252ed <historical base>`, every executable commit of which must be named by id; documentation-only ones are printed. Two executable successors are named on this branch; five earlier successors are protected-base ancestors retained separately as absorbed history. On a protected merge the historical base comes from the merge topology rather than moving `origin/develop`, so genuine successors survive subtraction |
+| **successors**           | `git log <head under test> --not 7b1252ed <historical base>`, every executable commit of which must be named by id; documentation-only ones are printed. Three executable successors are named on this branch; five earlier successors are protected-base ancestors retained separately as absorbed history. On a protected merge the historical base comes from the merge topology rather than moving `origin/develop`, so genuine successors survive subtraction |
 | **local tier figures**   | `git show <ledger commit>:…/local-run-ledger.json`, matched field by field, plus the measured head either executable-identical to the candidate or a named successor whose drift is declared path by path and compared against `git diff`                                                                                                                                                                                                                        |
 | **hosted tier figures**  | not computable here, so required to be fetchable: run id, job id, head sha, artefact. A head that is not the candidate must declare which of the two it is — an **ancestor**, superseded, listed in `pendingHostedBindings`; or a **descendant** whose `apps/**` and `supabase/**` `git diff` computes to be identical to the candidate's — and must be a commit `git cat-file` resolves                                                                         |
 | **documented claims**    | anchored sentences measured against the tree, and `PROTECTED_REPROOF` citations resolved into the files they name                                                                                                                                                                                                                                                                                                                                                |
