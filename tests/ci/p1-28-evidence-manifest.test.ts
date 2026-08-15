@@ -855,10 +855,10 @@ describe('P1-28-QA-005 — the seal is bound to the REPOSITORY, not to its own p
   it('names every executable successor, and only documentation-only ones go unnamed', () => {
     expect(binding.fabricatedSuccessors, 'a recorded successor is in no commit range').toEqual([]);
     expect(binding.unrecordedExecutable, 'an executable successor is not named').toEqual([]);
-    expect(
-      binding.commits.length,
+    expectNonEmptySuccessorRange(
+      binding as unknown as Binding,
       'the successor range is empty, so this measures nothing'
-    ).toBeGreaterThan(0);
+    );
     for (const sha of binding.unrecordedDocumentation) {
       const commit = binding.commits.find((c) => c.sha === sha);
       expect(commit?.paths ?? [], `${sha} is unnamed and its paths are unknown`).not.toEqual([]);
@@ -928,10 +928,10 @@ describe('P1-28-QA-005 — the seal is bound to the REPOSITORY, not to its own p
       git
     ) as unknown as { unrecordedExecutable: string[]; commits: { sha: string }[] };
 
-    expect(
-      unnamed.commits.length,
+    expectNonEmptySuccessorRange(
+      unnamed as unknown as Binding,
       'the superseded candidate has no successors, so this measures nothing'
-    ).toBeGreaterThan(0);
+    );
     expect(
       unnamed.unrecordedExecutable.length,
       'no executable successor exists to hide'
@@ -1196,7 +1196,7 @@ describe('P1-28-QA-005 — a re-freeze may not carry the old head’s numbers fo
 
 interface Scratch {
   readonly root: string;
-  readonly git: (args: string[]) => string | null;
+  readonly git: GitRead;
   readonly run: (...args: string[]) => string;
   /** The commit before the candidate, carrying DIFFERENT product content. */
   readonly previous: string;
@@ -1217,10 +1217,30 @@ interface Scratch {
   readonly mergeRef: string;
   /** A merge carrying a tree neither parent has. */
   readonly evilMerge: string;
+  /** The branch MERGED into its base: a clean merge, base first, branch second. */
+  readonly landed: string;
+  /** A commit on a branch cut from the merged base. */
+  readonly remediation: string;
+  /** That branch merged back: BOTH parents carry the candidate. */
+  readonly reMerge: string;
+  /** A local merge with the branch first and absorbed base second. */
+  readonly reverseMerge: string;
+  /** The protected base after taking that reverse-order local merge. */
+  readonly reverseLanded: string;
+  /** A later first-parent commit after the protected re-merge. */
+  readonly protectedAdvance: string;
+  /** A clean merge into a sibling forked from a stale base observation. */
+  readonly foreignMerge: string;
+  /** A real post-candidate product mutation. */
+  readonly productChanged: string;
   readonly checkout: (sha: string) => void;
   readonly dropBaseRefs: () => void;
   readonly document: (over?: Record<string, unknown>) => Record<string, unknown>;
 }
+
+type GitRead = ((args: string[]) => string | null) & {
+  probe?: (args: string[]) => { status: number | null; stdout: string };
+};
 
 function withScratchRepository<T>(inspect: (repo: Scratch) => T): T {
   const root = mkdtempSync(join(tmpdir(), 'rootlco-seal-world-'));
@@ -1297,6 +1317,76 @@ function withScratchRepository<T>(inspect: (repo: Scratch) => T): T {
     put('apps/web/screen.ts', 'export const version = 3;\n');
     const conflicted = commit('a resolution neither side wrote');
     const conflictedTree = run('rev-parse', `${conflicted}^{tree}`);
+    const branchTree = run('rev-parse', branchHead + '^{tree}');
+    const landed = run(
+      'commit-tree',
+      branchTree,
+      '-p',
+      baseTip,
+      '-p',
+      branchHead,
+      '-m',
+      'Merge the branch into develop'
+    );
+    run('checkout', '--quiet', '--detach', landed);
+    put('scripts/ci/remediation.mjs', 'export const fix = 1;\n');
+    const remediation = commit('fix: a remediation cut from the merged base');
+    const reMerge = run(
+      'commit-tree',
+      run('rev-parse', remediation + '^{tree}'),
+      '-p',
+      landed,
+      '-p',
+      remediation,
+      '-m',
+      'Merge the remediation into develop'
+    );
+    const reverseMerge = run(
+      'commit-tree',
+      run('rev-parse', remediation + '^{tree}'),
+      '-p',
+      remediation,
+      '-p',
+      landed,
+      '-m',
+      'Merge develop into the remediation branch'
+    );
+    const reverseLanded = run(
+      'commit-tree',
+      run('rev-parse', reverseMerge + '^{tree}'),
+      '-p',
+      landed,
+      '-p',
+      reverseMerge,
+      '-m',
+      'Merge the reverse-order branch back into develop'
+    );
+    const protectedAdvance = run(
+      'commit-tree',
+      run('rev-parse', reMerge + '^{tree}'),
+      '-p',
+      reMerge,
+      '-m',
+      'A later commit on the protected first-parent line'
+    );
+    run('checkout', '--quiet', '--detach', origin);
+    put('scripts/ci/foreign.mjs', 'export const foreign = 1;\n');
+    const foreignSibling = commit('fix: a sibling forked from the stale base');
+    const foreignMerge = run(
+      'commit-tree',
+      run('rev-parse', foreignSibling + '^{tree}'),
+      '-p',
+      foreignSibling,
+      '-p',
+      branchHead,
+      '-m',
+      'Merge the candidate branch into a foreign sibling'
+    );
+    run('checkout', '--quiet', '--detach', branchHead);
+    put('apps/web/screen.ts', 'export const version = 4;\n');
+    const productChanged = commit('fix: a real product mutation after the candidate');
+    run('checkout', '--quiet', '--detach', branchHead);
+
     const evilMerge = run(
       'commit-tree',
       conflictedTree,
@@ -1312,7 +1402,7 @@ function withScratchRepository<T>(inspect: (repo: Scratch) => T): T {
 
     return inspect({
       root,
-      git: gitReader(root) as (args: string[]) => string | null,
+      git: gitReader(root) as GitRead,
       run,
       previous,
       origin,
@@ -1323,6 +1413,14 @@ function withScratchRepository<T>(inspect: (repo: Scratch) => T): T {
       baseTip,
       mergeRef,
       evilMerge,
+      landed,
+      remediation,
+      reMerge,
+      reverseMerge,
+      reverseLanded,
+      protectedAdvance,
+      foreignMerge,
+      productChanged,
       checkout: (sha) => void run('checkout', '--quiet', '--detach', sha),
       setBaseRef: (sha) => void run('update-ref', 'refs/remotes/origin/develop', sha),
       dropBaseRefs: () => {
@@ -1357,6 +1455,9 @@ interface Binding {
   readonly mergeRefBaseSide: string | null;
   readonly evilMergePaths: string[];
   readonly declinedUnwrap: string | null;
+  readonly topologyUnknown: string | null;
+  readonly baseAbsorbedCandidate: boolean;
+  readonly treeMatches: boolean;
   readonly productDiff: string[];
   readonly productDiffUnknown: boolean;
   readonly rangeUnknown: boolean;
@@ -1364,8 +1465,12 @@ interface Binding {
   readonly unrecordedExecutable: string[];
 }
 
-const bindingOf = (doc: unknown, git: (args: string[]) => string | null): Binding =>
+const bindingOf = (doc: unknown, git: GitRead): Binding =>
   repositoryBinding(doc as never, git) as unknown as Binding;
+
+const expectNonEmptySuccessorRange = (binding: Pick<Binding, 'commits'>, message: string): void => {
+  expect(binding.commits.length, message).toBeGreaterThan(0);
+};
 
 describe('P1-28-QA-005 — a hosted run may be cited at a later head, and only at an identical one', () => {
   /*
@@ -1653,7 +1758,7 @@ describe('P1-28-QA-005 — a merge-ref checkout does not make the base branch a 
         null
       );
       expect(bound.baseSha).toBe(repo.baseTip);
-      expect(bound.baseFrom).toBe("the merge ref's base-side parent");
+      expect(bound.baseFrom).toContain('base as it stood');
       expect(bound.phaseHead).toBe(repo.branchHead);
       expect(
         bound.commits.map((c) => c.sha),
@@ -1713,19 +1818,17 @@ describe('P1-28-QA-005 — a merge-ref checkout does not make the base branch a 
       ).toEqual([repo.evilMerge]);
     }));
 
-  it('unwraps even when the base ref is STALE relative to the merge’s base side', () =>
+  it('fails CLOSED when the base ref is STALE behind the merge’s alleged base side', () =>
     withScratchRepository((repo) => {
       /*
        * THE CASE A PROBE AGAINST THIS REPOSITORY FOUND, and the reason the
        * cross-check asks about a RELATION rather than containment in one
        * direction.
        *
-       * A merge ref is computed by the forge when the branch or its base last
-       * moved; the remote-tracking ref in any given checkout is a snapshot that
-       * may sit either side of it. Here the ref is far behind the merge's base
-       * side — the shape a checkout fetched before the base advanced produces —
-       * and a rule demanding the base side be CONTAINED IN the ref would decline
-       * the unwrap for no better reason than which snapshot was fetched.
+       * A stale ref cannot distinguish the real base continuation from a sibling
+       * forked from the same observed commit. Treating comparability as identity
+       * was a fail-open: both shapes are descendants of the stale ref. UNKNOWN
+       * must stop rather than bless whichever parent happened to be first.
        */
       repo.checkout(repo.mergeRef);
       repo.setBaseRef(repo.origin);
@@ -1739,10 +1842,56 @@ describe('P1-28-QA-005 — a merge-ref checkout does not make the base branch a 
       ).toBe('');
 
       const bound = bindingOf(repo.document(), repo.git);
-      expect(bound.unwrappedMergeRef, 'a stale base ref declined the unwrap').toBe(repo.mergeRef);
-      expect(bound.phaseHead).toBe(repo.branchHead);
-      expect(bound.commits.map((c) => c.sha)).toEqual([repo.branchHead, repo.successor]);
-      expect(bound.unrecordedExecutable).toEqual([]);
+      expect(bound.unwrappedMergeRef, 'a stale observation was treated as proof').toBe(null);
+      expect(bound.topologyUnknown).toContain('stale behind');
+      expect(judge(soundInputsOver(ROOT, { repository: bound }), () => {}).repositoryOk).toBe(
+        false
+      );
+    }));
+
+  it('fails CLOSED for a foreign sibling descended from that same stale base', () =>
+    withScratchRepository((repo) => {
+      repo.checkout(repo.foreignMerge);
+      repo.setBaseRef(repo.origin);
+      const bound = bindingOf(repo.document(), repo.git);
+      expect(bound.unwrappedMergeRef, 'the foreign sibling was mistaken for develop').toBe(null);
+      expect(bound.topologyUnknown).toContain('sibling branch');
+      expect(judge(soundInputsOver(ROOT, { repository: bound }), () => {}).repositoryOk).toBe(
+        false
+      );
+    }));
+
+  it('fails CLOSED when candidate ancestry cannot be computed', () =>
+    withScratchRepository((repo) => {
+      repo.checkout(repo.mergeRef);
+      const broken = Object.assign((args: string[]) => repo.git(args), {
+        probe: (args: string[]) =>
+          args[0] === 'merge-base' && args[1] === '--is-ancestor'
+            ? { status: 2, stdout: '' }
+            : (repo.git.probe?.(args) ?? { status: 2, stdout: '' }),
+      }) as GitRead;
+      const bound = bindingOf(repo.document(), broken);
+      expect(bound.topologyUnknown).toContain('candidate is an ancestor');
+      expect(judge(soundInputsOver(ROOT, { repository: bound }), () => {}).repositoryOk).toBe(
+        false
+      );
+    }));
+
+  it('fails CLOSED when Git cannot inspect merge-owned content', () =>
+    withScratchRepository((repo) => {
+      repo.checkout(repo.mergeRef);
+      const broken = Object.assign(
+        (args: string[]) => (args[0] === 'diff-tree' ? null : repo.git(args)),
+        { probe: repo.git.probe }
+      ) as GitRead;
+      const bound = bindingOf(repo.document(), broken);
+      expect(bound.unwrappedMergeRef, 'a refused diff-tree was interpreted as an empty one').toBe(
+        null
+      );
+      expect(bound.topologyUnknown).toContain('could not inspect');
+      expect(judge(soundInputsOver(ROOT, { repository: bound }), () => {}).repositoryOk).toBe(
+        false
+      );
     }));
 
   it('declines the unwrap when the merge’s base side is not in the base branch', () =>
@@ -1813,6 +1962,18 @@ describe('P1-28-QA-005 — a merge-ref checkout does not make the base branch a 
       expect(said.join(' ')).toContain('UNKNOWN');
     }));
 
+  it('fails when a REAL product path changes after the candidate', () =>
+    withScratchRepository((repo) => {
+      repo.checkout(repo.productChanged);
+      const changed = bindingOf(repo.document(), repo.git);
+      expect(changed.productDiff, 'the scratch product mutation was not observed').toEqual([
+        'apps/web/screen.ts',
+      ]);
+      expect(judge(soundInputsOver(ROOT, { repository: changed }), () => {}).repositoryOk).toBe(
+        false
+      );
+    }));
+
   it('resolves the base from a ref when the checkout has one, and does not unwrap', () =>
     withScratchRepository((repo) => {
       repo.checkout(repo.branchHead);
@@ -1825,6 +1986,260 @@ describe('P1-28-QA-005 — a merge-ref checkout does not make the base branch a 
       );
       expect(honest.phaseHead).toBe(repo.branchHead);
       expect(honest.commits.map((c) => c.sha)).toEqual([repo.branchHead, repo.successor]);
+    }));
+});
+
+describe('P1-28-QA-005 — the base subtraction survives this branch MERGING into its base', () => {
+  /*
+   * THE FAILURE THIS CLOSES, reported by the protected-branch reproof.
+   *
+   * The base subtraction exists so a checkout does not count the base branch's
+   * own commits as successors of the candidate. It presumes the base does not
+   * CONTAIN the candidate. The moment the branch merges, that presumption
+   * inverts: `origin/develop` then contains the whole branch, so subtracting it
+   * removes every genuine successor and the range collapses to empty. Two jobs
+   * went red on exactly that, and both failures were anti-vacuity guards
+   * refusing to pass on an empty set — the guards working, over a rule that had
+   * stopped being true.
+   *
+   * A merge names its own base in its FIRST parent: the base as it stood before
+   * this branch landed. Every world below is built from objects the case creates.
+   */
+  const bindingOfRepo = (repo: Scratch, doc?: Record<string, unknown>): Binding =>
+    bindingOf(doc ?? repo.document(), repo.git);
+
+  it('is a hostile world: subtracting the base as it IS now empties the range', () =>
+    withScratchRepository((repo) => {
+      repo.checkout(repo.landed);
+      repo.setBaseRef(repo.landed);
+      // The base now contains the candidate — the inversion, computed.
+      expect(
+        repo.git(['merge-base', '--is-ancestor', repo.candidate, repo.landed]),
+        'the base has not absorbed the candidate, so this world is not the one that failed'
+      ).toBe('');
+      // Subtracting it removes every successor.
+      expect(
+        repo.run('log', '--format=%H', repo.branchHead, '--not', repo.candidate, repo.landed),
+        'the naive subtraction does not empty the range, so it demonstrates no hazard'
+      ).toBe('');
+      // Subtracting the base AS IT STOOD does not.
+      expect(
+        repo
+          .run('log', '--format=%H', repo.branchHead, '--not', repo.candidate, repo.baseTip)
+          .split('\n'),
+        'the base as it stood also empties the range'
+      ).toEqual([repo.branchHead, repo.successor]);
+    }));
+
+  it('judges the merge commit against the base as it STOOD, not as it is', () =>
+    withScratchRepository((repo) => {
+      repo.checkout(repo.landed);
+      repo.setBaseRef(repo.landed);
+      const bound = bindingOfRepo(repo);
+      expect(bound.checkoutHead).toBe(repo.landed);
+      expect(bound.unwrappedMergeRef, 'the merge was not recognised').toBe(repo.landed);
+      expect(bound.phaseHead, 'the head under test is not this branch').toBe(repo.branchHead);
+      expect(bound.baseSha, 'the base subtracted is not the one the merge names').toBe(
+        repo.baseTip
+      );
+      expect(bound.baseFrom).toContain('base as it stood');
+      expect(
+        bound.commits.map((c) => c.sha),
+        'the range is not this branch’s own successors'
+      ).toEqual([repo.branchHead, repo.successor]);
+      expect(bound.productDiff).toEqual([]);
+      expect(bound.unrecordedExecutable).toEqual([]);
+      expect(judge(soundInputsOver(ROOT, { repository: bound }), () => {}).repositoryOk).toBe(true);
+    }));
+
+  it('reads the base from the FIRST parent when both parents carry the candidate', () =>
+    withScratchRepository((repo) => {
+      /*
+       * The next merge after this one: a branch cut from the merged base and
+       * merged back. The candidate can no longer discriminate the parents —
+       * both contain it — so the forge convention does, and only then.
+       */
+      repo.checkout(repo.reMerge);
+      repo.setBaseRef(repo.reMerge);
+      for (const parent of [repo.landed, repo.remediation]) {
+        expect(
+          repo.git(['merge-base', '--is-ancestor', repo.candidate, parent]),
+          'a parent does not carry the candidate, so the ambiguity is not exercised'
+        ).toBe('');
+      }
+      const bound = bindingOfRepo(repo);
+      expect(bound.unwrappedMergeRef, 'the re-merge was not recognised').toBe(repo.reMerge);
+      expect(bound.phaseHead, 'the branch side is not the second parent').toBe(repo.remediation);
+      expect(bound.baseSha, 'the base side is not the first parent').toBe(repo.landed);
+      expect(
+        bound.commits.map((c) => c.sha),
+        'the range is not the remediation’s own commits'
+      ).toEqual([repo.remediation]);
+    }));
+
+  it('still finds that protected merge after the base first-parent line advances', () =>
+    withScratchRepository((repo) => {
+      repo.checkout(repo.reMerge);
+      repo.setBaseRef(repo.protectedAdvance);
+      const bound = bindingOfRepo(repo, {
+        ...repo.document(),
+        successors: [{ commit: repo.remediation, kind: 'remediation' }],
+      });
+      expect(bound.unwrappedMergeRef).toBe(repo.reMerge);
+      expect(bound.phaseHead).toBe(repo.remediation);
+      expect(bound.baseSha).toBe(repo.landed);
+    }));
+
+  it('reads the base from the SECOND parent for a local merge into the remediation branch', () =>
+    withScratchRepository((repo) => {
+      repo.checkout(repo.reverseMerge);
+      repo.setBaseRef(repo.landed);
+      const bound = bindingOfRepo(repo, {
+        ...repo.document(),
+        successors: [{ commit: repo.remediation, kind: 'remediation' }],
+      });
+      expect(bound.unwrappedMergeRef).toBe(repo.reverseMerge);
+      expect(bound.phaseHead, 'parent order was mistaken for branch identity').toBe(
+        repo.remediation
+      );
+      expect(bound.baseSha).toBe(repo.landed);
+      expect(bound.commits.map((c) => c.sha)).toEqual([repo.remediation]);
+      expect(judge(soundInputsOver(ROOT, { repository: bound }), () => {}).repositoryOk).toBe(true);
+    }));
+
+  it('fails CLOSED when both parents carry the candidate and the base is ambiguous', () =>
+    withScratchRepository((repo) => {
+      repo.checkout(repo.reverseMerge);
+      repo.setBaseRef(repo.origin);
+      const ambiguous = bindingOfRepo(repo);
+      expect(ambiguous.unwrappedMergeRef, 'ambiguous ancestry was resolved by parent order').toBe(
+        null
+      );
+      expect(ambiguous.topologyUnknown).toContain('both merge parents contain the candidate');
+      expect(judge(soundInputsOver(ROOT, { repository: ambiguous }), () => {}).repositoryOk).toBe(
+        false
+      );
+    }));
+
+  it('does not mistake second-parent reachability for the protected first-parent line', () =>
+    withScratchRepository((repo) => {
+      repo.checkout(repo.reverseMerge);
+      repo.setBaseRef(repo.reverseLanded);
+      const ambiguous = bindingOfRepo(repo);
+      expect(
+        ambiguous.unwrappedMergeRef,
+        'an ordinary branch merge was reclassified only because develop later contained it'
+      ).toBe(null);
+      expect(ambiguous.topologyUnknown).toContain('does not uniquely identify');
+      expect(judge(soundInputsOver(ROOT, { repository: ambiguous }), () => {}).repositoryOk).toBe(
+        false
+      );
+    }));
+
+  it('does NOT step past a merge on the protected branch that carries its own content', () =>
+    withScratchRepository((repo) => {
+      repo.checkout(repo.evilMerge);
+      repo.setBaseRef(repo.evilMerge);
+      const evil = bindingOfRepo(repo);
+      expect(evil.unwrappedMergeRef, 'an evil merge was unwrapped past').toBe(null);
+      expect(evil.evilMergePaths.length).toBeGreaterThan(0);
+      expect(evil.phaseHead).toBe(repo.evilMerge);
+    }));
+
+  it('subtracts an ABSORBED base to this branch’s own additions, and says that is what it did', () =>
+    withScratchRepository((repo) => {
+      /*
+       * A branch cut AFTER the merge — which is what a remediation branch is.
+       * The base already contains the candidate, and subtracting it answers the
+       * only question the subtrahend ever answers: what did this line of work
+       * add on top of the base it sits on? Here, the remediation commit.
+       */
+      repo.checkout(repo.remediation);
+      repo.setBaseRef(repo.landed);
+
+      // Unnamed, the remediation commit is an unnamed EXECUTABLE successor and
+      // the gate says so — the rule is not softened by the base being absorbed.
+      const unnamed = bindingOfRepo(repo);
+      expect(unnamed.baseAbsorbedCandidate, 'the absorption was not detected').toBe(true);
+      expect(unnamed.baseSha).toBe(repo.landed);
+      expect(
+        unnamed.commits.map((c) => c.sha),
+        'the range is not this branch’s own additions'
+      ).toEqual([repo.remediation]);
+      expect(unnamed.unrecordedExecutable).toEqual([repo.remediation]);
+      expect(judge(soundInputsOver(ROOT, { repository: unnamed }), () => {}).repositoryOk).toBe(
+        false
+      );
+
+      // Named, it binds — and product identity is taken over the WHOLE span from
+      // the candidate to the head, not over this range, so nothing hides in the
+      // absorbed history either.
+      const named = bindingOfRepo(repo, {
+        ...repo.document(),
+        successors: [{ commit: repo.remediation, kind: 'remediation' }],
+      });
+      expect(named.unrecordedExecutable).toEqual([]);
+      expect(named.productDiff).toEqual([]);
+      expect(judge(soundInputsOver(ROOT, { repository: named }), () => {}).repositoryOk).toBe(true);
+    }));
+
+  it('makes BOTH anti-vacuity guards fire on a sound, genuinely empty range', () =>
+    withScratchRepository((repo) => {
+      /*
+       * The guards are what reported the post-merge failure, and they must not
+       * have been quieted by fixing it. A candidate that IS the head has no
+       * successors at all, and the binding says so — which is the condition each
+       * guard tests, on the two candidates they read.
+       */
+      repo.checkout(repo.branchHead);
+      repo.setBaseRef(repo.baseTip);
+      const asCandidate = (sha: string): Binding =>
+        bindingOfRepo(repo, {
+          ...repo.document(),
+          candidate: {
+            FINAL_CODE_SHA: sha,
+            FINAL_CODE_TREE: repo.run('rev-parse', `${sha}^{tree}`),
+            baseBranch: 'develop',
+          },
+          successors: [],
+        });
+
+      const empty = asCandidate(repo.branchHead);
+      expect(empty.treeMatches, 'the empty world has a false candidate/tree binding').toBe(true);
+      expect(empty.commits, 'an empty range was not reported empty').toEqual([]);
+      expect(empty.unrecordedExecutable, 'an empty range invented a successor').toEqual([]);
+      expect(
+        judge(soundInputsOver(ROOT, { repository: empty }), () => {}).repositoryOk,
+        'the topology itself is unsound, so an anti-vacuity failure would prove nothing'
+      ).toBe(true);
+
+      for (const message of [
+        'the successor range is empty, so this measures nothing',
+        'the superseded candidate has no successors, so this measures nothing',
+      ]) {
+        expect(
+          () => expectNonEmptySuccessorRange(empty, message),
+          `anti-vacuity guard did not fire: ${message}`
+        ).toThrow();
+      }
+
+      // The same guard accepts the non-empty baseline, so it is not always red.
+      expectNonEmptySuccessorRange(
+        asCandidate(repo.candidate),
+        'the real candidate unexpectedly has no successors'
+      );
+    }));
+
+  it('changes nothing before the merge: the PR checkout still subtracts its own base', () =>
+    withScratchRepository((repo) => {
+      repo.checkout(repo.mergeRef);
+      const bound = bindingOfRepo(repo);
+      expect(bound.phaseHead).toBe(repo.branchHead);
+      expect(bound.baseSha, 'the pre-merge base is no longer the merge’s own parent').toBe(
+        repo.baseTip
+      );
+      expect(bound.commits.map((c) => c.sha)).toEqual([repo.branchHead, repo.successor]);
+      expect(bound.unrecordedExecutable).toEqual([]);
     }));
 });
 

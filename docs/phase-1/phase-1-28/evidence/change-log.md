@@ -26,6 +26,36 @@ a later reader needs is why the product is shaped this way.
 
 ---
 
+## Post-merge QA-005 seal remediation (`50a86014`–`eeba15d7`, PR #229)
+
+PR #226 merged the reviewed P1-28 tree into protected `develop`, after which
+the protected reproof exposed a topology defect in the QA-005 successor range:
+subtracting current `origin/develop` subtracted the branch itself and collapsed
+the range to empty. The first repair (`3f80bc2d`) recovered the historical base
+from the merge, but adversarial review found three remaining fail-open shapes.
+
+`50a86014` closes them. Git ancestry is tri-state, failed `diff-tree --cc` is
+UNKNOWN rather than empty, both-parent candidate ancestry is resolved only by an
+exact base parent or the protected first-parent line, and a stale base that
+cannot distinguish its continuation from a sibling is refused. The suite now
+constructs all required topology worlds in scratch repositories, including
+reverse parent order, advanced first-parent history, genuine empty-range
+anti-vacuity, real product drift, contentful merge, and Git command failure.
+The frozen product candidate remains unchanged and `apps/**` / `supabase/**`
+remain byte-identical; this is evidence machinery, not a P1-29 feature and not a
+phase closure.
+
+The lint-clean executable head is `eeba15d7`: it removes the retired
+`execFileSync` import left by the tri-state Git reader. Both local tiers were
+re-recorded there after the executable commit, with 2575/2575 root tests and
+2726/2726 web tests, 0 failed and 98 files in each.
+
+Exact remediation head `b12b9f0f` then passed 21/21 hosted checks in PR CI run
+`31877658859` and CI run `31877658813`. The package binds unit job `94995683335`
+and web job `94995683404` to that executable-identical head; CodeQL, dependency
+security, authenticated browser, hosted clean room and `ci-gate` all concluded
+success.
+
 ## Before the first screen — the day-one authority
 
 P1-27 spent five adversarial rounds paying for a task register that did not exist

@@ -69,7 +69,7 @@
  * Exit:   0 written / in sync · 1 drifted, unreachable, unbound or self-check
  *         failed · 2 IO error.
  */
-import { execFileSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readFileSync, readdirSync, writeFileSync, existsSync } from 'node:fs';
 import { join, posix, sep } from 'node:path';
@@ -366,25 +366,72 @@ export function blockerCoverage(root = ROOT) {
  * case ever asked whether anything computed `false` from a tree.
  */
 export function gitReader(root = ROOT) {
-  return (args) => {
-    try {
-      return execFileSync('git', args, {
-        cwd: root,
-        encoding: 'utf8',
-        stdio: ['ignore', 'pipe', 'ignore'],
-      });
-    } catch {
-      return null;
-    }
+  const probe = (args) => {
+    const result = spawnSync('git', args, {
+      cwd: root,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    return {
+      status: result.error ? null : result.status,
+      stdout: typeof result.stdout === 'string' ? result.stdout : '',
+    };
   };
+  const read = (args) => {
+    const result = probe(args);
+    return result.status === 0 ? result.stdout : null;
+  };
+  read.probe = probe;
+  return read;
 }
 
 /** A fake `git`, keyed by the exact argument vector. Used only by `selfCheck`. */
+export const GIT_COMMAND_FAILURE = Symbol('GIT_COMMAND_FAILURE');
+
 export function fakeGit(table) {
-  return (args) => {
+  const read = (args) => {
     const key = args.join(' ');
-    return key in table ? table[key] : null;
+    const value = table[key];
+    return key in table && value !== GIT_COMMAND_FAILURE ? (value ?? null) : null;
   };
+  read.probe = (args) => {
+    const key = args.join(' ');
+    if (table[key] === GIT_COMMAND_FAILURE) return { status: 2, stdout: '' };
+    if (key in table) {
+      return table[key] === undefined
+        ? { status: 1, stdout: '' }
+        : { status: 0, stdout: String(table[key] ?? '') };
+    }
+    /*
+     * Synthetic ancestry tables omit the negative edge. Other omitted commands
+     * are refusals. A failure world uses GIT_COMMAND_FAILURE explicitly so the
+     * two answers remain distinguishable.
+     */
+    return args[0] === 'merge-base' && args[1] === '--is-ancestor'
+      ? { status: 1, stdout: '' }
+      : { status: 2, stdout: '' };
+  };
+  return read;
+}
+
+/** `true`, `false`, or `null` when Git could not answer the ancestry question. */
+function ancestry(git, ancestor, descendant) {
+  const args = ['merge-base', '--is-ancestor', ancestor, descendant];
+  if (typeof git.probe === 'function') {
+    const result = git.probe(args);
+    if (result.status === 0) return true;
+    if (result.status === 1) return false;
+    return null;
+  }
+  /* Compatibility for narrow test wrappers around a real reader. */
+  return git(args) === null ? false : true;
+}
+
+/** Whether `commit` is on `baseTip`'s first-parent line, or `null` on refusal. */
+function firstParentLineContains(git, commit, baseTip) {
+  if (commit === baseTip) return true;
+  const raw = git(['rev-list', '--first-parent', baseTip]);
+  return raw === null ? null : lines(raw).includes(commit);
 }
 
 const lines = (out) =>
@@ -458,10 +505,12 @@ export function resolveBaseRef(git, baseBranch) {
  * base, this is not a preview of this pull request and the unwrap is DECLINED
  * and said out loud.
  *
- * Every other shape is left alone: an octopus merge, a merge where both parents
- * carry the candidate or neither does, and a merge that resolved a conflict and
- * so carries content neither parent has. The honest failure of this function is
- * to decline to unwrap, never to unwrap the wrong thing.
+ * A two-parent merge where both parents carry the candidate is unwrapped only
+ * when the resolved base identifies one parent exactly, or when the checkout is
+ * itself proved to be on the resolved base line. Missing/failed ancestry,
+ * ambiguous parents, a stale ref that only proves a shared ancestor, and failed
+ * merge-content inspection are UNKNOWN and fail closed. A contentful merge is
+ * deliberately left intact so its own bytes remain under judgement.
  *
  * `evilMergePaths` and `declined` are returned rather than swallowed: a merge
  * that was NOT unwrapped, and the reason, are facts a reader wants.
@@ -478,43 +527,105 @@ export function phaseHead(git, candidateSha, baseSha) {
     baseSide: null,
     evilMergePaths: [],
     declined: null,
+    topologyUnknown: null,
   };
   if (checkout === null || parents.length !== 2 || !candidateSha) return plain;
 
-  const carries = parents.filter(
-    (p) => git(['merge-base', '--is-ancestor', candidateSha, p]) !== null
-  );
-  if (carries.length !== 1) return plain;
-  const branchSide = carries[0];
-  const baseSide = parents.find((p) => p !== branchSide) ?? null;
+  const candidateRelations = parents.map((p) => ancestry(git, candidateSha, p));
+  if (candidateRelations.some((relation) => relation === null)) {
+    return {
+      ...plain,
+      topologyUnknown:
+        'Git could not determine whether the candidate is an ancestor of both merge parents',
+    };
+  }
+  const carries = parents.filter((_, index) => candidateRelations[index] === true);
+  /*
+   * Ordinarily exactly one parent carries the candidate. Once the base has
+   * absorbed it, both may. Parent order alone is not proof in that world: a
+   * protected merge has base first, while `git merge develop` on a remediation
+   * branch has the branch first. The resolved base must disambiguate them.
+   */
+  let branchSide = null;
+  let baseSide = null;
+  if (carries.length === 1) {
+    branchSide = carries[0];
+    baseSide = parents.find((p) => p !== branchSide) ?? null;
+  } else if (carries.length === parents.length) {
+    const exactBase = baseSha ? parents.filter((p) => p === baseSha) : [];
+    if (exactBase.length === 1) {
+      baseSide = exactBase[0];
+      branchSide = parents.find((p) => p !== baseSide) ?? null;
+    } else if (baseSha) {
+      const checkoutOnBase = firstParentLineContains(git, checkout, baseSha);
+      if (checkoutOnBase === null) {
+        return {
+          ...plain,
+          topologyUnknown:
+            'Git could not determine whether this merge commit is on the resolved base line',
+        };
+      }
+      if (checkoutOnBase) {
+        [baseSide, branchSide] = parents;
+      } else {
+        return {
+          ...plain,
+          topologyUnknown:
+            'both merge parents contain the candidate and the resolved base does not uniquely identify either parent',
+        };
+      }
+    } else {
+      return {
+        ...plain,
+        topologyUnknown:
+          'both merge parents contain the candidate and no resolved base identifies the base side',
+      };
+    }
+  } else {
+    return {
+      ...plain,
+      topologyUnknown: 'neither merge parent contains the candidate',
+    };
+  }
   if (baseSide === null) return plain;
 
   /*
-   * The cross-check asks whether the two are ON THE SAME LINE, in either
-   * direction — not whether the merge's base side is contained in the ref.
-   *
-   * A pull request's merge ref is computed by the forge when the branch or its
-   * base last moved, and the remote-tracking ref in any given checkout is a
-   * SNAPSHOT that may sit either side of it: fetched later, and the ref is ahead
-   * of the merge's base side; fetched earlier, and it is behind. Demanding
-   * containment in one direction made the rule depend on which, and a probe
-   * whose base side was one commit AHEAD of `origin/develop` declined the unwrap
-   * for that reason alone. What actually distinguishes a base-branch merge from
-   * a merge with some unrelated branch is that one of the two contains the
-   * other; a foreign parent is on neither side of the base's history.
+   * The base-side parent may equal the observed base or precede it. The reverse
+   * is not proof: when the observation is stale, both the real base and an
+   * unrelated sibling can descend from it. That world is UNKNOWN, not a reason
+   * to trust parent order.
    */
-  if (
-    baseSha &&
-    git(['merge-base', '--is-ancestor', baseSide, baseSha]) === null &&
-    git(['merge-base', '--is-ancestor', baseSha, baseSide]) === null
-  ) {
-    return {
-      ...plain,
-      declined: `its non-candidate parent ${baseSide.slice(0, 8)} is on neither side of the base branch ${baseSha.slice(0, 8)} — neither contains the other — so this is not a preview of this pull request`,
-    };
+  if (baseSha && baseSide !== baseSha) {
+    const sideBeforeBase = ancestry(git, baseSide, baseSha);
+    const baseBeforeSide = ancestry(git, baseSha, baseSide);
+    if (sideBeforeBase === null || baseBeforeSide === null) {
+      return {
+        ...plain,
+        topologyUnknown: `Git could not compare merge parent ${baseSide.slice(0, 8)} with the resolved base ${baseSha.slice(0, 8)}`,
+      };
+    }
+    if (!sideBeforeBase && baseBeforeSide) {
+      return {
+        ...plain,
+        topologyUnknown: `the resolved base ${baseSha.slice(0, 8)} is stale behind merge parent ${baseSide.slice(0, 8)}, so topology cannot prove that parent is the base rather than a sibling branch`,
+      };
+    }
+    if (!sideBeforeBase && !baseBeforeSide) {
+      return {
+        ...plain,
+        declined: `its non-candidate parent ${baseSide.slice(0, 8)} is on neither side of the base branch ${baseSha.slice(0, 8)} — neither contains the other — so this is not a preview of this pull request`,
+      };
+    }
   }
 
-  const combined = lines(git(['diff-tree', '--cc', '--name-only', '--no-commit-id', checkout]));
+  const combinedRaw = git(['diff-tree', '--cc', '--name-only', '--no-commit-id', checkout]);
+  if (combinedRaw === null) {
+    return {
+      ...plain,
+      topologyUnknown: `Git could not inspect whether merge ${checkout.slice(0, 8)} carries content belonging to neither parent`,
+    };
+  }
+  const combined = lines(combinedRaw);
   if (combined.length > 0) return { ...plain, evilMergePaths: combined };
 
   return {
@@ -524,6 +635,7 @@ export function phaseHead(git, candidateSha, baseSha) {
     baseSide,
     evilMergePaths: [],
     declined: null,
+    topologyUnknown: null,
   };
 }
 
@@ -595,9 +707,51 @@ export function repositoryBinding(candidateFile, git) {
    * filtered clone may carry no `refs/remotes/origin/<base>` at all, and a merge
    * ref names its base side in its parent list whether or not any ref does.
    */
-  const baseSha = base.sha ?? head.baseSide;
-  const baseFrom = base.sha ? base.ref : head.baseSide ? "the merge ref's base-side parent" : null;
+  /*
+   * The base as it STOOD, not the base as it is now — and the difference is
+   * what a merge makes.
+   *
+   * The subtraction exists so a checkout does not count the base branch's own
+   * commits as successors of the candidate. It presumes the base does not
+   * contain the candidate. The moment this branch MERGES, that presumption
+   * inverts: `origin/develop` then contains the whole branch, so subtracting it
+   * removes every genuine successor and the range collapses to empty — which is
+   * exactly what the protected-branch reproof reported, and what the two
+   * anti-vacuity guards refused to pass on.
+   *
+   * A merge names its own base in its first parent: the base as it stood before
+   * this branch landed. That is the honest subtrahend both before the merge (a
+   * pull request's merge ref names the base tip it previewed against) and after
+   * it (the merge commit names the develop it was merged into). It is preferred
+   * over the resolved ref for the same reason the ref is only a cross-check in
+   * `phaseHead`: a ref is a moving snapshot, a parent is a fact about the commit
+   * under test.
+   */
+  const baseSha = head.baseSide ?? base.sha;
+  const baseFrom = head.baseSide
+    ? "the merge's own base-side parent — the base as it stood"
+    : base.sha
+      ? base.ref
+      : null;
   const baseResolved = Boolean(baseSha);
+  /*
+   * Whether the base already contains the candidate — reported, NOT refused.
+   *
+   * It looks alarming and is not. The subtrahend answers one question: what did
+   * THIS line of work add on top of the base it sits on? A branch cut from a
+   * base that has already absorbed the candidate added exactly its own commits,
+   * and subtracting that base is what says so. Nothing is hidden by it either:
+   * the product-identity check is taken over the whole span from the candidate
+   * to the head under test, not over this range, so a product file that moved
+   * inside the absorbed history still fails.
+   *
+   * What this flag exists for is the reader. "0 successors" means something
+   * different on a branch cut after the merge than it does before it, and the
+   * gate says which it is looking at rather than leaving the number to be
+   * misread.
+   */
+  const baseAbsorbedCandidate =
+    baseResolved && wellFormed && git(['merge-base', '--is-ancestor', sha, baseSha]) !== null;
 
   const exists = wellFormed && git(['cat-file', '-e', `${sha}^{commit}`]) !== null;
   const actualTree = exists ? (lines(git(['rev-parse', `${sha}^{tree}`]))[0] ?? null) : null;
@@ -654,6 +808,7 @@ export function repositoryBinding(candidateFile, git) {
     baseRef: base.ref,
     baseSha,
     baseFrom,
+    baseAbsorbedCandidate,
     baseAttempted: base.attempted,
     baseResolved,
     phaseHead: head.head,
@@ -662,6 +817,7 @@ export function repositoryBinding(candidateFile, git) {
     mergeRefBaseSide: head.baseSide,
     evilMergePaths: head.evilMergePaths,
     declinedUnwrap: head.declined,
+    topologyUnknown: head.topologyUnknown,
     isAncestorOfHead,
     productDiff,
     productDiffUnknown,
@@ -1899,6 +2055,13 @@ export function reportRepository(binding, write = toStderr) {
     );
     return sound;
   }
+  if (binding.topologyUnknown) {
+    sound = false;
+    write(
+      `::error::the Git world at HEAD is UNKNOWN: ${binding.topologyUnknown}. Parent order, a failed Git command, or an ambiguous ancestry cannot be interpreted as an empty successor set; this gate fails closed.\n`
+    );
+    return sound;
+  }
   if (binding.declinedUnwrap) {
     // Not a failure by itself — the merge is judged as an ordinary commit —
     // but a reader must be told the unwrap was declined and why.
@@ -2126,6 +2289,10 @@ const W = Object.freeze({
   mergeRef: '4'.repeat(40),
   /** A hosted run taken at a DESCENDANT of the candidate, product-identical. */
   runHead: '6'.repeat(40),
+  /** The base branch AFTER this branch merged into it: it contains the candidate. */
+  mergedBase: '5'.repeat(40),
+  /** A later commit on the base's first-parent line. */
+  baseAdvanced: '0'.repeat(40),
 });
 
 const ledgerAt = (head) =>
@@ -3047,12 +3214,154 @@ export const WORLD_CHECK_CASES = [
     inputs: worldInputs({
       git: syntheticGit({
         ...MERGE_REF_GIT,
-        [`merge-base --is-ancestor ${W.baseTip} ${W.baseTip}`]: undefined,
+        [`rev-parse --verify --quiet refs/remotes/origin/develop^{commit}`]: `${W.stranger}\n`,
       }),
     }),
     expects: { repositoryOk: false, sound: false },
     explains: true,
   },
+  /* ---- after this branch has MERGED into its base ---- *
+   *
+   * The shape that took the protected-branch reproof red. The base subtraction
+   * presumes the base does not contain the candidate; the merge inverts that,
+   * and subtracting the base as it is NOW removes every genuine successor. The
+   * base as it STOOD is in the merge's first parent, and these three worlds are
+   * what hold the seal to reading it from there.
+   */
+  {
+    name: 'the merge commit on the protected branch, base subtracted as it STOOD — allowed',
+    inputs: worldInputs({
+      git: syntheticGit({
+        // `origin/develop` is now the merge itself and contains the candidate.
+        [`rev-parse --verify --quiet refs/remotes/origin/develop^{commit}`]: `${W.mergedBase}\n`,
+        [`rev-list --parents -n 1 HEAD`]: `${W.mergeRef} ${W.baseTip} ${W.branchHead}\n`,
+        [`merge-base --is-ancestor ${W.candidate} ${W.baseTip}`]: undefined,
+        [`merge-base --is-ancestor ${W.baseTip} ${W.mergedBase}`]: '',
+        [`diff-tree --cc --name-only --no-commit-id ${W.mergeRef}`]: '',
+      }),
+    }),
+    expects: { repositoryOk: true },
+    explains: false,
+  },
+  {
+    name: 'a re-merge where BOTH parents carry the candidate — the base is the first parent',
+    inputs: worldInputs({
+      git: syntheticGit({
+        [`rev-parse --verify --quiet refs/remotes/origin/develop^{commit}`]: `${W.mergedBase}\n`,
+        [`rev-list --parents -n 1 HEAD`]: `${W.mergeRef} ${W.mergedBase} ${W.branchHead}\n`,
+        [`merge-base --is-ancestor ${W.candidate} ${W.mergedBase}`]: '',
+        [`merge-base --is-ancestor ${W.mergedBase} ${W.mergedBase}`]: '',
+        [`diff-tree --cc --name-only --no-commit-id ${W.mergeRef}`]: '',
+        [`log --format=%H %s ${W.branchHead} --not ${W.candidate} ${W.mergedBase}`]: `${W.documentationSuccessor} docs: re-record the ledger\n${W.executableSuccessor} feat: the packaging machinery\n`,
+      }),
+    }),
+    expects: { repositoryOk: true },
+    explains: false,
+  },
+  {
+    name: 'the protected merge remains identifiable after the base first-parent line advances',
+    inputs: worldInputs({
+      git: syntheticGit({
+        [`rev-parse --verify --quiet refs/remotes/origin/develop^{commit}`]: `${W.baseAdvanced}\n`,
+        [`rev-list --parents -n 1 HEAD`]: `${W.mergeRef} ${W.mergedBase} ${W.branchHead}\n`,
+        [`merge-base --is-ancestor ${W.candidate} ${W.mergedBase}`]: '',
+        [`rev-list --first-parent ${W.baseAdvanced}`]: `${W.baseAdvanced}\n${W.mergeRef}\n${W.mergedBase}\n`,
+        [`merge-base --is-ancestor ${W.mergedBase} ${W.baseAdvanced}`]: '',
+        [`diff-tree --cc --name-only --no-commit-id ${W.mergeRef}`]: '',
+        [`log --format=%H %s ${W.branchHead} --not ${W.candidate} ${W.mergedBase}`]: `${W.documentationSuccessor} docs: re-record the ledger\n${W.executableSuccessor} feat: the packaging machinery\n`,
+      }),
+    }),
+    expects: { repositoryOk: true },
+    explains: false,
+  },
+  {
+    name: 'second-parent reachability is not the protected base first-parent line',
+    inputs: worldInputs({
+      git: syntheticGit({
+        [`rev-parse --verify --quiet refs/remotes/origin/develop^{commit}`]: `${W.baseAdvanced}\n`,
+        [`rev-list --parents -n 1 HEAD`]: `${W.mergeRef} ${W.mergedBase} ${W.branchHead}\n`,
+        [`merge-base --is-ancestor ${W.candidate} ${W.mergedBase}`]: '',
+        [`rev-list --first-parent ${W.baseAdvanced}`]: `${W.baseAdvanced}\n${W.mergedBase}\n`,
+      }),
+    }),
+    expects: { repositoryOk: false, sound: false },
+    explains: true,
+  },
+  {
+    name: 'both parents carry the candidate but a stale base identifies neither — fail closed',
+    inputs: worldInputs({
+      git: syntheticGit({
+        [`rev-parse --verify --quiet refs/remotes/origin/develop^{commit}`]: `${W.baseTip}\n`,
+        [`rev-list --parents -n 1 HEAD`]: `${W.mergeRef} ${W.mergedBase} ${W.branchHead}\n`,
+        [`merge-base --is-ancestor ${W.candidate} ${W.mergedBase}`]: '',
+        [`merge-base --is-ancestor ${W.baseTip} ${W.mergedBase}`]: '',
+      }),
+    }),
+    expects: { repositoryOk: false, sound: false },
+    explains: true,
+  },
+  {
+    name: 'candidate ancestry for a merge parent is UNKNOWN — fail closed',
+    inputs: worldInputs({
+      git: syntheticGit({
+        ...MERGE_REF_GIT,
+        [`merge-base --is-ancestor ${W.candidate} ${W.baseTip}`]: GIT_COMMAND_FAILURE,
+      }),
+    }),
+    expects: { repositoryOk: false, sound: false },
+    explains: true,
+  },
+  {
+    name: 'merge-owned content inspection is UNKNOWN — fail closed',
+    inputs: worldInputs({
+      git: syntheticGit({
+        ...MERGE_REF_GIT,
+        [`diff-tree --cc --name-only --no-commit-id ${W.mergeRef}`]: GIT_COMMAND_FAILURE,
+      }),
+    }),
+    expects: { repositoryOk: false, sound: false },
+    explains: true,
+  },
+  {
+    name: 'an alleged base parent is only a sibling beyond a stale base observation',
+    inputs: worldInputs({
+      git: syntheticGit({
+        [`rev-parse --verify --quiet refs/remotes/origin/develop^{commit}`]: `${W.baseTip}\n`,
+        [`rev-list --parents -n 1 HEAD`]: `${W.mergeRef} ${W.mergedBase} ${W.branchHead}\n`,
+        [`merge-base --is-ancestor ${W.baseTip} ${W.mergedBase}`]: '',
+      }),
+    }),
+    expects: { repositoryOk: false, sound: false },
+    explains: true,
+  },
+  {
+    name: 'a branch cut from a base that has ABSORBED the candidate — its own additions',
+    inputs: worldInputs({
+      git: syntheticGit({
+        [`rev-parse --verify --quiet refs/remotes/origin/develop^{commit}`]: `${W.mergedBase}\n`,
+        [`merge-base --is-ancestor ${W.candidate} ${W.mergedBase}`]: '',
+        [`log --format=%H %s ${W.branchHead} --not ${W.candidate} ${W.mergedBase}`]: `${W.documentationSuccessor} docs: re-record the ledger\n${W.executableSuccessor} feat: the packaging machinery\n`,
+      }),
+    }),
+    expects: { repositoryOk: true },
+    explains: false,
+  },
+  {
+    name: 'a merge on the protected branch that carries content of its own — not stepped past',
+    inputs: worldInputs({
+      git: syntheticGit({
+        [`rev-parse --verify --quiet refs/remotes/origin/develop^{commit}`]: `${W.mergedBase}\n`,
+        [`rev-list --parents -n 1 HEAD`]: `${W.mergeRef} ${W.baseTip} ${W.branchHead}\n`,
+        [`merge-base --is-ancestor ${W.candidate} ${W.baseTip}`]: undefined,
+        [`merge-base --is-ancestor ${W.baseTip} ${W.mergedBase}`]: '',
+        [`diff-tree --cc --name-only --no-commit-id ${W.mergeRef}`]:
+          'apps/web/src/features/receptions/api.ts\n',
+      }),
+    }),
+    expects: { repositoryOk: false, sound: false },
+    explains: true,
+  },
+
   {
     name: 'a product diff between the candidate and the head under test that git refuses to take',
     inputs: worldInputs({

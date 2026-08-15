@@ -68,6 +68,11 @@
       "branchPrefix": "closure/p1-26-",
       "profile": "p1-26-frontend",
       "why": "the P1-26 closure branch carries the same Frontend declaration"
+    },
+    {
+      "branchPrefix": "fix/p1-28-",
+      "profile": "p1-27-frontend",
+      "why": "P1-28 seal remediations cut from develop after PR #226 merged. They change the evidence machinery under scripts/ci and tests/ci and the phase records under docs, which is the same surface the P1-28 integration branch owns."
     }
   ]
 }
