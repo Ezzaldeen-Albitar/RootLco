@@ -71,10 +71,10 @@ describe('provisionIntakeCatalogues', () => {
     });
     vi.stubGlobal('fetch', fetch);
 
-    const result = await provisionIntakeCatalogues({
+    const result = (await provisionIntakeCatalogues({
       apiOrigin: 'http://127.0.0.1:54321',
       token: 'test-token',
-    });
+    })) as Record<string, unknown>;
 
     expect(fetch).toHaveBeenCalledTimes(INTAKE_CATALOGUE_FIXTURES.length);
     for (const fixture of INTAKE_CATALOGUE_FIXTURES) {
@@ -105,10 +105,10 @@ describe('provisionIntakeCatalogues', () => {
     });
     vi.stubGlobal('fetch', fetch);
 
-    const result = await provisionIntakeCatalogues({
+    const result = (await provisionIntakeCatalogues({
       apiOrigin: 'http://127.0.0.1:54321',
       token: 'test-token',
-    });
+    })) as Record<string, unknown>;
 
     expect(fetch).toHaveBeenCalledTimes(INTAKE_CATALOGUE_FIXTURES.length * 2);
     for (const fixture of INTAKE_CATALOGUE_FIXTURES) {
@@ -234,7 +234,7 @@ describe('provisionPartyAndVehicle', () => {
       }
       if (url.endsWith('/api/v1/customers/individuals')) {
         expect(init?.method).toBe('POST');
-        expect(JSON.parse(init.body ?? '{}')).toEqual({
+        expect(JSON.parse(init?.body ?? '{}')).toEqual({
           givenName: PARTY_FIXTURE.givenName,
           familyName: PARTY_FIXTURE.familyName,
           lifecycleStatus: 'active',
@@ -252,7 +252,7 @@ describe('provisionPartyAndVehicle', () => {
       if (url.includes('/vehicles?limit=50')) return response({ items: [] });
       if (url.includes(`/customers/${LOWER_UUID}/vehicles`)) {
         expect(init?.method).toBe('POST');
-        expect(JSON.parse(init.body ?? '{}')).toEqual({
+        expect(JSON.parse(init?.body ?? '{}')).toEqual({
           vehicleId: LOWER_VEHICLE_UUID,
           relationshipRole: PARTY_FIXTURE.relationshipRole,
         });
