@@ -83,7 +83,7 @@ quoted as a current one.
 
 Every **local** figure in this package describes **that commit**, or a named
 successor of it whose drift from it is declared path by path. The successor set
-is now non-empty: four full ids name the post-candidate evidence machinery, while
+is now non-empty: five full ids name the post-candidate evidence machinery, while
 the product diff under `apps/**` and `supabase/**` remains empty.
 
 **`3f80bc2d03234d940c6e10d0c7c148264644927a` — the base subtraction made to
@@ -124,6 +124,14 @@ second-parent-only reachability trap, a sound empty range whose two anti-vacuity
 guards are observed red, a real product mutation, and Git command refusal. It is
 94/94, while the gate's embedded self-check is 82 worlds: 66 analyzer-derived
 worlds plus 16 reporter cases.
+
+**`eeba15d70e355c3a9e66dbc5d5053e8e92966d72` — the lint-clean measurement
+head.** The topology refactor retired `execFileSync` but left its import behind.
+The full lint gate passed with that one warning; this successor removes the
+unused import and changes no runtime behavior. Because the seal is executable,
+the repository ordering rule still applies: the cleanup was committed first,
+then both local tiers were re-run at this exact head and pinned in P1-27 ledger
+commit `9c173ff4eff3dc516b9d9778527ac98649582ebe`.
 
 That was not true until now, and the difference is worth stating because it is
 what the re-freeze bought. The previous candidate,
@@ -309,7 +317,7 @@ Two arguments this page used to make, and no longer needs to:
 | -------------------- | -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **arithmetic**       | all five                   | `passed + failed + skipped` must equal the declared total. The review set `passed: 3, failed: 812` beside `tests: 2475` and the first revision of the gate accepted it.                                                                                                                                                                                                                             |
 | **computed**         | unit, web                  | the figures must equal the P1-27 run ledger's, read out of git at a **pinned commit**, and the tier may carry no figure the ledger does not write                                                                                                                                                                                                                                                   |
-| **measurement head** | unit, web                  | the head the tier names must be executable-identical to the candidate, or a **named successor** carrying no product drift and declaring `measurementDrift` exactly equal to what `git diff` says. The currently bound package measurement is at `27ea8f25`; the remediation re-run is recorded separately at `50a86014` before hosted rebinding                                                     |
+| **measurement head** | unit, web                  | the head the tier names must be executable-identical to the candidate, or a **named successor** carrying no product drift and declaring `measurementDrift` exactly equal to what `git diff` says. The currently bound package measurement is at `27ea8f25`; the remediation re-run is recorded separately at `eeba15d7` before hosted rebinding                                                     |
 | **pending**          | none, now                  | the rule is unchanged and still fires: a record describing a head the candidate **supersedes** must declare `describesSupersededHead`, name a head this repository **contains** and can prove is an **ancestor**, name what replaces it, and appear in `pendingHostedBindings` — a list the gate **derives** and compares in both directions, so it is empty by computation rather than by deletion |
 | **run head**         | all eleven hosted bindings | a run cited at a head that is not the candidate must declare `describesProductIdenticalSuccessor`, and that head must be **contained** in this repository, **descend** from the candidate, and differ from it by **no** path under `apps/**` or `supabase/**` — computed, and a diff git refuses to take is UNKNOWN, not empty                                                                      |
 
@@ -318,8 +326,8 @@ Two arguments this page used to make, and no longer needs to:
 The package's bound local record at `ca19414914a44f986ab60500bf0c34aacf0c5056`
 records unit 2567/2567 and web 2726/2726 at the named successor
 `27ea8f25083df44e5444dc5071528b0469e372f3`. The remediation ledger is re-taken
-at `50a860141a1c00f60915d07f16cc5accfb25b5c6` and committed in
-`1b9fa1664b1d8e9dea545b7e0ede9dcb9fb40271`: unit 2575/2575, web 2726/2726,
+at `eeba15d70e355c3a9e66dbc5d5053e8e92966d72` and committed in
+`9c173ff4eff3dc516b9d9778527ac98649582ebe`: unit 2575/2575, web 2726/2726,
 0 failed and 98 files in each. It is deliberately not presented as the package's
 bound hosted/local pair until hosted CI observes the same evidence code.
 The gate reads that ledger **out of git at the commit that carries it**, through
@@ -804,7 +812,7 @@ about a repository. What the gate now computes, on every invocation:
 | the **head under test**  | `git rev-list --parents -n 1 HEAD`. Ordinarily HEAD itself. A two-parent merge is unwrapped only after tri-state ancestry, exact-base/first-parent-line identification where both parents carry the candidate, and a successful empty combined diff. Ambiguous ancestry, a stale base that identifies no parent, or any refused Git command is UNKNOWN and fails closed                  |
 | its **ancestry**         | `git merge-base --is-ancestor 7b1252ed <head under test>`                                                                                                                                                                                                                                                                                                                                |
 | **product identity**     | `git diff --name-only 7b1252ed..<head under test> -- apps supabase` must be empty — computed, where the package used to assert it in a sentence                                                                                                                                                                                                                                          |
-| **successors**           | `git log <head under test> --not 7b1252ed <historical base>`, every executable commit of which must be named by id; documentation-only ones are printed. Four executable successors are named. On a protected merge the historical base comes from the merge topology rather than moving `origin/develop`, so genuine successors survive subtraction                                     |
+| **successors**           | `git log <head under test> --not 7b1252ed <historical base>`, every executable commit of which must be named by id; documentation-only ones are printed. Five executable successors are named. On a protected merge the historical base comes from the merge topology rather than moving `origin/develop`, so genuine successors survive subtraction                                     |
 | **local tier figures**   | `git show <ledger commit>:…/local-run-ledger.json`, matched field by field, plus the measured head either executable-identical to the candidate or a named successor whose drift is declared path by path and compared against `git diff`                                                                                                                                                |
 | **hosted tier figures**  | not computable here, so required to be fetchable: run id, job id, head sha, artefact. A head that is not the candidate must declare which of the two it is — an **ancestor**, superseded, listed in `pendingHostedBindings`; or a **descendant** whose `apps/**` and `supabase/**` `git diff` computes to be identical to the candidate's — and must be a commit `git cat-file` resolves |
 | **documented claims**    | anchored sentences measured against the tree, and `PROTECTED_REPROOF` citations resolved into the files they name                                                                                                                                                                                                                                                                        |

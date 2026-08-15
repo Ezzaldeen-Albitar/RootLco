@@ -26,7 +26,7 @@ a later reader needs is why the product is shaped this way.
 
 ---
 
-## Post-merge QA-005 seal remediation (`50a86014`, PR #229)
+## Post-merge QA-005 seal remediation (`50a86014`–`eeba15d7`, PR #229)
 
 PR #226 merged the reviewed P1-28 tree into protected `develop`, after which
 the protected reproof exposed a topology defect in the QA-005 successor range:
@@ -44,6 +44,11 @@ anti-vacuity, real product drift, contentful merge, and Git command failure.
 The frozen product candidate remains unchanged and `apps/**` / `supabase/**`
 remain byte-identical; this is evidence machinery, not a P1-29 feature and not a
 phase closure.
+
+The lint-clean executable head is `eeba15d7`: it removes the retired
+`execFileSync` import left by the tri-state Git reader. Both local tiers were
+re-recorded there after the executable commit, with 2575/2575 root tests and
+2726/2726 web tests, 0 failed and 98 files in each.
 
 ## Before the first screen — the day-one authority
 

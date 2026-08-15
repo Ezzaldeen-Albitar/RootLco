@@ -63,16 +63,16 @@
       "bytes": 11687
     },
     "docs/phase-1/phase-1-28/evidence/change-log.md": {
-      "sha256": "f982b5169682e15dd7f6dff2d9c076f8128a332cb2ae1b668c624f60106d5d45",
-      "bytes": 38458
+      "sha256": "3080cd8c9552dbbe04cfa077498b863ab7ad84bec932b61bc3cf2ac6ebca3537",
+      "bytes": 38748
     },
     "docs/phase-1/phase-1-28/evidence/closure-candidate.json": {
-      "sha256": "d5d41c75fc5e459329af8e09e6558b6980b19bea53edb804a6d9221b29313d36",
-      "bytes": 58740
+      "sha256": "e0ad2bdd2c244bd2c1bd7cdbd7fe4229055c21d3cc363bcb803b3d8363e972a8",
+      "bytes": 60167
     },
     "docs/phase-1/phase-1-28/evidence/closure-evidence.md": {
-      "sha256": "4345541a8c253efa1e58227458fe2f8978a174501af7387cc9a7259461802856",
-      "bytes": 69001
+      "sha256": "0c2c67fc59ba1c8c94b70cec5d55303d301813728cce29aa0528c7d2d4af5ecb",
+      "bytes": 69522
     },
     "docs/phase-1/phase-1-28/evidence/traceability.json": {
       "sha256": "600a8ae57e4a33b5c54d847befbcab82acb2a0d136d005cec777345c39c74ab1",
