@@ -62,6 +62,61 @@ export class FixtureFailure extends Error {}
 /** Hosts that count as this machine. Same set as `context.mjs`. */
 const LOOPBACK = new Set(['127.0.0.1', 'localhost', '::1', '[::1]']);
 
+/** The only variable characters a database UUID may contribute to local state. */
+export const UUID_ALPHABET = '0123456789abcdef';
+const UUID_LENGTH = 36;
+const UUID_SEPARATORS = new Set([8, 13, 18, 23]);
+
+/**
+ * Rebuilds an API-returned UUID from a local alphabet, or refuses it.
+ *
+ * ## Why this exists — `js/http-to-file-access`
+ *
+ * The provisioning command writes the identifiers needed by the browser tier
+ * to a git-ignored local manifest. The API is loopback-only, but its response
+ * is still a network trust boundary: persisting response fields verbatim would
+ * let a compromised or misdirected service choose arbitrary file content.
+ *
+ * This is an allow-list, not a regex-shaped assertion followed by the original
+ * value. Every emitted hexadecimal character comes from `UUID_ALPHABET`, every
+ * separator comes from this module, and the input contributes only the index of
+ * the constant character to copy. The output is therefore a canonical lowercase
+ * UUID even when the API used uppercase hexadecimal.
+ *
+ * @param {unknown} value an identifier returned by the loopback API
+ * @param {string} label the fixture field named in a refusal
+ * @returns {string} the same UUID rebuilt entirely from local constants
+ */
+export function reconstructFixtureUuid(value, label = 'fixture identifier') {
+  if (typeof value !== 'string') {
+    throw new FixtureFailure(`${label} is absent or is not a string UUID.`);
+  }
+  if (value.length !== UUID_LENGTH) {
+    throw new FixtureFailure(`${label} has ${value.length} characters; a UUID must have 36.`);
+  }
+
+  const out = [];
+  for (let position = 0; position < UUID_LENGTH; position += 1) {
+    if (UUID_SEPARATORS.has(position)) {
+      if (value[position] !== '-') {
+        throw new FixtureFailure(`${label} has no UUID separator at position ${position + 1}.`);
+      }
+      out.push('-');
+      continue;
+    }
+
+    const index = UUID_ALPHABET.indexOf(value[position].toLowerCase());
+    if (index < 0) {
+      throw new FixtureFailure(
+        `${label} contains a character outside the UUID alphabet at position ${position + 1}.`
+      );
+    }
+    // The alphabet's own character, never the network response's character.
+    out.push(UUID_ALPHABET[index]);
+  }
+  return out.join('');
+}
+
 /**
  * Proves the target is this machine, or refuses.
  *
@@ -173,6 +228,9 @@ export const PARTY_FIXTURE = Object.freeze({
   relationshipRole: 'owner',
 });
 
+/** Existing workspaces may carry the pre-hardening default; new fixtures are active. */
+const ACCEPTANCE_CUSTOMER_LIFECYCLES = new Set(['active', 'prospect']);
+
 /** Fixture rows carry no personal data, so a name may be reported. */
 const label = (fixture) => `${fixture.key} (${fixture.code})`;
 
@@ -213,6 +271,14 @@ async function call(origin, token, method, path, { body, idempotent = false } = 
   return parsed;
 }
 
+/** A list operation must prove it returned a page before absence can mean absence. */
+function pageItems(page, operation) {
+  if (page === null || typeof page !== 'object' || !Array.isArray(page.items)) {
+    throw new FixtureFailure(`${operation} returned no valid items array.`);
+  }
+  return page.items;
+}
+
 /**
  * Reads one catalogue and returns the fixture row, or `null`.
  *
@@ -223,8 +289,13 @@ async function call(origin, token, method, path, { body, idempotent = false } = 
  */
 async function findCatalogueRow(origin, token, fixture) {
   const page = await call(origin, token, 'GET', `${fixture.path}?limit=100`);
-  const items = Array.isArray(page?.items) ? page.items : [];
-  return items.find((item) => item?.code === fixture.code) ?? null;
+  const matches = pageItems(page, `GET ${fixture.path}`).filter(
+    (item) => item?.code === fixture.code
+  );
+  if (matches.length > 1) {
+    throw new FixtureFailure(`${label(fixture)} was returned more than once.`);
+  }
+  return matches[0] ?? null;
 }
 
 /**
@@ -241,7 +312,17 @@ export async function provisionIntakeCatalogues({ apiOrigin, token, log = () => 
   for (const fixture of INTAKE_CATALOGUE_FIXTURES) {
     const existing = await findCatalogueRow(origin, token, fixture);
     if (existing !== null) {
-      provisioned[fixture.key] = { ...existing, created: false };
+      if (existing.code !== fixture.code || existing.name !== fixture.name) {
+        throw new FixtureFailure(
+          `${label(fixture)} does not match the configured fixture returned by the API.`
+        );
+      }
+      provisioned[fixture.key] = {
+        id: reconstructFixtureUuid(existing.id, `${label(fixture)} id`),
+        code: fixture.code,
+        name: fixture.name,
+        created: false,
+      };
       log(`  catalogue ${label(fixture).padEnd(48)} present`);
       continue;
     }
@@ -249,12 +330,17 @@ export async function provisionIntakeCatalogues({ apiOrigin, token, log = () => 
       body: { code: fixture.code, name: fixture.name },
       idempotent: true,
     });
-    if (typeof created?.id !== 'string') {
+    if (created?.code !== fixture.code || created?.name !== fixture.name) {
       throw new FixtureFailure(
-        `${fixture.path} answered 201 without an id: ${JSON.stringify(created)}`
+        `${fixture.path} did not return the configured fixture: ${JSON.stringify(created)}`
       );
     }
-    provisioned[fixture.key] = { ...created, created: true };
+    provisioned[fixture.key] = {
+      id: reconstructFixtureUuid(created.id, `${label(fixture)} id`),
+      code: fixture.code,
+      name: fixture.name,
+      created: true,
+    };
     log(`  catalogue ${label(fixture).padEnd(48)} created`);
   }
 
@@ -273,40 +359,84 @@ export async function provisionIntakeCatalogues({ apiOrigin, token, log = () => 
 export async function provisionPartyAndVehicle({ apiOrigin, token, log = () => {} }) {
   const origin = assertLoopbackApi(apiOrigin);
 
-  const found = await call(
-    origin,
-    token,
-    'GET',
-    `/api/v1/customers?name=${encodeURIComponent(PARTY_FIXTURE.searchName)}&limit=10`
-  );
-  const hits = Array.isArray(found?.items) ? found.items : [];
   const wanted = `${PARTY_FIXTURE.givenName} ${PARTY_FIXTURE.familyName}`;
-  let customer = hits.find((hit) => hit?.displayName === wanted) ?? null;
+  const customerPath =
+    `/api/v1/customers?name=${encodeURIComponent(PARTY_FIXTURE.searchName)}` + '&limit=10';
+  const findCustomer = async () => {
+    const page = await call(origin, token, 'GET', customerPath);
+    const matches = pageItems(page, 'GET /api/v1/customers').filter(
+      (hit) => hit?.displayName === wanted
+    );
+    if (matches.length > 1) {
+      throw new FixtureFailure(`more than one customer is named ${wanted}.`);
+    }
+    const match = matches[0] ?? null;
+    if (
+      match !== null &&
+      (match.partyType !== 'individual' ||
+        !ACCEPTANCE_CUSTOMER_LIFECYCLES.has(match.lifecycleStatus))
+    ) {
+      throw new FixtureFailure(`${wanted} exists but is not a usable acceptance individual.`);
+    }
+    return match;
+  };
+
+  let customer = await findCustomer();
 
   if (customer === null) {
-    customer = await call(origin, token, 'POST', '/api/v1/customers/individuals', {
-      body: { givenName: PARTY_FIXTURE.givenName, familyName: PARTY_FIXTURE.familyName },
+    const created = await call(origin, token, 'POST', '/api/v1/customers/individuals', {
+      body: {
+        givenName: PARTY_FIXTURE.givenName,
+        familyName: PARTY_FIXTURE.familyName,
+        lifecycleStatus: 'active',
+      },
       idempotent: true,
     });
+    const createdId = reconstructFixtureUuid(
+      created?.id ?? created?.customerId ?? created?.partnerId,
+      'the created acceptance customer id'
+    );
+    customer = await findCustomer();
+    if (
+      customer === null ||
+      reconstructFixtureUuid(customer.id, 'the acceptance customer search id') !== createdId
+    ) {
+      throw new FixtureFailure('the created acceptance customer could not be verified by search.');
+    }
     log(`  customer  ${wanted.padEnd(48)} created`);
   } else {
     log(`  customer  ${wanted.padEnd(48)} present`);
   }
-  const customerId = customer?.id ?? customer?.customerId ?? customer?.partnerId;
-  if (typeof customerId !== 'string') {
-    throw new FixtureFailure(`the customer carries no id: ${JSON.stringify(customer)}`);
-  }
-
-  const vehiclePage = await call(
-    origin,
-    token,
-    'GET',
-    `/api/v1/vehicles?vin=${encodeURIComponent(PARTY_FIXTURE.vin)}&limit=10`
+  const customerId = reconstructFixtureUuid(
+    customer?.id ?? customer?.customerId ?? customer?.partnerId,
+    'the acceptance customer id'
   );
-  const vehicles = Array.isArray(vehiclePage?.items) ? vehiclePage.items : [];
-  let vehicleId = vehicles[0]?.id ?? null;
 
-  if (vehicleId === null) {
+  const vehiclePath = `/api/v1/vehicles?vin=${encodeURIComponent(PARTY_FIXTURE.vin)}&limit=10`;
+  const findVehicle = async () => {
+    const page = await call(origin, token, 'GET', vehiclePath);
+    const items = pageItems(page, 'GET /api/v1/vehicles');
+    const matches = items.filter(
+      (vehicle) =>
+        vehicle?.vin === PARTY_FIXTURE.vin &&
+        vehicle?.displayNumber === PARTY_FIXTURE.vehicleDisplayNumber &&
+        vehicle?.modelYear === PARTY_FIXTURE.modelYear &&
+        vehicle?.lifecycleStatus === 'draft'
+    );
+    if (matches.length > 1) {
+      throw new FixtureFailure(`the acceptance vehicle ${PARTY_FIXTURE.vin} was returned twice.`);
+    }
+    if (items.length > 0 && matches.length === 0) {
+      throw new FixtureFailure(
+        `the vehicle search returned a row that is not the configured fixture ${PARTY_FIXTURE.vin}.`
+      );
+    }
+    return matches[0] ?? null;
+  };
+
+  let vehicle = await findVehicle();
+
+  if (vehicle === null) {
     const created = await call(origin, token, 'POST', '/api/v1/vehicles', {
       body: {
         vin: PARTY_FIXTURE.vin,
@@ -316,14 +446,22 @@ export async function provisionPartyAndVehicle({ apiOrigin, token, log = () => {
       },
       idempotent: true,
     });
-    vehicleId = created?.id ?? created?.vehicleId ?? null;
+    const createdId = reconstructFixtureUuid(
+      created?.id ?? created?.vehicleId,
+      'the created acceptance vehicle id'
+    );
+    vehicle = await findVehicle();
+    if (
+      vehicle === null ||
+      reconstructFixtureUuid(vehicle.id, 'the acceptance vehicle search id') !== createdId
+    ) {
+      throw new FixtureFailure('the created acceptance vehicle could not be verified by search.');
+    }
     log(`  vehicle   ${PARTY_FIXTURE.vin.padEnd(48)} created`);
   } else {
     log(`  vehicle   ${PARTY_FIXTURE.vin.padEnd(48)} present`);
   }
-  if (typeof vehicleId !== 'string') {
-    throw new FixtureFailure('the acceptance vehicle carries no id.');
-  }
+  const vehicleId = reconstructFixtureUuid(vehicle.id, 'the acceptance vehicle id');
 
   const links = await call(
     origin,
@@ -331,9 +469,18 @@ export async function provisionPartyAndVehicle({ apiOrigin, token, log = () => {
     'GET',
     `/api/v1/customers/${customerId}/vehicles?limit=50`
   );
-  const linked = (Array.isArray(links?.items) ? links.items : []).some(
-    (row) => row?.vehicleId === vehicleId
+  const canonicalLinks = pageItems(links, 'GET /api/v1/customers/{customerId}/vehicles').map(
+    (row) => {
+      if (typeof row?.active !== 'boolean') {
+        throw new FixtureFailure('a customer vehicle relationship carries no active state.');
+      }
+      return {
+        vehicleId: reconstructFixtureUuid(row.vehicleId, 'a customer vehicle relationship id'),
+        active: row.active,
+      };
+    }
   );
+  const linked = canonicalLinks.some((row) => row.vehicleId === vehicleId && row.active);
   if (!linked) {
     await call(origin, token, 'POST', `/api/v1/customers/${customerId}/vehicles`, {
       body: { vehicleId, relationshipRole: PARTY_FIXTURE.relationshipRole },
@@ -387,7 +534,7 @@ export async function releaseOpenVisits({
     'GET',
     `/api/v1/receptions?companyId=${companyId}&branchId=${branchId}&vehicleId=${vehicleId}&limit=50`
   );
-  const items = Array.isArray(page?.items) ? page.items : [];
+  const items = pageItems(page, 'GET /api/v1/receptions');
   let released = 0;
 
   for (const visit of items) {
