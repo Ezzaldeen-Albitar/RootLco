@@ -84,8 +84,48 @@ quoted as a current one.
 
 Every **local** figure in this package describes **that commit**, or a named
 successor of it whose drift from it is declared path by path. The successor set
-is now non-empty: five full ids name the post-candidate evidence machinery, while
-the product diff under `apps/**` and `supabase/**` remains empty.
+is non-empty: two full ids name the executable changes on the current remediation
+branch, while the product diff under `apps/**` and `supabase/**` remains empty.
+
+**`3187f18c82a9b3113b876ec035c9a2324117ee84` — the acceptance-manifest
+network boundary.** Protected CodeQL policy found `js/http-to-file-access` in
+the local acceptance-fixture command: catalogue, customer and vehicle response
+objects flowed into `JSON.stringify` and then `writeFileSync`. The repository
+ceiling is **0**, so this is repaired rather than dismissed or added to the
+ceiling. Every identifier that reaches the manifest is rebuilt character by
+character from a fixed UUID alphabet; every label comes from repository-owned
+fixture constants; malformed pages, ambiguous customers, mismatched vehicles
+and invalid relationships fail closed; newly created records are re-read before
+their ids are bound; and the unused response-derived release count is not
+persisted. Fifteen focused cases prove the boundary and the exact manifest
+allow-list. The change touches only `scripts/dev/owner-acceptance/**` and
+`tests/ci/**`; the frozen product trees remain byte-identical.
+
+**`a2095925f13e11f7fdbc04264db69ecf88939568` — the absorbed-measurement
+boundary.** The PR #229 local measurement at `eeba15d7` remains valid and
+product-identical after that head becomes protected-base ancestry, but it is no
+longer in the current successor range. The seal now gives that history a
+separate, fail-closed vocabulary: every `absorbedSuccessors` id must be proven
+between the candidate and the resolved base and product-identical to the
+candidate. It may preserve an already pinned measurement head, but it can never
+cover an unnamed current successor. Two real scratch worlds prove the valid and
+hostile forms. The change touches only the seal and its own suite.
+
+Both local tiers were then measured at that exact executable head and recorded
+in P1-27 ledger commit
+`6ea6bfdcb4f6a867ebc7190740fda0ce5b521474`: unit **2592/2592** over **99**
+files and web **2726/2726** over **98** files, with **0 failed**. These are a
+newer local observation, not yet the bound package figures: until hosted CI
+measures the same executable tree, the bound local/hosted pair remains the
+honest `eeba15d7`/`b12b9f0f` observation below.
+
+The five successors below were current on PR #229. They are now ancestors of
+protected `develop`, so the current branch calculation correctly excludes them:
+`git log a2095925 --not 7b1252ed 0a91918b` contains `a2095925` and `3187f18c`.
+They remain
+recorded in `closure-candidate.json` under `absorbedSuccessors`, with their full
+history, rather than being deleted or falsely retained in the current
+`successors` range.
 
 **`3f80bc2d03234d940c6e10d0c7c148264644927a` — the base subtraction made to
 survive this branch's own merge.** The successor rule subtracts the base branch
@@ -123,7 +163,7 @@ The suite constructs real scratch repositories for the eleven required worlds,
 including both parent orders, an advanced protected first-parent line, a
 second-parent-only reachability trap, a sound empty range whose two anti-vacuity
 guards are observed red, a real product mutation, and Git command refusal. It is
-94/94, while the gate's embedded self-check is 82 worlds: 66 analyzer-derived
+96/96, while the gate's embedded self-check is 82 worlds: 66 analyzer-derived
 worlds plus 16 reporter cases.
 
 **`eeba15d70e355c3a9e66dbc5d5053e8e92966d72` — the lint-clean measurement
@@ -182,8 +222,8 @@ point:
 - the world flags are cross-checked against the package's own
   `pendingHostedBindings` declaration, which `worldFrom` never reads.
 
-The committed bound package now passes **94/94**, and the pending/forward-binding
-states remain fixture-proved inside that same run. Nothing was removed: 82
+The committed bound package now passes **96/96**, and the pending/forward-binding
+and absorbed-history states remain fixture-proved inside that same run. Nothing was removed: 82
 self-check worlds run on every invocation and `selfCheck` reports 0 failures.
 
 **What it cost.** The two local tiers, re-measured here — and the unit tier
@@ -231,10 +271,11 @@ acts are independent and only one of them is evidence: re-freezing changed what
 the package is _about_, and a **separate** hosted run — not this section — is
 what made the package able to say anything about it.
 
-**The rule, and the single hole it cannot close.** Every commit in
-`git log 7b1252ed..HEAD` that touches an executable path — anything outside
-`docs/` that is not `*.md` — must appear in `closure-candidate.json` by its full
-40-character id, and the gate computes that range and refuses an unnamed one. A
+**The rule, and the single hole it cannot close.** Every commit in the computed
+`git log <head under test> --not 7b1252ed <historical base>` range that touches
+an executable path — anything outside `docs/` that is not `*.md` — must appear
+in `closure-candidate.json` by its full 40-character id, and the gate refuses an
+unnamed one. A
 **documentation-only** successor may go unnamed, and the gate **prints** the ones
 that did. The reason is arithmetic, not policy: a commit cannot write its own id
 into a file it contains, so "the recorded list is exactly `git log`" is not a
@@ -803,18 +844,18 @@ put that to the test and it failed in the two ways it was built to prevent:
 Well-formedness is not existence, and two documents agreeing is not evidence
 about a repository. What the gate now computes, on every invocation:
 
-| Binding                  | How it is established                                                                                                                                                                                                                                                                                                                                                                    |
-| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| the candidate **exists** | `git cat-file -e 7b1252ed^{commit}`                                                                                                                                                                                                                                                                                                                                                      |
-| its **tree**             | `git rev-parse 7b1252ed^{tree}` must equal the recorded `1ef831d2ecfcf94d07b73857b7448c3b424faca3`                                                                                                                                                                                                                                                                                       |
-| the **base branch**      | `git rev-parse --verify refs/remotes/origin/develop^{commit}`, tried before `refs/heads/develop` and the bare name, and RECOVERED from the merge ref's own base-side parent when no ref resolves. A base that can be found neither way makes the successor set UNKNOWN and the gate fails **closed**                                                                                     |
-| the **head under test**  | `git rev-list --parents -n 1 HEAD`. Ordinarily HEAD itself. A two-parent merge is unwrapped only after tri-state ancestry, exact-base/first-parent-line identification where both parents carry the candidate, and a successful empty combined diff. Ambiguous ancestry, a stale base that identifies no parent, or any refused Git command is UNKNOWN and fails closed                  |
-| its **ancestry**         | `git merge-base --is-ancestor 7b1252ed <head under test>`                                                                                                                                                                                                                                                                                                                                |
-| **product identity**     | `git diff --name-only 7b1252ed..<head under test> -- apps supabase` must be empty — computed, where the package used to assert it in a sentence                                                                                                                                                                                                                                          |
-| **successors**           | `git log <head under test> --not 7b1252ed <historical base>`, every executable commit of which must be named by id; documentation-only ones are printed. Five executable successors are named. On a protected merge the historical base comes from the merge topology rather than moving `origin/develop`, so genuine successors survive subtraction                                     |
-| **local tier figures**   | `git show <ledger commit>:…/local-run-ledger.json`, matched field by field, plus the measured head either executable-identical to the candidate or a named successor whose drift is declared path by path and compared against `git diff`                                                                                                                                                |
-| **hosted tier figures**  | not computable here, so required to be fetchable: run id, job id, head sha, artefact. A head that is not the candidate must declare which of the two it is — an **ancestor**, superseded, listed in `pendingHostedBindings`; or a **descendant** whose `apps/**` and `supabase/**` `git diff` computes to be identical to the candidate's — and must be a commit `git cat-file` resolves |
-| **documented claims**    | anchored sentences measured against the tree, and `PROTECTED_REPROOF` citations resolved into the files they name                                                                                                                                                                                                                                                                        |
+| Binding                  | How it is established                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| the candidate **exists** | `git cat-file -e 7b1252ed^{commit}`                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| its **tree**             | `git rev-parse 7b1252ed^{tree}` must equal the recorded `1ef831d2ecfcf94d07b73857b7448c3b424faca3`                                                                                                                                                                                                                                                                                                                                                               |
+| the **base branch**      | `git rev-parse --verify refs/remotes/origin/develop^{commit}`, tried before `refs/heads/develop` and the bare name, and RECOVERED from the merge ref's own base-side parent when no ref resolves. A base that can be found neither way makes the successor set UNKNOWN and the gate fails **closed**                                                                                                                                                             |
+| the **head under test**  | `git rev-list --parents -n 1 HEAD`. Ordinarily HEAD itself. A two-parent merge is unwrapped only after tri-state ancestry, exact-base/first-parent-line identification where both parents carry the candidate, and a successful empty combined diff. Ambiguous ancestry, a stale base that identifies no parent, or any refused Git command is UNKNOWN and fails closed                                                                                          |
+| its **ancestry**         | `git merge-base --is-ancestor 7b1252ed <head under test>`                                                                                                                                                                                                                                                                                                                                                                                                        |
+| **product identity**     | `git diff --name-only 7b1252ed..<head under test> -- apps supabase` must be empty — computed, where the package used to assert it in a sentence                                                                                                                                                                                                                                                                                                                  |
+| **successors**           | `git log <head under test> --not 7b1252ed <historical base>`, every executable commit of which must be named by id; documentation-only ones are printed. Two executable successors are named on this branch; five earlier successors are protected-base ancestors retained separately as absorbed history. On a protected merge the historical base comes from the merge topology rather than moving `origin/develop`, so genuine successors survive subtraction |
+| **local tier figures**   | `git show <ledger commit>:…/local-run-ledger.json`, matched field by field, plus the measured head either executable-identical to the candidate or a named successor whose drift is declared path by path and compared against `git diff`                                                                                                                                                                                                                        |
+| **hosted tier figures**  | not computable here, so required to be fetchable: run id, job id, head sha, artefact. A head that is not the candidate must declare which of the two it is — an **ancestor**, superseded, listed in `pendingHostedBindings`; or a **descendant** whose `apps/**` and `supabase/**` `git diff` computes to be identical to the candidate's — and must be a commit `git cat-file` resolves                                                                         |
+| **documented claims**    | anchored sentences measured against the tree, and `PROTECTED_REPROOF` citations resolved into the files they name                                                                                                                                                                                                                                                                                                                                                |
 
 ### The eight rules, each of which can be made to fail
 
@@ -853,7 +894,7 @@ always returns false.
 
 #### The property that makes a candidate bindable at all
 
-**`tests/ci/p1-28-evidence-manifest.test.ts` passes 94/94 with this package
+**`tests/ci/p1-28-evidence-manifest.test.ts` passes 96/96 with this package
 BOUND, while pending and forward-binding worlds are constructed and proved in
 that same run.**
 

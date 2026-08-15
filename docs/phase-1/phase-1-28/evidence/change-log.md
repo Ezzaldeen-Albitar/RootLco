@@ -26,6 +26,38 @@ a later reader needs is why the product is shaped this way.
 
 ---
 
+## Protected CodeQL policy remediation (`3187f18c`–`a2095925`, PR pending)
+
+The protected reproof after PR #229 exposed the pre-existing repository-wide
+`js/http-to-file-access` finding in
+`scripts/dev/owner-acceptance/provision-acceptance-fixtures.mjs`: loopback API
+response objects were serialized into `.local/acceptance-fixtures.json`. The
+path is local and git-ignored, but that does not make response bytes trusted, and
+the CodeQL ceiling remains **0** rather than being raised.
+
+`3187f18c` turns both the API boundary and the file boundary into exact
+allow-lists. UUIDs are rebuilt from a local hexadecimal alphabet, catalogue and
+party labels come from repository constants, malformed pages and ambiguous or
+mismatched identities fail closed, newly created customer and vehicle records
+are re-read before their ids are accepted, and the unused response-derived
+release count is no longer persisted. Fifteen focused tests cover both existing
+and created resources, legacy prospect reconciliation, uppercase-equivalent
+relationship ids, malformed pages, substitution attempts and the exact manifest
+shape. This is local acceptance/security tooling only; it changes no path under
+`apps/**` or `supabase/**`, makes no Owner decision and does not start P1-29.
+
+`a2095925` then repairs the seal bootstrap exposed by beginning this remediation
+from protected `develop`: the valid `eeba15d7` measurement head is now base
+ancestry rather than a current successor. The seal retains such heads only in a
+separate `absorbedSuccessors` set whose entries Git must prove lie between the
+candidate and resolved base and remain product-identical. Absorbed history can
+preserve a pinned measurement, but it cannot satisfy current-branch successor
+coverage. Two real scratch worlds take the seal suite from 94 to 96 cases.
+Both local tiers were then re-recorded at that exact executable head in P1-27
+ledger commit `6ea6bfdc`: unit 2592/2592 over 99 files and web 2726/2726 over
+98 files, with 0 failures. The bound P1-28 tier pair remains unchanged until a
+matching hosted run exists.
+
 ## Post-merge QA-005 seal remediation (`50a86014`–`eeba15d7`, PR #229)
 
 PR #226 merged the reviewed P1-28 tree into protected `develop`, after which
