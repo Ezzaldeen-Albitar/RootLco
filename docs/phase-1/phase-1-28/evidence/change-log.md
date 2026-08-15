@@ -55,8 +55,8 @@ preserve a pinned measurement, but it cannot satisfy current-branch successor
 coverage. Two real scratch worlds take the seal suite from 94 to 96 cases.
 Both local tiers were then re-recorded at that exact executable head in P1-27
 ledger commit `6ea6bfdc`: unit 2592/2592 over 99 files and web 2726/2726 over
-98 files, with 0 failures. The bound P1-28 tier pair remains unchanged until a
-matching hosted run exists.
+98 files, with 0 failures. That observation was later superseded by the
+strict-type correction below before a matching hosted run existed.
 
 The first exact-head CI run for PR #230 (`31884032641`) exposed a strict-type
 defect in the new boundary suite rather than a runtime fixture defect. At
@@ -68,8 +68,13 @@ runtime fixture behavior, product path or database path changes.
 Both authoritative local tiers were then re-recorded at `ea045d88` and committed
 in P1-27 ledger commit `2e0f2191`: unit 2592/2592 over 99 files and web 2726/2726
 over 98 files, with 0 failures. This replaces the earlier `a2095925` local
-observation; the package moves the paired local/hosted tier figures only when a
-matching hosted run for the current executable tree exists.
+observation. Exact-head PR CI run `31885987461` at `1a186a7b` then reproduced
+unit 2592/2592 over 99 files and web 2726/2726 over 98 files, while backend
+2004/2004, database 1647/1647 and authenticated browser 366 passed / 4 skipped
+also finished with 0 failures. Both local/hosted tier halves are now bound to
+that observation; JavaScript/TypeScript CodeQL analyses `1623406974` and
+`1623403842` returned 0 results, the repository-wide open-alert query returned
+0, hosted clean room passed, and `ci-gate` concluded success.
 
 ## Post-merge QA-005 seal remediation (`50a86014`–`eeba15d7`, PR #229)
 

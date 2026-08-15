@@ -3,7 +3,7 @@
   "what": "The machine-readable half of the P1-28 closing package. It names ONE commit as the phase's code candidate and records every measurement taken against it, with the provenance of each. docs/phase-1/phase-1-28/evidence/closure-evidence.md is the prose half and must state the same candidate; scripts/ci/build-p1-28-evidence-manifest.mjs refuses a disagreement between the two.",
   "why": "P1-27 shipped a closing page that pinned a head 47 commits behind the tree it described, and it went on reading like evidence because nothing compared the claim with the repository. A closing value that names no head is not a measurement of anything. Every figure below therefore carries the head it was taken at and the artefact it came from.",
   "howToCheck": "npm run validate:p1-28-evidence",
-  "whatThisIsNot": "This is not a tamper-proof seal. The digests in evidence-manifest.json remove SILENT revision, not revision. It is ALSO not an Owner acceptance and not a closure record: the phase is OPEN and `OWNER ACCEPTANCE` has neither been asked for nor returned. What it now IS, which it was not until this revision, is a package whose hosted half has been taken: nine product bindings cite runs 31783658759 and 31783658604 at 81cbd44bae5f8f64091416019458b3d2b514503e, while the unit and web bindings cite exact remediation run 31877658859 at b12b9f0ff527d6b782cb47bfdd91996d1797499f so their 2575 and 2726 figures agree with the local observation at eeba15d7. Both run heads descend from the candidate, their apps/** and supabase/** are COMPUTED byte-identical to it, and each binding says so with `describesProductIdenticalSuccessor` rather than being restated as though it had been taken at the candidate itself. `pendingHostedBindings.bindings` is EMPTY, and the gate derives that set from the documents’ own `headSha` fields, so the emptiness is computed rather than declared. The two superseded citations this package has carried, 55b932cb and 38afa5c2, are kept in `supersededObservations`.",
+  "whatThisIsNot": "This is not a tamper-proof seal. The digests in evidence-manifest.json remove SILENT revision, not revision. It is ALSO not an Owner acceptance and not a closure record: the phase is OPEN and `OWNER ACCEPTANCE` has neither been asked for nor returned. What it now IS is a package whose current remediation half has been taken: nine bindings, including all five tiers, CodeQL, dependency security, browser-by-project and the database reproof, cite exact-head PR CI run 31885987461 at 1a186a7bcb7d0b97bb771753dacb584535692455. The unit and web figures agree with the authoritative local observation at ea045d88 pinned by ledger commit 2e0f2191. The earlier aggregate hostedCi and production-build records remain fetchable at product-identical 81cbd44b because the exact remediation run legitimately skipped those change-classified build jobs. Every cited head descends from the candidate, its apps/** and supabase/** are COMPUTED byte-identical to it, and each binding says so with `describesProductIdenticalSuccessor`. `pendingHostedBindings.bindings` is EMPTY by derivation. The two superseded citations this package has carried, 55b932cb and 38afa5c2, are kept in `supersededObservations`.",
   "candidate": {
     "FINAL_CODE_SHA": "7b1252edebb5d7f48451213c71ab832cb44e46b5",
     "FINAL_CODE_TREE": "1ef831d2ecfcf94d07b73857b7448c3b424faca3",
@@ -122,7 +122,7 @@
       "what": "Rebuilds every API-returned UUID from a fixed local alphabet; writes only repository-defined fixture labels and exact allow-listed fields; refuses malformed pages, ambiguous customer identity, mismatched vehicle identity and invalid relationships; re-reads newly created customer and vehicle records before binding their ids; and removes the unused response-derived release count from the manifest.",
       "why": "Protected CodeQL policy found js/http-to-file-access at the local fixture writer: network response objects flowed into JSON.stringify and then writeFileSync. The repository ceiling is zero, so the response boundary is canonicalized rather than dismissed or added to the ceiling. Fifteen focused cases prove existing and created catalogues, legacy prospect reconciliation, exact customer and vehicle identity, canonical-equivalent links, malformed pages and the exact manifest allow-list.",
       "productIdentity": "`git diff --name-only 7b1252edebb5d7f48451213c71ab832cb44e46b5..3187f18c82a9b3113b876ec035c9a2324117ee84 -- apps supabase` returns nothing. The successor changes two scripts/dev/owner-acceptance modules and one tests/ci suite, not product code or database schema.",
-      "measurementHead": "This was the first executable head of the current remediation. The local tiers were re-run at the later a2095925 seal head so the measurement includes both executable successors. Until a matching hosted run exists, the currently bound local/hosted pair remains pinned at eeba15d7/b12b9f0f; the newer 2592/99 unit and 2726/98 web observation is recorded separately in P1-27 ledger commit 6ea6bfdcb4f6a867ebc7190740fda0ce5b521474."
+      "measurementHead": "This was the first executable head of the current remediation. The local tiers were first re-run at the later a2095925 seal head, then superseded and re-run at ea045d88 after the strict-type test correction. The final 2592/99 unit and 2726/98 web observation is pinned by P1-27 ledger commit 2e0f2191db4c118e766e9ca4b8ffff981b63d7c6 and matched by exact-head hosted run 31885987461."
     },
     {
       "commit": "a2095925f13e11f7fdbc04264db69ecf88939568",
@@ -138,38 +138,41 @@
       "what": "Types the catalogue result as a string-keyed record before hostile-field assertions and preserves the optional RequestInit guard when parsing mocked POST bodies. Test behavior, case count and runtime fixture behavior are unchanged.",
       "why": "Exact-head CI run 31884032641 reached the repository typecheck and rejected four indexes on an inferred empty object plus two direct reads from an optional RequestInit. The focused boundary suite still passes 15/15; this successor makes the test express the narrowing that its runtime guards already perform.",
       "productIdentity": "`git diff --name-only 7b1252edebb5d7f48451213c71ab832cb44e46b5..ea045d88fd88843c82c8ecd7273b0772f65417f6 -- apps supabase` returns nothing. Relative to a2095925 it changes only tests/ci/owner-acceptance-fixtures.test.ts.",
-      "measurementHead": "This is the latest executable head. Both authoritative local tiers were re-run here and committed in P1-27 ledger commit 2e0f2191db4c118e766e9ca4b8ffff981b63d7c6: unit 2592/2592 over 99 files and web 2726/2726 over 98 files, with 0 failures and no dirty executable paths. Until a matching hosted run exists, the bound local/hosted pair remains the honest eeba15d7/b12b9f0f observation; both halves move together after hosted CI measures this executable tree."
+      "measurementHead": "This is the latest executable head. Both authoritative local tiers were re-run here and committed in P1-27 ledger commit 2e0f2191db4c118e766e9ca4b8ffff981b63d7c6: unit 2592/2592 over 99 files and web 2726/2726 over 98 files, with 0 failures and no dirty executable paths. Exact-head PR CI run 31885987461 then reproduced both figures at 1a186a7bcb7d0b97bb771753dacb584535692455, so both halves are now bound together."
     }
   ],
-  "howTierFiguresAreChecked": "Four obligations, because there are four kinds of claim. ARITHMETIC: `passed + failed + skipped` must equal the declared total. LOCAL: figures equal the P1-27 run ledger read out of Git at `localLedger.atCommit`. MEASUREMENT HEAD: both local tiers name successor eeba15d70e355c3a9e66dbc5d5053e8e92966d72, whose three declared non-product drift paths equal Git's path set, and are pinned to ledger commit 9c173ff4eff3dc516b9d9778527ac98649582ebe. HOSTED: claims remain fetchable attestations at their recorded run heads; a non-candidate head must explicitly be a superseded ancestor or a product-identical descendant, and Git refusal is UNKNOWN rather than empty.",
+  "howTierFiguresAreChecked": "Four obligations, because there are four kinds of claim. ARITHMETIC: `passed + failed + skipped` must equal the declared total. LOCAL: figures equal the P1-27 run ledger read out of Git at `localLedger.atCommit`. MEASUREMENT HEAD: both local tiers name successor ea045d88fd88843c82c8ecd7273b0772f65417f6, whose six declared non-product drift paths equal Git's path set, and are pinned to ledger commit 2e0f2191db4c118e766e9ca4b8ffff981b63d7c6. HOSTED: claims remain fetchable attestations at their recorded run heads; a non-candidate head must explicitly be a superseded ancestor or a product-identical descendant, and Git refusal is UNKNOWN rather than empty.",
   "tiers": {
     "unit": {
       "label": "root unit and foundation",
-      "tests": 2575,
-      "passed": 2575,
+      "tests": 2592,
+      "passed": 2592,
       "failed": 0,
       "skipped": 0,
-      "files": 98,
-      "measuredAtCommit": "eeba15d70e355c3a9e66dbc5d5053e8e92966d72",
+      "files": 99,
+      "measuredAtCommit": "ea045d88fd88843c82c8ecd7273b0772f65417f6",
       "provenance": "LOCAL_AND_HOSTED_AGREE",
       "localLedger": {
         "path": "docs/phase-1/phase-1-27/evidence/local-run-ledger.json",
         "tier": "unit",
-        "atCommit": "9c173ff4eff3dc516b9d9778527ac98649582ebe",
-        "howChecked": "`git show 9c173ff4eff3dc516b9d9778527ac98649582ebe:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD when this measurement was committed, not as it stands now. Pinned to a commit because the ledger MOVES: `check-p1-27-closing-values.mjs --record` rewrites it at whatever head it was last taken at, so a check against the working copy would go red on the next unrelated re-record and would then be relaxed rather than fixed."
+        "atCommit": "2e0f2191db4c118e766e9ca4b8ffff981b63d7c6",
+        "howChecked": "`git show 2e0f2191db4c118e766e9ca4b8ffff981b63d7c6:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD when this measurement was committed, not as it stands now. Pinned to a commit because the ledger MOVES: `check-p1-27-closing-values.mjs --record` rewrites it at whatever head it was last taken at, so a check against the working copy would go red on the next unrelated re-record and would then be relaxed rather than fixed."
       },
       "hostedAttestation": {
-        "runId": 31877658859,
-        "jobId": 94995683335,
-        "artefact": "evidence-unit-coverage / test-totals-unit.json (artefact 9245183246)",
-        "headSha": "b12b9f0ff527d6b782cb47bfdd91996d1797499f",
+        "runId": 31885987461,
+        "jobId": 95015291732,
+        "artefact": "evidence-unit-coverage / test-totals-unit.json (artefact 9247278760)",
+        "headSha": "1a186a7bcb7d0b97bb771753dacb584535692455",
         "describesProductIdenticalSuccessor": true,
-        "whyThisHead": "The seal’s own record cannot live inside the commit it seals, so hosted CI necessarily runs at a later head. `b12b9f0f` descends from the candidate and `git diff --name-only 7b1252ed..b12b9f0f -- apps supabase` is EMPTY. It also has the exact executable tree measured locally at `eeba15d7`: the commits between them record the run ledger and this package under docs/**. The gate recomputes candidate descent and product identity on every invocation, and a diff Git refuses to take counts as UNKNOWN rather than as empty."
+        "whyThisHead": "The seal’s own record cannot live inside the commit it seals, so hosted CI necessarily runs at a later head. `1a186a7b` descends from the candidate and `git diff --name-only 7b1252ed..1a186a7b -- apps supabase` is EMPTY. It contains the executable measurement head `ea045d88`; the commits after that head only record the run ledger and this package under docs/**. The gate recomputes candidate descent and product identity on every invocation, and a diff Git refuses to take counts as UNKNOWN rather than as empty."
       },
-      "note": "BOTH HALVES TAKEN, and they agree. The LOCAL half was measured at named successor eeba15d7 and COMPUTED against the run ledger at 9c173ff4. The HOSTED half is run 31877658859 job 94995683335 at b12b9f0f; its `test-totals-unit.json` reports total 2575, executed 2575, passed 2575, failed 0, pending 0 and todo 0 over 98 files, with an empty `failures` array. The two heads have the same executable tree: only the ledger-recording and package-recording documentation commits lie between them. Suite count is deliberately NOT recorded as a tier figure: the run ledger carries no suite count, so nothing here could check it.",
+      "note": "BOTH HALVES TAKEN, and they agree. The LOCAL half was measured at named successor ea045d88 and COMPUTED against the run ledger at 2e0f2191. The HOSTED half is run 31885987461 job 95015291732 at 1a186a7b; its `test-totals-unit.json` reports total 2592, executed 2592, passed 2592, failed 0, pending 0 and todo 0 over 99 files, with an empty `failures` array. The two heads have the same executable tree: only the ledger-recording and package-recording documentation commits lie between them. Suite count is deliberately NOT recorded as a tier figure: the run ledger carries no suite count, so nothing here could check it.",
       "measurementDrift": [
         ".github/ci-baselines/phase-ownership-profiles.json",
         "scripts/ci/build-p1-28-evidence-manifest.mjs",
+        "scripts/dev/owner-acceptance/acceptance-fixtures.mjs",
+        "scripts/dev/owner-acceptance/provision-acceptance-fixtures.mjs",
+        "tests/ci/owner-acceptance-fixtures.test.ts",
         "tests/ci/p1-28-evidence-manifest.test.ts"
       ]
     },
@@ -180,26 +183,29 @@
       "failed": 0,
       "skipped": 0,
       "files": 98,
-      "measuredAtCommit": "eeba15d70e355c3a9e66dbc5d5053e8e92966d72",
+      "measuredAtCommit": "ea045d88fd88843c82c8ecd7273b0772f65417f6",
       "provenance": "LOCAL_AND_HOSTED_AGREE",
       "localLedger": {
         "path": "docs/phase-1/phase-1-27/evidence/local-run-ledger.json",
         "tier": "web",
-        "atCommit": "9c173ff4eff3dc516b9d9778527ac98649582ebe",
-        "howChecked": "`git show 9c173ff4eff3dc516b9d9778527ac98649582ebe:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD when this measurement was committed, not as it stands now. Pinned to a commit because the ledger MOVES: `check-p1-27-closing-values.mjs --record` rewrites it at whatever head it was last taken at, so a check against the working copy would go red on the next unrelated re-record and would then be relaxed rather than fixed."
+        "atCommit": "2e0f2191db4c118e766e9ca4b8ffff981b63d7c6",
+        "howChecked": "`git show 2e0f2191db4c118e766e9ca4b8ffff981b63d7c6:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD when this measurement was committed, not as it stands now. Pinned to a commit because the ledger MOVES: `check-p1-27-closing-values.mjs --record` rewrites it at whatever head it was last taken at, so a check against the working copy would go red on the next unrelated re-record and would then be relaxed rather than fixed."
       },
       "hostedAttestation": {
-        "runId": 31877658859,
-        "jobId": 94995683404,
-        "artefact": "evidence-web-quality / test-totals-web.json (artefact 9245223241)",
-        "headSha": "b12b9f0ff527d6b782cb47bfdd91996d1797499f",
+        "runId": 31885987461,
+        "jobId": 95015291673,
+        "artefact": "evidence-web-quality / test-totals-web.json (artefact 9247315825)",
+        "headSha": "1a186a7bcb7d0b97bb771753dacb584535692455",
         "describesProductIdenticalSuccessor": true,
-        "whyThisHead": "The same computed descent, empty product diff and executable-tree identity as the unit tier — b12b9f0f contains candidate 7b1252ed and local measurement head eeba15d7, differing from the latter only under docs/**."
+        "whyThisHead": "The same computed descent, empty product diff and executable-tree identity as the unit tier — 1a186a7b contains candidate 7b1252ed and local measurement head ea045d88, differing from the latter only under docs/**."
       },
-      "note": "BOTH HALVES TAKEN, and this tier is measured THREE times. The LOCAL half was measured at eeba15d7. The HOSTED half is run 31877658859 job 94995683404 at b12b9f0f, reporting total 2726, passed 2726, failed 0 and pending 0 over 98 files. The hosted CLEAN ROOM (job 94995683364, artefact 9245335777) re-derived the same tier independently at the same head, from a fresh checkout and a fresh install, and reported the identical 2726 over 98 files in `clean-room-web-totals.json`. Two of the three runners share nothing with this workstation.",
+      "note": "BOTH HALVES TAKEN, and this tier is measured THREE times. The LOCAL half was measured at ea045d88. The HOSTED half is run 31885987461 job 95015291673 at 1a186a7b, reporting total 2726, passed 2726, failed 0 and pending 0 over 98 files. The hosted CLEAN ROOM (job 95015291709, artefact 9247462978) re-derived the same tier independently at the same head, from a fresh checkout and a fresh install, and reported the identical 2726 over 98 files in `clean-room-web-totals.json`. Two of the three runners share nothing with this workstation.",
       "measurementDrift": [
         ".github/ci-baselines/phase-ownership-profiles.json",
         "scripts/ci/build-p1-28-evidence-manifest.mjs",
+        "scripts/dev/owner-acceptance/acceptance-fixtures.mjs",
+        "scripts/dev/owner-acceptance/provision-acceptance-fixtures.mjs",
+        "tests/ci/owner-acceptance-fixtures.test.ts",
         "tests/ci/p1-28-evidence-manifest.test.ts"
       ]
     },
@@ -211,17 +217,17 @@
       "skipped": 0,
       "files": 86,
       "suites": 566,
-      "measuredAtCommit": "81cbd44bae5f8f64091416019458b3d2b514503e",
+      "measuredAtCommit": "1a186a7bcb7d0b97bb771753dacb584535692455",
       "provenance": "HOSTED_ARTEFACT_ATTESTED",
       "hostedAttestation": {
-        "runId": 31783658759,
-        "jobId": 94714715651,
-        "artefact": "evidence-integration-tests / test-totals-backend.json",
-        "headSha": "81cbd44bae5f8f64091416019458b3d2b514503e",
+        "runId": 31885987461,
+        "jobId": 95015291834,
+        "artefact": "evidence-integration-tests / test-totals-backend.json (artefact 9247326036)",
+        "headSha": "1a186a7bcb7d0b97bb771753dacb584535692455",
         "describesProductIdenticalSuccessor": true,
-        "whyThisHead": "The same computed descent and empty product diff. This tier’s suite lives under tests/backend/**, which is likewise byte-identical between the candidate and 81cbd44b."
+        "whyThisHead": "The same computed descent and empty product diff. This exact remediation run includes every current scripts/** and tests/** successor, while the product paths remain byte-identical to the candidate."
       },
-      "note": "MEASURED, and still not measurable HERE: this tier needs a running PostgreSQL with every migration applied, which this workstation does not host. That is why it carries no local half and never claims one. Run 31783658759 job 94714715651 at 81cbd44b reports total 2004, executed 2004, passed 2004, failed 0, pending 0, todo 0 over 86 files and 566 suites, with an empty `failures` array. The figures are unchanged from the two superseded runs, which is a finding rather than a copy: the candidate touches one file under tests/ci and no backend route."
+      "note": "MEASURED, and still not measurable HERE: this tier needs a running PostgreSQL with every migration applied, which this workstation does not host. That is why it carries no local half and never claims one. Exact remediation run 31885987461 job 95015291834 at 1a186a7b reports total 2004, executed 2004, passed 2004, failed 0, pending 0, todo 0 over 86 files and 566 suites, with an empty `failures` array."
     },
     "database": {
       "label": "database and RLS",
@@ -231,42 +237,42 @@
       "skipped": 0,
       "files": 139,
       "suites": 552,
-      "measuredAtCommit": "81cbd44bae5f8f64091416019458b3d2b514503e",
+      "measuredAtCommit": "1a186a7bcb7d0b97bb771753dacb584535692455",
       "provenance": "HOSTED_ARTEFACT_ATTESTED",
       "hostedAttestation": {
-        "runId": 31783658759,
-        "jobId": 94714715750,
-        "artefact": "evidence-security-matrix / test-totals-database.json",
-        "headSha": "81cbd44bae5f8f64091416019458b3d2b514503e",
+        "runId": 31885987461,
+        "jobId": 95015291738,
+        "artefact": "evidence-security-matrix / test-totals-database.json (artefact 9247300588)",
+        "headSha": "1a186a7bcb7d0b97bb771753dacb584535692455",
         "describesProductIdenticalSuccessor": true,
-        "whyThisHead": "The same computed descent and empty product diff. supabase/** in particular is byte-identical between the candidate and 81cbd44b, which is what makes the migrations, policies and RLS matrix this tier exercises the candidate’s."
+        "whyThisHead": "The same computed descent and empty product diff. supabase/** in particular is byte-identical between the candidate and 1a186a7b, which is what makes the migrations, policies and RLS matrix this tier exercises the candidate’s."
       },
-      "note": "MEASURED, and — as with the backend tier — not measurable on this workstation, which hosts no PostgreSQL. Run 31783658759 job 94714715750 at 81cbd44b reports total 1647, executed 1647, passed 1647, failed 0, pending 0, todo 0 over 139 files and 552 suites. This package previously argued that supabase/** was unchanged and DECLINED to convert that into a measurement; the inference is no longer needed."
+      "note": "MEASURED, and — as with the backend tier — not measurable on this workstation, which hosts no PostgreSQL. Exact remediation run 31885987461 job 95015291738 at 1a186a7b reports total 1647, executed 1647, passed 1647, failed 0, pending 0, todo 0 over 139 files and 552 suites."
     },
     "browser": {
       "label": "authenticated browser, against the running application, the running API and the real database under RLS",
       "planned": 370,
-      "passed": 365,
+      "passed": 366,
       "failed": 0,
-      "skipped": 5,
-      "measuredAtCommit": "81cbd44bae5f8f64091416019458b3d2b514503e",
+      "skipped": 4,
+      "measuredAtCommit": "1a186a7bcb7d0b97bb771753dacb584535692455",
       "provenance": "HOSTED_ARTEFACT_ATTESTED",
       "hostedAttestation": {
-        "runId": 31783658759,
-        "jobId": 94714715648,
-        "artefact": "evidence-authenticated-browser / apps/web/playwright-report.json",
-        "headSha": "81cbd44bae5f8f64091416019458b3d2b514503e",
+        "runId": 31885987461,
+        "jobId": 95015291803,
+        "artefact": "evidence-authenticated-browser / apps/web/playwright-report.json (artefact 9247400440)",
+        "headSha": "1a186a7bcb7d0b97bb771753dacb584535692455",
         "describesProductIdenticalSuccessor": true,
         "whyThisHead": "The same computed descent and empty product diff. That matters most here: this tier drives the rendered application, so a run at a head whose apps/** differed would be a measurement of different screens."
       },
-      "note": "MEASURED. Run 31783658759 job 94714715648 at 81cbd44b: `playwright-report.json` `stats` reports expected 365, skipped 5, unexpected 0, flaky 0, over 370 planned. THE SKIP COUNT MOVED, 4 to 5, AND IT IS NOT A CODE CHANGE — the candidate touches nothing under apps/**. The extra skip is `a dialog traps focus and returns it, signed in` in authenticated/accessibility.spec.ts under authenticated-en, and it is a CONDITIONAL skip taken inside the test body: the case opens /en/administration/users, counts the dialog openers, and calls `test.skip(true, \"this screen exposes no dialog opener for the current permission set\")` when it finds none. Its condition is about the acceptance workspace the run provisioned, not about the tree, so it can differ run to run at an identical commit — and it did, between 55b932cb and here. It is recorded rather than smoothed over, because a moving skip count is exactly the shape that hides a case which measured nothing. NO P1-28 CASE IS SKIPPED, which is checked rather than restated: all 141 entries owned by authenticated/appointments-and-receptions.spec.ts carry status `expected`. Per project across the whole tier: authenticated-en 152 planned / 149 expected / 3 skipped, authenticated-ar 152 / 150 / 2, authenticated-tablet 65 / 65 / 0, plus the single auth-setup entry."
+      "note": "MEASURED. Exact remediation run 31885987461 job 95015291803 at 1a186a7b: `playwright-report.json` `stats` reports expected 366, skipped 4, unexpected 0, flaky 0, over 370 planned. The workspace-dependent skip count returned from 5 to 4; it is recorded rather than smoothed over. NO P1-28 CASE IS SKIPPED, checked from the run artefact: `authenticated/appointments-and-receptions.spec.ts` executed all 141 entries, 47 in each of authenticated-en, authenticated-ar and authenticated-tablet."
     }
   },
   "browserByProject": {
     "spec": "authenticated/appointments-and-receptions.spec.ts",
-    "runId": 31783658759,
-    "jobId": 94714715648,
-    "headSha": "81cbd44bae5f8f64091416019458b3d2b514503e",
+    "runId": 31885987461,
+    "jobId": 95015291803,
+    "headSha": "1a186a7bcb7d0b97bb771753dacb584535692455",
     "jobConclusion": "success",
     "total": 141,
     "projects": {
@@ -290,9 +296,9 @@
       }
     },
     "howTaken": "Read per test entry out of the run's own playwright-report.json, grouped by `projectName` and the owning spec file. NOT inferred from a keyword count and not copied from a local run.",
-    "note": "AT 81cbd44b, a documentation-only descendant whose product the gate computes to be identical to the candidate’s. Read per test entry out of THAT run’s playwright-report.json, walking the suite tree and grouping by `projectName` and the owning spec file — not inferred from a keyword count and not copied from a local run. Every one of the 141 entries carries status `expected`; none is `skipped`, `unexpected` or `flaky`, which is why the extra skip recorded on the browser tier is provably not one of this phase’s. The tablet project observes this phase at 1024x768 (apps/web/playwright.config.ts:254-260) and its testMatch at :255 names `(administration|appointments-and-receptions)`; that is a fact about the CONFIG. The 47 tablet cases are now a fact about a run at this product.",
+    "note": "AT 1a186a7b, the exact remediation evidence head. Read per test entry out of THAT run’s playwright-report.json, walking the suite tree and grouping by `projectName` and the owning spec file — not inferred from a keyword count and not copied from a local run. Every one of the 141 entries carries status `expected`; none is `skipped`, `unexpected` or `flaky`. The tablet project observes this phase at 1024x768 (apps/web/playwright.config.ts:254-260), and all 47 tablet cases ran.",
     "describesProductIdenticalSuccessor": true,
-    "whyThisHead": "The seal’s own record cannot live inside the commit it seals, so hosted CI necessarily runs at a later head. `81cbd44b` is a DOCUMENTATION-ONLY descendant of the candidate: `git merge-base --is-ancestor 7b1252ed 81cbd44b` holds and `git diff --name-only 7b1252ed..81cbd44b -- apps supabase` is EMPTY, both recomputed by the gate on every invocation, and a diff git refuses to take counts as UNKNOWN rather than as empty."
+    "whyThisHead": "The seal’s own record cannot live inside the commit it seals, so hosted CI necessarily runs at a later head. `1a186a7b` contains all three current executable successors, descends from the candidate, and `git diff --name-only 7b1252ed..1a186a7b -- apps supabase` is EMPTY; the gate recomputes those facts and treats a refused diff as UNKNOWN."
   },
   "hostedCi": {
     "runId": 31783658759,
@@ -440,17 +446,17 @@
     "whyThisHead": "The seal’s own record cannot live inside the commit it seals, so hosted CI necessarily runs at a later head. `81cbd44b` is a DOCUMENTATION-ONLY descendant of the candidate: `git merge-base --is-ancestor 7b1252ed 81cbd44b` holds and `git diff --name-only 7b1252ed..81cbd44b -- apps supabase` is EMPTY, both recomputed by the gate on every invocation, and a diff git refuses to take counts as UNKNOWN rather than as empty."
   },
   "codeql": {
-    "headSha": "81cbd44bae5f8f64091416019458b3d2b514503e",
-    "ref": "refs/pull/226/head",
+    "headSha": "1a186a7bcb7d0b97bb771753dacb584535692455",
+    "ref": "refs/pull/230/head",
     "analyses": [
       {
-        "id": 1618296034,
+        "id": 1623406974,
         "language": "javascript-typescript",
         "rules": 201,
         "results": 0
       },
       {
-        "id": 1618288471,
+        "id": 1623403842,
         "language": "actions",
         "rules": 27,
         "results": 0
@@ -458,25 +464,25 @@
     ],
     "openAlertsRepositoryWide": 0,
     "whatThisDoesNotProve": "A CodeQL run on a pull request is DIFF-INFORMED. Two analyses at this head each returned 0 results over 201 and 27 rules, and the repository carries 0 open alerts on any analysed ref, but a pull-request analysis does not by itself establish the repository ceiling; only a run on a protected ref does. This is recorded as the pull-request result it is, and promoting it to a ceiling claim is exactly the error SEC-CODEQL-033 was closed to avoid.",
-    "howTaken": "GET /repos/{owner}/{repo}/code-scanning/analyses?ref=refs/pull/226/head, taking the two analyses whose own `commit_sha` IS this head rather than the two most recent; and GET /code-scanning/alerts?state=open, counted from the response.",
-    "whyThisMattersHere": "The candidate two commits back, 3c75f49a, existed BECAUSE of a CodeQL HIGH: `js/file-system-race` at scripts/ci/check-p1-28-traceability.mjs:330. Analysis 1618296034 is a javascript-typescript analysis at a head containing that fix and returns 0 results over the same 201 rules that reported it.",
+    "howTaken": "GET /repos/{owner}/{repo}/code-scanning/analyses?ref=refs/pull/230/head, taking the two analyses whose own `commit_sha` IS this head rather than the two most recent; and GET /code-scanning/alerts?state=open, counted from the response.",
+    "whyThisMattersHere": "This remediation exists because protected CodeQL reported js/http-to-file-access in the acceptance-fixture writer. Analysis 1623406974 runs at a head containing the canonicalization boundary and returns 0 results over 201 JavaScript/TypeScript rules; the repository-wide open-alert query also returns 0.",
     "describesProductIdenticalSuccessor": true,
-    "whyThisHead": "Both analyses ran at 81cbd44b, which descends from the candidate with an empty apps/** and supabase/** diff. CodeQL also reads scripts/** and tests/**, which are NOT under the product-identity rule — and 81cbd44b changes no file outside docs/, so nothing CodeQL reads differs between the two commits either."
+    "whyThisHead": "Both analyses ran at the exact remediation evidence head 1a186a7b, which contains the acceptance-fixture fix, its boundary suite and the strict-type correction. It descends from the candidate with an empty apps/** and supabase/** diff."
   },
   "dependencySecurity": {
-    "jobId": 94714715417,
+    "jobId": 95015291777,
     "productionVulnerabilities": 0,
     "developmentVulnerabilities": 0,
     "criticalHighModerateLow": 0,
     "dependenciesResolved": 830,
     "policyOk": true,
     "prohibitedLicences": 0,
-    "runId": 31783658759,
-    "headSha": "81cbd44bae5f8f64091416019458b3d2b514503e",
-    "artefact": "evidence-dependency-security / dependency-policy.json, audit-production.json, audit-full.json (artefact 9212651470)",
+    "runId": 31885987461,
+    "headSha": "1a186a7bcb7d0b97bb771753dacb584535692455",
+    "artefact": "evidence-dependency-security / dependency-policy.json, audit-production.json, audit-full.json (artefact 9247272005)",
     "note": "TAKEN, not inferred. `audit-production.json` and `audit-full.json` both report info 0, low 0, moderate 0, high 0, critical 0 over 830 resolved dependencies (prod 68, dev 706, optional 145), and `dependency-policy.json` reports ok true with 0 blocking advisories on either side, 0 waived, and no prohibited licence.",
     "describesProductIdenticalSuccessor": true,
-    "whyThisHead": "81cbd44b descends from the candidate and touches no file outside docs/, so package.json and package-lock.json — the only inputs this audit reads — are byte-identical to the candidate’s."
+    "whyThisHead": "1a186a7b is the exact remediation evidence head and package.json plus package-lock.json remain byte-identical to the candidate’s."
   },
   "productionBuild": {
     "jobId": 94714715555,
@@ -499,15 +505,15 @@
     "policies": 631,
     "rlsMatrixCells": 1356,
     "securityDefinerFunctions": 0,
-    "replayJobId": 94714715656,
-    "cleanRoomJobId": 94714715543,
+    "replayJobId": 95015291721,
+    "cleanRoomJobId": 95015291709,
     "note": "TAKEN, both halves. database-migration-replay applied all 120 migrations in the tree to an empty database (`migrationsInTree` 120, `migrationsApplied` 120, 0 failures) and recorded 242 tables, 516 functions, 631 policies, 543 triggers and 0 SECURITY DEFINER functions, with 7 populated tables — every one a structural catalogue (iam.permissions, inv.units_of_measure, sal.payment_methods and the four wo.* state/transition tables) and no business row, which is the standing no-fake-data policy holding. hosted-clean-room re-applied them at the exact SHA from a fresh checkout and re-derived the RLS matrix independently: 1356 cells over 113 tables in 7 schemas, ok true, 0 failures, 0 advisories, 0 SECURITY DEFINER functions. The two agree on the schema hash to the character — `schema-hash.txt` from the replay and both `schema-hash-before.txt` and `schema-hash-after.txt` from the clean room are all f6b4f023…, so the clean room’s own re-application changed nothing.",
-    "runId": 31783658759,
-    "headSha": "81cbd44bae5f8f64091416019458b3d2b514503e",
-    "artefact": "evidence-migration-replay / migration-replay.json, migration-post.json, schema-hash.txt (artefact 9212657862); evidence-hosted-clean-room / clean-room-rls.json, schema-hash-before.txt, schema-hash-after.txt (artefact 9213086044)",
+    "runId": 31885987461,
+    "headSha": "1a186a7bcb7d0b97bb771753dacb584535692455",
+    "artefact": "evidence-migration-replay / migration-replay.json, migration-post.json, schema-hash.txt (artefact 9247275006); evidence-hosted-clean-room / clean-room-rls.json, schema-hash-before.txt, schema-hash-after.txt (artefact 9247462978)",
     "schemaHash": "f6b4f023d9e6b1e7d823dac4e5550379202a216ab1ae1fe9e5a2826703061f79",
     "describesProductIdenticalSuccessor": true,
-    "whyThisHead": "supabase/** is byte-identical between the candidate and 81cbd44b — the same `git diff` the product-identity rule runs — and 81cbd44b changes no file outside docs/ at all."
+    "whyThisHead": "supabase/** is byte-identical between the candidate and the exact remediation evidence head 1a186a7b — the same `git diff` the product-identity rule runs."
   },
   "taskMatrix": {
     "source": "docs/phase-1/phase-1-28/task-matrix-verdicts.json",
@@ -559,11 +565,11 @@
     "rule": "The permanent Frontend closure rule from P1-26 onward: no Frontend phase closes without the Product Owner testing the running application in real installed Chrome and returning `OWNER ACCEPTANCE: PASS` verbatim. Silence is never Pass. Automated CI is necessary and is not sufficient.",
     "owner": "the Product Owner",
     "howToRun": "npm run acceptance:serve — a production build, never dev:all. A dev stack compiles route bundles lazily and the API authenticator is installed as a side effect of composing the IAM module, so an acceptance session on a dev stack reports product defects that do not exist.",
-    "note": "This package is the technical evidence an acceptance session rests on. It is NOT a closure record and does not close the phase. The AUTOMATED product half is complete: nine bindings remain bound to runs 31783658759 and 31783658604 at 81cbd44b, while the unit and web bindings are bound to exact remediation run 31877658859 at b12b9f0f; `pendingHostedBindings.bindings` is empty by derivation. THAT CHANGES NOTHING ABOUT THIS FIELD. Automated CI is necessary and is not sufficient; every mocked tier in this repository once passed a seam this phase shipped dead, and no automated tier observes the product the way the Owner will. The state is NOT REQUESTED, NOT RETURNED, and silence is never Pass."
+    "note": "This package is the technical evidence an acceptance session rests on. It is NOT a closure record and does not close the phase. The AUTOMATED product half is complete: nine bindings, including all five tiers and both CodeQL analyses, now cite exact remediation run 31885987461 at 1a186a7b; the earlier aggregate hostedCi and production-build bindings remain fetchable product-identical observations at 81cbd44b. `pendingHostedBindings.bindings` is empty by derivation. THAT CHANGES NOTHING ABOUT THIS FIELD. Automated CI is necessary and is not sufficient; every mocked tier in this repository once passed a seam this phase shipped dead, and no automated tier observes the product the way the Owner will. The state is NOT REQUESTED, NOT RETURNED, and silence is never Pass."
   },
   "pendingHostedBindings": {
     "what": "Every binding in this package that describes a head other than the candidate, listed by name. The gate DERIVES this set from the documents’ own `headSha` fields and refuses a difference in either direction, so a pending binding cannot go unlisted and a listed one cannot be decorative. IT IS EMPTY, and empty is a COMPUTED result rather than a claim: eleven bindings were listed here, hosted runs bound every one, and the derivation that would report a twelfth is unchanged and still runs on every invocation.",
-    "howItWasClosed": "Nine bindings cite runs 31783658759 (PR CI) and 31783658604 (CI) at 81cbd44bae5f8f64091416019458b3d2b514503e, plus the two CodeQL analyses at that head; the unit and web bindings cite exact remediation run 31877658859 at b12b9f0ff527d6b782cb47bfdd91996d1797499f. Each names its actual head, declares `describesProductIdenticalSuccessor`, and passes the four things the gate computes: the head is a commit this repository contains, it DESCENDS from the candidate, `git diff --name-only <candidate>..<head> -- apps supabase` is EMPTY, and a diff Git refuses to take counts as UNKNOWN rather than as empty.",
+    "howItWasClosed": "Nine bindings cite exact remediation run 31885987461 at 1a186a7bcb7d0b97bb771753dacb584535692455, including all five tier records and the two CodeQL analyses at that head. The aggregate hostedCi and production-build bindings retain their fetchable observation at 81cbd44bae5f8f64091416019458b3d2b514503e because the exact remediation workflow legitimately skipped the two change-classified build jobs. Each binding names its actual head, declares `describesProductIdenticalSuccessor`, and passes the four things the gate computes: the head is a commit this repository contains, it DESCENDS from the candidate, `git diff --name-only <candidate>..<head> -- apps supabase` is EMPTY, and a diff Git refuses to take counts as UNKNOWN rather than as empty.",
     "whyNotAnExactHeadRun": "Because there cannot be one, and pretending otherwise is what produced the reseal treadmill. The seal’s own machinery cannot live inside the commit it seals: recording a run’s result changes the tree, so a literal exact-head rule is stale the moment it is satisfied. Measured rather than argued: GET /commits/{sha}/check-runs returns `total_count: 0` for 7b1252ed, and returned 0 for 3c75f49a and for every other candidate this package has named. 81cbd44b is the DOCUMENTATION-ONLY commit that carries the previous freeze, and it changes no file outside `docs/` at all.",
     "whatIsStillRefused": "Unchanged, and worth stating because a rule that has just been satisfied is the easiest one to relax next time. Still refused: a run at a head the candidate SUPERSEDES wearing the forward marker (it must say `describesSupersededHead` and it stays pending); a run at a head this repository does not contain; a run at a descendant whose apps/** or supabase/** differs by even one path — in which case the candidate must be re-frozen there and the local tiers re-measured, exactly as this branch did at 38afa5c2, 6392ccb4, 34b3fca5, b5e9919b, 3c75f49a and 7b1252ed; and a product diff `git` refused to take being read as an empty one.",
     "bindings": []
