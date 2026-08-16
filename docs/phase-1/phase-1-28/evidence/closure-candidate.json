@@ -98,17 +98,17 @@
     "unit": {
       "label": "root unit and foundation",
       "tests": 2592,
-      "passed": 2585,
-      "failed": 7,
+      "passed": 2587,
+      "failed": 5,
       "skipped": 0,
       "files": 99,
-      "measuredAtCommit": "8b6e9e90e43a76cc7f0f3b28ffc4959e60a53305",
+      "measuredAtCommit": "e0bf83bd9e8f4b0f76968991c484f1f02bde5cb2",
       "provenance": "LOCAL_COMPUTED_HOSTED_PENDING",
       "localLedger": {
         "path": "docs/phase-1/phase-1-27/evidence/local-run-ledger.json",
         "tier": "unit",
-        "atCommit": "8356794db346f0fd0bcad54a2acfc87a2f3699f2",
-        "howChecked": "`git show 8356794db346f0fd0bcad54a2acfc87a2f3699f2:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD when this measurement was recorded, which is the commit that carries it. Reading the working copy instead would let an uncommitted edit vouch for itself."
+        "atCommit": "825c4f4a4f29c99dd36846e590936aca618982ef",
+        "howChecked": "`git show 825c4f4a4f29c99dd36846e590936aca618982ef:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD when this measurement was recorded."
       },
       "hostedAttestation": {
         "runId": 31885987461,
@@ -119,7 +119,7 @@
         "describesSupersededHead": true,
         "supersededBy": "The hosted run taken at a head that DESCENDS from candidate 526a3b39 — the pull request CI for branch `p1-28/od-025-policy-enforcement`. Until that run exists this figure describes an ancestor and is cited as such; it is replaced by re-citing the same fields (run id, job id, head, artefact) at the descending head, never by relaxing the rule that refused it."
       },
-      "note": "Measured AT the candidate. The working tree at measurement time differed from 526a3b39 only in documentation, so there is no executable drift to declare."
+      "note": "Measured at documentation-only successor e0bf83bd, which is executable-identical to the candidate — the commits between them carry only evidence records."
     },
     "web": {
       "label": "web component and DOM",
@@ -128,13 +128,13 @@
       "failed": 0,
       "skipped": 0,
       "files": 98,
-      "measuredAtCommit": "8b6e9e90e43a76cc7f0f3b28ffc4959e60a53305",
+      "measuredAtCommit": "e0bf83bd9e8f4b0f76968991c484f1f02bde5cb2",
       "provenance": "LOCAL_COMPUTED_HOSTED_PENDING",
       "localLedger": {
         "path": "docs/phase-1/phase-1-27/evidence/local-run-ledger.json",
         "tier": "web",
-        "atCommit": "8356794db346f0fd0bcad54a2acfc87a2f3699f2",
-        "howChecked": "`git show 8356794db346f0fd0bcad54a2acfc87a2f3699f2:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD when this measurement was recorded, which is the commit that carries it. Reading the working copy instead would let an uncommitted edit vouch for itself."
+        "atCommit": "825c4f4a4f29c99dd36846e590936aca618982ef",
+        "howChecked": "`git show 825c4f4a4f29c99dd36846e590936aca618982ef:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD when this measurement was recorded."
       },
       "hostedAttestation": {
         "runId": 31885987461,
@@ -145,7 +145,7 @@
         "describesSupersededHead": true,
         "supersededBy": "The hosted run taken at a head that DESCENDS from candidate 526a3b39 — the pull request CI for branch `p1-28/od-025-policy-enforcement`. Until that run exists this figure describes an ancestor and is cited as such; it is replaced by re-citing the same fields (run id, job id, head, artefact) at the descending head, never by relaxing the rule that refused it."
       },
-      "note": "Measured AT the candidate. The working tree at measurement time differed from 526a3b39 only in documentation, so there is no executable drift to declare."
+      "note": "Measured at documentation-only successor e0bf83bd, which is executable-identical to the candidate — the commits between them carry only evidence records."
     },
     "backend": {
       "label": "backend integration, against a real PostgreSQL",
