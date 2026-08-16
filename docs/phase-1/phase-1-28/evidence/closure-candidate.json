@@ -99,8 +99,8 @@
       "localLedger": {
         "path": "docs/phase-1/phase-1-27/evidence/local-run-ledger.json",
         "tier": "unit",
-        "atCommit": "2e0f2191db4c118e766e9ca4b8ffff981b63d7c6",
-        "howChecked": "`git show 2e0f2191db4c118e766e9ca4b8ffff981b63d7c6:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD when this measurement was committed, not as it stands now. Pinned to a commit because the ledger MOVES: `check-p1-27-closing-values.mjs --record` rewrites it at whatever head it was last taken at, so a check against the working copy would go red on the next unrelated re-record and would then be relaxed rather than fixed."
+        "atCommit": "8356794db346f0fd0bcad54a2acfc87a2f3699f2",
+        "howChecked": "`git show 8356794db346f0fd0bcad54a2acfc87a2f3699f2:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD when this measurement was recorded, which is the commit that carries it. Reading the working copy instead would let an uncommitted edit vouch for itself."
       },
       "hostedAttestation": {
         "runId": 31885987461,
@@ -126,8 +126,8 @@
       "localLedger": {
         "path": "docs/phase-1/phase-1-27/evidence/local-run-ledger.json",
         "tier": "web",
-        "atCommit": "2e0f2191db4c118e766e9ca4b8ffff981b63d7c6",
-        "howChecked": "`git show 2e0f2191db4c118e766e9ca4b8ffff981b63d7c6:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD when this measurement was committed, not as it stands now. Pinned to a commit because the ledger MOVES: `check-p1-27-closing-values.mjs --record` rewrites it at whatever head it was last taken at, so a check against the working copy would go red on the next unrelated re-record and would then be relaxed rather than fixed."
+        "atCommit": "8356794db346f0fd0bcad54a2acfc87a2f3699f2",
+        "howChecked": "`git show 8356794db346f0fd0bcad54a2acfc87a2f3699f2:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD when this measurement was recorded, which is the commit that carries it. Reading the working copy instead would let an uncommitted edit vouch for itself."
       },
       "hostedAttestation": {
         "runId": 31885987461,
