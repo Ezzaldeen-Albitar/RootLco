@@ -160,7 +160,7 @@ async function seedDocument(input: {
   if (state === 'accepted') {
     await admin.query(
       `INSERT INTO shared.file_scan_results
-         (tenant_id, version_id, scanner, scan_status, scanned_at, created_by)
+         (tenant_id, version_id, scanner_code, scan_status, scanned_at, created_by)
        VALUES ($1,$2,'harness','clean',now(),$3)`,
       [tenantId, versionId, USER_A]
     );
@@ -325,7 +325,7 @@ describe('FE-018 — a version that is not accepted can never become evidence', 
     });
 
     await admin.query(
-      `INSERT INTO shared.file_scan_results (tenant_id, version_id, scanner, scan_status, scanned_at, created_by)
+      `INSERT INTO shared.file_scan_results (tenant_id, version_id, scanner_code, scan_status, scanned_at, created_by)
        VALUES ($1,$2,'harness','clean',now(),$3)`,
       [TENANT_A, doc.versionId, USER_A]
     );
