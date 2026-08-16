@@ -172,6 +172,13 @@ const readRepo = (relative: string): string => readFileSync(join(ROOT, relative)
 
 const CLEAN_ROOM = readRepo(`${PHASE}/clean-room-evidence.md`);
 const CI_EVIDENCE = readRepo(`${PHASE}/ci-evidence.md`);
+/**
+ * The CURRENT record. `clean-room-evidence.md` is not one: its measurement table
+ * sits under "Hosted corroboration at the head this record SUPERSEDES" and says
+ * in its own prose that both runs were taken "at the head named in the banner
+ * above — NOT at the current tree".
+ */
+const CLOSURE_RECORD = readRepo(`${PHASE}/closure-record.md`);
 
 /** stderr is piped rather than inherited so a deliberate miss is not noise. */
 const git = (...args: string[]): string =>
@@ -710,18 +717,70 @@ describe('P1-27-QA-005 — the two evidence pages agree with each other and the 
      * same schema. `a677eb05…` is the hash this one REPLACED, and the note in
      * that baseline still says so, which is exactly the kind of near-miss a
      * substring comparison would have accepted.
+     *
+     * ## Which record, and why it is not the clean room
+     *
+     * This case read `clean-room-evidence.md`, and passed for as long as the
+     * baseline had not moved since the head that page describes. That was a
+     * COINCIDENCE, not a rule: the clean-room table sits under "Hosted
+     * corroboration at the head this record SUPERSEDES" and states in its own
+     * prose that both runs were taken "at the head named in the banner above —
+     * NOT at the current tree". The sibling case below independently requires
+     * that same row to equal the migration count that superseded head really
+     * carried.
+     *
+     * So the two cases were pointed at one row with opposite meanings, and the
+     * P1-OD-025 evidence foundation is what separated them: raising
+     * `migrationCount` to 121 made a historical measurement and a current
+     * baseline disagree for the first time. The fix is to read the CURRENT
+     * record — `closure-record.md` — rather than to edit a measurement of a past
+     * head so a current-count gate goes green. A superseded figure that is
+     * rewritten to match today is no longer evidence of anything.
      */
     const baseline = JSON.parse(readRepo('.github/ci-baselines/schema-baseline.json')) as {
       schemaHash?: string;
       migrationCount?: number;
     };
     expect(baseline.schemaHash, 'the schema baseline pins no hash').toMatch(/^[0-9a-f]{64}$/);
-    const quoted = /\|\s*Schema hash\s*\|\s*`([0-9a-f]{64})`/.exec(CLEAN_ROOM)?.[1];
-    expect(quoted, 'the record quotes no schema hash').toBe(baseline.schemaHash);
+    const quoted = /schema hash\s*`([0-9a-f]{64})`/i.exec(CLOSURE_RECORD)?.[1];
+    expect(quoted, 'the closure record quotes no schema hash').toBe(baseline.schemaHash);
     expect(
-      figure(CLEAN_ROOM, /\|\s*Migrations applied\s*\|\s*(\d+)\s*\|/, 'the migrations applied row'),
-      'the record and the schema baseline disagree about the migration count'
+      figure(
+        CLOSURE_RECORD,
+        /\|\s*Migrations\s*\|\s*\*\*(\d+)\*\*/,
+        'the closure record migrations row'
+      ),
+      'the closure record and the schema baseline disagree about the migration count'
     ).toBe(baseline.migrationCount);
+  });
+
+  it('keeps the two apart: the historical row is NOT the current baseline', () => {
+    /*
+     * Anti-vacuity for the separation above, in both directions. If these two
+     * figures ever coincide again the case still passes, but if a later edit
+     * re-points the current assertion at the superseded table — the exact
+     * mistake this separation was made to prevent — the clean room stops being
+     * readable as a past measurement and this says so.
+     */
+    const baseline = JSON.parse(readRepo('.github/ci-baselines/schema-baseline.json')) as {
+      migrationCount?: number;
+    };
+    const historical = figure(
+      CLEAN_ROOM,
+      /\|\s*Migrations applied\s*\|\s*(\d+)\s*\|/,
+      'the migrations applied row'
+    );
+    const current = figure(
+      CLOSURE_RECORD,
+      /\|\s*Migrations\s*\|\s*\*\*(\d+)\*\*/,
+      'the closure record migrations row'
+    );
+    // The clean room describes a head this record supersedes; it must say so.
+    expect(CLEAN_ROOM).toContain('at the head this record supersedes');
+    expect(historical).toBe(
+      filesAt(supersededHead(), 'supabase/migrations').filter((p) => p.endsWith('.sql')).length
+    );
+    expect(current).toBe(baseline.migrationCount);
   });
 
   it('states a CodeQL figure that both pages share and the committed ceiling permits', () => {
