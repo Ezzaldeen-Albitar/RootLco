@@ -16,37 +16,24 @@
 --   whole reason the decision was taken.
 -- ============================================================================
 
--- A reader must not need the write-capable shared.document.manage permission.
-INSERT INTO iam.permissions (permission_code, domain, description, risk_level, created_by)
-VALUES (
-  'shared.document.read', 'shared', 'Read document metadata and accepted evidence', 'low',
-  '00000000-0000-4000-8000-000000000001'
-)
-ON CONFLICT (permission_code) DO NOTHING;
+-- ROWS LIVE IN SEEDS, NOT HERE. This migration creates structure only.
+--
+-- A first draft inserted `shared.document.read` and the seven platform evidence
+-- categories at the top level, and the migration-replay gate refused it: a
+-- migration that ships rows is a migration that ships someone's data. Both
+-- moved to the seed files that already own their kind —
+-- `seeds/04_iam_permission_catalog.sql` for the permission code and
+-- `seeds/05_shared_reference.sql` for the platform catalogue, beside the
+-- retention classes it is a sibling of.
+--
+-- Local `supabase db reset` applies migrations AND seeds, so it could never have
+-- told the two apart. Only the static gate could, and it did.
 
 ALTER TABLE shared.document_categories
   ADD COLUMN business_link_purpose text NOT NULL DEFAULT 'evidence',
   ADD COLUMN device_capture_timestamp_required boolean NOT NULL DEFAULT false;
 ALTER TABLE shared.document_categories ADD CONSTRAINT ck_document_categories_link_purpose
   CHECK (business_link_purpose IN ('evidence','identity_document','inspection_media','signature'));
-
--- Owner-approved business categories. Tenant-scoped rows with the same code may
--- override these platform defaults through the existing dual-scope resolution.
-INSERT INTO shared.document_categories (
-  id, scope, tenant_id, category_code, name, description,
-  allowed_content_types, max_size_bytes, default_classification,
-  default_retention_class, status, created_by,
-  business_link_purpose, device_capture_timestamp_required
-)
-VALUES
-  ('d1500000-0000-4000-8000-000000000001','platform',NULL,'reception_exterior','Reception exterior','Exterior reception evidence',ARRAY['image/jpeg','image/png','image/webp'],10485760,'restricted','evidence-audit','active','00000000-0000-4000-8000-000000000001','inspection_media',true),
-  ('d1500000-0000-4000-8000-000000000002','platform',NULL,'reception_dashboard','Reception dashboard','Dashboard and odometer evidence',ARRAY['image/jpeg','image/png','image/webp'],10485760,'restricted','evidence-audit','active','00000000-0000-4000-8000-000000000001','inspection_media',true),
-  ('d1500000-0000-4000-8000-000000000003','platform',NULL,'reception_vin','Reception VIN','VIN evidence',ARRAY['image/jpeg','image/png','image/webp'],10485760,'restricted','evidence-audit','active','00000000-0000-4000-8000-000000000001','identity_document',true),
-  ('d1500000-0000-4000-8000-000000000004','platform',NULL,'reception_damage','Reception damage','Damage evidence',ARRAY['image/jpeg','image/png','image/webp'],10485760,'restricted','evidence-audit','active','00000000-0000-4000-8000-000000000001','inspection_media',true),
-  ('d1500000-0000-4000-8000-000000000005','platform',NULL,'reception_signature','Reception signature','Drawn or uploaded signature evidence',ARRAY['image/jpeg','image/png','image/webp'],10485760,'restricted','evidence-audit','active','00000000-0000-4000-8000-000000000001','signature',true),
-  ('d1500000-0000-4000-8000-000000000006','platform',NULL,'reception_refusal_evidence','Reception refusal evidence','Optional refusal supporting evidence',ARRAY['image/jpeg','image/png','image/webp'],10485760,'restricted','evidence-audit','active','00000000-0000-4000-8000-000000000001','evidence',true),
-  ('d1500000-0000-4000-8000-000000000007','platform',NULL,'reception_damage_map_template','Reception damage-map template','Versioned damage-map template image',ARRAY['image/jpeg','image/png','image/webp'],10485760,'internal','evidence-audit','active','00000000-0000-4000-8000-000000000001','inspection_media',false)
-ON CONFLICT DO NOTHING;
 
 ALTER TABLE shared.document_versions
   ADD COLUMN scanning_at timestamptz NULL,
