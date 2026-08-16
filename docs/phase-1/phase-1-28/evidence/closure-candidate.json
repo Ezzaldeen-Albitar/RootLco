@@ -145,18 +145,18 @@
   "tiers": {
     "unit": {
       "label": "root unit and foundation",
-      "tests": 2659,
-      "passed": 2657,
+      "tests": 2660,
+      "passed": 2658,
       "failed": 2,
       "skipped": 0,
       "files": 100,
-      "measuredAtCommit": "4a8ab03d3ffe35a5df53906a787b0d14171fd303",
+      "measuredAtCommit": "a5be17492c59713e5bd55a31336d16dc4aa611a3",
       "provenance": "LOCAL_COMPUTED_HOSTED_PENDING",
       "localLedger": {
         "path": "docs/phase-1/phase-1-27/evidence/local-run-ledger.json",
         "tier": "unit",
-        "atCommit": "319ac59e6a47a036ced722d5c5fe2056904b17b5",
-        "howChecked": "`git show 319ac59e6a47a036ced722d5c5fe2056904b17b5:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD when this measurement was recorded, rather than the working copy, which would let an uncommitted edit vouch for itself."
+        "atCommit": "9153e281029a68c5b48cf20ce2b25e8a2dffae4f",
+        "howChecked": "`git show 9153e281029a68c5b48cf20ce2b25e8a2dffae4f:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD when this measurement was recorded, rather than the working copy, which would let an uncommitted edit vouch for itself."
       },
       "hostedAttestation": {
         "runId": 31885987461,
@@ -167,7 +167,8 @@
         "describesSupersededHead": true,
         "supersededBy": "The hosted run taken at a head that DESCENDS from candidate 526a3b39 — the pull request CI for branch `p1-28/od-025-policy-enforcement`. Until that run exists this figure describes an ancestor and is cited as such; it is replaced by re-citing the same fields (run id, job id, head, artefact) at the descending head, never by relaxing the rule that refused it."
       },
-      "note": "Measured at 4a8ab03d, a documentation-only successor of the candidate: the commits between them carry evidence records and nothing executable."
+      "note": "Measured at a5be1749, a documentation-only successor of the candidate: the commits between them carry evidence records and nothing executable.",
+      "measurementDrift": ["tests/ci/p1-27-doc-counts.test.ts"]
     },
     "web": {
       "label": "web component and DOM",
@@ -176,13 +177,13 @@
       "failed": 0,
       "skipped": 0,
       "files": 98,
-      "measuredAtCommit": "0ee53647032345524e4dd7c193cee99edb93b46c",
+      "measuredAtCommit": "a5be17492c59713e5bd55a31336d16dc4aa611a3",
       "provenance": "LOCAL_COMPUTED_HOSTED_PENDING",
       "localLedger": {
         "path": "docs/phase-1/phase-1-27/evidence/local-run-ledger.json",
         "tier": "web",
-        "atCommit": "319ac59e6a47a036ced722d5c5fe2056904b17b5",
-        "howChecked": "`git show 319ac59e6a47a036ced722d5c5fe2056904b17b5:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD when this measurement was recorded, rather than the working copy, which would let an uncommitted edit vouch for itself."
+        "atCommit": "9153e281029a68c5b48cf20ce2b25e8a2dffae4f",
+        "howChecked": "`git show 9153e281029a68c5b48cf20ce2b25e8a2dffae4f:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD when this measurement was recorded, rather than the working copy, which would let an uncommitted edit vouch for itself."
       },
       "hostedAttestation": {
         "runId": 31885987461,
@@ -193,7 +194,8 @@
         "describesSupersededHead": true,
         "supersededBy": "The hosted run taken at a head that DESCENDS from candidate 526a3b39 — the pull request CI for branch `p1-28/od-025-policy-enforcement`. Until that run exists this figure describes an ancestor and is cited as such; it is replaced by re-citing the same fields (run id, job id, head, artefact) at the descending head, never by relaxing the rule that refused it."
       },
-      "note": "Measured at 0ee53647, a documentation-only successor of the candidate: the commits between them carry evidence records and nothing executable."
+      "note": "Measured at a5be1749, a documentation-only successor of the candidate: the commits between them carry evidence records and nothing executable.",
+      "measurementDrift": ["tests/ci/p1-27-doc-counts.test.ts"]
     },
     "backend": {
       "label": "backend integration, against a real PostgreSQL",
