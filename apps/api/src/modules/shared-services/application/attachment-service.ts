@@ -675,9 +675,17 @@ export class AttachmentService extends ApplicationService implements FileService
   /**
    * Issues a short-lived download URL for an accepted version.
    *
-   * The state check is the whole authorization story for content: a version that
-   * has not been accepted has not passed scanning, and no path in this phase can
-   * accept one.
+   * The state check is the whole authorization story for CONTENT, and it says
+   * something different since P1-OD-025. It used to be "no path in this phase
+   * can accept a version", which was true when nothing could produce a verdict.
+   * `registerVersionAndScan` now can, so the sentence would have become a
+   * docblock stating a rule the code no longer implements.
+   *
+   * What is still true, and is what this check rests on: an accepted version
+   * passed `scanning` with an exclusively clean verdict, enforced by
+   * `shared.guard_document_version_transition` rather than by this method; and
+   * a rejected or quarantined version is terminal, so it can never become
+   * downloadable later.
    */
   async requestDownload(db: DbHandle, input: DownloadRequestInput): Promise<DownloadGrant> {
     const config = backendConfig();

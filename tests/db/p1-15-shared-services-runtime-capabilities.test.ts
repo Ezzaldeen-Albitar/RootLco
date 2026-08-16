@@ -376,7 +376,11 @@ describe('P1-15 / global security posture', () => {
     expect(Number(rows[0]?.n)).toBe(0);
   });
 
-  it('both new permission codes exist exactly once and the catalog totals 107', async () => {
+  // The title states no number ON PURPOSE. It said "totals 107" while the
+  // assertion below read 109 — the exact "prose disagreeing with the assertion
+  // four lines away" defect this repository has a gate for. The number lives in
+  // one place, and that place is the expectation.
+  it('both new permission codes exist exactly once, and the catalog total is pinned', async () => {
     const { rows } = await admin.query<{ permission_code: string; n: string }>(
       `SELECT permission_code, count(*)::text AS n FROM iam.permissions
         WHERE permission_code IN ('shared.document.manage','shared.notification.send')
@@ -453,9 +457,22 @@ describe('P1-15 / global security posture', () => {
     // fix is a management contract, never a seed: the no-fake-data policy is
     // permanent, and both codes are granted to nobody by default.
     //
+    // P1-OD-025 adds one, taking the catalog to 110: shared.document.read.
+    // Every document read on this surface demanded `shared.document.manage` —
+    // the code that CREATES document metadata, pre-acceptance versions and
+    // links. A receptionist who may only look at reception evidence therefore
+    // had to be given the authority to author it, which is the same
+    // read/write conflation `shared.notification.read` was minted to end in
+    // P1-23. The code is seeded in
+    // supabase/seeds/04_iam_permission_catalog.sql AND inserted by migration
+    // 20260815090000 with ON CONFLICT DO NOTHING, because the migration's own
+    // functions depend on the catalog being current in an environment that has
+    // migrated but not re-seeded; both paths are idempotent, so the count is
+    // one either way, which the per-code assertion above is what proves.
+    //
     // The pin moves with the seed deliberately: it is what catches an accidental
     // catalog edit.
-    expect(Number(total.rows[0]?.n)).toBe(109);
+    expect(Number(total.rows[0]?.n)).toBe(110);
   });
 
   it('the exact write-policy inventory of the whole shared schema is unchanged apart from migrations 117 and 119', async () => {

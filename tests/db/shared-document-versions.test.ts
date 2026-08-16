@@ -6,6 +6,13 @@
  * accepted only after a clean scan and with no infected scan; terminal states are
  * immutable; content columns are immutable; storage_key is inert metadata. Scan
  * history is append-only. Isolation runs as the non-owner runtime login.
+ *
+ * P1-OD-025 added `scanning` between `pending` and acceptance, and the
+ * assertions below are stated so the two rules stay separable: `pending ->
+ * accepted` is refused because of the LIFECYCLE even when a clean verdict is on
+ * record, and `scanning -> accepted` is refused because of the EVIDENCE when it
+ * is not. Refusal by rejection or quarantine still needs no scan — neither is
+ * evidence, and `shared.attachment-version-reject` depends on it.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Pool } from 'pg';
