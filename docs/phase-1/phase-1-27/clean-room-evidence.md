@@ -253,7 +253,7 @@ nothing.
 | Database tests             | 1647 passed, 0 failed                                      |
 | Coverage — lines / branches | 95.53% / 93.89%                                           |
 | Migrations applied         | 120                                                        |
-| Schema hash                | `f6b4f023d9e6b1e7d823dac4e5550379202a216ab1ae1fe9e5a2826703061f79` |
+| Schema hash                | `56245964fd0140d7bd4c994e0804c69a1a62915e2858dbe94191b2d7d68147ad` |
 | Application tables before migration | 0                                                 |
 | RLS matrix                 | 113 tables, 1356 cells, 0 RLS disabled, 0 unforced, 0 `SECURITY DEFINER` |
 | CodeQL open alerts         | **0** on the three refs that analysis covered              |
