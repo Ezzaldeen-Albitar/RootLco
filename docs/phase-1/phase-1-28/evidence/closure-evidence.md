@@ -33,13 +33,13 @@ the candidate, and refuses either half that fails to name an unclosed task.
 
 ## The frozen candidate
 
-| Binding           | Value                                                                                  |
-| ----------------- | -------------------------------------------------------------------------------------- |
-| `FINAL_CODE_SHA`  | `526a3b391b050f2e76fc7e6c1d8aed2983922fe7`                                             |
-| `FINAL_CODE_TREE` | `50e0c47757003774667ff1a78ccaf3c22e07596b`                                             |
-| Branch            | `p1-28/od-025-policy-enforcement`                                                      |
-| Pull request      | not yet opened, base `develop`, 1 commit ahead                                         |
-| Subject           | `feat(p1-28): enforce the approved P1-OD-025 evidence policy instead of forbidding it` |
+| Binding           | Value                                                                      |
+| ----------------- | -------------------------------------------------------------------------- |
+| `FINAL_CODE_SHA`  | `8b6e9e90e43a76cc7f0f3b28ffc4959e60a53305`                                 |
+| `FINAL_CODE_TREE` | `9b040267e10dff9e49e5c1b147d18e849998d0cb`                                 |
+| Branch            | `p1-28/od-025-policy-enforcement`                                          |
+| Pull request      | **#231**, base `develop`, 7 commits ahead                                  |
+| Subject           | `style(p1-28): format the converted suite with the WEB workspace prettier` |
 
 The previous candidate was `7b1252edebb5d7f48451213c71ab832cb44e46b5`, tree
 `1ef831d2ecfcf94d07b73857b7448c3b424faca3`, on
