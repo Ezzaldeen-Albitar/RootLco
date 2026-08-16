@@ -44,6 +44,41 @@ export const CLASSIFIERS = [
     bucket: 'webGenerated',
     test: (p) => p === 'apps/web/src/lib/api/idempotent-operations.ts',
   },
+  // Before 'web', on the exact precedent of `webGenerated` above: the handwritten
+  // files a Backend branch is FORCED to touch by publishing an operation.
+  //
+  // `idempotent-operations.ts` publishes every operation the contract carries.
+  // Two handwritten mirrors then assert BIDIRECTIONAL equality against a slice
+  // of it — `receptions-contract.test.ts:135` and
+  // `appointments-contract.test.ts:128` both do `expect(mirrored).toEqual(published)`
+  // over `rec.*` and `apt.*`. So a Backend branch that adds one `rec.*` route
+  // regenerates the manifest, reddens a web test, and under every Backend
+  // profile is FORBIDDEN to fix the file that went red. PRs #220/#221 escaped
+  // that only because the contract layer did not exist when they merged.
+  //
+  // A mirror ROW is contract metadata — operation id, method, template,
+  // idempotency, audit class, permission — forced by an exhaustiveness
+  // assertion. It is not a Frontend design decision, and nothing about a
+  // component, a screen, a route, a hook or a translation is in this bucket.
+  // The handwritten web tree stays closed, which is the hole every Backend
+  // profile exists to close.
+  //
+  // LITERAL PATHS, not a pattern, for the same reason `webGenerated` is one
+  // literal path: a pattern like `*-contract.ts` would also swallow
+  // `features/vehicles/duplicates-contract.ts` and six others that no
+  // exhaustiveness assertion touches. The rule for adding an entry is exactly
+  // the rule that put these here — the file is one half of a
+  // `toEqual(published)` pair. `src/lib/api/operation-contract.ts` is
+  // deliberately ABSENT: it reads the manifest but is a resolver, not a row
+  // list, and a new operation costs it no edit.
+  {
+    bucket: 'webContract',
+    test: (p) =>
+      p === 'apps/web/src/features/receptions/receptions-contract.ts' ||
+      p === 'apps/web/tests/receptions-contract.test.ts' ||
+      p === 'apps/web/src/features/appointments/appointments-contract.ts' ||
+      p === 'apps/web/tests/appointments-contract.test.ts',
+  },
   { bucket: 'web', test: (p) => p.startsWith('apps/web/') },
   { bucket: 'apiSource', test: (p) => p.startsWith('apps/api/src/') },
   { bucket: 'apiConfig', test: (p) => p.startsWith('apps/api/') },
@@ -66,7 +101,7 @@ export const CLASSIFIERS = [
 export const PROFILES = {
   'p1-26-frontend': {
     why: 'P1-26 is a Frontend phase',
-    allowed: ['web', 'docs', 'tooling', 'tests', 'rootConfig'],
+    allowed: ['web', 'webContract', 'docs', 'tooling', 'tests', 'rootConfig'],
     forbidden: {
       apiSource:
         'a Frontend phase must not change API source — route it through a Backend remediation',
@@ -81,7 +116,7 @@ export const PROFILES = {
     // phase that borrows another phase's profile is not declaring anything. The
     // gate defaults to `p1-26-frontend` when no profile is given, which is how
     // P1-27 came to be measured against P1-26's declaration for its whole life.
-    allowed: ['web', 'docs', 'tooling', 'tests', 'rootConfig'],
+    allowed: ['web', 'webContract', 'docs', 'tooling', 'tests', 'rootConfig'],
     forbidden: {
       apiSource:
         'a Frontend phase must not change API source — route it through a Backend remediation',
@@ -104,6 +139,11 @@ export const PROFILES = {
       'migrations',
       'supabase',
       'webGenerated',
+      // This profile is the reason the bucket exists. Every read it publishes is
+      // an `apt.*` or `rec.*` operation, and both mirrors assert exhaustive
+      // equality over exactly those prefixes — so a branch under this profile
+      // cannot publish a read without a mirror row, and could not add one.
+      'webContract',
     ],
     forbidden: {
       web:
@@ -135,6 +175,13 @@ export const PROFILES = {
       // — generator output the Backend's own register keeps in sync, validated
       // by `validate:generated-artifacts` and `validate:idempotent-operations`.
       'webGenerated',
+      // Allowed for the same reason as `webGenerated`, and needed for the same
+      // class of change even though this branch did not have to use it: the two
+      // operations it publishes are `shared.*`, and no mirror asserts
+      // exhaustiveness over that prefix, so nothing in the web tree went red.
+      // A later evidence operation under `rec.*` would, and the declaration
+      // should not have to be discovered by that branch turning CI red.
+      'webContract',
     ],
     forbidden: {
       // Backend-only, for the reason every Backend profile gives: the reception
@@ -155,6 +202,10 @@ export const PROFILES = {
       // riding inside a Frontend branch where no Backend gate saw them. A
       // profile that permitted both halves would reopen the hole it closes.
       web: 'the partner-identity remediation is Backend-only — the Frontend half is a separate change',
+      webContract:
+        'this remediation publishes no operation, so no exhaustiveness assertion forces a mirror ' +
+        'row on it. A successor that DOES publish one adds webContract to this list, which is a ' +
+        'one-line diff and exactly the declaration the gate exists to require',
       migrations: 'the partner-identity remediation must not change a migration',
       supabase: 'the partner-identity remediation must not change the database',
     },
@@ -174,6 +225,9 @@ export const PROFILES = {
       web: 'a repository tooling change must not carry Frontend source — that is a phase change',
       webGenerated:
         'a repository tooling change must not regenerate the Frontend contract manifest',
+      webContract:
+        'nor edit a contract mirror. A gate change carries no operation, so nothing can force a ' +
+        'mirror row on it',
       apiSource: 'a repository tooling change must not change API source',
       apiConfig: 'a repository tooling change must not change API workspace configuration',
       migrations: 'a repository tooling change must not change a migration',
@@ -182,7 +236,16 @@ export const PROFILES = {
   },
   'api-boundary': {
     why: 'the pre-P1-26 API file-boundary remediation',
-    allowed: ['apiSource', 'apiConfig', 'docs', 'tooling', 'tests', 'rootConfig', 'web'],
+    allowed: [
+      'apiSource',
+      'apiConfig',
+      'docs',
+      'tooling',
+      'tests',
+      'rootConfig',
+      'web',
+      'webContract',
+    ],
     forbidden: {
       migrations: 'the boundary remediation must not change a migration',
       supabase: 'the boundary remediation must not change the database',
@@ -198,6 +261,9 @@ export const PROFILES = {
       // close, merely pointing the other way. The Frontend half is a separate
       // change under `p1-26-frontend`, against a Backend contract already merged.
       web: 'the login-contract remediation is Backend-only — the Frontend half is a separate change',
+      webContract:
+        'the login contract publishes no rec.*/apt.* operation, so no exhaustiveness assertion ' +
+        'reaches it. A successor that publishes one declares webContract here',
       migrations: 'the login-contract remediation must not change a migration',
       supabase: 'the login-contract remediation must not change the database',
     },
