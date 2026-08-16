@@ -314,9 +314,25 @@ describe('P1-15 / global security posture', () => {
       ),
       'utf8'
     );
-    // Exactly one new permission code, and it is a READ capability.
-    expect([...sql.matchAll(/INSERT INTO iam\.permissions/g)]).toHaveLength(1);
-    expect(sql).toContain("'shared.document.read'");
+    /*
+     * The migration creates STRUCTURE ONLY — it inserts no row at the top level.
+     *
+     * This case first asserted the opposite: exactly one `INSERT INTO
+     * iam.permissions`, because that is how the migration was written. The
+     * migration-replay gate refused it — "migrations create structure; business
+     * rows are the tenant's" — and the row moved to
+     * `seeds/04_iam_permission_catalog.sql`, which already owned that kind.
+     *
+     * So the assertion inverts. Counting zero here is what proves the rule held,
+     * and the permission is asserted where it now lives, so moving it back into
+     * a migration fails in two places rather than passing quietly in one.
+     */
+    expect([...sql.matchAll(/^INSERT INTO/gm)]).toHaveLength(0);
+    const permissionSeed = readFileSync(
+      fileURLToPath(new URL('../../supabase/seeds/04_iam_permission_catalog.sql', import.meta.url)),
+      'utf8'
+    );
+    expect(permissionSeed).toContain("'shared.document.read'");
     // Exactly two new policies, both named.
     const policies = [...sql.matchAll(/CREATE POLICY (\w+)/g)].map((m) => m[1]).sort();
     expect(policies).toEqual(['ins_file_scan_results_scanner', 'upd_document_versions_lifecycle']);
