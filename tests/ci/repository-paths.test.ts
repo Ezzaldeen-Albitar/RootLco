@@ -161,7 +161,25 @@ describe('the API application lives in the workspace', () => {
     // it reads `iam.user_accounts` rather than a `rec` catalogue table and
     // therefore shares neither collection route file nor lifecycle with the
     // seven catalogues beside it.
-    expect(routeFiles.length).toBe(238);
+    //
+    // 240 with the two P1-OD-025 evidence reads: `attachments/categories`
+    // publishes the governed category policy a client must obey, and
+    // `attachments/versions/{versionId}` publishes one immutable version and
+    // its scan lifecycle. Both are new route MODULES — neither path had a file.
+    //
+    // 249 with the reception evidence contracts (FE-012 / FE-018 / FE-019):
+    // nine new route modules — the four damage-map-template modules
+    // (collection, id, `/versions`, `/status`), `capture-overrides`,
+    // `evidence-bindings` and its `/{bindingId}/finalization`, and the
+    // signature read-back pair `signatures/{signatureId}/events`. The
+    // `condition-evidence`, `refusals` and `signatures` collection files
+    // already existed, so the operations they gained move the operation count
+    // below and this one not at all.
+    //
+    // Three independent remediations, written as three separate steps: a
+    // checkout carrying only one of them fails at ITS number rather than
+    // passing a pin that was moved once and then reused.
+    expect(routeFiles.length).toBe(249);
 
     // Non-vacuity. A discovery assertion that only checks a count would pass
     // against a set with one route swapped for another, so the comparison that
@@ -204,8 +222,16 @@ describe('the API application lives in the workspace', () => {
     // amounts for that reason, which is exactly why both are asserted.
     // 289 with the seven administrative reads, which move both counts by seven
     // — one operation per new module. 290 with the FE-007 receiving-employee
-    // picker, which moves both by one for the same reason.
-    expect(report.operations).toHaveLength(290);
+    // picker, which moves both by one for the same reason. 292 with the two
+    // P1-OD-025 evidence reads, which likewise move both counts by two.
+    //
+    // 305 with the reception evidence contracts: THIRTEEN operations over the
+    // nine new route modules above. The two counts move by different amounts
+    // here — four of the thirteen are methods added to route files that already
+    // existed (`condition-evidence`, `refusals`, and the two on `signatures`) —
+    // which is exactly why both are asserted rather than one standing in for
+    // the other.
+    expect(report.operations).toHaveLength(305);
 
     // ~1 s per process by construction, not by slowness. The budget is stated
     // here rather than raised globally, so it cannot quietly cover a different

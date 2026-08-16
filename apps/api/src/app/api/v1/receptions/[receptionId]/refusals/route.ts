@@ -28,6 +28,11 @@ const Body = z
     refusingPartnerId: schemas.uuid.nullable().optional(),
     witnessEmployeeId: schemas.uuid.nullable().optional(),
     evidenceDocumentId: schemas.uuid.nullable().optional(),
+    // The EXACT version of the supporting media (Owner decision FE-019).
+    // Optional by default: refusal is not globally media-dependent, and a live
+    // capture-policy rule for this branch and refusal type is the only thing
+    // that makes it — and its acceptance — mandatory.
+    evidenceDocumentVersionId: schemas.uuid.nullable().optional(),
   })
   .strict();
 

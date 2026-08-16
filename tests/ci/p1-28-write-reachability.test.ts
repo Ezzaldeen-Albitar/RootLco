@@ -205,10 +205,14 @@ describe('the gate is green on the CURRENT tree', () => {
 
   it('derives the canonical writes from the register rather than a hand list', () => {
     // 12 per the canonical plan §4, plus the two R5 terminal closes, plus the
-    // 21 intake-catalogue management writes PR #227 registered. Pinned so a
-    // register regression (the derivation returning nothing, or a whole family
-    // of writes vanishing) cannot pass as "nothing to check".
-    expect(live.canonical.length).toBe(35);
+    // 21 intake-catalogue management writes PR #227 registered, plus the eight
+    // the reception evidence-contract remediation registered (Owner decisions
+    // FE-012, FE-018, FE-019): the evidence binding and its finalization, the
+    // capture override, the signature lifecycle event, three damage-map template
+    // management writes and the capture-policy set. Pinned so a register
+    // regression (the derivation returning nothing, or a whole family of writes
+    // vanishing) cannot pass as "nothing to check".
+    expect(live.canonical.length).toBe(43);
     expect(live.scanned).toBeGreaterThan(0);
     // The crm/veh call sites prove the scanner works even while the apt/rec
     // wired count is legitimately zero.
@@ -226,7 +230,7 @@ describe('the gate is green on the CURRENT tree', () => {
     expect(parked.length).toBeLessThanOrEqual(DAY_ONE_NOT_YET_WIRED.length);
   });
 
-  it('pins the live DELIBERATELY_ABSENT count at exactly 21', () => {
+  it('pins the live DELIBERATELY_ABSENT count at exactly 29', () => {
     // WHAT THIS NUMBER MEANS, now that it is no longer zero.
     //
     // The pin exists because DELIBERATELY_ABSENT is the sideways exit from the
@@ -245,9 +249,21 @@ describe('the gate is green on the CURRENT tree', () => {
     // the case below proves the gate resolves the reference against that
     // section rather than accepting any non-empty string.
     //
-    // So the number now reads: 21 writes whose absence is a recorded decision,
+    // It moved again, from 21 to 29, for the eight writes the reception
+    // evidence-contract remediation registered. Four of them are the same
+    // administration question against `P1-28-OD-001` — three damage-map
+    // template management writes and the capture-policy set are reception
+    // configuration catalogues in exactly the sense that decision raises. The
+    // other four cite `P1-OD-025` instead: binding capture evidence,
+    // finalizing it, waiving it and recording a signature lifecycle event all
+    // require a COMPLETED document chain, and the three DOCUMENT_CHAIN_BLOCKERS
+    // that keep `rec.reception-signature` unwired keep these unreachable for
+    // the same reason. Wiring a control that fails before it reaches storage
+    // would be a false REACHABLE of the INT-113 shape.
+    //
+    // So the number now reads: 29 writes whose absence is a recorded decision,
     // and nothing else may join them without moving this line again.
-    expect(live.counts.DELIBERATELY_ABSENT ?? 0).toBe(21);
+    expect(live.counts.DELIBERATELY_ABSENT ?? 0).toBe(29);
   });
 
   it('resolves every live DELIBERATELY_ABSENT reference against the plan §7', () => {
@@ -257,7 +273,7 @@ describe('the gate is green on the CURRENT tree', () => {
     const referenced = live.results
       .filter((r) => r.classification === 'DELIBERATELY_ABSENT')
       .map((r) => r.decisionRef);
-    expect(referenced).toHaveLength(21);
+    expect(referenced).toHaveLength(29);
     expect(live.decisions.length).toBeGreaterThan(0);
     const unresolved = referenced.filter((ref) => !ref || !live.decisions.includes(ref));
     expect(unresolved, 'a decisionRef naming no decision recorded in the plan §7').toEqual([]);

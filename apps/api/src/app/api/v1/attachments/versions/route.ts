@@ -22,6 +22,7 @@ const Body = z
     documentId: z.string().uuid().nullable().optional(),
     checksumSha256: z.string().regex(/^[0-9a-f]{64}$/),
     byteSize: z.number().int().positive(),
+    capturedAt: z.coerce.date().nullable().optional(),
   })
   .strict();
 
@@ -52,11 +53,12 @@ export async function POST(request: Request): Promise<Response> {
       const input = await parseJsonBody(raw, Body);
       return {
         status: 201,
-        body: await sharedServicesModule().attachments.registerVersion(db, {
+        body: await sharedServicesModule().attachments.registerVersionAndScan(db, {
           uploadToken: input.uploadToken,
           documentId: input.documentId ?? null,
           checksumSha256: input.checksumSha256,
           byteSize: input.byteSize,
+          capturedAt: input.capturedAt ?? null,
         }),
       };
     },

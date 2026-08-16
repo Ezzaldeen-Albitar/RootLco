@@ -701,14 +701,14 @@ describe('F9 · creation commands keep their pre-handler resolved target', () =>
 });
 
 // ---------------------------------------------------------------------------
-// F10 — exactly the twelve id-addressed P1-18 commands hold the locked-row
-// path, exactly the six id-addressed reads hold the deferred-authorizer one,
-// and exactly the fourteen id-addressed intake-catalogue commands are the
-// tenant-scoped configuration class that owns neither
+// F10 — exactly the sixteen id-addressed P1-18 branch commands hold the
+// locked-row path, exactly the eight id-addressed branch reads hold the
+// deferred-authorizer one, and the sixteen id-addressed configuration commands
+// and one configuration read are the tenant-scoped class that owns neither
 // ---------------------------------------------------------------------------
 
 /**
- * The twelve commands, discovered rather than declared.
+ * The sixteen locked-row commands, discovered rather than declared.
  *
  * A hand-maintained list would pass forever after someone added a thirteenth
  * unprotected operation, so the set is derived from source — every `apt.`/`rec.`
@@ -727,18 +727,24 @@ const EXPECTED_LOCKED_ROW_OPERATIONS = [
   'apt.appointment-reschedule',
   'rec.reception-approve',
   'rec.reception-authorization',
+  'rec.reception-capture-override',
   'rec.reception-close-without-work',
   'rec.reception-condition-evidence',
   'rec.reception-convert-to-work-order',
+  'rec.reception-evidence-binding',
+  'rec.reception-evidence-binding-finalize',
   'rec.reception-party-role',
   'rec.reception-refusal',
   'rec.reception-refuse',
   'rec.reception-signature',
+  'rec.reception-signature-event',
 ] as const;
 
 /**
- * The fourteen id-addressed CONFIGURATION commands (P1-27-INT-018, executed by
- * P1-18): seven renames and seven lifecycle changes over the intake catalogues.
+ * The sixteen id-addressed CONFIGURATION commands: seven renames and seven
+ * lifecycle changes over the intake catalogues (P1-27-INT-018, executed by
+ * P1-18), plus the damage-map template revision and lifecycle commands the
+ * reception evidence-contract remediation added (Owner decision FE-012).
  *
  * These are id-addressed and therefore discovered, but they are deliberately NOT
  * locked-row operations, and the distinction is real rather than bookkeeping. An
@@ -765,6 +771,8 @@ const EXPECTED_TENANT_CONFIGURATION_COMMANDS = [
   'apt.catalogue-cancellation-reason-update',
   'apt.catalogue-source-channel-status-set',
   'apt.catalogue-source-channel-update',
+  'rec.catalogue-damage-map-template-status-set',
+  'rec.catalogue-damage-map-template-version-create',
   'rec.catalogue-fuel-level-status-set',
   'rec.catalogue-fuel-level-update',
   'rec.catalogue-refusal-reason-status-set',
@@ -776,7 +784,8 @@ const EXPECTED_TENANT_CONFIGURATION_COMMANDS = [
 ] as const;
 
 /**
- * The six id-addressed reads (P1-27 read-surface remediation). Same doctrine,
+ * The eight id-addressed BRANCH reads (P1-27 read-surface remediation, plus the
+ * capture contract and the signature ledger). Same doctrine,
  * different mechanics: a read is addressed by id, so the pre-handler check has
  * no scope to name and the deferred `authorizeScope` against the row's own
  * company and branch is what makes `scope: 'branch'` true (P1-18-A-01).
@@ -786,9 +795,29 @@ const EXPECTED_ID_ADDRESSED_READS = [
   'rec.reception-authorization-list',
   'rec.reception-condition-evidence-list',
   'rec.reception-detail',
+  'rec.reception-evidence-binding-list',
   'rec.reception-history',
   'rec.reception-party-role-list',
+  'rec.reception-signature-list',
 ] as const;
+
+/**
+ * The id-addressed CONFIGURATION reads.
+ *
+ * A third class for the reason the second one exists. A damage-map template
+ * belongs to the TENANT — `rec.damage_map_templates` carries a nullable
+ * company/branch pair and a template may apply to the whole tenant — so a read
+ * addressed by its id has no row-owned branch to authorize against, and an
+ * `authorizeScope` call would have nothing true to pass it. Isolation is the
+ * `sel_damage_map_templates` policy plus the tenant predicate the repository
+ * takes from the principal.
+ *
+ * Listed rather than filtered out, exactly as the configuration COMMANDS are:
+ * the completeness assertion compares the discovered reads against both lists
+ * together, so a new id-addressed `apt.`/`rec.` GET still fails this file
+ * until somebody consciously decides which class it belongs to.
+ */
+const EXPECTED_TENANT_CONFIGURATION_READS = ['rec.catalogue-damage-map-template-read'] as const;
 
 /** `authorizeScope({ companyId: <row>.companyId, branchId: <row>.branchId })`. */
 const LOCKED_ROW_CALL =
@@ -877,7 +906,7 @@ describe('F10 · structural completeness of the locked-row path', () => {
     expect(operations.length).toBeGreaterThan(50);
   });
 
-  it('discovers exactly the twenty-six id-addressed P1-18 commands, in two classes', () => {
+  it('discovers exactly the thirty-two id-addressed P1-18 commands, in two classes', () => {
     // Compared against BOTH lists at once. That is what keeps the guard total:
     // an id-addressed command that is in neither list fails here, so a new one
     // cannot be protected by an assumption about which class it belongs to.
@@ -897,8 +926,36 @@ describe('F10 · structural completeness of the locked-row path', () => {
     expect(overlap).toEqual([]);
   });
 
-  it('discovers exactly the six id-addressed P1-18 reads', () => {
-    expect(affectedReads.map((entry) => entry.id).sort()).toEqual([...EXPECTED_ID_ADDRESSED_READS]);
+  it('discovers exactly the id-addressed P1-18 reads, in two classes', () => {
+    // Both lists at once, for the reason the command assertion gives: a read
+    // addressed by id that is in neither class fails here rather than being
+    // protected by an assumption about which one it belongs to.
+    expect(affectedReads.map((entry) => entry.id).sort()).toEqual(
+      [...EXPECTED_ID_ADDRESSED_READS, ...EXPECTED_TENANT_CONFIGURATION_READS].sort()
+    );
+  });
+
+  it('keeps the two read classes disjoint', () => {
+    const overlap = EXPECTED_ID_ADDRESSED_READS.filter((id) =>
+      (EXPECTED_TENANT_CONFIGURATION_READS as readonly string[]).includes(id)
+    );
+    expect(overlap).toEqual([]);
+  });
+
+  it.each(EXPECTED_TENANT_CONFIGURATION_READS)('%s declares tenant scope explicitly', (id) => {
+    // Asserted, never defaulted: `defineOperation` defaults a missing scope to
+    // `'tenant'`, so a branch-scoped read that lost its scope line would land
+    // in this class looking correct.
+    const entry = affectedReads.find((candidate) => candidate.id === id);
+    expect(entry).toBeDefined();
+    expect(entry?.scope).toBe('tenant');
+    expect(entry?.source).toContain("scope: 'tenant'");
+  });
+
+  it.each(EXPECTED_TENANT_CONFIGURATION_READS)('%s runs under its OWN declaration', (id) => {
+    const entry = affectedReads.find((candidate) => candidate.id === id);
+    expect(entry).toBeDefined();
+    expect(entry?.source).toContain(`handleOperation(\n    ${entry?.constant},`);
   });
 
   it.each(EXPECTED_LOCKED_ROW_OPERATIONS)('%s declares branch scope explicitly', (id) => {

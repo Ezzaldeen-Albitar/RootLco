@@ -47,6 +47,12 @@ const STRUCTURAL_REFERENCE = new Set([
   // Phase 1-11 platform payment-method catalog (structurally mandatory; a receipt is
   // meaningless without a method). Platform scope only.
   'sal.payment_methods',
+  // P1-OD-025 platform evidence-category catalog (structurally mandatory; the
+  // reception guards enforce against these rows by `category_code`, so a
+  // reception cannot record evidence without them). Platform scope only —
+  // `no-fake-data.test.ts` separately holds that the tenant-scoped half of this
+  // dual-scope table stays empty, which is what the allow-list stops watching.
+  'shared.document_categories',
 ]);
 const PLATFORM_ACTOR = '00000000-0000-4000-8000-000000000001';
 const EXPECTED_RETENTION = [

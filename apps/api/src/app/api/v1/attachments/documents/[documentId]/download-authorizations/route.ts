@@ -24,7 +24,7 @@ export const ATTACHMENT_DOWNLOAD_AUTHORIZE_OPERATION = defineOperation({
   method: 'POST',
   path: '/attachments/documents/{documentId}/download-authorizations',
   summary: 'Issue a short-lived signed download URL for an accepted version.',
-  permissions: ['shared.document.manage'],
+  permissions: ['shared.document.read'],
   scope: 'tenant',
   auditClass: 'security',
   auditAction: 'shared.document.download_authorized',

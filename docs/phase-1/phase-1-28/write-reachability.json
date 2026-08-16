@@ -199,6 +199,46 @@
       "classification": "DELIBERATELY_ABSENT",
       "decisionRef": "P1-28-OD-001",
       "reason": "Catalogue rec.warning_light_codes — status set. Same surface question; no apps/web module calls it."
+    },
+    "rec.reception-evidence-binding": {
+      "classification": "DELIBERATELY_ABSENT",
+      "decisionRef": "P1-OD-025",
+      "reason": "Binding capture evidence requires a registered shared.documents row AND its exact shared.document_versions id, which is the same document chain that blocks rec.reception-signature: no operation configures a document category, the default storage provider refuses every signing call, and a registered version can never leave pending. The chain cannot COMPLETE, so a screen would present a control that fails before it reaches storage. API only, behind rec.reception.evidence.manage. The no-upload-path gate rule refuses capture code in apps/web while P1-OD-025 is open."
+    },
+    "rec.reception-evidence-binding-finalize": {
+      "classification": "DELIBERATELY_ABSENT",
+      "decisionRef": "P1-OD-025",
+      "reason": "Finalization operates on a binding that cannot be created from a screen for the reason recorded against rec.reception-evidence-binding, and it additionally requires the bound version to be ACCEPTED - a state no application role can reach while P1-OD-025 is open, because acceptance needs a clean scan record none of them may write. Wiring it would present a control that can never succeed."
+    },
+    "rec.reception-capture-override": {
+      "classification": "DELIBERATELY_ABSENT",
+      "decisionRef": "P1-OD-025",
+      "reason": "The override waives a capture requirement, and the requirement it waives is the one nothing can currently satisfy. Publishing a screen that records \"no photograph was needed\" while no photograph can be taken at all would turn an escape hatch into the only path, which is the opposite of what the separate rec.reception.evidence.override permission exists for. API only; the code is granted to nobody by default."
+    },
+    "rec.reception-signature-event": {
+      "classification": "DELIBERATELY_ABSENT",
+      "decisionRef": "P1-OD-025",
+      "reason": "Finalizing a signature requires its document version to be ACCEPTED, and repudiating one requires a finalized signature to exist. rec.reception-signature itself is recorded NOT_YET_WIRED for the three DOCUMENT_CHAIN_BLOCKERS in apps/web/src/features/receptions/media/media-decision.ts, so neither event can have a subject. The ledger ships as API only and becomes reachable in the same wave that unblocks signature capture."
+    },
+    "rec.catalogue-damage-map-template-create": {
+      "classification": "DELIBERATELY_ABSENT",
+      "decisionRef": "P1-28-OD-001",
+      "reason": "Damage-map template administration is a reception configuration catalogue in exactly the sense P1-28-OD-001 raises: no administration screen and no canonical task binding one, API only, behind rec.catalogue.manage, granted to no role. It is additionally blocked by P1-OD-025, because a template revision needs an accepted template document."
+    },
+    "rec.catalogue-damage-map-template-version-create": {
+      "classification": "DELIBERATELY_ABSENT",
+      "decisionRef": "P1-28-OD-001",
+      "reason": "Publishing a template revision is the same administration surface as creating the slot, and it needs an ACCEPTED reception_damage_map_template document version, which no application role can produce while P1-OD-025 is open. API only, behind rec.catalogue.manage."
+    },
+    "rec.catalogue-damage-map-template-status-set": {
+      "classification": "DELIBERATELY_ABSENT",
+      "decisionRef": "P1-28-OD-001",
+      "reason": "Retiring or restoring a template slot is the same administration surface, with the same missing screen. API only, behind rec.catalogue.manage. Bidirectional by design, so no capability is lost by withholding the screen rather than the command."
+    },
+    "rec.catalogue-capture-policy-set": {
+      "classification": "DELIBERATELY_ABSENT",
+      "decisionRef": "P1-28-OD-001",
+      "reason": "The capture policy is a reception configuration catalogue - what a branch requires at intake, and whether a refusal type requires supporting media. Same decision as the twenty-one intake-catalogue writes: no administration screen and no canonical task binding one, API only, behind rec.catalogue.manage, granted to no role. The absence of a rule is the DEFAULT and it is optional, so a tenant that never reaches this endpoint is never blocked by it."
     }
   }
 }

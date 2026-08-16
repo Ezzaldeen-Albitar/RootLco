@@ -174,6 +174,15 @@ const schema = z.object({
     .string()
     .regex(/^[a-z][a-z0-9_]{1,62}$/, 'must match ^[a-z][a-z0-9_]{1,62}$')
     .default('unconfigured'),
+  /** S3-compatible endpoint and server-only credentials (Supabase local/hosted supported). */
+  STORAGE_S3_ENDPOINT: z.string().url().optional(),
+  STORAGE_S3_REGION: z.string().min(1).default('local'),
+  STORAGE_S3_ACCESS_KEY_ID: z.string().min(1).optional(),
+  STORAGE_S3_SECRET_ACCESS_KEY: z.string().min(1).optional(),
+  STORAGE_S3_FORCE_PATH_STYLE: z
+    .enum(['true', 'false'])
+    .default('true')
+    .transform((value) => value === 'true'),
   /** Bucket/container name. Never a path, never caller-supplied. */
   STORAGE_BUCKET: z.string().min(1).default('rootlco-attachments'),
   /**
