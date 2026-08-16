@@ -5,19 +5,27 @@
   "howToCheck": "npm run validate:p1-28-evidence",
   "whatThisIsNot": "This is not a tamper-proof seal. The digests in evidence-manifest.json remove SILENT revision, not revision. It is ALSO not an Owner acceptance and not a closure record: the phase is OPEN and `OWNER ACCEPTANCE` has neither been asked for nor returned. What it now IS is a package whose current remediation half has been taken: nine bindings, including all five tiers, CodeQL, dependency security, browser-by-project and the database reproof, cite exact-head PR CI run 31885987461 at 1a186a7bcb7d0b97bb771753dacb584535692455. The unit and web figures agree with the authoritative local observation at ea045d88 pinned by ledger commit 2e0f2191. The earlier aggregate hostedCi and production-build records remain fetchable at product-identical 81cbd44b because the exact remediation run legitimately skipped those change-classified build jobs. Every cited head descends from the candidate, its apps/** and supabase/** are COMPUTED byte-identical to it, and each binding says so with `describesProductIdenticalSuccessor`. `pendingHostedBindings.bindings` is EMPTY by derivation. The two superseded citations this package has carried, 55b932cb and 38afa5c2, are kept in `supersededObservations`.",
   "candidate": {
-    "FINAL_CODE_SHA": "9e8ebde2c285cb6a9f86af733c663938cad7271c",
-    "FINAL_CODE_TREE": "7bc304e3ab0436bcf1e49e38537a84097d00fad7",
+    "FINAL_CODE_SHA": "45c8f533d4507bdc56fa8480c54387f71980d933",
+    "FINAL_CODE_TREE": "c5d925eb818c8c62d1005a42f89508e7b2e936eb",
     "branch": "remediation/p1-15-reception-document-foundation",
     "pullRequest": null,
     "baseBranch": "develop",
-    "commitsAheadOfDevelop": 55,
-    "subject": "fix(db): the migration creates structure only",
+    "commitsAheadOfDevelop": 62,
+    "subject": "fix(p1-15): grant the column the register writes, and stop narrowing two shipped operations",
     "whatFreezingMeans": "This commit freezes the PRODUCT: every later head cited by the package must leave apps/** and supabase/** byte-identical to it. Executable evidence machinery may follow only as a full-id successor, and every LOCAL measurement taken there must declare the exact non-product drift that Git computes. A successor that changes a product tree invalidates this package and the candidate must be re-frozen and re-measured; a successor that changes only evidence machinery is named and re-measured without pretending it was part of the frozen product.",
-    "productIdentityCheck": "git diff --name-only 9e8ebde2c285cb6a9f86af733c663938cad7271c..HEAD -- apps supabase",
+    "productIdentityCheck": "git diff --name-only 45c8f533d4507bdc56fa8480c54387f71980d933..HEAD -- apps supabase",
     "productIdentityExpectation": "empty output — no product file differs between the candidate and any successor",
     "reFrozenFrom": {
       "what": "Every candidate this package has named, most recent first. Kept rather than overwritten: deleting the record of what was once frozen is the half-update this gate exists to catch.",
       "history": [
+        {
+          "previousCandidate": "9e8ebde2c285cb6a9f86af733c663938cad7271c",
+          "previousTree": "7bc304e3ab0436bcf1e49e38537a84097d00fad7",
+          "whyItMoved": "ONE re-freeze for the whole fix, taken after the entire CI-equivalent battery passed: backend 87/87 files and 2028 tests, database 140/140 files and 1684 tests, and all eight static checks. Two product defects landed together — the captured_at column grant the register needs, and the reversal of a permission narrowing that would have returned 403 to every download caller.",
+          "whyReFrozenRatherThanNamed": "`git diff --name-only 9e8ebde2..45c8f533 -- apps supabase` is NOT empty, so the successor apparatus — which exists only for a commit that leaves the product tree byte-identical — was unavailable. Amending the previous candidate would have produced the same tree in one commit, and was rejected: the branch is pushed and rewriting it would require a force, which this wave does not do.",
+          "whatThisCostAndWhatItDidNot": "The two LOCAL tiers, re-measured at this candidate. It bought no hosted figure and changed no test outcome — the converted suite is 26/26 before and after — so every hosted binding remains PENDING exactly as it was.",
+          "supersededSuccessorRecord": "That candidate named no executable successor at the moment it was superseded; `45c8f533d4507bdc56fa8480c54387f71980d933` is now the candidate itself."
+        },
         {
           "previousCandidate": "9d8d7dccf2fa7cd1504a5610ec34516f146dcd57",
           "previousTree": "f58214100011d863d264fbdd2dbdcb6728b8ff77",
@@ -174,7 +182,7 @@
       "failed": 0,
       "skipped": 0,
       "files": 100,
-      "measuredAtCommit": "7c47ca49067c81fd867272ce23c5cb917c5b5d5e",
+      "measuredAtCommit": "45c8f533d4507bdc56fa8480c54387f71980d933",
       "provenance": "LOCAL_COMPUTED_HOSTED_PENDING",
       "localLedger": {
         "path": "docs/phase-1/phase-1-27/evidence/local-run-ledger.json",
@@ -200,7 +208,7 @@
       "failed": 0,
       "skipped": 0,
       "files": 98,
-      "measuredAtCommit": "4d4b97456bcfd52065f01141884865772708fd33",
+      "measuredAtCommit": "45c8f533d4507bdc56fa8480c54387f71980d933",
       "provenance": "LOCAL_COMPUTED_HOSTED_PENDING",
       "localLedger": {
         "path": "docs/phase-1/phase-1-27/evidence/local-run-ledger.json",
