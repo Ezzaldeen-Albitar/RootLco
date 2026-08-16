@@ -157,8 +157,10 @@ describe('committed baselines', () => {
     // reports and which a developer can reproduce locally. It moves in lockstep
     // with structuralTotals.functions — the gap between them is extension-owned
     // code and is constant — so pinning both is what makes the larger figure
-    // derivable instead of guessed.
-    expect(baseline.functionCountDiscrepancyNote).toMatch(exactly(214));
+    // derivable instead of guessed. 214 through DBCR-P1-18-001; 215 since
+    // DBCR-P1-18-002 added rec.stamp_receiving_employee_identity, which lives in
+    // one of the seventeen RootLco schemas and is therefore counted by both.
+    expect(baseline.functionCountDiscrepancyNote).toMatch(exactly(215));
     expect(baseline.functionCountDiscrepancyNote).toMatch(
       exactly(baseline.structuralTotals.functions)
     );
