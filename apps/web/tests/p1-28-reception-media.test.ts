@@ -686,7 +686,9 @@ describe('P1-28 — the approved P1-OD-025 evidence policy is enforced', () => {
       .sort((a, b) => a.path.localeCompare(b.path))
       .flatMap(({ path, source }) => {
         const found = [
-          ...source.matchAll(/ck_document_versions_status[\s\S]{0,200}?status\s+IN\s*\(([^)]*)\)/gi),
+          ...source.matchAll(
+            /ck_document_versions_status[\s\S]{0,200}?status\s+IN\s*\(([^)]*)\)/gi
+          ),
         ];
         return found.map((match) => ({ path, values: match[1] }));
       });
@@ -745,7 +747,8 @@ describe('P1-28 — the approved P1-OD-025 evidence policy is enforced', () => {
     const RAW_KEY = /storageKey|storage_key/;
     const failures: string[] = [];
     for (const { path, source } of files) {
-      if (CREDENTIAL.test(source)) failures.push(`${path}: browser code carries storage credentials`);
+      if (CREDENTIAL.test(source))
+        failures.push(`${path}: browser code carries storage credentials`);
       if (RAW_KEY.test(source)) failures.push(`${path}: browser code names a raw storage key`);
     }
     return failures;
@@ -788,7 +791,7 @@ describe('P1-28 — the approved P1-OD-025 evidence policy is enforced', () => {
         {
           path: 'planted.sql',
           source:
-            "INSERT INTO shared.document_categories (id, category_code, default_classification) " +
+            'INSERT INTO shared.document_categories (id, category_code, default_classification) ' +
             "VALUES ('x','reception_exterior','public');",
         },
       ])
@@ -799,7 +802,7 @@ describe('P1-28 — the approved P1-OD-025 evidence policy is enforced', () => {
         {
           path: 'planted.sql',
           source:
-            "ALTER TABLE shared.document_versions ADD CONSTRAINT ck_document_versions_status " +
+            'ALTER TABLE shared.document_versions ADD CONSTRAINT ck_document_versions_status ' +
             "CHECK (status IN ('pending','scanning','accepted','quarantined','rejected','auto_accepted'));",
         },
       ])
@@ -832,7 +835,7 @@ describe('P1-28 — the approved P1-OD-025 evidence policy is enforced', () => {
         {
           path: 'planted.sql',
           source:
-            "ALTER TABLE shared.document_versions ADD CONSTRAINT ck_document_versions_status " +
+            'ALTER TABLE shared.document_versions ADD CONSTRAINT ck_document_versions_status ' +
             "CHECK (status IN ('pending','scanning','accepted','quarantined','rejected'));",
         },
       ])
