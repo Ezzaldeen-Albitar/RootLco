@@ -690,12 +690,21 @@ describe('P1-28 — the approved P1-OD-025 evidence policy is enforced', () => {
             /ck_document_versions_status[\s\S]{0,200}?status\s+IN\s*\(([^)]*)\)/gi
           ),
         ];
-        return found.map((match) => ({ path, values: match[1] }));
+        return found.map((match) => ({ path, values: match[1] ?? '' }));
       });
-    if (definitions.length === 0) return [];
 
-    const effective = definitions[definitions.length - 1];
-    const declared = [...effective.values.matchAll(/'([a-z_]+)'/gi)].map((m) => m[1]);
+    /*
+     * `.at(-1)` with an explicit guard rather than `[length - 1]`: the web
+     * workspace compiles under `noUncheckedIndexedAccess`, so an index read is
+     * `T | undefined` however carefully the length was checked first. The guard
+     * is the honest form anyway — it says out loud that a repository with no
+     * lifecycle definition satisfies this rule having examined nothing.
+     */
+    const effective = definitions.at(-1);
+    if (!effective) return [];
+    const declared = [...effective.values.matchAll(/'([a-z_]+)'/gi)]
+      .map((m) => m[1])
+      .filter((state): state is string => typeof state === 'string');
 
     /*
      * The vocabulary is CLOSED, not fixed. A tree that has not yet grown the
