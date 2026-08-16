@@ -108,7 +108,14 @@
     "whatWouldFailThis": "Any executable commit in `git log <head under test> --not <candidate> <historical base>` that is not named here, any named id outside that computed range, any product-path difference under apps/** or supabase/**, or any Git/topology question that returns UNKNOWN."
   },
   "absorbedSuccessors": [],
-  "successors": [],
+  "successors": [
+    {
+      "commit": "ab3c82af2a941a3722aa8058e8160c4c3fb1bd58",
+      "kind": "evidence tooling — the structural-reference allow-list, in every copy that must agree",
+      "what": "The platform evidence-category catalog is declared as structural reference in scripts/db/validate-seed-state.mjs and scripts/dev/owner-acceptance/discovery.mjs, matching the database tier own allow-list. tests/ci/acceptance-discovery.test.ts asserts the three agree, and it caught two of three being updated — it exists because two copies of a list that must agree, with nothing checking that they do, is how they stop agreeing.",
+      "whyNotAReFreeze": "git diff --name-only 04b3f6d8..ab3c82af -- apps supabase is EMPTY. The two changed paths are under scripts/, which is not product, so the frozen product tree is byte-identical and this is nameable rather than a re-freeze."
+    }
+  ],
   "howTierFiguresAreChecked": "Four obligations, because there are four kinds of claim. ARITHMETIC: `passed + failed + skipped` must equal the declared total. LOCAL: figures equal the P1-27 run ledger read out of Git at `localLedger.atCommit`. MEASUREMENT HEAD: both local tiers name successor ea045d88fd88843c82c8ecd7273b0772f65417f6, whose six declared non-product drift paths equal Git's path set, and are pinned to ledger commit 2e0f2191db4c118e766e9ca4b8ffff981b63d7c6. HOSTED: claims remain fetchable attestations at their recorded run heads; a non-candidate head must explicitly be a superseded ancestor or a product-identical descendant, and Git refusal is UNKNOWN rather than empty.",
   "tiers": {
     "unit": {
