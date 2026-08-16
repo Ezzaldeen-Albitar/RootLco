@@ -33,13 +33,31 @@ the candidate, and refuses either half that fails to name an unclosed task.
 
 ## The frozen candidate
 
-| Binding           | Value                                                                  |
-| ----------------- | ---------------------------------------------------------------------- |
-| `FINAL_CODE_SHA`  | `7b1252edebb5d7f48451213c71ab832cb44e46b5`                             |
-| `FINAL_CODE_TREE` | `1ef831d2ecfcf94d07b73857b7448c3b424faca3`                             |
-| Branch            | `feature/p1-28-appointment-vehicle-reception-frontend`                 |
-| Pull request      | **#226**, base `develop`, 130 commits ahead                            |
-| Subject           | `fix(p1-28): let the seal's own tests survive the package being bound` |
+| Binding           | Value                                                                                  |
+| ----------------- | -------------------------------------------------------------------------------------- |
+| `FINAL_CODE_SHA`  | `526a3b391b050f2e76fc7e6c1d8aed2983922fe7`                                             |
+| `FINAL_CODE_TREE` | `50e0c47757003774667ff1a78ccaf3c22e07596b`                                             |
+| Branch            | `p1-28/od-025-policy-enforcement`                                                      |
+| Pull request      | not yet opened, base `develop`, 1 commit ahead                                         |
+| Subject           | `feat(p1-28): enforce the approved P1-OD-025 evidence policy instead of forbidding it` |
+
+The previous candidate was `7b1252edebb5d7f48451213c71ab832cb44e46b5`, tree
+`1ef831d2ecfcf94d07b73857b7448c3b424faca3`, on
+`feature/p1-28-appointment-vehicle-reception-frontend` (**#226**). It was
+superseded because the Owner **resolved `P1-OD-025`**, and the gate that encoded
+that decision as OPEN became the thing blocking the approved foundation:
+`apps/web/tests/p1-28-reception-media.test.ts` proved that no SQL could create a
+document category, and the approved private/versioned model seeds seven reception
+categories. Reproduced as `1 failed | 56 passed` before the conversion existed.
+
+That path lives under `apps/**`, so
+`git diff --name-only 7b1252ed..526a3b39 -- apps supabase` is **not** empty and
+the successor apparatus was unavailable: this had to be a re-freeze. Every hosted
+binding therefore returns to PENDING and is listed in `pendingHostedBindings`,
+because moving the candidate moves the code the package describes and cannot
+manufacture an observation of it. The full account, including what the re-freeze
+cost and what it did not buy, is in `closure-candidate.json` under
+`reFrozenFrom.history`.
 
 ### This candidate is a RE-FREEZE, and the seal is why
 
