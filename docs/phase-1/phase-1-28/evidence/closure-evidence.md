@@ -33,13 +33,13 @@ the candidate, and refuses either half that fails to name an unclosed task.
 
 ## The frozen candidate
 
-| Binding           | Value                                                                             |
-| ----------------- | --------------------------------------------------------------------------------- |
-| `FINAL_CODE_SHA`  | `a5be17492c59713e5bd55a31336d16dc4aa611a3`                                        |
-| `FINAL_CODE_TREE` | `72fab9cd2b6bffda9b7877370f206f6ea7c8874f`                                        |
-| Branch            | `remediation/p1-15-reception-document-foundation`                                 |
-| Pull request      | **#232**, base `develop`, 25 commits ahead                                        |
-| Subject           | `fix(ci): bind the historical schema hash to an assertion that it is NOT current` |
+| Binding           | Value                                              |
+| ----------------- | -------------------------------------------------- |
+| `FINAL_CODE_SHA`  | `9d8d7dccf2fa7cd1504a5610ec34516f146dcd57`         |
+| `FINAL_CODE_TREE` | `f58214100011d863d264fbdd2dbdcb6728b8ff77`         |
+| Branch            | `remediation/p1-15-reception-document-foundation`  |
+| Pull request      | **#232**, base `develop`, 25 commits ahead         |
+| Subject           | `fix(ci): permissionCount is 110 — CI measured it` |
 
 The previous candidate was `7b1252edebb5d7f48451213c71ab832cb44e46b5`, tree
 `1ef831d2ecfcf94d07b73857b7448c3b424faca3`, on
