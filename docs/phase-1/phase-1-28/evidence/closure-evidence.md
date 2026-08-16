@@ -33,13 +33,13 @@ the candidate, and refuses either half that fails to name an unclosed task.
 
 ## The frozen candidate
 
-| Binding           | Value                                                                      |
-| ----------------- | -------------------------------------------------------------------------- |
-| `FINAL_CODE_SHA`  | `8b6e9e90e43a76cc7f0f3b28ffc4959e60a53305`                                 |
-| `FINAL_CODE_TREE` | `9b040267e10dff9e49e5c1b147d18e849998d0cb`                                 |
-| Branch            | `p1-28/od-025-policy-enforcement`                                          |
-| Pull request      | **#231**, base `develop`, 7 commits ahead                                  |
-| Subject           | `style(p1-28): format the converted suite with the WEB workspace prettier` |
+| Binding           | Value                                                                |
+| ----------------- | -------------------------------------------------------------------- |
+| `FINAL_CODE_SHA`  | `10a2f3d3c2c77cc3a0c56c14e0d7c8097d669cff`                           |
+| `FINAL_CODE_TREE` | `e8ab76dee9c2abe0fa794334a8844aa27aba4105`                           |
+| Branch            | `p1-28/od-025-policy-enforcement`                                    |
+| Pull request      | **#231**, base `develop`, 13 commits ahead                           |
+| Subject           | `fix(p1-28): satisfy noUncheckedIndexedAccess in the lifecycle rule` |
 
 The previous candidate was `7b1252edebb5d7f48451213c71ab832cb44e46b5`, tree
 `1ef831d2ecfcf94d07b73857b7448c3b424faca3`, on
