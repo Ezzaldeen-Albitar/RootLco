@@ -221,6 +221,11 @@ async function seedVersion(documentId: string, status: 'pending' | 'accepted'): 
        VALUES ($1, $2, $3, 'clean', 'fx_p15_fixture_scanner', $4)`,
       [randomUUID(), TENANT_A, versionId, U_SHARED]
     );
+    // Since P1-OD-025 a version reaches `accepted` only through `scanning`;
+    // `pending -> accepted` is refused by the guard even for a BYPASSRLS writer.
+    await admin.query(`UPDATE shared.document_versions SET status = 'scanning' WHERE id = $1`, [
+      versionId,
+    ]);
     await admin.query(`UPDATE shared.document_versions SET status = 'accepted' WHERE id = $1`, [
       versionId,
     ]);

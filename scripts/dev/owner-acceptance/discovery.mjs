@@ -231,6 +231,13 @@ export const STRUCTURAL_REFERENCE = Object.freeze([
   'wo.job_transitions',
   'inv.units_of_measure',
   'sal.payment_methods',
+  // P1-OD-025 platform evidence-category catalog. Structurally mandatory on the
+  // same argument as the work-order state graph above: the reception guards
+  // enforce against these rows by `category_code`, so a reception cannot record
+  // evidence without them. Platform scope only — `no-fake-data.test.ts` holds
+  // separately that the tenant-scoped half of this dual-scope table stays empty,
+  // which is the half an allow-list stops watching.
+  'shared.document_categories',
 ]);
 
 /** The schemas that test sweeps. Wider than the tenant-scoped scan by design. */

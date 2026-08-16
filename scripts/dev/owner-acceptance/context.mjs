@@ -205,6 +205,7 @@ export const CRM_VEHICLE_PERMISSIONS = Object.freeze([
   // inverted relative to every other vehicle sub-resource, and the one code an
   // Administration-shaped permission set would never have suggested.
   'shared.document.manage',
+  'shared.document.read',
 ]);
 
 /**

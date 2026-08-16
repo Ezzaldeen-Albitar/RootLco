@@ -96,6 +96,23 @@ export interface StorageProvider {
   signDownload(request: SignUrlRequest): Promise<SignedUrl>;
 }
 
+export interface StoredObject {
+  readonly bytes: Uint8Array;
+  readonly contentType: string | null;
+  readonly contentLength: number;
+}
+
+/** Implemented only by real server-side adapters; never exposed to the browser. */
+export interface ReadableStorageProvider extends StorageProvider {
+  readObject(storageKey: string, maxBytes: number): Promise<StoredObject>;
+}
+
+export function storageProviderCanRead(
+  candidate: StorageProvider
+): candidate is ReadableStorageProvider {
+  return typeof (candidate as Partial<ReadableStorageProvider>).readObject === 'function';
+}
+
 /** Longest signed-URL lifetime any adapter may issue, whatever configuration says. */
 export const ABSOLUTE_MAX_URL_TTL_SECONDS = 900;
 

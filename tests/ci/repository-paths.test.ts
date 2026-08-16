@@ -155,7 +155,12 @@ describe('the API application lives in the workspace', () => {
     // active entries for `apt.appointment.read` / `rec.reception.read`, and the
     // administrative read shows retired entries and their `recordVersion` to
     // `apt.catalogue.manage` / `rec.catalogue.manage`.
-    expect(routeFiles.length).toBe(237);
+    //
+    // 239 with the two P1-OD-025 evidence reads: `attachments/categories`
+    // publishes the governed category policy a client must obey, and
+    // `attachments/versions/{versionId}` publishes one immutable version and
+    // its scan lifecycle. Both are new route MODULES — neither path had a file.
+    expect(routeFiles.length).toBe(239);
 
     // Non-vacuity. A discovery assertion that only checks a count would pass
     // against a set with one route swapped for another, so the comparison that
@@ -197,8 +202,9 @@ describe('the API application lives in the workspace', () => {
     // the seven collection GETs. Operations and route modules move by different
     // amounts for that reason, which is exactly why both are asserted.
     // 289 with the seven administrative reads, which move both counts by seven
-    // — one operation per new module.
-    expect(report.operations).toHaveLength(289);
+    // — one operation per new module. 291 with the two P1-OD-025 evidence
+    // reads, which likewise move both counts by two.
+    expect(report.operations).toHaveLength(291);
 
     // ~1 s per process by construction, not by slowness. The budget is stated
     // here rather than raised globally, so it cannot quietly cover a different

@@ -15,6 +15,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
+  CLASSIFIERS,
   DEFAULT_BASE,
   PROFILE_MAP_PATH,
   PROFILES,
@@ -233,6 +234,110 @@ describe('p1-27-backend-partner-identity profile', () => {
   ])('still forbids %s', (_label, path, bucket) => {
     const { failures } = evaluate([...BACKEND_CHANGES, path], 'p1-27-backend-partner-identity');
     expect(failures.some((f) => f.startsWith(`${bucket}:`) && f.includes(path))).toBe(true);
+  });
+});
+
+describe('the webContract bucket', () => {
+  /*
+   * WHY THE BUCKET EXISTS, stated so the test can outlive the memory of it.
+   *
+   * `apps/web/src/lib/api/idempotent-operations.ts` is GENERATED and publishes
+   * every operation the contract carries, so any new route regenerates it. Two
+   * HANDWRITTEN mirrors then assert bidirectional equality against a slice of
+   * it. A Backend branch that publishes one `rec.*` route therefore reddens
+   * `receptions-contract.test.ts` — and every Backend profile forbids `web`, so
+   * that branch is forbidden to fix the file it just broke. Reproduced on the
+   * FE-007 branch as `1 failed | 56 passed`, with `rec.receiving-employee-list`
+   * published and unmirrored.
+   *
+   * The danger in the remedy is the opposite one: a bucket wide enough to be
+   * convenient reopens the hole every Backend profile exists to close. So the
+   * assertions below run in both directions.
+   */
+  const MIRRORS = [
+    'apps/web/src/features/receptions/receptions-contract.ts',
+    'apps/web/tests/receptions-contract.test.ts',
+    'apps/web/src/features/appointments/appointments-contract.ts',
+    'apps/web/tests/appointments-contract.test.ts',
+  ];
+
+  /** Handwritten web files that are NOT contract mirrors and must stay `web`. */
+  const NOT_MIRRORS = [
+    'apps/web/src/features/receptions/components/steps/SignatureStep.tsx',
+    'apps/web/src/features/receptions/receptions-api.ts',
+    'apps/web/src/features/receptions/work-order-contract.ts',
+    'apps/web/src/features/vehicles/duplicates-contract.ts',
+    'apps/web/src/lib/customers/vehicles-contract.ts',
+    'apps/web/src/lib/api/operation-contract.ts',
+    'apps/web/tests/p1-28-reception-media.test.ts',
+    'apps/web/src/app/(app)/receptions/page.tsx',
+    'apps/web/src/i18n/en.json',
+  ];
+
+  it.each(MIRRORS)('classifies %s as webContract', (path) => {
+    expect(classify(path)).toBe('webContract');
+  });
+
+  it.each(NOT_MIRRORS)('leaves %s in the closed web bucket', (path) => {
+    // The anti-vacuity half. `duplicates-contract.ts`, `work-order-contract.ts`
+    // and `vehicles-contract.ts` are here on purpose: a `*-contract.ts` pattern
+    // would have swallowed all three, and no exhaustiveness assertion touches
+    // any of them.
+    expect(classify(path)).toBe('web');
+  });
+
+  it('is a Backend escape that does not open the web tree', () => {
+    const changes = [
+      'apps/api/src/app/api/v1/receptions/route.ts',
+      'apps/web/src/lib/api/idempotent-operations.ts',
+      ...MIRRORS,
+    ];
+    expect(evaluate(changes, 'p1-18-read-surface').failures).toEqual([]);
+    // …and the same profile still refuses a component in the same diff.
+    const withComponent = [...changes, NOT_MIRRORS[0] as string];
+    expect(
+      evaluate(withComponent, 'p1-18-read-surface').failures.some((f) => f.startsWith('web:'))
+    ).toBe(true);
+  });
+
+  it('is DECLARED by every profile, so no profile permits it by silence', () => {
+    /*
+     * `evaluate()` fails a bucket only when the profile FORBIDS it by name — a
+     * bucket in neither list passes. The module docblock says "anything not
+     * listed is forbidden"; the code does not, and this test does not change
+     * that behaviour, it removes the reliance on it. Without this, adding
+     * `webContract` would have silently widened every profile that previously
+     * refused those files under `web`.
+     */
+    for (const [name, profile] of Object.entries(PROFILES)) {
+      const listed = profile.allowed.includes('webContract') || 'webContract' in profile.forbidden;
+      expect(listed, `${name} neither allows nor forbids webContract`).toBe(true);
+    }
+  });
+
+  it('still exists for a reason: both mirrors really do assert exhaustive equality', () => {
+    // The bucket is justified by an assertion in another file. If that assertion
+    // is deleted or narrowed, the escape hatch has outlived its cause and this
+    // says so instead of leaving a permanent hole in the Backend profiles.
+    for (const test of [
+      'apps/web/tests/receptions-contract.test.ts',
+      'apps/web/tests/appointments-contract.test.ts',
+    ]) {
+      const source = readFileSync(join(REPO_ROOT, test), 'utf8');
+      expect(source, `${test} no longer imports the generated manifest`).toContain(
+        'PUBLISHED_OPERATIONS'
+      );
+      expect(source, `${test} no longer asserts exhaustive equality`).toContain(
+        'expect(mirrored).toEqual(published)'
+      );
+    }
+  });
+
+  it('is matched before the general web rule, or it could never fire', () => {
+    const order = CLASSIFIERS.map((rule) => rule.bucket);
+    expect(order.indexOf('webContract')).toBeGreaterThanOrEqual(0);
+    expect(order.indexOf('webContract')).toBeLessThan(order.indexOf('web'));
+    expect(order.indexOf('webGenerated')).toBeLessThan(order.indexOf('web'));
   });
 });
 
