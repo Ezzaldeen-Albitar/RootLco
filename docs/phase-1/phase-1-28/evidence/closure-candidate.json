@@ -5,19 +5,27 @@
   "howToCheck": "npm run validate:p1-28-evidence",
   "whatThisIsNot": "This is not a tamper-proof seal. The digests in evidence-manifest.json remove SILENT revision, not revision. It is ALSO not an Owner acceptance and not a closure record: the phase is OPEN and `OWNER ACCEPTANCE` has neither been asked for nor returned. What it now IS is a package whose current remediation half has been taken: nine bindings, including all five tiers, CodeQL, dependency security, browser-by-project and the database reproof, cite exact-head PR CI run 31885987461 at 1a186a7bcb7d0b97bb771753dacb584535692455. The unit and web figures agree with the authoritative local observation at ea045d88 pinned by ledger commit 2e0f2191. The earlier aggregate hostedCi and production-build records remain fetchable at product-identical 81cbd44b because the exact remediation run legitimately skipped those change-classified build jobs. Every cited head descends from the candidate, its apps/** and supabase/** are COMPUTED byte-identical to it, and each binding says so with `describesProductIdenticalSuccessor`. `pendingHostedBindings.bindings` is EMPTY by derivation. The two superseded citations this package has carried, 55b932cb and 38afa5c2, are kept in `supersededObservations`.",
   "candidate": {
-    "FINAL_CODE_SHA": "9d8d7dccf2fa7cd1504a5610ec34516f146dcd57",
-    "FINAL_CODE_TREE": "f58214100011d863d264fbdd2dbdcb6728b8ff77",
+    "FINAL_CODE_SHA": "9e8ebde2c285cb6a9f86af733c663938cad7271c",
+    "FINAL_CODE_TREE": "7bc304e3ab0436bcf1e49e38537a84097d00fad7",
     "branch": "remediation/p1-15-reception-document-foundation",
     "pullRequest": null,
     "baseBranch": "develop",
-    "commitsAheadOfDevelop": 49,
-    "subject": "fix(ci): permissionCount is 110 — CI measured it",
+    "commitsAheadOfDevelop": 55,
+    "subject": "fix(db): the migration creates structure only",
     "whatFreezingMeans": "This commit freezes the PRODUCT: every later head cited by the package must leave apps/** and supabase/** byte-identical to it. Executable evidence machinery may follow only as a full-id successor, and every LOCAL measurement taken there must declare the exact non-product drift that Git computes. A successor that changes a product tree invalidates this package and the candidate must be re-frozen and re-measured; a successor that changes only evidence machinery is named and re-measured without pretending it was part of the frozen product.",
-    "productIdentityCheck": "git diff --name-only 9d8d7dccf2fa7cd1504a5610ec34516f146dcd57..HEAD -- apps supabase",
+    "productIdentityCheck": "git diff --name-only 9e8ebde2c285cb6a9f86af733c663938cad7271c..HEAD -- apps supabase",
     "productIdentityExpectation": "empty output — no product file differs between the candidate and any successor",
     "reFrozenFrom": {
       "what": "Every candidate this package has named, most recent first. Kept rather than overwritten: deleting the record of what was once frozen is the half-update this gate exists to catch.",
       "history": [
+        {
+          "previousCandidate": "9d8d7dccf2fa7cd1504a5610ec34516f146dcd57",
+          "previousTree": "f58214100011d863d264fbdd2dbdcb6728b8ff77",
+          "whyItMoved": "Keeps the candidate as the newest commit touching an executable path; product tree byte-identical.",
+          "whyReFrozenRatherThanNamed": "`git diff --name-only 9d8d7dcc..9e8ebde2 -- apps supabase` is NOT empty, so the successor apparatus — which exists only for a commit that leaves the product tree byte-identical — was unavailable. Amending the previous candidate would have produced the same tree in one commit, and was rejected: the branch is pushed and rewriting it would require a force, which this wave does not do.",
+          "whatThisCostAndWhatItDidNot": "The two LOCAL tiers, re-measured at this candidate. It bought no hosted figure and changed no test outcome — the converted suite is 26/26 before and after — so every hosted binding remains PENDING exactly as it was.",
+          "supersededSuccessorRecord": "That candidate named no executable successor at the moment it was superseded; `9e8ebde2c285cb6a9f86af733c663938cad7271c` is now the candidate itself."
+        },
         {
           "previousCandidate": "a5be17492c59713e5bd55a31336d16dc4aa611a3",
           "previousTree": "72fab9cd2b6bffda9b7877370f206f6ea7c8874f",
@@ -171,8 +179,8 @@
       "localLedger": {
         "path": "docs/phase-1/phase-1-27/evidence/local-run-ledger.json",
         "tier": "unit",
-        "atCommit": "66e56c0f4ddcec8e7f65e5cb7c4afd6cbe422ec2",
-        "howChecked": "`git show 66e56c0f4ddcec8e7f65e5cb7c4afd6cbe422ec2:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD when this measurement was recorded, rather than the working copy, which would let an uncommitted edit vouch for itself."
+        "atCommit": "9e8ebde2c285cb6a9f86af733c663938cad7271c",
+        "howChecked": "`git show 9e8ebde2c285cb6a9f86af733c663938cad7271c:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD when this measurement was recorded, rather than the working copy, which would let an uncommitted edit vouch for itself."
       },
       "hostedAttestation": {
         "runId": 31885987461,
@@ -183,7 +191,8 @@
         "describesSupersededHead": true,
         "supersededBy": "The hosted run taken at a head that DESCENDS from candidate 526a3b39 — the pull request CI for branch `p1-28/od-025-policy-enforcement`. Until that run exists this figure describes an ancestor and is cited as such; it is replaced by re-citing the same fields (run id, job id, head, artefact) at the descending head, never by relaxing the rule that refused it."
       },
-      "note": "Measured at cb1c6550, a documentation-only successor of the candidate: the commits between them carry evidence records and nothing executable."
+      "note": "Measured at cb1c6550, a documentation-only successor of the candidate: the commits between them carry evidence records and nothing executable.",
+      "measurementDrift": ["tests/db/p1-15-shared-services-runtime-capabilities.test.ts"]
     },
     "web": {
       "label": "web component and DOM",
@@ -197,8 +206,8 @@
       "localLedger": {
         "path": "docs/phase-1/phase-1-27/evidence/local-run-ledger.json",
         "tier": "web",
-        "atCommit": "66e56c0f4ddcec8e7f65e5cb7c4afd6cbe422ec2",
-        "howChecked": "`git show 66e56c0f4ddcec8e7f65e5cb7c4afd6cbe422ec2:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD when this measurement was recorded, rather than the working copy, which would let an uncommitted edit vouch for itself."
+        "atCommit": "9e8ebde2c285cb6a9f86af733c663938cad7271c",
+        "howChecked": "`git show 9e8ebde2c285cb6a9f86af733c663938cad7271c:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD when this measurement was recorded, rather than the working copy, which would let an uncommitted edit vouch for itself."
       },
       "hostedAttestation": {
         "runId": 31885987461,
@@ -209,7 +218,8 @@
         "describesSupersededHead": true,
         "supersededBy": "The hosted run taken at a head that DESCENDS from candidate 526a3b39 — the pull request CI for branch `p1-28/od-025-policy-enforcement`. Until that run exists this figure describes an ancestor and is cited as such; it is replaced by re-citing the same fields (run id, job id, head, artefact) at the descending head, never by relaxing the rule that refused it."
       },
-      "note": "Measured at 8fac4c94, a documentation-only successor of the candidate: the commits between them carry evidence records and nothing executable."
+      "note": "Measured at 8fac4c94, a documentation-only successor of the candidate: the commits between them carry evidence records and nothing executable.",
+      "measurementDrift": ["tests/db/p1-15-shared-services-runtime-capabilities.test.ts"]
     },
     "backend": {
       "label": "backend integration, against a real PostgreSQL",
