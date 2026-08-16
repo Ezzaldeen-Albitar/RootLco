@@ -112,6 +112,40 @@ export const PROFILES = {
         'backend-merge precedent (#212/#213)',
     },
   },
+  'p1-15-evidence-foundation': {
+    why:
+      'the P1-OD-025 shared private/versioned evidence remediation: an S3-compatible storage ' +
+      'adapter, the scanner handoff, two evidence read operations, the category policy columns ' +
+      'and the migration that carries them',
+    allowed: [
+      'apiSource',
+      'apiConfig',
+      'docs',
+      'tooling',
+      'tests',
+      'rootConfig',
+      'migrations',
+      'supabase',
+      // `apps/web/src/lib/api/idempotent-operations.ts`. A first draft of this
+      // profile FORBADE it, reasoning that two new READ operations cannot move
+      // an idempotency manifest. That reasoning was wrong about the file: it
+      // publishes EVERY operation the contract carries, with its idempotency
+      // and audit class as fields, so any new operation moves it. Allowing it
+      // is the P1-18 read-surface and P1-24 backend-merge precedent (#212/#213)
+      // — generator output the Backend's own register keeps in sync, validated
+      // by `validate:generated-artifacts` and `validate:idempotent-operations`.
+      'webGenerated',
+    ],
+    forbidden: {
+      // Backend-only, for the reason every Backend profile gives: the reception
+      // Frontend that will consume this evidence surface is a separate change,
+      // reviewed as Frontend. `apiConfig` IS allowed here and is not allowed to
+      // most Backend profiles — this change adds runtime dependencies to
+      // `apps/api/package.json`, which is a Backend fact about a Backend
+      // workspace, and hiding it in `rootConfig` would misdescribe it.
+      web: 'the evidence foundation is Backend-only — the reception Frontend is a separate change',
+    },
+  },
   'p1-27-backend-partner-identity': {
     why: 'the P1-27-INT-025 partner-identity Backend remediation, split out of the Frontend branch',
     allowed: ['apiSource', 'apiConfig', 'docs', 'tooling', 'tests', 'rootConfig'],

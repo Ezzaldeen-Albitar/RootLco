@@ -133,13 +133,52 @@ describe('shared.document_versions — append-only, gated lifecycle', () => {
     );
   });
 
+  it('cannot go straight from pending to accepted, however clean the scan', async () => {
+    // P1-OD-025. The clean verdict is present, so the ONLY thing refusing the
+    // update is the requirement to pass through scanning first.
+    await withRolledBackTx(admin, {}, async (c) => {
+      const v = await insertVersion(c, 19);
+      const id = v.rows[0].id;
+      await c.query(
+        `INSERT INTO shared.file_scan_results (tenant_id, version_id, scan_status, scanner_code, created_by)
+         VALUES ($1,$2,'clean','clamav',$3)`,
+        [TENANT_A, id, ACTOR]
+      );
+      await expectSqlState(
+        c.query(`UPDATE shared.document_versions SET status='accepted' WHERE id=$1`, [id]),
+        '23514'
+      );
+    });
+  });
+
   it('cannot be accepted without a clean scan', async () => {
     await withRolledBackTx(admin, {}, async (c) => {
       const v = await insertVersion(c, 20);
+      await c.query(`UPDATE shared.document_versions SET status='scanning' WHERE id=$1`, [
+        v.rows[0].id,
+      ]);
       await expectSqlState(
         c.query(`UPDATE shared.document_versions SET status='accepted' WHERE id=$1`, [
           v.rows[0].id,
         ]),
+        '23514'
+      );
+    });
+  });
+
+  it('cannot be accepted on an error verdict alone — a scan that failed is not a clean scan', async () => {
+    // The rule the decision states as "scanner failure must not auto-accept".
+    await withRolledBackTx(admin, {}, async (c) => {
+      const v = await insertVersion(c, 25);
+      const id = v.rows[0].id;
+      await c.query(
+        `INSERT INTO shared.file_scan_results (tenant_id, version_id, scan_status, scanner_code, created_by)
+         VALUES ($1,$2,'error','clamav',$3)`,
+        [TENANT_A, id, ACTOR]
+      );
+      await c.query(`UPDATE shared.document_versions SET status='scanning' WHERE id=$1`, [id]);
+      await expectSqlState(
+        c.query(`UPDATE shared.document_versions SET status='accepted' WHERE id=$1`, [id]),
         '23514'
       );
     });
@@ -159,6 +198,7 @@ describe('shared.document_versions — append-only, gated lifecycle', () => {
          VALUES ($1,$2,'infected','clamav','EICAR-Test',$3)`,
         [TENANT_A, id, ACTOR]
       );
+      await c.query(`UPDATE shared.document_versions SET status='scanning' WHERE id=$1`, [id]);
       await expectSqlState(
         c.query(`UPDATE shared.document_versions SET status='accepted' WHERE id=$1`, [id]),
         '23514'
@@ -166,7 +206,7 @@ describe('shared.document_versions — append-only, gated lifecycle', () => {
     });
   });
 
-  it('is accepted (with accepted_at stamped) once a clean scan exists', async () => {
+  it('is accepted (with accepted_at and scanning_at stamped) once a clean scan exists', async () => {
     await withRolledBackTx(admin, {}, async (c) => {
       const v = await insertVersion(c, 22);
       const id = v.rows[0].id;
@@ -175,12 +215,30 @@ describe('shared.document_versions — append-only, gated lifecycle', () => {
          VALUES ($1,$2,'clean','clamav',$3)`,
         [TENANT_A, id, ACTOR]
       );
+      const scanning = await c.query(
+        `UPDATE shared.document_versions SET status='scanning' WHERE id=$1 RETURNING scanning_at`,
+        [id]
+      );
+      expect(scanning.rows[0].scanning_at).not.toBeNull();
       const r = await c.query(
-        `UPDATE shared.document_versions SET status='accepted' WHERE id=$1 RETURNING status, accepted_at`,
+        `UPDATE shared.document_versions SET status='accepted' WHERE id=$1 RETURNING status, accepted_at, scanning_at`,
         [id]
       );
       expect(r.rows[0].status).toBe('accepted');
       expect(r.rows[0].accepted_at).not.toBeNull();
+      expect(r.rows[0].scanning_at).not.toBeNull();
+    });
+  });
+
+  it('a scanning version cannot fall back to pending', async () => {
+    await withRolledBackTx(admin, {}, async (c) => {
+      const v = await insertVersion(c, 26);
+      const id = v.rows[0].id;
+      await c.query(`UPDATE shared.document_versions SET status='scanning' WHERE id=$1`, [id]);
+      await expectSqlState(
+        c.query(`UPDATE shared.document_versions SET status='pending' WHERE id=$1`, [id]),
+        '23514'
+      );
     });
   });
 
@@ -193,11 +251,58 @@ describe('shared.document_versions — append-only, gated lifecycle', () => {
          VALUES ($1,$2,'clean','clamav',$3)`,
         [TENANT_A, id, ACTOR]
       );
+      await c.query(`UPDATE shared.document_versions SET status='scanning' WHERE id=$1`, [id]);
       await c.query(`UPDATE shared.document_versions SET status='accepted' WHERE id=$1`, [id]);
       await expectSqlState(
         c.query(`UPDATE shared.document_versions SET status='rejected' WHERE id=$1`, [id]),
         '23514'
       );
+    });
+  });
+
+  it('a quarantined and a rejected version are terminal too — neither can become accepted', async () => {
+    // "A rejected or quarantined version can never satisfy evidence" is only
+    // true if neither can leave its state. Both directions, not just accepted.
+    //
+    // ONE failing probe per transaction: a statement that raises aborts the
+    // transaction, so a second probe would report 25P02 and the assertion would
+    // be about the runner rather than about the guard.
+    let n = 27;
+    for (const terminal of ['quarantined', 'rejected'] as const) {
+      for (const target of ['accepted', 'scanning', 'pending'] as const) {
+        n += 1;
+        await withRolledBackTx(admin, {}, async (c) => {
+          const v = await insertVersion(c, n);
+          const id = v.rows[0].id;
+          await c.query(
+            `INSERT INTO shared.file_scan_results (tenant_id, version_id, scan_status, scanner_code, created_by)
+             VALUES ($1,$2,'clean','clamav',$3)`,
+            [TENANT_A, id, ACTOR]
+          );
+          await c.query(`UPDATE shared.document_versions SET status=$2 WHERE id=$1`, [
+            id,
+            terminal,
+          ]);
+          await expectSqlState(
+            c.query(`UPDATE shared.document_versions SET status=$2 WHERE id=$1`, [id, target]),
+            '23514'
+          );
+        });
+      }
+    }
+  });
+
+  it('a pending version may still be rejected directly — the shipped runtime transition', async () => {
+    // Regression lock. `shared.attachment-version-reject` updates a pending row
+    // straight to `rejected`; a guard that demanded scanning first would answer
+    // every request to that operation with an error.
+    await withRolledBackTx(admin, {}, async (c) => {
+      const v = await insertVersion(c, 40);
+      const r = await c.query(
+        `UPDATE shared.document_versions SET status='rejected' WHERE id=$1 RETURNING rejected_at`,
+        [v.rows[0].id]
+      );
+      expect(r.rows[0].rejected_at).not.toBeNull();
     });
   });
 

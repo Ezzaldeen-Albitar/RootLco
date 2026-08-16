@@ -157,8 +157,8 @@
       "class": "DERIVABLE_LOCAL",
       "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
-      "locator": "| Migrations on disk                          | 120   | a walk of `supabase/migrations`                                    |",
-      "value": "120",
+      "locator": "| Migrations on disk                          | 121   | a walk of `supabase/migrations`                                    |",
+      "value": "121",
       "binding": {
         "kind": "derived",
         "table": "counts",

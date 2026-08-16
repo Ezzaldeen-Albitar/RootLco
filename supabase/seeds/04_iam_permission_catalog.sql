@@ -79,6 +79,7 @@ INSERT INTO iam.permissions (permission_code, domain, description, risk_level, c
   -- the existing org.settings.manage: a message template is tenant configuration,
   -- and minting a second code for it would split one authority across two names.
   ('shared.document.manage',   'shared', 'Create document metadata, pre-acceptance versions and links', 'medium', '00000000-0000-4000-8000-000000000001'),
+  ('shared.document.read',     'shared', 'Read document metadata and accepted evidence', 'low', '00000000-0000-4000-8000-000000000001'),
   ('shared.notification.send', 'shared', 'Enqueue outbound notifications',           'medium', '00000000-0000-4000-8000-000000000001'),
   -- Phase 1-16 — CRM Backend (crm). DBCR-P1-16-001 enables runtime authorship of
   -- customer notes on shared.notes (SELECT-only before this change). One code,

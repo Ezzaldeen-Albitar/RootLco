@@ -654,6 +654,14 @@ describe('P1-15 attachments / the acceptance gate itself (admin probes, not capa
     let code = '';
     let message = '';
     try {
+      // The version is moved to `scanning` first ON PURPOSE. Since P1-OD-025 a
+      // direct `pending -> accepted` is refused by a DIFFERENT rule, and this
+      // test is about the clean-scan gate: asserting only the SQLSTATE would
+      // let the lifecycle rule stand in for the evidence rule and the suite
+      // would keep passing with the acceptance gate removed.
+      await admin.query(`UPDATE shared.document_versions SET status = 'scanning' WHERE id = $1`, [
+        VER_UNSCANNED_A,
+      ]);
       await admin.query(`UPDATE shared.document_versions SET status = 'accepted' WHERE id = $1`, [
         VER_UNSCANNED_A,
       ]);
@@ -662,7 +670,25 @@ describe('P1-15 attachments / the acceptance gate itself (admin probes, not capa
       message = (err as Error).message;
     }
     expect(code).toBe('23514');
-    expect(message).toContain('no clean scan on record');
+    expect(message).toContain('without an exclusively clean scan');
+  });
+
+  it('a direct pending -> accepted is refused whatever the scan history says', async () => {
+    // The lifecycle rule, isolated from the evidence rule above. VER_SCANNED_A
+    // HAS a clean verdict, so the only thing standing between it and acceptance
+    // here is the requirement to pass through scanning.
+    let code = '';
+    let message = '';
+    try {
+      await admin.query(`UPDATE shared.document_versions SET status = 'accepted' WHERE id = $1`, [
+        VER_SCANNED_A,
+      ]);
+    } catch (err) {
+      code = (err as { code?: string }).code ?? '';
+      message = (err as Error).message;
+    }
+    expect(code).toBe('23514');
+    expect(message).toContain('must enter scanning before acceptance');
   });
 
   it('acceptance succeeds once a clean scan row exists — an ADMIN FIXTURE, not a scanner', async () => {
@@ -683,18 +709,27 @@ describe('P1-15 attachments / the acceptance gate itself (admin probes, not capa
       );
     });
 
+    await admin.query(`UPDATE shared.document_versions SET status = 'scanning' WHERE id = $1`, [
+      VER_SCANNED_A,
+    ]);
     const updated = await admin.query(
       `UPDATE shared.document_versions SET status = 'accepted' WHERE id = $1`,
       [VER_SCANNED_A]
     );
     expect(updated.rowCount).toBe(1);
 
-    const { rows } = await admin.query<{ status: string; accepted_at: string | null }>(
-      `SELECT status, accepted_at FROM shared.document_versions WHERE id = $1`,
-      [VER_SCANNED_A]
-    );
+    const { rows } = await admin.query<{
+      status: string;
+      accepted_at: string | null;
+      scanning_at: string | null;
+    }>(`SELECT status, accepted_at, scanning_at FROM shared.document_versions WHERE id = $1`, [
+      VER_SCANNED_A,
+    ]);
     expect(rows[0]?.status).toBe('accepted');
     expect(rows[0]?.accepted_at).not.toBeNull();
+    // The scanning instant survives acceptance, so an accepted version can
+    // always be shown to have passed through the gate rather than around it.
+    expect(rows[0]?.scanning_at).not.toBeNull();
   });
 });
 
