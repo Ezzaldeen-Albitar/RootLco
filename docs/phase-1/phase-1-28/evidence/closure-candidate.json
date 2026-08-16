@@ -111,8 +111,7 @@
         "describesSupersededHead": true,
         "supersededBy": "The hosted run taken at a head that DESCENDS from candidate 526a3b39 — the pull request CI for branch `p1-28/od-025-policy-enforcement`. Until that run exists this figure describes an ancestor and is cited as such; it is replaced by re-citing the same fields (run id, job id, head, artefact) at the descending head, never by relaxing the rule that refused it."
       },
-      "note": "Measured AT the candidate. The working tree at measurement time differed from 526a3b39 only in documentation, so there is no executable drift to declare.",
-      "measurementDrift": []
+      "note": "Measured AT the candidate. The working tree at measurement time differed from 526a3b39 only in documentation, so there is no executable drift to declare."
     },
     "web": {
       "label": "web component and DOM",
@@ -138,8 +137,7 @@
         "describesSupersededHead": true,
         "supersededBy": "The hosted run taken at a head that DESCENDS from candidate 526a3b39 — the pull request CI for branch `p1-28/od-025-policy-enforcement`. Until that run exists this figure describes an ancestor and is cited as such; it is replaced by re-citing the same fields (run id, job id, head, artefact) at the descending head, never by relaxing the rule that refused it."
       },
-      "note": "Measured AT the candidate. The working tree at measurement time differed from 526a3b39 only in documentation, so there is no executable drift to declare.",
-      "measurementDrift": []
+      "note": "Measured AT the candidate. The working tree at measurement time differed from 526a3b39 only in documentation, so there is no executable drift to declare."
     },
     "backend": {
       "label": "backend integration, against a real PostgreSQL",
