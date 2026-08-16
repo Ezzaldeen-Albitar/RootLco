@@ -33,13 +33,13 @@ the candidate, and refuses either half that fails to name an unclosed task.
 
 ## The frozen candidate
 
-| Binding           | Value                                                                             |
-| ----------------- | --------------------------------------------------------------------------------- |
-| `FINAL_CODE_SHA`  | `2c25414a34908010f4ceae01da8cfa72af02819f`                                        |
-| `FINAL_CODE_TREE` | `9fc883e01272fe85af5b4c6fed1dccd9b8193022`                                        |
-| Branch            | `remediation/p1-15-reception-document-foundation`                                 |
-| Pull request      | **#232**, base `develop`, 25 commits ahead                                        |
-| Subject           | `fix(p1-15): rows belong in seeds, and the schema baseline moves with the change` |
+| Binding           | Value                                                          |
+| ----------------- | -------------------------------------------------------------- |
+| `FINAL_CODE_SHA`  | `4d737a59a2e6852f168632aef1786dbb49961f39`                     |
+| `FINAL_CODE_TREE` | `7e6e862971ed2f3ddda6e8c8355fdcaa151d26ce`                     |
+| Branch            | `remediation/p1-15-reception-document-foundation`              |
+| Pull request      | **#232**, base `develop`, 25 commits ahead                     |
+| Subject           | `fix(ci): raise the frozen schema hash to the one CI computed` |
 
 The previous candidate was `7b1252edebb5d7f48451213c71ab832cb44e46b5`, tree
 `1ef831d2ecfcf94d07b73857b7448c3b424faca3`, on
