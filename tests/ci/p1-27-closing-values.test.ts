@@ -106,6 +106,33 @@ describe('P1-27 closing values — the gate is not vacuous', () => {
     expect(judge(unbound).failureIds).toContain('UNBOUND_DERIVABLE_VALUE');
   });
 
+  it('resolves the `schemaBaseline` binding, and refuses a field that is not there', () => {
+    /*
+     * The binding kind added so `QA-005` could compare a record row against the
+     * DATABASE baseline instead of against `Migrations applied` — a superseded
+     * hosted measurement fixed at the head it describes. One row cannot answer
+     * to a fixed historical head and a moving baseline at once, and while it
+     * did, raising `migrationCount` turned one red gate into a different one.
+     *
+     * Both directions, because a resolver that returned a value for every field
+     * name would satisfy the positive case and prove nothing. The negative case
+     * is the one that makes the positive mean something.
+     */
+    const resolved = JSON.parse(JSON.stringify(minimal()));
+    resolved.schemaBaseline = { migrationCount: 123 };
+    resolved.ledger.values[0].binding = { kind: 'schemaBaseline', field: 'migrationCount' };
+    resolved.ledger.values[0].value = '123';
+    expect(judge(resolved).failureIds).not.toContain('UNBOUND_DERIVABLE_VALUE');
+
+    const disagrees = JSON.parse(JSON.stringify(resolved));
+    disagrees.ledger.values[0].value = '122';
+    expect(judge(disagrees).failureIds).toContain('DERIVED_VALUE_DISAGREES');
+
+    const absent = JSON.parse(JSON.stringify(resolved));
+    absent.ledger.values[0].binding = { kind: 'schemaBaseline', field: 'noSuchField' };
+    expect(judge(absent).failureIds).toContain('UNBOUND_DERIVABLE_VALUE');
+  });
+
   it('refuses every mutation in the self-check table, on every invocation', () => {
     // The same table runs inside the gate. Asserting it here as well is the
     // difference between "the negative proofs exist" and "the negative proofs

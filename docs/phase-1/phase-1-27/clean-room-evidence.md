@@ -167,7 +167,8 @@ different tree is not evidence about this one.
 | Root unit tier — files the run reported     | 100   | the same report, cross-checked against the tier's include rule      |
 | Committed web floor (`minTests`)            | 2500  | `.github/ci-baselines/test-count-baseline.json`                    |
 | Committed unit floor (`minTests`)           | 1050  | the same baseline                                                  |
-| Migrations on disk                          | 121   | a walk of `supabase/migrations`                                    |
+| Migrations on disk                          | 123   | a walk of `supabase/migrations`                                    |
+| Committed migration baseline                | 123   | `.github/ci-baselines/schema-baseline.json`, `migrationCount`      |
 
 The floor and the measurement are different questions and they have different
 authorities. The baseline file defines the FLOOR, so binding "the floor is 2500"
@@ -181,14 +182,26 @@ the tree was running.
 | --------------------------------------------------- | ------------------------------------------- |
 | Tracked files under `docs/phase-1/phase-1-27`        | 41                                          |
 | Tracked `.md` files under the same directory         | 31                                          |
-| Migrations tracked by git at `HEAD`                  | 121                                         |
+| Migrations tracked by git at `HEAD`                  | 123                                         |
 | `CODE_CANDIDATE_SHA`                                 | `501f5f0d48d7b8cafc12dad51f6c501534b66a18`  |
 | Executable paths changed, candidate to accepted `develop` | 0                                      |
 
-The migration count appears twice on purpose. The first is a walk of the
-filesystem and the second is `git ls-tree` at `HEAD`; a disagreement between them
-is an untracked migration, which is a thing that can happen and which neither
-answer detects alone.
+The migration count appears three times on purpose, and a fourth time that is
+NOT the same claim. The first is a walk of the filesystem, the second is
+`git ls-tree` at `HEAD`, and the third is what `schema-baseline.json` commits;
+a disagreement between the first two is an untracked migration, and a
+disagreement with the third is a baseline that has fallen behind the tree — a
+thing that can happen, and which no one of the three answers detects alone.
+
+The fourth is `Migrations applied` in the superseded hosted table below, and it
+is deliberately NOT any of these. It is what a specific historical head really
+carried, so it does not move when the tree does. `QA-005` used to compare that
+historical figure against the CURRENT committed baseline, which meant the
+baseline could not be raised without breaking a gate that was measuring
+something else — the obligation `schema-baseline.json` recorded under
+`pendingMeasurementNote`. The bindings are separated here: the historical row
+answers to the superseded head, and `Committed migration baseline` above
+answers to the baseline file.
 
 The candidate row and the zero beneath it are one claim read together: the
 frozen code candidate resolves as a commit in this repository, and no executable

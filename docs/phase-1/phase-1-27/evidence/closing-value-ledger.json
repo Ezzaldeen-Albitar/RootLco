@@ -157,13 +157,26 @@
       "class": "DERIVABLE_LOCAL",
       "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
-      "locator": "| Migrations on disk                          | 121   | a walk of `supabase/migrations`                                    |",
-      "value": "121",
+      "locator": "| Migrations on disk                          | 123   | a walk of `supabase/migrations`                                    |",
+      "value": "123",
       "binding": {
         "kind": "derived",
         "table": "counts",
         "name": "supabase/migrations"
       }
+    },
+    {
+      "id": "CR-A-MIGRATIONS-BASELINE-ROW",
+      "class": "DERIVABLE_LOCAL",
+      "standing": "CURRENT",
+      "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
+      "locator": "| Committed migration baseline                | 123   | `.github/ci-baselines/schema-baseline.json`, `migrationCount`      |",
+      "value": "123",
+      "binding": {
+        "kind": "schemaBaseline",
+        "field": "migrationCount"
+      },
+      "why": "The row QA-005 compares against the committed baseline. It exists because that check used to read `Migrations applied` in the superseded hosted table, which is what one historical head carried and does not move when the tree does — so one row answered to two moving reference points and the baseline could not be raised without breaking a gate measuring something else. Deliberately the same number as CR-A-MIGRATIONS-DISK-ROW and CR-B-MIGRATIONS-GIT by a third route: a disagreement here is a baseline that has fallen behind the tree, which neither of the other two detects."
     },
     {
       "id": "CR-A-WEB-FLOOR-PROSE",
@@ -212,8 +225,8 @@
       "class": "DERIVABLE_GIT",
       "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
-      "locator": "| Migrations tracked by git at `HEAD`                  | 121                                         |",
-      "value": "121",
+      "locator": "| Migrations tracked by git at `HEAD`                  | 123                                         |",
+      "value": "123",
       "binding": {
         "kind": "git",
         "op": "lsTree",

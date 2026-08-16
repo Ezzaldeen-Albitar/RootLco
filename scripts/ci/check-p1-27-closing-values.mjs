@@ -104,6 +104,21 @@ export const LEDGER_PATH = `${PHASE_DIR}/evidence/closing-value-ledger.json`;
 export const RUN_LEDGER_PATH = `${PHASE_DIR}/evidence/local-run-ledger.json`;
 export const LIFECYCLE_PATH = `${PHASE_DIR}/evidence/lifecycle-ledger.json`;
 export const BASELINE_PATH = '.github/ci-baselines/test-count-baseline.json';
+/**
+ * The DATABASE baseline, which is a different file answering a different
+ * question. `BASELINE_PATH` above commits the test-count FLOORS; this one
+ * commits what the migration-replay job re-proves from an empty PostgreSQL —
+ * `migrationCount`, `permissionCount`, `schemaHash`, `structuralTotals`.
+ *
+ * It is bindable because `QA-005` has to compare a record row against the
+ * committed baseline, and the row it used to read for that was
+ * `Migrations applied` in the superseded hosted table: a historical
+ * measurement, fixed at the head it describes. One row cannot answer to a fixed
+ * historical head and a moving baseline at once, so raising `migrationCount`
+ * turned one red gate into a different red gate. The two bindings are separate
+ * now, and this constant is the second one's authority.
+ */
+export const SCHEMA_BASELINE_PATH = '.github/ci-baselines/schema-baseline.json';
 export const CLEAN_ROOM = `${PHASE_DIR}/clean-room-evidence.md`;
 export const CI_EVIDENCE = `${PHASE_DIR}/ci-evidence.md`;
 export const SEALED_DOCUMENTS = Object.freeze([CLEAN_ROOM, CI_EVIDENCE]);
@@ -404,6 +419,16 @@ export function resolveBinding(binding, facts) {
         return { value: null, why: `the \`${binding.tier}\` floor has no \`${binding.field}\`` };
       }
       return { value: String(found), why: `${BASELINE_PATH} ${binding.tier}.${binding.field}` };
+    }
+    case 'schemaBaseline': {
+      const found = facts.schemaBaseline?.[binding.field];
+      if (found === undefined) {
+        return {
+          value: null,
+          why: `${SCHEMA_BASELINE_PATH} has no \`${binding.field}\``,
+        };
+      }
+      return { value: String(found), why: `${SCHEMA_BASELINE_PATH} ${binding.field}` };
     }
     case 'git': {
       const key = gitKey(binding);
@@ -1257,6 +1282,7 @@ export function readFacts(root = ROOT) {
     unitTierFiles: unitTierFiles(root),
     git: gitFacts,
     baseline: readJson(root, BASELINE_PATH),
+    schemaBaseline: readJson(root, SCHEMA_BASELINE_PATH),
     lifecycle: readJson(root, LIFECYCLE_PATH),
     runs,
     executableChanges,

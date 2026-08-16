@@ -718,8 +718,27 @@ describe('P1-27-QA-005 — the two evidence pages agree with each other and the 
     expect(baseline.schemaHash, 'the schema baseline pins no hash').toMatch(/^[0-9a-f]{64}$/);
     const quoted = /\|\s*Schema hash\s*\|\s*`([0-9a-f]{64})`/.exec(CLEAN_ROOM)?.[1];
     expect(quoted, 'the record quotes no schema hash').toBe(baseline.schemaHash);
+    /*
+     * `Committed migration baseline`, NOT `Migrations applied`.
+     *
+     * The two rows are different claims and this assertion used to read the
+     * wrong one. `Migrations applied` belongs to the superseded HOSTED table:
+     * it is what one historical head really carried, it is asserted against
+     * that head by "states the migration count the superseded head really
+     * held", and a historical measurement does not change when the tree does.
+     * Pointing this current-baseline check at it made one row answer to two
+     * moving reference points, so raising `migrationCount` turned one red gate
+     * into a different red gate and edited a superseded phase record on the
+     * way — the obligation `schema-baseline.json` recorded under
+     * `pendingMeasurementNote`, discharged here by separating the bindings
+     * rather than by choosing which of the two truths to break.
+     */
     expect(
-      figure(CLEAN_ROOM, /\|\s*Migrations applied\s*\|\s*(\d+)\s*\|/, 'the migrations applied row'),
+      figure(
+        CLEAN_ROOM,
+        /\|\s*Committed migration baseline\s*\|\s*(\d+)\s*\|/,
+        'the committed migration baseline row'
+      ),
       'the record and the schema baseline disagree about the migration count'
     ).toBe(baseline.migrationCount);
   });
