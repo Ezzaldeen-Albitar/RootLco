@@ -502,12 +502,23 @@ describe('P1-15 attachments / pending -> rejected is the whole runtime lifecycle
     });
   });
 
-  it('an UPDATE to accepted is STILL refused when a clean verdict does exist', async () => {
-    // The load-bearing case. VER_SCANNED_A carries an admin-provisioned clean
-    // scan, so the trigger is satisfied and the only thing left standing is
-    // upd_document_versions_reject's WITH CHECK (status = 'rejected'). Acceptance
-    // is therefore unreachable from the request path for two independent reasons,
-    // not one.
+  it('an UPDATE to accepted is refused from PENDING even when a clean verdict exists', async () => {
+    /*
+     * This case used to assert that acceptance was refused ALWAYS — that no
+     * version could ever leave `pending`, for two independent reasons. That was
+     * the true contract while `P1-OD-025` was open, and it is the contract the
+     * Owner has now DECIDED to change: the approved model is
+     * `pending -> scanning -> accepted`, where acceptance is EARNED by a clean
+     * scan rather than being unreachable.
+     *
+     * So the assertion moves rather than disappearing. What survives — and is
+     * the load-bearing half — is that acceptance cannot be reached by SKIPPING
+     * the scan. `VER_SCANNED_A` carries an admin-provisioned clean verdict, so
+     * the clean-scan requirement is already satisfied; the only thing standing
+     * between `pending` and `accepted` is the state machine itself. If a later
+     * change ever let a pending version jump straight to accepted because a
+     * verdict happened to exist, this case is what says so.
+     */
     await withRolledBackTx(runtime, AS_MANAGER_A, async (c: Q) => {
       await expectSqlState(
         c.query(
@@ -515,22 +526,66 @@ describe('P1-15 attachments / pending -> rejected is the whole runtime lifecycle
             WHERE tenant_id = $1 AND id = $2`,
           [TENANT_A, VER_SCANNED_A]
         ),
-        '42501'
+        '23514'
       );
     });
   });
 
-  it('an UPDATE to quarantined is refused by the same policy', async () => {
+  /*
+   * The other half of what the old absolute protected — that a rejected or
+   * quarantined version can never become finalized evidence — is held in
+   * `tests/db/shared-document-evidence-lifecycle.test.ts`
+   * ("cannot reopen a terminal version, so evidence cannot be un-accepted").
+   * It belongs there because it needs a version it can drive to a terminal
+   * state, and this suite's versions are shared fixtures: the immutability
+   * trigger makes a terminal version unrestorable, so driving one here would
+   * leak state into every case that follows.
+   */
+
+  it('pending may be quarantined or rejected by a human, but never ACCEPTED', async () => {
+    /*
+     * This case previously asserted that quarantine was refused, under a write
+     * policy that permitted only `rejected`. Both halves of that have moved, and
+     * the direction is worth stating because it is easy to get backwards.
+     *
+     * `guard_document_version_transition` deliberately allows `pending ->
+     * quarantined` and `pending -> rejected`, and says why in its own body:
+     * `shared.attachment-version-reject` is a human refusing an upload, and
+     * pulling a suspicious pending file has no scan to wait for. Neither can
+     * ever satisfy evidence, so gating them buys no safety and costs a working
+     * operation — the P1-27-INT-113 shape.
+     *
+     * What the Owner decision forbids is exactly one edge: `pending ->
+     * accepted`. Finalized evidence must have passed a scan. So that is what
+     * this case holds, in both directions, rather than a blanket refusal that
+     * would misdescribe the contract.
+     */
+    await withRolledBackTx(runtime, AS_MANAGER_A, async (c: Q) => {
+      const permitted = await c.query(
+        `UPDATE shared.document_versions SET status = 'quarantined'
+          WHERE tenant_id = $1 AND id = $2`,
+        [TENANT_A, VER_UNSCANNED_A]
+      );
+      expect(permitted.rowCount).toBe(1);
+    });
+
     await withRolledBackTx(runtime, AS_MANAGER_A, async (c: Q) => {
       await expectSqlState(
         c.query(
-          `UPDATE shared.document_versions SET status = 'quarantined'
+          `UPDATE shared.document_versions SET status = 'accepted'
             WHERE tenant_id = $1 AND id = $2`,
           [TENANT_A, VER_UNSCANNED_A]
         ),
-        '42501'
+        '23514'
       );
     });
+
+    // Rolled back both ways: the fixture is untouched for the cases that follow.
+    const { rows } = await admin.query<{ status: string }>(
+      `SELECT status FROM shared.document_versions WHERE tenant_id = $1 AND id = $2`,
+      [TENANT_A, VER_UNSCANNED_A]
+    );
+    expect(rows[0]?.status).toBe('pending');
   });
 
   it('a version already rejected cannot be moved again — no row is even visible', async () => {
@@ -636,8 +691,12 @@ describe('P1-15 attachments / no application role may write shared.file_scan_res
           AND grantee IN ('app_runtime', 'app_worker', 'app_readonly')
         ORDER BY grantee, privilege_type`
     );
+    // The scanner INSERT arrived with P1-OD-025, replacing a SECURITY DEFINER
+    // handoff four posture gates refuse. It is append-only: no UPDATE, so a
+    // verdict cannot be edited, and no DELETE, so it cannot be withdrawn.
     expect(rows).toEqual([
       { grantee: 'app_readonly', privilege_type: 'SELECT' },
+      { grantee: 'app_runtime', privilege_type: 'INSERT' },
       { grantee: 'app_runtime', privilege_type: 'SELECT' },
     ]);
     // app_worker is absent entirely: it holds not even SELECT.

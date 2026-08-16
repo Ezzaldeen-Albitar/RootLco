@@ -393,8 +393,111 @@ describe('a scan verdict decides the terminal state, and error never means accep
   });
 });
 
-describe('the request role cannot reach the scan path except through the functions', () => {
-  it('app_runtime still holds no INSERT on shared.file_scan_results', async () => {
+/**
+ * What the request role may reach directly, and what it still may not.
+ *
+ * These two cases used to assert that `app_runtime` held NO write grant on
+ * either table, which was true while the handoff was `SECURITY DEFINER`. That
+ * implementation was withdrawn: four repository-wide gates assert that every
+ * module routine is `SECURITY INVOKER` with an empty `search_path` and none of
+ * them carries an allow-list, so keeping the elevation would have meant
+ * weakening four security gates to admit one migration.
+ *
+ * The replacement is a COLUMN grant — `UPDATE(status)` and `INSERT` — under RLS,
+ * with the lifecycle trigger unchanged. So the honest question is no longer
+ * "can the role write at all" but "what are the BOUNDS of what it can write",
+ * and that is what these cases now hold. Deleting them and trusting the grant
+ * would have been the half-update this suite exists to catch.
+ */
+describe('the narrow grants are narrow — bounds, not absence', () => {
+  it('writes STATUS only: no other column of a version is reachable', async () => {
+    /*
+     * The load-bearing property of a column grant, and the reason it is
+     * preferable to an elevated function whose body could later be widened.
+     * A version's bytes, its checksum and its storage key are what make it
+     * evidence; none of them is writable at any status, by any statement.
+     */
+    const versionId = await seedPendingVersion();
+    for (const column of ['sha256', 'size_bytes', 'content_type', 'storage_key']) {
+      await withRolledBackTx(runtime, AS_MANAGER_A, (c: Q) =>
+        expectSqlState(
+          c.query(`UPDATE shared.document_versions SET ${column} = $2 WHERE id = $1`, [
+            versionId,
+            column === 'size_bytes' ? 1 : 'x',
+          ]),
+          '42501'
+        )
+      );
+    }
+  });
+
+  it('cannot skip the scan: pending may not reach accepted directly', async () => {
+    const versionId = await seedPendingVersion();
+    await withRolledBackTx(runtime, AS_MANAGER_A, (c: Q) =>
+      expectSqlState(
+        c.query(`UPDATE shared.document_versions SET status='accepted' WHERE id=$1`, [versionId]),
+        '23514'
+      )
+    );
+    expect((await versionRow(versionId))?.status).toBe('pending');
+  });
+
+  it('cannot self-certify: scanning may not reach accepted without a clean scan', async () => {
+    const versionId = await seedPendingVersion();
+    await admin.query(`UPDATE shared.document_versions SET status='scanning' WHERE id=$1`, [
+      versionId,
+    ]);
+    await withRolledBackTx(runtime, AS_MANAGER_A, (c: Q) =>
+      expectSqlState(
+        c.query(`UPDATE shared.document_versions SET status='accepted' WHERE id=$1`, [versionId]),
+        '23514'
+      )
+    );
+  });
+
+  it('cannot reopen a terminal version, so evidence cannot be un-accepted', async () => {
+    const versionId = await seedPendingVersion();
+    await admin.query(`UPDATE shared.document_versions SET status='scanning' WHERE id=$1`, [
+      versionId,
+    ]);
+    await admin.query(`UPDATE shared.document_versions SET status='rejected' WHERE id=$1`, [
+      versionId,
+    ]);
+    await withRolledBackTx(runtime, AS_MANAGER_A, async (c: Q) => {
+      // The row is outside the write policy's USING clause once terminal, so it
+      // is filtered to zero rows rather than refused — either is correct, and
+      // succeeding is not.
+      const result = await c
+        .query(`UPDATE shared.document_versions SET status='pending' WHERE id=$1`, [versionId])
+        .catch((error: unknown) => error as { code?: string });
+      if ('code' in result && result.code !== undefined) {
+        expect(['42501', '23514']).toContain(result.code);
+      } else {
+        expect((result as { rowCount: number }).rowCount).toBe(0);
+      }
+    });
+    expect((await versionRow(versionId))?.status).toBe('rejected');
+  });
+
+  it('cannot record a scan result against another tenant, grant or no grant', async () => {
+    const versionId = await seedPendingVersion();
+    await admin.query(`UPDATE shared.document_versions SET status='scanning' WHERE id=$1`, [
+      versionId,
+    ]);
+    await withRolledBackTx(runtime, AS_MANAGER_B, (c: Q) =>
+      expectSqlState(
+        c.query(
+          `INSERT INTO shared.file_scan_results
+             (tenant_id, version_id, scan_status, scanner_code, created_by)
+           VALUES ($1,$2,'clean',$3,$4)`,
+          [TENANT_A, versionId, SCANNER, MANAGER_B]
+        ),
+        '42501'
+      )
+    );
+  });
+
+  it('cannot record a scan result for a version that never entered scanning', async () => {
     const versionId = await seedPendingVersion();
     await withRolledBackTx(runtime, AS_MANAGER_A, (c: Q) =>
       expectSqlState(
@@ -409,21 +512,16 @@ describe('the request role cannot reach the scan path except through the functio
     );
   });
 
-  it('app_runtime cannot move a version to scanning by hand', async () => {
-    const versionId = await seedPendingVersion();
-    await withRolledBackTx(runtime, AS_MANAGER_A, async (c: Q) => {
-      // Either the column grant refuses it (42501) or the write policy filters
-      // it to zero rows. Both are acceptable; silently succeeding is not.
-      const result = await c
-        .query(`UPDATE shared.document_versions SET status='scanning' WHERE id=$1`, [versionId])
-        .catch((error: unknown) => error as { code?: string });
-      if ('code' in result && result.code !== undefined) {
-        expect(result.code).toBe('42501');
-      } else {
-        expect((result as { rowCount: number }).rowCount).toBe(0);
-      }
-    });
-    expect((await versionRow(versionId))?.status).toBe('pending');
+  it('holds no DELETE on either table, so a verdict cannot be withdrawn', async () => {
+    const { rows } = await admin.query<{ privilege_type: string; table_name: string }>(
+      `SELECT table_name, privilege_type
+         FROM information_schema.role_table_grants
+        WHERE grantee = 'app_runtime'
+          AND table_schema = 'shared'
+          AND table_name IN ('document_versions', 'file_scan_results')
+          AND privilege_type IN ('DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER')`
+    );
+    expect(rows).toEqual([]);
   });
 
   it('both scan functions are revoked from PUBLIC and granted only to app_runtime', async () => {

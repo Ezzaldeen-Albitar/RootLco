@@ -1,5 +1,20 @@
--- P1-15 / P1-OD-025: operational, private, versioned reception evidence.
--- Roll-forward only once a version enters `scanning` or a seeded category is used.
+-- ============================================================================
+-- Phase: 1-15 — Shared Services (P1-28 Owner decision P1-OD-025)
+-- Migration: operational, private, versioned reception evidence — the scan
+--            lifecycle, the governed category policy and the scanner handoff
+-- Owner module: shared
+--
+-- Rollback classification: ROLL-FORWARD-ONLY once any version has entered
+--   `scanning`, or any reception has bound one of the seeded categories. The
+--   structural inverse is expressible — drop the two policies, the two column
+--   grants, the two functions and the added columns, and restore the previous
+--   `ck_document_versions_status` — but it FAILS on any version that has
+--   reached `scanning`, `accepted` or `quarantined`, because the prior
+--   constraint has no `scanning` member and the prior contract had no path out
+--   of `pending` at all. Reverting after a reception has recorded evidence
+--   would therefore either refuse or silently strand the evidence, which is the
+--   whole reason the decision was taken.
+-- ============================================================================
 
 -- A reader must not need the write-capable shared.document.manage permission.
 INSERT INTO iam.permissions (permission_code, domain, description, risk_level, created_by)
@@ -102,13 +117,78 @@ COMMENT ON FUNCTION shared.guard_document_version_transition() IS
 COMMENT ON TABLE shared.document_versions IS
   'Append-only per-version file METADATA (P1-05-DB-003) — no bytes. version_number is unique per document. A version starts pending; it may be refused (rejected) or pulled (quarantined) directly, but it reaches accepted only through scanning and only with a clean scan and no infected scan, via shared.guard_document_version_transition. Terminal rows are immutable. Runtime SELECT-only; the scanner handoff is shared.begin_document_scan / shared.complete_document_scan.';
 
--- The request role receives no table INSERT/terminal UPDATE grants. These two
--- narrow functions are the only scanner handoff and re-check tenant, actor,
--- permission, scope and source state under a fixed search_path.
+-- ---------------------------------------------------------------------------
+-- The scanner handoff, and why it is SECURITY INVOKER.
+--
+-- A first draft made these two functions SECURITY DEFINER, because the request
+-- role held only SELECT on both tables. That is a real need answered the wrong
+-- way: this repository asserts, in FOUR independent gates
+-- (p1-13-runtime-capabilities, p1-14-runtime-administration-capabilities,
+-- p1-15-shared-services-runtime-capabilities and shared-hardening), that every
+-- module routine is SECURITY INVOKER with an explicit empty search_path, and
+-- none of them carries an allow-list. Elevating here would have required
+-- weakening all four to admit one migration — and the sibling P1-18 evidence
+-- migration keeps all six of ITS guards INVOKER, so this was the outlier.
+--
+-- What replaces the elevation is narrower than it was, not looser:
+--
+--   * `GRANT UPDATE(status)` is a COLUMN grant. The request role cannot rewrite
+--     `sha256`, `size_bytes`, `storage_key`, `uploaded_by` or any other column
+--     of a version, at any status, by any statement — a privilege a SECURITY
+--     DEFINER function's body could have been changed to hand out later.
+--   * RLS carries tenancy and the permission, evaluated per row.
+--   * `shared.guard_document_version_transition` already enforces the state
+--     machine: terminal versions are immutable, `pending` may only reach
+--     `scanning`, and `accepted` requires an exclusively clean scan. That
+--     trigger is what makes acceptance earned, and it runs for every writer.
+--
+-- So the three guarantees the DEFINER version provided — tenancy, permission,
+-- and a lifecycle that cannot be skipped — are all still enforced, by the
+-- mechanisms this repository already trusts everywhere else.
+-- ---------------------------------------------------------------------------
+CREATE POLICY ins_file_scan_results_scanner ON shared.file_scan_results
+  FOR INSERT TO app_runtime
+  WITH CHECK (
+    tenant_id = iam.current_tenant_id()
+    AND created_by = iam.current_user_id()
+    AND EXISTS (
+      SELECT 1
+        FROM shared.document_versions v
+        JOIN shared.documents d ON d.tenant_id = v.tenant_id AND d.id = v.document_id
+       WHERE v.tenant_id = file_scan_results.tenant_id
+         AND v.id = file_scan_results.version_id
+         AND v.status = 'scanning'
+         AND iam.has_permission_in_scope('shared.document.manage', d.company_id, d.branch_id)
+    )
+  );
+
+CREATE POLICY upd_document_versions_lifecycle ON shared.document_versions
+  FOR UPDATE TO app_runtime
+  USING (
+    tenant_id = iam.current_tenant_id()
+    AND status IN ('pending', 'scanning')
+    AND EXISTS (
+      SELECT 1 FROM shared.documents d
+       WHERE d.tenant_id = document_versions.tenant_id
+         AND d.id = document_versions.document_id
+         AND iam.has_permission_in_scope('shared.document.manage', d.company_id, d.branch_id)
+    )
+  )
+  WITH CHECK (
+    tenant_id = iam.current_tenant_id()
+    AND status IN ('scanning', 'accepted', 'quarantined', 'rejected')
+  );
+
+GRANT INSERT ON shared.file_scan_results TO app_runtime;
+GRANT UPDATE(status) ON shared.document_versions TO app_runtime;
+
+COMMENT ON POLICY upd_document_versions_lifecycle ON shared.document_versions IS
+  'The scanner handoff, per row. USING refuses a version that is already terminal, so an accepted or quarantined version cannot be reopened; WITH CHECK refuses a target outside the approved vocabulary. The column grant is UPDATE(status) alone, so no other field of an immutable version is writable, and guard_document_version_transition still decides which transitions are legal.';
+
 CREATE OR REPLACE FUNCTION shared.begin_document_scan(p_tenant uuid, p_version uuid)
 RETURNS boolean
 LANGUAGE plpgsql
-SECURITY DEFINER
+SECURITY INVOKER
 SET search_path = ''
 AS $$
 DECLARE v_company uuid; v_branch uuid;
@@ -135,7 +215,7 @@ CREATE OR REPLACE FUNCTION shared.complete_document_scan(
 )
 RETURNS text
 LANGUAGE plpgsql
-SECURITY DEFINER
+SECURITY INVOKER
 SET search_path = ''
 AS $$
 DECLARE v_company uuid; v_branch uuid; v_target text; v_actor uuid := iam.current_user_id();
