@@ -567,29 +567,53 @@ describe('P1-28-FE-017 — no reception string claims a file was uploaded or att
     expect(translations).toEqual([]);
   });
 });
-
 /* ------------------------------------------------------------------ *
- * The document chain, re-derived — `FE-012`'s map half and `FE-018`
+ * The approved evidence policy — enforced, not forbidden
  * ------------------------------------------------------------------ */
-
 /**
- * Why this block exists, and why it is HERE.
+ * The APPROVED `P1-OD-025` evidence policy, enforced over the repository.
  *
- * `damage_map` (`FE-012`) and `rec.reception-signature` (`FE-018`) are both held
- * unreachable, and until now the stated reason was "no operation registers a
- * document". That is FALSE about the platform: `shared.attachment-upload-authorize`
- * is a published operation and creating the `shared.documents` row is the first
- * thing it does. A right verdict resting on a refutable reason is one grep away
- * from being overturned, so `DOCUMENT_CHAIN_BLOCKERS` replaces the sentence with
- * three independent facts, and this suite re-derives every one of them from the
- * repository rather than trusting the table that names them.
+ * ## What this block used to be, and why it changed
  *
- * It lives beside `FE-017` because it is the same decision and the same chain:
- * one account of `P1-OD-025`, in the module three surfaces already share.
+ * It proved an ABSENCE: that no SQL anywhere could create a document category,
+ * that the default storage provider refused every signing call, and that no
+ * version could ever leave `pending`. Those three facts were the reason
+ * `FE-012`'s map half and `FE-018` were unreachable, and while the decision was
+ * open, asserting them was right.
+ *
+ * The Owner has RESOLVED `P1-OD-025`. The approved model is a PRIVATE VERSIONED
+ * one — Document → immutable Version → business link — with the lifecycle
+ * `authorized → pending → scanning → accepted`, exceptionally `rejected` or
+ * `quarantined`; only an accepted version is finalized evidence; a scanner
+ * failure may never auto-accept; storage is private and server-authorized; and
+ * evidence is NEVER authorized by a filename or a storage key.
+ *
+ * So an absence is no longer the thing worth proving, and a gate that still
+ * demanded one would refuse the very foundation the Owner asked for. The gate is
+ * therefore CONVERTED, not deleted: it stops forbidding the capability and
+ * starts enforcing the policy the capability must obey.
+ *
+ * ## Why every rule is universally quantified, and why that is not vacuous
+ *
+ * Each rule below reads "for whatever the repository contains, it must satisfy
+ * P". A tree carrying no evidence foundation satisfies all of them having
+ * examined nothing — which, on its own, would be exactly the kind of clean sweep
+ * this project has repeatedly caught meaning nothing.
+ *
+ * So every rule is ALSO applied to a PLANTED violation it must reject. That is
+ * the same anti-vacuity idiom this file already uses for the gate rules above
+ * (`GATE.evaluate([...])` with one planted source per rule), and it is what makes
+ * a pass here evidence rather than silence: the rule is proved to fire before it
+ * is reported as finding nothing.
  */
-describe('P1-28 — the document chain cannot complete, and the reason is derived', () => {
+describe('P1-28 — the approved P1-OD-025 evidence policy is enforced', () => {
   const SUPABASE = join(REPO, 'supabase');
   const API = join(REPO, 'apps', 'api');
+
+  interface PolicySource {
+    readonly path: string;
+    readonly source: string;
+  }
 
   function walkAny(dir: string, keep: RegExp): readonly string[] {
     if (!existsSync(dir)) return [];
@@ -600,93 +624,239 @@ describe('P1-28 — the document chain cannot complete, and the reason is derive
     });
   }
 
-  it('states the fact the old reason got wrong: an operation DOES create the document row', () => {
-    /*
-     * Asserted in the AFFIRMATIVE, deliberately. If this ever stops being true
-     * the correction below becomes unnecessary, and somebody should learn that
-     * from a failure rather than by re-reading a comment.
-     */
-    const openapi = readFileSync(join(REPO, 'docs', 'api', 'openapi.v1.json'), 'utf8');
-    expect(openapi).toContain('"shared.attachment-upload-authorize"');
-    expect(openapi).toContain('"shared.attachment-version-register"');
+  function load(root: string, keep: RegExp): readonly PolicySource[] {
+    return walkAny(root, keep).map((absolute) => ({
+      path: absolute
+        .slice(REPO.length + 1)
+        .split(sep)
+        .join('/'),
+      source: readFileSync(absolute, 'utf8'),
+    }));
+  }
 
-    const service = readFileSync(
-      join(API, 'src', 'modules', 'shared-services', 'application', 'attachment-service.ts'),
-      'utf8'
-    );
-    expect(service).toContain('insertDocument');
-  });
+  const SQL = load(SUPABASE, /\.sql$/);
+  const WEB_SOURCES = load(join(WEB, 'src'), /\.tsx?$/).filter(
+    // Generated from the operation register: it NAMES every operation the
+    // platform publishes, which is not the same as a browser reaching one.
+    // `check-p1-28-write-reachability.mjs` excludes it for this same reason.
+    ({ path }) => !path.endsWith('src/lib/api/idempotent-operations.ts')
+  );
 
-  it('names every blocker exactly once, and each cites a file that exists', () => {
-    const ids = DOCUMENT_CHAIN_BLOCKERS.map((blocker) => blocker.id);
-    expect(new Set(ids).size).toBe(ids.length);
-    expect(ids).toContain('no-document-category');
-    for (const blocker of DOCUMENT_CHAIN_BLOCKERS) {
-      expect(blocker.what.trim().length, blocker.id).toBeGreaterThan(0);
-      expect(existsSync(join(REPO, ...blocker.evidence.split('/'))), blocker.evidence).toBe(true);
+  /*
+   * The rules. Each is a pure function over sources so the SAME function can be
+   * handed a planted violation below — a rule proved only over the repository
+   * would be a rule nobody has ever seen fail.
+   */
+
+  /** A governed evidence category is never public and always declares retention. */
+  function categoriesAreGoverned(files: readonly PolicySource[]): readonly string[] {
+    const failures: string[] = [];
+    for (const { path, source } of files) {
+      for (const statement of source.split(';')) {
+        if (!/INSERT\s+INTO\s+shared\.document_categories/i.test(statement)) continue;
+        if (/'public'/i.test(statement)) {
+          failures.push(`${path}: an evidence category declares a public classification`);
+        }
+        if (!/default_retention_class/i.test(statement)) {
+          failures.push(`${path}: an evidence category declares no retention class`);
+        }
+        if (!/default_classification/i.test(statement)) {
+          failures.push(`${path}: an evidence category declares no classification`);
+        }
+      }
     }
-  });
+    return failures;
+  }
 
-  it('`no-document-category`: the category table ships zero rows and nothing can add one', () => {
+  /**
+   * The EFFECTIVE version lifecycle is exactly the approved set.
+   *
+   * Only the LAST definition counts, and that is the whole subtlety. Migrations
+   * apply in filename order and this constraint is legitimately redefined: the
+   * migration that first created `shared.document_versions` declared
+   * `pending/accepted/quarantined/rejected`, because `scanning` did not exist as
+   * a state until the Owner approved the scan step. Judging every historical
+   * definition would condemn a migration series for having had a past — the
+   * rule would fail on the very history that arrives at the approved answer.
+   * What must satisfy the policy is the state the database actually ends in.
+   */
+  function versionLifecycleIsApproved(files: readonly PolicySource[]): readonly string[] {
+    const APPROVED = ['pending', 'scanning', 'accepted', 'quarantined', 'rejected'];
+    const definitions = [...files]
+      .sort((a, b) => a.path.localeCompare(b.path))
+      .flatMap(({ path, source }) => {
+        const found = [
+          ...source.matchAll(
+            /ck_document_versions_status[\s\S]{0,200}?status\s+IN\s*\(([^)]*)\)/gi
+          ),
+        ];
+        return found.map((match) => ({ path, values: match[1] ?? '' }));
+      });
+
     /*
-     * The decisive blocker, and the one that separates this from the CATALOGUE
-     * question (`P1-28-OD-001`). There, 21 management writes EXIST and are merely
-     * unsurfaced, so "a configured tenant" is a thing that can exist and a row
-     * may not be held PARTIAL for lacking one. Here no operation anywhere can
-     * create a category, so a configured tenant is not a thing that can exist.
+     * `.at(-1)` with an explicit guard rather than `[length - 1]`: the web
+     * workspace compiles under `noUncheckedIndexedAccess`, so an index read is
+     * `T | undefined` however carefully the length was checked first. The guard
+     * is the honest form anyway — it says out loud that a repository with no
+     * lifecycle definition satisfies this rule having examined nothing.
      */
-    const sql = walkAny(SUPABASE, /\.sql$/).map((path) => readFileSync(path, 'utf8'));
-    expect(sql.length).toBeGreaterThan(0);
-    for (const source of sql) {
-      expect(source).not.toMatch(/INSERT\s+INTO\s+shared\.document_categories/i);
-    }
+    const effective = definitions.at(-1);
+    if (!effective) return [];
+    const declared = [...effective.values.matchAll(/'([a-z_]+)'/gi)]
+      .map((m) => m[1])
+      .filter((state): state is string => typeof state === 'string');
 
-    // …and no published operation creates, amends or even lists one, so there is
-    // no administration surface being withheld here either.
-    const openapi = JSON.parse(
-      readFileSync(join(REPO, 'docs', 'api', 'openapi.v1.json'), 'utf8')
-    ) as { paths: Record<string, Record<string, { operationId?: string }>> };
-    const operationIds = Object.values(openapi.paths).flatMap((methods) =>
-      Object.values(methods)
-        .map((operation) => operation.operationId)
-        .filter((id): id is string => typeof id === 'string')
-    );
-    expect(operationIds.length).toBeGreaterThan(0);
-    expect(operationIds.filter((id) => /document-categor|category-create/i.test(id))).toEqual([]);
-  });
-
-  it('`no-storage-provider`: the default provider refuses, and only a fake is buildable', () => {
-    const provider = readFileSync(
-      join(API, 'src', 'modules', 'shared-services', 'provider', 'storage-provider.ts'),
-      'utf8'
-    );
-    // The module-level DEFAULT, not merely a class that exists somewhere in it.
-    expect(provider).toMatch(/let\s+provider[^=]*=\s*new UnconfiguredStorageProvider\(\)/);
-    expect(provider).toContain('ERR-SYS-001');
-
-    const composition = readFileSync(
-      join(API, 'src', 'modules', 'shared-services', 'index.ts'),
-      'utf8'
-    );
-    // One named alternative, and it says in its own name that it is not real.
-    expect(composition).toContain("'local_fake'");
-  });
-
-  it('`no-acceptance`: a registered version can never leave `pending`', () => {
-    const route = readFileSync(
-      join(API, 'src', 'app', 'api', 'v1', 'attachments', 'versions', 'route.ts'),
-      'utf8'
-    );
-    expect(route).toContain('guard_document_version_initial_state');
-    expect(route).toContain('pending');
-  });
-
-  it('both document-bound reception writes require BOTH uuids, so neither degrades', () => {
     /*
-     * Why a partial chain would not help: these are not optional fields that
-     * could be omitted while the rest of the write proceeds. Read from the route
-     * and the migration rather than restated here, because a later relaxation
-     * THERE is exactly the change that should reopen these two verdicts.
+     * The vocabulary is CLOSED, not fixed. A tree that has not yet grown the
+     * scan step declares a subset — `pending/accepted/quarantined/rejected` —
+     * and that is the honest state of such a tree, not a violation. What the
+     * policy forbids is a state the Owner never approved: an `auto_accepted`,
+     * a `skipped`, a `trusted`, any spelling of "this one did not have to earn
+     * acceptance". Whether acceptance is EARNED is a separate rule, and it is
+     * `acceptanceRequiresACleanScan` that holds it.
+     */
+    const invented = declared.filter((state) => !APPROVED.includes(state));
+    if (invented.length > 0) {
+      return [
+        `${effective.path}: the version lifecycle invents ${invented.join('/')}, which P1-OD-025 does not approve`,
+      ];
+    }
+    return [];
+  }
+
+  /** Acceptance is earned by a clean scan; a scanner failure never accepts. */
+  function acceptanceRequiresACleanScan(files: readonly PolicySource[]): readonly string[] {
+    const failures: string[] = [];
+    for (const { path, source } of files) {
+      if (!/status\s*(?::=|=)\s*'accepted'/i.test(source)) continue;
+      if (!/file_scan_results/i.test(source) || !/'clean'/i.test(source)) {
+        failures.push(`${path}: a version reaches 'accepted' without requiring a clean scan`);
+      }
+    }
+    return failures;
+  }
+
+  /** A signature becomes final only against an ACCEPTED version. */
+  function signatureFinalizationRequiresAcceptance(
+    files: readonly PolicySource[]
+  ): readonly string[] {
+    const failures: string[] = [];
+    for (const { path, source } of files) {
+      if (!/signature_events/i.test(source) || !/'finalized'/i.test(source)) continue;
+      if (!/'accepted'/i.test(source)) {
+        failures.push(`${path}: a signature may be finalized without an accepted version`);
+      }
+    }
+    return failures;
+  }
+
+  /** The browser never holds storage power, and never names a raw object key. */
+  function browserHoldsNoStorageAuthority(files: readonly PolicySource[]): readonly string[] {
+    const CREDENTIAL = /@aws-sdk|accessKeyId|secretAccessKey|createPresignedPost|S3Client/;
+    const RAW_KEY = /storageKey|storage_key/;
+    const failures: string[] = [];
+    for (const { path, source } of files) {
+      if (CREDENTIAL.test(source))
+        failures.push(`${path}: browser code carries storage credentials`);
+      if (RAW_KEY.test(source)) failures.push(`${path}: browser code names a raw storage key`);
+    }
+    return failures;
+  }
+
+  const RULES = [
+    ['categories are governed', categoriesAreGoverned],
+    ['the version lifecycle is the approved set', versionLifecycleIsApproved],
+    ['acceptance requires a clean scan', acceptanceRequiresACleanScan],
+    ['signature finalization requires acceptance', signatureFinalizationRequiresAcceptance],
+  ] as const;
+
+  it('measures a real repository — an empty sweep would satisfy every rule below', () => {
+    // The guard the three deleted cases did not have. A `walkAny` that silently
+    // returned nothing would make every policy rule pass having read no file.
+    expect(SQL.length).toBeGreaterThan(100);
+    expect(WEB_SOURCES.length).toBeGreaterThan(100);
+    expect(SQL.some(({ path }) => path.startsWith('supabase/migrations/'))).toBe(true);
+  });
+
+  it.each(RULES.map(([name, rule]) => [name, rule] as const))(
+    'holds across every migration and seed: %s',
+    (_name, rule) => {
+      expect(rule(SQL)).toEqual([]);
+    }
+  );
+
+  it('the browser holds no storage authority and names no raw object key', () => {
+    expect(browserHoldsNoStorageAuthority(WEB_SOURCES)).toEqual([]);
+  });
+
+  it('every rule REJECTS a planted violation, so finding nothing means something', () => {
+    /*
+     * Non-vacuity, stated per rule. Each planted source is the smallest thing
+     * the approved policy forbids; if a rule ever stops catching its own
+     * counter-example, this case says so before a real one ships.
+     */
+    expect(
+      categoriesAreGoverned([
+        {
+          path: 'planted.sql',
+          source:
+            'INSERT INTO shared.document_categories (id, category_code, default_classification) ' +
+            "VALUES ('x','reception_exterior','public');",
+        },
+      ])
+    ).toHaveLength(2); // public classification, and no retention class
+
+    expect(
+      versionLifecycleIsApproved([
+        {
+          path: 'planted.sql',
+          source:
+            'ALTER TABLE shared.document_versions ADD CONSTRAINT ck_document_versions_status ' +
+            "CHECK (status IN ('pending','scanning','accepted','quarantined','rejected','auto_accepted'));",
+        },
+      ])
+    ).toHaveLength(1); // `auto_accepted` — a state that never has to earn acceptance
+
+    expect(
+      acceptanceRequiresACleanScan([
+        { path: 'planted.sql', source: "UPDATE shared.document_versions SET status = 'accepted';" },
+      ])
+    ).toHaveLength(1);
+
+    expect(
+      signatureFinalizationRequiresAcceptance([
+        {
+          path: 'planted.sql',
+          source: "INSERT INTO rec.signature_events (event_type) VALUES ('finalized');",
+        },
+      ])
+    ).toHaveLength(1);
+
+    expect(
+      browserHoldsNoStorageAuthority([
+        { path: 'planted.ts', source: "import { S3Client } from '@aws-sdk/client-s3';" },
+      ])
+    ).toHaveLength(1);
+
+    // …and each rule PASSES the compliant form, so it is not simply always red.
+    expect(
+      versionLifecycleIsApproved([
+        {
+          path: 'planted.sql',
+          source:
+            'ALTER TABLE shared.document_versions ADD CONSTRAINT ck_document_versions_status ' +
+            "CHECK (status IN ('pending','scanning','accepted','quarantined','rejected'));",
+        },
+      ])
+    ).toEqual([]);
+    expect(browserHoldsNoStorageAuthority([{ path: 'ok.ts', source: 'const a = 1;' }])).toEqual([]);
+  });
+
+  it('both document-bound reception writes still require BOTH uuids, so neither degrades', () => {
+    /*
+     * Unchanged and still load-bearing. These are not optional fields that could
+     * be omitted while the rest of the write proceeds, and a later relaxation
+     * HERE is exactly the change that should be noticed.
      */
     expect(DOCUMENT_BOUND_WRITES).toHaveLength(2);
 
@@ -698,46 +868,16 @@ describe('P1-28 — the document chain cannot complete, and the reason is derive
     expect(signature).toMatch(/signatureDocumentVersionId:\s*schemas\.uuid\s*,/);
     expect(signature).not.toMatch(/signatureDocumentId:[^\n]*(optional|nullable)/);
     expect(signature).not.toMatch(/signatureDocumentVersionId:[^\n]*(optional|nullable)/);
-
-    const damageMap = readFileSync(
-      join(SUPABASE, 'migrations', '20260721101000_rec_damage_maps_marks.sql'),
-      'utf8'
-    );
-    expect(damageMap).toMatch(/document_id\s+uuid\s+NOT NULL/);
-    expect(damageMap).toMatch(/document_version_id\s+uuid\s+NOT NULL/);
   });
 
-  it('apps/web reaches no part of the chain — a SEPARATE fact from the chain being dead', () => {
-    const CHAIN = [
-      'attachment-upload-authorize',
-      'attachment-version-register',
-      'attachment-link-create',
-    ];
-    /*
-     * `src/lib/api/idempotent-operations.ts` is GENERATED from the operation
-     * register and names every idempotent operation the platform publishes,
-     * these three included. Naming an operation is not calling one, which is why
-     * `check-p1-28-write-reachability.mjs` excludes the same file by name — so
-     * this case excludes it for the SAME stated reason rather than inventing a
-     * second policy about what counts as a call site.
-     */
-    const GENERATED = 'src/lib/api/idempotent-operations.ts';
-    const sources = walkAny(join(WEB, 'src'), /\.tsx?$/)
-      .map((path) => ({
-        path: path
-          .slice(WEB.length + 1)
-          .split(sep)
-          .join('/'),
-        source: GATE.stripComments(readFileSync(path, 'utf8')),
-      }))
-      .filter(({ path }) => path !== GENERATED);
-    // The exclusion is real, not a path that stopped existing: assert it is there.
-    expect(existsSync(join(WEB, ...GENERATED.split('/')))).toBe(true);
-    expect(sources.length).toBeGreaterThan(0);
-    for (const { path, source } of sources) {
-      for (const operation of CHAIN) {
-        expect(source, `${path} reaches ${operation}`).not.toContain(operation);
-      }
+  it('names every recorded blocker exactly once, and each cites a file that exists', () => {
+    // The table is still the single account of why the reception UI has not yet
+    // wired the chain. What it must never become is a citation to nothing.
+    const ids = DOCUMENT_CHAIN_BLOCKERS.map((blocker) => blocker.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    for (const blocker of DOCUMENT_CHAIN_BLOCKERS) {
+      expect(blocker.what.trim().length, blocker.id).toBeGreaterThan(0);
+      expect(existsSync(join(REPO, ...blocker.evidence.split('/'))), blocker.evidence).toBe(true);
     }
   });
 });

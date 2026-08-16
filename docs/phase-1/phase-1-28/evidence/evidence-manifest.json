@@ -6,9 +6,9 @@
   "whatThisDoesNotProve": "This is not a tamper-proof seal. Anyone able to edit a document is able to re-run the generator and commit both. It removes SILENT revision, not revision.",
   "selfExclusion": "This manifest is the only path excluded from its own digest set, because a file containing its own hash has no fixed point. tests/ci/p1-28-evidence-manifest.test.ts asserts the exclusion is exactly this one path.",
   "candidate": {
-    "FINAL_CODE_SHA": "7b1252edebb5d7f48451213c71ab832cb44e46b5",
-    "FINAL_CODE_TREE": "1ef831d2ecfcf94d07b73857b7448c3b424faca3",
-    "pullRequest": 226,
+    "FINAL_CODE_SHA": "10a2f3d3c2c77cc3a0c56c14e0d7c8097d669cff",
+    "FINAL_CODE_TREE": "e8ab76dee9c2abe0fa794334a8844aa27aba4105",
+    "pullRequest": null,
     "recordedIn": "docs/phase-1/phase-1-28/evidence/closure-candidate.json",
     "restatedIn": "docs/phase-1/phase-1-28/evidence/closure-evidence.md"
   },
@@ -17,31 +17,31 @@
       "passed": 2592,
       "failed": 0,
       "skipped": 0,
-      "provenance": "LOCAL_AND_HOSTED_AGREE"
+      "provenance": "LOCAL_COMPUTED_HOSTED_PENDING"
     },
     "web": {
-      "passed": 2726,
+      "passed": 2728,
       "failed": 0,
       "skipped": 0,
-      "provenance": "LOCAL_AND_HOSTED_AGREE"
+      "provenance": "LOCAL_COMPUTED_HOSTED_PENDING"
     },
     "backend": {
       "passed": 2004,
       "failed": 0,
       "skipped": 0,
-      "provenance": "HOSTED_ARTEFACT_ATTESTED"
+      "provenance": "HOSTED_PENDING_AT_CANDIDATE"
     },
     "database": {
       "passed": 1647,
       "failed": 0,
       "skipped": 0,
-      "provenance": "HOSTED_ARTEFACT_ATTESTED"
+      "provenance": "HOSTED_PENDING_AT_CANDIDATE"
     },
     "browser": {
       "passed": 366,
       "failed": 0,
       "skipped": 4,
-      "provenance": "HOSTED_ARTEFACT_ATTESTED"
+      "provenance": "HOSTED_PENDING_AT_CANDIDATE"
     }
   },
   "fileCount": 14,
@@ -67,12 +67,12 @@
       "bytes": 42409
     },
     "docs/phase-1/phase-1-28/evidence/closure-candidate.json": {
-      "sha256": "d632d4e4b398e7b38321f42ead7b0036e1c81dc966e90be6e9f3c02ca3d4fbba",
-      "bytes": 64241
+      "sha256": "72e60d41f82d0d16e11c338768d94b206b4d6d62380209be3c14d4597a369df3",
+      "bytes": 62745
     },
     "docs/phase-1/phase-1-28/evidence/closure-evidence.md": {
-      "sha256": "022a35b5aa48660c8e90aee1f0f5f77f4229e079316d1d2c714a1fa17961c41b",
-      "bytes": 72825
+      "sha256": "2e4ba544c73143c4d627d9c69a4c8527a1891e882a27e14ceca023eb91fbca16",
+      "bytes": 73933
     },
     "docs/phase-1/phase-1-28/evidence/traceability.json": {
       "sha256": "600a8ae57e4a33b5c54d847befbcab82acb2a0d136d005cec777345c39c74ab1",
