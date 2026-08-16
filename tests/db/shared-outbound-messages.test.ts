@@ -53,7 +53,8 @@ beforeAll(async () => {
          (id, tenant_id, identity_provider, provider_subject, email, display_name, status, created_by)
        VALUES
          ($1,$2,'fixture','f5-user-a','f5-user-a@example.invalid','F5 User A','active',$1),
-         ($3,$4,'fixture','f5-user-b','f5-user-b@example.invalid','F5 User B','active',$1)`,
+         ($3,$4,'fixture','f5-user-b','f5-user-b@example.invalid','F5 User B','active',$1)
+       ON CONFLICT (id) DO NOTHING`,
       [USER_A, TENANT_A, USER_B, TENANT_B]
     );
 
