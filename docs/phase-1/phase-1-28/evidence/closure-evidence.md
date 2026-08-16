@@ -33,13 +33,13 @@ the candidate, and refuses either half that fails to name an unclosed task.
 
 ## The frozen candidate
 
-| Binding           | Value                                                                |
-| ----------------- | -------------------------------------------------------------------- |
-| `FINAL_CODE_SHA`  | `10a2f3d3c2c77cc3a0c56c14e0d7c8097d669cff`                           |
-| `FINAL_CODE_TREE` | `e8ab76dee9c2abe0fa794334a8844aa27aba4105`                           |
-| Branch            | `p1-28/od-025-policy-enforcement`                                    |
-| Pull request      | **#231**, base `develop`, 13 commits ahead                           |
-| Subject           | `fix(p1-28): satisfy noUncheckedIndexedAccess in the lifecycle rule` |
+| Binding           | Value                                                                             |
+| ----------------- | --------------------------------------------------------------------------------- |
+| `FINAL_CODE_SHA`  | `04b3f6d81ca7da02c435560bc3c43d09dcbf793f`                                        |
+| `FINAL_CODE_TREE` | `c948dbbe6ce52cc3c912ceb96262838aca73b040`                                        |
+| Branch            | `remediation/p1-15-reception-document-foundation`                                 |
+| Pull request      | not yet opened, base `develop`, 6 commits ahead                                   |
+| Subject           | `fix(p1-15): the scanner handoff is SECURITY INVOKER, and the grants are bounded` |
 
 The previous candidate was `7b1252edebb5d7f48451213c71ab832cb44e46b5`, tree
 `1ef831d2ecfcf94d07b73857b7448c3b424faca3`, on
