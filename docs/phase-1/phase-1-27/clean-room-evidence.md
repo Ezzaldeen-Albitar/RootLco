@@ -169,6 +169,7 @@ different tree is not evidence about this one.
 | Committed unit floor (`minTests`)           | 1050  | the same baseline                                                  |
 | Migrations on disk                          | 123   | a walk of `supabase/migrations`                                    |
 | Committed migration baseline                | 123   | `.github/ci-baselines/schema-baseline.json`, `migrationCount`      |
+| Committed schema hash                       | `53b26a711d28d3ce2c348877d71dabb12a8dc6bbb292efc66c2ad50090b0e738` | the same baseline, `schemaHash` |
 
 The floor and the measurement are different questions and they have different
 authorities. The baseline file defines the FLOOR, so binding "the floor is 2500"

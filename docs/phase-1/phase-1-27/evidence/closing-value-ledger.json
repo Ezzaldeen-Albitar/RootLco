@@ -179,6 +179,23 @@
       "why": "The row QA-005 compares against the committed baseline. It exists because that check used to read `Migrations applied` in the superseded hosted table, which is what one historical head carried and does not move when the tree does — so one row answered to two moving reference points and the baseline could not be raised without breaking a gate measuring something else. Deliberately the same number as CR-A-MIGRATIONS-DISK-ROW and CR-B-MIGRATIONS-GIT by a third route: a disagreement here is a baseline that has fallen behind the tree, which neither of the other two detects."
     },
     {
+      "id": "CR-A-SCHEMA-HASH-BASELINE",
+      "class": "DERIVABLE_LOCAL",
+      "standing": "CURRENT",
+      "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
+      "locator": "| Committed schema hash                       | `53b26a711d28d3ce2c348877d71dabb12a8dc6bbb292efc66c2ad50090b0e738` | the same baseline, `schemaHash` |",
+      "value": "53b26a711d28d3ce2c348877d71dabb12a8dc6bbb292efc66c2ad50090b0e738",
+      "binding": {
+        "kind": "schemaBaseline",
+        "field": "schemaHash"
+      },
+      "boundBy": {
+        "file": "tests/ci/p1-27-doc-counts.test.ts",
+        "contains": "the record quotes no committed schema hash"
+      },
+      "why": "What the committed baseline pins, which is what the migration-replay job compares against. Separated from the superseded row for the reason CR-A-MIGRATIONS-BASELINE-ROW records: a historical digest and a current baseline are two claims, and while one cell served both, the baseline could not be raised without breaking a gate measuring something else."
+    },
+    {
       "id": "CR-A-WEB-FLOOR-PROSE",
       "class": "DERIVABLE_LOCAL",
       "standing": "CURRENT",
@@ -531,9 +548,9 @@
       "value": "f6b4f023d9e6b1e7d823dac4e5550379202a216ab1ae1fe9e5a2826703061f79",
       "boundBy": {
         "file": "tests/ci/p1-27-doc-counts.test.ts",
-        "contains": "the record quotes no schema hash"
+        "contains": "the superseded record quotes no schema hash"
       },
-      "why": "It looked like the least checkable figure on the page and it is not: the same digest is pinned in .github/ci-baselines/schema-baseline.json, which is what the replay job compares against."
+      "why": "The digest the SUPERSEDED head produced. It used to be bound to the CURRENT committed baseline, which made one historical cell answer to a moving reference point — the same double binding `Migrations applied` carried, and the reason schemaHash could not be raised. The current claim is CR-A-SCHEMA-HASH-BASELINE; this row is held only to being a real digest inside its own superseded table."
     },
     {
       "id": "CR-E-STALE-TOTAL",

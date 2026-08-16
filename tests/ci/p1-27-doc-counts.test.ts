@@ -716,8 +716,21 @@ describe('P1-27-QA-005 — the two evidence pages agree with each other and the 
       migrationCount?: number;
     };
     expect(baseline.schemaHash, 'the schema baseline pins no hash').toMatch(/^[0-9a-f]{64}$/);
-    const quoted = /\|\s*Schema hash\s*\|\s*`([0-9a-f]{64})`/.exec(CLEAN_ROOM)?.[1];
-    expect(quoted, 'the record quotes no schema hash').toBe(baseline.schemaHash);
+    /*
+     * `Committed schema hash`, and the superseded row below it, are TWO claims.
+     * This check reads the current one for the same reason the migration count
+     * beneath it does: the `Schema hash` row belongs to the superseded hosted
+     * table and states the digest that head really produced, which does not
+     * change when the tree does.
+     */
+    const quoted = /\|\s*Committed schema hash\s*\|\s*`([0-9a-f]{64})`/.exec(CLEAN_ROOM)?.[1];
+    expect(quoted, 'the record quotes no committed schema hash').toBe(baseline.schemaHash);
+    // The historical row still has to BE a digest, and still has to be a
+    // digest — an empty superseded cell would satisfy every check above.
+    expect(
+      /\|\s*Schema hash\s*\|\s*`([0-9a-f]{64})`/.exec(CLEAN_ROOM)?.[1],
+      'the superseded record quotes no schema hash'
+    ).toMatch(/^[0-9a-f]{64}$/);
     /*
      * `Committed migration baseline`, NOT `Migrations applied`.
      *
