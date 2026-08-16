@@ -169,6 +169,26 @@ CREATE POLICY upd_document_versions_lifecycle ON shared.document_versions
 GRANT INSERT ON shared.file_scan_results TO app_runtime;
 GRANT UPDATE(status) ON shared.document_versions TO app_runtime;
 
+-- ADDING A COLUMN GRANTS NOTHING ON IT.
+--
+-- `app_runtime` holds INSERT on `shared.document_versions` column by column, and
+-- `captured_at` is new here. `shared.attachment-version-register` writes it —
+-- `document-repository.ts` names eleven columns and this is the eleventh — so
+-- without this grant the INSERT names a column the role cannot write and
+-- PostgreSQL rejects the whole statement: `permission denied for table
+-- document_versions`, ERR-SYS-001, HTTP 500 on every request.
+--
+-- That is a published operation failing every real call, the P1-27-INT-113 shape.
+-- It survived a 1681-test database tier because no DB test drives the HTTP
+-- registration path, and it survived local runs because this workstation's
+-- database carried an integrated tree whose other migrations had granted it.
+-- The hosted clean build is what found it.
+--
+-- `scanning_at` deliberately gets NO grant: the lifecycle trigger stamps it, and
+-- column privileges are checked against the columns a STATEMENT names, not what
+-- a trigger assigns. Granting it would widen the surface for no caller.
+GRANT INSERT(captured_at) ON shared.document_versions TO app_runtime;
+
 COMMENT ON POLICY upd_document_versions_lifecycle ON shared.document_versions IS
   'The scanner handoff, per row. USING refuses a version that is already terminal, so an accepted or quarantined version cannot be reopened; WITH CHECK refuses a target outside the approved vocabulary. The column grant is UPDATE(status) alone, so no other field of an immutable version is writable, and guard_document_version_transition still decides which transitions are legal.';
 

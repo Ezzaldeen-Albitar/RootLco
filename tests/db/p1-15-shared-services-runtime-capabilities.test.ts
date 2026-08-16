@@ -353,6 +353,7 @@ describe('P1-15 / global security posture', () => {
     expect(grants).toEqual([
       'INSERT ON shared.file_scan_results TO app_runtime',
       'UPDATE(status) ON shared.document_versions TO app_runtime',
+      'INSERT(captured_at) ON shared.document_versions TO app_runtime',
     ]);
   });
 

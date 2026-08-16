@@ -34,6 +34,8 @@
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Client, Pool } from 'pg';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { buildStorageKey } from '@/modules/shared-services/domain/storage-key';
 import {
@@ -701,5 +703,89 @@ describe('replacement creates a new version and never overwrites the prior one',
         '23505'
       )
     );
+  });
+});
+
+/**
+ * The privilege surface, DERIVED from the shipped write rather than restated.
+ *
+ * `shared.attachment-version-register` answered HTTP 500 to every request with
+ * `permission denied for table document_versions`, because `captured_at` was
+ * added by this migration and `app_runtime` holds INSERT on this table COLUMN BY
+ * COLUMN — adding a column grants nothing on it, and the statement names it.
+ *
+ * A published operation that fails every call is the P1-27-INT-113 shape, and it
+ * survived a 1681-test database tier because no DB case drives the HTTP path.
+ * So the guard here is not another hand-kept list of columns — a second list is
+ * exactly what drifted. The expected set is PARSED from the repository's own
+ * INSERT statement, so a column added to the write tomorrow is compared against
+ * the grants tomorrow, with nobody remembering to update anything.
+ */
+describe('document_versions INSERT grants cover exactly what the service writes', () => {
+  const REPOSITORY = fileURLToPath(
+    new URL(
+      '../../apps/api/src/modules/shared-services/data/document-repository.ts',
+      import.meta.url
+    )
+  );
+
+  const GRANTED = async (privilege: string): Promise<Set<string>> => {
+    const { rows } = await admin.query<{ column_name: string }>(
+      `SELECT column_name FROM information_schema.role_column_grants
+        WHERE grantee = 'app_runtime' AND table_schema = 'shared'
+          AND table_name = 'document_versions' AND privilege_type = $1`,
+      [privilege]
+    );
+    return new Set(rows.map((row) => row.column_name));
+  };
+
+  /** The columns the shipped INSERT names, read from the source that ships. */
+  function writtenColumns(): readonly string[] {
+    const source = readFileSync(REPOSITORY, 'utf8');
+    const match = /INSERT INTO shared\.document_versions\s*\(([\s\S]*?)\)\s*VALUES/.exec(source);
+    const columnList = match?.[1];
+    // Guarded rather than asserted-then-cast: this tier compiles under
+    // `noUncheckedIndexedAccess`, and a cast here would hide the one case that
+    // matters — the parse silently returning nothing.
+    expect(columnList, 'the repository no longer contains a document_versions INSERT').toBeTruthy();
+    return String(columnList)
+      .split(',')
+      .map((column) => column.trim())
+      .filter(Boolean)
+      .sort();
+  }
+
+  it('parses a real write-set — an empty parse would make every check below vacuous', () => {
+    const columns = writtenColumns();
+    expect(columns.length).toBeGreaterThan(8);
+    // The column whose absence caused the outage, named so a silent parse
+    // regression cannot quietly drop it.
+    expect(columns).toContain('captured_at');
+  });
+
+  it('every column the service writes is granted to app_runtime', async () => {
+    const granted = await GRANTED('INSERT');
+    const missing = writtenColumns().filter((column) => !granted.has(column));
+    expect(
+      missing,
+      `the registration INSERT names column(s) app_runtime cannot write: ${missing.join(', ')}`
+    ).toEqual([]);
+  });
+
+  it('grants nothing the service does not write — the lifecycle stamps stay server-owned', async () => {
+    /*
+     * The other direction, and the reason this is not simply "grant everything".
+     * `scanning_at`, `accepted_at`, `quarantined_at` and `rejected_at` are set by
+     * `guard_document_version_transition`, never by a caller. A trigger assigning
+     * NEW.<column> needs no column privilege, so granting these would widen the
+     * surface for no caller at all — and would let a request write a lifecycle
+     * timestamp the database is supposed to own.
+     */
+    const granted = await GRANTED('INSERT');
+    for (const serverOwned of ['scanning_at', 'accepted_at', 'quarantined_at', 'rejected_at']) {
+      expect(granted.has(serverOwned), `${serverOwned} must stay server-owned`).toBe(false);
+    }
+    // And UPDATE remains exactly the one column the scan handoff moves.
+    expect([...(await GRANTED('UPDATE'))]).toEqual(['status']);
   });
 });
