@@ -33,13 +33,13 @@ the candidate, and refuses either half that fails to name an unclosed task.
 
 ## The frozen candidate
 
-| Binding           | Value                                                                        |
-| ----------------- | ---------------------------------------------------------------------------- |
-| `FINAL_CODE_SHA`  | `ab3c82af2a941a3722aa8058e8160c4c3fb1bd58`                                   |
-| `FINAL_CODE_TREE` | `eeb1ad813b4fa45d2bbfa6281eb46526d38ac182`                                   |
-| Branch            | `remediation/p1-15-reception-document-foundation`                            |
-| Pull request      | not yet opened, base `develop`, 14 commits ahead                             |
-| Subject           | `fix(p1-15): the platform evidence-category catalog is structural reference` |
+| Binding           | Value                                                                             |
+| ----------------- | --------------------------------------------------------------------------------- |
+| `FINAL_CODE_SHA`  | `2c25414a34908010f4ceae01da8cfa72af02819f`                                        |
+| `FINAL_CODE_TREE` | `9fc883e01272fe85af5b4c6fed1dccd9b8193022`                                        |
+| Branch            | `remediation/p1-15-reception-document-foundation`                                 |
+| Pull request      | **#232**, base `develop`, 25 commits ahead                                        |
+| Subject           | `fix(p1-15): rows belong in seeds, and the schema baseline moves with the change` |
 
 The previous candidate was `7b1252edebb5d7f48451213c71ab832cb44e46b5`, tree
 `1ef831d2ecfcf94d07b73857b7448c3b424faca3`, on
