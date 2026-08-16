@@ -7,13 +7,13 @@
     "unit": {
       "command": "npx vitest run --reporter=json",
       "tests": 2658,
-      "passed": 2652,
-      "failed": 6,
+      "passed": 2655,
+      "failed": 3,
       "skipped": 0,
       "files": 100,
-      "measuredAtCommit": "094f74dfe41a470e97db4dc497209f4fb3d5cc62",
+      "measuredAtCommit": "1d675f332197593c550591dfbadb88100229292e",
       "dirtyExecutablePaths": [],
-      "measuredAt": "2026-08-16T14:47:16.159Z"
+      "measuredAt": "2026-08-16T14:52:20.917Z"
     },
     "web": {
       "command": "npm run test --workspace @rootlco/web -- --reporter=json",
