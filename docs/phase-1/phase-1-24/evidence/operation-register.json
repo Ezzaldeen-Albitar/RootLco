@@ -7847,6 +7847,7 @@
       "tests": [
         "tests/backend/p1-15-attachments-notifications.test.ts",
         "tests/backend/p1-15-operation-routes.test.ts",
+        "tests/db/p1-15-attachments.test.ts",
         "tests/db/shared-document-versions.test.ts",
         "tests/foundation/p1-15-catalogs.test.ts"
       ],
