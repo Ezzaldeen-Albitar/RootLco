@@ -33,13 +33,13 @@ the candidate, and refuses either half that fails to name an unclosed task.
 
 ## The frozen candidate
 
-| Binding           | Value                                                |
-| ----------------- | ---------------------------------------------------- |
-| `FINAL_CODE_SHA`  | `0ee53647032345524e4dd7c193cee99edb93b46c`           |
-| `FINAL_CODE_TREE` | `1f417466483976b376ad4b3460737583ec6e8033`           |
-| Branch            | `remediation/p1-15-reception-document-foundation`    |
-| Pull request      | **#232**, base `develop`, 25 commits ahead           |
-| Subject           | `fix(ci): the clean room measures a SUPERSEDED head` |
+| Binding           | Value                                                                             |
+| ----------------- | --------------------------------------------------------------------------------- |
+| `FINAL_CODE_SHA`  | `a5be17492c59713e5bd55a31336d16dc4aa611a3`                                        |
+| `FINAL_CODE_TREE` | `72fab9cd2b6bffda9b7877370f206f6ea7c8874f`                                        |
+| Branch            | `remediation/p1-15-reception-document-foundation`                                 |
+| Pull request      | **#232**, base `develop`, 25 commits ahead                                        |
+| Subject           | `fix(ci): bind the historical schema hash to an assertion that it is NOT current` |
 
 The previous candidate was `7b1252edebb5d7f48451213c71ab832cb44e46b5`, tree
 `1ef831d2ecfcf94d07b73857b7448c3b424faca3`, on
