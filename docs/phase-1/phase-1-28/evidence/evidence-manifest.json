@@ -14,8 +14,8 @@
   },
   "tierTotals": {
     "unit": {
-      "passed": 2592,
-      "failed": 0,
+      "passed": 2652,
+      "failed": 6,
       "skipped": 0,
       "provenance": "LOCAL_COMPUTED_HOSTED_PENDING"
     },
@@ -67,8 +67,8 @@
       "bytes": 42409
     },
     "docs/phase-1/phase-1-28/evidence/closure-candidate.json": {
-      "sha256": "c8c75a6107eea85e7f68540e8c808fcc7f755c55dfd16e07c0015f2e1d5f2bfb",
-      "bytes": 64435
+      "sha256": "4334d46f3e54570f86ce64805e785e067205bddf67479960e03637613703b142",
+      "bytes": 64436
     },
     "docs/phase-1/phase-1-28/evidence/closure-evidence.md": {
       "sha256": "2aa78d4793e63f7be2aa19018352fade158c876ad78449f6c0c0aaba55251511",
