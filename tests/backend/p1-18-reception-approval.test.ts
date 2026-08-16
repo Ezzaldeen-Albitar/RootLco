@@ -212,7 +212,7 @@ async function openReception(
     companyId: input.companyId ?? COMPANY_A1,
     branchId: input.branchId ?? BRANCH_A1,
     vehicleId,
-    receivingEmployeeId: USER_A,
+    receivingEmployeeId: USER_APPROVER,
     serviceRequesterPartnerId: input.partnerId ?? PARTNER_A,
     origin: { kind: 'walk_in' },
   });

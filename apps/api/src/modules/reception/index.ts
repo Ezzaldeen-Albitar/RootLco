@@ -58,6 +58,7 @@ export type {
   ReceptionDetailRow,
   ReceptionHistoryEntry,
   ReceptionListEntry,
+  ReceivingEmployeeEntry,
 } from './data/reception-read-repository';
 export type {
   AppointmentDetailRow,

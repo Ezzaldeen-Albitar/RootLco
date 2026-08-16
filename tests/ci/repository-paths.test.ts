@@ -155,7 +155,13 @@ describe('the API application lives in the workspace', () => {
     // active entries for `apt.appointment.read` / `rec.reception.read`, and the
     // administrative read shows retired entries and their `recordVersion` to
     // `apt.catalogue.manage` / `rec.catalogue.manage`.
-    expect(routeFiles.length).toBe(237);
+    //
+    // 238 with the FE-007 receiving-employee picker
+    // (`reception-catalogue/receiving-employees`), a module of its own because
+    // it reads `iam.user_accounts` rather than a `rec` catalogue table and
+    // therefore shares neither collection route file nor lifecycle with the
+    // seven catalogues beside it.
+    expect(routeFiles.length).toBe(238);
 
     // Non-vacuity. A discovery assertion that only checks a count would pass
     // against a set with one route swapped for another, so the comparison that
@@ -197,8 +203,9 @@ describe('the API application lives in the workspace', () => {
     // the seven collection GETs. Operations and route modules move by different
     // amounts for that reason, which is exactly why both are asserted.
     // 289 with the seven administrative reads, which move both counts by seven
-    // — one operation per new module.
-    expect(report.operations).toHaveLength(289);
+    // — one operation per new module. 290 with the FE-007 receiving-employee
+    // picker, which moves both by one for the same reason.
+    expect(report.operations).toHaveLength(290);
 
     // ~1 s per process by construction, not by slowness. The budget is stated
     // here rather than raised globally, so it cannot quietly cover a different

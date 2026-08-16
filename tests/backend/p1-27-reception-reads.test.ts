@@ -268,7 +268,7 @@ async function openReception(
         companyId: COMPANY_A1,
         branchId: BRANCH_A1,
         vehicleId,
-        receivingEmployeeId: USER_A,
+        receivingEmployeeId: USER_FULL,
         serviceRequesterPartnerId: PARTNER_A,
         origin: { kind: 'walk_in' },
         ...overrides,
@@ -692,6 +692,7 @@ describe('the detail and the If-Match round trip', () => {
       'odometerReadingId',
       'origin',
       'receivingEmployeeId',
+      'receivingEmployeeDisplayName',
       'receptionStatus',
       'recordVersion',
       'updatedAt',
@@ -702,6 +703,8 @@ describe('the detail and the If-Match round trip', () => {
     expect(body.receptionStatus).toBe('opened');
     expect(body.origin).toBe('walk_in');
     expect(body.vehicleId).toBe(vehicleId);
+    expect(body.receivingEmployeeId).toBe(USER_FULL);
+    expect(body.receivingEmployeeDisplayName).toBe('Reception Read Principal');
     expect(body.fuelLevelName).toBe('Half Tank');
     // numeric(5,2) crosses the boundary as a STRING and stays one.
     expect(typeof body.evSocPercent).toBe('string');

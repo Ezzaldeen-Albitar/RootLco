@@ -269,7 +269,7 @@ beforeEach(async () => {
 // ---------------------------------------------------------------------------
 
 describe('P1-15 / global security posture', () => {
-  it('the repository declares exactly 120 migrations, with 119 and 120 last', () => {
+  it('the repository declares exactly 121 migrations, with 120 and 121 last', () => {
     // Counted from the repository, not from `supabase_migrations.schema_migrations`:
     // that bookkeeping table is created by the Supabase CLI and does not exist in
     // CI, where the database is built by `npm run db:apply-migrations` against a
@@ -287,13 +287,20 @@ describe('P1-15 / global security posture', () => {
     // restates uq_reception_visits_open_vehicle. It adds no grant, role, policy
     // or permission code, so every inventory assertion in this file is unchanged
     // by it — which is exactly why the count is asserted here.
+    // 121 is DBCR-P1-18-002 (Owner decision FE-007), which binds
+    // rec.reception_visits.receiving_employee_id to iam.user_accounts and adds an
+    // immutable display-name snapshot. It adds ONE permission CODE
+    // (rec.reception.receiving_employee.assign_any, mapped to no role) and no
+    // grant, role or policy — so the grant and policy inventories below are
+    // unchanged by it, and the permission count it does move is pinned in
+    // .github/ci-baselines/schema-baseline.json rather than here.
     const dir = fileURLToPath(new URL('../../supabase/migrations', import.meta.url));
     const files = readdirSync(dir)
       .filter((f) => f.endsWith('.sql'))
       .sort();
-    expect(files).toHaveLength(120);
-    expect(files.at(-2)).toBe('20260730090000_crm_customer_notes_write_capability.sql');
-    expect(files.at(-1)).toBe('20260731090000_rec_custody_release_visit_marker.sql');
+    expect(files).toHaveLength(121);
+    expect(files.at(-2)).toBe('20260731090000_rec_custody_release_visit_marker.sql');
+    expect(files.at(-1)).toBe('20260815093000_rec_receiving_employee_identity.sql');
   });
 
   it('every relation touched by migration 117 keeps ENABLE and FORCE RLS', async () => {

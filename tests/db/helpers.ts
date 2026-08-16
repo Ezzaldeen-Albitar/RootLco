@@ -49,6 +49,8 @@ export const TENANT_A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 export const TENANT_B = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 export const USER_A = 'a0000000-0000-4000-8000-000000000001';
 export const USER_B = 'b0000000-0000-4000-8000-000000000001';
+const ROLE_FIXTURE_EMPLOYEE_A = 'a0000000-0000-4000-8000-0000000000e1';
+const ROLE_FIXTURE_EMPLOYEE_B = 'b0000000-0000-4000-8000-0000000000e1';
 export const COMPANY_A1 = 'a1000000-0000-4000-8000-000000000001';
 export const BRANCH_A1 = 'a1100000-0000-4000-8000-000000000001';
 
@@ -229,6 +231,41 @@ export async function ensureOrgFixtures(admin: Pool): Promise<void> {
      VALUES ($1, $2, $3, 'branch_a1', 'Fixture Branch A1', 'UTC', $4)
      ON CONFLICT (id) DO NOTHING`,
     [BRANCH_A1, TENANT_A, COMPANY_A1, USER_A]
+  );
+  // Real active IAM identities with live tenant-wide grants. Reception database
+  // suites use USER_A as their deterministic receiving employee; FE-007 no
+  // longer permits an arbitrary uuid to stand in for one.
+  await admin.query(
+    `INSERT INTO iam.user_accounts
+       (id, tenant_id, identity_provider, provider_subject, email, display_name, status, created_by)
+     VALUES
+       ($1,$3,'test_harness','fx_db_user_a','db-user-a@example.test','Fixture User A','active',$5),
+       ($2,$4,'test_harness','fx_db_user_b','db-user-b@example.test','Fixture User B','active',$5)
+     ON CONFLICT (id) DO NOTHING`,
+    [USER_A, USER_B, TENANT_A, TENANT_B, SYS]
+  );
+  await admin.query(
+    `INSERT INTO iam.roles (id, tenant_id, role_code, name, created_by)
+     VALUES ($1,$3,'fx_db_employee','DB fixture employee',$5),
+            ($2,$4,'fx_db_employee','DB fixture employee',$5)
+     ON CONFLICT (id) DO NOTHING`,
+    [ROLE_FIXTURE_EMPLOYEE_A, ROLE_FIXTURE_EMPLOYEE_B, TENANT_A, TENANT_B, SYS]
+  );
+  await admin.query(
+    `INSERT INTO iam.role_grants
+       (tenant_id, user_id, role_id, scope_mode, granted_by, created_by)
+     SELECT $1,$2,$3,'unrestricted',$4,$4
+      WHERE NOT EXISTS (
+        SELECT 1 FROM iam.role_grants
+         WHERE tenant_id = $1 AND user_id = $2 AND role_id = $3 AND status = 'active'
+      )
+     UNION ALL
+     SELECT $5,$6,$7,'unrestricted',$4,$4
+      WHERE NOT EXISTS (
+        SELECT 1 FROM iam.role_grants
+         WHERE tenant_id = $5 AND user_id = $6 AND role_id = $7 AND status = 'active'
+      )`,
+    [TENANT_A, USER_A, ROLE_FIXTURE_EMPLOYEE_A, SYS, TENANT_B, USER_B, ROLE_FIXTURE_EMPLOYEE_B]
   );
 }
 

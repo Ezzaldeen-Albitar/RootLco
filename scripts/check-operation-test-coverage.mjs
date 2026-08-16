@@ -491,6 +491,11 @@ export const MANIFEST = {
     ],
     note: 'both origin modes: a walk-in creates its own origin record (no fabricated appointment) and an appointment origin also moves the appointment to checked_in, all in one transaction; visit + service-requester role + accepted custody + status history are written atomically by rec.accept_check_in and an injected failure leaves none of them (rollback); one origin is consumed at most once and two concurrent check-ins of the same origin leave exactly one visit (concurrency)',
   },
+  'rec.receiving-employee-list': {
+    files: ['tests/backend/p1-18-reception-create.test.ts'],
+    required: ['success', 'denial', 'isolation'],
+    note: 'FE-007. The picker the check-in form selects a custodian from. It exists to answer exactly the question the authoritative insert guard asks, so the evidence is the two halves together: what the list offers, and what a create does with an id the list did not offer. Declared in the create suite for that reason — a list proven in isolation from the write it feeds proves only that a query runs.',
+  },
   'rec.reception-party-role': {
     files: [
       'tests/backend/p1-18-reception-parties.test.ts',

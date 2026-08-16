@@ -1,20 +1,20 @@
 {
   "generatedBy": "scripts/p1-24-operation-register.mjs",
   "totals": {
-    "operations": 289,
-    "openapiPaths": 236,
-    "openapiOperations": 289,
+    "operations": 290,
+    "openapiPaths": 237,
+    "openapiOperations": 290,
     "openapiSchemas": 3,
     "events": 50,
     "eventsProduced": 47,
     "eventsDeliveryTested": 50,
     "outboxForeignWriters": 0,
     "errorCodes": 28,
-    "permissionCodes": 109,
+    "permissionCodes": 110,
     "auditActions": 176
   },
   "counts": {
-    "Covered": 289
+    "Covered": 290
   },
   "operations": [
     {
@@ -6014,6 +6014,36 @@
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/reception-catalogue/warning-light-codes/[warningLightCodeId]/route.ts"
+    },
+    {
+      "id": "rec.receiving-employee-list",
+      "domain": "reception",
+      "method": "GET",
+      "route": "/api/v1/reception-catalogue/receiving-employees",
+      "permissions": ["rec.reception.manage"],
+      "public": false,
+      "scope": "branch",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/reception-catalogue/receiving-employees",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": ["route", "service", "success", "authorization", "isolation", "denial"],
+      "providedEvidence": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/p1-18-reception-create.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/reception-catalogue/receiving-employees/route.ts"
     },
     {
       "id": "rec.reception-approve",

@@ -26,12 +26,14 @@ import {
   PARTY_ROLE_ORDERING,
   RECEPTION_HISTORY_ORDERING,
   RECEPTION_LIST_ORDERING,
+  RECEIVING_EMPLOYEE_ORDERING,
   type AuthorizationEntry,
   type ConditionEvidenceEntry,
   type PartyRoleEntry,
   type ReceptionDetailRow,
   type ReceptionHistoryEntry,
   type ReceptionListEntry,
+  type ReceivingEmployeeEntry,
   type ReceptionReadRepository,
   type ReceptionScopeRow,
 } from '../data/reception-read-repository';
@@ -82,6 +84,22 @@ export class ReceptionReadService extends ApplicationService {
         vehicleId: query.vehicleId,
       },
       pageRequest(RECEPTION_LIST_ORDERING, query)
+    );
+  }
+
+  /** Active IAM users who may receive custody in the requested branch. */
+  async listReceivingEmployees(
+    db: DbHandle,
+    query: {
+      readonly companyId: string;
+      readonly branchId: string;
+    } & PageQuery
+  ): Promise<Page<ReceivingEmployeeEntry>> {
+    return this.reads.listReceivingEmployees(
+      db,
+      query.companyId,
+      query.branchId,
+      pageRequest(RECEIVING_EMPLOYEE_ORDERING, query)
     );
   }
 

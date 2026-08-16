@@ -150,6 +150,7 @@ import '@/app/api/v1/reception-catalogue/visit-reasons/route';
 import '@/app/api/v1/reception-catalogue/fuel-levels/route';
 import '@/app/api/v1/reception-catalogue/warning-light-codes/route';
 import '@/app/api/v1/reception-catalogue/refusal-reasons/route';
+import '@/app/api/v1/reception-catalogue/receiving-employees/route';
 // P1-27-INT-018 management half. The seven creates are POSTs inside the seven
 // collection modules already imported above, so they arrive for free — these
 // fourteen do NOT, and each is the only place its operation is declared. An
