@@ -460,9 +460,19 @@ describe('P1-15 / global security posture', () => {
     // fix is a management contract, never a seed: the no-fake-data policy is
     // permanent, and both codes are granted to nobody by default.
     //
+    // FE-007 (the Owner's receiving-employee decision, DBCR-P1-18-002) adds one,
+    // taking the catalog to 110: rec.reception.receiving_employee.assign_any.
+    // It is the first code here that NO operation declares, and deliberately so:
+    // there is no cross-branch check-in endpoint to gate, because the decision is
+    // taken inside rec.stamp_receiving_employee_identity() against the ACTOR's
+    // authority in the visit's own scope, where a direct database writer cannot
+    // step around it. Publishing it as a route permission would move the decision
+    // to a layer that is not the authority. Like every code above it is mapped to
+    // no role, so on a replayed database it exists and is held by nobody.
+    //
     // The pin moves with the seed deliberately: it is what catches an accidental
     // catalog edit.
-    expect(Number(total.rows[0]?.n)).toBe(109);
+    expect(Number(total.rows[0]?.n)).toBe(110);
   });
 
   it('the exact write-policy inventory of the whole shared schema is unchanged apart from migrations 117 and 119', async () => {
