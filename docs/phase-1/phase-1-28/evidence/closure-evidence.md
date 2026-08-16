@@ -33,13 +33,13 @@ the candidate, and refuses either half that fails to name an unclosed task.
 
 ## The frozen candidate
 
-| Binding           | Value                                              |
-| ----------------- | -------------------------------------------------- |
-| `FINAL_CODE_SHA`  | `9d8d7dccf2fa7cd1504a5610ec34516f146dcd57`         |
-| `FINAL_CODE_TREE` | `f58214100011d863d264fbdd2dbdcb6728b8ff77`         |
-| Branch            | `remediation/p1-15-reception-document-foundation`  |
-| Pull request      | **#232**, base `develop`, 25 commits ahead         |
-| Subject           | `fix(ci): permissionCount is 110 — CI measured it` |
+| Binding           | Value                                             |
+| ----------------- | ------------------------------------------------- |
+| `FINAL_CODE_SHA`  | `9e8ebde2c285cb6a9f86af733c663938cad7271c`        |
+| `FINAL_CODE_TREE` | `7bc304e3ab0436bcf1e49e38537a84097d00fad7`        |
+| Branch            | `remediation/p1-15-reception-document-foundation` |
+| Pull request      | **#232**, base `develop`, 25 commits ahead        |
+| Subject           | `fix(db): the migration creates structure only`   |
 
 The previous candidate was `7b1252edebb5d7f48451213c71ab832cb44e46b5`, tree
 `1ef831d2ecfcf94d07b73857b7448c3b424faca3`, on
