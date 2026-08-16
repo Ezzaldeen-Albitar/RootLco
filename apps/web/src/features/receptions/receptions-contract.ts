@@ -133,6 +133,22 @@ export const RECEPTION_PERMISSIONS = {
    * DELIBERATELY_ABSENT against that decision.
    */
   catalogueManage: 'rec.catalogue.manage',
+  /**
+   * Waiving a required intake capture, with an attributable reason.
+   *
+   * Deliberately NOT implied by `evidenceManage`: taking the photograph and
+   * recording that no photograph was needed are different decisions, and folding
+   * them together would make the requirement optional for everyone who could
+   * satisfy it. Named here because the backend registers it and this layer must
+   * know every code its domain can be denied for. `P1-OD-025` (document and
+   * media file policy) is RESOLVED — private, versioned evidence, only an
+   * ACCEPTED version finalized — so the capture surface is no longer blocked;
+   * this commit publishes the CONTRACT for it, and the screen that consults the
+   * code is delivered by the P1-28 Frontend integration. Until that screen
+   * lands, this write stays recorded in
+   * `docs/phase-1/phase-1-28/write-reachability.json`.
+   */
+  evidenceOverride: 'rec.reception.evidence.override',
 } as const;
 
 /**
@@ -282,6 +298,60 @@ export const RECEPTION_OPERATIONS: readonly ReceptionOperationRow[] = Object.fre
     idempotent: true,
     versionGuarded: true,
     permission: RECEPTION_PERMISSIONS.close,
+    auditClass: 'privileged',
+  },
+  {
+    operationId: 'rec.reception-evidence-binding-list',
+    method: 'GET',
+    template: '/receptions/{receptionId}/evidence-bindings',
+    idempotent: false,
+    versionGuarded: false,
+    permission: RECEPTION_PERMISSIONS.read,
+    auditClass: 'none',
+  },
+  {
+    operationId: 'rec.reception-signature-list',
+    method: 'GET',
+    template: '/receptions/{receptionId}/signatures',
+    idempotent: false,
+    versionGuarded: false,
+    permission: RECEPTION_PERMISSIONS.read,
+    auditClass: 'none',
+  },
+  {
+    operationId: 'rec.reception-evidence-binding',
+    method: 'POST',
+    template: '/receptions/{receptionId}/evidence-bindings',
+    idempotent: true,
+    versionGuarded: false,
+    permission: RECEPTION_PERMISSIONS.evidenceManage,
+    auditClass: 'privileged',
+  },
+  {
+    operationId: 'rec.reception-evidence-binding-finalize',
+    method: 'POST',
+    template: '/receptions/{receptionId}/evidence-bindings/{bindingId}/finalization',
+    idempotent: true,
+    versionGuarded: false,
+    permission: RECEPTION_PERMISSIONS.evidenceManage,
+    auditClass: 'privileged',
+  },
+  {
+    operationId: 'rec.reception-capture-override',
+    method: 'POST',
+    template: '/receptions/{receptionId}/capture-overrides',
+    idempotent: true,
+    versionGuarded: false,
+    permission: RECEPTION_PERMISSIONS.evidenceOverride,
+    auditClass: 'privileged',
+  },
+  {
+    operationId: 'rec.reception-signature-event',
+    method: 'POST',
+    template: '/receptions/{receptionId}/signatures/{signatureId}/events',
+    idempotent: true,
+    versionGuarded: false,
+    permission: RECEPTION_PERMISSIONS.signatureManage,
     auditClass: 'privileged',
   },
   {
@@ -477,6 +547,69 @@ export const RECEPTION_OPERATIONS: readonly ReceptionOperationRow[] = Object.fre
     method: 'PATCH',
     template: '/reception-catalogue/warning-light-codes/{warningLightCodeId}',
     idempotent: false,
+    versionGuarded: true,
+    permission: RECEPTION_PERMISSIONS.catalogueManage,
+    auditClass: 'privileged',
+  },
+  {
+    operationId: 'rec.catalogue-capture-policy-list',
+    method: 'GET',
+    template: '/reception-catalogue/capture-policies',
+    idempotent: false,
+    versionGuarded: false,
+    permission: RECEPTION_PERMISSIONS.catalogueManage,
+    auditClass: 'none',
+  },
+  {
+    operationId: 'rec.catalogue-capture-policy-set',
+    method: 'POST',
+    template: '/reception-catalogue/capture-policies',
+    idempotent: true,
+    versionGuarded: false,
+    permission: RECEPTION_PERMISSIONS.catalogueManage,
+    auditClass: 'privileged',
+  },
+  {
+    operationId: 'rec.catalogue-damage-map-template-list',
+    method: 'GET',
+    template: '/reception-catalogue/damage-map-templates',
+    idempotent: false,
+    versionGuarded: false,
+    permission: RECEPTION_PERMISSIONS.catalogueManage,
+    auditClass: 'none',
+  },
+  {
+    operationId: 'rec.catalogue-damage-map-template-create',
+    method: 'POST',
+    template: '/reception-catalogue/damage-map-templates',
+    idempotent: true,
+    versionGuarded: false,
+    permission: RECEPTION_PERMISSIONS.catalogueManage,
+    auditClass: 'privileged',
+  },
+  {
+    operationId: 'rec.catalogue-damage-map-template-read',
+    method: 'GET',
+    template: '/reception-catalogue/damage-map-templates/{templateId}',
+    idempotent: false,
+    versionGuarded: false,
+    permission: RECEPTION_PERMISSIONS.catalogueManage,
+    auditClass: 'none',
+  },
+  {
+    operationId: 'rec.catalogue-damage-map-template-version-create',
+    method: 'POST',
+    template: '/reception-catalogue/damage-map-templates/{templateId}/versions',
+    idempotent: true,
+    versionGuarded: false,
+    permission: RECEPTION_PERMISSIONS.catalogueManage,
+    auditClass: 'privileged',
+  },
+  {
+    operationId: 'rec.catalogue-damage-map-template-status-set',
+    method: 'POST',
+    template: '/reception-catalogue/damage-map-templates/{templateId}/status',
+    idempotent: true,
     versionGuarded: true,
     permission: RECEPTION_PERMISSIONS.catalogueManage,
     auditClass: 'privileged',

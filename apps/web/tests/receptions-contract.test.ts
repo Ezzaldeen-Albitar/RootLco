@@ -137,8 +137,8 @@ describe('every module row mirrors the generated manifest and the published docu
 
   it('partitions the table into an operator and an administration surface', () => {
     // Anti-vacuity for the partition the narrowed pins below depend on.
-    expect(OPERATOR_OPERATIONS.length).toBe(20);
-    expect(ADMINISTRATION_OPERATIONS.length).toBe(16);
+    expect(OPERATOR_OPERATIONS.length).toBe(26);
+    expect(ADMINISTRATION_OPERATIONS.length).toBe(23);
     expect(OPERATOR_OPERATIONS.length + ADMINISTRATION_OPERATIONS.length).toBe(
       RECEPTION_OPERATIONS.length
     );
@@ -213,6 +213,7 @@ describe('the contract facts the archaeology pinned', () => {
       .map((row) => row.operationId)
       .sort();
     expect(guarded).toEqual([
+      'rec.catalogue-damage-map-template-status-set',
       'rec.catalogue-fuel-level-status-set',
       'rec.catalogue-fuel-level-update',
       'rec.catalogue-refusal-reason-status-set',
@@ -240,7 +241,7 @@ describe('the contract facts the archaeology pinned', () => {
     expect(approvals).toEqual(['rec.reception-approve', 'rec.reception-authorization']);
   });
 
-  it('spreads the write surface across seven distinct permission codes', () => {
+  it('spreads the write surface across eight distinct permission codes', () => {
     // Evidence capture, signature capture, authorization verification,
     // approval, conversion and closure are DIFFERENT authorities. A screen
     // gated on one code must not render another code's controls.
@@ -257,6 +258,7 @@ describe('the contract facts the archaeology pinned', () => {
       'rec.reception.close',
       'rec.reception.convert',
       'rec.reception.evidence.manage',
+      'rec.reception.evidence.override',
       'rec.reception.manage',
       'rec.reception.party.manage',
       'rec.reception.signature.manage',
