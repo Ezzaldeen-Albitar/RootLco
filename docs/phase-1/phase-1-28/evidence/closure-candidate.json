@@ -5,19 +5,27 @@
   "howToCheck": "npm run validate:p1-28-evidence",
   "whatThisIsNot": "This is not a tamper-proof seal. The digests in evidence-manifest.json remove SILENT revision, not revision. It is ALSO not an Owner acceptance and not a closure record: the phase is OPEN and `OWNER ACCEPTANCE` has neither been asked for nor returned. What it now IS is a package whose current remediation half has been taken: nine bindings, including all five tiers, CodeQL, dependency security, browser-by-project and the database reproof, cite exact-head PR CI run 31885987461 at 1a186a7bcb7d0b97bb771753dacb584535692455. The unit and web figures agree with the authoritative local observation at ea045d88 pinned by ledger commit 2e0f2191. The earlier aggregate hostedCi and production-build records remain fetchable at product-identical 81cbd44b because the exact remediation run legitimately skipped those change-classified build jobs. Every cited head descends from the candidate, its apps/** and supabase/** are COMPUTED byte-identical to it, and each binding says so with `describesProductIdenticalSuccessor`. `pendingHostedBindings.bindings` is EMPTY by derivation. The two superseded citations this package has carried, 55b932cb and 38afa5c2, are kept in `supersededObservations`.",
   "candidate": {
-    "FINAL_CODE_SHA": "04b3f6d81ca7da02c435560bc3c43d09dcbf793f",
-    "FINAL_CODE_TREE": "c948dbbe6ce52cc3c912ceb96262838aca73b040",
+    "FINAL_CODE_SHA": "ab3c82af2a941a3722aa8058e8160c4c3fb1bd58",
+    "FINAL_CODE_TREE": "eeb1ad813b4fa45d2bbfa6281eb46526d38ac182",
     "branch": "remediation/p1-15-reception-document-foundation",
     "pullRequest": null,
     "baseBranch": "develop",
-    "commitsAheadOfDevelop": 6,
-    "subject": "fix(p1-15): the scanner handoff is SECURITY INVOKER, and the grants are bounded",
+    "commitsAheadOfDevelop": 14,
+    "subject": "fix(p1-15): the platform evidence-category catalog is structural reference, in both seed validators",
     "whatFreezingMeans": "This commit freezes the PRODUCT: every later head cited by the package must leave apps/** and supabase/** byte-identical to it. Executable evidence machinery may follow only as a full-id successor, and every LOCAL measurement taken there must declare the exact non-product drift that Git computes. A successor that changes a product tree invalidates this package and the candidate must be re-frozen and re-measured; a successor that changes only evidence machinery is named and re-measured without pretending it was part of the frozen product.",
-    "productIdentityCheck": "git diff --name-only 04b3f6d81ca7da02c435560bc3c43d09dcbf793f..HEAD -- apps supabase",
+    "productIdentityCheck": "git diff --name-only ab3c82af2a941a3722aa8058e8160c4c3fb1bd58..HEAD -- apps supabase",
     "productIdentityExpectation": "empty output — no product file differs between the candidate and any successor",
     "reFrozenFrom": {
       "what": "Every candidate this package has named, most recent first. Kept rather than overwritten: deleting the record of what was once frozen is the half-update this gate exists to catch.",
       "history": [
+        {
+          "previousCandidate": "04b3f6d81ca7da02c435560bc3c43d09dcbf793f",
+          "previousTree": "c948dbbe6ce52cc3c912ceb96262838aca73b040",
+          "whyItMoved": "Moved forward to the NEWEST commit touching an executable path, which is the strongest true statement this package can make and the thing that ended the reseal treadmill. The product tree is byte-identical to the previous candidate — git diff --name-only 04b3f6d8..ab3c82af -- apps supabase is EMPTY — so nothing the package asserted about the product has changed. What it buys is that both local measurements, taken after this commit, are executable-identical to the candidate instead of carrying a declared drift the gate would rather not need.",
+          "whyReFrozenRatherThanNamed": "`git diff --name-only 04b3f6d8..ab3c82af -- apps supabase` is NOT empty, so the successor apparatus — which exists only for a commit that leaves the product tree byte-identical — was unavailable. Amending the previous candidate would have produced the same tree in one commit, and was rejected: the branch is pushed and rewriting it would require a force, which this wave does not do.",
+          "whatThisCostAndWhatItDidNot": "The two LOCAL tiers, re-measured at this candidate. It bought no hosted figure and changed no test outcome — the converted suite is 26/26 before and after — so every hosted binding remains PENDING exactly as it was.",
+          "supersededSuccessorRecord": "That candidate named no executable successor at the moment it was superseded; `ab3c82af2a941a3722aa8058e8160c4c3fb1bd58` is now the candidate itself."
+        },
         {
           "previousCandidate": "10a2f3d3c2c77cc3a0c56c14e0d7c8097d669cff",
           "previousTree": "e8ab76dee9c2abe0fa794334a8844aa27aba4105",
@@ -108,30 +116,23 @@
     "whatWouldFailThis": "Any executable commit in `git log <head under test> --not <candidate> <historical base>` that is not named here, any named id outside that computed range, any product-path difference under apps/** or supabase/**, or any Git/topology question that returns UNKNOWN."
   },
   "absorbedSuccessors": [],
-  "successors": [
-    {
-      "commit": "ab3c82af2a941a3722aa8058e8160c4c3fb1bd58",
-      "kind": "evidence tooling — the structural-reference allow-list, in every copy that must agree",
-      "what": "The platform evidence-category catalog is declared as structural reference in scripts/db/validate-seed-state.mjs and scripts/dev/owner-acceptance/discovery.mjs, matching the database tier own allow-list. tests/ci/acceptance-discovery.test.ts asserts the three agree, and it caught two of three being updated — it exists because two copies of a list that must agree, with nothing checking that they do, is how they stop agreeing.",
-      "whyNotAReFreeze": "git diff --name-only 04b3f6d8..ab3c82af -- apps supabase is EMPTY. The two changed paths are under scripts/, which is not product, so the frozen product tree is byte-identical and this is nameable rather than a re-freeze."
-    }
-  ],
+  "successors": [],
   "howTierFiguresAreChecked": "Four obligations, because there are four kinds of claim. ARITHMETIC: `passed + failed + skipped` must equal the declared total. LOCAL: figures equal the P1-27 run ledger read out of Git at `localLedger.atCommit`. MEASUREMENT HEAD: both local tiers name successor ea045d88fd88843c82c8ecd7273b0772f65417f6, whose six declared non-product drift paths equal Git's path set, and are pinned to ledger commit 2e0f2191db4c118e766e9ca4b8ffff981b63d7c6. HOSTED: claims remain fetchable attestations at their recorded run heads; a non-candidate head must explicitly be a superseded ancestor or a product-identical descendant, and Git refusal is UNKNOWN rather than empty.",
   "tiers": {
     "unit": {
       "label": "root unit and foundation",
       "tests": 2658,
-      "passed": 2654,
-      "failed": 4,
+      "passed": 2656,
+      "failed": 2,
       "skipped": 0,
       "files": 100,
-      "measuredAtCommit": "0c847e6cf679c48ddd55e6a9730fbe52a97f1045",
+      "measuredAtCommit": "edb02f9a38dec4d4cb07c7ca19b7700e92f82048",
       "provenance": "LOCAL_COMPUTED_HOSTED_PENDING",
       "localLedger": {
         "path": "docs/phase-1/phase-1-27/evidence/local-run-ledger.json",
         "tier": "unit",
-        "atCommit": "9f44d69bf2592c8e5dc5907c767be66969e8f4b0",
-        "howChecked": "`git show 9f44d69bf2592c8e5dc5907c767be66969e8f4b0:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD when this measurement was recorded, rather than the working copy, which would let an uncommitted edit vouch for itself."
+        "atCommit": "96b60988fe71f992c91ea5b689dc64ca86e02a77",
+        "howChecked": "`git show 96b60988fe71f992c91ea5b689dc64ca86e02a77:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD when this measurement was recorded, rather than the working copy, which would let an uncommitted edit vouch for itself."
       },
       "hostedAttestation": {
         "runId": 31885987461,
@@ -142,7 +143,7 @@
         "describesSupersededHead": true,
         "supersededBy": "The hosted run taken at a head that DESCENDS from candidate 526a3b39 — the pull request CI for branch `p1-28/od-025-policy-enforcement`. Until that run exists this figure describes an ancestor and is cited as such; it is replaced by re-citing the same fields (run id, job id, head, artefact) at the descending head, never by relaxing the rule that refused it."
       },
-      "note": "Measured at 0c847e6c, a documentation-only successor of the candidate: the commits between them carry evidence records and nothing executable."
+      "note": "Measured at edb02f9a, a documentation-only successor of the candidate: the commits between them carry evidence records and nothing executable."
     },
     "web": {
       "label": "web component and DOM",
@@ -156,8 +157,8 @@
       "localLedger": {
         "path": "docs/phase-1/phase-1-27/evidence/local-run-ledger.json",
         "tier": "web",
-        "atCommit": "9f44d69bf2592c8e5dc5907c767be66969e8f4b0",
-        "howChecked": "`git show 9f44d69bf2592c8e5dc5907c767be66969e8f4b0:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD when this measurement was recorded, rather than the working copy, which would let an uncommitted edit vouch for itself."
+        "atCommit": "96b60988fe71f992c91ea5b689dc64ca86e02a77",
+        "howChecked": "`git show 96b60988fe71f992c91ea5b689dc64ca86e02a77:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD when this measurement was recorded, rather than the working copy, which would let an uncommitted edit vouch for itself."
       },
       "hostedAttestation": {
         "runId": 31885987461,
