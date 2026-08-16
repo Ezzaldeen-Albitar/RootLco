@@ -163,7 +163,7 @@ different tree is not evidence about this one.
 | Web test files under `apps/web/tests`       | 98    | a walk of the tree                                                 |
 | Web tier — tests executed                   | 2728  | `--record web`, from the `vitest` JSON report                      |
 | Web tier — files the run reported           | 98    | the same report, cross-checked against the walk above              |
-| Root unit tier — tests executed             | 2658  | `--record unit`, from the `vitest` JSON report                     |
+| Root unit tier — tests executed             | 2659  | `--record unit`, from the `vitest` JSON report                     |
 | Root unit tier — files the run reported     | 100   | the same report, cross-checked against the tier's include rule      |
 | Committed web floor (`minTests`)            | 2500  | `.github/ci-baselines/test-count-baseline.json`                    |
 | Committed unit floor (`minTests`)           | 1050  | the same baseline                                                  |
@@ -253,7 +253,7 @@ nothing.
 | Database tests             | 1647 passed, 0 failed                                      |
 | Coverage — lines / branches | 95.53% / 93.89%                                           |
 | Migrations applied         | 120                                                        |
-| Schema hash                | `56245964fd0140d7bd4c994e0804c69a1a62915e2858dbe94191b2d7d68147ad` |
+| Schema hash                | `f6b4f023d9e6b1e7d823dac4e5550379202a216ab1ae1fe9e5a2826703061f79` |
 | Application tables before migration | 0                                                 |
 | RLS matrix                 | 113 tables, 1356 cells, 0 RLS disabled, 0 unforced, 0 `SECURITY DEFINER` |
 | CodeQL open alerts         | **0** on the three refs that analysis covered              |

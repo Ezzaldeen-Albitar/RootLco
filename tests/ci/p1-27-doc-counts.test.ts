@@ -783,6 +783,31 @@ describe('P1-27-QA-005 — the two evidence pages agree with each other and the 
     expect(current).toBe(baseline.migrationCount);
   });
 
+  it('the historical hash is not the current baseline, and is not refreshed to match it', () => {
+    /*
+     * The schema hash on the superseded table is the figure most likely to be
+     * "helpfully" refreshed when the baseline moves — it looks like a stale
+     * value rather than a record of what a past head produced. Refreshing it
+     * turns a measurement into a claim about today, and this repository has
+     * already seen that happen once.
+     *
+     * So the binding is inverted: the historical digest must be a real digest,
+     * must be the one the clean room's own run produced, and must NOT be the
+     * hash the current baseline pins. When a future migration moves the
+     * baseline again, this case keeps the past honest without anyone
+     * remembering to.
+     */
+    const baseline = JSON.parse(readRepo('.github/ci-baselines/schema-baseline.json')) as {
+      schemaHash?: string;
+    };
+    const historicalHash = /\|\s*Schema hash\s*\|\s*`([0-9a-f]{64})`/.exec(CLEAN_ROOM)?.[1];
+    expect(historicalHash, 'the superseded table quotes no schema hash').toMatch(/^[0-9a-f]{64}$/);
+    expect(
+      historicalHash,
+      'the superseded table now quotes the CURRENT baseline hash — a past measurement has been refreshed to match today'
+    ).not.toBe(baseline.schemaHash);
+  });
+
   it('states a CodeQL figure that both pages share and the committed ceiling permits', () => {
     /*
      * "**0**, repository-wide" appears on both pages and was read by neither.
