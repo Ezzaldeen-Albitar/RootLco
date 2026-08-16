@@ -1791,7 +1791,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": ["shared.document.read"],
+        "x-required-permissions": ["shared.document.manage"],
         "x-scope": "tenant",
         "x-audit-class": "none",
         "x-rate-limit-policy": "expensive-read",
@@ -1845,7 +1845,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": ["shared.document.read"],
+        "x-required-permissions": ["shared.document.manage"],
         "x-scope": "tenant",
         "x-audit-class": "security",
         "x-rate-limit-policy": "standard-command",
