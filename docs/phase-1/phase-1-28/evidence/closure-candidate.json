@@ -98,17 +98,17 @@
     "unit": {
       "label": "root unit and foundation",
       "tests": 2592,
-      "passed": 2587,
-      "failed": 5,
+      "passed": 2592,
+      "failed": 0,
       "skipped": 0,
       "files": 99,
-      "measuredAtCommit": "e0bf83bd9e8f4b0f76968991c484f1f02bde5cb2",
+      "measuredAtCommit": "8fc749c1b9c79df56197dbaed9ce11881af2218b",
       "provenance": "LOCAL_COMPUTED_HOSTED_PENDING",
       "localLedger": {
         "path": "docs/phase-1/phase-1-27/evidence/local-run-ledger.json",
         "tier": "unit",
-        "atCommit": "825c4f4a4f29c99dd36846e590936aca618982ef",
-        "howChecked": "`git show 825c4f4a4f29c99dd36846e590936aca618982ef:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD when this measurement was recorded."
+        "atCommit": "eb91a7d6491ed5c2ac522adca2089640cc119af3",
+        "howChecked": "`git show eb91a7d6491ed5c2ac522adca2089640cc119af3:docs/phase-1/phase-1-27/evidence/local-run-ledger.json`"
       },
       "hostedAttestation": {
         "runId": 31885987461,
@@ -133,8 +133,8 @@
       "localLedger": {
         "path": "docs/phase-1/phase-1-27/evidence/local-run-ledger.json",
         "tier": "web",
-        "atCommit": "825c4f4a4f29c99dd36846e590936aca618982ef",
-        "howChecked": "`git show 825c4f4a4f29c99dd36846e590936aca618982ef:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD when this measurement was recorded."
+        "atCommit": "eb91a7d6491ed5c2ac522adca2089640cc119af3",
+        "howChecked": "`git show eb91a7d6491ed5c2ac522adca2089640cc119af3:docs/phase-1/phase-1-27/evidence/local-run-ledger.json`"
       },
       "hostedAttestation": {
         "runId": 31885987461,
