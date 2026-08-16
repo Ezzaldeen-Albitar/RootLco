@@ -233,8 +233,23 @@ export async function ensureOrgFixtures(admin: Pool): Promise<void> {
     [BRANCH_A1, TENANT_A, COMPANY_A1, USER_A]
   );
   // Real active IAM identities with live tenant-wide grants. Reception database
-  // suites use USER_A as their deterministic receiving employee; FE-007 no
-  // longer permits an arbitrary uuid to stand in for one.
+  // suites use USER_A (and tenant B's USER_B) as their deterministic receiving
+  // employee; FE-007 no longer permits an arbitrary uuid to stand in for one,
+  // because rec.reception_visits.receiving_employee_id is now a same-tenant
+  // foreign key into iam.user_accounts guarded by an eligibility trigger.
+  //
+  // `ON CONFLICT (id)` is the NARROW target on purpose, although both tables
+  // carry further unique indexes that it does not cover —
+  // `uq_user_accounts_tenant_email_active` (tenant_id, email),
+  // `uq_user_accounts_provider_identity_active` (identity_provider,
+  // provider_subject — GLOBAL, not per tenant) and `uq_roles_tenant_code_active`
+  // (tenant_id, role_code). Reaching one of those means some OTHER row already
+  // holds a natural key that belongs to this fixture, and the four values below
+  // appear nowhere else in the repository. A bare `ON CONFLICT DO NOTHING` would
+  // swallow exactly that case and leave USER_A absent, which surfaces later as
+  // "receiving employee is not an active IAM user" — a mystery instead of a
+  // unique violation naming the index. Fail loudly there; be idempotent only on
+  // the id, which is what re-running a suite actually repeats.
   await admin.query(
     `INSERT INTO iam.user_accounts
        (id, tenant_id, identity_provider, provider_subject, email, display_name, status, created_by)
@@ -251,22 +266,44 @@ export async function ensureOrgFixtures(admin: Pool): Promise<void> {
      ON CONFLICT (id) DO NOTHING`,
     [ROLE_FIXTURE_EMPLOYEE_A, ROLE_FIXTURE_EMPLOYEE_B, TENANT_A, TENANT_B, SYS]
   );
-  await admin.query(
-    `INSERT INTO iam.role_grants
-       (tenant_id, user_id, role_id, scope_mode, granted_by, created_by)
-     SELECT $1,$2,$3,'unrestricted',$4,$4
-      WHERE NOT EXISTS (
-        SELECT 1 FROM iam.role_grants
-         WHERE tenant_id = $1 AND user_id = $2 AND role_id = $3 AND status = 'active'
-      )
-     UNION ALL
-     SELECT $5,$6,$7,'unrestricted',$4,$4
-      WHERE NOT EXISTS (
-        SELECT 1 FROM iam.role_grants
-         WHERE tenant_id = $5 AND user_id = $6 AND role_id = $7 AND status = 'active'
-      )`,
-    [TENANT_A, USER_A, ROLE_FIXTURE_EMPLOYEE_A, SYS, TENANT_B, USER_B, ROLE_FIXTURE_EMPLOYEE_B]
-  );
+  // ONE grant per statement, and every parameter explicitly cast.
+  //
+  // These two grants were originally one statement joined by `UNION ALL`, and it
+  // took the ENTIRE database tier down: 117 of 140 files failed in
+  // `ensureOrgFixtures`, and because the throw happened in a hook the runner
+  // SKIPPED 1420 tests rather than failing them, so the summary read
+  // "237 passed" instead of red.
+  //
+  // The cause is a type-resolution ordering that only a UNION exposes. In a
+  // plain `INSERT INTO t (cols) SELECT $1, …` PostgreSQL takes the parameter
+  // types from the target columns. Under `UNION ALL` it must first resolve the
+  // select-list types ACROSS the branches, which it does before consulting the
+  // insert target — so `$1` in the select list settled as `text` while
+  // `tenant_id = $1` in the WHERE NOT EXISTS forced `uuid`, and the parse failed
+  // with `inconsistent types deduced for parameter $1 … uuid versus text`.
+  //
+  // Both properties of the fix were verified against PostgreSQL directly, with
+  // `PREPARE` and no declared parameter list so the server infers exactly as the
+  // `pg` driver makes it: the UNION form raises, the single-row form parses.
+  // The casts are belt and braces — the split alone is sufficient — and they are
+  // kept because they make the statement independent of where its types come
+  // from, which is the property that was silently missing.
+  for (const [tenantId, userId, roleId] of [
+    [TENANT_A, USER_A, ROLE_FIXTURE_EMPLOYEE_A],
+    [TENANT_B, USER_B, ROLE_FIXTURE_EMPLOYEE_B],
+  ] as const) {
+    await admin.query(
+      `INSERT INTO iam.role_grants
+         (tenant_id, user_id, role_id, scope_mode, granted_by, created_by)
+       SELECT $1::uuid, $2::uuid, $3::uuid, 'unrestricted', $4::uuid, $4::uuid
+        WHERE NOT EXISTS (
+          SELECT 1 FROM iam.role_grants
+           WHERE tenant_id = $1::uuid AND user_id = $2::uuid
+             AND role_id = $3::uuid AND status = 'active'
+        )`,
+      [tenantId, userId, roleId, SYS]
+    );
+  }
 }
 
 /**
