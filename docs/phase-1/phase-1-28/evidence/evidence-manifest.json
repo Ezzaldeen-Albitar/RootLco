@@ -55,11 +55,11 @@
       "bytes": 2816
     },
     "docs/phase-1/phase-1-28/contract-archaeology.md": {
-      "sha256": "cfdc479760d99b4420f3e2c5ca010dbb52207f89c3aa0eca7d16a4604f7d19b5",
+      "sha256": "7e529013681aed0b2f3faf328c921e33570e56a8ff523e7fa8f99e551fbb2f22",
       "bytes": 76720
     },
     "docs/phase-1/phase-1-28/developer-guide.md": {
-      "sha256": "7b006704d03fe7be81b3195277762076861de89791ffeeef515ff9fc9305adfb",
+      "sha256": "702466a4898aea653d855b146d5e9496fc854547e6da8a9297a0ea9292a01a20",
       "bytes": 11687
     },
     "docs/phase-1/phase-1-28/evidence/change-log.md": {
@@ -75,8 +75,8 @@
       "bytes": 72825
     },
     "docs/phase-1/phase-1-28/evidence/traceability.json": {
-      "sha256": "600a8ae57e4a33b5c54d847befbcab82acb2a0d136d005cec777345c39c74ab1",
-      "bytes": 30544
+      "sha256": "e2166fcfab79c8dea4140f03ee0901a1ac8d49f0ec53a2d78b7eca3ddaa970f5",
+      "bytes": 31274
     },
     "docs/phase-1/phase-1-28/evidence/traceability.md": {
       "sha256": "61d855f3e89138c54b0cf032a369c017ef85d51aea8fc2a9913eb1914433c217",
@@ -99,8 +99,8 @@
       "bytes": 383956
     },
     "docs/phase-1/phase-1-28/write-reachability.json": {
-      "sha256": "347b375ec98508dc922abb75506a7052f8422e937b3efca0c0090d1689de0b96",
-      "bytes": 18887
+      "sha256": "6c4522f2aaebd86bba03cb7000f9b22ea6bde1795a61839115340cee58937196",
+      "bytes": 23214
     }
   }
 }

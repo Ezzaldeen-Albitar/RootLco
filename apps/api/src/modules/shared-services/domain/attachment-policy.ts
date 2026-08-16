@@ -44,6 +44,7 @@ export const LINKABLE_ENTITY_TYPES: readonly string[] = Object.freeze([
   'crm.business_partners',
   'org.legal_companies',
   'quo.quotations',
+  'rec.damage_map_templates',
   'rec.reception_visits',
   'sal.invoices',
   'veh.vehicles',

@@ -803,6 +803,62 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
       'A refusal reason was retired from the refusal pickers or restored to them. Never a deletion: a refusal is preserved as its own fact and keeps resolving its reason.',
   },
   {
+    code: 'rec.reception.capture_evidence_bound',
+    class: 'privileged',
+    entityType: 'rec.reception_visit',
+    description:
+      'A capture requirement of a reception visit was bound to one exact immutable document version. The version is recorded, never the bytes and never a signed URL: the media contract keeps deciding who may open the image. The binding starts unfinalized, so this records what was captured and not that it counts.',
+  },
+  {
+    code: 'rec.reception.capture_evidence_finalized',
+    class: 'privileged',
+    entityType: 'rec.reception_visit',
+    description:
+      'A reception evidence binding was declared sufficient. This is the only act that makes captured media count toward a requirement, and the database refuses it unless the bound version has been accepted — a rejected, quarantined or still-pending version can never satisfy evidence.',
+  },
+  {
+    code: 'rec.reception.capture_requirement_overridden',
+    class: 'privileged',
+    entityType: 'rec.reception_visit',
+    description:
+      'A named actor recorded that a required reception capture would not be taken, with a reason and a time. It costs a permission that capture authority does not imply, and it can never be edited or withdrawn: waiving the proof is a different decision from taking it, and both are permanent.',
+  },
+  {
+    code: 'rec.reception.signature_lifecycle_recorded',
+    class: 'privileged',
+    entityType: 'rec.signature',
+    description:
+      'A reception signature was finalized or repudiated. One code covers both because they are one append-only ledger and a consumer reacts to the resulting state; the event type is recorded in the details. Finalizing is refused while the bound document version is anything other than accepted, and repudiating erases nothing — a correction is a new signature naming the one it supersedes.',
+  },
+  {
+    code: 'rec.damage_map_template.created',
+    class: 'privileged',
+    entityType: 'rec.damage_map_template',
+    description:
+      'A damage-map template slot was created for a tenant or one of its branches. The slot has no bindable geometry until a revision is published against it. No row ships: what a tenant draws damage on is the operator’s decision.',
+  },
+  {
+    code: 'rec.damage_map_template.version_published',
+    class: 'privileged',
+    entityType: 'rec.damage_map_template',
+    description:
+      'A new revision of a damage-map template was published and the previous one retired, in one transaction. Every visit already bound to the previous revision keeps it, because the binding column is immutable — a revised template never moves a mark that was already placed.',
+  },
+  {
+    code: 'rec.damage_map_template.status_changed',
+    class: 'privileged',
+    entityType: 'rec.damage_map_template',
+    description:
+      'A damage-map template was retired from the reception pickers or restored to them. Never a deletion: a retired template stays readable for every visit bound to one of its revisions and is refused only for a new one.',
+  },
+  {
+    code: 'rec.capture_policy.set',
+    class: 'privileged',
+    entityType: 'rec.capture_policy_rule',
+    description:
+      'The live reception capture rule for one requirement was set, retiring the rule it replaced rather than editing it, so what was required at the time of a visit stays readable. The absence of a rule is the default, and for refusal supporting media that default is optional.',
+  },
+  {
     code: 'wo.work_order.state_changed',
     class: 'privileged',
     entityType: 'wo.work_order',

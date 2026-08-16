@@ -88,7 +88,7 @@ source rather than copied out of that heading.
 
 The canonical write list is **derived from the P1-24 register at check time**,
 never written down: it was 14 when the gate landed and is
-<!-- derived: reachability total = 35 --> **35** today, and that it moved
+<!-- derived: reachability total = 43 --> **43** today, and that it moved
 
 without anybody editing a list is the derivation working. Every write is one of
 exactly three things:

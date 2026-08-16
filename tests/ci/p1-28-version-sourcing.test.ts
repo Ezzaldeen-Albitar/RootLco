@@ -159,21 +159,24 @@ describe('the gate is green on the CURRENT tree', () => {
   });
 
   it('derives the guarded operations from the published contract', () => {
-    // Twenty-one guarded operations today. Seven of them are the OPERATOR
+    // Twenty-two guarded operations today. Seven of them are the OPERATOR
     // commands this gate was built for — three appointment lifecycle commands,
     // and on the reception side approve, convert and the two terminal exits.
-    // The other fourteen arrived with PR #227's intake-catalogue
-    // ADMINISTRATION contract (every catalogue amend and retirement guards on
-    // `recordVersion`), and this product reaches none of them: there is no
-    // catalogue-administration screen, and who administers those catalogues is
-    // an open Owner decision recorded in the canonical plan §7.
+    // The other fifteen are ADMINISTRATION. Fourteen arrived with PR #227's
+    // intake-catalogue contract (every catalogue amend and retirement guards on
+    // `recordVersion`); the fifteenth is the damage-map template lifecycle
+    // command the reception evidence-contract remediation added (Owner decision
+    // FE-012), which guards for exactly the same reason. This product reaches
+    // none of them: there is no catalogue-administration screen, and who
+    // administers those catalogues is an open Owner decision recorded in the
+    // canonical plan §7.
     //
     // Both numbers are pinned, because each fails a different way. A guarded
     // count that collapsed would pass as "nothing to check"; a withheld count
     // that grew would be this gate's subject shrinking without anybody
     // deciding to.
-    expect(live.guarded).toHaveLength(21);
-    expect(live.withheld).toHaveLength(14);
+    expect(live.guarded).toHaveLength(22);
+    expect(live.withheld).toHaveLength(15);
     expect(live.expected).toHaveLength(7);
     for (const operation of live.guarded) expect(operation.id).toMatch(/^(apt|rec)\./);
   });
@@ -190,7 +193,7 @@ describe('the gate is green on the CURRENT tree', () => {
         0
       );
     }
-    // One decision, not fourteen: a per-operation reference would be a place to
+    // One decision, not fifteen: a per-operation reference would be a place to
     // hide a second, unreviewed excuse.
     expect(new Set(live.withheld.map((entry) => entry.decisionRef)).size).toBe(1);
   });

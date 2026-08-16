@@ -28,6 +28,7 @@ import { ReceptionRepository } from './data/reception-repository';
 import { ReceptionEvidenceRepository } from './data/reception-evidence-repository';
 import { ReceptionConversionRepository } from './data/reception-conversion-repository';
 import { ReceptionReadRepository } from './data/reception-read-repository';
+import { ReceptionCaptureRepository } from './data/reception-capture-repository';
 import { AppointmentService } from './application/appointment-service';
 import { AppointmentReadService } from './application/appointment-read-service';
 import { IntakeCatalogueService } from './application/intake-catalogue-service';
@@ -35,6 +36,7 @@ import { ReceptionService } from './application/reception-service';
 import { ReceptionEvidenceService } from './application/reception-evidence-service';
 import { ReceptionConversionService } from './application/reception-conversion-service';
 import { ReceptionReadService } from './application/reception-read-service';
+import { ReceptionCaptureService } from './application/reception-capture-service';
 
 export type {
   AppointmentChangeKind,
@@ -95,6 +97,65 @@ export type {
   WarningLightEvidence,
 } from './application/reception-evidence-service';
 export type { ReceptionConverted } from './application/reception-conversion-service';
+// The capture contract (Owner decisions FE-012, FE-018, FE-019). Behaviour and
+// types only, never the repository — ADR-001.
+export type {
+  CaptureContract,
+  CaptureOverrideInput,
+  CaptureOverrideRecorded,
+  CapturePolicyInput,
+  CapturePolicySet,
+  CaptureRequirementState,
+  DamageMapTemplateInput,
+  DamageMapTemplateVersionInput,
+  DamageMapTemplateView,
+  EvidenceBindingFinalized,
+  EvidenceBindingInput,
+  EvidenceBindingRecorded,
+  SignatureEventInput,
+  SignatureEventRecorded,
+  SignatureLedger,
+} from './application/reception-capture-service';
+export type {
+  CaptureBindingRow,
+  CaptureOverrideRow,
+  CapturePolicyRow,
+  DamageMapTemplateRow,
+  DamageMapTemplateVersionRow,
+  SignatureReadRow,
+} from './data/reception-capture-repository';
+// The bounds and vocabularies the ROUTES validate against: a value outside a
+// frozen CHECK must be a 422 naming the field, not a constraint violation.
+export {
+  BASELINE_CAPTURE_RULES,
+  CAPTURE_CATEGORY_BY_REQUIREMENT,
+  CAPTURE_POLICY_REFUSAL_TYPES,
+  CAPTURE_POLICY_REQUIREMENTS,
+  CAPTURE_POLICY_SCOPES,
+  CAPTURE_QUALITY_STATUSES,
+  CAPTURE_REQUIREMENTS,
+  DAMAGE_MAP_TEMPLATE_CATEGORY,
+  DAMAGE_MAP_TEMPLATE_ENTITY_TYPE,
+  DAMAGE_MAP_TEMPLATE_STATUSES,
+  DAMAGE_MAP_TYPES,
+  EVIDENCE_FINAL_VERSION_STATE,
+  EVIDENCE_USABLE_VERSION_STATES,
+  MAX_CAPTURE_COUNT,
+  MAX_CAPTURE_OVERRIDE_REASON,
+  MAX_REPUDIATION_REASON,
+  MAX_TEMPLATE_PERSPECTIVE,
+  SIGNATURE_EVENT_TYPES,
+  SIGNATURE_STATUSES,
+  type CapturePolicyRefusalType,
+  type CapturePolicyRequirement,
+  type CapturePolicyScope,
+  type CaptureQualityStatus,
+  type CaptureRequirement,
+  type DamageMapTemplateStatus,
+  type DamageMapTemplateType,
+  type SignatureEventType,
+  type SignatureStatus,
+} from './domain/reception-capture';
 
 export {
   APPOINTMENT_STATUSES,
@@ -189,6 +250,10 @@ export const receptionModule = composeModule({
         numbers
       ),
       intakeCatalogues: new IntakeCatalogueService(new IntakeCatalogueRepository()),
+      // Shares the same ReceptionRepository as the three services above: the
+      // capture commands lock the same visit row, and there is exactly one way
+      // to do that correctly.
+      receptionCapture: new ReceptionCaptureService(new ReceptionCaptureRepository(), receptions),
     };
   },
 });

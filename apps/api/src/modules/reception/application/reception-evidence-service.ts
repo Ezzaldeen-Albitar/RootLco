@@ -114,6 +114,16 @@ export interface DamageMapEvidence {
   /** Frozen `ck_damage_maps_type`: exterior, interior, undercarriage, or other. */
   readonly mapType: string;
   readonly perspective?: string | null | undefined;
+  /**
+   * The managed damage-map template revision this map is drawn on (FE-012).
+   *
+   * Optional so the shipped contract keeps working, and the exact-version rule
+   * is not weakened by that: when supplied, the database requires the revision
+   * to be the ACTIVE one of an ACTIVE slot AND to carry exactly the document and
+   * version above, so the two cannot disagree. Bound revisions are immutable, so
+   * revising the template afterwards never moves this map.
+   */
+  readonly damageMapTemplateVersionId?: string | null | undefined;
 }
 
 export interface DamageMarkEvidence {
@@ -179,6 +189,14 @@ export interface SignatureInput {
   readonly purpose: SignaturePurpose;
   /** Lowercase hex, at most 64 bytes. Never the drawn image itself. */
   readonly signatureHash?: string | null | undefined;
+  /**
+   * The signature this one supersedes (FE-018).
+   *
+   * A correction is NEW evidence. The superseded row is untouched — the table
+   * has no UPDATE or DELETE grant — and both remain in the read-back, so
+   * "replaced" is a visible fact rather than a disappearance.
+   */
+  readonly replacesSignatureId?: string | null | undefined;
 }
 
 export interface RefusalInput {
@@ -187,6 +205,15 @@ export interface RefusalInput {
   readonly refusingPartnerId?: string | null | undefined;
   readonly witnessEmployeeId?: string | null | undefined;
   readonly evidenceDocumentId?: string | null | undefined;
+  /**
+   * The EXACT version of the supporting media (FE-019).
+   *
+   * Optional by default and mandatory only where a live capture-policy rule for
+   * this branch and refusal type says so — refusal is deliberately NOT globally
+   * media-dependent. Supplying a document without a version stays legal, so the
+   * shipped contract is not withdrawn.
+   */
+  readonly evidenceDocumentVersionId?: string | null | undefined;
 }
 
 export interface ConditionEvidenceRecorded {
@@ -285,6 +312,7 @@ export class ReceptionEvidenceService extends ApplicationService {
         captureMethod: input.captureMethod,
         purpose: input.purpose,
         signatureHash,
+        replacesSignatureId: input.replacesSignatureId ?? null,
       });
     } catch (error) {
       throw this.mapEvidenceFailure(error);
@@ -359,6 +387,7 @@ export class ReceptionEvidenceService extends ApplicationService {
         refusingPartnerId: input.refusingPartnerId ?? null,
         witnessEmployeeId: input.witnessEmployeeId ?? null,
         evidenceDocumentId: input.evidenceDocumentId ?? null,
+        evidenceDocumentVersionId: input.evidenceDocumentVersionId ?? null,
       });
     } catch (error) {
       throw this.mapEvidenceFailure(error);
@@ -488,6 +517,7 @@ export class ReceptionEvidenceService extends ApplicationService {
             documentVersionId: input.documentVersionId,
             mapType,
             perspective,
+            damageMapTemplateVersionId: input.damageMapTemplateVersionId ?? null,
           }),
           'Binding the damage map'
         );

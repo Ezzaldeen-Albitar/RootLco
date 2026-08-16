@@ -531,6 +531,74 @@ export const MANIFEST = {
     required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
     note: 'bound to an exact immutable document version (a version belonging to another document is refused); append-only — no application role holds UPDATE or DELETE on rec.signatures, proved by attempting both; records an acknowledgement, never a certified identity proof',
   },
+  // ---------------------------------------------------------------------------
+  // Reception evidence contracts — Owner decisions FE-012, FE-018, FE-019.
+  // ---------------------------------------------------------------------------
+  'rec.reception-evidence-binding': {
+    files: ['tests/backend/p1-18-reception-evidence-contracts.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
+    note: 'FE-018 applied to capture. Binds one exact immutable document version to one capture requirement, unfinalized. A rejected or quarantined version is refused outright, a version of the wrong category is refused, and a document with no live link to this visit is refused - all three by rec.guard_reception_evidence_binding, not by a predicate in the module.',
+  },
+  'rec.reception-evidence-binding-list': {
+    files: ['tests/backend/p1-18-reception-evidence-contracts.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation'],
+    note: 'The capture contract of one visit: what it owes, what it has, and which damage-map templates it may still bind. satisfied counts FINALIZED bindings only, so a screen cannot report a visit complete on versions that are still pending.',
+  },
+  'rec.reception-evidence-binding-finalize': {
+    files: ['tests/backend/p1-18-reception-evidence-contracts.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
+    note: 'The only act that makes captured media count. Refused while the bound version is pending; a second finalization is a 409 rather than a silent success.',
+  },
+  'rec.reception-capture-override': {
+    files: ['tests/backend/p1-18-reception-evidence-contracts.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
+    note: 'Waiving a required capture costs rec.reception.evidence.override, which capture authority does not imply - the denial case runs on a caller holding rec.reception.evidence.manage and nothing else. Recorded once per requirement per visit, never editable.',
+  },
+  'rec.reception-signature-list': {
+    files: ['tests/backend/p1-18-reception-evidence-contracts.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation'],
+    note: 'FE-018 read-back. Every signature including superseded and repudiated ones, with the exact version bound, its state, and the SERVER-owned version checksum rather than the caller-supplied hash.',
+  },
+  'rec.reception-signature-event': {
+    files: ['tests/backend/p1-18-reception-evidence-contracts.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
+    note: 'FE-018 lifecycle. Finalizing is refused while the bound version is pending; repudiation is a second row and rewrites nothing, proved by reading both rows back after it.',
+  },
+  'rec.catalogue-damage-map-template-list': {
+    files: ['tests/backend/p1-18-reception-evidence-contracts.test.ts'],
+    required: ['success', 'denial'],
+    note: 'FE-012 administration read. Gated on rec.catalogue.manage, not on the reception read code: the receptionist picker is the visit capture contract, a different path.',
+  },
+  'rec.catalogue-damage-map-template-create': {
+    files: ['tests/backend/p1-18-reception-evidence-contracts.test.ts'],
+    required: ['success', 'denial', 'audit', 'idempotency'],
+    note: 'FE-012. A slot has no bindable geometry until a revision is published against it. Zero rows ship.',
+  },
+  'rec.catalogue-damage-map-template-read': {
+    files: ['tests/backend/p1-18-reception-evidence-contracts.test.ts'],
+    required: ['success', 'denial', 'cross-tenant'],
+    note: 'FE-012 historical read: a retired slot and every retired revision stay readable, and this read supplies the recordVersion the status command needs as If-Match.',
+  },
+  'rec.catalogue-damage-map-template-version-create': {
+    files: ['tests/backend/p1-18-reception-evidence-contracts.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'idempotency'],
+    note: 'FE-012. Retires the previous revision and publishes the next in one transaction; a visit already bound keeps its revision, proved by reading the damage map back after the revision.',
+  },
+  'rec.catalogue-damage-map-template-status-set': {
+    files: ['tests/backend/p1-18-reception-evidence-contracts.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'stale-version', 'audit', 'idempotency'],
+    note: 'FE-012. Retiring withdraws the slot from NEW visits only, proved by the bindable list of a later visit; bidirectional, because a slot owns its revision history and a one-way retirement would fork a diagram into two identities.',
+  },
+  'rec.catalogue-capture-policy-list': {
+    files: ['tests/backend/p1-18-reception-evidence-contracts.test.ts'],
+    required: ['success', 'denial'],
+    note: 'FE-019. The live rules of the tenant. Zero rows is the DEFAULT and not an error: the absence of a rule is what makes refusal supporting media optional.',
+  },
+  'rec.catalogue-capture-policy-set': {
+    files: ['tests/backend/p1-18-reception-evidence-contracts.test.ts'],
+    required: ['success', 'denial', 'audit', 'idempotency'],
+    note: 'FE-019. Retire-then-insert in one transaction, so the rule that applied at the time of a visit stays readable. The suite proves the default (a refusal with no media is accepted), the raised floor (the same refusal type is then refused), that a type the rule does not name is unaffected, and that lowering it restores the default.',
+  },
   'rec.reception-refusal': {
     files: [
       'tests/backend/p1-18-reception-evidence.test.ts',

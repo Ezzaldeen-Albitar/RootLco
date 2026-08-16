@@ -291,9 +291,21 @@ describe('P1-15 / global security posture', () => {
     const files = readdirSync(dir)
       .filter((f) => f.endsWith('.sql'))
       .sort();
-    expect(files).toHaveLength(120);
-    expect(files.at(-2)).toBe('20260730090000_crm_customer_notes_write_capability.sql');
-    expect(files.at(-1)).toBe('20260731090000_rec_custody_release_visit_marker.sql');
+    // 121 and 122 are the two halves of the reception evidence-contract
+    // remediation (Owner decisions FE-012, FE-018, FE-019), and they are stated
+    // as a PAIR because neither works alone: 121 adds
+    // shared.document_categories.business_link_purpose and the seven reception_*
+    // categories, and 122's guards reference both by name, so 122 cannot replay
+    // without 121. They add no grant, role or policy in `shared`, so every
+    // inventory assertion in this file is unchanged by them — which is exactly
+    // why the count is asserted here.
+    //
+    // This file's DB tier therefore has ONE valid state, both migrations present,
+    // and a checkout carrying only 122 fails this assertion at 121 rather than
+    // producing a confusing guard error deeper in.
+    expect(files).toHaveLength(122);
+    expect(files.at(-2)).toBe('20260815090000_shared_reception_evidence_foundation.sql');
+    expect(files.at(-1)).toBe('20260815100000_rec_reception_evidence_contracts.sql');
   });
 
   it('every relation touched by migration 117 keeps ENABLE and FORCE RLS', async () => {
@@ -453,9 +465,18 @@ describe('P1-15 / global security posture', () => {
     // fix is a management contract, never a seed: the no-fake-data policy is
     // permanent, and both codes are granted to nobody by default.
     //
+    // The reception evidence-contract remediation (FE-012 / FE-018 / FE-019)
+    // adds ONE, taking the catalog to 110: rec.reception.evidence.override.
+    // Waiving a required capture is not the same authority as taking one — a
+    // receptionist who may photograph a vehicle must not thereby be able to
+    // record that no photograph was needed — and the other three codes those
+    // policies gate on already existed (rec.reception.evidence.manage,
+    // rec.reception.signature.manage, rec.catalogue.manage), so exactly one
+    // line is added. Granted to nobody by default, like every code above it.
+    //
     // The pin moves with the seed deliberately: it is what catches an accidental
     // catalog edit.
-    expect(Number(total.rows[0]?.n)).toBe(109);
+    expect(Number(total.rows[0]?.n)).toBe(110);
   });
 
   it('the exact write-policy inventory of the whole shared schema is unchanged apart from migrations 117 and 119', async () => {
