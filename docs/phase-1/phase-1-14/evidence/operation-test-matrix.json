@@ -1,15 +1,15 @@
 {
   "generatedFrom": "scripts/check-operation-test-coverage.mjs",
   "counts": {
-    "registered": 290,
-    "publicApi": 290,
+    "registered": 292,
+    "publicApi": 292,
     "internal": 0,
-    "withRequiredEvidence": 290,
+    "withRequiredEvidence": 292,
     "invocationOnly": 0,
     "p1_15": {
-      "registered": 26,
-      "publicApi": 26,
-      "operationDepth": 26,
+      "registered": 28,
+      "publicApi": 28,
+      "operationDepth": 28,
       "invocationOnly": 0,
       "pending": 0,
       "unitOnly": 0,
@@ -7274,6 +7274,22 @@
       "unitOnly": false
     },
     {
+      "id": "shared.document-category-list",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/attachments/categories",
+      "public": false,
+      "files": ["tests/backend/p1-15-evidence-foundation.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization"],
+      "declared": ["denial"],
+      "required": ["route", "service", "success", "authorization", "denial"],
+      "provided": ["authorization", "denial", "route", "service", "success"],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
       "id": "shared.document-read",
       "surface": "public-api",
       "method": "GET",
@@ -7326,6 +7342,22 @@
         "service",
         "success"
       ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "shared.document-version-read",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/attachments/versions/{versionId}",
+      "public": false,
+      "files": ["tests/backend/p1-15-evidence-foundation.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "cross-tenant"],
+      "declared": ["denial", "cross-tenant"],
+      "required": ["route", "service", "success", "authorization", "cross-tenant", "denial"],
+      "provided": ["authorization", "cross-tenant", "denial", "route", "service", "success"],
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false

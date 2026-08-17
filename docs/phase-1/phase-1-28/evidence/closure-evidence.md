@@ -33,13 +33,13 @@ the candidate, and refuses either half that fails to name an unclosed task.
 
 ## The frozen candidate
 
-| Binding           | Value                                                                |
-| ----------------- | -------------------------------------------------------------------- |
-| `FINAL_CODE_SHA`  | `10a2f3d3c2c77cc3a0c56c14e0d7c8097d669cff`                           |
-| `FINAL_CODE_TREE` | `e8ab76dee9c2abe0fa794334a8844aa27aba4105`                           |
-| Branch            | `p1-28/od-025-policy-enforcement`                                    |
-| Pull request      | **#231**, base `develop`, 13 commits ahead                           |
-| Subject           | `fix(p1-28): satisfy noUncheckedIndexedAccess in the lifecycle rule` |
+| Binding           | Value                                                                                 |
+| ----------------- | ------------------------------------------------------------------------------------- |
+| `FINAL_CODE_SHA`  | `45c8f533d4507bdc56fa8480c54387f71980d933`                                            |
+| `FINAL_CODE_TREE` | `c5d925eb818c8c62d1005a42f89508e7b2e936eb`                                            |
+| Branch            | `remediation/p1-15-reception-document-foundation`                                     |
+| Pull request      | **#232**, base `develop`, 25 commits ahead                                            |
+| Subject           | `fix(p1-15): grant the column the register writes, and stop narrowing two operations` |
 
 The previous candidate was `7b1252edebb5d7f48451213c71ab832cb44e46b5`, tree
 `1ef831d2ecfcf94d07b73857b7448c3b424faca3`, on

@@ -58,6 +58,7 @@ import { StatusTransitionService } from './application/status-transition-service
 import { TemplateService } from './application/template-service';
 
 import { LocalStorageProvider } from './provider/local-storage-provider';
+import { S3StorageProvider } from './provider/s3-storage-provider';
 import {
   setStorageProvider,
   storageProvider,
@@ -178,6 +179,7 @@ export {
 } from './domain/attachment-policy';
 export {
   buildStorageKey,
+  contentDispositionAttachment,
   keyBelongsToTenant,
   safeContentDispositionFilename,
   STORAGE_KEY_PATTERN,
@@ -197,6 +199,7 @@ export {
   type StorageProvider,
 } from './provider/storage-provider';
 export { LocalStorageProvider } from './provider/local-storage-provider';
+export { S3StorageProvider } from './provider/s3-storage-provider';
 export {
   LocalMessageProvider,
   messageProvider,
@@ -223,6 +226,35 @@ function buildStorageProvider(): StorageProvider {
   const config = backendConfig();
   if (config.STORAGE_PROVIDER === 'local_fake') {
     return new LocalStorageProvider({ bucket: config.STORAGE_BUCKET });
+  }
+  if (config.STORAGE_PROVIDER === 's3_compatible') {
+    if (
+      !config.STORAGE_S3_ENDPOINT ||
+      !config.STORAGE_S3_ACCESS_KEY_ID ||
+      !config.STORAGE_S3_SECRET_ACCESS_KEY
+    ) {
+      throw new Error(
+        'STORAGE_PROVIDER=s3_compatible requires STORAGE_S3_ENDPOINT, ' +
+          'STORAGE_S3_ACCESS_KEY_ID and STORAGE_S3_SECRET_ACCESS_KEY'
+      );
+    }
+    return new S3StorageProvider({
+      endpoint: config.STORAGE_S3_ENDPOINT,
+      region: config.STORAGE_S3_REGION,
+      accessKeyId: config.STORAGE_S3_ACCESS_KEY_ID,
+      secretAccessKey: config.STORAGE_S3_SECRET_ACCESS_KEY,
+      bucket: config.STORAGE_BUCKET,
+      forcePathStyle: config.STORAGE_S3_FORCE_PATH_STYLE,
+      // Bucket auto-creation is a developer convenience and nothing else. A
+      // staging or production bucket is provisioned out of band with its own
+      // policy, lifecycle and encryption, so the adapter neither creates it nor
+      // probes it — probing would demand a `ListBucket` grant that a correct
+      // production credential is not required to hold.
+      provisioning:
+        config.NEXT_PUBLIC_APP_ENV === 'local' || config.NEXT_PUBLIC_APP_ENV === 'development'
+          ? 'ensure'
+          : 'assume',
+    });
   }
   return new UnconfiguredStorageProvider();
 }

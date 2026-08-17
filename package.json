@@ -152,7 +152,10 @@
     "nanoid": "^3.3.17",
     "js-yaml": "^4.3.1"
   },
+  "comment:dependencies": "Mirrors apps/api/package.json. The API workspace names what it imports so it can build alone; the root names the same runtime because the repository-level test tiers (vitest.config.ts, vitest.config.backend.ts, vitest.config.db.ts) import API source through the @/ alias and would otherwise resolve these packages only by npm's hoisting, which is an implementation detail rather than a declaration. @aws-sdk/client-s3, @aws-sdk/s3-request-presigner and sharp are here for that reason: tests/foundation/p1-15-evidence-foundation.test.ts imports the S3 adapter and tests/backend/p1-15-evidence-foundation.test.ts imports sharp. ONE deliberate spelling difference: sharp is `^0.35.3` here and `0.35.3` in the workspace, because npm refuses (EOVERRIDE) a root direct dependency whose spec differs from the root's own security override for the same package. The override is the root's authority over sharp and it resolves to the identical 0.35.3 in the lockfile.",
   "dependencies": {
+    "@aws-sdk/client-s3": "3.1111.0",
+    "@aws-sdk/s3-request-presigner": "3.1111.0",
     "@supabase/ssr": "^0.12.4",
     "@supabase/supabase-js": "^2.97.0",
     "next": "16.2.12",
@@ -160,6 +163,7 @@
     "pino": "^10.3.1",
     "react": "19.2.8",
     "react-dom": "19.2.8",
+    "sharp": "^0.35.3",
     "zod": "^4.3.6"
   },
   "devDependencies": {

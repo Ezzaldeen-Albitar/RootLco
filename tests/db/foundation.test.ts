@@ -414,7 +414,12 @@ const ALLOWED_ROUTINES = new Set([
   'sal.record_receipt',
   'sal.stamp_dual_control_maker',
   'shared.archive_document',
+  // P1-OD-025 scanner handoff. Both SECURITY INVOKER with an empty search_path,
+  // which is why they may join this list at all — the posture case in
+  // `shared-hardening.test.ts` refuses a DEFINER routine in any module schema.
+  'shared.begin_document_scan',
   'shared.claim_outbox_events',
+  'shared.complete_document_scan',
   'shared.complete_outbox_event',
   'shared.document_deletion_eligibility',
   'shared.document_ids_for_entity',
@@ -1266,6 +1271,7 @@ describe('database foundation', () => {
       'ins_event_outbox_producer',
       'ins_external_purchase_part_details_gated',
       'ins_external_purchase_parts_scope',
+      'ins_file_scan_results_scanner',
       'ins_financial_events_gated',
       'ins_findings_scope',
       'ins_fuel_levels_tenant',
@@ -1695,6 +1701,7 @@ describe('database foundation', () => {
       'upd_diagnostic_types_tenant',
       'upd_discount_rules_tenant',
       'upd_document_links_unlink',
+      'upd_document_versions_lifecycle',
       'upd_document_versions_reject',
       'upd_dtc_records_scope',
       'upd_duplicate_candidates_tenant',

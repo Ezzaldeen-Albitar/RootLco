@@ -104,8 +104,8 @@
       "class": "DERIVABLE_LOCAL",
       "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
-      "locator": "| Root unit tier — tests executed             | 2592  | `--record unit`, from the `vitest` JSON report                     |",
-      "value": "2592",
+      "locator": "| Root unit tier — tests executed             | 2660  | `--record unit`, from the `vitest` JSON report                     |",
+      "value": "2660",
       "binding": {
         "kind": "run",
         "tier": "unit",
@@ -118,8 +118,8 @@
       "class": "DERIVABLE_LOCAL",
       "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
-      "locator": "| Root unit tier — files the run reported     | 99    | the same report, cross-checked against the tier's include rule      |",
-      "value": "99",
+      "locator": "| Root unit tier — files the run reported     | 100   | the same report, cross-checked against the tier's include rule      |",
+      "value": "100",
       "binding": {
         "kind": "run",
         "tier": "unit",
@@ -518,9 +518,9 @@
       "value": "f6b4f023d9e6b1e7d823dac4e5550379202a216ab1ae1fe9e5a2826703061f79",
       "boundBy": {
         "file": "tests/ci/p1-27-doc-counts.test.ts",
-        "contains": "the record quotes no schema hash"
+        "contains": "the historical hash is not the current baseline"
       },
-      "why": "It looked like the least checkable figure on the page and it is not: the same digest is pinned in .github/ci-baselines/schema-baseline.json, which is what the replay job compares against."
+      "why": "A superseded measurement. It looked like the least checkable figure on the page, and the temptation is to refresh it when the baseline moves — which would turn a record of a past head into a claim about today. It is bound to a case that asserts it is NOT the current baseline hash."
     },
     {
       "id": "CR-E-STALE-TOTAL",

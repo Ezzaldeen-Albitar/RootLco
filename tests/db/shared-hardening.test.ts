@@ -224,6 +224,16 @@ describe('module security posture', () => {
       'iam.grant_delegation_within_authority',
       'iam.has_permission',
       'iam.has_permission_in_scope',
+      // P1-OD-025 scanner handoff. Both are SECURITY INVOKER with an empty
+      // search_path — the case above proves that for every module routine, and
+      // it is why these two may appear here at all. They hold no privilege the
+      // caller does not: each re-checks `iam.current_tenant_id()`, the actor and
+      // `shared.document.manage` in the document's own scope, and the writes
+      // they perform run under the caller's `INSERT` on file_scan_results and
+      // `UPDATE(status)` on document_versions. `shared-document-evidence-
+      // lifecycle.test.ts` holds the bounds of those two grants directly.
+      'shared.begin_document_scan',
+      'shared.complete_document_scan',
       'shared.document_deletion_eligibility',
       'shared.document_ids_for_entity',
       'shared.missing_translations',

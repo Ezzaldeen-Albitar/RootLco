@@ -958,13 +958,15 @@ describe('operation coverage gate — real registry and real files', () => {
 
     // 21 from P1-15 plus the 5 P1-23 operations that share the `shared.`
     // namespace: three notification reads, a document read, and a
-    // non-destructive retention evaluation.
+    // non-destructive retention evaluation. 28 with the two P1-OD-025 evidence
+    // reads — the category policy list and the version lifecycle read — which
+    // are P1-15 surface again, so the namespace is now three phases wide.
     // The counter selects by prefix, so it cannot separate the phases; what it
     // still proves exactly is that every operation in the namespace is at
     // operation depth, with none pending, unit-only or metadata-only.
-    expect(counts.p1_15.registered).toBe(26);
-    expect(counts.p1_15.publicApi).toBe(26);
-    expect(counts.p1_15.operationDepth).toBe(26);
+    expect(counts.p1_15.registered).toBe(28);
+    expect(counts.p1_15.publicApi).toBe(28);
+    expect(counts.p1_15.operationDepth).toBe(28);
     expect(counts.p1_15.invocationOnly).toBe(0);
     expect(counts.p1_15.pending).toBe(0);
     expect(counts.p1_15.unitOnly).toBe(0);

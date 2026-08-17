@@ -1800,6 +1800,22 @@ export const MANIFEST = {
     required: ['denial', 'outbox'],
     note: 'soft withdrawal; the row survives because the attachment fact is evidence',
   },
+  // ---- P1-OD-025 evidence foundation ---------------------------------------
+  //
+  // Two READ operations minted with `shared.document.read`, the permission that
+  // did not exist before this decision: every document read demanded
+  // `shared.document.manage`, so looking at evidence required the authority to
+  // create it.
+  'shared.document-category-list': {
+    files: ['tests/backend/p1-15-evidence-foundation.test.ts'],
+    required: ['denial'],
+    note: 'the governed policy envelope a client must obey, including device_capture_timestamp_required — projected so a client can obey it, and enforced server-side so it cannot choose not to; another tenant’s category is proven invisible, and a caller without the read permission is refused',
+  },
+  'shared.document-version-read': {
+    files: ['tests/backend/p1-15-evidence-foundation.test.ts'],
+    required: ['denial', 'cross-tenant'],
+    note: 'the immutable version and its scan lifecycle; the projection is asserted as a KEY SET in both directions because the addition that matters is storage_key — a locator that travels outside RLS — and a field-by-field assertion cannot catch an addition. A tenant-B version and a version that never existed answer identically',
+  },
   // ---- P1-23 reporting catalogue -------------------------------------------
   //
   // The first operations ever registered against the `rpt.` namespace, which is

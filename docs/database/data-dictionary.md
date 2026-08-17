@@ -924,25 +924,27 @@ credential authority. Contact fields are classified `restricted`.
 
 **Scope:** platform + tenant · **Retention class:** operational · Dual-scope document policy envelope. A platform row (`tenant_id` NULL) is a shared default readable by every tenant; a tenant row is a tenant override. Category constraints are data, not upload implementation. Runtime SELECT-only.
 
-| Column                    | Type                     | Null | Default           | Classification |
-| ------------------------- | ------------------------ | ---- | ----------------- | -------------- |
-| `id`                      | uuid                     | NO   | gen_random_uuid() | internal       |
-| `scope`                   | text                     | NO   | —                 | internal       |
-| `tenant_id`               | uuid                     | YES  | —                 | internal       |
-| `category_code`           | text                     | NO   | —                 | internal       |
-| `name`                    | text                     | NO   | —                 | internal       |
-| `description`             | text                     | YES  | —                 | internal       |
-| `allowed_content_types`   | text[]                   | NO   | —                 | internal       |
-| `max_size_bytes`          | bigint                   | NO   | —                 | internal       |
-| `default_classification`  | text                     | NO   | —                 | internal       |
-| `default_retention_class` | text                     | NO   | —                 | internal       |
-| `status`                  | text                     | NO   | 'active'          | internal       |
-| `deleted_at`              | timestamp with time zone | YES  | —                 | internal       |
-| `record_version`          | integer                  | NO   | 1                 | internal       |
-| `created_at`              | timestamp with time zone | NO   | now()             | internal       |
-| `created_by`              | uuid                     | NO   | —                 | internal       |
-| `updated_at`              | timestamp with time zone | YES  | —                 | internal       |
-| `updated_by`              | uuid                     | YES  | —                 | internal       |
+| Column                              | Type                     | Null | Default           | Classification |
+| ----------------------------------- | ------------------------ | ---- | ----------------- | -------------- |
+| `id`                                | uuid                     | NO   | gen_random_uuid() | internal       |
+| `scope`                             | text                     | NO   | —                 | internal       |
+| `tenant_id`                         | uuid                     | YES  | —                 | internal       |
+| `category_code`                     | text                     | NO   | —                 | internal       |
+| `name`                              | text                     | NO   | —                 | internal       |
+| `description`                       | text                     | YES  | —                 | internal       |
+| `allowed_content_types`             | text[]                   | NO   | —                 | internal       |
+| `max_size_bytes`                    | bigint                   | NO   | —                 | internal       |
+| `default_classification`            | text                     | NO   | —                 | internal       |
+| `default_retention_class`           | text                     | NO   | —                 | internal       |
+| `business_link_purpose`             | text                     | NO   | 'evidence'        | internal       |
+| `device_capture_timestamp_required` | boolean                  | NO   | false             | internal       |
+| `status`                            | text                     | NO   | 'active'          | internal       |
+| `deleted_at`                        | timestamp with time zone | YES  | —                 | internal       |
+| `record_version`                    | integer                  | NO   | 1                 | internal       |
+| `created_at`                        | timestamp with time zone | NO   | now()             | internal       |
+| `created_by`                        | uuid                     | NO   | —                 | internal       |
+| `updated_at`                        | timestamp with time zone | YES  | —                 | internal       |
+| `updated_by`                        | uuid                     | YES  | —                 | internal       |
 
 ### `shared.documents`
 
@@ -970,7 +972,7 @@ credential authority. Contact fields are classified `restricted`.
 
 ### `shared.document_versions`
 
-**Scope:** tenant · **Retention class:** evidence-audit · Append-only per-version file metadata (no bytes). `version_number` unique per document; one-way lifecycle (pending → accepted/quarantined/rejected) via `shared.guard_document_version_transition`; terminal rows immutable. Runtime SELECT-only.
+**Scope:** tenant · **Retention class:** evidence-audit · Append-only per-version file metadata (no bytes). `version_number` unique per document; one-way lifecycle `pending → scanning → accepted | quarantined | rejected` via `shared.guard_document_version_transition`; acceptance requires an exclusively clean scan and a scanner failure quarantines rather than accepts; terminal rows immutable. Runtime holds SELECT plus a single column grant, `UPDATE(status)`, under `upd_document_versions_lifecycle` — no other column of a version is writable by the request role.
 
 | Column           | Type                     | Null | Default           | Classification |
 | ---------------- | ------------------------ | ---- | ----------------- | -------------- |
@@ -985,6 +987,8 @@ credential authority. Contact fields are classified `restricted`.
 | `uploaded_by`    | uuid                     | NO   | —                 | internal       |
 | `uploaded_at`    | timestamp with time zone | NO   | now()             | internal       |
 | `status`         | text                     | NO   | 'pending'         | internal       |
+| `scanning_at`    | timestamp with time zone | YES  | —                 | internal       |
+| `captured_at`    | timestamp with time zone | YES  | —                 | internal       |
 | `accepted_at`    | timestamp with time zone | YES  | —                 | internal       |
 | `quarantined_at` | timestamp with time zone | YES  | —                 | internal       |
 | `rejected_at`    | timestamp with time zone | YES  | —                 | internal       |
