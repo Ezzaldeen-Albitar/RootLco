@@ -30,7 +30,7 @@
     "validate:tokens": "node scripts/check-design-tokens.mjs"
   },
   "dependencies": {
-    "@hookform/resolvers": "^3.10.0",
+    "@hookform/resolvers": "^5.8.0",
     "next": "16.2.12",
     "react": "19.2.8",
     "react-dom": "19.2.8",
