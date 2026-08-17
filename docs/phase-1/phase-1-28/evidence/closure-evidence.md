@@ -33,13 +33,13 @@ the candidate, and refuses either half that fails to name an unclosed task.
 
 ## The frozen candidate
 
-| Binding           | Value                                                           |
-| ----------------- | --------------------------------------------------------------- |
-| `FINAL_CODE_SHA`  | `4301f817c7a7ec480c09e75a024731e78e4d91e4`                      |
-| `FINAL_CODE_TREE` | `6937799efdd22f8c624ff7a0e3e36e90f17bf859`                      |
-| Branch            | `remediation/p1-15-reception-document-foundation`               |
-| Pull request      | **#232**, base `develop`, 25 commits ahead                      |
-| Subject           | `fix(p1-28): a pending entry may not rest on a base that moves` |
+| Binding           | Value                                                                               |
+| ----------------- | ----------------------------------------------------------------------------------- |
+| `FINAL_CODE_SHA`  | `b3b92d9b385d84ff5034d1e040a951202e911e9c`                                          |
+| `FINAL_CODE_TREE` | `8bdcf7c7af946a6509ec97561fc4292f8f1acae7`                                          |
+| Branch            | `remediation/p1-15-reception-document-foundation`                                   |
+| Pull request      | **#232**, base `develop`, 25 commits ahead                                          |
+| Subject           | `fix(p1-18): the RLS grants, two guard defects, and the debt six contracts now owe` |
 
 The previous candidate was `7b1252edebb5d7f48451213c71ab832cb44e46b5`, tree
 `1ef831d2ecfcf94d07b73857b7448c3b424faca3`, on
@@ -762,6 +762,8 @@ from the verdicts file on every run: a fourth task turning PARTIAL fails
   proved — the operator's exact coordinates travel unrounded, the mark is
   placeable by keyboard, it clamps at the contract bounds and it refuses a blank
   coordinate by name.
+
+- **`FE-017` — PARTIAL.** Four contracts published with no Frontend adapter: the evidence binding trio and the capture override, all declared `PENDING_FRONTEND_ADAPTER` and owed by feature/p1-28-owner-decisions-frontend.
 
 ### `P1-28-FE-018` — customer signature capture · **PARTIAL**
 
