@@ -20,8 +20,8 @@
       "provenance": "LOCAL_COMPUTED_HOSTED_PENDING"
     },
     "web": {
-      "passed": 2728,
-      "failed": 0,
+      "passed": 2724,
+      "failed": 4,
       "skipped": 0,
       "provenance": "LOCAL_COMPUTED_HOSTED_PENDING"
     },
@@ -67,8 +67,8 @@
       "bytes": 42409
     },
     "docs/phase-1/phase-1-28/evidence/closure-candidate.json": {
-      "sha256": "5a524666eeff84c314efd80d4842cf31954d368c24b27d44517481b987cd96bb",
-      "bytes": 78840
+      "sha256": "e9b49cf703222fa252910b32075db2ce1fe049220167982c355acf9c6f18bb59",
+      "bytes": 76909
     },
     "docs/phase-1/phase-1-28/evidence/closure-evidence.md": {
       "sha256": "cb31212d6dc23d846192e982035b808a19a585a0eb5b7551838160f758527d00",

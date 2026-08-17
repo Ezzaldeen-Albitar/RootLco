@@ -195,8 +195,8 @@
       "localLedger": {
         "path": "docs/phase-1/phase-1-27/evidence/local-run-ledger.json",
         "tier": "unit",
-        "atCommit": "8772ce2877446df84e99068de91f35f7d803a42b",
-        "howChecked": "`git show 8772ce2877446df84e99068de91f35f7d803a42b:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD when this measurement was recorded, rather than the working copy, which would let an uncommitted edit vouch for itself."
+        "atCommit": "56036bf88c06b2ab3e9a42f21d12909469f18867",
+        "howChecked": "`git show 56036bf88c06b2ab3e9a42f21d12909469f18867:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD when this measurement was recorded, rather than the working copy, which would let an uncommitted edit vouch for itself."
       },
       "hostedAttestation": {
         "runId": 31885987461,
@@ -212,17 +212,17 @@
     "web": {
       "label": "web component and DOM",
       "tests": 2728,
-      "passed": 2728,
-      "failed": 0,
+      "passed": 2724,
+      "failed": 4,
       "skipped": 0,
       "files": 98,
-      "measuredAtCommit": "bf744ded5d0c6808d6dfa8bb7e9fd9dc69a8a950",
+      "measuredAtCommit": "0b794ebc6b5aa03bc3c5b03817ee541fc95e91dc",
       "provenance": "LOCAL_COMPUTED_HOSTED_PENDING",
       "localLedger": {
         "path": "docs/phase-1/phase-1-27/evidence/local-run-ledger.json",
         "tier": "web",
-        "atCommit": "8772ce2877446df84e99068de91f35f7d803a42b",
-        "howChecked": "`git show 8772ce2877446df84e99068de91f35f7d803a42b:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD when this measurement was recorded, rather than the working copy, which would let an uncommitted edit vouch for itself."
+        "atCommit": "56036bf88c06b2ab3e9a42f21d12909469f18867",
+        "howChecked": "`git show 56036bf88c06b2ab3e9a42f21d12909469f18867:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD when this measurement was recorded, rather than the working copy, which would let an uncommitted edit vouch for itself."
       },
       "hostedAttestation": {
         "runId": 31885987461,
@@ -233,42 +233,7 @@
         "describesSupersededHead": true,
         "supersededBy": "The hosted run taken at a head that DESCENDS from candidate 526a3b39 — the pull request CI for branch `p1-28/od-025-policy-enforcement`. Until that run exists this figure describes an ancestor and is cited as such; it is replaced by re-citing the same fields (run id, job id, head, artefact) at the descending head, never by relaxing the rule that refused it."
       },
-      "note": "Measured at bf744ded, a documentation-only successor of the candidate: the commits between them carry evidence records and nothing executable.",
-      "measurementDrift": [
-        ".github/ci-baselines/schema-baseline.json",
-        "apps/api/src/app/api/v1/reception-catalogue/receiving-employees/route.ts",
-        "apps/api/src/app/api/v1/receptions/route.ts",
-        "apps/api/src/modules/reception/application/reception-read-service.ts",
-        "apps/api/src/modules/reception/application/reception-service.ts",
-        "apps/api/src/modules/reception/data/reception-read-repository.ts",
-        "apps/api/src/modules/reception/domain/reception.ts",
-        "apps/api/src/modules/reception/index.ts",
-        "apps/api/src/server/db/repository.ts",
-        "apps/api/src/server/http/route-templates.ts",
-        "apps/web/src/lib/api/idempotent-operations.ts",
-        "scripts/check-operation-test-coverage.mjs",
-        "supabase/migrations/20260815093000_rec_receiving_employee_identity.sql",
-        "supabase/seeds/04_iam_permission_catalog.sql",
-        "tests/backend/p1-18-intake-catalogue-management.test.ts",
-        "tests/backend/p1-18-reception-approval.test.ts",
-        "tests/backend/p1-18-reception-closure.test.ts",
-        "tests/backend/p1-18-reception-conversion.test.ts",
-        "tests/backend/p1-18-reception-create.test.ts",
-        "tests/backend/p1-18-reception-evidence.test.ts",
-        "tests/backend/p1-18-reception-parties.test.ts",
-        "tests/backend/p1-18-scope-containment.test.ts",
-        "tests/backend/p1-19-helpers.ts",
-        "tests/backend/p1-27-reception-reads.test.ts",
-        "tests/ci/baseline-integrity.test.ts",
-        "tests/ci/repository-paths.test.ts",
-        "tests/db/foundation.test.ts",
-        "tests/db/helpers.ts",
-        "tests/db/p1-15-shared-services-runtime-capabilities.test.ts",
-        "tests/db/rec-receiving-employee-identity.test.ts",
-        "tests/db/shared-message-templates.test.ts",
-        "tests/db/shared-outbound-messages.test.ts",
-        "tests/openapi-contract.test.ts"
-      ]
+      "note": "Measured at 0b794ebc, a documentation-only successor of the candidate: the commits between them carry evidence records and nothing executable."
     },
     "backend": {
       "label": "backend integration, against a real PostgreSQL",
