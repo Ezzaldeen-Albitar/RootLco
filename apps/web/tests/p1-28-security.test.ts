@@ -242,14 +242,41 @@ describe('P1-28-SEC-001 — the iam.user.read staff-directory overload, disposed
   it('states the overload rather than softening it: the directory read is TENANT-wide', () => {
     // The uncomfortable half, pinned. A branch-scoped receptionist who holds the
     // code reads accounts from every branch, because the operation's scope is
-    // the tenant and no narrower staff read exists anywhere.
+    // the tenant.
     expect(STAFF_DIRECTORY_SCOPE).toBe('tenant');
     expect(operation('iam.user-list').scope).toBe(STAFF_DIRECTORY_SCOPE);
     expect(operation('iam.user-list').scope).not.toBe('branch');
+
+    /*
+     * This clause used to require that NO narrower staff read existed anywhere,
+     * and it fired the moment DBCR-P1-18-002 published one. That is the tripwire
+     * doing its job: the disposition WAS stale, because the debt it recorded
+     * (G-EMP / R6) has now been paid at the API layer.
+     *
+     * So the claim moves rather than relaxes. A narrower read must now exist, it
+     * must be exactly the branch-scoped picker this decision built, and it must
+     * be narrower on the axis that matters — scope, not merely name. What has NOT
+     * happened yet is the screen switching onto it: that is handwritten Frontend,
+     * which this Backend profile forbids, so it is named here as the outstanding
+     * step instead of being quietly assumed done.
+     */
     const narrower = REGISTER.filter(
       (entry) => /employee/i.test(entry.id) && entry.method === 'GET'
     );
-    expect(narrower, 'a narrower staff read exists and this disposition is stale').toEqual([]);
+    expect(
+      narrower.map((entry) => entry.id),
+      'the narrower staff read this disposition now rests on has gone missing'
+    ).toEqual(['rec.receiving-employee-list']);
+    expect(operation('rec.receiving-employee-list').scope).toBe('branch');
+    expect(operation('rec.receiving-employee-list').permissions).not.toContain(
+      STAFF_DIRECTORY_PERMISSION
+    );
+
+    // Still true, and the reason the on-screen notice below stays: the wizard has
+    // not been moved onto the narrow read yet. When a Frontend change does move
+    // it, this expectation fails and the notice is reconsidered with it.
+    const screen = webFile('features', 'receptions', 'components', 'CheckInStartScreen.tsx');
+    expect(screen).not.toContain('rec.receiving-employee-list');
   });
 
   it('says it ON SCREEN, in both catalogues, from the module that carries the decision', () => {

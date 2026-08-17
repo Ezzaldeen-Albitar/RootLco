@@ -1083,7 +1083,7 @@ describe('P1-28-QA-003 — scope is resolved by the server, and asserted by nobo
     return { id: resolveOperation(method, path)?.operationId ?? '', call: JSON.stringify(call) };
   }
 
-  it('derived a real rule, and in this phase it names exactly four operations', () => {
+  it('derived a real rule, and in this phase it names exactly five operations', () => {
     // Anti-vacuity first: a set that had become everything, or nothing, would
     // make the sweep below meaningless. The rule is platform-wide by
     // construction — it holds for every collection read and every create — so
@@ -1093,6 +1093,12 @@ describe('P1-28-QA-003 — scope is resolved by the server, and asserted by nobo
     expect([...BRANCH_ADDRESSED].filter((id) => /^(apt|rec)\./.test(id)).sort()).toEqual([
       'apt.appointment-create',
       'apt.appointment-list',
+      // The FE-007 picker is branch-addressed for the same reason the two
+      // collection reads are: which employees may accept custody depends on the
+      // branch, so the branch is a resource selector carried as the
+      // authorization target, not a filter the client applies afterwards.
+      // ('receiving' sorts before 'reception': 'i' precedes 'p'.)
+      'rec.receiving-employee-list',
       'rec.reception-create',
       'rec.reception-list',
     ]);
