@@ -327,6 +327,15 @@ number the Owner assigns supersedes this one and this section is corrected.
   somebody decides who should hold it. All 21 are recorded
   `DELIBERATELY_ABSENT` against this decision in
   `docs/phase-1/phase-1-28/write-reachability.json`.
+- **The READ half of the same question** lives in
+  `docs/phase-1/phase-1-28/adapter-reachability.json`, enforced by
+  `scripts/ci/check-p1-28-adapter-reachability.mjs`. It records the operations a
+  Backend remediation published and could not wire, because its ownership profile
+  forbids handwritten `web` — the `PENDING_FRONTEND_ADAPTER` state. One entry
+  stands today: `rec.receiving-employee-list`, owed by `P1-28-FE-007` and payable
+  only on `feature/p1-28-owner-decisions-frontend`. It is fail-closed on seven
+  conditions and cannot outlive its adapter, and because it holds FE-007 open it
+  is also what makes a 35/35 claim impossible while the debt stands.
 - **Enforced by:** `scripts/ci/check-p1-28-write-reachability.mjs`, which
   resolves every `decisionRef` against the decision headings of **this section**
   — a reference naming no decision recorded here fails the gate, and
