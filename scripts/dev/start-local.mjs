@@ -62,6 +62,7 @@
  *   owner's editor tooling is also node.
  * - **Readiness is polled, then printed.** "It started" means "it answers".
  */
+import { describeStorageEnv, resolveStorageEnv } from './storage-env.mjs';
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -168,6 +169,18 @@ const nextBin = (ws) => `${root}/apps/${ws}/node_modules/next/dist/bin/next`;
 const nextEntry = (ws) =>
   existsSync(nextBin(ws)) ? nextBin(ws) : `${root}/node_modules/next/dist/bin/next`;
 
+/**
+ * The object store, resolved ONCE per launch and given to the API tier only.
+ *
+ * Read live from the local stack rather than committed, and never handed to
+ * `apps/web`: the web tier holds no storage credential and builds no key, which
+ * is why its capture Server Action PUTs to a URL the API issued rather than to
+ * one it worked out. `scripts/dev/storage-env.mjs` carries the whole reasoning,
+ * including why a partial read produces nothing rather than a fragment that
+ * would take the API down at composition.
+ */
+const STORAGE_ENV = resolveStorageEnv();
+
 const TIERS = {
   api: {
     label: 'api',
@@ -178,7 +191,12 @@ const TIERS = {
     // shares `.next` with the production build — which is why the stale-build
     // clear below still applies to this tier and not to the web one.
     devDistDir: PRODUCTION_DIST_DIR,
-    env: { development: {}, production: {} },
+    env: {
+      // Both modes, because the acceptance environment is production and the
+      // browser suite runs against the same store.
+      development: { ...(STORAGE_ENV ?? {}) },
+      production: { ...(STORAGE_ENV ?? {}) },
+    },
   },
   web: {
     label: 'web',
@@ -718,6 +736,7 @@ async function main() {
       console.log('');
       console.log(`  NEXT_PUBLIC_API_BASE_URL  ${process.env.NEXT_PUBLIC_API_BASE_URL}`);
       console.log(`  NEXT_PUBLIC_APP_ENV       ${process.env.NEXT_PUBLIC_APP_ENV}`);
+      for (const line of describeStorageEnv(STORAGE_ENV)) console.log(line);
       console.log(
         '  Both are inlined by next build, so they are fixed for the life of this stack.'
       );
