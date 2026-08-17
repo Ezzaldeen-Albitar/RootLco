@@ -5,19 +5,27 @@
   "howToCheck": "npm run validate:p1-28-evidence",
   "whatThisIsNot": "This is not a tamper-proof seal. The digests in evidence-manifest.json remove SILENT revision, not revision. It is ALSO not an Owner acceptance and not a closure record: the phase is OPEN and `OWNER ACCEPTANCE` has neither been asked for nor returned. What it now IS is a package whose current remediation half has been taken: nine bindings, including all five tiers, CodeQL, dependency security, browser-by-project and the database reproof, cite exact-head PR CI run 31885987461 at 1a186a7bcb7d0b97bb771753dacb584535692455. The unit and web figures agree with the authoritative local observation at ea045d88 pinned by ledger commit 2e0f2191. The earlier aggregate hostedCi and production-build records remain fetchable at product-identical 81cbd44b because the exact remediation run legitimately skipped those change-classified build jobs. Every cited head descends from the candidate, its apps/** and supabase/** are COMPUTED byte-identical to it, and each binding says so with `describesProductIdenticalSuccessor`. `pendingHostedBindings.bindings` is EMPTY by derivation. The two superseded citations this package has carried, 55b932cb and 38afa5c2, are kept in `supersededObservations`.",
   "candidate": {
-    "FINAL_CODE_SHA": "b3b92d9b385d84ff5034d1e040a951202e911e9c",
-    "FINAL_CODE_TREE": "8bdcf7c7af946a6509ec97561fc4292f8f1acae7",
+    "FINAL_CODE_SHA": "3ca04325241389e7d8d83efd9c3e7f27acda51e2",
+    "FINAL_CODE_TREE": "74ea1fafbff58f51323f85753b35174ffd6147b7",
     "branch": "remediation/p1-18-reception-evidence-contracts",
     "pullRequest": null,
     "baseBranch": "develop",
-    "commitsAheadOfDevelop": 6,
-    "subject": "fix(p1-18): the RLS grants, two guard defects, and the debt six contracts now owe",
+    "commitsAheadOfDevelop": 22,
+    "subject": "test(ci): the route and operation pins move to 249 / 305",
     "whatFreezingMeans": "This commit freezes the PRODUCT: every later head cited by the package must leave apps/** and supabase/** byte-identical to it. Executable evidence machinery may follow only as a full-id successor, and every LOCAL measurement taken there must declare the exact non-product drift that Git computes. A successor that changes a product tree invalidates this package and the candidate must be re-frozen and re-measured; a successor that changes only evidence machinery is named and re-measured without pretending it was part of the frozen product.",
-    "productIdentityCheck": "git diff --name-only b3b92d9b385d84ff5034d1e040a951202e911e9c..HEAD -- apps supabase",
+    "productIdentityCheck": "git diff --name-only 3ca04325241389e7d8d83efd9c3e7f27acda51e2..HEAD -- apps supabase",
     "productIdentityExpectation": "empty output — no product file differs between the candidate and any successor",
     "reFrozenFrom": {
       "what": "Every candidate this package has named, most recent first. Kept rather than overwritten: deleting the record of what was once frozen is the half-update this gate exists to catch.",
       "history": [
+        {
+          "previousCandidate": "b3b92d9b385d84ff5034d1e040a951202e911e9c",
+          "previousTree": "8bdcf7c7af946a6509ec97561fc4292f8f1acae7",
+          "whyItMoved": "Re-frozen at the last executable commit of the P1-18 integration; the seal cycle that follows changes documentation only.",
+          "whyReFrozenRatherThanNamed": "`git diff --name-only b3b92d9b..3ca04325 -- apps supabase` is NOT empty, so the successor apparatus — which exists only for a commit that leaves the product tree byte-identical — was unavailable. Amending the previous candidate would have produced the same tree in one commit, and was rejected: the branch is pushed and rewriting it would require a force, which this wave does not do.",
+          "whatThisCostAndWhatItDidNot": "The two LOCAL tiers, re-measured at this candidate. It bought no hosted figure and changed no test outcome — the converted suite is 26/26 before and after — so every hosted binding remains PENDING exactly as it was.",
+          "supersededSuccessorRecord": "That candidate named no executable successor at the moment it was superseded; `3ca04325241389e7d8d83efd9c3e7f27acda51e2` is now the candidate itself."
+        },
         {
           "previousCandidate": "4301f817c7a7ec480c09e75a024731e78e4d91e4",
           "previousTree": "6937799efdd22f8c624ff7a0e3e36e90f17bf859",
@@ -222,7 +230,7 @@
       "failed": 2,
       "skipped": 0,
       "files": 102,
-      "measuredAtCommit": "76e1c8f842a38cf1538297f2f322d87aed9a1847",
+      "measuredAtCommit": "3ca04325241389e7d8d83efd9c3e7f27acda51e2",
       "provenance": "LOCAL_COMPUTED_HOSTED_PENDING",
       "localLedger": {
         "path": "docs/phase-1/phase-1-27/evidence/local-run-ledger.json",
@@ -248,7 +256,7 @@
       "failed": 0,
       "skipped": 0,
       "files": 98,
-      "measuredAtCommit": "e472605838d9a2f7ee44e6d3bbd55624c1f0add3",
+      "measuredAtCommit": "3ca04325241389e7d8d83efd9c3e7f27acda51e2",
       "provenance": "LOCAL_COMPUTED_HOSTED_PENDING",
       "localLedger": {
         "path": "docs/phase-1/phase-1-27/evidence/local-run-ledger.json",

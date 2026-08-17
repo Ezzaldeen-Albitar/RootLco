@@ -33,13 +33,13 @@ the candidate, and refuses either half that fails to name an unclosed task.
 
 ## The frozen candidate
 
-| Binding           | Value                                                                               |
-| ----------------- | ----------------------------------------------------------------------------------- |
-| `FINAL_CODE_SHA`  | `b3b92d9b385d84ff5034d1e040a951202e911e9c`                                          |
-| `FINAL_CODE_TREE` | `8bdcf7c7af946a6509ec97561fc4292f8f1acae7`                                          |
-| Branch            | `remediation/p1-15-reception-document-foundation`                                   |
-| Pull request      | **#232**, base `develop`, 25 commits ahead                                          |
-| Subject           | `fix(p1-18): the RLS grants, two guard defects, and the debt six contracts now owe` |
+| Binding           | Value                                                      |
+| ----------------- | ---------------------------------------------------------- |
+| `FINAL_CODE_SHA`  | `3ca04325241389e7d8d83efd9c3e7f27acda51e2`                 |
+| `FINAL_CODE_TREE` | `74ea1fafbff58f51323f85753b35174ffd6147b7`                 |
+| Branch            | `remediation/p1-15-reception-document-foundation`          |
+| Pull request      | **#232**, base `develop`, 25 commits ahead                 |
+| Subject           | `test(ci): the route and operation pins move to 249 / 305` |
 
 The previous candidate was `7b1252edebb5d7f48451213c71ab832cb44e46b5`, tree
 `1ef831d2ecfcf94d07b73857b7448c3b424faca3`, on
