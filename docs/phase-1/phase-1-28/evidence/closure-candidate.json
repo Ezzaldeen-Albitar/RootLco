@@ -202,17 +202,17 @@
     "unit": {
       "label": "root unit and foundation",
       "tests": 2681,
-      "passed": 2679,
-      "failed": 2,
+      "passed": 2676,
+      "failed": 5,
       "skipped": 0,
       "files": 101,
-      "measuredAtCommit": "c10671f6f32ed2527bf9c739c679b014a578b929",
+      "measuredAtCommit": "ccc7aa0641c12490de8e808d1dc71fc6a27da1ba",
       "provenance": "LOCAL_COMPUTED_HOSTED_PENDING",
       "localLedger": {
         "path": "docs/phase-1/phase-1-27/evidence/local-run-ledger.json",
         "tier": "unit",
-        "atCommit": "9b7873bc240c68a4352ea687705c3bf0ee9520a5",
-        "howChecked": "`git show 9b7873bc240c68a4352ea687705c3bf0ee9520a5:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD when this measurement was recorded, rather than the working copy, which would let an uncommitted edit vouch for itself."
+        "atCommit": "dbadb95c91717ce1f57bb25b556d34c77c997cf5",
+        "howChecked": "`git show dbadb95c91717ce1f57bb25b556d34c77c997cf5:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD when this measurement was recorded, rather than the working copy, which would let an uncommitted edit vouch for itself."
       },
       "hostedAttestation": {
         "runId": 31885987461,
@@ -223,7 +223,7 @@
         "describesSupersededHead": true,
         "supersededBy": "The hosted run taken at a head that DESCENDS from candidate 526a3b39 — the pull request CI for branch `p1-28/od-025-policy-enforcement`. Until that run exists this figure describes an ancestor and is cited as such; it is replaced by re-citing the same fields (run id, job id, head, artefact) at the descending head, never by relaxing the rule that refused it."
       },
-      "note": "Measured at c10671f6, a documentation-only successor of the candidate: the commits between them carry evidence records and nothing executable."
+      "note": "Measured at ccc7aa06, a documentation-only successor of the candidate: the commits between them carry evidence records and nothing executable."
     },
     "web": {
       "label": "web component and DOM",
@@ -232,13 +232,13 @@
       "failed": 0,
       "skipped": 0,
       "files": 98,
-      "measuredAtCommit": "255c911ecb981929e921c416bd382e18e9ad4aa2",
+      "measuredAtCommit": "ccc7aa0641c12490de8e808d1dc71fc6a27da1ba",
       "provenance": "LOCAL_COMPUTED_HOSTED_PENDING",
       "localLedger": {
         "path": "docs/phase-1/phase-1-27/evidence/local-run-ledger.json",
         "tier": "web",
-        "atCommit": "9b7873bc240c68a4352ea687705c3bf0ee9520a5",
-        "howChecked": "`git show 9b7873bc240c68a4352ea687705c3bf0ee9520a5:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD when this measurement was recorded, rather than the working copy, which would let an uncommitted edit vouch for itself."
+        "atCommit": "dbadb95c91717ce1f57bb25b556d34c77c997cf5",
+        "howChecked": "`git show dbadb95c91717ce1f57bb25b556d34c77c997cf5:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD when this measurement was recorded, rather than the working copy, which would let an uncommitted edit vouch for itself."
       },
       "hostedAttestation": {
         "runId": 31885987461,
@@ -249,11 +249,7 @@
         "describesSupersededHead": true,
         "supersededBy": "The hosted run taken at a head that DESCENDS from candidate 526a3b39 — the pull request CI for branch `p1-28/od-025-policy-enforcement`. Until that run exists this figure describes an ancestor and is cited as such; it is replaced by re-citing the same fields (run id, job id, head, artefact) at the descending head, never by relaxing the rule that refused it."
       },
-      "note": "Measured at 255c911e, a documentation-only successor of the candidate: the commits between them carry evidence records and nothing executable.",
-      "measurementDrift": [
-        "apps/api/src/modules/reception/domain/reception.ts",
-        "scripts/ci/check-phase-ownership.mjs"
-      ]
+      "note": "Measured at ccc7aa06, a documentation-only successor of the candidate: the commits between them carry evidence records and nothing executable."
     },
     "backend": {
       "label": "backend integration, against a real PostgreSQL",
