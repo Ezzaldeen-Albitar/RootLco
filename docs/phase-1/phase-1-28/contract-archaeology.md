@@ -46,9 +46,9 @@ those writes, which is `P1-28-OD-001` (`canonical-plan.md` §7). `G-EMP`,
 `G-MEDIA`, `G-CRM-PHONE`, R6–R8 and every Owner decision remain open.
 
 The apt/rec public surface at this head, derived rather than counted:
-<!-- derived: surface operations = 70 --> **70** published operations —
+<!-- derived: surface operations = 71 --> **71** published operations —
 <!-- derived: surface writes = 43 --> **43** writes and
-<!-- derived: surface reads = 27 --> **27** reads — carrying
+<!-- derived: surface reads = 28 --> **28** reads — carrying
 <!-- derived: surface permissions = 15 --> **15** distinct permission codes. Of
 
 those, <!-- derived: surface catalogue-writes = 25 --> **25** writes and
