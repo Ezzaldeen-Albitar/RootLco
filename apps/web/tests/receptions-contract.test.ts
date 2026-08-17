@@ -137,7 +137,12 @@ describe('every module row mirrors the generated manifest and the published docu
 
   it('partitions the table into an operator and an administration surface', () => {
     // Anti-vacuity for the partition the narrowed pins below depend on.
-    expect(OPERATOR_OPERATIONS.length).toBe(20);
+    // 21 since the FE-007 receiving-employee picker. It is an OPERATOR row, not
+    // an administration one: the partition is drawn by permission, and it
+    // registers `rec.reception.manage` — the authority to take a vehicle in —
+    // rather than `rec.catalogue.manage`, the authority to define what the
+    // catalogues are.
+    expect(OPERATOR_OPERATIONS.length).toBe(21);
     expect(ADMINISTRATION_OPERATIONS.length).toBe(16);
     expect(OPERATOR_OPERATIONS.length + ADMINISTRATION_OPERATIONS.length).toBe(
       RECEPTION_OPERATIONS.length

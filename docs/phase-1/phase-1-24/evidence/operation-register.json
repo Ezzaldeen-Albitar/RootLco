@@ -6041,7 +6041,11 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-18-reception-create.test.ts", "tests/ci/phase-ownership.test.ts"],
+      "tests": [
+        "tests/backend/p1-18-reception-create.test.ts",
+        "tests/ci/p1-28-adapter-reachability.test.ts",
+        "tests/ci/phase-ownership.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/reception-catalogue/receiving-employees/route.ts"
     },
@@ -6424,7 +6428,8 @@
       "tests": [
         "tests/backend/p1-18-reception-approval.test.ts",
         "tests/backend/p1-18-reception-create.test.ts",
-        "tests/backend/p1-18-scope-containment.test.ts"
+        "tests/backend/p1-18-scope-containment.test.ts",
+        "tests/ci/p1-28-adapter-reachability.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/receptions/route.ts"
