@@ -275,6 +275,28 @@ const UNCONSUMED_READS: ReadonlyMap<string, string> = new Map([
   ],
 ]);
 
+/**
+ * Operations a Backend remediation published whose adapter it was not allowed to
+ * write — the third state, read from the canonical declaration rather than
+ * restated here, so this file and `check-p1-28-adapter-reachability.mjs` cannot
+ * drift into disagreeing about what is owed.
+ *
+ * That gate enforces WHETHER an entry is legitimate: published, mirrored, new on
+ * this branch, owed by a canonical task that is still open, blocked by a named
+ * ownership profile that really forbids `web`, and pointed at a Frontend branch
+ * that really exists. This file enforces the other half, the one only it can see
+ * — that the operation really is still unreached.
+ */
+const PENDING_ADAPTERS: ReadonlySet<string> = new Set(
+  Object.entries(
+    repoJson<{
+      readonly operations?: Readonly<Record<string, { readonly classification?: string }>>;
+    }>('docs', 'phase-1', 'phase-1-28', 'adapter-reachability.json').operations ?? {}
+  )
+    .filter(([, entry]) => entry.classification === 'PENDING_FRONTEND_ADAPTER')
+    .map(([id]) => id)
+);
+
 /** Every operation id any canonical task binds, qualifiers dropped. */
 function canonicallyBoundOperations(): ReadonlySet<string> {
   const matrix = repoJson<{
@@ -395,7 +417,9 @@ describe('P1-28-QA-001 — every adapter is executed, and this file proves it', 
 
     const published = publishedAptRec();
     const administrative = new Set(administrativeAptRec());
-    const operator = published.filter((id) => !administrative.has(id) && !UNCONSUMED_READS.has(id));
+    const operator = published.filter(
+      (id) => !administrative.has(id) && !UNCONSUMED_READS.has(id) && !PENDING_ADAPTERS.has(id)
+    );
 
     const unreached = operator.filter((id) => !reached.has(id));
     expect(
@@ -431,12 +455,55 @@ describe('P1-28-QA-001 — every adapter is executed, and this file proves it', 
         'pending P1-28-OD-001; wire it deliberately or not at all'
     ).toEqual([]);
 
-    // Anti-vacuity for both derivations. An empty published set would make the
+    /*
+     * The pending-adapter surface, on exactly the same terms — and this is the
+     * staleness guard that keeps PENDING_FRONTEND_ADAPTER transitional.
+     *
+     * A pending entry says a Backend remediation published a read whose adapter
+     * its ownership profile forbade it to write. That claim is false the instant
+     * an adapter exists, so an entry that outlives its adapter fails HERE, in the
+     * one place that can tell: reachability is measured by running the adapters
+     * against a mocked transport, never by scanning source for path strings.
+     *
+     * When the Frontend branch wires the picker, this case goes red until the
+     * entry is deleted — which is the whole point. The debt cannot be paid
+     * silently, and it cannot be left behind either.
+     */
+    const reachedPending = [...reached].filter((id) => PENDING_ADAPTERS.has(id)).sort();
+    expect(
+      reachedPending,
+      'an adapter reaches an operation still declared PENDING_FRONTEND_ADAPTER; delete the entry ' +
+        'from docs/phase-1/phase-1-28/adapter-reachability.json in the same change that wired it'
+    ).toEqual([]);
+
+    /*
+     * Exhaustive derivation. Every published apt/rec operation is in EXACTLY one
+     * of the four buckets — reached, administrative, deliberately absent, pending
+     * — and nothing is in two. Without this the three exclusion lists could
+     * disagree, or an operation could fall between them and be judged by nobody,
+     * which is the silence this whole apparatus exists to prevent.
+     */
+    for (const id of published) {
+      const states = [
+        reached.has(id) && 'REACHABLE',
+        administrative.has(id) && 'ADMINISTRATIVE',
+        UNCONSUMED_READS.has(id) && 'DELIBERATELY_ABSENT',
+        PENDING_ADAPTERS.has(id) && 'PENDING_FRONTEND_ADAPTER',
+      ].filter(Boolean);
+      expect(states, `${id} is in ${states.length} states, not exactly one`).toHaveLength(1);
+    }
+
+    // Anti-vacuity for every derivation. An empty published set would make the
     // filter above trivially satisfied; an administration set that swallowed
-    // the operator surface would do the same, one layer down.
+    // the operator surface would do the same, one layer down; and a pending list
+    // that grew to cover the surface would hide an unwired product behind debt.
     expect(published.length).toBeGreaterThan(25);
-    expect(administrative.size).toBe(28);
+    expect(administrative.size).toBe(35);
     expect(operator.length).toBeGreaterThan(25);
+    // Seven: the FE-007 picker plus the six P1-18 contracts FE-017 and FE-018 own.
+    // The bound exists so the pending list cannot quietly grow to cover the surface
+    // — an unwired product hidden behind declared debt is the failure it guards.
+    expect(PENDING_ADAPTERS.size).toBeLessThan(9);
   });
 
   it('lets no unconsumed-read exclusion rest on this file’s own judgement', () => {
@@ -500,7 +567,11 @@ describe('P1-28-QA-001 — every adapter is executed, and this file proves it', 
       const operation = PUBLISHED_OPERATIONS.find((op) => op.operationId === id);
       return operation !== undefined && operation.method !== 'GET';
     });
-    expect(writes.length, 'the administration surface publishes no write').toBe(21);
+    // 25 since P1-18 published four more catalogue writes: the capture policy, and
+    // the damage-map template with its versions. Each is administration by the same
+    // reading as the twenty-one before it — gated by `rec.catalogue.manage`, which
+    // no role holds — so each is DELIBERATELY_ABSENT against P1-28-OD-001.
+    expect(writes.length, 'the administration surface publishes no write').toBe(25);
 
     for (const id of writes) {
       const entry = manifest.operations[id];
@@ -1083,7 +1154,7 @@ describe('P1-28-QA-003 — scope is resolved by the server, and asserted by nobo
     return { id: resolveOperation(method, path)?.operationId ?? '', call: JSON.stringify(call) };
   }
 
-  it('derived a real rule, and in this phase it names exactly four operations', () => {
+  it('derived a real rule, and in this phase it names exactly five operations', () => {
     // Anti-vacuity first: a set that had become everything, or nothing, would
     // make the sweep below meaningless. The rule is platform-wide by
     // construction — it holds for every collection read and every create — so
@@ -1093,6 +1164,12 @@ describe('P1-28-QA-003 — scope is resolved by the server, and asserted by nobo
     expect([...BRANCH_ADDRESSED].filter((id) => /^(apt|rec)\./.test(id)).sort()).toEqual([
       'apt.appointment-create',
       'apt.appointment-list',
+      // The FE-007 picker is branch-addressed for the same reason the two
+      // collection reads are: which employees may accept custody depends on the
+      // branch, so the branch is a resource selector carried as the
+      // authorization target, not a filter the client applies afterwards.
+      // ('receiving' sorts before 'reception': 'i' precedes 'p'.)
+      'rec.receiving-employee-list',
       'rec.reception-create',
       'rec.reception-list',
     ]);

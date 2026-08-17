@@ -33,13 +33,13 @@ the candidate, and refuses either half that fails to name an unclosed task.
 
 ## The frozen candidate
 
-| Binding           | Value                                                                             |
-| ----------------- | --------------------------------------------------------------------------------- |
-| `FINAL_CODE_SHA`  | `04b3f6d81ca7da02c435560bc3c43d09dcbf793f`                                        |
-| `FINAL_CODE_TREE` | `c948dbbe6ce52cc3c912ceb96262838aca73b040`                                        |
-| Branch            | `remediation/p1-15-reception-document-foundation`                                 |
-| Pull request      | not yet opened, base `develop`, 6 commits ahead                                   |
-| Subject           | `fix(p1-15): the scanner handoff is SECURITY INVOKER, and the grants are bounded` |
+| Binding           | Value                                                  |
+| ----------------- | ------------------------------------------------------ |
+| `FINAL_CODE_SHA`  | `d9492ed680d287db6ca5c45297c0674ef6feea9a`             |
+| `FINAL_CODE_TREE` | `e5d78364d1c68ed245ed56cb414a2c1bda8fe379`             |
+| Branch            | `remediation/p1-15-reception-document-foundation`      |
+| Pull request      | **#232**, base `develop`, 25 commits ahead             |
+| Subject           | `fix(ci): raise the schema baseline for migration 123` |
 
 The previous candidate was `7b1252edebb5d7f48451213c71ab832cb44e46b5`, tree
 `1ef831d2ecfcf94d07b73857b7448c3b424faca3`, on
@@ -762,6 +762,8 @@ from the verdicts file on every run: a fourth task turning PARTIAL fails
   proved — the operator's exact coordinates travel unrounded, the mark is
   placeable by keyboard, it clamps at the contract bounds and it refuses a blank
   coordinate by name.
+
+- **`FE-017` — PARTIAL.** Four contracts published with no Frontend adapter: the evidence binding trio and the capture override, all declared `PENDING_FRONTEND_ADAPTER` and owed by feature/p1-28-owner-decisions-frontend.
 
 ### `P1-28-FE-018` — customer signature capture · **PARTIAL**
 

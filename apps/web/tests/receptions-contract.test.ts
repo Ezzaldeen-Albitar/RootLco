@@ -137,7 +137,17 @@ describe('every module row mirrors the generated manifest and the published docu
 
   it('partitions the table into an operator and an administration surface', () => {
     // Anti-vacuity for the partition the narrowed pins below depend on.
-    expect(OPERATOR_OPERATIONS.length).toBe(26);
+    // 27 / 23, from a base of 20 / 16 plus two independent additions.
+    //
+    // P1-18 adds the reception evidence, capture-policy and damage-map template
+    // contracts: six operator rows and seven administration ones.
+    //
+    // FE-007 adds the receiving-employee picker, and it lands on the OPERATOR
+    // side even though its route sits among the catalogues: the partition is
+    // drawn by PERMISSION, and it registers `rec.reception.manage` — the
+    // authority to take a vehicle in — rather than `rec.catalogue.manage`, which
+    // is the authority to define what the catalogues are.
+    expect(OPERATOR_OPERATIONS.length).toBe(27);
     expect(ADMINISTRATION_OPERATIONS.length).toBe(23);
     expect(OPERATOR_OPERATIONS.length + ADMINISTRATION_OPERATIONS.length).toBe(
       RECEPTION_OPERATIONS.length

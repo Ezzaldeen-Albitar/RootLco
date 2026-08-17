@@ -32,11 +32,11 @@
       "bytes": 17702
     },
     "docs/phase-1/phase-1-27/clean-room-evidence.md": {
-      "sha256": "1480ae348e2a82e2d3c68d020b5f79ee8b18dfb05f4cf5c8411e8cff6add0e7c",
+      "sha256": "14852e2ae21aad1c7801877722b1df078e6b51896aa80f5ae22142bdea707b8c",
       "bytes": 23731
     },
     "docs/phase-1/phase-1-27/closure-record.md": {
-      "sha256": "47b6599e35ecfa9da20956742d313ef3a9a774fd38f192f1410e0ff73416b5b4",
+      "sha256": "6de0ceb7c33ac18b5b213a4420449971e847142eca648667c7c76c5855334bda",
       "bytes": 8630
     },
     "docs/phase-1/phase-1-27/continuation-checkpoint.md": {
@@ -48,7 +48,7 @@
       "bytes": 24145
     },
     "docs/phase-1/phase-1-27/deliverable-manifest.md": {
-      "sha256": "11a435a4307950776f60fec6faf45c436c1550e4759e753294a58df7a77f33b2",
+      "sha256": "cfbf032527e2b54ee9570abd9d409e453010661db9605e851077c3f9b74096d7",
       "bytes": 144646
     },
     "docs/phase-1/phase-1-27/developer-guide.md": {
@@ -60,19 +60,19 @@
       "bytes": 81669
     },
     "docs/phase-1/phase-1-27/evidence/closing-value-ledger.json": {
-      "sha256": "a00a4513b08bb5037e9f1b6c7d997462b98a1ca08ac853de49cebdf17ae28bc0",
-      "bytes": 50227
+      "sha256": "01c92d775b18b32f3369cfb11a047c2c0c4da77ef3c236f21381fb06f27c46a4",
+      "bytes": 50338
     },
     "docs/phase-1/phase-1-27/evidence/lifecycle-ledger.json": {
       "sha256": "c2bc3e5bd353ee54ccaefd8286573a5be5c09f91bbb01ea9af7fa5fe72aebf1e",
       "bytes": 9208
     },
     "docs/phase-1/phase-1-27/evidence/local-run-ledger.json": {
-      "sha256": "4db7e48dc09a4f4cf0da6da8095876cd65da8860f217e6cc8d8b81da5cc05e10",
+      "sha256": "371f854421ae2aa20ae347457fae3826b1f31871eee7374a0422a466c86c35be",
       "bytes": 1201
     },
     "docs/phase-1/phase-1-27/evidence/task-traceability.md": {
-      "sha256": "8e284a88c653297c0fc71842d548beb6d68e9c5c65921b132d9de0bb6bb4ec07",
+      "sha256": "508ba0519105a278a943d2ebd28ba0952a255e59c3f88671766d787bdc0561c9",
       "bytes": 113394
     },
     "docs/phase-1/phase-1-27/evidence/test-catalogue-traceability.json": {
@@ -152,7 +152,7 @@
       "bytes": 62211
     },
     "docs/phase-1/phase-1-27/risk-register.md": {
-      "sha256": "9c5c38d361d662691680a67f6202efe8f15b367a3f31aa94e22c7a3b030c8f58",
+      "sha256": "9411a5d5006eda81485bac286722467c46125fa846c672a6753b6fd7a5f455a2",
       "bytes": 187800
     },
     "docs/phase-1/phase-1-27/task-matrix-verdicts.json": {

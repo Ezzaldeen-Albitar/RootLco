@@ -212,7 +212,13 @@ async function openReception(
     companyId: input.companyId ?? COMPANY_A1,
     branchId: input.branchId ?? BRANCH_A1,
     vehicleId,
-    receivingEmployeeId: USER_APPROVER,
+    // The receiving employee follows the TENANT. DBCR-P1-18-002 gave the column a
+    // same-tenant FK and an insert-time eligibility guard, so the tenant-A
+    // USER_APPROVER this fixture passed unconditionally now draws a 422
+    // `ineligible_reference` on the tenant-B visit this suite builds to prove
+    // isolation — meaning the isolation was being asserted against a visit that
+    // could not exist.
+    receivingEmployeeId: tenantId === TENANT_B ? USER_TENANT_B : USER_APPROVER,
     serviceRequesterPartnerId: input.partnerId ?? PARTNER_A,
     origin: { kind: 'walk_in' },
   });

@@ -291,6 +291,15 @@ jobs:
           # the next commit. It still rides that path too — this is an additional
           # naming, not a replacement.
           npm run validate:p1-28-evidence
+          # The READ reachability authority, and the PENDING_FRONTEND_ADAPTER
+          # lifecycle. It reads documents, the operation register, the matrix,
+          # the verdicts and the two contract mirrors — no browser, no database
+          # — so it belongs in the FAST static job by the same reading as the
+          # three above it. The placement is the point: this gate is the only
+          # thing standing between a published-but-unwired read and a phase
+          # calling itself complete, and a gate met forty minutes late is met
+          # after the claim has already been written down.
+          npm run validate:p1-28-adapter-reachability
 
       # =======================================================================
       # Changed-file ownership — P1-27-DO-003.

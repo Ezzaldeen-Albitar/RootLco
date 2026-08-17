@@ -138,7 +138,7 @@ sit in the tree looking like coverage while running nowhere.
 ## Current tree
 
 The live web suite holds **98 web test files**, every one matched by a `vitest`
-project, and the current tree executes **2728** tests. Both are derived on every
+project, and the current tree executes **2742** tests. Both are derived on every
 run of `npm run validate:p1-27-closing-values` rather than recorded by hand.
 
 That executed figure is the one a test reads. It used to read the `Web tier` row
@@ -149,7 +149,7 @@ comparing a live baseline against a record of a head the branch had left behind.
 The superseded figures are left exactly as they were, because they are a true
 account of that head; what moved is which number the check consults.
 
-**The 2728 is local, and it is the binding measurement.** It is the output of
+**The 2742 is local, and it is the binding measurement.** It is the output of
 `node scripts/ci/check-p1-27-closing-values.mjs --record web` against this tree,
 recorded in `evidence/local-run-ledger.json` with the commit it was taken at. A
 hosted run at a superseded head agreed with it, and that agreement is recorded
@@ -161,15 +161,13 @@ different tree is not evidence about this one.
 | measure                                    | value | the command that decides it                                       |
 | ------------------------------------------ | ----- | ------------------------------------------------------------------ |
 | Web test files under `apps/web/tests`       | 98    | a walk of the tree                                                 |
-| Web tier — tests executed                   | 2728  | `--record web`, from the `vitest` JSON report                      |
+| Web tier — tests executed                   | 2742  | `--record web`, from the `vitest` JSON report                      |
 | Web tier — files the run reported           | 98    | the same report, cross-checked against the walk above              |
-| Root unit tier — tests executed             | 2658  | `--record unit`, from the `vitest` JSON report                     |
-| Root unit tier — files the run reported     | 100   | the same report, cross-checked against the tier's include rule      |
+| Root unit tier — tests executed             | 2717  | `--record unit`, from the `vitest` JSON report                     |
+| Root unit tier — files the run reported     | 102   | the same report, cross-checked against the tier's include rule      |
 | Committed web floor (`minTests`)            | 2500  | `.github/ci-baselines/test-count-baseline.json`                    |
 | Committed unit floor (`minTests`)           | 1050  | the same baseline                                                  |
 | Migrations on disk                          | 123   | a walk of `supabase/migrations`                                    |
-| Committed migration baseline                | 123   | `.github/ci-baselines/schema-baseline.json`, `migrationCount`      |
-| Committed schema hash                       | `53b26a711d28d3ce2c348877d71dabb12a8dc6bbb292efc66c2ad50090b0e738` | the same baseline, `schemaHash` |
 
 The floor and the measurement are different questions and they have different
 authorities. The baseline file defines the FLOOR, so binding "the floor is 2500"
@@ -187,22 +185,10 @@ the tree was running.
 | `CODE_CANDIDATE_SHA`                                 | `501f5f0d48d7b8cafc12dad51f6c501534b66a18`  |
 | Executable paths changed, candidate to accepted `develop` | 0                                      |
 
-The migration count appears three times on purpose, and a fourth time that is
-NOT the same claim. The first is a walk of the filesystem, the second is
-`git ls-tree` at `HEAD`, and the third is what `schema-baseline.json` commits;
-a disagreement between the first two is an untracked migration, and a
-disagreement with the third is a baseline that has fallen behind the tree — a
-thing that can happen, and which no one of the three answers detects alone.
-
-The fourth is `Migrations applied` in the superseded hosted table below, and it
-is deliberately NOT any of these. It is what a specific historical head really
-carried, so it does not move when the tree does. `QA-005` used to compare that
-historical figure against the CURRENT committed baseline, which meant the
-baseline could not be raised without breaking a gate that was measuring
-something else — the obligation `schema-baseline.json` recorded under
-`pendingMeasurementNote`. The bindings are separated here: the historical row
-answers to the superseded head, and `Committed migration baseline` above
-answers to the baseline file.
+The migration count appears twice on purpose. The first is a walk of the
+filesystem and the second is `git ls-tree` at `HEAD`; a disagreement between them
+is an untracked migration, which is a thing that can happen and which neither
+answer detects alone.
 
 The candidate row and the zero beneath it are one claim read together: the
 frozen code candidate resolves as a commit in this repository, and no executable

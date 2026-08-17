@@ -6288,7 +6288,11 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-18-reception-create.test.ts", "tests/ci/phase-ownership.test.ts"],
+      "tests": [
+        "tests/backend/p1-18-reception-create.test.ts",
+        "tests/ci/p1-28-adapter-reachability.test.ts",
+        "tests/ci/phase-ownership.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/reception-catalogue/receiving-employees/route.ts"
     },
@@ -6716,7 +6720,8 @@
       "tests": [
         "tests/backend/p1-18-reception-approval.test.ts",
         "tests/backend/p1-18-reception-create.test.ts",
-        "tests/backend/p1-18-scope-containment.test.ts"
+        "tests/backend/p1-18-scope-containment.test.ts",
+        "tests/ci/p1-28-adapter-reachability.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/receptions/route.ts"
@@ -8134,7 +8139,7 @@
       "domain": "shared-services",
       "method": "POST",
       "route": "/api/v1/attachments/documents/{documentId}/download-authorizations",
-      "permissions": ["shared.document.read"],
+      "permissions": ["shared.document.manage"],
       "public": false,
       "scope": "tenant",
       "transaction": "transactional write",
@@ -8346,6 +8351,7 @@
       "tests": [
         "tests/backend/p1-15-attachments-notifications.test.ts",
         "tests/backend/p1-15-operation-routes.test.ts",
+        "tests/db/shared-document-evidence-lifecycle.test.ts",
         "tests/foundation/p1-15-catalogs.test.ts"
       ],
       "classification": "Covered",
@@ -8510,7 +8516,7 @@
       "domain": "shared-services",
       "method": "GET",
       "route": "/api/v1/attachments/documents/{documentId}",
-      "permissions": ["shared.document.read"],
+      "permissions": ["shared.document.manage"],
       "public": false,
       "scope": "tenant",
       "transaction": "read (no business mutation)",

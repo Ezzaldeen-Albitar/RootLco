@@ -12,8 +12,8 @@
     "Documentation": 2
   },
   "totals": {
-    "PASS": 32,
-    "PARTIAL": 3,
+    "PASS": 31,
+    "PARTIAL": 4,
     "FAIL": 0
   },
   "protectedReproof": {
@@ -269,6 +269,7 @@
       "CANONICAL_BACKEND_OPERATIONS": [
         "rec.reception-create",
         "iam.user-list",
+        "rec.receiving-employee-list",
         "rec.reception-list",
         "rec.reception-detail"
       ],
@@ -663,7 +664,11 @@
         "shared.attachment-upload-authorize",
         "shared.attachment-version-register",
         "shared.attachment-link-create",
-        "shared.document-read"
+        "shared.document-read",
+        "rec.reception-evidence-binding",
+        "rec.reception-evidence-binding-finalize",
+        "rec.reception-evidence-binding-list",
+        "rec.reception-capture-override"
       ],
       "CANONICAL_TEST_ID": "TC-P1-28-REC-009",
       "IMPLEMENTATION_SURFACES": "`apps/web/src/features/receptions/media/media-decision.ts` (187 lines: the closed status constant, the three surfaces, the four things the Owner must decide, and — added at this head — the three independent document-chain blockers at `:141-174`) rendered by `apps/web/src/features/receptions/media/MediaDecisionNotice.tsx` and registered as a wizard step through `apps/web/src/features/receptions/components/steps/MediaStep.tsx` at `apps/web/src/features/receptions/check-in/steps.tsx:94-107`.",
@@ -692,8 +697,8 @@
       "PROTECTED_REPROOF_STATUS": "PENDING_PROTECTED_MERGE",
       "FINDING_IDS": "`P1-OD-025` OPEN (Owner decision); `G-MEDIA` OPEN (R8 deferred); Owner rows 12-14 Blocked (INT-093/094/095). All three are named on screen rather than left to be discovered.",
       "DOCUMENTATION_EVIDENCE": "`canonical-plan.md` §7 (`P1-OD-025` disposition: decision-neutral foundation) and §10 (media wording); `media-capture-decision-record.md` — the Owner-facing half of the same statement; `p1-28-guidance-reconciliation.test.ts` \"‘nothing takes, chooses or records a picture’ — and the screen says it\".",
-      "FINAL_VERDICT": "PASS",
-      "VERDICT_RATIONALE": "I applied DECISION-NEUTRALITY as the DoD, not working capture, and I say so explicitly: plan §7 dispositions `P1-OD-025` as a decision-neutral foundation with capture blocked, and the P1-27 `FE-027` precedent closed the same shape on the honest notice. Measured against that DoD the row is complete and unusually well proved — the decision is named as a closed constant rather than a feature flag, the four open questions are listed without answering any, the fifteen strings are pinned exactly in both catalogues with a sixteenth-string guard, no size or file type is invented in either script, the notice sits where the camera would have been and survives a terminal visit, and the absence of any capture control is swept across every wizard step and both entry screens with a PLANTED affordance proving the sweep can fail. It is also the one P1-28 surface with a clean axe run in both directions. Judged against working capture it would be a FAIL — but that is not this task's DoD while the decision is open."
+      "FINAL_VERDICT": "PARTIAL",
+      "VERDICT_RATIONALE": "RE-ADJUDICATED when P1-18 published the contracts this task consumes. The upload half is complete and unchanged: authorize, register an immutable version, link it, read it back. What is NOT complete is the half P1-18 has just made expressible — an uploaded version only counts against a capture requirement once it is BOUND to that requirement and the binding is finalised, and a required capture can now be waived with an attributable reason. FE-017 canonically owns those four operations (canonical-plan.md §5) and none of them has a production adapter, so they stand as PENDING_FRONTEND_ADAPTER in docs/phase-1/phase-1-28/adapter-reachability.json against feature/p1-28-owner-decisions-frontend. This is not a regression in what shipped; it is the task’s scope becoming visible. Before P1-18 the binding did not exist to be missing, and a PASS recorded against a surface whose evidence never counted would have been the kind of claim this matrix exists to prevent. It returns to PASS when the Frontend branch wires the four adapters and their consumers, at which point QA-001 derives REACHABLE and the pending entries must be deleted in the same change. I applied DECISION-NEUTRALITY as the DoD, not working capture, and I say so explicitly: plan §7 dispositions `P1-OD-025` as a decision-neutral foundation with capture blocked, and the P1-27 `FE-027` precedent closed the same shape on the honest notice. Measured against that DoD the row is complete and unusually well proved — the decision is named as a closed constant rather than a feature flag, the four open questions are listed without answering any, the fifteen strings are pinned exactly in both catalogues with a sixteenth-string guard, no size or file type is invented in either script, the notice sits where the camera would have been and survives a terminal visit, and the absence of any capture control is swept across every wizard step and both entry screens with a PLANTED affordance proving the sweep can fail. It is also the one P1-28 surface with a clean axe run in both directions. Judged against working capture it would be a FAIL — but that is not this task's DoD while the decision is open."
     },
     {
       "TASK_ID": "FE-018",
@@ -701,7 +706,9 @@
       "CANONICAL_REQUIREMENT": "Reception signature capture",
       "CANONICAL_SOURCE": "docs/phase-1/phase-1-28/canonical-plan.md — the Frontend task table",
       "CANONICAL_BACKEND_OPERATIONS": [
-        "rec.reception-signature"
+        "rec.reception-signature",
+        "rec.reception-signature-event",
+        "rec.reception-signature-list"
       ],
       "CANONICAL_TEST_ID": "TC-P1-28-REC-010",
       "IMPLEMENTATION_SURFACES": "`apps/web/src/features/receptions/components/steps/SignatureStep.tsx` (211 lines), registered at `apps/web/src/features/receptions/check-in/steps.tsx:108-113`. It renders the block statement as a `role=\"note\"` region (`SignatureStep.tsx:99-110`), the no-read-back statement (`:122`), the vocabularies and hash bound it would record (`:131-163`) and the visit’s active parties from `rec.reception-party-role-list` (`:87`, `:170-208`). The adapter `recordSignature` exists in `apps/web/src/features/receptions/api.ts` and this file deliberately contains no call to it.",

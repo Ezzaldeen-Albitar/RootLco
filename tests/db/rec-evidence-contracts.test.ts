@@ -164,10 +164,23 @@ async function seedDocument(input: {
        VALUES ($1,$2,'harness','clean',now(),$3)`,
       [tenantId, versionId, USER_A]
     );
-    await admin.query(
-      `UPDATE shared.document_versions SET status='accepted', accepted_at=now() WHERE id=$1`,
-      [versionId]
-    );
+    /*
+     * Through `scanning`, not around it. P1-15's
+     * `guard_document_version_transition` refuses pending -> accepted outright:
+     * a version reaches `accepted` only from `scanning`, and only with a clean
+     * scan and no infected one. Jumping the step raised "document version must
+     * enter scanning before acceptance" and took three cases with it.
+     *
+     * The fixture consumes that lifecycle rather than restating it, which is the
+     * point of P1-15 owning it — the guard stamps `scanning_at` and `accepted_at`
+     * itself, so neither is set here.
+     */
+    await admin.query(`UPDATE shared.document_versions SET status='scanning' WHERE id=$1`, [
+      versionId,
+    ]);
+    await admin.query(`UPDATE shared.document_versions SET status='accepted' WHERE id=$1`, [
+      versionId,
+    ]);
   } else if (state === 'quarantined' || state === 'rejected') {
     await admin.query(
       `UPDATE shared.document_versions
@@ -181,10 +194,68 @@ async function seedDocument(input: {
   return { documentId, versionId };
 }
 
+/**
+ * The four permission codes the migration's own policies gate on, read off the
+ * migration rather than guessed: every `iam.has_permission_in_scope('…')` in
+ * `20260815100000_rec_reception_evidence_contracts.sql`.
+ */
+const POLICY_PERMISSIONS = [
+  'rec.catalogue.manage',
+  'rec.reception.evidence.manage',
+  'rec.reception.evidence.override',
+  'rec.reception.signature.manage',
+] as const;
+
+/** The platform system actor. A grant may not be awarded by its own grantee. */
+const PLATFORM_ACTOR = '00000000-0000-4000-8000-000000000001';
+
+const ROLE_EVIDENCE_A = 'a0000000-0000-4000-8000-00000f1180c1';
+
+/**
+ * Gives USER_A the authority the PERMITTED paths need, in tenant A only.
+ *
+ * Without this every positive case in this suite is refused by RLS — the insert
+ * policies all end in `iam.has_permission_in_scope(...)`, `ensureOrgFixtures`
+ * creates user ACCOUNTS and no grants, and the suite seeded none of its own. So
+ * four cases here could never have passed; they were not a regression, they had
+ * never been run against a principal that could satisfy them.
+ *
+ * This does not weaken a single refusal in this file. The `42501`s prove
+ * APPEND-ONLY — `app_runtime` holds no UPDATE or DELETE grant on `rec.signatures`
+ * — which no permission code can confer. The `23514`s prove the guards. The
+ * isolation block runs in tenant B, where this grant does not reach. Every
+ * refusal that was refused before is still refused for the same reason.
+ */
+async function seedEvidencePrincipal(): Promise<void> {
+  await admin.query(
+    `INSERT INTO iam.roles (id, tenant_id, role_code, name, is_system, created_by)
+     VALUES ($1, $2, 'fx_p118_evidence', 'Fixture P1-18 Evidence', false, $3)
+     ON CONFLICT (id) DO NOTHING`,
+    [ROLE_EVIDENCE_A, TENANT_A, USER_A]
+  );
+  await admin.query(
+    `INSERT INTO iam.role_permissions (tenant_id, role_id, permission_id, effect, created_by)
+     SELECT $1, $2, p.id, 'allow', $3 FROM iam.permissions p
+      WHERE p.permission_code = ANY($4::text[])
+     ON CONFLICT (tenant_id, role_id, permission_id) DO NOTHING`,
+    [TENANT_A, ROLE_EVIDENCE_A, USER_A, [...POLICY_PERMISSIONS]]
+  );
+  // `granted_by` is the platform actor, not the grantee: `ck_role_grants_no_self_grant`
+  // refuses a grant somebody awarded themselves.
+  await admin.query(
+    `INSERT INTO iam.role_grants
+       (tenant_id, user_id, role_id, scope_mode, status, granted_by, created_by)
+     VALUES ($1, $2, $3, 'unrestricted', 'active', $4, $4)
+     ON CONFLICT DO NOTHING`,
+    [TENANT_A, USER_A, ROLE_EVIDENCE_A, PLATFORM_ACTOR]
+  );
+}
+
 beforeAll(async () => {
   admin = adminPool();
   await ensureTestLogins(admin);
   await ensureOrgFixtures(admin);
+  await seedEvidencePrincipal();
   runtime = runtimePool();
 });
 
@@ -329,10 +400,12 @@ describe('FE-018 — a version that is not accepted can never become evidence', 
        VALUES ($1,$2,'harness','clean',now(),$3)`,
       [TENANT_A, doc.versionId, USER_A]
     );
-    await admin.query(
-      `UPDATE shared.document_versions SET status='accepted', accepted_at=now() WHERE id=$1`,
-      [doc.versionId]
-    );
+    await admin.query(`UPDATE shared.document_versions SET status='scanning' WHERE id=$1`, [
+      doc.versionId,
+    ]);
+    await admin.query(`UPDATE shared.document_versions SET status='accepted' WHERE id=$1`, [
+      doc.versionId,
+    ]);
 
     await withRolledBackTx(runtime, contextA(), async (c) => {
       const id = (
@@ -419,11 +492,21 @@ describe('FE-018 — a version that is not accepted can never become evidence', 
           )
         ).rows
       ).toHaveLength(1);
+      /*
+       * Each refusal gets its own savepoint. Two expected failures back to back
+       * without one means the FIRST aborts the transaction and the second reports
+       * 25P02 — so the DELETE would never actually be tested, and the append-only
+       * claim would rest on an error about transaction state.
+       */
+      await c.query('SAVEPOINT s3');
       await expectSqlState(
         c.query(`UPDATE rec.signatures SET purpose='other' WHERE id='${signature}'`),
         '42501'
       );
+      await c.query('ROLLBACK TO SAVEPOINT s3');
+      await c.query('SAVEPOINT s4');
       await expectSqlState(c.query(`DELETE FROM rec.signatures WHERE id='${signature}'`), '42501');
+      await c.query('ROLLBACK TO SAVEPOINT s4');
     });
   });
 
@@ -529,6 +612,10 @@ describe('FE-012 — a retired revision is history, not a choice', () => {
     );
     const later = await openVisit();
     await withRolledBackTx(runtime, contextA(), async (c) => {
+      // The refusal ABORTS the transaction, so the read that follows it needs a
+      // savepoint to return to — without one it raises 25P02 and the second half
+      // of the rule is never actually tested.
+      await c.query('SAVEPOINT retired_probe');
       await expectSqlState(
         c.query(
           `INSERT INTO rec.damage_maps
@@ -539,6 +626,7 @@ describe('FE-012 — a retired revision is history, not a choice', () => {
         ),
         '23514'
       );
+      await c.query('ROLLBACK TO SAVEPOINT retired_probe');
       // And it is still readable, which is the other half of the rule.
       const readable = await c.query(
         `SELECT status FROM rec.damage_map_template_versions WHERE id='${version}'`

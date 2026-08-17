@@ -561,14 +561,41 @@ CREATE TRIGGER tg_damage_maps_template_immutable
 CREATE OR REPLACE FUNCTION rec.guard_signature_evidence()
 RETURNS trigger LANGUAGE plpgsql SECURITY INVOKER SET search_path = '' AS $$
 DECLARE v_status text; v_category text; v_link_purpose text; v_prior_visit uuid;
+        v_owner_document uuid;
 BEGIN
-  SELECT v.status, c.category_code, c.business_link_purpose
-    INTO v_status, v_category, v_link_purpose
+  -- Two DIFFERENT failures, deliberately told apart.
+  --
+  -- Resolving the version and the document in ONE predicate collapses them: a
+  -- version that belongs to another document in the SAME tenant then reports
+  -- "not visible", the service maps foreign_key_violation to ERR-RES-001, and the
+  -- caller gets 404 for a pair it can see both halves of. That is wrong twice —
+  -- it hides a client error behind a missing-resource answer, and it contradicts
+  -- rec.guard_signature_version (Phase 1-8), which calls the same mismatch a
+  -- check_violation.
+  --
+  -- So: resolve the VERSION within the tenant first. Absent means genuinely not
+  -- visible, and stays a foreign_key_violation — the anti-probing answer, which
+  -- must not become a hint that the row exists somewhere. Only once the version
+  -- is visible do we ask whether it belongs to the named document, and a
+  -- mismatch there is an incoherent reference the caller supplied: 23514, which
+  -- the service already maps to ERR-VAL-001.
+  SELECT v.status, v.document_id INTO v_status, v_owner_document
     FROM shared.document_versions v
-    JOIN shared.documents d ON d.tenant_id = v.tenant_id AND d.id = v.document_id
+   WHERE v.tenant_id = NEW.tenant_id AND v.id = NEW.signature_document_version_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'signature document/version is not visible'
+      USING ERRCODE = 'foreign_key_violation';
+  END IF;
+  IF v_owner_document IS DISTINCT FROM NEW.signature_document_id THEN
+    RAISE EXCEPTION 'signature version % does not belong to document %',
+      NEW.signature_document_version_id, NEW.signature_document_id
+      USING ERRCODE = 'check_violation';
+  END IF;
+  SELECT c.category_code, c.business_link_purpose INTO v_category, v_link_purpose
+    FROM shared.documents d
     JOIN shared.document_categories c ON c.id = d.category_id
-   WHERE v.tenant_id = NEW.tenant_id AND v.id = NEW.signature_document_version_id
-     AND d.id = NEW.signature_document_id AND d.deleted_at IS NULL;
+   WHERE d.tenant_id = NEW.tenant_id AND d.id = NEW.signature_document_id
+     AND d.deleted_at IS NULL;
   IF NOT FOUND THEN
     RAISE EXCEPTION 'signature document/version is not visible'
       USING ERRCODE = 'foreign_key_violation';
@@ -874,3 +901,58 @@ GRANT SELECT ON rec.signature_events TO app_readonly;
 -- a TABLE-level INSERT grant to app_runtime, which covers every column including
 -- one added later. A column grant here would read as a narrowing that does not
 -- exist.
+
+-- ---------------------------------------------------------------------------
+-- Covering indexes for the six foreign keys that had none.
+--
+-- Derived from the rebuilt database, not from reading this file: for every FK on
+-- the six tables above, the FK's columns were compared against each index's
+-- LEADING columns. Seven were already served -- the two visit bindings, the
+-- template/version pair, the signature-event pair and the two tenant-only keys,
+-- each covered by a unique constraint whose leading columns match. Six were not.
+--
+-- An index that merely mentions the columns does not serve the key: a lookup on
+-- (tenant_id, document_id) cannot use an index led by
+-- (tenant_id, company_id, branch_id, reception_visit_id). That is why "there are
+-- already six CREATE INDEX statements in this migration" was not an answer to
+-- the question, and why the check that found these compared column ORDER rather
+-- than counting index statements.
+--
+-- Each matters at delete/update time on the PARENT: without them PostgreSQL
+-- sequentially scans the child to enforce the constraint, and the document
+-- tables these reference are exactly the ones P1-15 made append-heavy.
+CREATE INDEX ix_capture_policy_rules_branch
+  ON rec.capture_policy_rules (tenant_id, company_id, branch_id);
+
+CREATE INDEX ix_damage_map_templates_branch
+  ON rec.damage_map_templates (tenant_id, company_id, branch_id);
+
+CREATE INDEX ix_damage_map_template_versions_document
+  ON rec.damage_map_template_versions (tenant_id, document_id);
+
+CREATE INDEX ix_damage_map_template_versions_file
+  ON rec.damage_map_template_versions (tenant_id, document_version_id);
+
+CREATE INDEX ix_reception_evidence_bindings_document
+  ON rec.reception_evidence_bindings (tenant_id, document_id);
+
+CREATE INDEX ix_reception_evidence_bindings_version
+  ON rec.reception_evidence_bindings (tenant_id, document_version_id);
+
+-- Two more, found by the repository's OWN gate (P1-03-DB-017) after the six
+-- above, and both are cases a hand-rolled check waves through:
+--
+--  * fk_signature_event_signature is "covered" by uq_signature_event_finalized,
+--    whose leading columns match exactly -- but that index is PARTIAL, so it
+--    serves only the rows its predicate admits and cannot enforce the key. An
+--    index that matches on column order and still does not cover is precisely
+--    why the count of CREATE INDEX statements is never the answer.
+--
+--  * fk_signatures_replaces sits on rec.signatures, an EXISTING table this
+--    migration adds a column to. A sweep scoped to "the six new tables" cannot
+--    see it, which is how it survived the first pass.
+CREATE INDEX ix_signature_events_signature
+  ON rec.signature_events (tenant_id, signature_id);
+
+CREATE INDEX ix_signatures_replaces
+  ON rec.signatures (tenant_id, replaces_signature_id);

@@ -36,8 +36,8 @@
       "class": "DERIVABLE_LOCAL",
       "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
-      "locator": "the current tree executes **2728** tests",
-      "value": "2728",
+      "locator": "the current tree executes **2742** tests",
+      "value": "2742",
       "binding": {
         "kind": "run",
         "tier": "web",
@@ -50,8 +50,8 @@
       "class": "DERIVABLE_LOCAL",
       "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
-      "locator": "**The 2728 is local, and it is the binding measurement.**",
-      "value": "2728",
+      "locator": "**The 2742 is local, and it is the binding measurement.**",
+      "value": "2742",
       "binding": {
         "kind": "run",
         "tier": "web",
@@ -77,8 +77,8 @@
       "class": "DERIVABLE_LOCAL",
       "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
-      "locator": "| Web tier — tests executed                   | 2728  | `--record web`, from the `vitest` JSON report                      |",
-      "value": "2728",
+      "locator": "| Web tier — tests executed                   | 2742  | `--record web`, from the `vitest` JSON report                      |",
+      "value": "2742",
       "binding": {
         "kind": "run",
         "tier": "web",
@@ -104,8 +104,8 @@
       "class": "DERIVABLE_LOCAL",
       "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
-      "locator": "| Root unit tier — tests executed             | 2658  | `--record unit`, from the `vitest` JSON report                     |",
-      "value": "2658",
+      "locator": "| Root unit tier — tests executed             | 2717  | `--record unit`, from the `vitest` JSON report                     |",
+      "value": "2717",
       "binding": {
         "kind": "run",
         "tier": "unit",
@@ -118,8 +118,8 @@
       "class": "DERIVABLE_LOCAL",
       "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
-      "locator": "| Root unit tier — files the run reported     | 100   | the same report, cross-checked against the tier's include rule      |",
-      "value": "100",
+      "locator": "| Root unit tier — files the run reported     | 102   | the same report, cross-checked against the tier's include rule      |",
+      "value": "102",
       "binding": {
         "kind": "run",
         "tier": "unit",
@@ -164,36 +164,6 @@
         "table": "counts",
         "name": "supabase/migrations"
       }
-    },
-    {
-      "id": "CR-A-MIGRATIONS-BASELINE-ROW",
-      "class": "DERIVABLE_LOCAL",
-      "standing": "CURRENT",
-      "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
-      "locator": "| Committed migration baseline                | 123   | `.github/ci-baselines/schema-baseline.json`, `migrationCount`      |",
-      "value": "123",
-      "binding": {
-        "kind": "schemaBaseline",
-        "field": "migrationCount"
-      },
-      "why": "The row QA-005 compares against the committed baseline. It exists because that check used to read `Migrations applied` in the superseded hosted table, which is what one historical head carried and does not move when the tree does — so one row answered to two moving reference points and the baseline could not be raised without breaking a gate measuring something else. Deliberately the same number as CR-A-MIGRATIONS-DISK-ROW and CR-B-MIGRATIONS-GIT by a third route: a disagreement here is a baseline that has fallen behind the tree, which neither of the other two detects."
-    },
-    {
-      "id": "CR-A-SCHEMA-HASH-BASELINE",
-      "class": "DERIVABLE_LOCAL",
-      "standing": "CURRENT",
-      "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
-      "locator": "| Committed schema hash                       | `53b26a711d28d3ce2c348877d71dabb12a8dc6bbb292efc66c2ad50090b0e738` | the same baseline, `schemaHash` |",
-      "value": "53b26a711d28d3ce2c348877d71dabb12a8dc6bbb292efc66c2ad50090b0e738",
-      "binding": {
-        "kind": "schemaBaseline",
-        "field": "schemaHash"
-      },
-      "boundBy": {
-        "file": "tests/ci/p1-27-doc-counts.test.ts",
-        "contains": "the record quotes no committed schema hash"
-      },
-      "why": "What the committed baseline pins, which is what the migration-replay job compares against. Separated from the superseded row for the reason CR-A-MIGRATIONS-BASELINE-ROW records: a historical digest and a current baseline are two claims, and while one cell served both, the baseline could not be raised without breaking a gate measuring something else."
     },
     {
       "id": "CR-A-WEB-FLOOR-PROSE",
@@ -548,9 +518,9 @@
       "value": "f6b4f023d9e6b1e7d823dac4e5550379202a216ab1ae1fe9e5a2826703061f79",
       "boundBy": {
         "file": "tests/ci/p1-27-doc-counts.test.ts",
-        "contains": "the superseded record quotes no schema hash"
+        "contains": "the historical hash is not the current baseline"
       },
-      "why": "The digest the SUPERSEDED head produced. It used to be bound to the CURRENT committed baseline, which made one historical cell answer to a moving reference point — the same double binding `Migrations applied` carried, and the reason schemaHash could not be raised. The current claim is CR-A-SCHEMA-HASH-BASELINE; this row is held only to being a real digest inside its own superseded table."
+      "why": "A superseded measurement. It looked like the least checkable figure on the page, and the temptation is to refresh it when the baseline moves — which would turn a record of a past head into a claim about today. It is bound to a case that asserts it is NOT the current baseline hash."
     },
     {
       "id": "CR-E-STALE-TOTAL",

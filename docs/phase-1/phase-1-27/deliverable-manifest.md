@@ -165,7 +165,7 @@ fact in words did not, which is the gap this revision closes.
 | Web unit and component test files                                      | **98**                                                             | derived                                                                    |
 | Playwright specification files                                         | **9** (2 anonymous, 7 authenticated)                               | commands 11 and 12 — **not re-measured**, §1.1.1                           |
 | Root CI-contract test files                                            | **46**                                                             | derived                                                                    |
-| CI gate scripts under `scripts/ci`                                     | **52** in the directory, **8** introduced or changed by this phase | derived; the eight are the `scripts/ci` rows of §7.1                       |
+| CI gate scripts under `scripts/ci`                                     | **53** in the directory, **8** introduced or changed by this phase | derived; the eight are the `scripts/ci` rows of §7.1                       |
 | Web gate scripts under `apps/web/scripts`                              | **4** in the directory, **1** introduced by this phase             | derived                                                                    |
 | Phase documentation under `docs/phase-1/phase-1-27`                    | **38** tracked, of which **30** are `.md`                          | derived from `git ls-files` — see §9.1                                     |
 | Product planning documentation under `docs/product`                    | **13** tracked                                                     | derived from `git ls-files` — see §9.2                                     |
@@ -684,13 +684,13 @@ under-report itself by seven files.
 | `canonical-plan.md`                               | 340   | What P1-27 is scoped to build, and the disposition of `P1-OD-017` and `P1-OD-025`  |
 | `canonical-write-reachability.json`               | 66    | Every write operation classified reachable or deliberately absent, with a decision |
 | `ci-evidence.md`                                  | 275   | Hosted CI, with every value classified and every hosted one naming its run         |
-| `clean-room-evidence.md`                          | 393   | The clean-room record, and the six classes every closing value is sorted into      |
+| `clean-room-evidence.md`                          | 379   | The clean-room record, and the six classes every closing value is sorted into      |
 | `contract-archaeology.md`                         | 416   | What the Backend actually publishes, read before anything was built                |
 | `deliverable-manifest.md`                         | 1051  | This file                                                                          |
 | `developer-guide.md`                              | 188   | `DOC-002` — the developer half                                                     |
 | `evidence/change-log.md`                          | 1135  | `DOC-002` — the change-log half; its rows are scraped by a test                    |
 | `evidence/evidence-manifest.json`                 | 171   | `QA-005` — a SHA-256 digest of every document in this directory                    |
-| `evidence/closing-value-ledger.json`              | 937   | Every closing value on the two evidence pages, classified, with its authority      |
+| `evidence/closing-value-ledger.json`              | 907   | Every closing value on the two evidence pages, classified, with its authority      |
 | `evidence/lifecycle-ledger.json`                  | 72    | The closure lifecycle's observations and the state this repository declares        |
 | `evidence/local-run-ledger.json`                  | 30    | What a tier DID when it was run — written only by `record:p1-27-run`               |
 | `evidence/task-traceability.md`                   | 435   | Every task, the operations it calls, the files it produced, the named proof        |
@@ -972,12 +972,12 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
      whose regexes read the label and the number as adjacent cells. -->
 
 <!-- derived: files apps/web/tests = 98 -->
-<!-- derived: files tests/ci = 49 -->
-<!-- derived: files scripts/ci = 52 -->
+<!-- derived: files tests/ci = 51 -->
+<!-- derived: files scripts/ci = 53 -->
 <!-- derived: files apps/web/scripts = 4 -->
 <!-- derived: files supabase/migrations = 123 -->
-<!-- derived: files tests/db = 142 -->
-<!-- derived: files tests/db:all = 146 -->
+<!-- derived: files tests/db = 143 -->
+<!-- derived: files tests/db:all = 147 -->
 <!-- derived: files tests/backend = 88 -->
 <!-- derived: files tests/backend:all = 93 -->
 <!-- derived: files apps/web/src/features/crm = 20 -->
@@ -987,10 +987,10 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
 <!-- derived: tracked docs/phase-1/phase-1-27 = 41 -->
 <!-- derived: tracked docs/phase-1/phase-1-27:md = 31 -->
 <!-- derived: tracked docs/product = 13 -->
-<!-- derived: commands registered = 161 -->
-<!-- derived: commands required = 82 -->
-<!-- derived: commands reachable = 82 -->
-<!-- derived: commands hosted-ci = 82 -->
+<!-- derived: commands registered = 162 -->
+<!-- derived: commands required = 83 -->
+<!-- derived: commands reachable = 83 -->
+<!-- derived: commands hosted-ci = 83 -->
 <!-- derived: cases vehicle-screens.dom.test.tsx = 40 -->
 <!-- derived: cases tailwind-theme-gate.test.ts = 8 -->
 <!-- derived: cases navigation.test.ts = 22 -->
@@ -1002,14 +1002,14 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
 <!-- derived: lines docs/phase-1/phase-1-27/canonical-plan.md = 340 -->
 <!-- derived: lines docs/phase-1/phase-1-27/canonical-write-reachability.json = 66 -->
 <!-- derived: lines docs/phase-1/phase-1-27/ci-evidence.md = 275 -->
-<!-- derived: lines docs/phase-1/phase-1-27/clean-room-evidence.md = 393 -->
+<!-- derived: lines docs/phase-1/phase-1-27/clean-room-evidence.md = 379 -->
 <!-- derived: lines docs/phase-1/phase-1-27/closure-record.md = 114 -->
 <!-- derived: lines docs/phase-1/phase-1-27/contract-archaeology.md = 416 -->
 <!-- derived: lines docs/phase-1/phase-1-27/deliverable-manifest.md = 1051 -->
 <!-- derived: lines docs/phase-1/phase-1-27/developer-guide.md = 188 -->
 <!-- derived: lines docs/phase-1/phase-1-27/evidence/change-log.md = 1135 -->
 <!-- derived: lines docs/phase-1/phase-1-27/evidence/evidence-manifest.json = 171 -->
-<!-- derived: lines docs/phase-1/phase-1-27/evidence/closing-value-ledger.json = 937 -->
+<!-- derived: lines docs/phase-1/phase-1-27/evidence/closing-value-ledger.json = 907 -->
 <!-- derived: lines docs/phase-1/phase-1-27/evidence/lifecycle-ledger.json = 72 -->
 <!-- derived: lines docs/phase-1/phase-1-27/evidence/local-run-ledger.json = 30 -->
 <!-- derived: lines docs/phase-1/phase-1-27/evidence/task-traceability.md = 435 -->

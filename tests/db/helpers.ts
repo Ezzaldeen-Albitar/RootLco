@@ -456,28 +456,12 @@ export async function deleteTenantCascade(admin: Pool, tenantIds: string[]): Pro
   // children before the master before the appointment catalogs. Config catalogs'
   // tenant rows are removed here; their platform rows (tenant_id NULL, fx_ codes)
   // are removed in cleanFixtures.
-  // P1-28 Owner decisions (migration 123) — six tenant-scoped tables, and every
-  // one of them holds org.tenants by a RESTRICT foreign key. They are FIRST
-  // because they are the newest leaves: signature_events and
-  // reception_evidence_bindings reference rec.signatures and
-  // rec.reception_visits below. Omitting them is not a slow leak — every suite
-  // that calls this helper fails at `update or delete on table "tenants"
-  // violates ... damage_map_templates_tenant_id_fkey`, which is what 113 of the
-  // 142 database files did the first time this union was run.
-  //
-  // The two damage-map-template tables are NOT here. Migration 123 adds
-  // rec.damage_maps.template_version_id, so the template versions are a PARENT
-  // of damage_maps and have to go after it — they are deleted below, straight
-  // after damage_maps, and putting them here would swap one RESTRICT failure
-  // for another.
-  await deleteFrom('rec.signature_events');
-  await deleteFrom('rec.capture_requirement_overrides');
-  await deleteFrom('rec.reception_evidence_bindings');
-  await deleteFrom('rec.capture_policy_rules');
   await deleteFrom('rec.reception_status_history');
   await deleteFrom('rec.custody_history');
   await deleteFrom('rec.authorizations');
   await deleteFrom('rec.refusals');
+  // P1-18 signature events reference rec.signatures, so they unwind first.
+  await deleteFrom('rec.signature_events');
   await deleteFrom('rec.signatures');
   await deleteFrom('rec.vehicle_content_details');
   await deleteFrom('rec.vehicle_contents');
@@ -487,10 +471,25 @@ export async function deleteTenantCascade(admin: Pool, tenantIds: string[]): Pro
   await deleteFrom('rec.visual_inspections');
   await deleteFrom('rec.damage_marks');
   await deleteFrom('rec.damage_maps');
-  // Parents of damage_maps since migration 123 (rec.damage_maps.template_version_id),
-  // and the versions are a child of the templates.
+  /*
+   * P1-18 reception evidence contracts. Order is the FK graph, not the alphabet:
+   *
+   *  - damage_map_template_versions is referenced BY rec.damage_maps, so it goes
+   *    after it and before its own parent, damage_map_templates;
+   *  - reception_evidence_bindings and capture_requirement_overrides reference
+   *    rec.reception_visits, deleted below;
+   *  - capture_policy_rules is referenced by nothing and only needs to precede
+   *    the tenant itself.
+   *
+   * All six were absent from this cascade when the contracts landed. A tenant-
+   * scoped table missing here does not fail loudly: it survives cleanup, and the
+   * next suite inherits its rows.
+   */
   await deleteFrom('rec.damage_map_template_versions');
   await deleteFrom('rec.damage_map_templates');
+  await deleteFrom('rec.reception_evidence_bindings');
+  await deleteFrom('rec.capture_requirement_overrides');
+  await deleteFrom('rec.capture_policy_rules');
   await deleteFrom('rec.warning_light_observations');
   await deleteFrom('rec.leak_observations');
   await deleteFrom('rec.reception_party_roles');
