@@ -503,7 +503,7 @@ describe('P1-28-QA-001 — every adapter is executed, and this file proves it', 
     // Seven: the FE-007 picker plus the six P1-18 contracts FE-017 and FE-018 own.
     // The bound exists so the pending list cannot quietly grow to cover the surface
     // — an unwired product hidden behind declared debt is the failure it guards.
-        expect(PENDING_ADAPTERS.size).toBeLessThan(9);
+    expect(PENDING_ADAPTERS.size).toBeLessThan(9);
   });
 
   it('lets no unconsumed-read exclusion rest on this file’s own judgement', () => {
@@ -571,7 +571,7 @@ describe('P1-28-QA-001 — every adapter is executed, and this file proves it', 
     // the damage-map template with its versions. Each is administration by the same
     // reading as the twenty-one before it — gated by `rec.catalogue.manage`, which
     // no role holds — so each is DELIBERATELY_ABSENT against P1-28-OD-001.
-        expect(writes.length, 'the administration surface publishes no write').toBe(25);
+    expect(writes.length, 'the administration surface publishes no write').toBe(25);
 
     for (const id of writes) {
       const entry = manifest.operations[id];
