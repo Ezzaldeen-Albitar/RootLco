@@ -62,7 +62,27 @@ import {
  * has already been taken.
  */
 
-const EMPTY_CATEGORIES: readonly DocumentCategory[] = [];
+/*
+ * `EMPTY_CATEGORIES` — a `readonly DocumentCategory[] = []` — was declared here
+ * and re-exported at the foot of the file. It is gone, and its removal is a
+ * PRODUCTION FIX rather than tidying.
+ *
+ * A `'use server'` module may export async functions and NOTHING else. Next
+ * refuses the module at evaluation with "A 'use server' file can only export
+ * async functions, found object", and because that happens while the server
+ * chunk is being instantiated it takes down every Server Action bundled beside
+ * it — including the reception intake-catalogue reads, which do not import this
+ * file at all. Observed as `listWarningLightCodes()` rejecting before it could
+ * reach the API, on a screen whose catalogue was correctly configured.
+ *
+ * `next dev` never showed it: it evaluates lazily, per route, so the module was
+ * only ever instantiated in a context that tolerated it. The defect appears the
+ * moment the tier is built the way it ships — which is the argument for the
+ * acceptance environment being a production build, made again by a different
+ * failure.
+ *
+ * Nothing imported the constant. It cost a working screen and bought nothing.
+ */
 
 /** The governed category policy (`shared.document-category-list`). */
 export async function listDocumentCategories(): Promise<
@@ -279,5 +299,3 @@ export async function createDocumentLink(
     linkId: result.data.linkId,
   };
 }
-
-export { EMPTY_CATEGORIES };

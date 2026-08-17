@@ -613,6 +613,17 @@ export const REGISTER = Object.freeze([
     why: 'domain classification validators — every one needs PostgreSQL (P1-25-F-023)',
   },
   {
+    name: 'validate:use-server-exports',
+    owner: ROOT,
+    tier: 'required',
+    // A `'use server'` file exporting a value breaks the whole server chunk in a
+    // PRODUCTION build and takes down Server Actions in other features that
+    // never imported it. `next dev` evaluates lazily and never shows it, so the
+    // defect survived a full green local battery and was found only when the
+    // acceptance environment was built the way the product ships.
+    why: "'use server' modules export async functions and nothing else",
+  },
+  {
     name: 'verify:storage',
     owner: ROOT,
     tier: 'environment',
