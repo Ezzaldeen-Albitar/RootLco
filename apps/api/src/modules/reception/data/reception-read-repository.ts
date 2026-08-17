@@ -60,6 +60,10 @@ export const RECEPTION_LIST_ORDERING: OrderingContract = {
   key: 'rec.reception_visits:custody_accepted_at_desc',
   direction: 'desc',
 };
+export const RECEIVING_EMPLOYEE_ORDERING: OrderingContract = {
+  key: 'rec.receiving_employees:display_name_asc',
+  direction: 'asc',
+};
 export const PARTY_ROLE_ORDERING: OrderingContract = {
   key: 'rec.reception_party_roles:valid_from_desc',
   direction: 'desc',
@@ -107,8 +111,9 @@ export interface ReceptionDetailRow {
   readonly fuelLevelName: string | null;
   /** `numeric(5,2)` — a string, never a JS float. */
   readonly evSocPercent: string | null;
-  /** Bare id — the column has no foreign key, so no label can be joined honestly. */
   readonly receivingEmployeeId: string;
+  /** Immutable reception-time snapshot, not the account's current mutable name. */
+  readonly receivingEmployeeDisplayName: string;
   readonly custodyAcceptedAt: string;
   /** `null` means the workshop still holds the vehicle. */
   readonly custodyReleasedAt: string | null;
@@ -129,6 +134,12 @@ export interface ReceptionListEntry {
   readonly custodyReleasedAt: string | null;
   /** Per row, because the guarded writes are addressed from the list. */
   readonly recordVersion: number;
+}
+
+/** A currently selectable IAM identity for one reception branch. */
+export interface ReceivingEmployeeEntry {
+  readonly id: string;
+  readonly displayName: string;
 }
 
 export interface PartyRoleEntry {
@@ -246,6 +257,7 @@ export class ReceptionReadRepository extends Repository {
       fuel_level_name: string | null;
       ev_soc_percent: string | null;
       receiving_employee_id: string;
+      receiving_employee_display_name: string;
       custody_accepted_at: Date;
       custody_released_at: Date | null;
       record_version: number;
@@ -259,7 +271,8 @@ export class ReceptionReadRepository extends Repository {
               rv.odometer_reading_id, rv.fuel_level_id,
               fl.name AS fuel_level_name,
               rv.ev_soc_percent::text AS ev_soc_percent,
-              rv.receiving_employee_id, rv.custody_accepted_at, rv.custody_released_at,
+              rv.receiving_employee_id, rv.receiving_employee_display_name,
+              rv.custody_accepted_at, rv.custody_released_at,
               rv.record_version, rv.created_at, rv.updated_at
          FROM rec.reception_visits rv
          LEFT JOIN veh.vehicles v ON v.tenant_id = rv.tenant_id AND v.id = rv.vehicle_id
@@ -285,12 +298,81 @@ export class ReceptionReadRepository extends Repository {
       fuelLevelName: row.fuel_level_name,
       evSocPercent: row.ev_soc_percent,
       receivingEmployeeId: row.receiving_employee_id,
+      receivingEmployeeDisplayName: row.receiving_employee_display_name,
       custodyAcceptedAt: row.custody_accepted_at.toISOString(),
       custodyReleasedAt: iso(row.custody_released_at),
       recordVersion: row.record_version,
       createdAt: row.created_at.toISOString(),
       updatedAt: iso(row.updated_at),
     };
+  }
+
+  /**
+   * Active same-tenant IAM users with a live grant that covers the requested
+   * company/branch. This is intentionally the same predicate enforced by
+   * `rec.stamp_receiving_employee_identity()`: a picker must never offer an id
+   * that the authoritative insert guard will reject.
+   */
+  async listReceivingEmployees(
+    db: DbHandle,
+    companyId: string,
+    branchId: string,
+    page: PageRequest
+  ): Promise<Page<ReceivingEmployeeEntry>> {
+    const context = this.assertContext(db);
+    const values: unknown[] = [context.principal.tenantId, companyId, branchId];
+    const keyset = keysetFragment(
+      page,
+      { sort: 'account.display_name', id: 'account.id' },
+      RECEIVING_EMPLOYEE_ORDERING,
+      values.length + 1
+    );
+    const result = await this.run<{ id: string; display_name: string }>(
+      db,
+      `SELECT account.id, account.display_name
+         FROM iam.user_accounts AS account
+        WHERE account.tenant_id = $1
+          AND account.status = 'active'
+          AND account.deleted_at IS NULL
+          AND EXISTS (
+            SELECT 1
+              FROM iam.role_grants AS grant_row
+             WHERE grant_row.tenant_id = account.tenant_id
+               AND grant_row.user_id = account.id
+               AND grant_row.status = 'active'
+               AND grant_row.valid_from <= now()
+               AND (grant_row.valid_to IS NULL OR grant_row.valid_to > now())
+               AND (
+                 grant_row.scope_mode = 'unrestricted'
+                 OR EXISTS (
+                   SELECT 1
+                     FROM iam.grant_scopes AS grant_scope
+                    WHERE grant_scope.tenant_id = grant_row.tenant_id
+                      AND grant_scope.grant_id = grant_row.id
+                      AND (
+                        (grant_scope.scope_type = 'company' AND grant_scope.company_id = $2)
+                        OR (grant_scope.scope_type = 'branch'
+                          AND grant_scope.company_id = $2 AND grant_scope.branch_id = $3)
+                        OR (grant_scope.scope_type = 'department'
+                          AND grant_scope.company_id = $2 AND grant_scope.branch_id = $3)
+                      )
+                 )
+               )
+          )
+          ${keyset.predicate}
+        ${keyset.order}
+        ${keyset.limitClause}`,
+      [...values, ...keyset.values]
+    );
+    return buildPageWithCursors(
+      result.rows.map((row) => ({
+        item: { id: row.id, displayName: row.display_name },
+        sortValue: row.display_name,
+        id: row.id,
+      })),
+      page,
+      RECEIVING_EMPLOYEE_ORDERING
+    );
   }
 
   /**

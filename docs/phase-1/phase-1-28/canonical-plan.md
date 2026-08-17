@@ -148,7 +148,7 @@ tasks are cross-domain: `FE-006` (walk-in intake composes CRM and Vehicle),
 | id             | canonical name                                  | primary Backend operation(s)                                                                                                                         | test id            |
 | -------------- | ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------ |
 | `P1-28-FE-006` | Walk-in customer and vehicle intake             | `crm.customer-search`, `crm.individual-create`, `crm.company-create`, `veh.vehicle-search`, `veh.vehicle-create`, `crm.vehicle-link`                 | `TC-P1-28-XD-001`  |
-| `P1-28-FE-007` | Reception check-in wizard                       | `rec.reception-create`, `iam.user-list`, `rec.reception-list`, `rec.reception-detail`                                                                | `TC-P1-28-REC-001` |
+| `P1-28-FE-007` | Reception check-in wizard                       | `rec.reception-create`, `iam.user-list`, `rec.receiving-employee-list`, `rec.reception-list`, `rec.reception-detail`                                 | `TC-P1-28-REC-001` |
 | `P1-28-FE-008` | Reception customer and vehicle confirmation     | `crm.customer-read`, `veh.vehicle-read`, `veh.vehicle-relationship-list`, `crm.customer-vehicle-list`                                                | `TC-P1-28-XD-002`  |
 | `P1-28-FE-009` | Reception party roles and authorization         | `rec.reception-party-role`, `rec.reception-authorization`, `rec.reception-party-role-list`, `rec.reception-authorization-list`                       | `TC-P1-28-REC-002` |
 | `P1-28-FE-010` | Reception customer complaint capture            | `rec.reception-condition-evidence [kind complaint]`                                                                                                  | `TC-P1-28-REC-003` |
@@ -327,6 +327,15 @@ number the Owner assigns supersedes this one and this section is corrected.
   somebody decides who should hold it. All 21 are recorded
   `DELIBERATELY_ABSENT` against this decision in
   `docs/phase-1/phase-1-28/write-reachability.json`.
+- **The READ half of the same question** lives in
+  `docs/phase-1/phase-1-28/adapter-reachability.json`, enforced by
+  `scripts/ci/check-p1-28-adapter-reachability.mjs`. It records the operations a
+  Backend remediation published and could not wire, because its ownership profile
+  forbids handwritten `web` — the `PENDING_FRONTEND_ADAPTER` state. One entry
+  stands today: `rec.receiving-employee-list`, owed by `P1-28-FE-007` and payable
+  only on `feature/p1-28-owner-decisions-frontend`. It is fail-closed on seven
+  conditions and cannot outlive its adapter, and because it holds FE-007 open it
+  is also what makes a 35/35 claim impossible while the debt stands.
 - **Enforced by:** `scripts/ci/check-p1-28-write-reachability.mjs`, which
   resolves every `decisionRef` against the decision headings of **this section**
   — a reference naming no decision recorded here fails the gate, and

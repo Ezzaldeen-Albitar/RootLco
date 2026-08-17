@@ -19,7 +19,7 @@ export const DOCUMENT_READ_OPERATION = defineOperation({
   method: 'GET',
   path: '/attachments/documents/{documentId}',
   summary: 'Read the metadata of one document.',
-  permissions: ['shared.document.read'],
+  permissions: ['shared.document.manage'],
   scope: 'tenant',
   auditClass: 'none',
   // Was the unregistered `'standard-read'`, which made every request to this

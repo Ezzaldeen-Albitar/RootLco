@@ -259,6 +259,8 @@ interface Scope {
   readonly documentVersionId: string;
   /** The subject able to create fixtures there. */
   readonly operator: string;
+  /** Active IAM user whose live grant covers this branch. */
+  readonly receivingEmployeeId: string;
 }
 
 let admin: Pool;
@@ -276,6 +278,7 @@ const SCOPE_B1: Scope = {
   documentId: DOC_SIG_A,
   documentVersionId: VER_SIG_A,
   operator: PRINCIPAL_TENANT_WIDE_PERMISSION,
+  receivingEmployeeId: USER_TENANT_WIDE,
 };
 const SCOPE_B2: Scope = { ...SCOPE_B1, label: 'branch B2', branchId: BRANCH_B2 };
 const SCOPE_OTHER_COMPANY: Scope = {
@@ -295,6 +298,7 @@ const SCOPE_TENANT_B: Scope = {
   documentId: DOC_SIG_B,
   documentVersionId: VER_SIG_B,
   operator: SUBJ_TENANT_B,
+  receivingEmployeeId: USER_TENANT_B,
 };
 
 function authAs(subject: string, tenantId = TENANT_A): void {
@@ -501,7 +505,7 @@ async function openReception(scope: Scope): Promise<string> {
         companyId: scope.companyId,
         branchId: scope.branchId,
         vehicleId,
-        receivingEmployeeId: USER_A,
+        receivingEmployeeId: scope.receivingEmployeeId,
         serviceRequesterPartnerId: scope.partnerId,
         origin: { kind: 'walk_in' },
       }),

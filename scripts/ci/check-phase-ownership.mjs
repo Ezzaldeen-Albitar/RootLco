@@ -71,13 +71,34 @@ export const CLASSIFIERS = [
   // `toEqual(published)` pair. `src/lib/api/operation-contract.ts` is
   // deliberately ABSENT: it reads the manifest but is a resolver, not a row
   // list, and a new operation costs it no edit.
+  //
+  // The two P1-28 suites below are here by the SAME rule, and were added when it
+  // caught them. `p1-28-qa.test.ts` QA-001 does
+  // `expect(unreached).toEqual([])` over the published `apt.*`/`rec.*` operator
+  // surface, and `p1-28-security.test.ts` SEC-001 does `expect(narrower).toEqual([])`
+  // over a register-derived filter. Both are halves of an exhaustiveness pair
+  // against the published contract, so publishing ONE `rec.*` read reddens them
+  // both — and under this profile the branch that reddened them may not fix them.
+  //
+  // That is not a hypothetical: DBCR-P1-18-002 publishes
+  // `rec.receiving-employee-list`, which QA-001 reports unreached and which makes
+  // SEC-001's "no narrower staff read exists" clause false in the same commit.
+  // Neither is a Frontend decision. Declaring an operation's reachability state
+  // and correcting a disposition the publication invalidated are both contract
+  // bookkeeping forced by the publication itself.
+  //
+  // The handwritten web tree stays closed: no component, screen, route, hook,
+  // translation or ADAPTER is in this bucket. `p1-28-qa.test.ts` may declare that
+  // an operation is pending an adapter; it still cannot write one.
   {
     bucket: 'webContract',
     test: (p) =>
       p === 'apps/web/src/features/receptions/receptions-contract.ts' ||
       p === 'apps/web/tests/receptions-contract.test.ts' ||
       p === 'apps/web/src/features/appointments/appointments-contract.ts' ||
-      p === 'apps/web/tests/appointments-contract.test.ts',
+      p === 'apps/web/tests/appointments-contract.test.ts' ||
+      p === 'apps/web/tests/p1-28-qa.test.ts' ||
+      p === 'apps/web/tests/p1-28-security.test.ts',
   },
   { bucket: 'web', test: (p) => p.startsWith('apps/web/') },
   { bucket: 'apiSource', test: (p) => p.startsWith('apps/api/src/') },

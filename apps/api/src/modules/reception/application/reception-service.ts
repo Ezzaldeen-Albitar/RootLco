@@ -149,7 +149,14 @@ export class ReceptionService extends ApplicationService {
   }
 
   async create(db: DbHandle, input: ReceptionCreateInput): Promise<ReceptionCreated> {
-    const plan = this.planOrFail(() => toReceptionCreatePlan(input), 'body');
+    // FE-007. The default custodian is the authenticated user, read from the
+    // resolved context rather than from the body: a body-supplied "actor" would
+    // let a caller record somebody else as having received the vehicle merely by
+    // saying so, which is the whole failure this remediation exists to close.
+    const plan = this.planOrFail(
+      () => toReceptionCreatePlan(input, this.contextOf(db).principal.userId),
+      'body'
+    );
     const origin = await this.resolveOrigin(db, plan);
 
     // Same contract as the appointment number: allocated in the caller's
@@ -721,6 +728,14 @@ export class ReceptionService extends ApplicationService {
       return new AppFailure('ERR-VAL-001', {
         message: 'A referenced record is not visible to this tenant',
         safeDetails: { violations: [{ path: 'body', rule: 'unknown_reference' }] },
+      });
+    }
+    if (isSqlState(error, SQLSTATE.invalidParameterValue)) {
+      return new AppFailure('ERR-VAL-001', {
+        message: 'The receiving employee is not active and eligible for this branch',
+        safeDetails: {
+          violations: [{ path: 'body.receivingEmployeeId', rule: 'ineligible_reference' }],
+        },
       });
     }
     if (isSqlState(error, SQLSTATE.checkViolation)) {

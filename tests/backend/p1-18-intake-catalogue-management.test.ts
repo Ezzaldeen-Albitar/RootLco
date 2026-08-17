@@ -1267,7 +1267,7 @@ describe('a referenced entry cannot be hard-removed by anybody', () => {
           companyId: COMPANY_A1,
           branchId: BRANCH_A1,
           vehicleId,
-          receivingEmployeeId: USER_A,
+          receivingEmployeeId: USER_MANAGER,
           serviceRequesterPartnerId: PARTNER_A,
           fuelLevelId: entry.id,
           origin: { kind: 'walk_in' },

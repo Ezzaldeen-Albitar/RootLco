@@ -280,7 +280,11 @@ async function seedReception(input: {
         input.branchId,
         vehicleId,
         walkIn.rows[0]?.id ?? '',
-        USER_A,
+        // The receiving employee follows the TENANT. DBCR-P1-18-002 made this a
+        // real same-tenant reference to iam.user_accounts with an insert-time
+        // eligibility guard, so a tenant-A id on a tenant-B visit is refused
+        // outright — the decision working, not a regression. The fixture was wrong.
+        input.tenantId === TENANT_B ? USER_RB : USER_A,
         input.partnerId,
       ]
     );

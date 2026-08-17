@@ -6,21 +6,21 @@
   "whatThisDoesNotProve": "This is not a tamper-proof seal. Anyone able to edit a document is able to re-run the generator and commit both. It removes SILENT revision, not revision.",
   "selfExclusion": "This manifest is the only path excluded from its own digest set, because a file containing its own hash has no fixed point. tests/ci/p1-28-evidence-manifest.test.ts asserts the exclusion is exactly this one path.",
   "candidate": {
-    "FINAL_CODE_SHA": "04b3f6d81ca7da02c435560bc3c43d09dcbf793f",
-    "FINAL_CODE_TREE": "c948dbbe6ce52cc3c912ceb96262838aca73b040",
+    "FINAL_CODE_SHA": "4301f817c7a7ec480c09e75a024731e78e4d91e4",
+    "FINAL_CODE_TREE": "6937799efdd22f8c624ff7a0e3e36e90f17bf859",
     "pullRequest": null,
     "recordedIn": "docs/phase-1/phase-1-28/evidence/closure-candidate.json",
     "restatedIn": "docs/phase-1/phase-1-28/evidence/closure-evidence.md"
   },
   "tierTotals": {
     "unit": {
-      "passed": 2655,
-      "failed": 3,
+      "passed": 2682,
+      "failed": 0,
       "skipped": 0,
       "provenance": "LOCAL_COMPUTED_HOSTED_PENDING"
     },
     "web": {
-      "passed": 2728,
+      "passed": 2729,
       "failed": 0,
       "skipped": 0,
       "provenance": "LOCAL_COMPUTED_HOSTED_PENDING"
@@ -44,22 +44,26 @@
       "provenance": "HOSTED_PENDING_AT_CANDIDATE"
     }
   },
-  "fileCount": 14,
+  "fileCount": 15,
   "files": {
+    "docs/phase-1/phase-1-28/adapter-reachability.json": {
+      "sha256": "5ebbf30eed37af71fb53c51732139e9a54e5d639faed3eb36c04c370fecf4908",
+      "bytes": 2440
+    },
     "docs/phase-1/phase-1-28/canonical-plan.md": {
-      "sha256": "6bd5967701e1ac20c2a95ca3fea8d9bbc838922044d8bd667b8179f0e872b3b9",
-      "bytes": 32320
+      "sha256": "b7cca60c02bdcc52a79d5f58ae7c0653324f3c79a8d8bbc9f34f0619332bc942",
+      "bytes": 32991
     },
     "docs/phase-1/phase-1-28/composed-permissions.json": {
       "sha256": "5d0cf3a5567d9c9023fac7ae02a0906565759f249d45415db5c33cfdc00bb336",
       "bytes": 2816
     },
     "docs/phase-1/phase-1-28/contract-archaeology.md": {
-      "sha256": "7e529013681aed0b2f3faf328c921e33570e56a8ff523e7fa8f99e551fbb2f22",
+      "sha256": "cfd3ab3e5210b87edfc80e27c3242fe525e4defe08cc8efe02caf0caf089a31a",
       "bytes": 76720
     },
     "docs/phase-1/phase-1-28/developer-guide.md": {
-      "sha256": "702466a4898aea653d855b146d5e9496fc854547e6da8a9297a0ea9292a01a20",
+      "sha256": "7b006704d03fe7be81b3195277762076861de89791ffeeef515ff9fc9305adfb",
       "bytes": 11687
     },
     "docs/phase-1/phase-1-28/evidence/change-log.md": {
@@ -67,16 +71,16 @@
       "bytes": 42409
     },
     "docs/phase-1/phase-1-28/evidence/closure-candidate.json": {
-      "sha256": "004780eb648e0561da40259363afff2e12cf570c23a94e8647ffbb280e70f9f4",
-      "bytes": 64436
+      "sha256": "5148bf213513023e290103c0beff13a206cca19abf2c27808df4f5f08d01d05c",
+      "bytes": 80543
     },
     "docs/phase-1/phase-1-28/evidence/closure-evidence.md": {
-      "sha256": "2aa78d4793e63f7be2aa19018352fade158c876ad78449f6c0c0aaba55251511",
-      "bytes": 74024
+      "sha256": "a60fe95ea4db326bc8659d3b2d5464d004f8c4f748136ac632f253682ea165ea",
+      "bytes": 73898
     },
     "docs/phase-1/phase-1-28/evidence/traceability.json": {
-      "sha256": "e2166fcfab79c8dea4140f03ee0901a1ac8d49f0ec53a2d78b7eca3ddaa970f5",
-      "bytes": 31274
+      "sha256": "600a8ae57e4a33b5c54d847befbcab82acb2a0d136d005cec777345c39c74ab1",
+      "bytes": 30544
     },
     "docs/phase-1/phase-1-28/evidence/traceability.md": {
       "sha256": "61d855f3e89138c54b0cf032a369c017ef85d51aea8fc2a9913eb1914433c217",
@@ -95,12 +99,12 @@
       "bytes": 365666
     },
     "docs/phase-1/phase-1-28/task-matrix.json": {
-      "sha256": "81e1d28ac7278c4935a4a278448306f0690f60f471d5342bfcce886778126552",
-      "bytes": 383956
+      "sha256": "654c8c8d32da7c783b0e24d42444f912b2d53031ee2adef44e3d9cbe71272ce8",
+      "bytes": 383995
     },
     "docs/phase-1/phase-1-28/write-reachability.json": {
-      "sha256": "6c4522f2aaebd86bba03cb7000f9b22ea6bde1795a61839115340cee58937196",
-      "bytes": 23214
+      "sha256": "347b375ec98508dc922abb75506a7052f8422e937b3efca0c0090d1689de0b96",
+      "bytes": 18887
     }
   }
 }

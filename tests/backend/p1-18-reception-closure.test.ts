@@ -195,7 +195,7 @@ async function openReception(vehicleId?: string): Promise<{ id: string; vehicleI
     companyId: COMPANY_A1,
     branchId: BRANCH_A1,
     vehicleId: vehicle,
-    receivingEmployeeId: USER_A,
+    receivingEmployeeId: USER_CLOSER,
     serviceRequesterPartnerId: PARTNER_A,
     origin: { kind: 'walk_in' },
   });
@@ -481,7 +481,7 @@ describe('rec.reception-close-without-work', () => {
       companyId: COMPANY_A1,
       branchId: BRANCH_A1,
       vehicleId: first.vehicleId,
-      receivingEmployeeId: USER_A,
+      receivingEmployeeId: USER_CLOSER,
       serviceRequesterPartnerId: PARTNER_A,
       origin: { kind: 'walk_in' },
     });
@@ -558,7 +558,7 @@ describe('rec.reception-refuse', () => {
       companyId: COMPANY_A1,
       branchId: BRANCH_A1,
       vehicleId: first.vehicleId,
-      receivingEmployeeId: USER_A,
+      receivingEmployeeId: USER_CLOSER,
       serviceRequesterPartnerId: PARTNER_A,
       origin: { kind: 'walk_in' },
     });

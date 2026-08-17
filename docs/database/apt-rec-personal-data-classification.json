@@ -2,7 +2,7 @@
   "$schema": "./classification.schema.json",
   "description": "P1-08-SEC-003 — Appointment (apt) + Vehicle Reception (rec) personal-data / sensitivity classification registry. Every live apt/rec column is classified. Restricted columns (complaint narrative, vehicle-content description + declared value) are row-gated by iam.sensitive.view and must never be searchable. Reconciled against the live schema by scripts/check-aptrec-classification.mjs (run identically locally and in CI).",
   "allowedClassifications": ["public", "internal", "restricted", "secret"],
-  "columnCount": 454,
+  "columnCount": 455,
   "columns": {
     "apt.appointment_services.appointment_id": {
       "classification": "internal",
@@ -1408,6 +1408,11 @@
       "classification": "internal",
       "searchable": false,
       "dataType": "uuid"
+    },
+    "rec.reception_visits.receiving_employee_display_name": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
     },
     "rec.reception_visits.receiving_employee_id": {
       "classification": "internal",

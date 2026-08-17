@@ -404,7 +404,9 @@ async function newVisit(
     const visit = (
       await client.query<{ id: string }>(
         `SELECT rec.accept_check_in($1::uuid,$2::uuid,$3::uuid,NULL::uuid,$4::uuid,$5::uuid,$6::uuid) AS id`,
-        [companyId, branchId, vehicle, walkIn, USER_A, partnerId]
+        // The receiving employee follows the TENANT — DBCR-P1-18-002 gave the
+        // column a same-tenant FK and an insert-time eligibility guard.
+        [companyId, branchId, vehicle, walkIn, tenantId === TENANT_B ? USER_TB : USER_A, partnerId]
       )
     ).rows[0]!.id;
     await client.query('COMMIT');

@@ -208,6 +208,7 @@ export const ROUTE_TEMPLATES = Object.freeze([
   '/reception-catalogue/refusal-reasons',
   '/reception-catalogue/refusal-reasons/{refusalReasonId}',
   '/reception-catalogue/refusal-reasons/{refusalReasonId}/status',
+  '/reception-catalogue/receiving-employees',
   '/reception-catalogue/visit-reasons',
   '/reception-catalogue/visit-reasons/{visitReasonId}',
   '/reception-catalogue/visit-reasons/{visitReasonId}/status',

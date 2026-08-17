@@ -13,6 +13,14 @@
  * `rec.accept_check_in()` primitive in one statement, so there is no window in which
  * a vehicle is held with no custody record.
  *
+ * `receivingEmployeeId` names the IAM account that actually accepted custody
+ * (FE-007). It is OPTIONAL and defaults to the authenticated user; a supplied id
+ * is validated by `rec.stamp_receiving_employee_identity()` inside the same
+ * transaction, which refuses anything that is not an active, same-tenant,
+ * branch-eligible account and stamps the display-name snapshot itself. Nothing
+ * about the employee is taken on the body's word — including the snapshot, which
+ * the body cannot carry at all.
+ *
  * `companyId` and `branchId` are the scope this operation is authorized against, so
  * for an appointment origin the module REFUSES a body that names anything other
  * than the appointment's own company and branch. They cannot merely be ignored in
@@ -57,7 +65,12 @@ const Body = z
     companyId: schemas.uuid,
     branchId: schemas.uuid,
     vehicleId: schemas.uuid,
-    receivingEmployeeId: schemas.uuid,
+    // Optional because the Owner's FE-007 decision makes the AUTHENTICATED user
+    // the default custodian: omitting the field means "I received it myself",
+    // which is the ordinary case. Supplying one names a colleague, and the
+    // database — not this schema — decides whether that colleague is an active,
+    // branch-eligible, same-tenant account.
+    receivingEmployeeId: schemas.uuid.optional(),
     serviceRequesterPartnerId: schemas.uuid,
     origin: Origin,
     odometerReadingId: schemas.uuid.nullable().default(null),

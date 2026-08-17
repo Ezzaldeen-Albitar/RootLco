@@ -310,7 +310,25 @@ INSERT INTO iam.permissions (permission_code, domain, description, risk_level, c
   -- surface configured by one role in one screen, and seven codes would be a
   -- distinction no operator makes.
   ('apt.catalogue.manage',     'apt', 'Manage the tenant appointment configuration catalogues', 'high', '00000000-0000-4000-8000-000000000001'),
-  ('rec.catalogue.manage',     'rec', 'Manage the tenant reception configuration catalogues',   'high', '00000000-0000-4000-8000-000000000001')
+  ('rec.catalogue.manage',     'rec', 'Manage the tenant reception configuration catalogues',   'high', '00000000-0000-4000-8000-000000000001'),
+  -- FE-007 (Owner decision, P1-28). The receiving employee is now a real IAM
+  -- reference, and normal selection is limited to accounts eligible for the
+  -- visit's own branch. Naming somebody from ANOTHER branch is the exception the
+  -- Owner allowed, and the Owner required it to be explicitly authorized — so it
+  -- is a code of its own rather than an extra power folded into
+  -- rec.reception.manage, which every receptionist holds.
+  --
+  -- It is deliberately NOT declared by any operation. There is no "cross-branch
+  -- check-in" endpoint to gate: the decision is taken inside the database, by
+  -- rec.stamp_receiving_employee_identity(), against the ACTOR's authority in
+  -- the visit's own scope. Publishing it as a route permission would move the
+  -- decision to a layer a direct writer bypasses.
+  --
+  -- Mapped to NO role here. This file seeds the platform CATALOGUE; role
+  -- mappings are tenant provisioning, so on a freshly replayed database this
+  -- code exists and is held by nobody, and cross-branch selection is refused for
+  -- every actor until a tenant deliberately grants it.
+  ('rec.reception.receiving_employee.assign_any', 'rec', 'Name a receiving employee who is not eligible for the visit branch', 'high', '00000000-0000-4000-8000-000000000001')
 ON CONFLICT (permission_code) DO NOTHING;
 
 DO $$

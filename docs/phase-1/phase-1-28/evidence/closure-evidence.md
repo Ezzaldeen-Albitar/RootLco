@@ -33,13 +33,13 @@ the candidate, and refuses either half that fails to name an unclosed task.
 
 ## The frozen candidate
 
-| Binding           | Value                                                                             |
-| ----------------- | --------------------------------------------------------------------------------- |
-| `FINAL_CODE_SHA`  | `04b3f6d81ca7da02c435560bc3c43d09dcbf793f`                                        |
-| `FINAL_CODE_TREE` | `c948dbbe6ce52cc3c912ceb96262838aca73b040`                                        |
-| Branch            | `remediation/p1-15-reception-document-foundation`                                 |
-| Pull request      | not yet opened, base `develop`, 6 commits ahead                                   |
-| Subject           | `fix(p1-15): the scanner handoff is SECURITY INVOKER, and the grants are bounded` |
+| Binding           | Value                                                           |
+| ----------------- | --------------------------------------------------------------- |
+| `FINAL_CODE_SHA`  | `4301f817c7a7ec480c09e75a024731e78e4d91e4`                      |
+| `FINAL_CODE_TREE` | `6937799efdd22f8c624ff7a0e3e36e90f17bf859`                      |
+| Branch            | `remediation/p1-15-reception-document-foundation`               |
+| Pull request      | **#232**, base `develop`, 25 commits ahead                      |
+| Subject           | `fix(p1-28): a pending entry may not rest on a base that moves` |
 
 The previous candidate was `7b1252edebb5d7f48451213c71ab832cb44e46b5`, tree
 `1ef831d2ecfcf94d07b73857b7448c3b424faca3`, on
