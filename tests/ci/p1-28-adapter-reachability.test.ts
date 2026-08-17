@@ -141,8 +141,9 @@ describe('P1-28 adapter reachability — the gate can be made to fail', () => {
     };
     // `introducedHere` answers false for anything but the new read, which is
     // exactly the fact that makes this refusal correct rather than incidental.
+    // The base is a pinned sha, so the refusal names the commit, not a branch.
     expect(problemsOf({ ...base, manifest }).join('\n')).toMatch(
-      /already existed at .*origin\/develop/
+      /already existed at `[0-9a-f]{40}`/
     );
   });
 
@@ -257,6 +258,27 @@ describe('P1-28 adapter reachability — the gate can be made to fail', () => {
     expect(problemsOf(withEntry({ frontendBranch: undefined })).join('\n')).toMatch(
       /identifies no Frontend integration branch/
     );
+  });
+
+  it('13a. refuses a MOVING base, which answers differently after the merge', () => {
+    /*
+     * The defect this case exists for actually happened. The entry named
+     * `origin/develop`: true on the pull request, and FALSE the moment the merge
+     * landed, because develop then contained the operation. The gate refused its
+     * own entry on protected develop and took the reproof down with it.
+     *
+     * So the SHAPE is refused, not the one instance — a full sha is the only kind
+     * of base whose answer cannot drift out from under the claim.
+     */
+    for (const moving of ['origin/develop', 'develop', 'HEAD~1', '592cfe6e']) {
+      expect(
+        problemsOf(withEntry({ introducedAgainstBase: moving })).join('\n'),
+        `${moving} must be refused as a base`
+      ).toMatch(/not a full 40-character commit sha/);
+    }
+    // And the shipped entry really is pinned, so the guard above is not vacuous.
+    const manifest = world().manifest as { operations: Record<string, Entry> };
+    expect(manifest.operations[OPERATION]?.introducedAgainstBase).toMatch(/^[0-9a-f]{40}$/);
   });
 
   it('13. refuses an unknown base, rather than letting a missing one bless the entry', () => {

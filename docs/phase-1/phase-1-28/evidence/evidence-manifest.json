@@ -6,15 +6,15 @@
   "whatThisDoesNotProve": "This is not a tamper-proof seal. Anyone able to edit a document is able to re-run the generator and commit both. It removes SILENT revision, not revision.",
   "selfExclusion": "This manifest is the only path excluded from its own digest set, because a file containing its own hash has no fixed point. tests/ci/p1-28-evidence-manifest.test.ts asserts the exclusion is exactly this one path.",
   "candidate": {
-    "FINAL_CODE_SHA": "0807a44082f53b960ea5d0678880a7dd32b362f4",
-    "FINAL_CODE_TREE": "7d9646100fd78deb9f8bf24e8ced8dfe0a0c6f02",
+    "FINAL_CODE_SHA": "4301f817c7a7ec480c09e75a024731e78e4d91e4",
+    "FINAL_CODE_TREE": "6937799efdd22f8c624ff7a0e3e36e90f17bf859",
     "pullRequest": null,
     "recordedIn": "docs/phase-1/phase-1-28/evidence/closure-candidate.json",
     "restatedIn": "docs/phase-1/phase-1-28/evidence/closure-evidence.md"
   },
   "tierTotals": {
     "unit": {
-      "passed": 2681,
+      "passed": 2682,
       "failed": 0,
       "skipped": 0,
       "provenance": "LOCAL_COMPUTED_HOSTED_PENDING"
@@ -47,8 +47,8 @@
   "fileCount": 15,
   "files": {
     "docs/phase-1/phase-1-28/adapter-reachability.json": {
-      "sha256": "3223b75f03eab2808bc50d06ef8e55e79d50ecd66d697031f33e46af13990c30",
-      "bytes": 1935
+      "sha256": "5ebbf30eed37af71fb53c51732139e9a54e5d639faed3eb36c04c370fecf4908",
+      "bytes": 2440
     },
     "docs/phase-1/phase-1-28/canonical-plan.md": {
       "sha256": "b7cca60c02bdcc52a79d5f58ae7c0653324f3c79a8d8bbc9f34f0619332bc942",
@@ -71,12 +71,12 @@
       "bytes": 42409
     },
     "docs/phase-1/phase-1-28/evidence/closure-candidate.json": {
-      "sha256": "babca30f5fcbd8ea4ae039471c2ad9b2d253d8822e5f06a54e5d7c4efaa20d71",
-      "bytes": 79389
+      "sha256": "5148bf213513023e290103c0beff13a206cca19abf2c27808df4f5f08d01d05c",
+      "bytes": 80543
     },
     "docs/phase-1/phase-1-28/evidence/closure-evidence.md": {
-      "sha256": "d405aa12e8499321d702fb84d107b76856dd914d8d7096798a40ed15033413d0",
-      "bytes": 74080
+      "sha256": "a60fe95ea4db326bc8659d3b2d5464d004f8c4f748136ac632f253682ea165ea",
+      "bytes": 73898
     },
     "docs/phase-1/phase-1-28/evidence/traceability.json": {
       "sha256": "600a8ae57e4a33b5c54d847befbcab82acb2a0d136d005cec777345c39c74ab1",
