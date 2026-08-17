@@ -6,8 +6,8 @@
   "whatThisDoesNotProve": "This is not a tamper-proof seal. Anyone able to edit a document is able to re-run the generator and commit both. It removes SILENT revision, not revision.",
   "selfExclusion": "This manifest is the only path excluded from its own digest set, because a file containing its own hash has no fixed point. tests/ci/p1-28-evidence-manifest.test.ts asserts the exclusion is exactly this one path.",
   "candidate": {
-    "FINAL_CODE_SHA": "99aee45562c9f3efb13ac1ae7e30c9fdcabdc294",
-    "FINAL_CODE_TREE": "03f2dc2e73782aa7e24e4f9670640cfef593d072",
+    "FINAL_CODE_SHA": "8df9ff88483625396b8e9347fdf7e6b117a6798e",
+    "FINAL_CODE_TREE": "ecefe560d31d618547ebe1115456868c2b561895",
     "pullRequest": null,
     "recordedIn": "docs/phase-1/phase-1-28/evidence/closure-candidate.json",
     "restatedIn": "docs/phase-1/phase-1-28/evidence/closure-evidence.md"
@@ -44,10 +44,14 @@
       "provenance": "HOSTED_PENDING_AT_CANDIDATE"
     }
   },
-  "fileCount": 14,
+  "fileCount": 15,
   "files": {
+    "docs/phase-1/phase-1-28/adapter-reachability.json": {
+      "sha256": "3223b75f03eab2808bc50d06ef8e55e79d50ecd66d697031f33e46af13990c30",
+      "bytes": 1935
+    },
     "docs/phase-1/phase-1-28/canonical-plan.md": {
-      "sha256": "6bd5967701e1ac20c2a95ca3fea8d9bbc838922044d8bd667b8179f0e872b3b9",
+      "sha256": "71999da6934be070da98fd49521194be7792354fd0ad986262b869dfc5654abf",
       "bytes": 32320
     },
     "docs/phase-1/phase-1-28/composed-permissions.json": {
@@ -67,12 +71,12 @@
       "bytes": 42409
     },
     "docs/phase-1/phase-1-28/evidence/closure-candidate.json": {
-      "sha256": "e9b49cf703222fa252910b32075db2ce1fe049220167982c355acf9c6f18bb59",
-      "bytes": 76909
+      "sha256": "ef9b239aa397517a6b0ede368debe44e2bee7364003770387b9614474e68c3e3",
+      "bytes": 78112
     },
     "docs/phase-1/phase-1-28/evidence/closure-evidence.md": {
-      "sha256": "cb31212d6dc23d846192e982035b808a19a585a0eb5b7551838160f758527d00",
-      "bytes": 74031
+      "sha256": "d849195e4b8a17ad6d4a4b8196f51e2bcc24fc5875f1072a3c2ea6b82759a032",
+      "bytes": 73919
     },
     "docs/phase-1/phase-1-28/evidence/traceability.json": {
       "sha256": "600a8ae57e4a33b5c54d847befbcab82acb2a0d136d005cec777345c39c74ab1",
@@ -95,8 +99,8 @@
       "bytes": 365666
     },
     "docs/phase-1/phase-1-28/task-matrix.json": {
-      "sha256": "81e1d28ac7278c4935a4a278448306f0690f60f471d5342bfcce886778126552",
-      "bytes": 383956
+      "sha256": "654c8c8d32da7c783b0e24d42444f912b2d53031ee2adef44e3d9cbe71272ce8",
+      "bytes": 383995
     },
     "docs/phase-1/phase-1-28/write-reachability.json": {
       "sha256": "347b375ec98508dc922abb75506a7052f8422e937b3efca0c0090d1689de0b96",

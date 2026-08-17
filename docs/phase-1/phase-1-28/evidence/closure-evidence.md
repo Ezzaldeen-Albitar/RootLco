@@ -33,13 +33,13 @@ the candidate, and refuses either half that fails to name an unclosed task.
 
 ## The frozen candidate
 
-| Binding           | Value                                                                              |
-| ----------------- | ---------------------------------------------------------------------------------- |
-| `FINAL_CODE_SHA`  | `99aee45562c9f3efb13ac1ae7e30c9fdcabdc294`                                         |
-| `FINAL_CODE_TREE` | `03f2dc2e73782aa7e24e4f9670640cfef593d072`                                         |
-| Branch            | `remediation/p1-15-reception-document-foundation`                                  |
-| Pull request      | **#232**, base `develop`, 25 commits ahead                                         |
-| Subject           | `fix(p1-27): move the CURRENT counts to 122, and leave every historical one alone` |
+| Binding           | Value                                                              |
+| ----------------- | ------------------------------------------------------------------ |
+| `FINAL_CODE_SHA`  | `8df9ff88483625396b8e9347fdf7e6b117a6798e`                         |
+| `FINAL_CODE_TREE` | `ecefe560d31d618547ebe1115456868c2b561895`                         |
+| Branch            | `remediation/p1-15-reception-document-foundation`                  |
+| Pull request      | **#232**, base `develop`, 25 commits ahead                         |
+| Subject           | `feat(p1-28): the PENDING_FRONTEND_ADAPTER lifecycle, fail-closed` |
 
 The previous candidate was `7b1252edebb5d7f48451213c71ab832cb44e46b5`, tree
 `1ef831d2ecfcf94d07b73857b7448c3b424faca3`, on
