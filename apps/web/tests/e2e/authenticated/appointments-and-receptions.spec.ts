@@ -116,8 +116,9 @@ import { E2E_API_ORIGIN, REPO_ROOT } from '../origin';
  * the fuel catalogue degrades the field and not the operation (§12); the
  * odometer/state-of-charge reading is exercisable and never reaches the address
  * bar (§12); the three lifecycle panels are absent over a record that could not
- * be read (§15); no capture control exists anywhere an operator can reach while
- * `P1-OD-025` is open (§16); and the whole surface discloses nothing of another
+ * be read (§15); capture has not leaked out of the check-in wizard step that
+ * owns it, and no camera path exists anywhere (§16); and the whole surface
+ * discloses nothing of another
  * workspace, at both the browser and the API (§17).
  *
  * ## Reader-only principal
@@ -1743,32 +1744,34 @@ test.describe('reschedule, cancel and no-show are panels on a real appointment',
 });
 
 /* ================================================================== *
- * 16 — P1-OD-025: no capture control exists anywhere an operator can
- *      reach, and the notice that says so is wizard-gated
+ * 16 — P1-OD-025 is RESOLVED: capture exists, and it is confined to
+ *      the one wizard step and the one approved control
  * ================================================================== */
 
-test.describe('reception media is blocked by a named open decision', () => {
-  test('no P1-28 route an operator can reach offers a capture control of any kind', async ({
-    page,
-  }) => {
+test.describe('reception capture is confined to the step that owns it', () => {
+  test('no P1-28 route outside the check-in wizard offers a capture control', async ({ page }) => {
     // Eight navigations with three locator assertions each. The 30 s default is
     // the per-TEST budget; see the identical note in §9.
     test.setTimeout(90_000);
     /*
-     * `P1-OD-025` is an OPEN Owner decision: no retention period, no permitted
-     * kinds, no size ceiling, and no storage provider or scanner exists. So
-     * reception media cannot be captured, and the deliverable is a notice
-     * explaining that — never a control, and never a DISABLED control standing
-     * in for one, which would assert the capability exists and this operator
-     * lacks permission. That is a different and false statement, the same
-     * distinction `P1-OD-017` forced on the P1-27 merge affordance.
+     * This case used to assert that NO capture control existed anywhere,
+     * because `P1-OD-025` was open. The Owner RESOLVED it: capture is built,
+     * the private versioned chain is real, and a file really is stored.
      *
-     * `tests/p1-28-reception-media.test.ts` reads `MediaDecisionNotice.tsx`'s own
-     * source and fails on `<button`, `<input`, `<form`, `<a `, `<video`,
-     * `<canvas`, `onClick` or `disabled`. That is a proof about ONE file. This
-     * is the complement it cannot make: that no OTHER screen on the phase's
-     * surface quietly grew one — the walk-in intake and the check-in start
-     * screen being exactly where a "just add a photo" control would land.
+     * So the absence this walk still finds is true for a different reason, and
+     * that reason is worth holding. Capture lives in exactly one place — the
+     * check-in wizard's media step, rendering the one approved control,
+     * `CaptureFileField` — and every route below is reachable WITHOUT a
+     * reception visit. A file input appearing on one of them would mean the
+     * capture surface had escaped the step that owns it, which is exactly where
+     * a "just add a photo" control would land: the walk-in intake and the
+     * check-in start screen.
+     *
+     * The camera assertions are unchanged and are NOT about the decision. No
+     * camera path is sanctioned anywhere in this product — `getUserMedia`, an
+     * `ImageCapture`, a `capture=` attribute and a `<video>` preview all remain
+     * banned, and `tests/p1-28-reception-media.test.ts` holds that over the
+     * source because no gate rule covers it.
      */
     for (const route of phaseRoutes('en')) {
       await page.goto(route);
@@ -1776,27 +1779,28 @@ test.describe('reception media is blocked by a named open decision', () => {
 
       await expect(
         page.locator('input[type="file"]'),
-        `${route} offers a file input while P1-OD-025 is open`
+        `${route} offers a file input outside the check-in wizard's media step`
       ).toHaveCount(0);
       await expect(
         page.locator('[capture]'),
-        `${route} offers a camera capture affordance while P1-OD-025 is open`
+        `${route} offers a camera capture affordance, which is sanctioned nowhere`
       ).toHaveCount(0);
       await expect(
         page.locator('video'),
-        `${route} renders a video surface while P1-OD-025 is open`
+        `${route} renders a video surface, which is sanctioned nowhere`
       ).toHaveCount(0);
     }
 
     /*
-     * NEEDS DATA, and stated rather than quietly omitted: the NOTICE itself —
-     * `receptions.media.blocked` naming `P1-OD-025`, the questions the Owner has
-     * to decide, and the honest ceiling of the shipped attachment chain — renders
-     * only inside the check-in wizard's media step, which needs a reception visit
-     * to exist. `MediaDecisionNotice` has exactly one call site (`MediaStep`), so
-     * there is no route this tier can reach it through, and this suite will not
-     * open a visit to manufacture one. What is asserted above is the half a
-     * browser CAN establish: that the absence is real everywhere it can look.
+     * NEEDS DATA, and stated rather than quietly omitted: the capture surface
+     * itself renders only inside the check-in wizard's media step, which needs a
+     * reception visit to exist. This suite will not open one to manufacture a
+     * route. What is asserted above is the half a browser CAN establish without
+     * a visit — that capture has not leaked out of the step that owns it. The
+     * capture chain end to end, against the real object store, is §6 of the
+     * acceptance directive and is proved by
+     * `tests/acceptance/storage-round-trip.test.ts` plus the browser pass on a
+     * seeded visit.
      */
   });
 });

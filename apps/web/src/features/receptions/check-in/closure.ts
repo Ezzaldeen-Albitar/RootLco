@@ -179,14 +179,24 @@ export function isCustomerReported(kind: string): boolean {
 }
 
 /**
- * Whether an evidence row references a registered media document.
+ * Whether an evidence row references a media document at all.
  *
- * The state is REGISTERED, PENDING — never "uploaded". `P1-OD-025` is open: the
- * platform records a document reference at reception and no upload path exists
- * in this phase, so the only truthful sentence is that a reference is on record
- * and the media itself is pending. The identifier is not rendered: it is an
- * internal reference, and the acknowledgement a customer takes away has no use
- * for one.
+ * This answers EXISTENCE and nothing more, because existence is all the row
+ * carries. `rec.reception-condition-evidence-list` unions the eight evidence
+ * relations and projects each one's `evidence_document_id` directly; it joins
+ * no document or version table, so no lifecycle state — `pending`, `scanning`,
+ * `accepted` — travels with the reference. A reader that named a state here
+ * would be naming one it never read, and it would be wrong precisely when the
+ * version had already been accepted.
+ *
+ * So the callers say only that a file is on record. Reporting the lifecycle
+ * would need the READ to publish it, which is a Backend contract change; the
+ * capture surfaces that do have a status (`CaptureBindingEntry`,
+ * `SignatureEntry`, both carrying `documentVersionStatus`) render it from that
+ * field and never from this one.
+ *
+ * The identifier itself is not rendered: it is an internal reference, and the
+ * acknowledgement a customer takes away has no use for one.
  */
 export function hasRegisteredMedia(evidenceDocumentId: unknown): boolean {
   return typeof evidenceDocumentId === 'string' && evidenceDocumentId.length > 0;

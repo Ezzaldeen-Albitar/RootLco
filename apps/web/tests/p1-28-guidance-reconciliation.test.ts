@@ -3,9 +3,17 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { APPOINTMENT_PERMISSIONS } from '@/features/appointments/appointments-contract';
+import {
+  ACCEPTED_VERSION_STATUS,
+  DOCUMENT_VERSION_STATUSES,
+} from '@/features/attachments/attachments-contract';
 import { RECEPTION_PERMISSIONS } from '@/features/receptions/receptions-contract';
 import { EVIDENCE_KIND_COVERAGE } from '@/features/receptions/check-in/evidence';
 import { CHECK_IN_STEPS } from '@/features/receptions/check-in/steps';
+import {
+  MEDIA_DECISION_ID,
+  MEDIA_DECISION_RESOLVED,
+} from '@/features/receptions/media/media-decision';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
 
@@ -310,16 +318,46 @@ describe('the reception sentences', () => {
     }
   });
 
-  it('"no submit control on that step" — the signature write really is uncalled', () => {
-    expect(OPERATOR).toContain('There is no submit control on that step');
+  it('"a draft until that image has been accepted" — the step withholds final', () => {
+    /*
+     * This case pinned the OPPOSITE sentence — "There is no submit control on
+     * that step" — and both halves were true when it was written.
+     * `rec.reception-signature` takes a registered document AND the exact
+     * version signed, nothing in the product could produce either, and a step
+     * offering controls would have been offering a way to be refused.
+     *
+     * `P1-15` built the registration chain and the Owner resolved `P1-OD-025`,
+     * so the step captures now, and the sentence worth holding it to is the one
+     * an operator can act on wrongly: a recorded signature is not a final one.
+     * A guide still promising that nothing can be submitted would be the same
+     * failure as the old one with the direction reversed.
+     *
+     * Held on three sides, because any two of them can agree while the product
+     * is wrong: the guide's sentence, the string the ledger renders where the
+     * control would otherwise be, and the single constant that decides which
+     * version status may be made final.
+     */
+    expect(OPERATOR).toContain('draft until that image has been accepted');
+    expect(en['receptions.signature.finalizeBlocked']).toContain(
+      'stays a draft until the signed image has been accepted'
+    );
+    expect(ACCEPTED_VERSION_STATUS).toBe('accepted');
+
     const step = read('features', 'receptions', 'components', 'steps', 'SignatureStep.tsx');
-    expect(step, 'the signature step now calls a write').not.toMatch(/recordSignature\s*\(/);
+    expect(step, 'the step decides finality without the shared constant').toContain(
+      'ACCEPTED_VERSION_STATUS'
+    );
+    expect(step, 'the finalize control is no longer gated on an accepted version').toMatch(
+      /canFinalize\s*=\s*[^;]*\baccepted\b/
+    );
+
     // And the phase's own reachability manifest agrees, so the guide, the code
-    // and the SEC-004 record cannot drift apart in pairs.
+    // and the SEC-004 record cannot drift apart in pairs. It classified this
+    // operation `NOT_YET_WIRED` for as long as the step above had no control.
     const manifest = JSON.parse(readFileSync(join(PHASE, 'write-reachability.json'), 'utf8')) as {
       operations: Record<string, { classification: string }>;
     };
-    expect(manifest.operations['rec.reception-signature']?.classification).toBe('NOT_YET_WIRED');
+    expect(manifest.operations['rec.reception-signature']?.classification).toBe('REACHABLE');
   });
 
   it('"a refusal does not end the visit" — the exit is a different operation', () => {
@@ -352,32 +390,75 @@ describe('the reception sentences', () => {
 });
 
 describe('the media and coverage sentences, with their numbers re-derived', () => {
-  it('"nothing takes, chooses or records a picture" — and the screen says it', () => {
-    expect(OPERATOR).toContain('Media capture is not available');
-    expect(en['receptions.media.blocked']).toContain('Nothing on this screen takes');
+  it('"a file counts only once it has been accepted" — and the screen says it', () => {
+    /*
+     * This case pinned the opposite sentence too: "Media capture is not
+     * available, and this is an Owner decision that has not been made", against
+     * a `receptions.media.blocked` string the media step rendered where the
+     * camera would have been. The decision was resolved, the notice and that key
+     * are gone, and the guide's job changed from naming an absence to stating
+     * the rule an operator can act on wrongly — a photograph on record is not
+     * yet a photograph that counts.
+     *
+     * The decision constant is asserted rather than described, and the guide is
+     * refused the identifier outright: a page that still named `P1-OD-025` would
+     * be sending a receptionist to ask about a settled question.
+     */
+    expect(MEDIA_DECISION_RESOLVED).toBe(true);
+    expect(OPERATOR, 'the guide still names a resolved decision').not.toContain(MEDIA_DECISION_ID);
+
+    // Flattened: this sentence is long enough that markdown wraps it mid-clause.
+    expect(OPERATOR_FLAT).toContain('counts only once it has been accepted');
+    expect(en['receptions.capture.intro']).toContain('counts only once it has been accepted');
+    expect(en['receptions.capture.state.recordedNotCounted']).toContain('Recorded but not counted');
   });
 
-  it('never says "uploaded" where the product says "registered, pending"', () => {
+  it('explains every state a file can be in, derived from the contract', () => {
     /*
-     * A truthful-labelling obligation from `canonical-plan.md` §10. The guide
-     * is the easiest place for the wrong word to survive, because nothing
-     * renders it.
+     * What replaced a truthful-labelling obligation that expired.
+     *
+     * `canonical-plan.md` §10 required media to be described as "registered,
+     * pending" and never as "uploaded" — expressly "while `P1-OD-025` is open",
+     * because at the time there was no store, no scan, and nothing that could
+     * have been uploaded anywhere. There is a real store now, so the banned word
+     * is the accurate one for a file that is held and not yet checked, and a
+     * guide enforcing the old ban would be choosing a less true word.
+     *
+     * The obligation underneath it did not expire: an operator must be able to
+     * tell, from what the screen says, whether a file counts. So the states are
+     * derived from the contract that defines them, each one is required in BOTH
+     * catalogues and quoted in the guide, and the five must read differently —
+     * two states collapsing into one sentence would leave the table advising the
+     * wrong thing while every key still resolved.
      */
-    expect(OPERATOR).toContain('registered, pending');
-    /*
-     * The word may appear exactly once, and only where the guide is naming it
-     * as the word the product does not use. A flat ban would forbid the guide
-     * from stating its own rule; a flat allowance would let the wrong word back
-     * in beside a screenshot of a file that is not stored anywhere.
-     */
-    const uses = OPERATOR.match(/\buploaded\b/gi) ?? [];
-    expect(uses.length, 'the guide uses "uploaded" more than once').toBeLessThanOrEqual(1);
-    if (uses.length === 1) {
-      expect(OPERATOR, 'the one use is not the statement of the rule').toContain(
-        'never "uploaded"'
+    expect(DOCUMENT_VERSION_STATUSES.length, 'the union is empty').toBeGreaterThan(4);
+    expect(DOCUMENT_VERSION_STATUSES).toContain(ACCEPTED_VERSION_STATUS);
+
+    const shown = (locale: Record<string, unknown>, status: string): string => {
+      const value = locale[`receptions.capture.version.${status}`];
+      expect(typeof value, `no wording for a version that is ${status}`).toBe('string');
+      return value as string;
+    };
+
+    for (const status of DOCUMENT_VERSION_STATUSES) {
+      const english = shown(en, status);
+      shown(ar, status);
+      expect(OPERATOR, `the guide does not say what "${english}" means`).toContain(english);
+    }
+
+    for (const [name, catalogue] of [
+      ['en', en],
+      ['ar', ar],
+    ] as const) {
+      const wordings = DOCUMENT_VERSION_STATUSES.map((status) => shown(catalogue, status));
+      expect(new Set(wordings).size, `two version states read identically in ${name}`).toBe(
+        wordings.length
       );
     }
-    expect(en['receptions.summary.mediaRegistered']).toBe('Media registered, pending');
+
+    // And the one that counts is stated as the only one that does.
+    expect(OPERATOR).toContain('the only state that counts towards a requirement');
+    expect(en['receptions.summary.mediaRegistered']).toBe('A file is on record');
   });
 
   it('states the coverage split as the table actually holds it', () => {
@@ -390,8 +471,15 @@ describe('the media and coverage sentences, with their numbers re-derived', () =
     expect(OPERATOR).toContain(
       `${['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight'][count('data_gated')]} wait on data`
     );
-    expect(count('blocked'), 'exactly one kind is blocked outright').toBe(1);
-    expect(OPERATOR).toContain('one is blocked');
+    /*
+     * The third status, derived the same way and now zero. `blocked` means a
+     * step with no control at all, and the damage map was the last kind holding
+     * it: registering a diagram became possible, so what remains is a branch
+     * that has not published one — a data question, which is the other status.
+     * A kind blocked again has to be stated again, in both places.
+     */
+    expect(count('blocked'), 'a kind is blocked again and the guide does not say which').toBe(0);
+    expect(OPERATOR, 'the guide still describes a blocked kind').toContain('none is blocked');
   });
 
   it('"road test is not part of this release" — nothing is labelled as one', () => {

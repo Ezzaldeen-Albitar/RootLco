@@ -47,36 +47,63 @@ import {
 
 /**
  * Damage map and marks — `rec.reception-condition-evidence` kinds `damage_map`
- * and `damage_mark` (`P1-28-FE-012`), the NON-MEDIA half.
+ * and `damage_mark` (`P1-28-FE-012`).
  *
- * ## Opening a map is BLOCKED, and this is where an operator would look for it
+ * ## What replaced a block
  *
- * `DamageMapEvidenceInput` requires `documentId` AND `documentVersionId`: a
- * registered map-template document and the exact version the marks were drawn
- * on, and `rec.damage_maps` holds both as NOT NULL foreign keys into
- * `shared.documents` / `shared.document_versions`.
+ * This step used to render no map form at all, and stated a reason where the
+ * form would have been. `DamageMapEvidenceInput` requires `documentId` AND
+ * `documentVersionId` — a registered map-template document and the exact version
+ * the marks were drawn on, held by `rec.damage_maps` as NOT NULL foreign keys
+ * into `shared.documents` / `shared.document_versions` — and while nothing in
+ * the product could produce either value, two uuid boxes would have been a
+ * control whose only outcome was a refusal.
  *
- * This docblock used to say "no operation in this product registers a document".
- * **The published surface does have one** — `shared.attachment-upload-authorize`
- * — so that sentence was refutable, and a refutable reason attached to a right
- * verdict is how the verdict gets overturned. The reason now lives in ONE place,
- * `DOCUMENT_CHAIN_BLOCKERS` in `../../media/media-decision.ts`: the chain cannot
- * complete for three independent, repository-derived reasons, so no tenant —
- * configured or otherwise — can hold a damage-map template. `P1-OD-025` governs
- * whether the chain may exist at all.
+ * Both uuids are still required and they still name the exact drawing. What
+ * changed is that a tenant can now HOLD one: the Owner resolved `P1-OD-025`,
+ * `P1-15` built the private versioned document chain, and `P1-18` publishes the
+ * revisions this visit's branch may bind to on the visit's own capture contract.
+ * So what an operator meets here is the capability — `MapForm`, a SELECT over
+ * what the branch already publishes — rather than an account of why there is not
+ * one, and no identifier is ever typed: the pair travels with the chosen
+ * revision, which is also what keeps the two halves coherent for
+ * `rec.guard_damage_map_version()`, the trigger that refuses a version not
+ * belonging to the named document.
  *
- * So there is no map form here at all: two uuid boxes would be a control whose
- * only outcome is a refusal, and the reason is stated where the control would
- * have been rather than left for an operator to discover.
+ * What can still be missing is a published revision, and that is a configuration
+ * state rather than an absent capability. `check-in/evidence.ts` carries this
+ * kind as `data_gated` on `receptions.damage.templateNone` for exactly that
+ * reason, and the notice is rendered in the form's place rather than left for an
+ * operator to discover.
+ *
+ * ## A bindable template is a REVISION, and it arrives with the visit
+ *
+ * A template is a slot — a `mapType`, an optional `perspective` and a lifecycle
+ * — and the geometry lives in the revisions it publishes. Only a slot with a
+ * published revision carries the `documentId`/`documentVersionId` pair a map can
+ * be bound to, which is what `selectableTemplates` filters for; a retired slot
+ * stays readable, because a map already drawn on one must still be able to say
+ * which drawing it used.
+ *
+ * That set is read from the visit's own capture contract and NOT from the
+ * damage-map-template catalogue, and the split is a permission one. Every
+ * `rec.catalogue-damage-map-template-*` operation costs `rec.catalogue.manage`,
+ * the authority to decide what the whole workshop draws on; the bindable set for
+ * this branch travels with `rec.reception-evidence-binding-list` behind
+ * `rec.reception.read`. Reading it through the visit is what lets the desk bind
+ * a revision without holding the authority to define one — which is why there is
+ * no template administration on this screen and why a receptionist who cannot
+ * see the catalogue can still open a map.
  *
  * ## Marks are real, and the diagram carries no template image
  *
  * `damage_mark` needs only an existing `damageMapId`, a type, a zone and a pair
- * of coordinates — so the capture is genuinely wired and submits genuinely. The
- * surface it is placed on is a plain schematic drawn in this file: no uploaded
- * image, no asserted vehicle body, no invented template. Media state anywhere in
- * this phase is "registered, pending" and never "uploaded"; here there is no
- * media at all.
+ * of coordinates. The surface it is placed on is a plain schematic drawn in this
+ * file: the bound revision is NAMED (`activeVersionNumber`) and never rendered,
+ * so no stored object is fetched to draw one and nothing here asserts a
+ * particular vehicle's shape. What the record carries is the fraction pair and
+ * the exact revision the map was bound to; a later reader resolves the drawing
+ * from that reference rather than from anything this screen draws.
  *
  * `coordX`/`coordY` are FRACTIONS of the map, `0..1` inclusive, exactly as the
  * contract states — which is why a mark survives the map being resized, and why
@@ -266,6 +293,18 @@ export function DamageMapStep({
                   })
                 );
                 await refresh();
+                /*
+                 * The MAP read-back, and not only the template list.
+                 *
+                 * `mapChoices` is derived from `maps`, so a map that is not
+                 * re-read is a map no mark can hang off: the operator opens one,
+                 * is told it worked, and the section below still says this visit
+                 * has none. Nothing else brings the row back within the session
+                 * — `refresh()` re-reads the VISIT, and recording a child row
+                 * does not move `recordVersion`, so `readKey` does not move
+                 * either and neither evidence table re-runs.
+                 */
+                maps.refresh();
                 templateTable.refresh();
               }
               return result;

@@ -4,6 +4,8 @@ import * as aptApi from '@/features/appointments/api';
 import * as aptCatalogue from '@/features/appointments/catalogue-api';
 import * as recApi from '@/features/receptions/api';
 import * as recCatalogue from '@/features/receptions/catalogue-api';
+import * as recEvidenceCapture from '@/features/receptions/evidence-capture';
+import * as recSignatureCapture from '@/features/receptions/signature-capture';
 import * as recSupport from '@/features/receptions/support-api';
 import * as recWorkOrder from '@/features/receptions/work-order-api';
 import * as customerDirectory from '@/lib/customers/directory';
@@ -20,9 +22,9 @@ import * as customerVehicles from '@/lib/customers/vehicles';
  * nothing was executing the adapters themselves. That is precisely the P1-27
  * Wave 5 finding: mutating an adapter left twenty DOM tests green, because the
  * only references to it in the whole suite were `vi.fn()` stubs that replace the
- * thing under test. Twenty-three reads and fourteen writes shipped in this phase
- * with contract-table coverage only, and a contract table cannot say which path
- * a function builds, whether it sends a scope, or what it returns for a 403.
+ * thing under test. Twenty-four reads and twenty writes ship in this phase with
+ * contract-table coverage only, and a contract table cannot say which path a
+ * function builds, whether it sends a scope, or what it returns for a 403.
  *
  * ## Not a test file
  *
@@ -85,6 +87,38 @@ export const REQUEST = { pageSize: 25 } as never;
 
 /** The version a guarded command presents. Never computed — see `QA-004`. */
 export const VERSION = 7;
+
+/**
+ * A chosen file, in the envelope a Server Action really receives.
+ *
+ * The two composite captures take `FormData` rather than a typed argument
+ * because that is what the browser→Server-Action boundary carries, and driving
+ * them with anything else would drive a signature the product does not have.
+ * The bytes are a real JPEG start-of-image marker: non-empty is load-bearing,
+ * because both actions refuse a zero-byte file before spending anything, and a
+ * drive that was refused there would reach no client at all and make every
+ * sweep over it vacuous.
+ *
+ * `lastModified` is set deliberately. It is what the DEVICE claims the capture
+ * happened at, and a category whose `device_capture_timestamp_required` is true
+ * — which every seeded reception category is — turns it into a
+ * `deviceCapturedAt` on the binding. Left at the default it would be "now",
+ * which is a fixture that changes between runs.
+ */
+export function capturedFile(field: string, fileName: string, contentType: string): FormData {
+  const form = new FormData();
+  form.set(
+    field,
+    new File([new Uint8Array([0xff, 0xd8, 0xff, 0xdb])], fileName, {
+      type: contentType,
+      lastModified: Date.UTC(2026, 8, 1, 9, 30),
+    })
+  );
+  return form;
+}
+
+/** What `capturedFile` records as the device's claim, as the actions send it. */
+export const CAPTURED_AT = new Date(Date.UTC(2026, 8, 1, 9, 30)).toISOString();
 
 /* ------------------------------------------------------------------ *
  * The drive table
@@ -227,6 +261,30 @@ const WINDOW = Object.freeze({
  * disagreeing inside one sentence. `QA-002` drives each of them through the 428
  * branch and asserts the census is seven, and `QA-004` proves each adapter takes
  * the version as a REQUIRED parameter rather than defaulting one.
+ *
+ * ## Four evidence writes, and two COMPOSITE actions beside them
+ *
+ * `P1-OD-025` resolved, so the document chain completes and four writes that had
+ * nothing to reach them entered this table: `bindEvidence`,
+ * `finalizeEvidenceBinding`, `overrideCaptureRequirement` and
+ * `recordSignatureEvent`. Each resolves to a published operation the registry
+ * marks `idempotent: true`, none is version guarded, and none mints a key of its
+ * own — the contract-derived client does that, which is what `QA-004` asserts.
+ *
+ * Two entries are a different KIND of drive and say so where they stand.
+ * `captureRequirementEvidence` and `captureSignatureEvidence` are not adapters:
+ * they are Server Actions that walk a category read, an upload authorization, an
+ * object PUT, a version registration and a link before they reach a reception
+ * write — `bindEvidence` for the first (and `finalizeEvidenceBinding` after it,
+ * when the version was accepted), `recordSignature` for the second.
+ * `p1-28-qa.test.ts` mocks `@/features/attachments/api`, the shared P1-15 half of
+ * that chain, which this phase consumes and does not own; so exactly ONE request
+ * reaches the mocked transport per drive, and it is the `rec.*` write. What these
+ * two entries prove is therefore what this file is for: that the reception
+ * request the composite finally issues is the one the contract publishes, on the
+ * right path, carrying no scope and no key of its own. What they deliberately do
+ * NOT measure is the `shared.*` half, which belongs to the attachments tier and
+ * is driven there.
  */
 export const WRITE_DRIVES: readonly AdapterDrive[] = Object.freeze([
   {
@@ -350,6 +408,46 @@ export const WRITE_DRIVES: readonly AdapterDrive[] = Object.freeze([
     name: 'recordSignatureEvent',
     channel: 'send',
     call: () => recApi.recordSignatureEvent(VISIT, SIGNATURE, { eventType: 'finalized' }),
+  },
+  {
+    /*
+     * FE-017's composite. Driven against `vin` because that requirement maps to
+     * exactly one category — `reception_vin` — so the drive exercises the
+     * derivation `CAPTURE_CATEGORY_BY_REQUIREMENT` performs rather than a
+     * category a caller chose.
+     *
+     * The registered version stays `pending` in the mocked chain, and that is a
+     * decision rather than a convenience: an `accepted` version would make the
+     * action finalize, which is a SECOND request, and every consumer of this
+     * table asserts exactly one. The accepted path is proved separately, in the
+     * one case that can afford two requests.
+     */
+    name: 'captureRequirementEvidence',
+    channel: 'send',
+    call: () =>
+      recEvidenceCapture.captureRequirementEvidence(
+        VISIT,
+        'vin',
+        capturedFile('evidenceFile', 'vin-plate.jpg', 'image/jpeg')
+      ),
+  },
+  {
+    /*
+     * FE-018's composite. The form fields are the ones `SignatureStep` really
+     * submits — role, purpose, an optional party and the image — because a drive
+     * that invented a field would prove the action accepts something no screen
+     * sends. `captureMethod` is deliberately absent: the action fixes it to
+     * `uploaded` server-side, which is why no form control offers it.
+     */
+    name: 'captureSignatureEvidence',
+    channel: 'send',
+    call: () => {
+      const form = capturedFile('signatureFile', 'signature.png', 'image/png');
+      form.set('signerRole', 'service_requester');
+      form.set('purpose', 'reception_acknowledgement');
+      form.set('signerPartnerId', PARTNER);
+      return recSignatureCapture.captureSignatureEvidence(VISIT, form);
+    },
   },
   {
     name: 'approveReception',

@@ -1,6 +1,12 @@
 import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-// @ts-expect-error -- a launcher module, deliberately plain JavaScript.
+/*
+ * `storage-env.mjs` is a launcher module, deliberately plain JavaScript. It
+ * carried a `@ts-expect-error` here, which the root `tsc` then reported as
+ * TS2578 — UNUSED: the root project resolves the `.mjs` and its JSDoc types
+ * without complaint, so the suppression was suppressing nothing and its own
+ * presence was the error. Removed rather than widened; the import typechecks.
+ */
 import { resolveStorageEnv } from '../../scripts/dev/storage-env.mjs';
 import { S3StorageProvider } from '../../apps/api/src/modules/shared-services/provider/s3-storage-provider';
 import { buildStorageKey } from '../../apps/api/src/modules/shared-services/domain/storage-key';

@@ -613,6 +613,22 @@ export const REGISTER = Object.freeze([
     why: 'domain classification validators — every one needs PostgreSQL (P1-25-F-023)',
   },
   {
+    name: 'verify:storage',
+    owner: ROOT,
+    tier: 'environment',
+    // The P1-OD-025 acceptance proof: it signs an upload, PUTs real bytes, reads
+    // them back and compares the hash, against whatever S3-compatible endpoint
+    // the launcher configured. That is the whole point of it — a class that
+    // COULD be configured is not a store that IS, and only moving an object
+    // tells the two apart — so it cannot be `required`: the aggregate would run
+    // it on a machine with no store, and hosted CI provisions none.
+    //
+    // `environment` rather than `informational` because failing it IS a verdict.
+    // It is the only check standing between "the acceptance environment has an
+    // object store" and a screen that offers capture into nothing.
+    why: 'the acceptance object store — needs a live S3-compatible endpoint (P1-OD-025)',
+  },
+  {
     name: 'build',
     owner: ROOT,
     tier: 'informational',

@@ -1,171 +1,126 @@
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { axe } from 'vitest-axe';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
 import { renderLtr, renderRtl } from './render';
-import type { ReceptionDetail } from '@/features/receptions/receptions-contract';
+import type { CheckInStepProps } from '@/features/receptions/check-in/wizard';
+import {
+  CAPTURE_REQUIREMENTS,
+  MAX_OVERRIDE_REASON,
+  type CaptureBindingEntry,
+  type CaptureContract,
+  type CaptureOverrideEntry,
+  type CaptureRequirement,
+  type CaptureRequirementState,
+  type ReceptionDetail,
+} from '@/features/receptions/receptions-contract';
 
 /**
- * `P1-28-FE-017` — the media notice, rendered, and the ban proved in the DOM
- * (`TC-P1-28-REC-009`).
+ * `P1-28-FE-017` — the reception evidence area, rendered (`TC-P1-28-REC-009`).
  *
- * The source twin (`p1-28-reception-media.test.ts`) proves no capture construct
- * exists in the tree. This file proves the other half, which source alone cannot
- * reach: that the screens an operator actually meets — the check-in start
- * screen, every registered wizard step, and the walk-in intake — put **no**
- * upload or camera affordance on the page, in either language, and that where a
- * photograph would have been attached there is instead a statement naming
- * `P1-OD-025`.
+ * ## What this file used to be, and why none of it survived
  *
- * ## Why both halves are needed
+ * It was the DOM half of a BAN. `P1-OD-025` was an open Owner decision, so the
+ * step rendered a statement instead of a capability, and this suite swept the
+ * check-in start screen, every wizard step and the walk-in intake asserting that
+ * nothing on any of them could hand a file to the application.
  *
- * A rendered-DOM sweep can only see the branch it rendered, so a control behind
- * an unrendered condition is invisible to it. A source sweep can only see text,
- * so a control assembled at runtime is invisible to that. Neither is sufficient;
- * the pair is.
+ * The decision is resolved. The private versioned model exists (Document →
+ * immutable Version → business link, `pending → scanning → accepted`), a real
+ * S3-compatible store is configured for the acceptance environment, the seven
+ * platform `reception_*` categories are seeded, and capture runs through a
+ * Server Action so the browser never holds storage credentials or an object key.
+ * A sweep for the absence of capture would now be a sweep for the absence of the
+ * feature, so it is gone rather than softened — and what replaces it is the
+ * proof that the capability an operator meets behaves as the contract says.
  *
- * ## The sweep asserts it swept something
+ * ## What is proved here, and what deliberately is not
  *
- * Every sweep first asserts the page rendered controls at all. Without that, a
- * failed render would report "no upload affordance found" — a vacuous pass on
- * the one claim this wave exists to make.
+ * The subject is `components/steps/MediaStep.tsx` and only that. Every adapter is
+ * a module mock, because what is under test is the SCREEN: which of the four
+ * per-requirement states it chooses, what its count means, which authority the
+ * waiver costs, what the operator is told after a capture, and which controls a
+ * terminal visit withdraws. The transport is held by `tests/support/p1-28-drives
+ * .ts` and by the source twin `p1-28-reception-media.test.ts`; the Server Action
+ * chain itself — category resolution, registration, link, bind, finalize — is
+ * held by `reception-evidence.test.ts`. Asserting any of that from here would be
+ * asserting a mock.
+ *
+ * ## Non-vacuity
+ *
+ * A DOM assertion about a row that never rendered is a pass that measured
+ * nothing, and this repository has been bitten by that shape repeatedly. So
+ * every case that speaks about requirement rows first asserts the rows are
+ * there, by requirement code, through `rowsRendered()`; the case that counts
+ * file inputs also asserts the count is non-zero on the surface it expects them;
+ * the four outcome sentences are asserted DISTINCT before any of them is used to
+ * identify a branch; and the Arabic case runs its script matcher in both
+ * directions so a matcher that could never fire cannot pass as a translation
+ * check.
  */
 
 /* --- adapter mocks (the transport is not what is under test) --------------- */
 
-const createReception = vi.fn();
-const listReceptions = vi.fn();
-const readReception = vi.fn();
-const listPartyRoles = vi.fn();
-const listAuthorizations = vi.fn();
-const listConditionEvidence = vi.fn();
-const assignPartyRole = vi.fn();
-const recordAuthorization = vi.fn();
-const recordConditionEvidence = vi.fn();
-const recordSignature = vi.fn();
-const recordRefusal = vi.fn();
-const approveReception = vi.fn();
-const convertReceptionToWorkOrder = vi.fn();
-const closeReceptionWithoutWork = vi.fn();
-const refuseReception = vi.fn();
-
-/*
- * EVERY adapter the reception module exports, not the subset the first version
- * of this file happened to need.
+const readCaptureContract = vi.fn();
+const overrideCaptureRequirement = vi.fn();
+/**
+ * Not called by this step — and mocked anyway.
  *
- * The sweep below walks every registered wizard step, so it mounts every step's
- * adapters. A factory mock REPLACES the module, so a missing export is not a
- * stub returning undefined — it throws on access, from inside an effect, as an
- * unhandled rejection that fails the run while every assertion still passes.
- * That is what happened when Waves E and F/G added nine steps to a registry this
- * file walks by iteration rather than by name.
+ * `steps/EvidencePanels.tsx` imports it at module scope for the read-back
+ * helpers the condition-evidence steps share, and `MediaStep` imports that
+ * module for `EvidenceStates` and the two button classes. A factory mock
+ * REPLACES the module, so an export the graph imports and this factory omits is
+ * not a stub returning `undefined` — it throws on access, which is how a suite
+ * ends up red for a reason that has nothing to do with what it tests.
  */
+const listConditionEvidence = vi.fn();
+
 vi.mock('@/features/receptions/api', () => ({
-  createReception: (...args: unknown[]) => createReception(...args),
-  listReceptions: (...args: unknown[]) => listReceptions(...args),
-  readReception: (...args: unknown[]) => readReception(...args),
-  listPartyRoles: (...args: unknown[]) => listPartyRoles(...args),
-  listAuthorizations: (...args: unknown[]) => listAuthorizations(...args),
+  readCaptureContract: (...args: unknown[]) => readCaptureContract(...args),
+  overrideCaptureRequirement: (...args: unknown[]) => overrideCaptureRequirement(...args),
   listConditionEvidence: (...args: unknown[]) => listConditionEvidence(...args),
-  assignPartyRole: (...args: unknown[]) => assignPartyRole(...args),
-  recordAuthorization: (...args: unknown[]) => recordAuthorization(...args),
-  recordConditionEvidence: (...args: unknown[]) => recordConditionEvidence(...args),
-  recordSignature: (...args: unknown[]) => recordSignature(...args),
-  recordRefusal: (...args: unknown[]) => recordRefusal(...args),
-  approveReception: (...args: unknown[]) => approveReception(...args),
-  convertReceptionToWorkOrder: (...args: unknown[]) => convertReceptionToWorkOrder(...args),
-  closeReceptionWithoutWork: (...args: unknown[]) => closeReceptionWithoutWork(...args),
-  refuseReception: (...args: unknown[]) => refuseReception(...args),
 }));
 
-const listFuelLevels = vi.fn();
-const listWarningLightCodes = vi.fn();
-const listRefusalReasons = vi.fn();
-
-vi.mock('@/features/receptions/catalogue-api', () => ({
-  listFuelLevels: (...args: unknown[]) => listFuelLevels(...args),
-  listWarningLightCodes: (...args: unknown[]) => listWarningLightCodes(...args),
-  listRefusalReasons: (...args: unknown[]) => listRefusalReasons(...args),
+/**
+ * The capture Server Action, mocked so its OUTCOMES can be driven.
+ *
+ * The four sentences the step can print are a function of what this returns —
+ * the stage reached and whether a scanner could read the object back — and
+ * nothing else on the screen can produce them. Driving the branches from here is
+ * therefore driving the branch selector, not simulating it.
+ */
+const captureRequirementEvidence = vi.fn();
+vi.mock('@/features/receptions/evidence-capture', () => ({
+  captureRequirementEvidence: (...args: unknown[]) => captureRequirementEvidence(...args),
 }));
 
-const readConvertedWorkOrder = vi.fn();
-vi.mock('@/features/receptions/work-order-api', () => ({
-  readConvertedWorkOrder: (...args: unknown[]) => readConvertedWorkOrder(...args),
-}));
-
-/** `FE-013` reads the arrival odometer through the P1-27 vehicle history module. */
-const listOdometerReadings = vi.fn();
-const recordOdometerAction = vi.fn();
-vi.mock('@/features/vehicles/history-api', () => ({
-  listOdometerReadings: (...args: unknown[]) => listOdometerReadings(...args),
-  recordOdometerAction: (...args: unknown[]) => recordOdometerAction(...args),
-}));
-
-const listConfirmedAppointments = vi.fn();
-const listReceivingEmployeeCandidates = vi.fn();
-const readCustomerSummary = vi.fn();
-const readVehicleSummary = vi.fn();
-const listVehicleRelationshipEntries = vi.fn();
-
+/** `EvidencePanels` resolves account identifiers to names through this one. */
+const readUserIdentity = vi.fn();
 vi.mock('@/features/receptions/support-api', () => ({
-  listConfirmedAppointments: (...args: unknown[]) => listConfirmedAppointments(...args),
-  listReceivingEmployeeCandidates: (...args: unknown[]) => listReceivingEmployeeCandidates(...args),
-  readCustomerSummary: (...args: unknown[]) => readCustomerSummary(...args),
-  readVehicleSummary: (...args: unknown[]) => readVehicleSummary(...args),
-  listVehicleRelationshipEntries: (...args: unknown[]) => listVehicleRelationshipEntries(...args),
+  readUserIdentity: (...args: unknown[]) => readUserIdentity(...args),
 }));
 
-const listCustomerVehicles = vi.fn();
-vi.mock('@/lib/customers/vehicles', () => ({
-  listCustomerVehicles: (...args: unknown[]) => listCustomerVehicles(...args),
-}));
-
-const searchCustomerDirectory = vi.fn();
-vi.mock('@/lib/customers/directory', () => ({
-  searchCustomerDirectory: (...args: unknown[]) => searchCustomerDirectory(...args),
-}));
-
-const createIndividualAction = vi.fn();
-const createCompanyAction = vi.fn();
-vi.mock('@/features/crm/customers/creation-actions', () => ({
-  createIndividualAction: (...args: unknown[]) => createIndividualAction(...args),
-  createCompanyAction: (...args: unknown[]) => createCompanyAction(...args),
-}));
-
-const searchVehicles = vi.fn();
-const createVehicleAction = vi.fn();
-vi.mock('@/features/vehicles/api', () => ({
-  searchVehicles: (...args: unknown[]) => searchVehicles(...args),
-  createVehicleAction: (...args: unknown[]) => createVehicleAction(...args),
-}));
-
-const linkCustomerAction = vi.fn();
-vi.mock('@/features/vehicles/relations-api', () => ({
-  linkCustomerAction: (...args: unknown[]) => linkCustomerAction(...args),
-}));
-
-const { MediaDecisionNotice } = await import('@/features/receptions/media/MediaDecisionNotice');
-const { MEDIA_DECISION_ID, MEDIA_SURFACE_KEYS } =
-  await import('@/features/receptions/media/media-decision');
-const { CheckInStartScreen } = await import('@/features/receptions/components/CheckInStartScreen');
-const { CheckInWizardShell } = await import('@/features/receptions/components/CheckInWizardShell');
-const { CHECK_IN_STEPS } = await import('@/features/receptions/check-in/steps');
-const { WalkInIntakeScreen } =
-  await import('@/features/receptions/intake/components/WalkInIntakeScreen');
+const { MediaStep } = await import('@/features/receptions/components/steps/MediaStep');
+/**
+ * The real component, NOT a mock.
+ *
+ * One case renders it standalone and compares the element it produces with the
+ * one the step rendered, which is the only way to prove the input in the capture
+ * form came from the single approved path rather than from a second
+ * `<input type="file">` that happens to look like it.
+ */
+const { CaptureFileField } = await import('@/features/receptions/components/CaptureFileField');
 
 const EN = en as Record<string, string>;
 const AR = ar as Record<string, string>;
 
 /* --- fixtures -------------------------------------------------------------- */
 
-function page<Row>(rows: readonly Row[]) {
-  return { status: 'ok' as const, rows, nextCursor: null, hasMore: false, correlationId: 'corr' };
-}
+const VISIT = 'rv-1';
 
 const DETAIL: ReceptionDetail = {
-  id: 'rv-1',
+  id: VISIT,
   displayNumber: 'R-0001',
   receptionStatus: 'opened',
   origin: 'walk_in',
@@ -188,14 +143,6 @@ const DETAIL: ReceptionDetail = {
   updatedAt: null,
 };
 
-/**
- * EVERY capability, deliberately granted.
- *
- * The sweep below asks whether a media control exists ANYWHERE in the wizard,
- * so it must run as the most privileged operator there is: a capability held
- * back here would hide a control behind a permission gate and let the sweep
- * report a clean wizard it never actually saw.
- */
 const CAPABILITIES = {
   manageParties: true,
   verifyAuthorizations: true,
@@ -203,8 +150,6 @@ const CAPABILITIES = {
   readVehicles: true,
   manageEvidence: true,
   overrideEvidence: true,
-  // P1-28-SEC-002: the WF-27 second permission, held here so the existing
-  // cases keep exercising the capture forms they were written against.
   viewSensitiveNarratives: true,
   manageSignatures: true,
   recordOdometer: true,
@@ -215,382 +160,699 @@ const CAPABILITIES = {
   readStaffDirectory: true,
 };
 
-/** The operator the referent-less identity fields (G-EMP) name. */
-const SESSION = { userId: 'user-1', displayName: 'Front Desk' };
-
-/** The receiving employee the route resolved (G-EMP). Not this suite's subject. */
-
-function startProps(messages: typeof en) {
+function stepProps(over: Partial<CheckInStepProps> = {}): CheckInStepProps {
   return {
-    locale: messages === en ? ('en' as const) : ('ar' as const),
-    messages,
-    sessionUserId: 'user-1',
-    sessionUserName: 'Front Desk',
-    companyIds: ['company-1'],
-    branchIds: ['branch-1'],
-    canCreate: true,
-    canListAppointments: true,
-    canPickEmployee: false,
-    canSearchCustomers: true,
-    fuelLevels: { status: 'ok' as const, options: [], truncated: false, correlationId: null },
+    locale: 'en',
+    messages: en,
+    visitId: VISIT,
+    recordVersion: 3,
+    detail: DETAIL,
+    capabilities: CAPABILITIES,
+    session: { userId: 'user-1', displayName: 'Front Desk' },
+    writesLocked: false,
+    refresh: vi.fn().mockResolvedValue(undefined),
+    ...over,
+  };
+}
+
+function requirement(
+  code: CaptureRequirement,
+  over: Partial<CaptureRequirementState> = {}
+): CaptureRequirementState {
+  return {
+    requirementCode: code,
+    minCount: 1,
+    deviceCapturedAtRequired: false,
+    source: 'baseline',
+    finalizedCount: 0,
+    recordedCount: 0,
+    satisfied: false,
+    overridden: false,
+    ...over,
+  };
+}
+
+function binding(
+  id: string,
+  code: CaptureRequirement,
+  status: string,
+  finalizedAt: string | null
+): CaptureBindingEntry {
+  return {
+    id,
+    requirementCode: code,
+    documentId: `doc-${id}`,
+    documentVersionId: `ver-${id}`,
+    documentVersionStatus: status,
+    integritySha256: finalizedAt === null ? null : 'a'.repeat(64),
+    deviceCapturedAt: null,
+    qualityStatus: 'readable',
+    finalizedAt,
+    finalizedBy: finalizedAt === null ? null : 'user-1',
+    createdAt: '2026-08-13T08:00:00.000Z',
+    createdBy: 'user-1',
+  };
+}
+
+const WAIVER: CaptureOverrideEntry = {
+  id: 'ovr-1',
+  requirementCode: 'ev_soc',
+  reason: 'The vehicle is not electric.',
+  actorId: 'user-1',
+  occurredAt: '2026-08-13T08:10:00.000Z',
+};
+
+/**
+ * FOUR requirements for four states, one each.
+ *
+ * A branch resolved to the same value twice cannot be told apart by a case that
+ * only asserts each row's own copy — the wrong-state row would be masked by a
+ * sibling that happens to be right — so each state is published exactly once and
+ * the four rendered sentences are then asserted distinct.
+ *
+ * `ev_soc` is deliberately BOTH `satisfied` and `overridden`, which is what
+ * `rec.reception-evidence-binding-list` answers for a waived requirement, since
+ * an override is one of the two ways a requirement is satisfied. It is the only
+ * fixture that can prove the precedence: a screen that read `satisfied` first
+ * would print "Met." over a requirement nobody evidenced.
+ */
+const PUBLISHED: readonly CaptureRequirement[] = ['exterior', 'vin', 'damage', 'ev_soc'];
+
+const CONTRACT: CaptureContract = {
+  receptionVisitId: VISIT,
+  requirements: [
+    requirement('exterior', { minCount: 2, finalizedCount: 2, recordedCount: 2, satisfied: true }),
+    // Three files bound, one accepted: the case the whole "finalized only" rule
+    // exists for.
+    requirement('vin', { minCount: 2, finalizedCount: 1, recordedCount: 3 }),
+    requirement('damage'),
+    requirement('ev_soc', { satisfied: true, overridden: true }),
+  ],
+  bindings: [
+    binding('ex-1', 'exterior', 'accepted', '2026-08-13T08:05:00.000Z'),
+    binding('ex-2', 'exterior', 'accepted', '2026-08-13T08:06:00.000Z'),
+    binding('vin-1', 'vin', 'accepted', '2026-08-13T08:07:00.000Z'),
+    binding('vin-2', 'vin', 'pending', null),
+    binding('vin-3', 'vin', 'scanning', null),
+  ],
+  overrides: [WAIVER],
+  bindableTemplates: [],
+};
+
+function contractRead(contract: CaptureContract = CONTRACT) {
+  return { status: 'ok' as const, data: contract, correlationId: 'corr-capture' };
+}
+
+/** A write that succeeded, in the shape `overrideCaptureRequirement` returns. */
+function waiverRecorded(code: CaptureRequirement) {
+  return {
+    status: 'success' as const,
+    correlationId: 'corr-waiver',
+    attempt: 1,
+    recorded: { receptionVisitId: VISIT, overrideId: 'ovr-new', requirementCode: code },
   };
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
-  listReceptions.mockResolvedValue(page([]));
-  // The operator is eligible in the chosen branch — the ordinary case. A test
-  // that wants the OTHER case says so, because an empty list now withdraws the
-  // default rather than leaving an ineligible custodian selected.
-  listReceivingEmployeeCandidates.mockResolvedValue(
-    page([{ id: 'user-1', displayName: 'Front Desk' }])
-  );
-  listConfirmedAppointments.mockResolvedValue(page([]));
-  listCustomerVehicles.mockResolvedValue(page([]));
-  listPartyRoles.mockResolvedValue(page([]));
-  listAuthorizations.mockResolvedValue(page([]));
-  listConditionEvidence.mockResolvedValue(page([]));
-  listVehicleRelationshipEntries.mockResolvedValue(page([]));
-  /*
-   * The four intake catalogues answer EMPTY, not undefined. Every one of them is
-   * a real tenant catalogue this product cannot populate, so an empty answer is
-   * both the honest default and the branch the steps state on screen — and the
-   * sweep needs the steps to render, not to throw.
-   */
-  const catalogue = { status: 'ok' as const, options: [], truncated: false, correlationId: null };
-  listFuelLevels.mockResolvedValue(catalogue);
-  listWarningLightCodes.mockResolvedValue(catalogue);
-  listRefusalReasons.mockResolvedValue(catalogue);
-  readConvertedWorkOrder.mockResolvedValue({ status: 'ok', data: null, correlationId: 'corr-wo' });
-  listOdometerReadings.mockResolvedValue(page([]));
-  searchCustomerDirectory.mockResolvedValue(page([]));
-  searchVehicles.mockResolvedValue(page([]));
-  readReception.mockResolvedValue({ status: 'ok', data: DETAIL, correlationId: 'corr-read' });
-  readCustomerSummary.mockResolvedValue({
+  readCaptureContract.mockResolvedValue(contractRead());
+  listConditionEvidence.mockResolvedValue({
     status: 'ok',
-    data: {
-      id: 'partner-1',
-      displayNumber: 'C-0001',
-      displayName: 'Layla Haddad',
-      partyType: 'individual',
-      lifecycleStatus: 'active',
-    },
-    correlationId: 'corr-cust',
+    rows: [],
+    nextCursor: null,
+    hasMore: false,
+    correlationId: 'corr-page',
   });
-  readVehicleSummary.mockResolvedValue({
+  readUserIdentity.mockResolvedValue({
     status: 'ok',
-    data: {
-      id: 'veh-9',
-      displayNumber: 'V-9',
-      vin: '1HGCM82633A004352',
-      makeName: 'Alpha',
-      modelName: 'Runner',
-      modelYear: 2021,
-      color: 'White',
-      lifecycleStatus: 'active',
-      workshopStatus: 'none',
-      mergedIntoId: null,
-    },
-    correlationId: 'corr-veh',
+    data: { id: 'user-1', displayName: 'Front Desk' },
+    correlationId: 'corr-user',
   });
 });
 
-/* --- the sweep ------------------------------------------------------------- */
+/* --- the non-vacuity guard every case below runs first ---------------------- */
 
 /**
- * Every element that is, or carries, a way to hand a file to the application.
+ * The requirement rows, once they are on the page.
  *
- * `[accept]` and `[capture]` are attribute selectors rather than element ones on
- * purpose: a wrapper component that forwarded either onto a div would be an
- * upload affordance the `input[type="file"]` selector never sees.
+ * Nothing in this file asserts anything about a row's content, its count, its
+ * controls or its copy without having gone through here first: the step renders
+ * a skeleton until the contract read answers, so an assertion made too early —
+ * or after a read that failed — would be an assertion about an empty document,
+ * and "no waiver control was found" is exactly as true of a step that never
+ * rendered as of one that withheld it.
  */
-const CAPTURE_SELECTORS = [
-  'input[type="file"]',
-  'input[type="image"]',
-  '[accept]',
-  '[capture]',
-  'video',
-  'canvas',
-  '[draggable="true"]',
-] as const;
-
-/**
- * Names that OFFER capture, in both languages.
- *
- * Deliberately verbs and devices, never subjects: the step is legitimately
- * called "Photographs and media" / "الصور والوسائط", and a pattern that banned
- * the noun would ban the notice's own signposting — which is the thing an
- * operator needs in order to find the statement at all.
- */
-const OFFERS_CAPTURE =
-  /upload|attach|browse|choose a file|take a photo|camera|scanner|رفع|إرفاق|مرفق|كاميرا|التقط/i;
-
-function sweep(where: string): void {
-  for (const selector of CAPTURE_SELECTORS) {
-    expect(document.body.querySelectorAll(selector).length, `${where} renders ${selector}`).toBe(0);
+async function rowsRendered(
+  codes: readonly CaptureRequirement[] = PUBLISHED
+): Promise<Map<CaptureRequirement, HTMLElement>> {
+  const rows = new Map<CaptureRequirement, HTMLElement>();
+  for (const code of codes) {
+    rows.set(code, await screen.findByTestId(`capture-${code}`));
   }
-
-  const controls = Array.from(
-    document.body.querySelectorAll(
-      'button, a, label, input, select, textarea, [role="button"], [role="link"]'
-    )
+  expect(rows.size, 'the step rendered no requirement row — this case measured nothing').toBe(
+    codes.length
   );
-  expect(
-    controls.length,
-    `${where} rendered no control at all — this sweep measured nothing`
-  ).toBeGreaterThan(0);
-
-  for (const control of controls) {
-    const name = [
-      control.textContent ?? '',
-      control.getAttribute('aria-label') ?? '',
-      control.getAttribute('title') ?? '',
-      control.getAttribute('placeholder') ?? '',
-      control.getAttribute('name') ?? '',
-    ].join(' ');
-    expect(name, `${where} offers capture: ${control.outerHTML.slice(0, 140)}`).not.toMatch(
-      OFFERS_CAPTURE
-    );
-  }
+  return rows;
 }
 
 /* ------------------------------------------------------------------ *
- * The notice itself
+ * The rows, and the state each one is in
  * ------------------------------------------------------------------ */
 
-describe('P1-28-FE-017 — the named-open-decision notice', () => {
-  it('states the block, names P1-OD-025, and says what the Owner must decide (English)', () => {
-    renderLtr(
-      <MediaDecisionNotice
-        locale="en"
-        messages={en}
-        surface="reception-evidence"
-        headingId="notice-heading"
-      />
-    );
+describe('P1-28-FE-017 — one row per requirement the contract published', () => {
+  it('renders the published requirements, and nothing for the rest of the vocabulary', async () => {
+    renderLtr(<MediaStep {...stepProps()} />);
+    const rows = await rowsRendered();
 
-    expect(screen.getByRole('note', { name: EN['receptions.media.heading']! })).toBeInTheDocument();
-    expect(screen.getByText(EN['receptions.media.blocked']!)).toBeInTheDocument();
-    // The decision identifier itself, not a paraphrase of it.
-    expect(screen.getByText(MEDIA_DECISION_ID)).toBeInTheDocument();
-    expect(screen.getByText(MEDIA_DECISION_ID)).toHaveAttribute('dir', 'ltr');
-    expect(screen.getByText(EN['receptions.media.decideHeading']!)).toBeInTheDocument();
-    for (const key of [
-      'receptions.media.decide.set',
-      'receptions.media.decide.formats',
-      'receptions.media.decide.storage',
-      'receptions.media.decide.enforcement',
-    ]) {
-      expect(screen.getByText(EN[key]!), key).toBeInTheDocument();
-    }
-    // What will exist once decided, and the honest ceiling of the chain.
-    expect(screen.getByText(EN['receptions.media.afterDecision']!)).toBeInTheDocument();
-    expect(screen.getByText(EN['receptions.media.ceiling']!)).toBeInTheDocument();
-  });
-
-  it('renders in Arabic, right-to-left, with the identifier still left-to-right', () => {
-    renderRtl(
-      <MediaDecisionNotice
-        locale="ar"
-        messages={ar}
-        surface="reception-evidence"
-        headingId="notice-heading"
-      />
-    );
-
-    expect(document.documentElement.dir).toBe('rtl');
-    expect(screen.getByRole('note', { name: AR['receptions.media.heading']! })).toBeInTheDocument();
-    expect(screen.getByText(AR['receptions.media.blocked']!)).toBeInTheDocument();
-    expect(screen.getByText(AR['receptions.media.ceiling']!)).toBeInTheDocument();
-    // A reference reads the same way in every locale, so it is pinned LTR.
-    expect(screen.getByText(MEDIA_DECISION_ID)).toHaveAttribute('dir', 'ltr');
-  });
-
-  it('says what specifically is blocked on each of the three surfaces', () => {
-    /*
-     * One decision, three surfaces: the evidence area (`FE-017`), the damage-map
-     * template document (`FE-012`) and the signature image (`FE-018`). Each
-     * states its own block, and states only its own — a shared component that
-     * said the same sentence three times would leave two waves explaining
-     * themselves in prose nobody reads.
-     */
-    for (const [surface, key] of Object.entries(MEDIA_SURFACE_KEYS)) {
-      const { unmount } = renderLtr(
-        <MediaDecisionNotice
-          locale="en"
-          messages={en}
-          surface={surface as keyof typeof MEDIA_SURFACE_KEYS}
-          headingId="notice-heading"
-        />
-      );
-      expect(screen.getByText(EN[key]!), surface).toBeInTheDocument();
-      for (const other of Object.values(MEDIA_SURFACE_KEYS)) {
-        if (other === key) continue;
-        expect(screen.queryByText(EN[other]!), `${surface} also claims ${other}`).toBeNull();
-      }
-      unmount();
-    }
-  });
-
-  it('has no critical or serious accessibility violation, in both directions', async () => {
-    for (const [render, messages, locale] of [
-      [renderLtr, en, 'en'],
-      [renderRtl, ar, 'ar'],
-    ] as const) {
-      const { container, unmount } = render(
-        <MediaDecisionNotice
-          locale={locale}
-          messages={messages}
-          surface="reception-evidence"
-          headingId="notice-heading"
-        />
-      );
-      const results = (await axe(container, {
-        runOnly: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'],
-      } as never)) as unknown as {
-        violations: readonly { id: string; impact: string | null }[];
-      };
+    for (const code of PUBLISHED) {
       expect(
-        results.violations.filter((v) => v.impact === 'critical' || v.impact === 'serious'),
-        locale
-      ).toEqual([]);
-      unmount();
+        within(rows.get(code)!).getByText(EN[`receptions.capture.requirement.${code}`]!),
+        code
+      ).toBeInTheDocument();
+    }
+
+    /*
+     * The other direction, and it is not decoration: the resolved policy for a
+     * branch is a SUBSET of the vocabulary, so a step that rendered
+     * `CAPTURE_REQUIREMENTS` instead of `contract.requirements` would ask an
+     * operator for captures their branch does not require and would report them
+     * outstanding for ever.
+     */
+    const unpublished = CAPTURE_REQUIREMENTS.filter((code) => !PUBLISHED.includes(code));
+    expect(unpublished.length, 'every requirement is published — the absence proves nothing').toBe(
+      2
+    );
+    for (const code of unpublished) {
+      expect(screen.queryByTestId(`capture-${code}`), code).toBeNull();
+    }
+  });
+
+  it('chooses a different state for each of the four, and the four are distinct', async () => {
+    renderLtr(<MediaStep {...stepProps()} />);
+    const rows = await rowsRendered();
+
+    const expected: Record<string, string> = {
+      exterior: EN['receptions.capture.state.satisfied']!,
+      // Bound, not accepted. The count says `1/2` and this says why.
+      vin: EN['receptions.capture.state.recordedNotCounted']!,
+      damage: EN['receptions.capture.state.outstanding']!,
+      ev_soc: EN['receptions.capture.state.overridden']!,
+    };
+
+    for (const code of PUBLISHED) {
+      const state = within(rows.get(code)!).getByTestId(`capture-state-${code}`);
+      expect(state.textContent, code).toBe(expected[code]);
+    }
+
+    // Four rows saying four things. A catalogue in which two of these sentences
+    // were identical would make the four assertions above pass over three
+    // states, so the distinctness is asserted rather than assumed.
+    expect(new Set(Object.values(expected)).size).toBe(4);
+  });
+
+  it('reads the waiver ahead of the tick, so a waived requirement never reads as met', async () => {
+    renderLtr(<MediaStep {...stepProps()} />);
+    const row = (await rowsRendered()).get('ev_soc')!;
+
+    // `ev_soc` arrives satisfied AND overridden. Only one of those is the truth
+    // an operator needs at a handover.
+    expect(within(row).getByTestId('capture-state-ev_soc').textContent).toBe(
+      EN['receptions.capture.state.overridden']
+    );
+    expect(within(row).queryByText(EN['receptions.capture.state.satisfied']!)).toBeNull();
+    // …and the recorded reason is on the row, not only in an audit table.
+    expect(within(row).getByTestId('capture-override-ev_soc')).toHaveTextContent(WAIVER.reason);
+  });
+
+  it('counts FINALIZED bindings only — three recorded files do not move 1/2', async () => {
+    renderLtr(<MediaStep {...stepProps()} />);
+    const row = (await rowsRendered()).get('vin')!;
+
+    /*
+     * `finalizedCount/minCount`, exactly. Asserted as an equality rather than
+     * with a substring matcher because the number this must NOT show is
+     * `recordedCount`, and "3/2" contains a "2" just as "1/2" does.
+     */
+    const count = within(row).getByTestId('capture-count-vin');
+    expect(count.textContent).toBe('1/2');
+
+    // The three bound versions are listed by their VERSION STATE — the only
+    // thing that decides whether a file is evidence — and exactly one of them
+    // carries the counted marker.
+    const versions = within(row).getAllByRole('listitem');
+    expect(versions).toHaveLength(3);
+    const lines = versions.map((entry) => entry.textContent ?? '');
+    expect(lines.some((line) => line.includes(EN['receptions.capture.version.accepted']!))).toBe(
+      true
+    );
+    expect(lines.some((line) => line.includes(EN['receptions.capture.version.pending']!))).toBe(
+      true
+    );
+    expect(lines.some((line) => line.includes(EN['receptions.capture.version.scanning']!))).toBe(
+      true
+    );
+    expect(lines.filter((line) => line.includes(EN['receptions.capture.counted']!))).toHaveLength(
+      1
+    );
+  });
+
+  it('states the failed read, with its correlation id and a retry — never an empty area', async () => {
+    /*
+     * The premise of every case above is that the rows on screen are what the
+     * contract answered. A read that failed has answered nothing, and rendering
+     * the step's empty frame would tell an operator this visit owes no evidence.
+     */
+    readCaptureContract.mockResolvedValue({ status: 'error', correlationId: 'corr-500' });
+    renderLtr(<MediaStep {...stepProps()} />);
+
+    expect(await screen.findByText('corr-500')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: EN['state.retry']! })).toBeInTheDocument();
+    for (const code of PUBLISHED) {
+      expect(screen.queryByTestId(`capture-${code}`), code).toBeNull();
     }
   });
 });
 
 /* ------------------------------------------------------------------ *
- * The ban, in the DOM the operator actually gets
+ * The capture form, and the one approved input
  * ------------------------------------------------------------------ */
 
-describe('P1-28-FE-017 — no upload affordance anywhere on the reception surface', () => {
-  it('the sweep is capable of failing — a planted affordance is caught', () => {
+describe('P1-28-FE-017 — the capture form', () => {
+  it('renders exactly one file input per offered requirement, and it is CaptureFileField', async () => {
+    const { container } = renderLtr(<MediaStep {...stepProps()} />);
+    const rows = await rowsRendered();
+
     /*
-     * The control case. Without it every assertion below reduces to "the sweep
-     * found nothing", which is equally true of a sweep that looks at nothing.
+     * Three forms, not four: a requirement whose waiver stands is not offered a
+     * capture control, because recording evidence against a waived requirement
+     * is not a thing the operator was asked for. `exterior` IS offered one
+     * despite being satisfied — a second exterior photograph is always legal.
+     */
+    const inputs = container.querySelectorAll('input[type="file"]');
+    expect(inputs.length, 'the step offered no capture control at all').toBe(3);
+    expect(within(rows.get('ev_soc')!).queryByLabelText(EN['receptions.capture.chooseFile']!)).toBe(
+      null
+    );
+
+    const inRow = rows.get('vin')!.querySelectorAll('input[type="file"]');
+    expect(inRow).toHaveLength(1);
+
+    /*
+     * PROVENANCE, not resemblance.
+     *
+     * `no-unapproved-file-input` allows a file input in exactly one path, and the
+     * allowance is worth nothing if a second input elsewhere can look like this
+     * one. The reference is rendered from the approved component with the props
+     * the step passes, and the two elements are compared as markup — so an input
+     * assembled in the step, or the shared component quietly gaining an `accept`
+     * list this tree invented, fails here.
+     */
+    const reference = renderLtr(
+      <CaptureFileField name="evidenceFile" label={EN['receptions.capture.chooseFile']!} />
+    );
+    expect(inRow[0]!.outerHTML).toBe(reference.container.firstElementChild!.outerHTML);
+    expect(inRow[0]!.hasAttribute('accept')).toBe(false);
+  });
+
+  it('carries the chosen file on the approved input, and submits it under the name the action reads', async () => {
+    /*
+     * Two halves of one contract, and they are asserted separately because jsdom
+     * can only be trusted with one of them.
+     *
+     * The FIELD NAME is a contract between two files: `evidence-capture.ts`
+     * reads `formData.get('evidenceFile')` and answers `attachments.capture
+     * .empty` for anything else. A rename on either side leaves a form that
+     * submits, a screen that reports a refusal, and nothing that says why — so
+     * the submitted key set is asserted on the wire, exactly, rather than the
+     * markup being read for a `name` attribute.
+     *
+     * The BYTES cannot be asserted through that `FormData`. jsdom builds it from
+     * each control's INTERNAL state, and `user-event` selects a file by defining
+     * a `files` property on the element — which every reader sees and jsdom's own
+     * serialiser does not — so the entry arrives as jsdom's empty-selection stand-
+     * in whatever was chosen. Claiming the file crossed would therefore be
+     * claiming something this environment cannot show. What it can show is that
+     * the operator's file is held by the ONE approved input, which is asserted
+     * off the element; that the browser then serialises it is the platform's job,
+     * and the Server Action's own refusal of an empty field is
+     * `reception-evidence.test.ts`'s.
+     */
+    captureRequirementEvidence.mockResolvedValue({
+      status: 'success',
+      attempt: 1,
+      stage: 'finalized',
+    });
+    const user = userEvent.setup();
+    renderLtr(<MediaStep {...stepProps()} />);
+    const row = (await rowsRendered()).get('vin')!;
+
+    const chosen = new File([new Uint8Array([1, 2, 3])], 'vin-plate.jpg', { type: 'image/jpeg' });
+    const field = within(row).getByLabelText(EN['receptions.capture.chooseFile']!);
+    await user.upload(field, chosen);
+    expect((field as HTMLInputElement).files?.[0]?.name).toBe('vin-plate.jpg');
+
+    await user.click(within(row).getByRole('button', { name: EN['receptions.capture.submit']! }));
+
+    await waitFor(() => expect(captureRequirementEvidence).toHaveBeenCalled());
+    const [visitId, code, formData] = captureRequirementEvidence.mock.calls.at(-1)!;
+    expect(visitId).toBe(VISIT);
+    // The requirement is the ROW's, never a value the operator chose: there is
+    // exactly one document category that can satisfy each requirement, so a
+    // picker here would be a way to be refused.
+    expect(code).toBe('vin');
+    /*
+     * Exactly one field, and it is that one. An equality rather than a `has`,
+     * because the second thing this proves is a negative: nothing else rides
+     * along — no company or branch the client asserted, no accepted-type list
+     * this tree invented, no requirement code smuggled into the body where the
+     * argument already carries it.
+     */
+    expect([...(formData as FormData).keys()]).toEqual(['evidenceFile']);
+  });
+
+  it('re-reads the contract after a capture, so the count is the server’s, not the form’s', async () => {
+    captureRequirementEvidence.mockResolvedValue({
+      status: 'success',
+      attempt: 1,
+      stage: 'bound',
+      scannerAvailable: true,
+    });
+    const user = userEvent.setup();
+    renderLtr(<MediaStep {...stepProps()} />);
+    const row = (await rowsRendered()).get('damage')!;
+
+    expect(readCaptureContract).toHaveBeenCalledTimes(1);
+    await user.click(within(row).getByRole('button', { name: EN['receptions.capture.submit']! }));
+
+    // The step never increments a count of its own: it asks again. A screen that
+    // added one locally would show `1/1` for a version that is still `pending`.
+    await waitFor(() => expect(readCaptureContract.mock.calls.length).toBeGreaterThan(1));
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * What the operator is told after a capture
+ * ------------------------------------------------------------------ */
+
+/**
+ * The four outcomes, and the sentence each one earns.
+ *
+ * Three of them are a SUCCESS that did not satisfy the requirement, and the
+ * distinction between them is the whole point: "the scan has not concluded" and
+ * "nothing in this environment can scan it" are different facts about whether
+ * waiting will help, and neither is an error.
+ */
+const OUTCOME_BRANCHES = [
+  {
+    name: 'a finalized capture',
+    outcome: { status: 'success', attempt: 1, stage: 'finalized', scannerAvailable: true },
+    key: 'receptions.capture.finalized',
+  },
+  {
+    name: 'a bound version still being checked',
+    outcome: { status: 'success', attempt: 1, stage: 'bound', scannerAvailable: true },
+    key: 'receptions.capture.boundPending',
+  },
+  {
+    name: 'a bound version nothing can check here',
+    outcome: { status: 'success', attempt: 1, stage: 'bound', scannerAvailable: false },
+    key: 'receptions.capture.boundNoScanner',
+  },
+  {
+    name: 'a capture that recorded nothing',
+    outcome: { status: 'error', attempt: 1, messageKey: 'attachments.capture.storeUnavailable' },
+    key: 'receptions.capture.failed',
+  },
+] as const;
+
+describe('P1-28-FE-017 — the outcome line', () => {
+  it('has four sentences to choose between, and they are four', () => {
+    // Without this the four cases below could all be asserting the same string,
+    // and a step that printed one sentence for every outcome would pass every one
+    // of them. A missing key is caught here too: it would arrive as `undefined`
+    // through the non-null assertions the cases below use.
+    const sentences = OUTCOME_BRANCHES.map((branch) => EN[branch.key]);
+    expect(sentences.every((sentence) => typeof sentence === 'string' && sentence !== '')).toBe(
+      true
+    );
+    expect(new Set(sentences).size).toBe(4);
+  });
+
+  for (const branch of OUTCOME_BRANCHES) {
+    it(`says what happened for ${branch.name}`, async () => {
+      captureRequirementEvidence.mockResolvedValue(branch.outcome);
+      const user = userEvent.setup();
+      renderLtr(<MediaStep {...stepProps()} />);
+      const row = (await rowsRendered()).get('damage')!;
+
+      await user.click(within(row).getByRole('button', { name: EN['receptions.capture.submit']! }));
+
+      const outcome = await screen.findByTestId('capture-outcome');
+      await waitFor(() => expect(outcome.textContent).toBe(EN[branch.key]!));
+      // …and only that one. Each sentence is the answer to a different question
+      // an operator is about to ask, so two of them at once is no answer.
+      for (const other of OUTCOME_BRANCHES) {
+        if (other.key === branch.key) continue;
+        expect(screen.queryByText(EN[other.key]!), other.key).toBeNull();
+      }
+    });
+  }
+});
+
+/* ------------------------------------------------------------------ *
+ * The waiver — a different authority, stated as one
+ * ------------------------------------------------------------------ */
+
+describe('P1-28-FE-017 — the override is a separate permission', () => {
+  it('offers the waiver control to an operator who holds the code', async () => {
+    renderLtr(<MediaStep {...stepProps()} />);
+    const rows = await rowsRendered();
+
+    for (const code of ['vin', 'damage'] as const) {
+      expect(
+        within(rows.get(code)!).getByTestId(`capture-override-open-${code}`)
+      ).toHaveTextContent(EN['receptions.capture.overrideOpen']!);
+      expect(within(rows.get(code)!).queryByTestId(`capture-override-withheld-${code}`)).toBeNull();
+    }
+
+    // A satisfied requirement is offered no waiver either way: there is nothing
+    // left to waive, and the control's absence there is not about permission.
+    expect(
+      within(rows.get('exterior')!).queryByTestId('capture-override-open-exterior')
+    ).toBeNull();
+    expect(
+      within(rows.get('exterior')!).queryByTestId('capture-override-withheld-exterior')
+    ).toBeNull();
+  });
+
+  it('withdraws it, with the reason stated, without rec.reception.evidence.override', async () => {
+    /*
+     * `manageEvidence` stays TRUE here. That is the whole separation: an
+     * operator who may photograph a vehicle must not thereby be able to record
+     * that no photograph was needed, so the capture forms below are still
+     * offered while the waiver is not.
      */
     renderLtr(
-      <div>
-        <button type="button">Choose</button>
-        <input type="file" aria-label="Upload a photograph" />
-      </div>
+      <MediaStep {...stepProps({ capabilities: { ...CAPABILITIES, overrideEvidence: false } })} />
     );
-    expect(() => sweep('planted')).toThrow();
-  });
+    const rows = await rowsRendered();
 
-  it('offers none on the check-in start screen, in either language', async () => {
-    for (const [render, messages, label] of [
-      [renderLtr, en, 'check-in start (en)'],
-      [renderRtl, ar, 'check-in start (ar)'],
-    ] as const) {
-      const { unmount } = render(<CheckInStartScreen {...startProps(messages)} />);
-      sweep(label);
-      unmount();
+    for (const code of ['vin', 'damage'] as const) {
+      expect(
+        within(rows.get(code)!).getByTestId(`capture-override-withheld-${code}`)
+      ).toHaveTextContent(EN['receptions.capture.overrideWithheld']!);
+      expect(within(rows.get(code)!).queryByTestId(`capture-override-open-${code}`)).toBeNull();
     }
-    await Promise.resolve();
-  });
-
-  it('offers none on ANY registered wizard step — every step is visited', async () => {
-    const user = userEvent.setup();
-    renderLtr(
-      <CheckInWizardShell
-        locale="en"
-        messages={en}
-        initialDetail={DETAIL}
-        steps={CHECK_IN_STEPS}
-        capabilities={CAPABILITIES}
-        session={SESSION}
-      />
-    );
-
-    // Guards the walk: a registry that shrank to nothing would make the loop
-    // below sweep a single step and report the whole wizard clean.
-    expect(CHECK_IN_STEPS.length).toBeGreaterThanOrEqual(10);
-
-    for (const step of CHECK_IN_STEPS) {
-      await user.click(screen.getAllByRole('button', { name: new RegExp(EN[step.titleKey]!) })[0]!);
-      await waitFor(() => {
-        /*
-         * `getAllBy`, not `getBy`: the signature step's own section heading is
-         * `receptions.signature.heading` = "Signatures" and its step title is
-         * "Signatures" too, so the panel and the step announce the same words at
-         * two levels. What this case needs is that the step RENDERED — one
-         * matching heading is that — and asserting uniqueness would fail on a
-         * duplication that has nothing to do with media capture.
-         */
-        expect(
-          screen.getAllByRole('heading', { name: EN[step.titleKey]! }).length
-        ).toBeGreaterThanOrEqual(1);
-      });
-      sweep(`wizard step ${step.id}`);
-    }
-  });
-
-  it('offers none on the walk-in intake screen', () => {
-    renderLtr(
-      <WalkInIntakeScreen
-        locale="en"
-        messages={en}
-        canCreateCustomer
-        canSearchVehicles
-        canCreateVehicle
-        canLinkVehicle
-        checkInAvailable={false}
-      />
-    );
-    sweep('walk-in intake');
-  });
-
-  it('puts the notice where the photographs would have gone, and nothing else', async () => {
-    const user = userEvent.setup();
-    renderLtr(
-      <CheckInWizardShell
-        locale="en"
-        messages={en}
-        initialDetail={DETAIL}
-        steps={CHECK_IN_STEPS}
-        capabilities={CAPABILITIES}
-        session={SESSION}
-      />
-    );
-
-    await user.click(
-      screen.getByRole('button', { name: new RegExp(EN['receptions.steps.media.title']!) })
-    );
-    const notice = await screen.findByRole('note', { name: EN['receptions.media.heading']! });
-    expect(notice).toBeInTheDocument();
-    expect(screen.getByText(MEDIA_DECISION_ID)).toBeInTheDocument();
-    // Inside the notice: no control at all, not even a disabled one.
+    // Withdrawn, not greyed out — there is no disabled waiver control anywhere.
     expect(
-      notice.querySelectorAll('button, input, form, a, select, textarea, [role="button"]').length
-    ).toBe(0);
-  });
-
-  it('shows the same notice on a terminal visit — the block is the release, not the state', async () => {
-    /*
-     * `converted` withdraws every write control in the wizard. It must not
-     * withdraw this statement: an operator reading a converted visit is owed the
-     * same account of why there are no photographs as one reading an open visit.
-     */
-    const user = userEvent.setup();
-    renderLtr(
-      <CheckInWizardShell
-        locale="en"
-        messages={en}
-        initialDetail={{ ...DETAIL, receptionStatus: 'converted' }}
-        steps={CHECK_IN_STEPS}
-        capabilities={CAPABILITIES}
-        session={SESSION}
-      />
-    );
-
-    await user.click(
-      screen.getByRole('button', { name: new RegExp(EN['receptions.steps.media.title']!) })
-    );
+      screen.queryByRole('button', { name: EN['receptions.capture.overrideOpen']! })
+    ).toBeNull();
+    // …and the capture forms the other permission pays for are untouched.
     expect(
-      await screen.findByRole('note', { name: EN['receptions.media.heading']! })
+      within(rows.get('damage')!).getByLabelText(EN['receptions.capture.chooseFile']!)
     ).toBeInTheDocument();
-    expect(screen.getByText(EN['receptions.media.blocked']!)).toBeInTheDocument();
-    sweep('wizard media step on a terminal visit');
+  });
+
+  it('sends the typed reason through overrideCaptureRequirement', async () => {
+    overrideCaptureRequirement.mockResolvedValue(waiverRecorded('damage'));
+    const user = userEvent.setup();
+    renderLtr(<MediaStep {...stepProps()} />);
+    const row = (await rowsRendered()).get('damage')!;
+
+    await user.click(within(row).getByTestId('capture-override-open-damage'));
+
+    const reason = within(row).getByLabelText(new RegExp(EN['receptions.capture.overrideReason']!));
+    // The column's own ceiling, mirrored on the control rather than discovered
+    // as a 422 after the operator has typed six hundred characters.
+    expect(reason).toHaveAttribute('maxlength', String(MAX_OVERRIDE_REASON));
+
+    const submit = within(row).getByRole('button', {
+      name: EN['receptions.capture.overrideSubmit']!,
+    });
+    // An unattributed waiver is indistinguishable afterwards from a requirement
+    // nobody noticed, so a blank reason cannot be submitted at all.
+    expect(submit).toBeDisabled();
+
+    await user.type(reason, '  The panel is behind a locked gate  ');
+    await user.click(submit);
+
+    await waitFor(() => expect(overrideCaptureRequirement).toHaveBeenCalled());
+    const [visitId, input] = overrideCaptureRequirement.mock.calls.at(-1)!;
+    expect(visitId).toBe(VISIT);
+    expect(input).toEqual({
+      requirementCode: 'damage',
+      reason: '  The panel is behind a locked gate  ',
+    });
+
+    // The form closes on success and the contract is re-read, so the waiver the
+    // server now holds is what the row reports.
+    await waitFor(() =>
+      expect(
+        within(row).queryByLabelText(new RegExp(EN['receptions.capture.overrideReason']!))
+      ).toBeNull()
+    );
+    await waitFor(() => expect(readCaptureContract.mock.calls.length).toBeGreaterThan(1));
+  });
+
+  it('keeps the typed reason on screen when the waiver is refused', async () => {
+    /*
+     * A refusal that cleared the box would cost the operator their sentence and
+     * teach them to write a shorter one. The form stays open, holding what they
+     * wrote, so the retry is a click rather than a re-typing.
+     */
+    overrideCaptureRequirement.mockResolvedValue({
+      status: 'denied',
+      attempt: 1,
+      messageKey: 'state.denied.title',
+      correlationId: 'corr-403',
+    });
+    const user = userEvent.setup();
+    renderLtr(<MediaStep {...stepProps()} />);
+    const row = (await rowsRendered()).get('damage')!;
+
+    await user.click(within(row).getByTestId('capture-override-open-damage'));
+    const reason = within(row).getByLabelText(new RegExp(EN['receptions.capture.overrideReason']!));
+    await user.type(reason, 'The bay is flooded');
+    await user.click(
+      within(row).getByRole('button', { name: EN['receptions.capture.overrideSubmit']! })
+    );
+
+    await waitFor(() => expect(overrideCaptureRequirement).toHaveBeenCalled());
+    expect(reason).toHaveValue('The bay is flooded');
+    expect(reason).toBeInTheDocument();
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * A terminal visit, and the permission that pays for capture
+ * ------------------------------------------------------------------ */
+
+describe('P1-28-FE-017 — when writes are gone, the facts stay', () => {
+  it('withdraws every capture form on a locked visit and still reports what is held', async () => {
+    const { container } = renderLtr(<MediaStep {...stepProps({ writesLocked: true })} />);
+    const rows = await rowsRendered();
+
+    expect(container.querySelectorAll('input[type="file"]')).toHaveLength(0);
+    expect(screen.queryByRole('button', { name: EN['receptions.capture.submit']! })).toBeNull();
+    expect(
+      screen.queryByRole('button', { name: EN['receptions.capture.overrideOpen']! })
+    ).toBeNull();
+
+    // The record itself is not withdrawn: a converted visit is read by people
+    // who need to know what it was evidenced with.
+    expect(within(rows.get('vin')!).getByTestId('capture-count-vin').textContent).toBe('1/2');
+    expect(within(rows.get('ev_soc')!).getByTestId('capture-override-ev_soc')).toHaveTextContent(
+      WAIVER.reason
+    );
+  });
+
+  it('withdraws the capture form without rec.reception.evidence.manage', async () => {
+    const { container } = renderLtr(
+      <MediaStep {...stepProps({ capabilities: { ...CAPABILITIES, manageEvidence: false } })} />
+    );
+    const rows = await rowsRendered();
+
+    expect(container.querySelectorAll('input[type="file"]')).toHaveLength(0);
+    // The waiver rides on the OTHER code, which this operator still holds, so it
+    // is still offered — the two permissions are not a single "may write" flag.
+    expect(
+      within(rows.get('damage')!).getByTestId('capture-override-open-damage')
+    ).toBeInTheDocument();
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * Arabic
+ * ------------------------------------------------------------------ */
+
+/**
+ * Arabic script, matched WITHOUT `\b`.
+ *
+ * `\b` in JavaScript is defined over ASCII word characters, so a boundary placed
+ * next to an Arabic letter can never match and a pattern carrying one silently
+ * matches nothing at all — a matcher that always passes because it never fires.
+ *
+ * This one carries no boundary. It is the Unicode script property, which names
+ * the script rather than a code-point range copied by hand, and the case below
+ * runs it in BOTH directions: it must accept the Arabic sentence and refuse the
+ * English one, so a matcher incapable of firing cannot pass as a proof that the
+ * Arabic catalogue was the one that rendered.
+ */
+const ARABIC_SCRIPT = /\p{Script=Arabic}/u;
+
+describe('P1-28-FE-017 — Arabic', () => {
+  it('renders right to left, in real Arabic copy, with the count still left to right', async () => {
+    renderRtl(<MediaStep {...stepProps({ locale: 'ar', messages: ar as typeof en })} />);
+    const rows = await rowsRendered();
+
+    expect(document.documentElement.dir).toBe('rtl');
+
+    // The matcher, proved capable of both answers before anything rests on it.
+    expect(ARABIC_SCRIPT.test(AR['receptions.capture.state.outstanding']!)).toBe(true);
+    expect(ARABIC_SCRIPT.test(EN['receptions.capture.state.outstanding']!)).toBe(false);
+
+    const state = within(rows.get('damage')!).getByTestId('capture-state-damage');
+    expect(state.textContent).toBe(AR['receptions.capture.state.outstanding']);
+    expect(ARABIC_SCRIPT.test(state.textContent ?? '')).toBe(true);
+
+    expect(
+      within(rows.get('vin')!).getByText(AR['receptions.capture.requirement.vin']!)
+    ).toBeInTheDocument();
+    // The one approved input carries the translated name too — it is labelled by
+    // `aria-label`, which has no visible text to fall back on.
+    expect(
+      within(rows.get('vin')!).getByLabelText(AR['receptions.capture.chooseFile']!)
+    ).toBeInTheDocument();
+
+    /*
+     * `1/2` is a pair of numerals with a solidus between them and it means
+     * "one of two" in both languages. Left to the paragraph direction it renders
+     * as `2/1`, which is a different claim about how much of this requirement is
+     * evidenced.
+     */
+    expect(within(rows.get('vin')!).getByTestId('capture-count-vin')).toHaveAttribute('dir', 'ltr');
+  });
+
+  it('states the waiver control and its withholding in Arabic', async () => {
+    const withheld = renderRtl(
+      <MediaStep
+        {...stepProps({
+          locale: 'ar',
+          messages: ar as typeof en,
+          capabilities: { ...CAPABILITIES, overrideEvidence: false },
+        })}
+      />
+    );
+    let rows = await rowsRendered();
+    expect(
+      within(rows.get('damage')!).getByTestId('capture-override-withheld-damage').textContent
+    ).toBe(AR['receptions.capture.overrideWithheld']);
+    withheld.unmount();
+
+    renderRtl(<MediaStep {...stepProps({ locale: 'ar', messages: ar as typeof en })} />);
+    rows = await rowsRendered();
+    expect(
+      within(rows.get('damage')!).getByTestId('capture-override-open-damage').textContent
+    ).toBe(AR['receptions.capture.overrideOpen']);
   });
 });

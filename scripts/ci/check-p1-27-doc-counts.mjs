@@ -591,6 +591,65 @@ export function deriveCounts(root = ROOT) {
  * ------------------------------------------------------------------ */
 
 /**
+ * The `'use server'` filename partition the developer guide's table declares.
+ *
+ * Three patterns, two of them SCOPED to a tree: `*api.ts` anywhere in the five
+ * trees, `*actions.ts` in `features/crm/customers`, `*-capture.ts` in
+ * `features/receptions`.
+ *
+ * ## Why the third pattern arrived with a scope
+ *
+ * `P1-OD-025` resolved and reception capture shipped two `'use server'` files
+ * that are neither adapters nor CRM write actions —
+ * `features/receptions/evidence-capture.ts` and `signature-capture.ts` — and this
+ * partition named them, correctly, as files the guide accounted for nowhere. The
+ * cheap repair was a third `endsWith` and nothing else, which buys silence at the
+ * price of the partition: `*-capture.ts` would then be a legitimate name for a
+ * `'use server'` file in any of the five trees, including the two whose files the
+ * guide's table describes one by one.
+ *
+ * So the suffix is admitted in the reception tree only, exactly as `*actions.ts`
+ * is admitted in the CRM tree only. Both scopings are what make the table a
+ * partition rather than a list of endings a file may happen to have.
+ *
+ * ## Why it is a pure function of the paths
+ *
+ * The claim below reads the tree, and a rule that only ever meets compliant input
+ * is a rule nothing has tested. Taking the paths as an argument lets
+ * `tests/ci/p1-27-doc-counts.test.ts` hand it violations that do not exist on
+ * disk — a capture file in the vehicle tree, a write action outside CRM, an
+ * adapter named something else — and prove each is REJECTED rather than assuming
+ * it would be.
+ *
+ * @param {readonly string[]} serverFiles Posix paths relative to `apps/web/src`.
+ * @returns {string[]} One message per violated pattern; empty when all three hold.
+ */
+export function partitionProblems(serverFiles) {
+  const problems = [];
+  const unmatched = serverFiles.filter(
+    (p) => !(p.endsWith('api.ts') || p.endsWith('actions.ts') || p.endsWith('-capture.ts'))
+  );
+  if (unmatched.length > 0) {
+    problems.push(`the guide accounts for no 'use server' file at ${unmatched.join(', ')}`);
+  }
+  const strayActions = serverFiles.filter(
+    (p) => p.endsWith('actions.ts') && !p.startsWith('features/crm/customers/')
+  );
+  if (strayActions.length > 0) {
+    problems.push(`the guide scopes *actions.ts to the CRM tree; found ${strayActions.join(', ')}`);
+  }
+  const strayCaptures = serverFiles.filter(
+    (p) => p.endsWith('-capture.ts') && !p.startsWith('features/receptions/')
+  );
+  if (strayCaptures.length > 0) {
+    problems.push(
+      `the guide scopes *-capture.ts to the reception tree; found ${strayCaptures.join(', ')}`
+    );
+  }
+  return problems;
+}
+
+/**
  * A guide sentence is proved against the executable thing it describes.
  *
  * `DOC-002` is a conjunction — "operator / developer guidance **and** change-log
@@ -713,6 +772,7 @@ export const GUIDE_CLAIMS = {
       'no-client-asserted-scope': 'a client-asserted',
       'no-invented-total': 'a total computed from `rows.length`',
       'no-upload-path': 'any upload path',
+      'no-unapproved-file-input': 'a file input outside the one approved capture component',
       'no-export-surface': 'any export surface',
       'no-invented-media-limit': 'any invented media limit',
       'no-console-output': 'any `console.*`',
@@ -765,21 +825,11 @@ export const GUIDE_CLAIMS = {
         `only ${serverFiles.length} adapters carry 'use server'; the trees must ship at least 13`
       );
     }
-    const unmatched = serverFiles.filter(
-      (p) => !(p.endsWith('api.ts') || p.endsWith('actions.ts'))
-    );
-    if (unmatched.length > 0) {
-      problems.push(`the guide accounts for no 'use server' file at ${unmatched.join(', ')}`);
-    }
-    const stray = serverFiles.filter(
-      (p) => p.endsWith('actions.ts') && !p.startsWith('features/crm/customers/')
-    );
-    if (stray.length > 0) {
-      problems.push(`the guide scopes *actions.ts to the CRM tree; found ${stray.join(', ')}`);
-    }
+    problems.push(...partitionProblems(serverFiles));
     for (const phrase of [
       '`features/{crm/customers,vehicles}/*api.ts`',
       '`features/crm/customers/*actions.ts`',
+      '`features/receptions/*-capture.ts`',
     ]) {
       if (!source.includes(phrase)) problems.push(`the guide no longer states ${phrase}`);
     }

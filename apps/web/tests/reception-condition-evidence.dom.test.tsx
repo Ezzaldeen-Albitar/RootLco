@@ -6,7 +6,10 @@ import ar from '../src/i18n/messages/ar.json';
 import { renderLtr, renderRtl } from './render';
 import type { CheckInStepProps } from '@/features/receptions/check-in/wizard';
 import { LEAK_TYPES } from '@/features/receptions/receptions-contract';
-import type { ReceptionDetail } from '@/features/receptions/receptions-contract';
+import type {
+  BindableTemplateEntry,
+  ReceptionDetail,
+} from '@/features/receptions/receptions-contract';
 
 /**
  * The condition-evidence wizard steps, rendered (`P1-28-FE-010`, `FE-011`,
@@ -29,6 +32,20 @@ const listConditionEvidence = vi.fn();
 const listPartyRoles = vi.fn();
 const listAuthorizations = vi.fn();
 const recordRefusal = vi.fn();
+/*
+ * `readCaptureContract` is FE-012's template read, and its absence from this
+ * factory was not a quiet gap.
+ *
+ * A `vi.mock` factory is exhaustive: a property it does not define THROWS on
+ * access rather than returning undefined. `DamageMapStep` reads the contract
+ * inside `useServerTable`'s async effect, so the throw became an unhandled
+ * rejection — reported by Vitest at file level, attributed to whichever case
+ * happened to be running, and fatal to nothing. Every damage case therefore ran
+ * against a template read that never resolved: `templateTable.status` stayed
+ * `'loading'`, the write slot rendered `null`, and fifteen assertions about
+ * what is NOT on screen passed against a panel that had rendered nothing at all.
+ */
+const readCaptureContract = vi.fn();
 
 vi.mock('@/features/receptions/api', () => ({
   recordConditionEvidence: (...args: unknown[]) => recordConditionEvidence(...args),
@@ -36,6 +53,7 @@ vi.mock('@/features/receptions/api', () => ({
   listPartyRoles: (...args: unknown[]) => listPartyRoles(...args),
   listAuthorizations: (...args: unknown[]) => listAuthorizations(...args),
   recordRefusal: (...args: unknown[]) => recordRefusal(...args),
+  readCaptureContract: (...args: unknown[]) => readCaptureContract(...args),
 }));
 
 const listWarningLightCodes = vi.fn();
@@ -168,6 +186,51 @@ function recorded(evidenceId: string, kind: string) {
   };
 }
 
+/**
+ * One damage-map template revision this branch may bind to.
+ *
+ * A template is a SLOT — a map type, an optional perspective and a lifecycle —
+ * and the geometry lives in the revision it publishes. The four revision fields
+ * are therefore set independently of `status` rather than derived from it,
+ * because the two states the step must keep apart are exactly a live slot with
+ * no published revision and a retired slot that still has one.
+ */
+function template(over: Partial<BindableTemplateEntry> = {}): BindableTemplateEntry {
+  return {
+    id: 'tpl-1',
+    scope: 'branch',
+    companyId: 'company-1',
+    branchId: 'branch-1',
+    // One of the four `ck_damage_map_templates_type` admits. A map type this
+    // suite invented would pin a screen the database cannot produce, which is
+    // the defect the leak and warning-light cases below already record twice.
+    mapType: 'exterior',
+    perspective: null,
+    status: 'active',
+    recordVersion: 1,
+    activeVersionId: 'tv-1',
+    activeVersionNumber: 4,
+    documentId: 'doc-1',
+    documentVersionId: 'ver-1',
+    ...over,
+  };
+}
+
+/** The visit's own capture contract — the only place bindable templates arrive from. */
+function captureContract(bindableTemplates: readonly BindableTemplateEntry[]) {
+  return {
+    status: 'ok' as const,
+    data: {
+      receptionVisitId: 'rv-1',
+      requirements: [],
+      bindings: [],
+      overrides: [],
+      bindableTemplates,
+    },
+    correlationId: 'corr-capture',
+  };
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   evidenceByKind({});
@@ -177,6 +240,17 @@ beforeEach(() => {
   listFuelLevels.mockResolvedValue(EMPTY_CATALOGUE);
   listRefusalReasons.mockResolvedValue(EMPTY_CATALOGUE);
   searchCustomerDirectory.mockResolvedValue(page([]));
+  /*
+   * A branch that HAS published a diagram, by default.
+   *
+   * The alternative default — an empty contract — would leave every damage case
+   * facing `damage-map-none`, and the mark-side notice ("A mark is placed on a
+   * damage map, and this visit has none. Open one above first.") would be
+   * telling the operator to use a control the same screen was withholding. The
+   * three configuration states each have their own case below, driven
+   * explicitly.
+   */
+  readCaptureContract.mockResolvedValue(captureContract([template()]));
   readUserIdentity.mockResolvedValue({
     status: 'ok',
     data: { id: 'user-77', displayName: 'Nadia Suleiman' },
@@ -514,6 +588,15 @@ describe('the inspection step (FE-011)', () => {
 
 /* --- FE-012: damage map and marks ------------------------------------------ */
 
+/**
+ * A damage map already recorded against this visit.
+ *
+ * `mapType` is one of the four `ck_damage_maps_type` admits. It was `sedan-plan`
+ * — a value the database refuses — which is the third appearance in this file of
+ * one defect: a fixture the platform could not produce, pinning a screen no
+ * operator will ever see. The leak and warning-light cases below record the
+ * other two.
+ */
 const DAMAGE_MAP = {
   kind: 'damage_map',
   id: 'map-1',
@@ -521,18 +604,411 @@ const DAMAGE_MAP = {
   evidenceDocumentId: null,
   documentId: 'doc-1',
   documentVersionId: 'ver-1',
-  mapType: 'sedan-plan',
+  mapType: 'exterior',
   perspective: 'top',
 };
 
+/** The step's two panels, each a `section` named by its own heading. */
+const mapsPanel = (catalogue: Record<string, string> = EN) =>
+  screen.getByRole('region', { name: catalogue['receptions.damage.mapHeading']! });
+const marksPanel = (catalogue: Record<string, string> = EN) =>
+  screen.getByRole('region', { name: catalogue['receptions.damage.markHeading']! });
+
+/**
+ * The values a chooser offers, in order.
+ *
+ * Guarded: a select that offered nothing would satisfy every "does not contain
+ * the retired one" assertion below without proving anything, which is the shape
+ * of sweep this phase has shipped four of.
+ */
+function offered(select: HTMLElement): string[] {
+  const options = within(select).getAllByRole('option');
+  expect(
+    options.length,
+    'the chooser offered nothing, so the comparison is vacuous'
+  ).toBeGreaterThan(0);
+  return options.map((option) => (option as HTMLOptionElement).value);
+}
+
+/**
+ * Every control the step offers, by accessible name and in document order.
+ *
+ * An ENUMERATION rather than a keyword sweep. A sweep that matches nothing reads
+ * exactly like a sweep that has stopped looking, whereas an exact list fails the
+ * moment a control is added — including one whose name nobody thought to ban.
+ * The count guard refuses an empty walk; the administration case below also
+ * plants a violation to prove its own matcher can still fire.
+ */
+function controlNames(): string[] {
+  const controls = [...screen.queryAllByRole('button'), ...screen.queryAllByRole('link')];
+  expect(controls.length, 'no control was scanned, so the enumeration is vacuous').toBeGreaterThan(
+    0
+  );
+  return controls.map((control) => control.getAttribute('aria-label') ?? control.textContent ?? '');
+}
+
 describe('the damage step (FE-012)', () => {
-  it('states the blocked map, where the control to open one would have been', async () => {
-    renderLtr(<DamageMapStep {...stepProps()} />);
-    expect(await screen.findByTestId('evidence-notice-damage_map')).toHaveTextContent(
-      EN['receptions.evidence.damageMapBlocked']!
+  it('reads the bindable diagrams from the VISIT, and calls no catalogue', async () => {
+    /*
+     * The permission split, asserted where it shows.
+     *
+     * Deciding what the whole workshop draws on costs `rec.catalogue.manage`,
+     * which no receptionist holds; the set THIS branch may bind to travels with
+     * the visit's own capture read behind `rec.reception.read`. Proven by moving
+     * the contract's answer and watching the offered diagrams move with it — a
+     * step that reached for a catalogue would be unmoved by that — and by the
+     * three catalogue adapters this feature has staying untouched throughout.
+     */
+    readCaptureContract.mockResolvedValue(
+      captureContract([template({ id: 'tpl-1' }), template({ id: 'tpl-2', mapType: 'interior' })])
     );
-    // No uuid boxes standing in for a document that cannot be registered.
-    expect(screen.queryByLabelText(/document/i)).not.toBeInTheDocument();
+    const first = renderLtr(<DamageMapStep {...stepProps()} />);
+    expect(
+      offered(
+        await within(mapsPanel()).findByLabelText(
+          new RegExp(EN['receptions.damage.templateLabel']!)
+        )
+      )
+    ).toEqual(['tpl-1', 'tpl-2']);
+    expect(readCaptureContract).toHaveBeenCalledWith('rv-1');
+    first.unmount();
+
+    readCaptureContract.mockResolvedValue(
+      captureContract([template({ id: 'tpl-3', mapType: 'other' })])
+    );
+    renderLtr(<DamageMapStep {...stepProps()} />);
+    expect(
+      offered(
+        await within(mapsPanel()).findByLabelText(
+          new RegExp(EN['receptions.damage.templateLabel']!)
+        )
+      )
+    ).toEqual(['tpl-3']);
+
+    for (const catalogue of [listWarningLightCodes, listFuelLevels, listRefusalReasons]) {
+      expect(catalogue, 'a catalogue read was spent on the reception desk').not.toHaveBeenCalled();
+    }
+  });
+
+  it('binds the EXACT revision of the diagram chosen, and asks for no identifier', async () => {
+    /*
+     * `documentId` AND `documentVersionId`, and both belonging to the chosen
+     * template rather than to the first one offered.
+     *
+     * `rec.guard_damage_map_version()` refuses a version that does not belong to
+     * the named document, and `rec.damage_maps` holds both as NOT NULL: a map is
+     * anchored to the DRAWING it was made on, so a template revised tomorrow
+     * must not move every mark already placed onto a different diagram. The pair
+     * travels with the choice, which is why nothing here is typed.
+     */
+    readCaptureContract.mockResolvedValue(
+      captureContract([
+        template({ id: 'tpl-1', documentId: 'doc-1', documentVersionId: 'ver-1' }),
+        template({
+          id: 'tpl-2',
+          mapType: 'interior',
+          perspective: 'front',
+          documentId: 'doc-2',
+          documentVersionId: 'ver-2',
+          activeVersionNumber: 7,
+        }),
+      ])
+    );
+    recordConditionEvidence.mockResolvedValue(recorded('map-new', 'damage_map'));
+    const refresh = vi.fn().mockResolvedValue(undefined);
+    const user = userEvent.setup();
+    renderLtr(<DamageMapStep {...stepProps({ refresh })} />);
+
+    const panel = mapsPanel();
+    await user.selectOptions(
+      await within(panel).findByLabelText(new RegExp(EN['receptions.damage.templateLabel']!)),
+      'tpl-2'
+    );
+    // The revision is NAMED beside the chooser rather than left implied, so the
+    // operator can see which drawing the marks will be anchored to.
+    expect(within(panel).getByText('7')).toBeInTheDocument();
+
+    await user.click(
+      within(panel).getByRole('button', { name: EN['receptions.damage.templateSubmit']! })
+    );
+
+    await waitFor(() => expect(recordConditionEvidence).toHaveBeenCalled());
+    const [visitId, input] = recordConditionEvidence.mock.calls.at(-1)!;
+    expect(visitId).toBe('rv-1');
+    expect(input).toEqual({
+      kind: 'damage_map',
+      documentId: 'doc-2',
+      documentVersionId: 'ver-2',
+      mapType: 'interior',
+      perspective: 'front',
+    });
+    // The chosen revision, not the default one — an assertion the equality above
+    // would also satisfy if the two templates shared a document.
+    expect((input as Record<string, unknown>)['documentId']).not.toBe('doc-1');
+
+    // No uuid box anywhere: the panel holds ONE control and it is a chooser.
+    expect(within(panel).queryAllByRole('textbox')).toHaveLength(0);
+    expect(within(panel).queryAllByRole('spinbutton')).toHaveLength(0);
+    expect(within(panel).getAllByRole('combobox')).toHaveLength(1);
+
+    await waitFor(() => expect(refresh).toHaveBeenCalled());
+  });
+
+  it('omits the perspective a diagram does not have, rather than sending it empty', async () => {
+    // `perspective` is nullable and the route is `.strict()`: an untouched slot
+    // must leave the key OFF the body, exactly as the complaint step's severity
+    // does. Nothing on this screen can clear it, so the omission is structural.
+    readCaptureContract.mockResolvedValue(captureContract([template({ perspective: null })]));
+    recordConditionEvidence.mockResolvedValue(recorded('map-new', 'damage_map'));
+    const user = userEvent.setup();
+    renderLtr(<DamageMapStep {...stepProps()} />);
+
+    await user.click(
+      await within(mapsPanel()).findByRole('button', {
+        name: EN['receptions.damage.templateSubmit']!,
+      })
+    );
+
+    await waitFor(() => expect(recordConditionEvidence).toHaveBeenCalled());
+    const input = recordConditionEvidence.mock.calls.at(-1)![1] as object;
+    expect(input).toEqual({
+      kind: 'damage_map',
+      documentId: 'doc-1',
+      documentVersionId: 'ver-1',
+      mapType: 'exterior',
+    });
+    expect('perspective' in input).toBe(false);
+  });
+
+  it('shows the map it just opened, so a mark can be placed without a reload', async () => {
+    /*
+     * The half a "was the write sent?" assertion cannot see.
+     *
+     * `mapChoices` is derived from the damage-map READ-BACK, so a map the panel
+     * does not re-read is a map no mark can hang off: the operator opens one, is
+     * told it worked, and the section below still says this visit has none.
+     * Nothing else would have brought it back — `refresh()` re-reads the visit's
+     * own detail, and recording a child row does not move `recordVersion`.
+     *
+     * Observed by the RESULT changing rather than by counting calls on a spy: it
+     * is the write that makes the next read return the row.
+     */
+    let mapRows: readonly unknown[] = [];
+    listConditionEvidence.mockImplementation((_visitId: string, kind: string) =>
+      Promise.resolve(page(kind === 'damage_map' ? mapRows : []))
+    );
+    recordConditionEvidence.mockImplementation(() => {
+      mapRows = [DAMAGE_MAP];
+      return Promise.resolve(recorded('map-1', 'damage_map'));
+    });
+    const user = userEvent.setup();
+    renderLtr(<DamageMapStep {...stepProps()} />);
+
+    // Before: no map, so the mark form is withheld and says why.
+    expect(await screen.findByTestId('evidence-notice-damage_mark')).toHaveTextContent(
+      EN['receptions.evidence.damageMapRequired']!
+    );
+
+    await user.click(
+      within(mapsPanel()).getByRole('button', { name: EN['receptions.damage.templateSubmit']! })
+    );
+
+    // After: the map is on screen and the mark form is offered against it.
+    const form = await screen.findByRole('form', { name: EN['receptions.damage.formLabel']! });
+    expect(screen.queryByTestId('evidence-notice-damage_mark')).not.toBeInTheDocument();
+    expect(
+      offered(within(form).getByLabelText(new RegExp(EN['receptions.damage.map']!)))
+    ).toContain('map-1');
+  });
+
+  it('does not offer a RETIRED diagram for a new map, and says the old ones stay readable', async () => {
+    readCaptureContract.mockResolvedValue(
+      captureContract([
+        template({ id: 'tpl-live' }),
+        template({
+          id: 'tpl-old',
+          mapType: 'interior',
+          status: 'retired',
+          documentId: 'doc-old',
+          documentVersionId: 'ver-old',
+        }),
+      ])
+    );
+    recordConditionEvidence.mockResolvedValue(recorded('map-new', 'damage_map'));
+    const user = userEvent.setup();
+    renderLtr(<DamageMapStep {...stepProps()} />);
+
+    const panel = mapsPanel();
+    expect(await within(panel).findByTestId('damage-map-retired')).toHaveTextContent(
+      EN['receptions.damage.templateRetired']!
+    );
+    expect(
+      offered(within(panel).getByLabelText(new RegExp(EN['receptions.damage.templateLabel']!)))
+    ).toEqual(['tpl-live']);
+
+    // Absent from the chooser is not enough on its own: the submit path must
+    // also be incapable of reaching it, which is what a `find` fallback to
+    // `templates[0]` would have quietly broken.
+    await user.click(
+      within(panel).getByRole('button', { name: EN['receptions.damage.templateSubmit']! })
+    );
+    await waitFor(() => expect(recordConditionEvidence).toHaveBeenCalled());
+    expect(recordConditionEvidence.mock.calls.at(-1)![1]).toEqual({
+      kind: 'damage_map',
+      documentId: 'doc-1',
+      documentVersionId: 'ver-1',
+      mapType: 'exterior',
+    });
+  });
+
+  it('keeps a visit drawn on a retired diagram readable, and still markable', async () => {
+    /*
+     * Retirement is forward-looking. A map already drawn carries the exact
+     * revision it was made on, so retiring the slot must not make the visit
+     * unreadable or freeze the marks that belong to it — only stop a NEW map
+     * being opened on a drawing nobody maintains.
+     */
+    evidenceByKind({ damage_map: [DAMAGE_MAP] });
+    readCaptureContract.mockResolvedValue(
+      captureContract([template({ id: 'tpl-old', status: 'retired' })])
+    );
+    renderLtr(<DamageMapStep {...stepProps()} />);
+
+    const panel = mapsPanel();
+    // The map itself reads back — the record does not depend on the template's
+    // lifecycle, which is the whole reason both uuids are stored on the row.
+    expect(await within(panel).findByText('top')).toBeInTheDocument();
+    expect(within(panel).getByTestId('damage-map-retired')).toBeInTheDocument();
+    // …and no new one can be opened, stated as the configuration state it is.
+    expect(within(panel).getByTestId('damage-map-none')).toHaveTextContent(
+      EN['receptions.damage.templateNone']!
+    );
+    expect(
+      within(panel).queryByRole('button', { name: EN['receptions.damage.templateSubmit']! })
+    ).not.toBeInTheDocument();
+
+    // The map that exists still takes marks.
+    const form = await screen.findByRole('form', { name: EN['receptions.damage.formLabel']! });
+    expect(
+      offered(within(form).getByLabelText(new RegExp(EN['receptions.damage.map']!)))
+    ).toContain('map-1');
+  });
+
+  it('states a diagram slot with no published revision as configuration, not as failure', async () => {
+    // `status: 'active'` and no revision: the slot exists, the geometry does
+    // not. Selecting it would send two nulls into NOT NULL columns, so it is
+    // filtered out — and the sentence names the missing publication rather than
+    // reporting a read that worked as one that did not.
+    readCaptureContract.mockResolvedValue(
+      captureContract([
+        template({
+          activeVersionId: null,
+          activeVersionNumber: null,
+          documentId: null,
+          documentVersionId: null,
+        }),
+      ])
+    );
+    renderLtr(<DamageMapStep {...stepProps()} />);
+
+    const panel = mapsPanel();
+    expect(await within(panel).findByTestId('damage-map-none')).toHaveTextContent(
+      EN['receptions.damage.templateNone']!
+    );
+    expect(within(panel).queryByTestId('damage-map-unread')).not.toBeInTheDocument();
+    expect(within(panel).queryByTestId('damage-map-retired')).not.toBeInTheDocument();
+    expect(
+      within(panel).queryByRole('button', { name: EN['receptions.damage.templateSubmit']! })
+    ).not.toBeInTheDocument();
+  });
+
+  it('tells a pending read, an empty one and a failed one apart', async () => {
+    /*
+     * Three answers that collapse into one sentence unless the step keeps them
+     * apart, and the collapse is always in the same direction: "this branch has
+     * published nothing" is a claim about CONFIGURATION, and making it off a
+     * read that has not answered — or off one that failed — sends an operator to
+     * an administrator to fix something that is not broken.
+     */
+    let settle: (value: unknown) => void = () => {};
+    readCaptureContract.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          settle = resolve;
+        })
+    );
+    const pending = renderLtr(<DamageMapStep {...stepProps()} />);
+    // Both read-backs beside it have answered, so this is a rendered step with
+    // an unanswered TEMPLATE read — not a step that has not mounted.
+    expect(await screen.findAllByText(EN['receptions.evidence.readBackEmpty']!)).toHaveLength(2);
+    expect(screen.queryByTestId('damage-map-none')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('damage-map-unread')).not.toBeInTheDocument();
+
+    settle(captureContract([]));
+    expect(await screen.findByTestId('damage-map-none')).toHaveTextContent(
+      EN['receptions.damage.templateNone']!
+    );
+    expect(screen.queryByTestId('damage-map-unread')).not.toBeInTheDocument();
+    pending.unmount();
+
+    // Every way the read can fail, including the one that answers `ok` with no
+    // contract at all — which is a broken answer, not an empty branch.
+    const failures = [
+      { status: 'error', correlationId: 'corr-500' },
+      { status: 'denied', correlationId: 'corr-403' },
+      { status: 'unavailable', correlationId: 'corr-429' },
+      { status: 'expired', correlationId: 'corr-401' },
+      { status: 'not-found', correlationId: 'corr-404' },
+      { status: 'ok', data: null, correlationId: 'corr-empty' },
+    ];
+    expect(failures).toHaveLength(6);
+    for (const failure of failures) {
+      readCaptureContract.mockResolvedValue(failure);
+      const failed = renderLtr(<DamageMapStep {...stepProps()} />);
+      expect(await screen.findByTestId('damage-map-unread'), failure.status).toHaveTextContent(
+        EN['receptions.damage.templateUnread']!
+      );
+      expect(screen.queryByTestId('damage-map-none'), failure.status).not.toBeInTheDocument();
+      expect(
+        screen.queryByText(EN['receptions.damage.templateNone']!),
+        failure.status
+      ).not.toBeInTheDocument();
+      failed.unmount();
+    }
+  });
+
+  it('offers no way to create, revise, publish or retire a diagram', async () => {
+    /*
+     * `rec.catalogue.manage` is not the reception desk's, and an absence is only
+     * a guarantee if something checks it. The enumeration is exact, so a control
+     * added tomorrow fails here whatever it is called; the matcher beside it
+     * states the rule in words and is proved against a planted violation, since
+     * a regular expression that has stopped matching reports a clean screen in
+     * exactly the same way as one that is working.
+     */
+    evidenceByKind({ damage_map: [DAMAGE_MAP] });
+    renderLtr(<DamageMapStep {...stepProps()} />);
+    await screen.findByRole('form', { name: EN['receptions.damage.formLabel']! });
+
+    const names = controlNames();
+    expect(names).toEqual([
+      EN['receptions.damage.templateSubmit']!,
+      EN['receptions.damage.diagramLabel']!,
+      EN['receptions.damage.record']!,
+    ]);
+
+    const ADMINISTRATION =
+      /\b(create|new|add|revise|publish|retire|delete|manage|configure|edit)\b/i;
+    expect(names.filter((name) => ADMINISTRATION.test(name))).toEqual([]);
+    // The self-test. English only, and deliberately: `\b` is ASCII-only, so this
+    // matcher can never fire beside Arabic script and running it over the RTL
+    // render would pass by construction. The Arabic case below enumerates
+    // instead, which needs no word boundary.
+    expect(ADMINISTRATION.test('Publish a new diagram revision'), 'the matcher is asleep').toBe(
+      true
+    );
+    expect(ADMINISTRATION.test(EN['receptions.damage.templateSubmit']!)).toBe(false);
+    expect(ADMINISTRATION.test(EN['receptions.damage.record']!)).toBe(false);
   });
 
   it('withholds the mark form with no map, and says why', async () => {
@@ -543,6 +1019,12 @@ describe('the damage step (FE-012)', () => {
     expect(
       screen.queryByRole('button', { name: EN['receptions.damage.record']! })
     ).not.toBeInTheDocument();
+    // The sentence says "Open one above first", so the control it points at has
+    // to be above it. That instruction was advice nobody could follow for as
+    // long as this step rendered no map form at all.
+    expect(
+      within(mapsPanel()).getByRole('button', { name: EN['receptions.damage.templateSubmit']! })
+    ).toBeInTheDocument();
   });
 
   it('records a mark against an existing map, with 0..1 coordinates', async () => {
@@ -576,6 +1058,12 @@ describe('the damage step (FE-012)', () => {
       markType: 'dent',
       vehicleZone: 'rear bumper',
     });
+    // A mark is structured data of its own and names the MAP it sits on, never
+    // the drawing: the document pair belongs to `rec.damage_maps`, and a mark
+    // that carried its own copy could disagree with the map it hangs off the
+    // moment the template is revised.
+    expect(input).not.toHaveProperty('documentId');
+    expect(input).not.toHaveProperty('documentVersionId');
     // FRACTIONS of the map, not pixels — which is why a mark survives a resize.
     // The centre is the documented default, asserted EXACTLY: a bounds check
     // alone cannot fail, because every value the form can hold is in bounds.
@@ -775,35 +1263,53 @@ describe('the damage step (FE-012)', () => {
     expect(screen.queryByText('0.33')).not.toBeInTheDocument();
   });
 
-  it('withdraws the mark form for a REASON, not as the missing-map gate, when writes are gone', async () => {
+  it('withdraws BOTH write controls for a stated REASON, never as a configuration gate', async () => {
     /*
-     * Two different absences that look identical on screen unless the copy
-     * distinguishes them: "no map exists to hang a mark off" (the data gate) and
-     * "you may not record one" (permission, or a terminal visit). A map EXISTS
-     * in both halves below, so a step that fell back to the missing-map notice
-     * would be telling the operator to fix something that is not wrong.
+     * Three absences that read identically unless the copy separates them: "this
+     * branch has published no diagram" (configuration), "no map exists to hang a
+     * mark off" (data), and "you may not record one" (permission, or a visit
+     * that has ended). A published diagram AND a map both exist in each half
+     * below, so a step that fell back to either gate would be sending the
+     * operator to fix something that is not wrong — and, worse, telling a reader
+     * their branch is misconfigured when what they actually lack is a
+     * permission.
+     *
+     * Each panel states its own withdrawal where its own control would have
+     * been, so the sentence is expected TWICE and asserted by section. A
+     * single-match `findByText` would refuse the second, correct, statement.
      */
     evidenceByKind({ damage_map: [DAMAGE_MAP] });
 
-    const readOnly = renderLtr(
-      <DamageMapStep {...stepProps({ capabilities: { ...CAPABILITIES, manageEvidence: false } })} />
-    );
-    expect(await screen.findByText(EN['receptions.evidence.readOnly']!)).toBeInTheDocument();
-    expect(
-      screen.queryByRole('button', { name: EN['receptions.damage.record']! })
-    ).not.toBeInTheDocument();
-    expect(screen.queryByTestId('evidence-notice-damage_mark')).not.toBeInTheDocument();
-    // The BLOCKED map is still stated: it is blocked for everybody, permission
-    // or not, and hiding it here would hide the open decision.
-    expect(screen.getByTestId('evidence-notice-damage_map')).toBeInTheDocument();
-    readOnly.unmount();
+    for (const withdrawn of [
+      {
+        props: { capabilities: { ...CAPABILITIES, manageEvidence: false } },
+        key: 'receptions.evidence.readOnly',
+      },
+      { props: { writesLocked: true }, key: 'receptions.evidence.lockedNote' },
+    ]) {
+      const view = renderLtr(<DamageMapStep {...stepProps(withdrawn.props)} />);
 
-    renderLtr(<DamageMapStep {...stepProps({ writesLocked: true })} />);
-    expect(await screen.findByText(EN['receptions.evidence.lockedNote']!)).toBeInTheDocument();
-    expect(
-      screen.queryByRole('button', { name: EN['receptions.damage.record']! })
-    ).not.toBeInTheDocument();
-    expect(screen.queryByTestId('evidence-notice-damage_mark')).not.toBeInTheDocument();
+      expect(await screen.findAllByText(EN[withdrawn.key]!), withdrawn.key).toHaveLength(2);
+      for (const panel of [mapsPanel(), marksPanel()]) {
+        expect(within(panel).getByText(EN[withdrawn.key]!), withdrawn.key).toBeInTheDocument();
+      }
+
+      // Neither write is offered, and neither gate is borrowed to explain a
+      // permission the operator can do nothing about.
+      for (const button of ['receptions.damage.record', 'receptions.damage.templateSubmit']) {
+        expect(
+          screen.queryByRole('button', { name: EN[button]! }),
+          `${withdrawn.key} · ${button}`
+        ).not.toBeInTheDocument();
+      }
+      for (const gate of ['evidence-notice-damage_mark', 'damage-map-none', 'damage-map-unread']) {
+        expect(screen.queryByTestId(gate), `${withdrawn.key} · ${gate}`).not.toBeInTheDocument();
+      }
+
+      // The read-back is untouched by any of it: a reader still reads.
+      expect(within(mapsPanel()).getByText('top'), withdrawn.key).toBeInTheDocument();
+      view.unmount();
+    }
   });
 
   it('renders in Arabic, RTL — and the map surface itself stays LTR so no mark is mirrored', async () => {
@@ -821,6 +1327,25 @@ describe('the damage step (FE-012)', () => {
     expect(document.documentElement.dir).toBe('rtl');
     const form = await screen.findByRole('form', { name: AR['receptions.damage.formLabel']! });
     expect(within(form).getByText(AR['receptions.damage.record']!)).toBeInTheDocument();
+
+    // The map type is a CLOSED four-value database vocabulary, so it is offered
+    // translated rather than as the stored token: `exterior` on an Arabic screen
+    // is an internal name reaching an operator, which is the same defect as a
+    // raw message key wearing different clothes.
+    expect(
+      within(
+        within(mapsPanel(AR)).getByLabelText(new RegExp(AR['receptions.damage.templateLabel']!))
+      ).getByRole('option', { name: AR['receptions.damage.mapType.exterior']! })
+    ).toBeInTheDocument();
+
+    // The administration absence, enumerated rather than matched — an Arabic
+    // keyword sweep written with `\b` could never fire (rule: `\b` is
+    // ASCII-only), so the same guarantee is stated here as an exact list.
+    expect(controlNames()).toEqual([
+      AR['receptions.damage.templateSubmit']!,
+      AR['receptions.damage.diagramLabel']!,
+      AR['receptions.damage.record']!,
+    ]);
 
     // The surface, and the two authoritative inputs, opt OUT of the direction.
     expect(screen.getByTestId('damage-diagram')).toHaveAttribute('dir', 'ltr');

@@ -214,24 +214,51 @@ describe('the gate is green on the CURRENT tree', () => {
     // vanishing) cannot pass as "nothing to check".
     expect(live.canonical.length).toBe(43);
     expect(live.scanned).toBeGreaterThan(0);
-    // The crm/veh call sites prove the scanner works even while the apt/rec
-    // wired count is legitimately zero.
+    // Consumed mutation call sites across the WHOLE of apps/web/src, apt/rec
+    // and otherwise. It is a floor rather than a pin because it is an
+    // anti-vacuity condition, not a measurement of this phase: on the day this
+    // branch opened the apt/rec wired count was legitimately zero and the
+    // crm/veh sites were the only evidence that the scanner could see a real
+    // mutation at all. The frontend waves have landed since and the floor is
+    // now cleared many times over, which is exactly why it stays a floor —
+    // pinning it would make every unrelated wave edit this line.
     expect(live.sites).toBeGreaterThan(0);
   });
 
-  it('keeps every live allow-list entry inside the frozen day-one list', () => {
+  it('keeps every live allow-list entry inside the frozen day-one list, now empty', () => {
     // Computed against the exports, never written as literals — see the file
     // docblock for why no real operation id may appear in this file.
+    //
+    // THE RATCHET HAS REACHED ITS TERMINUS, and that is what the last two
+    // assertions record. The day-one list froze fourteen ids and the allow-list
+    // has been shrinking towards zero ever since; the last id to leave was the
+    // signature write, which the capture chain wired. An empty allow-list is
+    // the legal end state of a list that may only shrink — it is not the gate
+    // going quiet. Nothing about the ratchet is relaxed by it: the frozen
+    // fourteen stay frozen (the section below holds them), so the day a wave
+    // parks anything at all, that id is either outside the high-water mark and
+    // the first assertion fails, or inside it and the count assertion fails.
+    // Either way the diff has to say so out loud.
+    //
+    // The containment assertion itself is now vacuously satisfied over an empty
+    // set, which is why the falsifiability lives where it can be exercised: the
+    // synthetic cases under "the ratchet refuses allow-list growth" mutate a
+    // manifest into each of the two failures above and prove the gate goes red.
     const parked = live.results
       .filter((r) => r.classification === 'NOT_YET_WIRED')
       .map((r) => r.id);
     const escaped = parked.filter((id) => !DAY_ONE_NOT_YET_WIRED.includes(id));
     expect(escaped, 'an allow-list entry outside the day-one high-water mark').toEqual([]);
     expect(parked.length).toBeLessThanOrEqual(DAY_ONE_NOT_YET_WIRED.length);
+    expect(parked, 'the allow-list has drained; the ratchet only shrinks').toEqual([]);
+    // Through the gate's own tally as well as through its results, because a
+    // count that disagreed with the rows it counted would be a gate defect no
+    // assertion over `results` alone could see.
+    expect(live.counts.NOT_YET_WIRED ?? 0).toBe(0);
   });
 
-  it('pins the live DELIBERATELY_ABSENT count at exactly 29', () => {
-    // WHAT THIS NUMBER MEANS, now that it is no longer zero.
+  it('pins the live DELIBERATELY_ABSENT count at exactly 25', () => {
+    // WHAT THIS NUMBER MEANS, now that it has moved DOWN as well as up.
     //
     // The pin exists because DELIBERATELY_ABSENT is the sideways exit from the
     // allow-list: the ratchet does not constrain it, so reclassifying an
@@ -239,31 +266,52 @@ describe('the gate is green on the CURRENT tree', () => {
     // slide past review. The pin forces the same diff to move this number,
     // which puts the claimed decision in front of a reviewer.
     //
-    // It moved from 0 to 21 once, deliberately, and the 21 are exactly the
-    // intake-catalogue management writes PR #227 registered: create, update
-    // and status-set across the seven catalogues. They are absent from
+    // It moved from 0 to 21 once, deliberately, and those 21 are still here:
+    // the intake-catalogue management writes PR #227 registered — create,
+    // update and status-set across the seven catalogues. They are absent from
     // apps/web because the 35-task register is the OPERATOR surface and no
-    // canonical P1-28 task binds a catalogue-administration screen — who
+    // canonical P1-28 task binds a catalogue-administration screen; who
     // administers those catalogues, and through which surface, is an Owner
     // decision nobody has taken. It is recorded in the canonical plan §7, and
     // the case below proves the gate resolves the reference against that
     // section rather than accepting any non-empty string.
     //
-    // It moved again, from 21 to 29, for the eight writes the reception
-    // evidence-contract remediation registered. Four of them are the same
-    // administration question against `P1-28-OD-001` — three damage-map
-    // template management writes and the capture-policy set are reception
-    // configuration catalogues in exactly the sense that decision raises. The
-    // other four cite `P1-OD-025` instead: binding capture evidence,
-    // finalizing it, waiving it and recording a signature lifecycle event all
-    // require a COMPLETED document chain, and the three DOCUMENT_CHAIN_BLOCKERS
-    // that keep `rec.reception-signature` unwired keep these unreachable for
-    // the same reason. Wiring a control that fails before it reaches storage
-    // would be a false REACHABLE of the INT-113 shape.
+    // It moved to 29 for the eight writes the reception evidence-contract
+    // remediation registered, and it has now come back to 25 because four of
+    // those eight LEFT. Those four are the capture chain — binding an evidence
+    // version to a capture requirement, finalizing that binding, overriding a
+    // requirement, and recording a signature lifecycle event. Their old
+    // justification was that each needs a COMPLETED document chain and that no
+    // application role could complete one: no category existed, no storage
+    // provider was configured, and no version could leave `pending`. That
+    // argument is spent in all three parts, and the module that enumerated the
+    // three blockers no longer holds them. The reception evidence-capture
+    // action and its signature twin now authorize, PUT the object server-side,
+    // register the version, read it back and complete the scan, so a version
+    // can reach `accepted` in the same request: the binding has a version to
+    // bind, the finalization has an accepted one to count, the signature event
+    // has a subject because a signature can be recorded, and the override is
+    // the exception beside a control that works rather than the only way
+    // through. Acceptance is a possibility and not a promise — an unreadable
+    // store still leaves the version `pending` and the capture reports `bound`
+    // — which is why finalization is attempted rather than assumed, and why
+    // each of the four operations is genuinely called either way.
     //
-    // So the number now reads: 29 writes whose absence is a recorded decision,
-    // and nothing else may join them without moving this line again.
-    expect(live.counts.DELIBERATELY_ABSENT ?? 0).toBe(29);
+    // The DIRECTION is enforced by the gate rather than by this pin, which is
+    // what makes the move down as hard to fake as the moves up were: the gate
+    // fails a REACHABLE claim with no production call site that something
+    // outside its own module CONSUMES, and fails a DELIBERATELY_ABSENT
+    // operation that IS called. The four could only leave because real call
+    // sites, reached by real steps, exist — a manifest edit alone would have
+    // been refused from both sides.
+    //
+    // So the number now reads: 25 writes whose absence is a recorded decision,
+    // and every one of them is now the SAME decision. The twenty-one intake
+    // catalogues, the three damage-map template management writes and the
+    // capture-policy set are all reception configuration administered through a
+    // surface no canonical task in this phase binds. Nothing else may join them
+    // without moving this line again.
+    expect(live.counts.DELIBERATELY_ABSENT ?? 0).toBe(25);
   });
 
   it('resolves every live DELIBERATELY_ABSENT reference against the plan §7', () => {
@@ -273,7 +321,7 @@ describe('the gate is green on the CURRENT tree', () => {
     const referenced = live.results
       .filter((r) => r.classification === 'DELIBERATELY_ABSENT')
       .map((r) => r.decisionRef);
-    expect(referenced).toHaveLength(29);
+    expect(referenced).toHaveLength(25);
     expect(live.decisions.length).toBeGreaterThan(0);
     const unresolved = referenced.filter((ref) => !ref || !live.decisions.includes(ref));
     expect(unresolved, 'a decisionRef naming no decision recorded in the plan §7').toEqual([]);

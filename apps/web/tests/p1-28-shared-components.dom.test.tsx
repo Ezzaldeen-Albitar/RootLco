@@ -80,6 +80,7 @@ const { IntakeCustomerCreate } =
   await import('@/features/receptions/intake/components/IntakeCustomerCreate');
 const { IntakeVehicleStep } =
   await import('@/features/receptions/intake/components/IntakeVehicleStep');
+const { EVIDENCE_KIND_COVERAGE } = await import('@/features/receptions/check-in/evidence');
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -356,10 +357,26 @@ describe('CoverageNotice', () => {
     expect(screen.getByText('an extra sentence the step supplied')).toBeVisible();
   });
 
-  it('states the blocked kind in Arabic too', () => {
+  it('states the data-gated kind in Arabic too', () => {
+    /*
+     * This case read `receptions.evidence.damageMapBlocked` while `damage_map`
+     * was a BLOCKED kind — no map could be opened, because nothing in the
+     * product could register a template document. `P1-15` built the chain and
+     * `P1-18` publishes the branch's bindable revisions, so the kind is now
+     * `data_gated`: the control exists, and a branch with no published revision
+     * is a configuration state rather than a missing capability.
+     *
+     * The notice key is read from the coverage table rather than named here, so
+     * this case follows the source of truth instead of pinning a second copy of
+     * it — the reason the old key could go stale unnoticed in the first place.
+     */
+    const row = EVIDENCE_KIND_COVERAGE.find((entry) => entry.kind === 'damage_map');
+    expect(row?.status, 'damage_map is no longer the data-gated kind').toBe('data_gated');
+    expect(row?.noticeKey, 'a gated kind must state something').not.toBeNull();
+
     renderRtl(<CoverageNotice locale="ar" messages={ar} kind="damage_map" />);
     expect(screen.getByTestId('evidence-notice-damage_map')).toHaveTextContent(
-      AR['receptions.evidence.damageMapBlocked'] as string
+      AR[row!.noticeKey as string] as string
     );
   });
 });

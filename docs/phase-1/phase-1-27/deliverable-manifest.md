@@ -224,18 +224,18 @@ every advance of local `develop` in the sequence above was a fast-forward from
 
 ## 5. Source files
 
-### 5.1 The five trees the P1-27 ownership gate owns — 124 files
+### 5.1 The five trees the P1-27 ownership gate owns — 126 files
 
-`validate:p1-27-frontend` reports **124 files across 5 trees, 0 failures**. Of
+`validate:p1-27-frontend` reports **126 files across 5 trees, 0 failures**. Of
 those, **43** are §5.2 and §5.3 together — the two feature trees — and both
 halves are derived from the trees the gate itself names, so the count follows the
 gate rather than a reader's memory of it. The next **34** are the third
 canonical tree, `apps/web/src/app/[locale]/(dashboard)`, which this manifest
 tables nowhere: §5.4 lists the eight CRM and Vehicle route pages only, and the
-other route files belong to earlier phases or to P1-28. The last **45** are the
+other route files belong to earlier phases or to P1-28. The last **47** are the
 two trees P1-28 adopted: **9** in `apps/web/src/features/appointments`, added
 when `P1-28-DO-001` found that the P1-28 plan names three Frontend trees and the
-gate had adopted only one of them, and **36** in
+gate had adopted only one of them, and **38** in
 `apps/web/src/features/receptions`, which is not a P1-27 tree at all either: P1-28
 ADOPTED these rules for it (`ADOPTED_ROOTS` in the gate, declared by
 `phase-1-28/canonical-plan.md` §9), because `no-upload-path` and
@@ -687,7 +687,7 @@ under-report itself by seven files.
 | `clean-room-evidence.md`                          | 379   | The clean-room record, and the six classes every closing value is sorted into      |
 | `contract-archaeology.md`                         | 416   | What the Backend actually publishes, read before anything was built                |
 | `deliverable-manifest.md`                         | 1051  | This file                                                                          |
-| `developer-guide.md`                              | 188   | `DOC-002` — the developer half                                                     |
+| `developer-guide.md`                              | 228   | `DOC-002` — the developer half                                                     |
 | `evidence/change-log.md`                          | 1135  | `DOC-002` — the change-log half; its rows are scraped by a test                    |
 | `evidence/evidence-manifest.json`                 | 171   | `QA-005` — a SHA-256 digest of every document in this directory                    |
 | `evidence/closing-value-ledger.json`              | 907   | Every closing value on the two evidence pages, classified, with its authority      |
@@ -982,12 +982,12 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
 <!-- derived: files tests/backend:all = 93 -->
 <!-- derived: files apps/web/src/features/crm = 20 -->
 <!-- derived: files apps/web/src/features/vehicles = 23 -->
-<!-- derived: files p1-27-frontend-gate = 124 -->
+<!-- derived: files p1-27-frontend-gate = 126 -->
 <!-- derived: files p1-27-frontend-gate:trees = 5 -->
 <!-- derived: tracked docs/phase-1/phase-1-27 = 41 -->
 <!-- derived: tracked docs/phase-1/phase-1-27:md = 31 -->
 <!-- derived: tracked docs/product = 13 -->
-<!-- derived: commands registered = 162 -->
+<!-- derived: commands registered = 163 -->
 <!-- derived: commands required = 83 -->
 <!-- derived: commands reachable = 83 -->
 <!-- derived: commands hosted-ci = 83 -->
@@ -1006,7 +1006,7 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
 <!-- derived: lines docs/phase-1/phase-1-27/closure-record.md = 114 -->
 <!-- derived: lines docs/phase-1/phase-1-27/contract-archaeology.md = 416 -->
 <!-- derived: lines docs/phase-1/phase-1-27/deliverable-manifest.md = 1051 -->
-<!-- derived: lines docs/phase-1/phase-1-27/developer-guide.md = 188 -->
+<!-- derived: lines docs/phase-1/phase-1-27/developer-guide.md = 228 -->
 <!-- derived: lines docs/phase-1/phase-1-27/evidence/change-log.md = 1135 -->
 <!-- derived: lines docs/phase-1/phase-1-27/evidence/evidence-manifest.json = 171 -->
 <!-- derived: lines docs/phase-1/phase-1-27/evidence/closing-value-ledger.json = 907 -->

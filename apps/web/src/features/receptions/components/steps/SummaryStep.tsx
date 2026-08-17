@@ -492,8 +492,10 @@ function EvidenceSummary({
                   )}
                 </span>
                 {hasRegisteredMedia(row.evidenceDocumentId) ? (
-                  // `P1-OD-025` is open: a reference is on record and the media
-                  // itself is pending. Never "uploaded", and never the identifier.
+                  // Existence only, and no lifecycle state: this row publishes
+                  // `evidenceDocumentId` and no status beside it, so naming one
+                  // would name a state this screen never read. Never the
+                  // identifier either — it is an internal reference.
                   <span className="text-caption text-text-muted">
                     {translate(messages, 'receptions.summary.mediaRegistered')}
                   </span>

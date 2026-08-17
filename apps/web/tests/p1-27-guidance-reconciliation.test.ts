@@ -218,11 +218,14 @@ describe('the operator guide describes the product that was built', () => {
 describe('the developer guide describes the repository that exists', () => {
   it('lists exactly the rules the gate enforces', () => {
     /*
-     * The guide presents six bullets as "the rules that are enforced, not merely
-     * written down". A seventh rule added to the gate without a bullet, or a
+     * The guide presents one bullet list as "the rules that are enforced, not
+     * merely written down". A rule added to the gate without a bullet, or a
      * bullet for a rule that was removed, both make the section untrustworthy in
      * the direction that matters — a developer deciding what they can get away
-     * with.
+     * with. This comment states no count on purpose. It said "six bullets" while
+     * the gate carried eight, because a number written in prose beside a check
+     * that derives its own is the one thing here nothing verifies — the two
+     * additions recorded in the map below each left it further behind.
      */
     const gate = readFileSync(join(REPO, 'scripts', 'ci', 'check-p1-27-frontend.mjs'), 'utf8');
     const ids = [...gate.matchAll(/^\s*id: '([a-z0-9-]+)',$/gm)].map((m) => m[1] ?? '');
@@ -235,6 +238,12 @@ describe('the developer guide describes the repository that exists', () => {
       'no-client-asserted-scope': 'a client-asserted',
       'no-invented-total': 'a total computed from `rows.length`',
       'no-upload-path': 'any upload path',
+      // Added when `P1-OD-025` was RESOLVED and reception capture shipped. The
+      // file input left `no-upload-path` for a rule of its own rather than being
+      // allow-listed against it, because `allow` exempts a file from a WHOLE
+      // rule — so the guide owes a sentence for the narrower rule and a
+      // corrected one for the six constructs left behind.
+      'no-unapproved-file-input': 'a file input outside the one approved capture component',
       // Added when `SEC-002`'s export and media conjuncts moved out of
       // `p1-27-security.test.ts` and into the gate. Of that task's five
       // conjuncts only `file-access` had a rule, and that rule covered three of
@@ -262,8 +271,8 @@ describe('the developer guide describes the repository that exists', () => {
      *
      * The case was bidirectional between the GATE and the map above, and only
      * one-directional against the GUIDE: substring presence. So the guide could
-     * grow a seventh bullet claiming an enforced rule the gate does not have,
-     * and this would still pass.
+     * grow an extra bullet claiming an enforced rule the gate does not have, and
+     * this would still pass.
      *
      * It already carried one such overstatement. The bullet said the gate fails
      * on "any `console.*`" while the rule matched a five-method allow-list, so
@@ -272,8 +281,10 @@ describe('the developer guide describes the repository that exists', () => {
      * exactly the data this rule protects — passed it. The gate was widened to
      * match what the guide had always claimed.
      *
-     * The bullet COUNT is now pinned to the rule count, so a seventh bullet
-     * fails here until a seventh rule exists.
+     * The bullet COUNT is now pinned to the rule count, so an extra bullet fails
+     * here until a rule exists for it — which is the direction the file-input
+     * split ran in: the ninth rule landed in the gate first and this case named
+     * it, by id, until the guide carried a sentence for it.
      */
     const bullets =
       /`npm run validate:p1-27-frontend` fails the build on:\n\n((?:- .*\n|  .*\n)+)/.exec(

@@ -138,12 +138,12 @@
     },
     "FE-017": {
       "testId": "TC-P1-28-REC-009",
-      "surface": "apps/web/src/features/receptions/media/media-decision.ts rendered by apps/web/src/features/receptions/media/MediaDecisionNotice.tsx and registered as a step through apps/web/src/features/receptions/components/steps/MediaStep.tsx — the named-open-decision notice and nothing else.",
+      "surface": "apps/web/src/features/receptions/components/steps/MediaStep.tsx, the capture surface, driving apps/web/src/features/receptions/evidence-capture.ts and rendering the one approved file input, apps/web/src/features/receptions/components/CaptureFileField.tsx. apps/web/src/features/receptions/media/media-decision.ts now records only that P1-OD-025 is RESOLVED; the notice it used to render is deleted.",
       "decisionRef": "P1-OD-025"
     },
     "FE-018": {
       "testId": "TC-P1-28-REC-010",
-      "surface": "apps/web/src/features/receptions/components/steps/SignatureStep.tsx — attribution shown, nothing recorded.",
+      "surface": "apps/web/src/features/receptions/components/steps/SignatureStep.tsx, which captures through apps/web/src/features/receptions/signature-capture.ts and renders the one approved file input, apps/web/src/features/receptions/components/CaptureFileField.tsx. The ledger it reads offers finalize only against an accepted version and repudiate only against a finalized signature, both through apps/web/src/features/receptions/api.ts.",
       "decisionRef": "P1-OD-025"
     },
     "FE-019": {
@@ -467,7 +467,10 @@
         {
           "file": "apps/web/tests/reception-condition-evidence.dom.test.tsx",
           "cases": [
-            "states the blocked map, where the control to open one would have been",
+            "reads the bindable diagrams from the VISIT, and calls no catalogue",
+            "binds the EXACT revision of the diagram chosen, and asks for no identifier",
+            "states a diagram slot with no published revision as configuration, not as failure",
+            "does not offer a RETIRED diagram for a new map, and says the old ones stay readable",
             "records a mark against an existing map, with 0..1 coordinates",
             "places the mark from the KEYBOARD, so the diagram is not a pointer-only input",
             "clamps a keyboard move at the contract bounds instead of leaving the map"
@@ -562,23 +565,27 @@
         {
           "file": "apps/web/tests/p1-28-reception-media.dom.test.tsx",
           "cases": [
-            "states the block, names P1-OD-025, and says what the Owner must decide (English)",
-            "offers none on ANY registered wizard step — every step is visited",
-            "puts the notice where the photographs would have gone, and nothing else"
+            "renders exactly one file input per offered requirement, and it is CaptureFileField",
+            "chooses a different state for each of the four, and the four are distinct",
+            "counts FINALIZED bindings only — three recorded files do not move 1/2",
+            "withdraws it, with the reason stated, without rec.reception.evidence.override"
           ]
         },
         {
           "file": "apps/web/tests/p1-28-reception-media.test.ts",
           "cases": [
-            "carries every media key in BOTH catalogues, with real Arabic",
-            "invents no size, no file kind and no extension, in EITHER script"
+            "the allowance names one path, that path exists, and it is CaptureFileField",
+            "reception evidence runs authorize → register → link → bind → finalize",
+            "finalization is attempted ONLY under ACCEPTED_VERSION_STATUS",
+            "no capture surface states a content type, an extension or a ceiling of its own",
+            "is named as an open decision by no shipped reception string, in EITHER script"
           ]
         }
       ],
       "observedInBrowserBy": [
         {
           "file": "apps/web/tests/e2e/authenticated/appointments-and-receptions.spec.ts",
-          "cases": ["no P1-28 route an operator can reach offers a capture control of any kind"]
+          "cases": ["no P1-28 route outside the check-in wizard offers a capture control"]
         }
       ]
     },
@@ -588,9 +595,12 @@
         {
           "file": "apps/web/tests/reception-readings-and-signoff.dom.test.tsx",
           "cases": [
-            "states the block and offers NO control that could not work",
-            "says there is no signature read either, rather than showing an empty list",
-            "shows the parties a signature would be attributed to, from the party-role read"
+            "renders every signature the ledger read returns, in the operator language",
+            "keeps a superseded signature on the ledger, pointing at the one that replaced it",
+            "keeps a repudiated signature on the ledger, with the reason it was withdrawn",
+            "offers no way to finalize against a version that has not been accepted",
+            "finalizes against an ACCEPTED version, and sends no reason with it",
+            "will not repudiate without a reason, and sends the one that was typed"
           ]
         }
       ]

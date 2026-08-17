@@ -58,59 +58,26 @@ export const MEDIA_DECISION_ID = 'P1-OD-025';
 /** Whether the decision is open. Read by the tests that forbid stale copy. */
 export const MEDIA_DECISION_RESOLVED = true;
 
-/**
- * Why capture may be unavailable, at RUNTIME.
+/*
+ * ## What this module deliberately no longer holds
  *
- * Three states, none of which is an Owner decision:
+ * It briefly carried a second account of the runtime states — a
+ * `MEDIA_RUNTIME_STATES` union, a `MEDIA_RUNTIME_KEYS` map and a
+ * `runtimeStateOf()` deriving one from a capture outcome — written when the
+ * block was converted. Nothing ever called any of it, and it could not have
+ * been called: `runtimeStateOf` took a `stored` boolean that `CaptureOutcome`
+ * does not have and never had. It was a description of the behaviour sitting
+ * beside the behaviour, agreeing with it by coincidence.
  *
- *   - `available` — the store answered and the version reached `accepted`.
- *   - `unverifiable` — the object was stored and no scanner could read it back,
- *     so the version stays `pending`. It is recorded, and it does NOT count.
- *   - `unconfigured` — no object store is configured in this environment, so
- *     nothing can be stored at all.
+ * That is the shape this project keeps catching — a module stating a rule the
+ * code does not implement — so it is gone rather than wired up for symmetry.
+ * The states an operator actually meets are derived where the answer comes
+ * from, in `components/steps/MediaStep.tsx` (`outcomeKey`) and
+ * `components/steps/SignatureStep.tsx`, from what the API returned: the version
+ * status and whether a scanner could read the object back. One account, in the
+ * place that has the facts.
  *
- * `as const satisfies` so a fourth state fails to compile here rather than
- * rendering a missing key.
+ * `MEDIA_SURFACE_KEYS` went the same way. Its three strings each said a surface
+ * could not produce a document "in this release"; two of them are now false and
+ * the third was rendered by the deleted notice.
  */
-export const MEDIA_RUNTIME_STATES = ['available', 'unverifiable', 'unconfigured'] as const;
-export type MediaRuntimeState = (typeof MEDIA_RUNTIME_STATES)[number];
-
-/** What each runtime state says, in both catalogues. */
-export const MEDIA_RUNTIME_KEYS = {
-  available: 'receptions.capture.state.satisfied',
-  unverifiable: 'receptions.capture.boundNoScanner',
-  unconfigured: 'attachments.capture.storeUnavailable',
-} as const satisfies Readonly<Record<MediaRuntimeState, string>>;
-
-/**
- * The surfaces the capture chain reaches.
- *
- * A union rather than a free string, for the reason it always was: a later wave
- * embedding a media statement has to declare WHICH surface it is about rather
- * than inventing a fourth account of the same behaviour.
- */
-export type MediaSurface = 'reception-evidence' | 'damage-map-template' | 'signature-image';
-
-/** The line that names what each surface captures. */
-export const MEDIA_SURFACE_KEYS: Readonly<Record<MediaSurface, string>> = Object.freeze({
-  'reception-evidence': 'receptions.media.surface.evidence',
-  'damage-map-template': 'receptions.media.surface.damageMap',
-  'signature-image': 'receptions.media.surface.signature',
-});
-
-/**
- * Which runtime state a completed capture landed in.
- *
- * Derived from what the API returned, never from configuration this tier can
- * read: `apps/web` holds no `STORAGE_*` variable, so the only honest source for
- * "is there a store" is whether one answered.
- */
-export function runtimeStateOf(outcome: {
-  readonly stored: boolean;
-  readonly scannerAvailable: boolean;
-  readonly versionStatus: string;
-}): MediaRuntimeState {
-  if (!outcome.stored) return 'unconfigured';
-  if (!outcome.scannerAvailable || outcome.versionStatus !== 'accepted') return 'unverifiable';
-  return 'available';
-}

@@ -249,7 +249,9 @@ export function AcknowledgementDocument({
                   : 'receptions.summary.staffObserved'
               ),
               hasRegisteredMedia(row.evidenceDocumentId)
-                ? // The STATE, never the reference. See the docblock.
+                ? // EXISTENCE, never a state and never the reference: the row
+                  // carries no status, and this is the copy the customer takes
+                  // away. See the docblock on `hasRegisteredMedia`.
                   translate(messages, 'receptions.summary.mediaRegistered')
                 : translate(messages, 'receptions.acknowledgement.noMedia'),
               <bdi key={row.id}>{formatDateTime(row.recordedAt, locale)}</bdi>,

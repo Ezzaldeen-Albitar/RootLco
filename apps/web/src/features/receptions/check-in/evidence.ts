@@ -118,16 +118,19 @@ export const EVIDENCE_KIND_COVERAGE: readonly EvidenceKindCoverage[] = Object.fr
   {
     kind: 'damage_map',
     stepId: 'condition-damage',
-    status: 'blocked',
+    // Was `blocked`, and the reason it gave has expired. `documentId` AND
+    // `documentVersionId` are still both required uuids naming a registered
+    // map-template document and the exact version drawn on — what changed is
+    // that a tenant can now HOLD one: P1-15 built the registration chain, P1-18
+    // publishes the branch's bindable revisions on the visit's own capture
+    // contract, and `DamageMapStep` binds the exact revision it was offered.
+    //
+    // `data_gated` rather than `wired` because a branch whose catalogue has no
+    // published revision still has nothing to draw on. That is a configuration
+    // state, not a missing capability, and the step states it as one.
+    status: 'data_gated',
     task: 'P1-28-FE-012',
-    // `documentId` AND `documentVersionId` are both required uuids naming a
-    // registered map-template document and the exact version it was drawn on.
-    // The published surface DOES have an operation that creates a document row;
-    // what it does not have is a chain that can complete — see
-    // `DOCUMENT_CHAIN_BLOCKERS` in `../media/media-decision.ts`, three
-    // independent facts a test re-derives from the repository. So no operator in
-    // any tenant can produce either value — P1-OD-025.
-    noticeKey: 'receptions.evidence.damageMapBlocked',
+    noticeKey: 'receptions.damage.templateNone',
   },
   {
     kind: 'damage_mark',

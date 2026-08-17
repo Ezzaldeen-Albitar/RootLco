@@ -17,6 +17,7 @@ import {
   type CaptureRequirementState,
 } from '../../receptions-contract';
 import type { CheckInStepProps } from '../../check-in/wizard';
+import { CaptureFileField } from '../CaptureFileField';
 import { EvidenceStates, PRIMARY_BUTTON, SECONDARY_BUTTON } from './EvidencePanels';
 
 /**
@@ -46,14 +47,16 @@ import { EvidenceStates, PRIMARY_BUTTON, SECONDARY_BUTTON } from './EvidencePane
  *     an operator has to be able to see.
  *   - **outstanding** — nothing bound.
  *
- * ## Why the file input is here and nowhere else
+ * ## The file input is not here either
  *
- * `no-unapproved-file-input` allows exactly this component. Every other
- * construct an upload can be built from — `FileReader`, a `DataTransfer`, a drop
- * target, a hand-set `multipart/form-data`, a `.files` list — stays forbidden
- * everywhere including here, and `no-invented-media-limit` is untouched: the
- * accepted types and the size ceiling come from the category the SERVER
- * published, rendered from that value and never from a constant.
+ * It is `components/CaptureFileField.tsx`, the one path `no-unapproved-file-input`
+ * allows, shared with the signature step so the allowance stays at one entry as
+ * capture surfaces multiply. Every other construct an upload can be built from —
+ * `FileReader`, a `DataTransfer`, a drop target, a hand-set
+ * `multipart/form-data`, a `.files` list — stays forbidden everywhere including
+ * there, and `no-invented-media-limit` is untouched: this step states no
+ * accepted-type list and no ceiling of its own, so the category the SERVER
+ * published is the only policy in play.
  *
  * ## The override is a different authority, and the screen says so
  *
@@ -264,11 +267,9 @@ function RequirementRow({
           }}
           className="flex flex-wrap items-center gap-2"
         >
-          <input
-            type="file"
+          <CaptureFileField
             name="evidenceFile"
-            aria-label={translate(messages, 'receptions.capture.chooseFile')}
-            className="text-body text-text-primary"
+            label={translate(messages, 'receptions.capture.chooseFile')}
           />
           <button type="submit" disabled={pending} className={PRIMARY_BUTTON}>
             {translate(messages, 'receptions.capture.submit')}

@@ -16,6 +16,7 @@ import {
   checkDocument,
   deriveCounts,
   evaluate,
+  partitionProblems,
   walk,
 } from '../../scripts/ci/check-p1-27-doc-counts.mjs';
 
@@ -123,6 +124,78 @@ describe('the live repository agrees with its own documents', () => {
     const result = evaluate();
     expect(result.claims, 'no document opts any count into the gate').toBeGreaterThan(5);
     expect(result.documents, 'no phase document was scanned').toBeGreaterThan(20);
+  });
+});
+
+/**
+ * The `'use server'` partition, driven with paths that are not on disk.
+ *
+ * `developer-guide/use-server-partition` reads the tree, so in the ordinary run
+ * it only ever meets files that comply — which is exactly how a rule ends up
+ * being trusted without ever having refused anything. The third pattern is the
+ * live case for that: `*-capture.ts` was admitted when reception capture shipped,
+ * and an unscoped admission would have made the suffix a legitimate name for a
+ * `'use server'` file in any of the five trees while every real file still
+ * passed and nothing looked wrong.
+ *
+ * So each pattern is handed a violation it must name, and a compliant list it
+ * must accept. The compliant case is not decoration: a `partitionProblems` that
+ * refused everything would satisfy all three rejection cases perfectly.
+ */
+describe('the use-server partition rejects what it says it rejects', () => {
+  /** What the reception, CRM and vehicle trees actually ship today. */
+  const COMPLIANT = [
+    'features/crm/customers/api.ts',
+    'features/crm/customers/profile-actions.ts',
+    'features/vehicles/history-api.ts',
+    'features/receptions/evidence-capture.ts',
+    'features/receptions/signature-capture.ts',
+  ];
+
+  it('accepts the three patterns in the trees the guide scopes them to', () => {
+    expect(COMPLIANT.length, 'the compliant sample is empty').toBeGreaterThan(4);
+    expect(partitionProblems(COMPLIANT)).toEqual([]);
+  });
+
+  it('names a use-server file matching no pattern at all', () => {
+    const problems = partitionProblems([...COMPLIANT, 'features/vehicles/duplicates-queue.ts']);
+    expect(problems.length).toBe(1);
+    expect(problems[0]).toContain('accounts for no');
+    expect(problems[0], 'the message must name the file, not the count').toContain(
+      'features/vehicles/duplicates-queue.ts'
+    );
+  });
+
+  it('names a write action outside the CRM tree', () => {
+    const problems = partitionProblems([...COMPLIANT, 'features/vehicles/profile-actions.ts']);
+    expect(problems.length).toBe(1);
+    expect(problems[0]).toContain('scopes *actions.ts to the CRM tree');
+    expect(problems[0]).toContain('features/vehicles/profile-actions.ts');
+  });
+
+  it('names a capture file outside the reception tree', () => {
+    /*
+     * The direction the cheap repair would have lost. This path ends in
+     * `-capture.ts`, so an unscoped partition calls it accounted for and reports
+     * nothing — while the guide's table says the vehicle tree holds adapters and
+     * contracts, and a reader looking for the vehicle capture act would find a
+     * file the table does not describe.
+     */
+    const problems = partitionProblems([...COMPLIANT, 'features/vehicles/damage-capture.ts']);
+    expect(problems.length).toBe(1);
+    expect(problems[0]).toContain('scopes *-capture.ts to the reception tree');
+    expect(problems[0]).toContain('features/vehicles/damage-capture.ts');
+  });
+
+  it('reports every violated pattern rather than the first', () => {
+    // Three at once, because a partition that stops at the first failure tells a
+    // reader to fix one thing and meet the next one on the following run.
+    const problems = partitionProblems([
+      'features/vehicles/duplicates-queue.ts',
+      'features/vehicles/profile-actions.ts',
+      'features/vehicles/damage-capture.ts',
+    ]);
+    expect(problems.length).toBe(3);
   });
 });
 
