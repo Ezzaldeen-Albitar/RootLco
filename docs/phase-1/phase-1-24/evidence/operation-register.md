@@ -9,13 +9,13 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 
 | Measure                  | Value |
 | ------------------------ | ----- |
-| Public operations        | 289   |
+| Public operations        | 291   |
 | Domains (modules)        | 19    |
-| OpenAPI paths            | 236   |
-| OpenAPI operations       | 289   |
+| OpenAPI paths            | 238   |
+| OpenAPI operations       | 291   |
 | OpenAPI schemas          | 3     |
 | OpenAPI security schemes | 1     |
-| Permission codes seeded  | 109   |
+| Permission codes seeded  | 110   |
 | Audit actions catalogued | 176   |
 | Domain events catalogued | 50    |
 | Structured error codes   | 28    |
@@ -24,7 +24,7 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 
 | Classification    | Operations |
 | ----------------- | ---------- |
-| Covered           | 289        |
+| Covered           | 291        |
 | Partially covered | 0          |
 | Uncovered         | 0          |
 | Not applicable    | 0          |
@@ -48,7 +48,7 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 | reception       | 57         | 57      | 35     | 35      | 28         | 21              |
 | reporting       | 2          | 2       | 0      | 0       | 0          | 0               |
 | service-catalog | 5          | 5       | 4      | 4       | 4          | 2               |
-| shared-services | 26         | 26      | 18     | 18      | 6          | 6               |
+| shared-services | 28         | 28      | 18     | 18      | 6          | 6               |
 | technician      | 6          | 6       | 3      | 3       | 1          | 2               |
 | vehicle         | 27         | 27      | 12     | 12      | 12         | 0               |
 | warranty        | 2          | 2       | 1      | 1       | 1          | 0               |
@@ -257,8 +257,10 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 | `shared.attachment-version-reject`                  | POST   | `/api/v1/attachments/versions/{versionId}/rejection`                               | tenant  | `shared.document.manage`                                             | shared.document.version_rejected       | —    | —   | audit authorization cross-tenant denial route service success                                                                 | Covered |
 | `shared.branch-status-change`                       | POST   | `/api/v1/organization/branches/{branchId}/status`                                  | branch  | `org.settings.manage`                                                | org.branch.status_changed              | —    | yes | audit authorization cross-tenant denial isolation outbox route service stale-version success                                  | Covered |
 | `shared.branch-status-read`                         | GET    | `/api/v1/organization/branches/{branchId}/status`                                  | branch  | `org.branch.read`                                                    | —                                      | —    | —   | authorization cross-tenant isolation route service success                                                                    | Covered |
+| `shared.document-category-list`                     | GET    | `/api/v1/attachments/categories`                                                   | tenant  | `shared.document.read`                                               | —                                      | —    | —   | authorization denial route service success                                                                                    | Covered |
 | `shared.document-read`                              | GET    | `/api/v1/attachments/documents/{documentId}`                                       | tenant  | `shared.document.manage`                                             | —                                      | —    | —   | authorization cross-tenant denial isolation route service success                                                             | Covered |
 | `shared.document-retention-evaluate`                | POST   | `/api/v1/attachments/documents/{documentId}/retention-evaluations`                 | tenant  | `shared.document.archive`                                            | shared.document.retention_evaluated    | —    | —   | audit authorization cross-tenant denial isolation route service success                                                       | Covered |
+| `shared.document-version-read`                      | GET    | `/api/v1/attachments/versions/{versionId}`                                         | tenant  | `shared.document.read`                                               | —                                      | —    | —   | authorization cross-tenant denial route service success                                                                       | Covered |
 | `shared.export-authorize`                           | POST   | `/api/v1/exports/authorizations`                                                   | tenant  | `rpt.export`                                                         | shared.export.authorized               | —    | —   | audit authorization denial route service success                                                                              | Covered |
 | `shared.export-catalogue`                           | GET    | `/api/v1/exports/resources`                                                        | tenant  | `rpt.export`                                                         | —                                      | —    | —   | authorization route service success                                                                                           | Covered |
 | `shared.health-live`                                | GET    | `/api/v1/health/live`                                                              | tenant  | _public_                                                             | —                                      | —    | —   | route service success unauthenticated                                                                                         | Covered |

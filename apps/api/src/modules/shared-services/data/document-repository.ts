@@ -36,6 +36,8 @@ export interface CategoryRow {
   readonly max_size_bytes: string;
   readonly default_classification: string;
   readonly default_retention_class: string;
+  readonly business_link_purpose: string;
+  readonly device_capture_timestamp_required: boolean;
   readonly status: string;
 }
 
@@ -63,6 +65,13 @@ export interface VersionRow {
   readonly status: string;
   readonly company_id: string | null;
   readonly branch_id: string | null;
+  readonly captured_at: Date | null;
+  readonly uploaded_at: Date;
+  readonly scanning_at: Date | null;
+  readonly accepted_at: Date | null;
+  readonly quarantined_at: Date | null;
+  readonly rejected_at: Date | null;
+  readonly sha256_hex: string;
 }
 
 export interface LinkRow {
@@ -83,7 +92,8 @@ export class DocumentRepository extends Repository {
     return this.runOne<CategoryRow>(
       db,
       `SELECT id, category_code, scope, allowed_content_types, max_size_bytes,
-              default_classification, default_retention_class, status
+              default_classification, default_retention_class, status,
+              business_link_purpose, device_capture_timestamp_required
          FROM shared.document_categories
         WHERE category_code = $1
           AND deleted_at IS NULL
@@ -107,13 +117,31 @@ export class DocumentRepository extends Repository {
     return this.runOne<CategoryRow>(
       db,
       `SELECT id, category_code, scope, allowed_content_types, max_size_bytes,
-              default_classification, default_retention_class, status
+              default_classification, default_retention_class, status,
+              business_link_purpose, device_capture_timestamp_required
          FROM shared.document_categories
         WHERE id = $1
           AND deleted_at IS NULL
           AND (scope = 'platform' OR tenant_id = $2)`,
       [categoryId, context.principal.tenantId]
     );
+  }
+
+  async listActiveCategories(db: DbHandle): Promise<readonly CategoryRow[]> {
+    const context = this.assertContext(db);
+    const result = await this.run<CategoryRow>(
+      db,
+      `SELECT DISTINCT ON (category_code)
+              id, category_code, scope, allowed_content_types, max_size_bytes,
+              default_classification, default_retention_class, status,
+              business_link_purpose, device_capture_timestamp_required
+         FROM shared.document_categories
+        WHERE deleted_at IS NULL AND status='active'
+          AND (scope='platform' OR tenant_id=$1)
+        ORDER BY category_code, scope='tenant' DESC`,
+      [context.principal.tenantId]
+    );
+    return result.rows;
   }
 
   /**
@@ -233,6 +261,7 @@ export class DocumentRepository extends Repository {
       readonly contentType: string;
       readonly sizeBytes: number;
       readonly sha256Hex: string;
+      readonly capturedAt: Date | null;
     }
   ): Promise<string | null> {
     const context = this.assertContext(db);
@@ -240,8 +269,8 @@ export class DocumentRepository extends Repository {
       db,
       `INSERT INTO shared.document_versions
          (id, tenant_id, document_id, version_number, storage_key, content_type,
-          size_bytes, sha256, uploaded_by, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, decode($8, 'hex'), $9, $9)
+          size_bytes, sha256, uploaded_by, created_by, captured_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, decode($8, 'hex'), $9, $9, $10)
        RETURNING id`,
       [
         input.id,
@@ -253,6 +282,7 @@ export class DocumentRepository extends Repository {
         input.sizeBytes,
         input.sha256Hex,
         context.principal.userId,
+        input.capturedAt,
       ]
     );
     return row?.id ?? null;
@@ -264,7 +294,9 @@ export class DocumentRepository extends Repository {
     return this.runOne<VersionRow>(
       db,
       `SELECT v.id, v.document_id, v.version_number, v.storage_key, v.content_type,
-              v.size_bytes, v.status, d.company_id, d.branch_id
+              v.size_bytes, v.status, d.company_id, d.branch_id, v.captured_at,
+              v.uploaded_at, v.scanning_at, v.accepted_at, v.quarantined_at,
+              v.rejected_at, encode(v.sha256,'hex') AS sha256_hex
          FROM shared.document_versions v
          JOIN shared.documents d
            ON d.tenant_id = v.tenant_id AND d.id = v.document_id
@@ -279,7 +311,9 @@ export class DocumentRepository extends Repository {
     return this.runOne<VersionRow>(
       db,
       `SELECT v.id, v.document_id, v.version_number, v.storage_key, v.content_type,
-              v.size_bytes, v.status, d.company_id, d.branch_id
+              v.size_bytes, v.status, d.company_id, d.branch_id, v.captured_at,
+              v.uploaded_at, v.scanning_at, v.accepted_at, v.quarantined_at,
+              v.rejected_at, encode(v.sha256,'hex') AS sha256_hex
          FROM shared.document_versions v
          JOIN shared.documents d
            ON d.tenant_id = v.tenant_id AND d.id = v.document_id
@@ -321,6 +355,43 @@ export class DocumentRepository extends Repository {
       [context.principal.tenantId, versionId]
     );
     return result.rows.map((row) => row.scan_status);
+  }
+
+  async beginScan(db: DbHandle, versionId: string): Promise<boolean> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<{ begun: boolean }>(
+      db,
+      `SELECT shared.begin_document_scan($1,$2) AS begun`,
+      [context.principal.tenantId, versionId]
+    );
+    return row?.begun === true;
+  }
+
+  async completeScan(
+    db: DbHandle,
+    versionId: string,
+    input: {
+      readonly verdict: 'clean' | 'infected' | 'error';
+      readonly scanner: string;
+      readonly threat: string | null;
+      readonly details: Readonly<Record<string, string | number | boolean>>;
+    }
+  ): Promise<'accepted' | 'quarantined'> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<{ status: 'accepted' | 'quarantined' }>(
+      db,
+      `SELECT shared.complete_document_scan($1,$2,$3,$4,$5,$6::jsonb) AS status`,
+      [
+        context.principal.tenantId,
+        versionId,
+        input.verdict,
+        input.scanner,
+        input.threat,
+        JSON.stringify(input.details),
+      ]
+    );
+    if (!row) throw new Error('document scan completion returned no status');
+    return row.status;
   }
 
   async insertLink(

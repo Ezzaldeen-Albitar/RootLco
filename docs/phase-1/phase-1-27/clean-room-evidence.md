@@ -163,11 +163,11 @@ different tree is not evidence about this one.
 | Web test files under `apps/web/tests`       | 98    | a walk of the tree                                                 |
 | Web tier — tests executed                   | 2728  | `--record web`, from the `vitest` JSON report                      |
 | Web tier — files the run reported           | 98    | the same report, cross-checked against the walk above              |
-| Root unit tier — tests executed             | 2592  | `--record unit`, from the `vitest` JSON report                     |
-| Root unit tier — files the run reported     | 99    | the same report, cross-checked against the tier's include rule      |
+| Root unit tier — tests executed             | 2660  | `--record unit`, from the `vitest` JSON report                     |
+| Root unit tier — files the run reported     | 100   | the same report, cross-checked against the tier's include rule      |
 | Committed web floor (`minTests`)            | 2500  | `.github/ci-baselines/test-count-baseline.json`                    |
 | Committed unit floor (`minTests`)           | 1050  | the same baseline                                                  |
-| Migrations on disk                          | 120   | a walk of `supabase/migrations`                                    |
+| Migrations on disk                          | 121   | a walk of `supabase/migrations`                                    |
 
 The floor and the measurement are different questions and they have different
 authorities. The baseline file defines the FLOOR, so binding "the floor is 2500"
@@ -181,7 +181,7 @@ the tree was running.
 | --------------------------------------------------- | ------------------------------------------- |
 | Tracked files under `docs/phase-1/phase-1-27`        | 41                                          |
 | Tracked `.md` files under the same directory         | 31                                          |
-| Migrations tracked by git at `HEAD`                  | 120                                         |
+| Migrations tracked by git at `HEAD`                  | 121                                         |
 | `CODE_CANDIDATE_SHA`                                 | `501f5f0d48d7b8cafc12dad51f6c501534b66a18`  |
 | Executable paths changed, candidate to accepted `develop` | 0                                      |
 

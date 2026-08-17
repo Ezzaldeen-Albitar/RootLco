@@ -24,7 +24,7 @@
  * thirteen of them stating which class a write declares, none of them checkable
  * — because the Web tier held no data from which one could be derived.
  *
- * Currently approval 13, export 1, financial 13, none 113, privileged 136, security 13.
+ * Currently approval 13, export 1, financial 13, none 115, privileged 136, security 13.
  *
  * `(absent)` above would mean an operation the document publishes with NO audit
  * class. It is emitted as the empty string rather than defaulted to `none`,
@@ -49,7 +49,7 @@ export interface PublishedOperation {
   readonly auditClass: string;
 }
 
-/** Every operation the contract publishes. 289 of them. */
+/** Every operation the contract publishes. 291 of them. */
 export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze([
   {
     template: '/additional-work/{requestId}/approval',
@@ -248,6 +248,13 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     auditClass: 'privileged',
   },
   {
+    template: '/attachments/categories',
+    method: 'GET',
+    operationId: 'shared.document-category-list',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
     template: '/attachments/documents/{documentId}',
     method: 'GET',
     operationId: 'shared.document-read',
@@ -295,6 +302,13 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     operationId: 'shared.attachment-version-register',
     idempotent: true,
     auditClass: 'privileged',
+  },
+  {
+    template: '/attachments/versions/{versionId}',
+    method: 'GET',
+    operationId: 'shared.document-version-read',
+    idempotent: false,
+    auditClass: 'none',
   },
   {
     template: '/attachments/versions/{versionId}/rejection',

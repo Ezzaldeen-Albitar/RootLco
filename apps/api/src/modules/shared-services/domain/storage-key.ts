@@ -151,6 +151,39 @@ export function safeContentDispositionFilename(rawName: string): string {
   return bounded.length > 0 ? bounded : 'attachment';
 }
 
+/** Anything outside printable US-ASCII cannot appear in a bare `filename=`. */
+const NOT_PRINTABLE_ASCII = /[^ -~]/gu;
+
+/**
+ * Builds a complete, safe `Content-Disposition` value for a download.
+ *
+ * `safeContentDispositionFilename()` deliberately PRESERVES non-ASCII and says
+ * in its own docblock that the caller must emit RFC 5987. That sentence was the
+ * whole control, and a sentence is not a control: the S3 adapter interpolated
+ * the name straight into `attachment; filename="${name}"`, so an Arabic title
+ * produced a raw UTF-8 header value, and any caller that skipped the sanitiser
+ * produced parameter injection. This function removes the requirement to
+ * remember, because it sanitises again itself:
+ *
+ *  - `filename=` carries an ASCII-only fallback with every quote, backslash,
+ *    semicolon, comma and control character already gone;
+ *  - `filename*=UTF-8''…` carries the real name, percent-encoded to RFC 5987
+ *    `attr-char` (which is narrower than `encodeURIComponent` — `!`, `*`, `'`,
+ *    `(` and `)` are escaped explicitly).
+ *
+ * Callers pass a RAW name. Sanitising an already-sanitised name is idempotent,
+ * so passing a sanitised one is harmless; passing a hostile one is safe.
+ */
+export function contentDispositionAttachment(rawName: string): string {
+  const safe = safeContentDispositionFilename(rawName);
+  const ascii = safe.replace(NOT_PRINTABLE_ASCII, '_').trim();
+  const encoded = encodeURIComponent(safe).replace(
+    /['()!*]/g,
+    (character) => `%${character.charCodeAt(0).toString(16).toUpperCase()}`
+  );
+  return `attachment; filename="${ascii.length > 0 ? ascii : 'attachment'}"; filename*=UTF-8''${encoded}`;
+}
+
 /**
  * Normalises an uploaded filename for storage in `shared.documents`.
  *

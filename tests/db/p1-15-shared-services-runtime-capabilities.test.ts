@@ -28,7 +28,7 @@
  * The admin connection provisions fixtures and reads back. It carries BYPASSRLS
  * and is never evidence about runtime behaviour.
  */
-import { readdirSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Client, Pool } from 'pg';
@@ -291,9 +291,70 @@ describe('P1-15 / global security posture', () => {
     const files = readdirSync(dir)
       .filter((f) => f.endsWith('.sql'))
       .sort();
-    expect(files).toHaveLength(120);
-    expect(files.at(-2)).toBe('20260730090000_crm_customer_notes_write_capability.sql');
-    expect(files.at(-1)).toBe('20260731090000_rec_custody_release_visit_marker.sql');
+    expect(files).toHaveLength(121);
+    expect(files.at(-2)).toBe('20260731090000_rec_custody_release_visit_marker.sql');
+    expect(files.at(-1)).toBe('20260815090000_shared_reception_evidence_foundation.sql');
+  });
+
+  it('migration 121 changes the shared surface DELIBERATELY, and the change is bounded', () => {
+    /*
+     * The count above moved 120 -> 121, and a count that moves without saying
+     * what moved is the bump this file exists to prevent. 121 is the P1-OD-025
+     * evidence foundation, and unlike 118/119/120 it DOES change the inventory
+     * this suite asserts: one permission code, two policies and two column-level
+     * grants. Each is named here so a later migration that quietly adds a third
+     * cannot hide behind a number that was already updated once.
+     */
+    const sql = readFileSync(
+      fileURLToPath(
+        new URL(
+          '../../supabase/migrations/20260815090000_shared_reception_evidence_foundation.sql',
+          import.meta.url
+        )
+      ),
+      'utf8'
+    );
+    /*
+     * The migration creates STRUCTURE ONLY — it inserts no row at the top level.
+     *
+     * This case first asserted the opposite: exactly one `INSERT INTO
+     * iam.permissions`, because that is how the migration was written. The
+     * migration-replay gate refused it — "migrations create structure; business
+     * rows are the tenant's" — and the row moved to
+     * `seeds/04_iam_permission_catalog.sql`, which already owned that kind.
+     *
+     * So the assertion inverts. Counting zero here is what proves the rule held,
+     * and the permission is asserted where it now lives, so moving it back into
+     * a migration fails in two places rather than passing quietly in one.
+     */
+    expect([...sql.matchAll(/^INSERT INTO/gm)]).toHaveLength(0);
+    const permissionSeed = readFileSync(
+      fileURLToPath(new URL('../../supabase/seeds/04_iam_permission_catalog.sql', import.meta.url)),
+      'utf8'
+    );
+    expect(permissionSeed).toContain("'shared.document.read'");
+    // Exactly two new policies, both named.
+    const policies = [...sql.matchAll(/CREATE POLICY (\w+)/g)].map((m) => m[1]).sort();
+    expect(policies).toEqual(['ins_file_scan_results_scanner', 'upd_document_versions_lifecycle']);
+    /*
+     * The only write grants are the two narrow ones, and UPDATE is column-scoped.
+     *
+     * ANCHORED to the start of a line, and that is not incidental. The first
+     * version of this assertion matched anywhere in the file and found THREE
+     * grants: the two real ones, and the sentence in this migration's own header
+     * explaining that `GRANT UPDATE(status)` is a column grant. A comment is not
+     * a grant — reading prose as code is the single defect class this repository
+     * has caught most often, and it does not stop being that when the prose is
+     * ours.
+     */
+    const grants = [...sql.matchAll(/^GRANT (INSERT|UPDATE|DELETE|TRUNCATE)([^;]*);/gm)].map((m) =>
+      `${m[1]}${m[2]}`.replace(/\s+/g, ' ').trim()
+    );
+    expect(grants).toEqual([
+      'INSERT ON shared.file_scan_results TO app_runtime',
+      'UPDATE(status) ON shared.document_versions TO app_runtime',
+      'INSERT(captured_at) ON shared.document_versions TO app_runtime',
+    ]);
   });
 
   it('every relation touched by migration 117 keeps ENABLE and FORCE RLS', async () => {
@@ -376,7 +437,11 @@ describe('P1-15 / global security posture', () => {
     expect(Number(rows[0]?.n)).toBe(0);
   });
 
-  it('both new permission codes exist exactly once and the catalog totals 107', async () => {
+  // The title states no number ON PURPOSE. It said "totals 107" while the
+  // assertion below read 109 — the exact "prose disagreeing with the assertion
+  // four lines away" defect this repository has a gate for. The number lives in
+  // one place, and that place is the expectation.
+  it('both new permission codes exist exactly once, and the catalog total is pinned', async () => {
     const { rows } = await admin.query<{ permission_code: string; n: string }>(
       `SELECT permission_code, count(*)::text AS n FROM iam.permissions
         WHERE permission_code IN ('shared.document.manage','shared.notification.send')
@@ -453,9 +518,22 @@ describe('P1-15 / global security posture', () => {
     // fix is a management contract, never a seed: the no-fake-data policy is
     // permanent, and both codes are granted to nobody by default.
     //
+    // P1-OD-025 adds one, taking the catalog to 110: shared.document.read.
+    // Every document read on this surface demanded `shared.document.manage` —
+    // the code that CREATES document metadata, pre-acceptance versions and
+    // links. A receptionist who may only look at reception evidence therefore
+    // had to be given the authority to author it, which is the same
+    // read/write conflation `shared.notification.read` was minted to end in
+    // P1-23. The code is seeded in
+    // supabase/seeds/04_iam_permission_catalog.sql AND inserted by migration
+    // 20260815090000 with ON CONFLICT DO NOTHING, because the migration's own
+    // functions depend on the catalog being current in an environment that has
+    // migrated but not re-seeded; both paths are idempotent, so the count is
+    // one either way, which the per-code assertion above is what proves.
+    //
     // The pin moves with the seed deliberately: it is what catches an accidental
     // catalog edit.
-    expect(Number(total.rows[0]?.n)).toBe(109);
+    expect(Number(total.rows[0]?.n)).toBe(110);
   });
 
   it('the exact write-policy inventory of the whole shared schema is unchanged apart from migrations 117 and 119', async () => {
@@ -473,6 +551,10 @@ describe('P1-15 / global security posture', () => {
       'ins_documents_scoped',
       // --- pre-existing (Phase 1-5 / DBCR-P1-13-001) ---
       'ins_event_outbox_producer',
+      // --- added by migration 121 (P1-OD-025 evidence foundation) ---
+      // Append-only: the role holds INSERT and SELECT on file_scan_results and
+      // nothing else, so a verdict can be recorded but never edited or withdrawn.
+      'ins_file_scan_results_scanner',
       'ins_idempotency_keys_tenant',
       // --- added by migration 117 ---
       'ins_message_templates_tenant',
@@ -483,6 +565,12 @@ describe('P1-15 / global security posture', () => {
       'ins_template_versions_tenant',
       'lck_template_versions_reference',
       'upd_document_links_unlink',
+      // --- added by migration 121 (P1-OD-025 evidence foundation) ---
+      // The scanner handoff's row-level half. `USING` excludes a version that is
+      // already terminal, so acceptance cannot be un-done; `WITH CHECK` bounds
+      // the target to the approved vocabulary. Paired with the column grant
+      // `UPDATE(status)`, which is what stops any other field being written.
+      'upd_document_versions_lifecycle',
       'upd_document_versions_reject',
       'upd_message_templates_tenant',
       // --- added by migration 119 (DBCR-P1-16-001) ---
@@ -671,13 +759,30 @@ describe('P1-15 / document versions and the file-scan trust boundary', () => {
     }
   });
 
-  it('no application role holds any privilege on shared.file_scan_results beyond SELECT', async () => {
-    const { rows } = await admin.query<{ privilege_type: string }>(
-      `SELECT DISTINCT privilege_type FROM information_schema.table_privileges
+  it('the only privilege beyond SELECT on shared.file_scan_results is the scanner INSERT', async () => {
+    /*
+     * This asserted `['SELECT']` while the scan handoff was SECURITY DEFINER and
+     * the request role held no write at all. That implementation was withdrawn
+     * because four repository-wide gates refuse a DEFINER routine in a module
+     * schema and none of them carries an allow-list; the elevation is replaced
+     * by this one INSERT under `ins_file_scan_results_scanner`.
+     *
+     * The assertion therefore narrows rather than relaxes: INSERT and SELECT,
+     * for `app_runtime` only, and NOTHING else — no UPDATE, so a recorded
+     * verdict cannot be edited, and no DELETE, so it cannot be withdrawn. That
+     * append-only shape is what makes a scan result evidence.
+     */
+    const { rows } = await admin.query<{ grantee: string; privilege_type: string }>(
+      `SELECT DISTINCT grantee, privilege_type FROM information_schema.table_privileges
         WHERE table_schema = 'shared' AND table_name = 'file_scan_results'
-          AND grantee IN ('app_runtime','app_worker','app_readonly')`
+          AND grantee IN ('app_runtime','app_worker','app_readonly')
+        ORDER BY grantee, privilege_type`
     );
-    expect(rows.map((r) => r.privilege_type).sort()).toEqual(['SELECT']);
+    expect(rows).toEqual([
+      { grantee: 'app_readonly', privilege_type: 'SELECT' },
+      { grantee: 'app_runtime', privilege_type: 'INSERT' },
+      { grantee: 'app_runtime', privilege_type: 'SELECT' },
+    ]);
   });
 
   it('acceptance is refused because no clean scan exists — the scanner gate holds', async () => {

@@ -40,6 +40,11 @@
       "why": "the P1-26 Frontend branch"
     },
     {
+      "branchPrefix": "remediation/p1-15-",
+      "profile": "p1-15-evidence-foundation",
+      "why": "the P1-OD-025 shared private/versioned evidence remediation is Backend and Database work — API source, the storage adapter, the scanner handoff functions, a migration and the permission seed. It gets its own profile rather than borrowing a phase's, because borrowing declares nothing and no existing profile permits exactly this surface"
+    },
+    {
       "branchPrefix": "remediation/p1-18-",
       "profile": "p1-18-read-surface",
       "why": "P1-18 Backend read-surface remediation branches — the P1-28 unblocking reads and close commands"

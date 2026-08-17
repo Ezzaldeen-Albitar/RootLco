@@ -1,20 +1,20 @@
 {
   "generatedBy": "scripts/p1-24-operation-register.mjs",
   "totals": {
-    "operations": 289,
-    "openapiPaths": 236,
-    "openapiOperations": 289,
+    "operations": 291,
+    "openapiPaths": 238,
+    "openapiOperations": 291,
     "openapiSchemas": 3,
     "events": 50,
     "eventsProduced": 47,
     "eventsDeliveryTested": 50,
     "outboxForeignWriters": 0,
     "errorCodes": 28,
-    "permissionCodes": 109,
+    "permissionCodes": 110,
     "auditActions": 176
   },
   "counts": {
-    "Covered": 289
+    "Covered": 291
   },
   "operations": [
     {
@@ -7805,6 +7805,7 @@
       "tests": [
         "tests/backend/p1-15-attachments-notifications.test.ts",
         "tests/backend/p1-15-operation-routes.test.ts",
+        "tests/db/shared-document-evidence-lifecycle.test.ts",
         "tests/foundation/p1-15-catalogs.test.ts"
       ],
       "classification": "Covered",
@@ -7847,6 +7848,8 @@
       "tests": [
         "tests/backend/p1-15-attachments-notifications.test.ts",
         "tests/backend/p1-15-operation-routes.test.ts",
+        "tests/db/p1-15-attachments.test.ts",
+        "tests/db/shared-document-versions.test.ts",
         "tests/foundation/p1-15-catalogs.test.ts"
       ],
       "classification": "Covered",
@@ -7941,6 +7944,28 @@
       "file": "apps/api/src/app/api/v1/organization/branches/[branchId]/status/route.ts"
     },
     {
+      "id": "shared.document-category-list",
+      "domain": "shared-services",
+      "method": "GET",
+      "route": "/api/v1/attachments/categories",
+      "permissions": ["shared.document.read"],
+      "public": false,
+      "scope": "tenant",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/attachments/categories",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": ["route", "service", "success", "authorization", "denial"],
+      "providedEvidence": ["authorization", "denial", "route", "service", "success"],
+      "missingEvidence": [],
+      "tests": ["tests/backend/p1-15-evidence-foundation.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/attachments/categories/route.ts"
+    },
+    {
       "id": "shared.document-read",
       "domain": "shared-services",
       "method": "GET",
@@ -8026,6 +8051,42 @@
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/attachments/documents/[documentId]/retention-evaluations/route.ts"
+    },
+    {
+      "id": "shared.document-version-read",
+      "domain": "shared-services",
+      "method": "GET",
+      "route": "/api/v1/attachments/versions/{versionId}",
+      "permissions": ["shared.document.read"],
+      "public": false,
+      "scope": "tenant",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/attachments/versions/{versionId}",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "denial"
+      ],
+      "providedEvidence": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/p1-15-evidence-foundation.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/attachments/versions/[versionId]/route.ts"
     },
     {
       "id": "shared.export-authorize",

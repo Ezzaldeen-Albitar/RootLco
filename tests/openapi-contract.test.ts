@@ -60,8 +60,10 @@ import '@/app/api/v1/org/tenant/route';
 import '@/app/api/v1/org/companies/[companyId]/settings/route';
 import '@/app/api/v1/org/branches/[branchId]/settings/route';
 // --- Phase 1-15 shared services ------------------------------------------
+import '@/app/api/v1/attachments/categories/route';
 import '@/app/api/v1/attachments/upload-authorizations/route';
 import '@/app/api/v1/attachments/versions/route';
+import '@/app/api/v1/attachments/versions/[versionId]/route';
 import '@/app/api/v1/attachments/versions/[versionId]/rejection/route';
 import '@/app/api/v1/attachments/documents/[documentId]/route';
 import '@/app/api/v1/attachments/documents/[documentId]/retention-evaluations/route';

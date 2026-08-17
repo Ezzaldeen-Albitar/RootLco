@@ -61,9 +61,12 @@ import {
 } from '../domain/storage-key';
 import {
   storageProvider,
+  storageProviderCanRead,
   StorageProviderError,
   type SignedUrl,
 } from '../provider/storage-provider';
+import { createHash } from 'node:crypto';
+import sharp from 'sharp';
 
 /** `UploadAuthorization` plus the signed URL the frozen shape has no field for. */
 export interface DetailedUploadAuthorization extends UploadAuthorization {
@@ -81,8 +84,137 @@ export interface LinkDocumentInput {
   readonly linkPurpose: string;
 }
 
+export interface RegisterAndScanInput extends RegisterVersionInput {
+  readonly capturedAt: Date | null;
+}
+
+export interface RegisteredAndScannedVersion extends RegisteredVersion {
+  readonly status: 'pending' | 'accepted' | 'quarantined';
+  readonly scannerAvailable: boolean;
+  readonly scanStatus: 'not_started' | 'clean' | 'infected' | 'error';
+}
+
+export interface DocumentCategoryView {
+  readonly categoryCode: string;
+  readonly allowedContentTypes: readonly string[];
+  readonly maxBytes: number;
+  readonly retentionClass: string;
+  readonly classification: string;
+  readonly businessLinkPurpose: string;
+  readonly deviceCaptureTimestampRequired: boolean;
+}
+
+export interface DocumentVersionView {
+  readonly versionId: string;
+  readonly documentId: string;
+  readonly versionNumber: number;
+  readonly contentType: string;
+  readonly byteSize: number;
+  readonly checksumSha256: string;
+  readonly status: string;
+  readonly capturedAt: string | null;
+  readonly uploadedAt: string;
+  readonly scanningAt: string | null;
+  readonly acceptedAt: string | null;
+  readonly quarantinedAt: string | null;
+  readonly rejectedAt: string | null;
+  readonly scanVerdicts: readonly string[];
+}
+
 function newUuid(): string {
   return crypto.randomUUID();
+}
+
+const EICAR = Buffer.from('EICAR-STANDARD-ANTIVIRUS-TEST-FILE', 'ascii');
+
+function containsEicar(bytes: Uint8Array): boolean {
+  return Buffer.from(bytes).includes(EICAR);
+}
+
+/** Content types this scanner is able to decode. Anything else it cannot clear. */
+const DECODABLE_CONTENT_TYPES: readonly string[] = ['image/jpeg', 'image/png', 'image/webp'];
+
+/**
+ * The scanner could not reach a verdict, and WHY.
+ *
+ * Distinguished from a storage failure deliberately. Both end in `error` and
+ * therefore in quarantine, but the reason is written into an append-only scan
+ * record that is audit evidence: the first draft caught every failure in one
+ * block and recorded `provider_read: false` for an image that decoded badly,
+ * which is a false fact about the storage layer preserved forever.
+ */
+class ScanUnavailableError extends Error {
+  public override readonly name = 'ScanUnavailableError';
+  constructor(public readonly reason: string) {
+    super(reason);
+  }
+}
+
+/**
+ * Latest a device capture instant may claim to be, in milliseconds.
+ *
+ * A capture timestamp is device-supplied, so it is business data, not evidence
+ * of anything on its own — but a value the server accepts unchecked is worse
+ * than one it refuses: `z.coerce.date()` turns `"0"` into 1970 and accepts any
+ * future instant, and a reception photo stamped next year would be recorded as
+ * fact on an immutable row nothing can correct. The skew allows for an
+ * unsynchronised tablet clock; the floor is the earliest instant a digital
+ * capture could plausibly carry.
+ */
+const CAPTURE_FUTURE_SKEW_MS = 24 * 60 * 60 * 1000;
+const CAPTURE_EARLIEST_MS = Date.UTC(2000, 0, 1);
+
+async function validateOperationalImage(bytes: Uint8Array): Promise<{
+  contentType: string;
+  width: number;
+  height: number;
+}> {
+  const image = sharp(Buffer.from(bytes), {
+    failOn: 'warning',
+    limitInputPixels: 25_000_000,
+    sequentialRead: true,
+  });
+  const metadata = await image.metadata();
+  const contentType =
+    metadata.format === 'jpeg'
+      ? 'image/jpeg'
+      : metadata.format === 'png'
+        ? 'image/png'
+        : metadata.format === 'webp'
+          ? 'image/webp'
+          : null;
+  if (
+    contentType === null ||
+    !metadata.width ||
+    !metadata.height ||
+    metadata.width > 10_000 ||
+    metadata.height > 10_000
+  ) {
+    throw new ScanUnavailableError('unsupported_or_unsafe_image');
+  }
+  // Metadata parsing alone accepts truncated/polyglot inputs. A full decode is
+  // required before a clean verdict, with the same pixel/resource bounds.
+  await image.toBuffer();
+  return { contentType, width: metadata.width, height: metadata.height };
+}
+
+/**
+ * `validateOperationalImage` with every failure normalised to one type.
+ *
+ * `sharp` throws its own errors for a corrupt, truncated or hostile file, and
+ * those are exactly the inputs this exists to catch. Left unnormalised they
+ * fall into the generic branch and are recorded as a scanner fault, which
+ * blames the scanner for a file that was in fact rejected on purpose.
+ */
+async function decodeOrFail(
+  bytes: Uint8Array
+): Promise<{ contentType: string; width: number; height: number }> {
+  try {
+    return await validateOperationalImage(bytes);
+  } catch (error) {
+    if (error instanceof ScanUnavailableError) throw error;
+    throw new ScanUnavailableError('image_decode_failed');
+  }
 }
 
 export class AttachmentService extends ApplicationService implements FileService {
@@ -95,6 +227,42 @@ export class AttachmentService extends ApplicationService implements FileService
   // -------------------------------------------------------------------------
   // Frozen FileService surface
   // -------------------------------------------------------------------------
+
+  async listCategories(db: DbHandle): Promise<readonly DocumentCategoryView[]> {
+    return (await this.documents.listActiveCategories(db)).map((row) => ({
+      categoryCode: row.category_code,
+      allowedContentTypes: row.allowed_content_types,
+      maxBytes: Number(row.max_size_bytes),
+      retentionClass: row.default_retention_class,
+      classification: row.default_classification,
+      businessLinkPurpose: row.business_link_purpose,
+      deviceCaptureTimestampRequired: row.device_capture_timestamp_required,
+    }));
+  }
+
+  async readVersion(db: DbHandle, versionId: string): Promise<DocumentVersionView> {
+    const row = await this.documents.findVersion(db, versionId);
+    if (!row) {
+      throw new AppFailure('ERR-RES-001', { message: 'Version not found in the caller scope' });
+    }
+    const instant = (value: Date | null): string | null => value?.toISOString() ?? null;
+    return {
+      versionId: row.id,
+      documentId: row.document_id,
+      versionNumber: row.version_number,
+      contentType: row.content_type,
+      byteSize: Number(row.size_bytes),
+      checksumSha256: row.sha256_hex,
+      status: row.status,
+      capturedAt: instant(row.captured_at),
+      uploadedAt: row.uploaded_at.toISOString(),
+      scanningAt: instant(row.scanning_at),
+      acceptedAt: instant(row.accepted_at),
+      quarantinedAt: instant(row.quarantined_at),
+      rejectedAt: instant(row.rejected_at),
+      scanVerdicts: await this.documents.scanVerdicts(db, versionId),
+    };
+  }
 
   async authorizeUpload(db: DbHandle, input: AuthorizeUploadInput): Promise<UploadAuthorization> {
     const detailed = await this.authorizeUploadDetailed(db, input);
@@ -234,6 +402,14 @@ export class AttachmentService extends ApplicationService implements FileService
    * `domain/attachment-policy.ts` for why the token carries no authority.
    */
   async registerVersion(db: DbHandle, input: RegisterVersionInput): Promise<RegisteredVersion> {
+    return this.registerPendingVersion(db, input, null);
+  }
+
+  private async registerPendingVersion(
+    db: DbHandle,
+    input: RegisterVersionInput,
+    capturedAt: Date | null
+  ): Promise<RegisteredVersion> {
     const config = backendConfig();
     const context = this.contextOf(db);
     const token = decodeUploadToken(input.uploadToken);
@@ -301,6 +477,28 @@ export class AttachmentService extends ApplicationService implements FileService
     if (!category || category.status !== 'active') {
       throw new AppFailure('ERR-RES-001', { message: 'Document category not found or disabled' });
     }
+    // The category policy is enforced HERE, on the server, against the category
+    // the document actually resolves to — not by the client that chose to send
+    // the field, and not by the request schema, which cannot see the category.
+    if (category.device_capture_timestamp_required && capturedAt === null) {
+      throw new AppFailure('ERR-VAL-001', {
+        message: 'A device capture timestamp is required for this evidence category',
+        safeDetails: { violations: [{ path: 'body.capturedAt', rule: 'required' }] },
+      });
+    }
+    if (capturedAt !== null) {
+      const captureMs = capturedAt.getTime();
+      if (
+        !Number.isFinite(captureMs) ||
+        captureMs < CAPTURE_EARLIEST_MS ||
+        captureMs > Date.now() + CAPTURE_FUTURE_SKEW_MS
+      ) {
+        throw new AppFailure('ERR-VAL-001', {
+          message: 'Device capture timestamp is outside the plausible range',
+          safeDetails: { violations: [{ path: 'body.capturedAt', rule: 'out_of_range' }] },
+        });
+      }
+    }
     if (!contentTypeAllowed(token.contentType, category.allowed_content_types)) {
       throw new AppFailure('ERR-VAL-001', {
         message: 'Content type is not permitted for this category',
@@ -333,6 +531,7 @@ export class AttachmentService extends ApplicationService implements FileService
         contentType: token.contentType,
         sizeBytes: input.byteSize,
         sha256Hex: input.checksumSha256,
+        capturedAt,
       });
     } catch (error) {
       if (isSqlState(error, SQLSTATE.uniqueViolation)) {
@@ -384,11 +583,109 @@ export class AttachmentService extends ApplicationService implements FileService
   }
 
   /**
+   * Operational registration path. A real readable provider advances the
+   * immutable object through pending -> scanning -> accepted/quarantined in the
+   * same bounded request; deterministic test-only providers remain pending.
+   */
+  async registerVersionAndScan(
+    db: DbHandle,
+    input: RegisterAndScanInput
+  ): Promise<RegisteredAndScannedVersion> {
+    const registered = await this.registerPendingVersion(db, input, input.capturedAt);
+    const provider = storageProvider();
+    if (!storageProviderCanRead(provider)) {
+      return {
+        ...registered,
+        status: 'pending',
+        scannerAvailable: false,
+        scanStatus: 'not_started',
+      };
+    }
+    if (!(await this.documents.beginScan(db, registered.versionId))) {
+      throw new AppFailure('ERR-TRN-001', { message: 'Version could not enter scanning' });
+    }
+
+    // `error` is the starting value, not a fallback: every path below has to
+    // EARN `clean`. A scanner that cannot decide must never leave a version in
+    // a state acceptance can reach (P1-OD-025).
+    let verdict: 'clean' | 'infected' | 'error' = 'error';
+    let threat: string | null = null;
+    const details: Record<string, string | number | boolean> = { byte_validation: false };
+    try {
+      const token = decodeUploadToken(input.uploadToken);
+      const storageKey = buildStorageKey({
+        environment: backendConfig().NEXT_PUBLIC_APP_ENV as StorageEnvironment,
+        tenantId: this.contextOf(db).principal.tenantId,
+        documentId: token.documentId,
+        versionId: token.versionId,
+      });
+      const object = await provider.readObject(storageKey, input.byteSize);
+      const actualHash = createHash('sha256').update(object.bytes).digest('hex');
+      details.byte_validation = true;
+      details.size_matches = object.contentLength === input.byteSize;
+      details.hash_matches = actualHash === input.checksumSha256;
+      details.metadata_content_type_matches = object.contentType === token.contentType;
+      if (containsEicar(object.bytes)) {
+        verdict = 'infected';
+        threat = 'eicar_test_signature';
+      } else if (!DECODABLE_CONTENT_TYPES.includes(token.contentType)) {
+        // A category may legitimately permit a type this scanner cannot decode.
+        // Quarantine is still correct — an unscanned object is not evidence —
+        // but it is recorded as a scanner GAP, not as a bad file, because the
+        // remedy is a scanner that handles the type.
+        details.scan_gap = 'undecodable_content_type';
+        details.declared_content_type = token.contentType;
+      } else {
+        const decoded = await decodeOrFail(object.bytes);
+        details.detected_content_type = decoded.contentType;
+        details.width = decoded.width;
+        details.height = decoded.height;
+        if (
+          decoded.contentType === token.contentType &&
+          object.contentLength === input.byteSize &&
+          actualHash === input.checksumSha256 &&
+          object.contentType === token.contentType
+        ) {
+          verdict = 'clean';
+        } else {
+          details.scan_gap = 'declared_content_does_not_match_stored_bytes';
+        }
+      }
+    } catch (error) {
+      // The reason is written into an append-only record, so it has to be true.
+      verdict = 'error';
+      if (error instanceof StorageProviderError) {
+        details.provider_read = false;
+        details.provider_failure = error.kind;
+      } else if (error instanceof ScanUnavailableError) {
+        details.scan_gap = error.reason;
+      } else {
+        details.scan_gap = 'scanner_fault';
+      }
+    }
+    const status = await this.documents.completeScan(db, registered.versionId, {
+      verdict,
+      scanner: 'rootlco_image_guard',
+      threat,
+      details,
+    });
+    return { ...registered, status, scannerAvailable: true, scanStatus: verdict };
+  }
+
+  /**
    * Issues a short-lived download URL for an accepted version.
    *
-   * The state check is the whole authorization story for content: a version that
-   * has not been accepted has not passed scanning, and no path in this phase can
-   * accept one.
+   * The state check is the whole authorization story for CONTENT, and it says
+   * something different since P1-OD-025. It used to be "no path in this phase
+   * can accept a version", which was true when nothing could produce a verdict.
+   * `registerVersionAndScan` now can, so the sentence would have become a
+   * docblock stating a rule the code no longer implements.
+   *
+   * What is still true, and is what this check rests on: an accepted version
+   * passed `scanning` with an exclusively clean verdict, enforced by
+   * `shared.guard_document_version_transition` rather than by this method; and
+   * a rejected or quarantined version is terminal, so it can never become
+   * downloadable later.
    */
   async requestDownload(db: DbHandle, input: DownloadRequestInput): Promise<DownloadGrant> {
     const config = backendConfig();
