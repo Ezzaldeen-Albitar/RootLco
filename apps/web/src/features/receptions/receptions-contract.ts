@@ -481,6 +481,25 @@ export const RECEPTION_OPERATIONS: readonly ReceptionOperationRow[] = Object.fre
     permission: RECEPTION_PERMISSIONS.catalogueManage,
     auditClass: 'privileged',
   },
+  /*
+   * The receiving-employee picker (Owner decision FE-007).
+   *
+   * It sits among the catalogues by ROUTE only. It reads `iam.user_accounts`
+   * rather than a `rec` catalogue table, so it has no lifecycle and no
+   * management pair, and it is gated by `rec.reception.manage` — the authority
+   * to take a vehicle in — rather than by `rec.catalogue.manage`, which is the
+   * authority to define what the catalogues ARE. Naming who accepted custody is
+   * part of checking a vehicle in, not part of configuring the branch.
+   */
+  {
+    operationId: 'rec.receiving-employee-list',
+    method: 'GET',
+    template: '/reception-catalogue/receiving-employees',
+    idempotent: false,
+    versionGuarded: false,
+    permission: RECEPTION_PERMISSIONS.manage,
+    auditClass: 'none',
+  },
 ]);
 
 /* ------------------------------------------------------------------ *

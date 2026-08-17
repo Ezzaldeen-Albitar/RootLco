@@ -110,7 +110,15 @@ export interface ReceptionCreateInput {
   readonly companyId: string;
   readonly branchId: string;
   readonly vehicleId: string;
-  readonly receivingEmployeeId: string;
+  /**
+   * FE-007. Absent means the authenticated user received the vehicle, which is
+   * the Owner's default; a value names a colleague. Either way the id is only a
+   * PROPOSAL — `rec.stamp_receiving_employee_identity()` decides whether it is
+   * an active, same-tenant, branch-eligible account, and stamps the historical
+   * display name itself. The snapshot is deliberately absent from this type:
+   * a caller that could supply it could rewrite custody evidence.
+   */
+  readonly receivingEmployeeId?: string | undefined;
   readonly serviceRequesterPartnerId: string;
   readonly origin: ReceptionOrigin;
   readonly odometerReadingId?: string | null;
@@ -118,13 +126,27 @@ export interface ReceptionCreateInput {
   readonly evSocPercent?: number | null;
 }
 
-export interface ReceptionCreatePlan extends Omit<ReceptionCreateInput, 'evSocPercent'> {
+export interface ReceptionCreatePlan extends Omit<
+  ReceptionCreateInput,
+  'evSocPercent' | 'receivingEmployeeId'
+> {
   readonly evSocPercent: number | null;
   readonly odometerReadingId: string | null;
   readonly fuelLevelId: string | null;
+  /** Resolved against the authenticated actor by the application service. */
+  readonly receivingEmployeeId: string;
 }
 
-export function toReceptionCreatePlan(input: ReceptionCreateInput): ReceptionCreatePlan {
+/**
+ * @param actorUserId the authenticated user, used only as the FE-007 default
+ *   when the body names no receiving employee. It is never used to OVERRIDE a
+ *   supplied id: silently substituting the actor for a refused colleague would
+ *   record a custody handover that did not happen.
+ */
+export function toReceptionCreatePlan(
+  input: ReceptionCreateInput,
+  actorUserId: string
+): ReceptionCreatePlan {
   const soc = input.evSocPercent;
   if (soc !== undefined && soc !== null) {
     // Mirrors ck_reception_visits_soc.
@@ -142,6 +164,7 @@ export function toReceptionCreatePlan(input: ReceptionCreateInput): ReceptionCre
   }
   return {
     ...input,
+    receivingEmployeeId: input.receivingEmployeeId ?? actorUserId,
     odometerReadingId: input.odometerReadingId ?? null,
     fuelLevelId: input.fuelLevelId ?? null,
     evSocPercent: soc ?? null,

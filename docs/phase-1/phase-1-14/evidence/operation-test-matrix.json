@@ -1,10 +1,10 @@
 {
   "generatedFrom": "scripts/check-operation-test-coverage.mjs",
   "counts": {
-    "registered": 291,
-    "publicApi": 291,
+    "registered": 292,
+    "publicApi": 292,
     "internal": 0,
-    "withRequiredEvidence": 291,
+    "withRequiredEvidence": 292,
     "invocationOnly": 0,
     "p1_15": {
       "registered": 28,
@@ -37,9 +37,9 @@
       "metadataOnly": 0
     },
     "p1_18": {
-      "registered": 57,
-      "publicApi": 57,
-      "operationDepth": 57,
+      "registered": 58,
+      "publicApi": 58,
+      "operationDepth": 58,
       "invocationOnly": 0,
       "pending": 0,
       "unitOnly": 0,
@@ -5415,6 +5415,30 @@
         "route",
         "service",
         "stale-version",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "rec.receiving-employee-list",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/reception-catalogue/receiving-employees",
+      "public": false,
+      "files": ["tests/backend/p1-18-reception-create.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "isolation"],
+      "declared": ["success", "denial", "isolation"],
+      "required": ["route", "service", "success", "authorization", "isolation", "denial"],
+      "provided": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
         "success"
       ],
       "missing": [],

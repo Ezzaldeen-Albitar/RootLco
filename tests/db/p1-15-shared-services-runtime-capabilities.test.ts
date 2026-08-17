@@ -269,7 +269,7 @@ beforeEach(async () => {
 // ---------------------------------------------------------------------------
 
 describe('P1-15 / global security posture', () => {
-  it('the repository declares exactly 120 migrations, with 119 and 120 last', () => {
+  it('the repository declares exactly 121 migrations, with 120 and 121 last', () => {
     // Counted from the repository, not from `supabase_migrations.schema_migrations`:
     // that bookkeeping table is created by the Supabase CLI and does not exist in
     // CI, where the database is built by `npm run db:apply-migrations` against a
@@ -287,13 +287,28 @@ describe('P1-15 / global security posture', () => {
     // restates uq_reception_visits_open_vehicle. It adds no grant, role, policy
     // or permission code, so every inventory assertion in this file is unchanged
     // by it — which is exactly why the count is asserted here.
+    // 121 is the P1-OD-025 evidence foundation, whose bounded change to this very
+    // inventory is asserted in the case below rather than merely counted.
+    // 122 is DBCR-P1-18-002 (Owner decision FE-007), which binds
+    // rec.reception_visits.receiving_employee_id to iam.user_accounts and adds an
+    // immutable display-name snapshot. It adds ONE permission CODE
+    // (rec.reception.receiving_employee.assign_any, mapped to no role) and no
+    // grant, role or policy — so the grant and policy inventories below are
+    // unchanged by it, and the permission count it does move is pinned in
+    // .github/ci-baselines/schema-baseline.json rather than here.
+    //
+    // The tail is asserted three deep, not two. 121 and 122 arrived on separate
+    // branches and met here, and a two-deep tail would have gone on passing with
+    // either one of them missing — the shape that lets a migration vanish in a
+    // merge and take its grants with it.
     const dir = fileURLToPath(new URL('../../supabase/migrations', import.meta.url));
     const files = readdirSync(dir)
       .filter((f) => f.endsWith('.sql'))
       .sort();
-    expect(files).toHaveLength(121);
-    expect(files.at(-2)).toBe('20260731090000_rec_custody_release_visit_marker.sql');
-    expect(files.at(-1)).toBe('20260815090000_shared_reception_evidence_foundation.sql');
+    expect(files).toHaveLength(122);
+    expect(files.at(-3)).toBe('20260731090000_rec_custody_release_visit_marker.sql');
+    expect(files.at(-2)).toBe('20260815090000_shared_reception_evidence_foundation.sql');
+    expect(files.at(-1)).toBe('20260815093000_rec_receiving_employee_identity.sql');
   });
 
   it('migration 121 changes the shared surface DELIBERATELY, and the change is bounded', () => {
@@ -518,22 +533,31 @@ describe('P1-15 / global security posture', () => {
     // fix is a management contract, never a seed: the no-fake-data policy is
     // permanent, and both codes are granted to nobody by default.
     //
-    // P1-OD-025 adds one, taking the catalog to 110: shared.document.read.
-    // Every document read on this surface demanded `shared.document.manage` —
-    // the code that CREATES document metadata, pre-acceptance versions and
-    // links. A receptionist who may only look at reception evidence therefore
-    // had to be given the authority to author it, which is the same
-    // read/write conflation `shared.notification.read` was minted to end in
-    // P1-23. The code is seeded in
-    // supabase/seeds/04_iam_permission_catalog.sql AND inserted by migration
-    // 20260815090000 with ON CONFLICT DO NOTHING, because the migration's own
-    // functions depend on the catalog being current in an environment that has
-    // migrated but not re-seeded; both paths are idempotent, so the count is
-    // one either way, which the per-code assertion above is what proves.
+    // TWO codes arrive here from two branches, so the catalog moves 109 -> 111.
+    //
+    // P1-OD-025 adds shared.document.read. Every document read on this surface
+    // demanded `shared.document.manage` — the code that CREATES document
+    // metadata, pre-acceptance versions and links. A receptionist who may only
+    // look at reception evidence therefore had to be given the authority to
+    // author it, which is the same read/write conflation
+    // `shared.notification.read` was minted to end in P1-23. It is seeded in
+    // supabase/seeds/04_iam_permission_catalog.sql and NOWHERE ELSE: the row
+    // once lived in migration 20260815090000 too, and the migration-replay gate
+    // refused it — migrations create structure, business rows are the tenant's.
+    //
+    // FE-007 (the Owner's receiving-employee decision, DBCR-P1-18-002) adds
+    // rec.reception.receiving_employee.assign_any.
+    // It is the first code here that NO operation declares, and deliberately so:
+    // there is no cross-branch check-in endpoint to gate, because the decision is
+    // taken inside rec.stamp_receiving_employee_identity() against the ACTOR's
+    // authority in the visit's own scope, where a direct database writer cannot
+    // step around it. Publishing it as a route permission would move the decision
+    // to a layer that is not the authority. Like every code above it is mapped to
+    // no role, so on a replayed database it exists and is held by nobody.
     //
     // The pin moves with the seed deliberately: it is what catches an accidental
     // catalog edit.
-    expect(Number(total.rows[0]?.n)).toBe(110);
+    expect(Number(total.rows[0]?.n)).toBe(111);
   });
 
   it('the exact write-policy inventory of the whole shared schema is unchanged apart from migrations 117 and 119', async () => {

@@ -19,6 +19,7 @@
  *
  * COVERAGE-EVIDENCE (parsed by scripts/check-operation-test-coverage.mjs):
  *   rec.reception-create: route service authorization success denial cross-tenant isolation audit outbox rollback idempotency concurrency
+ *   rec.receiving-employee-list: route service authorization success denial cross-tenant isolation
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import type { Pool, PoolClient } from 'pg';
@@ -30,6 +31,7 @@ import {
   TENANT_A,
   TENANT_B,
   USER_A,
+  USER_TENANT_B,
   adminPool,
   cleanBackendFixtures,
   ensureBackendFixtures,
@@ -43,6 +45,7 @@ import {
   setSessionAuthenticator,
 } from '@/server/context/principal';
 import { POST as CREATE_RECEPTION } from '@/app/api/v1/receptions/route';
+import { GET as LIST_RECEIVING_EMPLOYEES } from '@/app/api/v1/reception-catalogue/receiving-employees/route';
 
 const ROLE_CLERK = 'c1180000-0000-4000-8000-0000000000a1';
 const USER_CLERK = 'c1180000-0000-4000-8000-0000000000a2';
@@ -92,6 +95,20 @@ const USER_COMPANY_WIDE = 'c1180000-0000-4000-8000-0000000000ab';
 const SUBJ_COMPANY_WIDE = 'fx_p1_18_rec_company_wide';
 const GRANT_COMPANY_WIDE = 'c1180000-0000-4000-8000-0000000000ac';
 
+/**
+ * FE-007. The one principal in this suite holding the cross-branch authority
+ * `rec.reception.receiving_employee.assign_any` on top of `rec.reception.manage`.
+ *
+ * It is a SEPARATE principal on purpose. Adding the permission to ROLE_CLERK
+ * would have made the refusal case below pass for the wrong reason — a denial
+ * test whose subject secretly holds the thing being denied proves nothing — so
+ * the two cases differ in exactly one variable: who is asking.
+ */
+const ROLE_CROSS_BRANCH = 'c1180000-0000-4000-8000-0000000000af';
+const USER_CROSS_BRANCH = 'c1180000-0000-4000-8000-0000000000b0';
+const SUBJ_CROSS_BRANCH = 'fx_p1_18_rec_cross_branch';
+const CROSS_BRANCH_PERMISSION = 'rec.reception.receiving_employee.assign_any';
+
 const BRANCH_A2 = 'c1180000-0000-4000-8000-0000000000b2';
 const COMPANY_B1 = 'c1180000-0000-4000-8000-0000000000c1';
 const BRANCH_B1 = 'c1180000-0000-4000-8000-0000000000c2';
@@ -99,8 +116,8 @@ const BRANCH_B1 = 'c1180000-0000-4000-8000-0000000000c2';
 const REQUESTER_A = 'c1180000-0000-4000-8000-0000000000d1';
 const REQUESTER_B = 'c1180000-0000-4000-8000-0000000000d2';
 const APPOINTMENT_TYPE = 'c1180000-0000-4000-8000-0000000000e1';
-/** `receiving_employee_id` carries no foreign key; any uuid is a valid actor id. */
-const RECEIVING_EMPLOYEE = 'c1180000-0000-4000-8000-0000000000f1';
+/** Active IAM identity with an unrestricted live role grant. */
+const RECEIVING_EMPLOYEE = USER_CLERK;
 /** An id that belongs to no row anywhere — used for the injected-failure case. */
 const ABSENT_ID = 'c1180000-0000-4000-8000-0000000000fe';
 
@@ -112,6 +129,13 @@ interface Body {
   readonly receptionStatus?: string;
   readonly recordVersion?: number;
   readonly code?: string;
+  readonly violations?: readonly { path: string; rule: string }[];
+}
+
+interface EmployeePage {
+  readonly items: readonly { id: string; displayName: string }[];
+  readonly nextCursor: string | null;
+  readonly hasMore: boolean;
 }
 
 interface VisitRow {
@@ -146,6 +170,13 @@ function createReception(body: unknown, key = crypto.randomUUID()): Promise<Resp
       headers: { 'content-type': 'application/json', 'idempotency-key': key },
       body: JSON.stringify(body),
     })
+  );
+}
+
+function listReceivingEmployees(companyId = COMPANY_A1, branchId = BRANCH_A1): Promise<Response> {
+  const query = new URLSearchParams({ companyId, branchId, limit: '100' });
+  return LIST_RECEIVING_EMPLOYEES(
+    new Request(`http://localhost/api/v1/reception-catalogue/receiving-employees?${query}`)
   );
 }
 
@@ -604,6 +635,35 @@ beforeAll(async () => {
     companyWide.release();
   }
 
+  // FE-007. The catalogue row the database gate resolves, inserted idempotently
+  // exactly as `rec.reception.manage` is above: the seed owns it, and a suite
+  // that depended on the seed having been re-run would be measuring the
+  // developer's stack rather than the guard.
+  await admin.query(
+    `INSERT INTO iam.permissions (permission_code, domain, description, risk_level, created_by)
+     VALUES ($1, 'rec', 'Name a receiving employee who is not eligible for the visit branch', 'high', $2)
+     ON CONFLICT (permission_code) DO NOTHING`,
+    [CROSS_BRANCH_PERMISSION, USER_A]
+  );
+  await seedPrincipal({
+    tenantId: TENANT_A,
+    roleId: ROLE_CROSS_BRANCH,
+    userId: USER_CROSS_BRANCH,
+    subject: SUBJ_CROSS_BRANCH,
+  });
+  await admin.query(
+    `INSERT INTO iam.role_permissions (tenant_id, role_id, permission_id, effect, created_by)
+     SELECT $1::uuid, $2::uuid, p.id, 'allow', $3::uuid FROM iam.permissions p
+      WHERE p.permission_code = $4
+     ON CONFLICT (tenant_id, role_id, permission_id) DO NOTHING`,
+    [TENANT_A, ROLE_CROSS_BRANCH, USER_A, CROSS_BRANCH_PERMISSION]
+  );
+  await admin.query(
+    `INSERT INTO iam.role_grants (tenant_id, user_id, role_id, scope_mode, granted_by, created_by)
+     VALUES ($1, $2, $3, 'unrestricted', $4, $4)`,
+    [TENANT_A, USER_CROSS_BRANCH, ROLE_CROSS_BRANCH, USER_A]
+  );
+
   await asActor(TENANT_A, async (client) => {
     await client.query(
       `INSERT INTO crm.business_partners (id, tenant_id, party_type, display_name, lifecycle_status, created_by)
@@ -659,6 +719,171 @@ describe('authentication and authorization', () => {
         [vehicle]
       )
     ).toBe(0);
+    expect(await visitFor(vehicle)).toBeUndefined();
+  });
+});
+
+describe('rec.receiving-employee-list and authoritative selection', () => {
+  it('lists active branch-eligible IAM users and refuses an out-of-branch selection', async () => {
+    authAs(SUBJ_CLERK);
+    const listed = await listReceivingEmployees();
+    expect(listed.status).toBe(200);
+    const page = (await listed.json()) as EmployeePage;
+    expect(page.items).toContainEqual({ id: USER_CLERK, displayName: 'Reception Clerk' });
+    expect(page.items.some((entry) => entry.id === USER_BRANCH2)).toBe(false);
+
+    const vehicle = await newVehicle();
+    const denied = await createReception(
+      walkInBody(vehicle, { receivingEmployeeId: USER_BRANCH2 })
+    );
+    expect(denied.status).toBe(422);
+    const problem = (await denied.json()) as Body;
+    expect(problem.code).toBe('ERR-VAL-001');
+    expect(problem.violations).toEqual([
+      { path: 'body.receivingEmployeeId', rule: 'ineligible_reference' },
+    ]);
+    expect(await visitFor(vehicle)).toBeUndefined();
+  });
+
+  it('keeps a disabled employee historical but neither selectable nor listable', async () => {
+    authAs(SUBJ_CLERK);
+    const vehicle = await newVehicle();
+    const created = await createReception(
+      walkInBody(vehicle, { receivingEmployeeId: USER_COMPANY_WIDE })
+    );
+    expect(created.status).toBe(201);
+    const visitId = ((await created.json()) as Body).receptionVisitId ?? '';
+
+    const before = await admin.query<{ receiving_employee_display_name: string }>(
+      `SELECT receiving_employee_display_name FROM rec.reception_visits WHERE id = $1`,
+      [visitId]
+    );
+    expect(before.rows[0]?.receiving_employee_display_name).toBe('Reception Clerk');
+
+    await admin.query(
+      `UPDATE iam.user_accounts
+          SET display_name = 'Renamed Historical Employee', status = 'locked'
+        WHERE id = $1`,
+      [USER_COMPANY_WIDE]
+    );
+    try {
+      const listed = (await (await listReceivingEmployees()).json()) as EmployeePage;
+      expect(listed.items.some((entry) => entry.id === USER_COMPANY_WIDE)).toBe(false);
+
+      const deniedVehicle = await newVehicle();
+      const denied = await createReception(
+        walkInBody(deniedVehicle, { receivingEmployeeId: USER_COMPANY_WIDE })
+      );
+      expect(denied.status).toBe(422);
+
+      const historical = await admin.query<{ receiving_employee_display_name: string }>(
+        `SELECT receiving_employee_display_name FROM rec.reception_visits WHERE id = $1`,
+        [visitId]
+      );
+      expect(historical.rows[0]?.receiving_employee_display_name).toBe('Reception Clerk');
+    } finally {
+      await admin.query(
+        `UPDATE iam.user_accounts SET display_name = 'Reception Clerk', status = 'active' WHERE id = $1`,
+        [USER_COMPANY_WIDE]
+      );
+    }
+  });
+
+  it('preserves unrelated check-in validation instead of mislabelling it as employee eligibility', async () => {
+    authAs(SUBJ_CLERK);
+    const vehicle = await newVehicle();
+    const response = await createReception(walkInBody(vehicle, { evSocPercent: 101 }));
+    expect(response.status).toBe(422);
+    const problem = (await response.json()) as Body;
+    expect(problem.violations?.[0]?.path).toBe('body.evSocPercent');
+    expect(problem.violations?.[0]?.rule).not.toBe('ineligible_reference');
+  });
+
+  it('refuses a forged identifier that names no account anywhere', async () => {
+    authAs(SUBJ_CLERK);
+    const vehicle = await newVehicle();
+    // ABSENT_ID is a well-formed uuid belonging to no row. Before FE-007 this
+    // was the ORDINARY case — the column had no foreign key — and a visit
+    // recording it opened successfully.
+    const denied = await createReception(walkInBody(vehicle, { receivingEmployeeId: ABSENT_ID }));
+    expect(denied.status).toBe(422);
+    expect(((await denied.json()) as Body).code).toBe('ERR-VAL-001');
+    expect(await visitFor(vehicle)).toBeUndefined();
+  });
+
+  it('refuses an account from another tenant and never offers one', async () => {
+    authAs(SUBJ_CLERK);
+    // USER_TENANT_B is a real, active account — in tenant B. The picker must not
+    // name it and the create must not accept it; both halves matter, because a
+    // list that leaks a foreign identity is a disclosure even when the write
+    // that follows is refused.
+    const page = (await (await listReceivingEmployees()).json()) as EmployeePage;
+    expect(page.items.some((entry) => entry.id === USER_TENANT_B)).toBe(false);
+
+    const vehicle = await newVehicle();
+    const denied = await createReception(
+      walkInBody(vehicle, { receivingEmployeeId: USER_TENANT_B })
+    );
+    expect(denied.status).toBe(422);
+    expect(((await denied.json()) as Body).code).toBe('ERR-VAL-001');
+    expect(await visitFor(vehicle)).toBeUndefined();
+  });
+
+  it('accepts an out-of-branch employee ONLY for an actor holding the cross-branch authority', async () => {
+    // The refusal half is asserted above for SUBJ_CLERK against the same
+    // employee, the same branch and the same body. Here exactly one thing
+    // differs — the actor — so the permission is provably what moved.
+    authAs(SUBJ_CROSS_BRANCH);
+    const vehicle = await newVehicle();
+    const created = await createReception(
+      walkInBody(vehicle, { receivingEmployeeId: USER_BRANCH2 })
+    );
+    expect(created.status).toBe(201);
+
+    const visitId = ((await created.json()) as Body).receptionVisitId ?? '';
+    const row = await admin.query<{ id: string; name: string }>(
+      `SELECT receiving_employee_id AS id, receiving_employee_display_name AS name
+         FROM rec.reception_visits WHERE id = $1`,
+      [visitId]
+    );
+    expect(row.rows[0]?.id).toBe(USER_BRANCH2);
+    expect(row.rows[0]?.name).toBe('Reception Clerk');
+
+    // The authority does NOT widen the picker: it stays the branch's own
+    // eligible set, so an administrator who reaches across branches does so
+    // deliberately with an id from the user directory, not by the list quietly
+    // growing under a permission the operator cannot see.
+    const page = (await (await listReceivingEmployees()).json()) as EmployeePage;
+    expect(page.items.some((entry) => entry.id === USER_BRANCH2)).toBe(false);
+  });
+
+  it('defaults the custodian to the authenticated user when the body names none', async () => {
+    authAs(SUBJ_CLERK);
+    const vehicle = await newVehicle();
+    const body = walkInBody(vehicle);
+    delete body.receivingEmployeeId;
+
+    const created = await createReception(body);
+    expect(created.status).toBe(201);
+    const visitId = ((await created.json()) as Body).receptionVisitId ?? '';
+    const row = await admin.query<{ id: string; name: string }>(
+      `SELECT receiving_employee_id AS id, receiving_employee_display_name AS name
+         FROM rec.reception_visits WHERE id = $1`,
+      [visitId]
+    );
+    expect(row.rows[0]?.id).toBe(USER_CLERK);
+    expect(row.rows[0]?.name).toBe('Reception Clerk');
+  });
+
+  it('stamps the snapshot server-side and ignores one supplied by the caller', async () => {
+    authAs(SUBJ_CLERK);
+    const vehicle = await newVehicle();
+    // `.strict()` refuses the unknown field outright, which is the strongest
+    // possible answer: the snapshot is not merely overwritten, it has no way in.
+    const rejected = await createReception(
+      walkInBody(vehicle, { receivingEmployeeDisplayName: 'Someone Else' })
+    );
+    expect(rejected.status).toBe(422);
     expect(await visitFor(vehicle)).toBeUndefined();
   });
 });

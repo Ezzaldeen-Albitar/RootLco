@@ -72,6 +72,7 @@ export const SQLSTATE = {
   uniqueViolation: '23505',
   foreignKeyViolation: '23503',
   checkViolation: '23514',
+  invalidParameterValue: '22023',
   /**
    * An `EXCLUDE` constraint refused the row.
    *

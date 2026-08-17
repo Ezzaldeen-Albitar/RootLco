@@ -2729,30 +2729,37 @@ Walk-in origin reference (P1-08-DB-004): an unscheduled arrival a reception visi
 
 Reception visit master / custody boundary (P1-08-DB-005). Exactly one origin (appointment XOR walk-in); one open visit per Vehicle; captures odometer/fuel/SOC. No work order.
 
-| Column                  | Type                     | Null | Default             | Class    |
-| ----------------------- | ------------------------ | ---- | ------------------- | -------- |
-| `id`                    | uuid                     | NO   | `gen_random_uuid()` | internal |
-| `tenant_id`             | uuid                     | NO   | —                   | internal |
-| `company_id`            | uuid                     | NO   | —                   | internal |
-| `branch_id`             | uuid                     | NO   | —                   | internal |
-| `appointment_id`        | uuid                     | YES  | —                   | internal |
-| `walk_in_id`            | uuid                     | YES  | —                   | internal |
-| `vehicle_id`            | uuid                     | NO   | —                   | internal |
-| `odometer_reading_id`   | uuid                     | YES  | —                   | internal |
-| `fuel_level_id`         | uuid                     | YES  | —                   | internal |
-| `ev_soc_percent`        | numeric                  | YES  | —                   | internal |
-| `receiving_employee_id` | uuid                     | NO   | —                   | internal |
-| `custody_accepted_at`   | timestamp with time zone | NO   | `now()`             | internal |
-| `reception_status`      | text                     | NO   | `'opened'`          | internal |
-| `display_number`        | text                     | YES  | —                   | internal |
-| `record_version`        | integer                  | NO   | `1`                 | internal |
-| `created_at`            | timestamp with time zone | NO   | `now()`             | internal |
-| `created_by`            | uuid                     | NO   | —                   | internal |
-| `updated_at`            | timestamp with time zone | YES  | —                   | internal |
-| `updated_by`            | uuid                     | YES  | —                   | internal |
-| `deleted_at`            | timestamp with time zone | YES  | —                   | internal |
-| `deleted_by`            | uuid                     | YES  | —                   | internal |
-| `custody_released_at`   | timestamp with time zone | YES  | —                   | internal |
+| Column                            | Type                     | Null | Default             | Class    |
+| --------------------------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`                              | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`                       | uuid                     | NO   | —                   | internal |
+| `company_id`                      | uuid                     | NO   | —                   | internal |
+| `branch_id`                       | uuid                     | NO   | —                   | internal |
+| `appointment_id`                  | uuid                     | YES  | —                   | internal |
+| `walk_in_id`                      | uuid                     | YES  | —                   | internal |
+| `vehicle_id`                      | uuid                     | NO   | —                   | internal |
+| `odometer_reading_id`             | uuid                     | YES  | —                   | internal |
+| `fuel_level_id`                   | uuid                     | YES  | —                   | internal |
+| `ev_soc_percent`                  | numeric                  | YES  | —                   | internal |
+| `receiving_employee_id`           | uuid                     | NO   | —                   | internal |
+| `custody_accepted_at`             | timestamp with time zone | NO   | `now()`             | internal |
+| `reception_status`                | text                     | NO   | `'opened'`          | internal |
+| `display_number`                  | text                     | YES  | —                   | internal |
+| `record_version`                  | integer                  | NO   | `1`                 | internal |
+| `created_at`                      | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`                      | uuid                     | NO   | —                   | internal |
+| `updated_at`                      | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`                      | uuid                     | YES  | —                   | internal |
+| `deleted_at`                      | timestamp with time zone | YES  | —                   | internal |
+| `deleted_by`                      | uuid                     | YES  | —                   | internal |
+| `custody_released_at`             | timestamp with time zone | YES  | —                   | internal |
+| `receiving_employee_display_name` | text                     | NO   | —                   | internal |
+
+`receiving_employee_id` is a same-tenant foreign key into `iam.user_accounts`
+(FE-007, DBCR-P1-18-002); `receiving_employee_display_name` is the immutable
+display-name snapshot stamped by `rec.stamp_receiving_employee_identity()` at
+insert, so a later rename, lock, archive or soft delete of the account cannot
+rewrite what the customer was shown when custody changed hands.
 
 ### `rec.reception_party_roles`
 

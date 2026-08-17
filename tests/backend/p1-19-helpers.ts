@@ -1328,6 +1328,22 @@ export async function seedAuthorizedVisit(
   const companyId = input.companyId ?? COMPANY_A1;
   const branchId = input.branchId ?? BRANCH_A1;
   const partnerId = input.partnerId ?? (tenantId === TENANT_B ? PARTNER_B : PARTNER_A);
+  /*
+   * The receiving employee follows the tenant, exactly as the partner above does.
+   *
+   * DBCR-P1-18-002 made this column a real same-tenant reference to
+   * iam.user_accounts with an insert-time eligibility guard, so the tenant-A
+   * USER_A this fixture used to pass unconditionally is now refused outright on a
+   * tenant-B visit — "receiving employee is not an active IAM user in this
+   * tenant". That refusal is CORRECT: it is the whole point of the decision, and
+   * before it any uuid at all was a legal custodian.
+   *
+   * The fixture was the thing that was wrong, and it was wrong in a way worth
+   * naming: every cross-tenant containment test in P1-19 seeds its tenant-B side
+   * through here, so one hard-coded id made ten suites assert isolation against a
+   * visit that could not exist.
+   */
+  const receivingEmployeeId = tenantId === TENANT_B ? TENANT_B_FULL.userId : USER_A;
   const vin = `1P19${String(++vinSeq).padStart(13, '0')}`;
 
   const client = await admin.connect();
@@ -1353,7 +1369,7 @@ export async function seedAuthorizedVisit(
 
     const visit = await client.query<{ id: string }>(
       `SELECT rec.accept_check_in($1::uuid,$2::uuid,$3::uuid,NULL::uuid,$4::uuid,$5::uuid,$6::uuid) AS id`,
-      [companyId, branchId, vehicleId, walkIn.rows[0]?.id ?? '', USER_A, partnerId]
+      [companyId, branchId, vehicleId, walkIn.rows[0]?.id ?? '', receivingEmployeeId, partnerId]
     );
     const visitId = visit.rows[0]?.id ?? '';
 

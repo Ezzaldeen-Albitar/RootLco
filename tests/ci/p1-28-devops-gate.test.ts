@@ -229,6 +229,11 @@ describe('a hosted job names each gate DIRECTLY, not only through an aggregate',
       // no browser, no database — so it belongs beside the matrix in the fast
       // static job rather than in the web one.
       'validate:p1-28-evidence': 'static-quality',
+      // The READ reachability authority reads documents, the register, the
+      // matrix, the verdicts and the two contract mirrors — no browser and no
+      // database — so it sits in the fast static job rather than beside its
+      // write sibling, which scans apps/web/src and belongs in the web one.
+      'validate:p1-28-adapter-reachability': 'static-quality',
       'validate:p1-28-write-reachability': 'web-quality',
       'validate:p1-28-access': 'web-quality',
       'validate:p1-28-version-sourcing': 'web-quality',

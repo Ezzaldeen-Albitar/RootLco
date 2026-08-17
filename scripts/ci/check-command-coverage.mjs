@@ -298,6 +298,26 @@ export const REGISTER = Object.freeze([
     why: 'every canonical P1-28 apt/rec write is reachable, allow-listed with a reason, or deliberately absent',
   },
   {
+    name: 'validate:p1-28-adapter-reachability',
+    owner: ROOT,
+    tier: 'required',
+    // The READ half, and the lifecycle its sibling has no need of. Ownership is
+    // split on purpose: a Backend remediation MUST publish an operation and its
+    // web contract mirror together, and CANNOT write the adapter the mirror row
+    // then obliges, because its profile forbids handwritten `web`. Widening the
+    // profile would let Frontend ride inside a Backend change reviewed by
+    // nobody, so the transition is named — PENDING_FRONTEND_ADAPTER — and every
+    // entry is fail-closed on seven conditions this gate checks against the
+    // registry, the mirror, the matrix, the verdicts, the ownership profiles and
+    // the branch list. Reachability ITSELF is derived by QA-001, which runs the
+    // adapters; declaring REACHABLE here is refused. The pending state is also
+    // the 35/35 block: `validate:p1-28-matrix` is a byte-identity check with no
+    // verdict semantics, so a full pass can only be claimed by writing PASS into
+    // the verdicts, which condition 5 refuses while an adapter is still owed.
+    // Mutation-proved by tests/ci/p1-28-adapter-reachability.test.ts.
+    why: 'every published P1-28 apt/rec read is mirrored, and any pending Frontend adapter is a fail-closed, task-owned, still-open debt',
+  },
+  {
     name: 'validate:p1-28-access',
     owner: ROOT,
     tier: 'required',

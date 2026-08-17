@@ -156,11 +156,19 @@ describe('the API application lives in the workspace', () => {
     // administrative read shows retired entries and their `recordVersion` to
     // `apt.catalogue.manage` / `rec.catalogue.manage`.
     //
-    // 239 with the two P1-OD-025 evidence reads: `attachments/categories`
-    // publishes the governed category policy a client must obey, and
+    // 240 = 237 + three route MODULES that arrived on two branches and met here.
+    //
+    // FE-007 adds the receiving-employee picker
+    // (`reception-catalogue/receiving-employees`), a module of its own because
+    // it reads `iam.user_accounts` rather than a `rec` catalogue table and
+    // therefore shares neither collection route file nor lifecycle with the
+    // seven catalogues beside it.
+    //
+    // P1-OD-025 adds two evidence reads: `attachments/categories` publishes the
+    // governed category policy a client must obey, and
     // `attachments/versions/{versionId}` publishes one immutable version and
-    // its scan lifecycle. Both are new route MODULES — neither path had a file.
-    expect(routeFiles.length).toBe(239);
+    // its scan lifecycle. Neither path had a file.
+    expect(routeFiles.length).toBe(240);
 
     // Non-vacuity. A discovery assertion that only checks a count would pass
     // against a set with one route swapped for another, so the comparison that
@@ -202,9 +210,10 @@ describe('the API application lives in the workspace', () => {
     // the seven collection GETs. Operations and route modules move by different
     // amounts for that reason, which is exactly why both are asserted.
     // 289 with the seven administrative reads, which move both counts by seven
-    // — one operation per new module. 291 with the two P1-OD-025 evidence
-    // reads, which likewise move both counts by two.
-    expect(report.operations).toHaveLength(291);
+    // — one operation per new module. 292 with the FE-007 receiving-employee
+    // picker (one) and the two P1-OD-025 evidence reads (two), each of which
+    // moves both counts by one per new module, for the same reason.
+    expect(report.operations).toHaveLength(292);
 
     // ~1 s per process by construction, not by slowness. The budget is stated
     // here rather than raised globally, so it cannot quietly cover a different

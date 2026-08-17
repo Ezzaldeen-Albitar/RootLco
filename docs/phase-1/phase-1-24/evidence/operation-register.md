@@ -9,13 +9,13 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 
 | Measure                  | Value |
 | ------------------------ | ----- |
-| Public operations        | 291   |
+| Public operations        | 292   |
 | Domains (modules)        | 19    |
-| OpenAPI paths            | 238   |
-| OpenAPI operations       | 291   |
+| OpenAPI paths            | 239   |
+| OpenAPI operations       | 292   |
 | OpenAPI schemas          | 3     |
 | OpenAPI security schemes | 1     |
-| Permission codes seeded  | 110   |
+| Permission codes seeded  | 111   |
 | Audit actions catalogued | 176   |
 | Domain events catalogued | 50    |
 | Structured error codes   | 28    |
@@ -24,7 +24,7 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 
 | Classification    | Operations |
 | ----------------- | ---------- |
-| Covered           | 291        |
+| Covered           | 292        |
 | Partially covered | 0          |
 | Uncovered         | 0          |
 | Not applicable    | 0          |
@@ -45,7 +45,7 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 | pricing         | 6          | 6       | 4      | 4       | 4          | 2               |
 | quality         | 13         | 13      | 7      | 8       | 7          | 2               |
 | quotation       | 6          | 6       | 5      | 5       | 5          | 2               |
-| reception       | 57         | 57      | 35     | 35      | 28         | 21              |
+| reception       | 58         | 58      | 35     | 35      | 28         | 21              |
 | reporting       | 2          | 2       | 0      | 0       | 0          | 0               |
 | service-catalog | 5          | 5       | 4      | 4       | 4          | 2               |
 | shared-services | 28         | 28      | 18     | 18      | 6          | 6               |
@@ -213,6 +213,7 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 | `rec.catalogue-warning-light-code-management-list`  | GET    | `/api/v1/reception-catalogue/management/warning-light-codes`                       | tenant  | `rec.catalogue.manage`                                               | —                                      | —    | —   | authorization denial retired-visible route service success                                                                    | Covered |
 | `rec.catalogue-warning-light-code-status-set`       | POST   | `/api/v1/reception-catalogue/warning-light-codes/{warningLightCodeId}/status`      | tenant  | `rec.catalogue.manage`                                               | rec.warning_light_code.status_changed  | yes  | yes | audit authorization cross-tenant denial idempotency route service stale-version success                                       | Covered |
 | `rec.catalogue-warning-light-code-update`           | PATCH  | `/api/v1/reception-catalogue/warning-light-codes/{warningLightCodeId}`             | tenant  | `rec.catalogue.manage`                                               | rec.warning_light_code.renamed         | —    | yes | audit authorization cross-tenant denial route service stale-version success                                                   | Covered |
+| `rec.receiving-employee-list`                       | GET    | `/api/v1/reception-catalogue/receiving-employees`                                  | branch  | `rec.reception.manage`                                               | —                                      | —    | —   | authorization cross-tenant denial isolation route service success                                                             | Covered |
 | `rec.reception-approve`                             | POST   | `/api/v1/receptions/{receptionId}/approve`                                         | branch  | `rec.reception.approve`                                              | rec.reception.approved                 | yes  | yes | audit authorization concurrency cross-tenant denial idempotency isolation outbox route service stale-version success          | Covered |
 | `rec.reception-authorization`                       | POST   | `/api/v1/receptions/{receptionId}/authorizations`                                  | branch  | `rec.reception.authorization.verify`                                 | rec.reception.authorization_recorded   | yes  | —   | audit authorization cross-tenant denial idempotency isolation route service success                                           | Covered |
 | `rec.reception-authorization-list`                  | GET    | `/api/v1/receptions/{receptionId}/authorizations`                                  | branch  | `rec.reception.read`                                                 | —                                      | —    | —   | authorization cross-tenant denial isolation route service success                                                             | Covered |

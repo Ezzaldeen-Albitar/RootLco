@@ -269,6 +269,7 @@
       "CANONICAL_BACKEND_OPERATIONS": [
         "rec.reception-create",
         "iam.user-list",
+        "rec.receiving-employee-list",
         "rec.reception-list",
         "rec.reception-detail"
       ],
