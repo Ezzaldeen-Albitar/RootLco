@@ -92,7 +92,10 @@ function world(): Record<string, unknown> {
     // otherwise ask git. The proofs stay hermetic; the real answers are exercised
     // by the gate running for real in `verify:policies`.
     branchExists: (ref: string) => ref === 'feature/p1-28-owner-decisions-frontend',
-    introducedHere: (id: string) => id === OPERATION,
+    // Every DECLARED pending operation is new against the pinned base; anything
+    // else is not, which is what case 2 relies on to refuse a re-labelled shipped
+    // operation.
+    introducedHere: (id: string) => Object.keys(manifest.operations).includes(id),
   };
 }
 

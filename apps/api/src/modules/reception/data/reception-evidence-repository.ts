@@ -227,6 +227,19 @@ export class ReceptionEvidenceRepository extends Repository {
       readonly documentVersionId: string;
       readonly mapType: string;
       readonly perspective: string | null;
+      /**
+       * The managed template revision this map is drawn on (Owner decision
+       * FE-012).
+       *
+       * Optional, because a map recorded before the template contract existed
+       * has none and must keep working. When present,
+       * `rec.guard_damage_map_template_binding()` requires it to be the ACTIVE
+       * revision of an ACTIVE slot and to carry exactly this document and
+       * version, so naming a retired revision is refused rather than quietly
+       * accepted. The column is immutable once written, which is what makes a
+       * historical visit keep its original geometry.
+       */
+      readonly damageMapTemplateVersionId: string | null;
     }
   ): Promise<string | null> {
     const context = this.assertContext(db);
@@ -234,8 +247,9 @@ export class ReceptionEvidenceRepository extends Repository {
       db,
       `INSERT INTO rec.damage_maps
          (tenant_id, company_id, branch_id, reception_visit_id, document_id,
-          document_version_id, map_type, perspective, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+          document_version_id, map_type, perspective, damage_map_template_version_id,
+          created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
        RETURNING id`,
       [
         context.principal.tenantId,
@@ -246,6 +260,7 @@ export class ReceptionEvidenceRepository extends Repository {
         input.documentVersionId,
         input.mapType,
         input.perspective,
+        input.damageMapTemplateVersionId,
         context.principal.userId,
       ]
     );
@@ -461,6 +476,16 @@ export class ReceptionEvidenceRepository extends Repository {
       readonly captureMethod: SignatureCaptureMethod;
       readonly purpose: SignaturePurpose;
       readonly signatureHash: Buffer | null;
+      /**
+       * The signature this one supersedes (Owner decision FE-018).
+       *
+       * Replacement is NEW evidence: the superseded row is never updated and
+       * never deleted — the table has no grant that would allow either — and
+       * both stay readable through the signature read-back.
+       * `rec.guard_signature_evidence()` keeps the pair on one visit and
+       * `uq_signatures_replaces` keeps the chain single-successor.
+       */
+      readonly replacesSignatureId: string | null;
     }
   ): Promise<string | null> {
     const context = this.assertContext(db);
@@ -469,8 +494,9 @@ export class ReceptionEvidenceRepository extends Repository {
       `INSERT INTO rec.signatures
          (tenant_id, company_id, branch_id, reception_visit_id, signer_role,
           signer_partner_id, signature_document_id, signature_document_version_id,
-          capture_method, purpose, signature_hash, correlation_id, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+          capture_method, purpose, signature_hash, replaces_signature_id,
+          correlation_id, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
        RETURNING id`,
       [
         context.principal.tenantId,
@@ -484,6 +510,7 @@ export class ReceptionEvidenceRepository extends Repository {
         input.captureMethod,
         input.purpose,
         input.signatureHash,
+        input.replacesSignatureId,
         context.correlationId,
         context.principal.userId,
       ]
@@ -505,6 +532,16 @@ export class ReceptionEvidenceRepository extends Repository {
       readonly refusingPartnerId: string | null;
       readonly witnessEmployeeId: string | null;
       readonly evidenceDocumentId: string | null;
+      /**
+       * The EXACT version of the supporting media (Owner decision FE-019).
+       *
+       * Optional, and the shipped contract that supplies a document alone is
+       * unchanged: `ck_refusals_evidence_pair` is one-directional, so a version
+       * requires its document and a document may still stand alone. What a live
+       * `rec.capture_policy_rules` row requires — that a version be present and
+       * ACCEPTED — is decided by `rec.guard_refusal_evidence_version()`.
+       */
+      readonly evidenceDocumentVersionId: string | null;
     }
   ): Promise<string | null> {
     const context = this.assertContext(db);
@@ -513,8 +550,9 @@ export class ReceptionEvidenceRepository extends Repository {
       `INSERT INTO rec.refusals
          (tenant_id, company_id, branch_id, reception_visit_id, refusal_type,
           refusal_reason_id, refusing_partner_id, witness_employee_id,
-          evidence_document_id, correlation_id, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+          evidence_document_id, evidence_document_version_id, correlation_id,
+          created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
        RETURNING id`,
       [
         context.principal.tenantId,
@@ -526,6 +564,7 @@ export class ReceptionEvidenceRepository extends Repository {
         input.refusingPartnerId,
         input.witnessEmployeeId,
         input.evidenceDocumentId,
+        input.evidenceDocumentVersionId,
         context.correlationId,
         context.principal.userId,
       ]

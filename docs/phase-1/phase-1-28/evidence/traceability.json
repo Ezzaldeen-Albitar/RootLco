@@ -64,7 +64,8 @@
     "rec.reception.approve": "Approves the visit (FE-020). Above being able to record evidence.",
     "rec.reception.close": "The two terminal exits R5 added, close-without-work and refuse (FE-020). A third authority again.",
     "rec.reception.convert": "Converts a visit into a work order (FE-022). NOT a wo.* code — WF-12.",
-    "rec.catalogue.manage": "The twelve reception catalogue management writes and the four management reads PR #227 registered. Granted to NO role by any seed: P1-28-OD-001."
+    "rec.catalogue.manage": "The twelve reception catalogue management writes and the four management reads PR #227 registered. Granted to NO role by any seed: P1-28-OD-001.",
+    "rec.reception.evidence.override": "Waives one required intake capture with an attributable reason (Owner decisions FE-012/FE-018 remediation). Deliberately NOT implied by rec.reception.evidence.manage: taking the proof and recording that no proof was needed are different decisions, and one code for both would make the requirement optional for everyone who could satisfy it. Granted to NO role by any seed, and consulted by no screen while P1-OD-025 leaves the capture surface unbuildable — its write is DELIBERATELY_ABSENT in write-reachability.json."
   },
   "tasks": {
     "FE-001": {

@@ -10,7 +10,7 @@
  * The backend requires an `Idempotency-Key` header on every operation it
  * registers as idempotent, and answers `400 ERR-INT-002` without one — before
  * authorization is evaluated. That set is NOT "the POST operations": it is
- * currently 136 operations (PATCH 3, POST 127, PUT 6).
+ * currently 144 operations (PATCH 3, POST 135, PUT 6).
  *
  * The client used to infer the answer from the HTTP method, which was wrong for
  * every non-POST member of that set. This table is the contract instead of a
@@ -24,7 +24,7 @@
  * thirteen of them stating which class a write declares, none of them checkable
  * — because the Web tier held no data from which one could be derived.
  *
- * Currently approval 13, export 1, financial 13, none 116, privileged 136, security 13.
+ * Currently approval 13, export 1, financial 13, none 121, privileged 144, security 13.
  *
  * `(absent)` above would mean an operation the document publishes with NO audit
  * class. It is emitted as the empty string rather than defaulted to `none`,
@@ -49,7 +49,7 @@ export interface PublishedOperation {
   readonly auditClass: string;
 }
 
-/** Every operation the contract publishes. 292 of them. */
+/** Every operation the contract publishes. 305 of them. */
 export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze([
   {
     template: '/additional-work/{requestId}/approval',
@@ -1340,6 +1340,55 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     auditClass: 'financial',
   },
   {
+    template: '/reception-catalogue/capture-policies',
+    method: 'GET',
+    operationId: 'rec.catalogue-capture-policy-list',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/reception-catalogue/capture-policies',
+    method: 'POST',
+    operationId: 'rec.catalogue-capture-policy-set',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/reception-catalogue/damage-map-templates',
+    method: 'GET',
+    operationId: 'rec.catalogue-damage-map-template-list',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/reception-catalogue/damage-map-templates',
+    method: 'POST',
+    operationId: 'rec.catalogue-damage-map-template-create',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/reception-catalogue/damage-map-templates/{templateId}',
+    method: 'GET',
+    operationId: 'rec.catalogue-damage-map-template-read',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/reception-catalogue/damage-map-templates/{templateId}/status',
+    method: 'POST',
+    operationId: 'rec.catalogue-damage-map-template-status-set',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/reception-catalogue/damage-map-templates/{templateId}/versions',
+    method: 'POST',
+    operationId: 'rec.catalogue-damage-map-template-version-create',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
     template: '/reception-catalogue/fuel-levels',
     method: 'GET',
     operationId: 'rec.catalogue-fuel-level-list',
@@ -1529,6 +1578,13 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     auditClass: 'approval',
   },
   {
+    template: '/receptions/{receptionId}/capture-overrides',
+    method: 'POST',
+    operationId: 'rec.reception-capture-override',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
     template: '/receptions/{receptionId}/close-without-work',
     method: 'POST',
     operationId: 'rec.reception-close-without-work',
@@ -1553,6 +1609,27 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     template: '/receptions/{receptionId}/convert-to-work-order',
     method: 'POST',
     operationId: 'rec.reception-convert-to-work-order',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/receptions/{receptionId}/evidence-bindings',
+    method: 'GET',
+    operationId: 'rec.reception-evidence-binding-list',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/receptions/{receptionId}/evidence-bindings',
+    method: 'POST',
+    operationId: 'rec.reception-evidence-binding',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/receptions/{receptionId}/evidence-bindings/{bindingId}/finalization',
+    method: 'POST',
+    operationId: 'rec.reception-evidence-binding-finalize',
     idempotent: true,
     auditClass: 'privileged',
   },
@@ -1593,8 +1670,22 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
   },
   {
     template: '/receptions/{receptionId}/signatures',
+    method: 'GET',
+    operationId: 'rec.reception-signature-list',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/receptions/{receptionId}/signatures',
     method: 'POST',
     operationId: 'rec.reception-signature',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/receptions/{receptionId}/signatures/{signatureId}/events',
+    method: 'POST',
+    operationId: 'rec.reception-signature-event',
     idempotent: true,
     auditClass: 'privileged',
   },

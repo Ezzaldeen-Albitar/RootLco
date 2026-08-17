@@ -166,6 +166,7 @@ INSERT INTO iam.permissions (permission_code, domain, description, risk_level, c
   -- record what a party personally acknowledged or personally declined, and a
   -- fabricated one is a materially different harm from a wrong damage mark.
   ('rec.reception.signature.manage','rec','Capture reception signatures and refusals','high','00000000-0000-4000-8000-000000000001'),
+  ('rec.reception.evidence.override','rec','Override a required reception capture with an attributable reason','high','00000000-0000-4000-8000-000000000001'),
   -- Approving a reception releases it for work. High risk and deliberately not
   -- implied by evidence capture, so the person who records the condition is not
   -- automatically the person who approves it.

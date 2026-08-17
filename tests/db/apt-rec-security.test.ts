@@ -20,6 +20,11 @@ const APPEND_ONLY = new Set([
   'rec.signatures',
   'rec.refusals',
   'rec.authorizations',
+  // The reception evidence contracts (Owner decisions FE-012, FE-018, FE-019).
+  // A waived capture and a signature lifecycle event are decisions, and a
+  // decision that could be edited afterwards is not a record of anything.
+  'rec.capture_requirement_overrides',
+  'rec.signature_events',
 ]);
 // Dual-scope config catalogs (tenant_id nullable by design; not branch-scoped).
 const CONFIG_CATALOGS = new Set([
@@ -30,6 +35,24 @@ const CONFIG_CATALOGS = new Set([
   'rec.fuel_levels',
   'rec.warning_light_codes',
   'rec.refusal_reasons',
+]);
+/**
+ * Tenant-scoped configuration that is NOT branch-scoped, so the
+ * tenant/company/branch NOT NULL rule below does not apply to it.
+ *
+ * Distinct from `CONFIG_CATALOGS` on purpose: those carry a nullable
+ * `tenant_id` because a PLATFORM default may exist. These three always belong
+ * to a tenant — `tenant_id` is NOT NULL on all of them — and it is
+ * `company_id`/`branch_id` that are optional, because a template or a capture
+ * rule may apply to the whole tenant or to one branch
+ * (`ck_damage_map_templates_scope`, `ck_capture_policy_scope`).
+ * `rec.damage_map_template_versions` has neither column at all: it is scoped by
+ * the slot it belongs to, through `fk_damage_map_template_version_template`.
+ */
+const TENANT_SCOPED_CONFIG = new Set([
+  'rec.capture_policy_rules',
+  'rec.damage_map_templates',
+  'rec.damage_map_template_versions',
 ]);
 
 let admin: Pool;
@@ -52,8 +75,13 @@ afterAll(async () => {
 
 describe('apt/rec security posture (auto-enumerated)', () => {
   it('discovered the full apt/rec table set', () => {
-    // 6 apt + 23 rec (guards a regression that would silently drop coverage).
-    expect(tables.length).toBe(29);
+    // 6 apt + 29 rec (guards a regression that would silently drop coverage).
+    // The reception evidence contracts add six: rec.capture_policy_rules,
+    // rec.damage_map_templates, rec.damage_map_template_versions,
+    // rec.reception_evidence_bindings, rec.capture_requirement_overrides and
+    // rec.signature_events. Every assertion below is auto-enumerated, so all six
+    // are held to the same posture as the twenty-three that preceded them.
+    expect(tables.length).toBe(35);
   });
 
   it('every apt/rec table has RLS enabled AND forced', async () => {
@@ -163,6 +191,7 @@ describe('apt/rec security posture (auto-enumerated)', () => {
     }
     for (const t of tables) {
       if (CONFIG_CATALOGS.has(t)) continue; // dual-scope: tenant_id nullable, no company/branch
+      if (TENANT_SCOPED_CONFIG.has(t)) continue; // tenant-owned, branch optional or absent
       const c = cols.get(t)!;
       expect(c.get('tenant_id'), `${t} tenant_id NOT NULL`).toBe('NO');
       expect(c.get('company_id'), `${t} company_id NOT NULL`).toBe('NO');

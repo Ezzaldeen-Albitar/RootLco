@@ -95,6 +95,11 @@ const DamageMap = z
     documentVersionId: schemas.uuid,
     mapType: z.string().min(1).max(MAX_MAP_TYPE),
     perspective: z.string().min(1).max(MAX_MAP_TYPE).nullable().optional(),
+    // The MANAGED template revision (Owner decision FE-012). Optional so the
+    // shipped contract is not withdrawn; when present the database requires it
+    // to be the active revision of an active slot carrying exactly the document
+    // and version above, and it is immutable from then on.
+    damageMapTemplateVersionId: schemas.uuid.nullable().optional(),
   })
   .strict();
 

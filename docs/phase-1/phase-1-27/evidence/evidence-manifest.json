@@ -32,11 +32,11 @@
       "bytes": 17702
     },
     "docs/phase-1/phase-1-27/clean-room-evidence.md": {
-      "sha256": "bef723d26c882353529e05272e60c94fb704a4652d06dca82d7b8c02e1e7854b",
+      "sha256": "14852e2ae21aad1c7801877722b1df078e6b51896aa80f5ae22142bdea707b8c",
       "bytes": 23731
     },
     "docs/phase-1/phase-1-27/closure-record.md": {
-      "sha256": "07a4881247417f033576f03613fb5c5722ddae13f2e6de57d22ed8bbbecbf1ff",
+      "sha256": "6de0ceb7c33ac18b5b213a4420449971e847142eca648667c7c76c5855334bda",
       "bytes": 8630
     },
     "docs/phase-1/phase-1-27/continuation-checkpoint.md": {
@@ -48,7 +48,7 @@
       "bytes": 24145
     },
     "docs/phase-1/phase-1-27/deliverable-manifest.md": {
-      "sha256": "363f8b8a5d18331dfa96d6c589150c4d4b36a444f932b5d3dbe40c0ca3522ad3",
+      "sha256": "cfbf032527e2b54ee9570abd9d409e453010661db9605e851077c3f9b74096d7",
       "bytes": 144646
     },
     "docs/phase-1/phase-1-27/developer-guide.md": {
@@ -60,7 +60,7 @@
       "bytes": 81669
     },
     "docs/phase-1/phase-1-27/evidence/closing-value-ledger.json": {
-      "sha256": "89f51fab50ff07b1a51390208b508fdf0c15315b1c817758373bfc2806f85234",
+      "sha256": "01c92d775b18b32f3369cfb11a047c2c0c4da77ef3c236f21381fb06f27c46a4",
       "bytes": 50338
     },
     "docs/phase-1/phase-1-27/evidence/lifecycle-ledger.json": {
@@ -68,7 +68,7 @@
       "bytes": 9208
     },
     "docs/phase-1/phase-1-27/evidence/local-run-ledger.json": {
-      "sha256": "2a5a369e83759d1c59c11b50737d34715780bdb4a597cb92f63197fb23b8b711",
+      "sha256": "371f854421ae2aa20ae347457fae3826b1f31871eee7374a0422a466c86c35be",
       "bytes": 1201
     },
     "docs/phase-1/phase-1-27/evidence/task-traceability.md": {
@@ -152,7 +152,7 @@
       "bytes": 62211
     },
     "docs/phase-1/phase-1-27/risk-register.md": {
-      "sha256": "ca41fb96e0c5ffa4c0d9099bc44b013f83086e4ef79b5705d75ac27d2d10104e",
+      "sha256": "9411a5d5006eda81485bac286722467c46125fa846c672a6753b6fd7a5f455a2",
       "bytes": 187800
     },
     "docs/phase-1/phase-1-27/task-matrix-verdicts.json": {

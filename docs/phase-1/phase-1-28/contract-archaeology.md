@@ -46,20 +46,20 @@ those writes, which is `P1-28-OD-001` (`canonical-plan.md` §7). `G-EMP`,
 `G-MEDIA`, `G-CRM-PHONE`, R6–R8 and every Owner decision remain open.
 
 The apt/rec public surface at this head, derived rather than counted:
-<!-- derived: surface operations = 58 --> **58** published operations —
-<!-- derived: surface writes = 35 --> **35** writes and
-<!-- derived: surface reads = 23 --> **23** reads — carrying
-<!-- derived: surface permissions = 14 --> **14** distinct permission codes. Of
+<!-- derived: surface operations = 71 --> **71** published operations —
+<!-- derived: surface writes = 43 --> **43** writes and
+<!-- derived: surface reads = 28 --> **28** reads — carrying
+<!-- derived: surface permissions = 15 --> **15** distinct permission codes. Of
 
-those, <!-- derived: surface catalogue-writes = 21 --> **21** writes and
-<!-- derived: surface catalogue-reads = 14 --> **14** reads are the intake
+those, <!-- derived: surface catalogue-writes = 25 --> **25** writes and
+<!-- derived: surface catalogue-reads = 17 --> **17** reads are the intake
 
 catalogue surface — the reads being seven operator-facing pickers and seven
 management projections. Every one of the 21 writes is recorded
 `DELIBERATELY_ABSENT` in `write-reachability.json` against `P1-28-OD-001`, which
 is what
-<!-- derived: reachability DELIBERATELY_ABSENT = 21 --> **21** of the manifest's
-<!-- derived: reachability total = 35 --> **35** classified writes means.
+<!-- derived: reachability DELIBERATELY_ABSENT = 29 --> **29** of the manifest's
+<!-- derived: reachability total = 43 --> **43** classified writes means.
 
 **What this is:** the factual foundation under `canonical-plan.md` §5. Before
 one screen is designed, this records — with file and line — which Backend

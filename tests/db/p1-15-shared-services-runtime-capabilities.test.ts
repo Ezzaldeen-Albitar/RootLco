@@ -305,10 +305,33 @@ describe('P1-15 / global security posture', () => {
     const files = readdirSync(dir)
       .filter((f) => f.endsWith('.sql'))
       .sort();
-    expect(files).toHaveLength(122);
-    expect(files.at(-3)).toBe('20260731090000_rec_custody_release_visit_marker.sql');
-    expect(files.at(-2)).toBe('20260815090000_shared_reception_evidence_foundation.sql');
-    expect(files.at(-1)).toBe('20260815093000_rec_receiving_employee_identity.sql');
+    // 121, 122 and 123 arrived on THREE separate branches and met here.
+    //
+    // 121 is the P1-OD-025 evidence foundation. It is the only one of the three
+    // that changes the inventory this suite asserts — one permission code, two
+    // policies and two column-level grants — and the bounded-change test
+    // immediately after this one names every one of them, so a count that moved
+    // three times cannot hide a fourth change.
+    //
+    // 122 is DBCR-P1-18-002, the FE-007 receiving-employee identity. 123 is the
+    // reception evidence-contract remediation (Owner decisions FE-012, FE-018,
+    // FE-019). Neither adds a grant, role or policy in `shared`, so both are
+    // inert to the assertions below.
+    //
+    // 123 DEPENDS ON 121: it references
+    // shared.document_categories.business_link_purpose and the reception_*
+    // categories by name, so it cannot replay without it. A checkout carrying
+    // 123 without 121 therefore fails HERE, on a count, rather than deeper in
+    // with a confusing guard error.
+    //
+    // The tail is asserted FOUR deep, one per branch that contributed. A shorter
+    // tail would go on passing with any one of them missing — the shape that
+    // lets a migration vanish in a merge and take its grants with it.
+    expect(files).toHaveLength(123);
+    expect(files.at(-4)).toBe('20260731090000_rec_custody_release_visit_marker.sql');
+    expect(files.at(-3)).toBe('20260815090000_shared_reception_evidence_foundation.sql');
+    expect(files.at(-2)).toBe('20260815093000_rec_receiving_employee_identity.sql');
+    expect(files.at(-1)).toBe('20260815100000_rec_reception_evidence_contracts.sql');
   });
 
   it('migration 121 changes the shared surface DELIBERATELY, and the change is bounded', () => {
@@ -533,7 +556,8 @@ describe('P1-15 / global security posture', () => {
     // fix is a management contract, never a seed: the no-fake-data policy is
     // permanent, and both codes are granted to nobody by default.
     //
-    // TWO codes arrive here from two branches, so the catalog moves 109 -> 111.
+    // THREE codes arrive here from three branches, so the catalog moves
+    // 109 -> 112 — one code each, from three independent remediations.
     //
     // P1-OD-025 adds shared.document.read. Every document read on this surface
     // demanded `shared.document.manage` — the code that CREATES document
@@ -555,9 +579,24 @@ describe('P1-15 / global security posture', () => {
     // to a layer that is not the authority. Like every code above it is mapped to
     // no role, so on a replayed database it exists and is held by nobody.
     //
+    // The reception evidence-contract remediation (migration 123, Owner
+    // decisions FE-012 / FE-018 / FE-019) adds ONE more, taking the catalog to
+    // 112: rec.reception.evidence.override. Waiving a required capture is not
+    // the same authority as taking one — a receptionist who may photograph a
+    // vehicle must not thereby be able to record that no photograph was needed
+    // — and the other three codes those policies gate on already existed
+    // (rec.reception.evidence.manage, rec.reception.signature.manage,
+    // rec.catalogue.manage), so exactly one line is added. Granted to nobody by
+    // default, like every code above it.
+    //
+    // 109 + 1 + 1 + 1 = 112 is a SUM of three independent remediations, and it is
+    // written as a sum on purpose: a checkout carrying only some of the three
+    // migrations fails here at 110 or 111 rather than passing a pin that was
+    // moved once and then reused.
+    //
     // The pin moves with the seed deliberately: it is what catches an accidental
     // catalog edit.
-    expect(Number(total.rows[0]?.n)).toBe(111);
+    expect(Number(total.rows[0]?.n)).toBe(112);
   });
 
   it('the exact write-policy inventory of the whole shared schema is unchanged apart from migrations 117 and 119', async () => {

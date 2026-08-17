@@ -10,6 +10,60 @@
       "frontendBranch": "feature/p1-28-owner-decisions-frontend",
       "reason": "DBCR-P1-18-002 publishes GET /reception-catalogue/receiving-employees so the check-in wizard can offer branch-eligible active IAM users instead of the tenant-wide iam.user.read staff directory it reads today (P1-28-SEC-001, debt G-EMP / R6). The Backend half is complete and mirrored; the production adapter and the picker that consumes it are handwritten Frontend, which the p1-18-read-surface ownership profile forbids on this branch. Widening that profile would let Frontend ride inside a Backend remediation reviewed by nobody, so the transition is named instead. This entry is deleted by the same change that adds the adapter and its consumer on feature/p1-28-owner-decisions-frontend, at which point QA-001 derives REACHABLE; until then P1-28-FE-007 stays PARTIAL and no 35/35 claim is possible, because writing PASS into task-matrix-verdicts.json while this entry stands is refused by condition 5.",
       "introducedAgainstBaseNote": "PINNED to an immutable commit, not a moving ref. It was origin/develop, which was true on the pull request and FALSE the moment the merge landed: develop then contained the operation, so the gate correctly refused its own entry on protected develop. A base that moves cannot support a claim about what a branch INTRODUCED. 592cfe6e is the develop this work was reviewed against (P1-15 merge), and the operation was absent there permanently."
+    },
+    "rec.reception-capture-override": {
+      "classification": "PENDING_FRONTEND_ADAPTER",
+      "canonicalTask": "P1-28-FE-017",
+      "ownerDecision": "FE-017: media is captured, registered as an immutable version, and BOUND to the requirement it satisfies.",
+      "introducedAgainstBase": "68b1865dcff3b2a0b84844bad3131fcc88a256c1",
+      "blockedByOwnershipProfile": "p1-18-read-surface",
+      "frontendBranch": "feature/p1-28-owner-decisions-frontend",
+      "reason": "Records an attributable waiver of a required capture, gated by rec.reception.evidence.override. The refusal workflow screen is what offers it, and that screen is handwritten Frontend. It is published and mirrored by this Backend remediation, which runs under p1-18-read-surface and is forbidden to write the adapter its mirror row then obliges. Widening that profile would let Frontend ride inside a Backend change reviewed by nobody, so the transition is named instead. This entry is deleted by the same change that adds the adapter and its production consumer on feature/p1-28-owner-decisions-frontend, at which point QA-001 derives REACHABLE; until then P1-28-FE-017 cannot be recorded PASS, and no 35/35 claim is possible."
+    },
+    "rec.reception-evidence-binding": {
+      "classification": "PENDING_FRONTEND_ADAPTER",
+      "canonicalTask": "P1-28-FE-017",
+      "ownerDecision": "FE-017: media is captured, registered as an immutable version, and BOUND to the requirement it satisfies.",
+      "introducedAgainstBase": "68b1865dcff3b2a0b84844bad3131fcc88a256c1",
+      "blockedByOwnershipProfile": "p1-18-read-surface",
+      "frontendBranch": "feature/p1-28-owner-decisions-frontend",
+      "reason": "Binds one reception capture requirement to an exact ACCEPTED document version. The damage-map screen is what creates these, and that screen is handwritten Frontend. It is published and mirrored by this Backend remediation, which runs under p1-18-read-surface and is forbidden to write the adapter its mirror row then obliges. Widening that profile would let Frontend ride inside a Backend change reviewed by nobody, so the transition is named instead. This entry is deleted by the same change that adds the adapter and its production consumer on feature/p1-28-owner-decisions-frontend, at which point QA-001 derives REACHABLE; until then P1-28-FE-017 cannot be recorded PASS, and no 35/35 claim is possible."
+    },
+    "rec.reception-evidence-binding-finalize": {
+      "classification": "PENDING_FRONTEND_ADAPTER",
+      "canonicalTask": "P1-28-FE-017",
+      "ownerDecision": "FE-017: media is captured, registered as an immutable version, and BOUND to the requirement it satisfies.",
+      "introducedAgainstBase": "68b1865dcff3b2a0b84844bad3131fcc88a256c1",
+      "blockedByOwnershipProfile": "p1-18-read-surface",
+      "frontendBranch": "feature/p1-28-owner-decisions-frontend",
+      "reason": "Finalises a binding, which is the step that makes the evidence count against the requirement. Reachable only from the same screen that creates the binding. It is published and mirrored by this Backend remediation, which runs under p1-18-read-surface and is forbidden to write the adapter its mirror row then obliges. Widening that profile would let Frontend ride inside a Backend change reviewed by nobody, so the transition is named instead. This entry is deleted by the same change that adds the adapter and its production consumer on feature/p1-28-owner-decisions-frontend, at which point QA-001 derives REACHABLE; until then P1-28-FE-017 cannot be recorded PASS, and no 35/35 claim is possible."
+    },
+    "rec.reception-evidence-binding-list": {
+      "classification": "PENDING_FRONTEND_ADAPTER",
+      "canonicalTask": "P1-28-FE-017",
+      "ownerDecision": "FE-017: media is captured, registered as an immutable version, and BOUND to the requirement it satisfies.",
+      "introducedAgainstBase": "68b1865dcff3b2a0b84844bad3131fcc88a256c1",
+      "blockedByOwnershipProfile": "p1-18-read-surface",
+      "frontendBranch": "feature/p1-28-owner-decisions-frontend",
+      "reason": "Reads back what has been captured against each requirement, so the screen can show what is still outstanding. It has no consumer until that screen exists. It is published and mirrored by this Backend remediation, which runs under p1-18-read-surface and is forbidden to write the adapter its mirror row then obliges. Widening that profile would let Frontend ride inside a Backend change reviewed by nobody, so the transition is named instead. This entry is deleted by the same change that adds the adapter and its production consumer on feature/p1-28-owner-decisions-frontend, at which point QA-001 derives REACHABLE; until then P1-28-FE-017 cannot be recorded PASS, and no 35/35 claim is possible."
+    },
+    "rec.reception-signature-event": {
+      "classification": "PENDING_FRONTEND_ADAPTER",
+      "canonicalTask": "P1-28-FE-018",
+      "ownerDecision": "FE-018: a signature binds an exact ACCEPTED document version; replacement is new evidence, never an overwrite.",
+      "introducedAgainstBase": "68b1865dcff3b2a0b84844bad3131fcc88a256c1",
+      "blockedByOwnershipProfile": "p1-18-read-surface",
+      "frontendBranch": "feature/p1-28-owner-decisions-frontend",
+      "reason": "Appends finalisation, repudiation or replacement to a signature. FE-018 owns the capture surface that emits these; the Backend half is complete and mirrored. It is published and mirrored by this Backend remediation, which runs under p1-18-read-surface and is forbidden to write the adapter its mirror row then obliges. Widening that profile would let Frontend ride inside a Backend change reviewed by nobody, so the transition is named instead. This entry is deleted by the same change that adds the adapter and its production consumer on feature/p1-28-owner-decisions-frontend, at which point QA-001 derives REACHABLE; until then P1-28-FE-018 cannot be recorded PASS, and no 35/35 claim is possible."
+    },
+    "rec.reception-signature-list": {
+      "classification": "PENDING_FRONTEND_ADAPTER",
+      "canonicalTask": "P1-28-FE-018",
+      "ownerDecision": "FE-018: a signature binds an exact ACCEPTED document version; replacement is new evidence, never an overwrite.",
+      "introducedAgainstBase": "68b1865dcff3b2a0b84844bad3131fcc88a256c1",
+      "blockedByOwnershipProfile": "p1-18-read-surface",
+      "frontendBranch": "feature/p1-28-owner-decisions-frontend",
+      "reason": "Reads a visit signatures back with signer, purpose, capture method and the exact bound version. The read-back panel that consumes it is handwritten Frontend. It is published and mirrored by this Backend remediation, which runs under p1-18-read-surface and is forbidden to write the adapter its mirror row then obliges. Widening that profile would let Frontend ride inside a Backend change reviewed by nobody, so the transition is named instead. This entry is deleted by the same change that adds the adapter and its production consumer on feature/p1-28-owner-decisions-frontend, at which point QA-001 derives REACHABLE; until then P1-28-FE-018 cannot be recorded PASS, and no 35/35 claim is possible."
     }
   }
 }

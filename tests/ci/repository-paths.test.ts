@@ -168,7 +168,10 @@ describe('the API application lives in the workspace', () => {
     // governed category policy a client must obey, and
     // `attachments/versions/{versionId}` publishes one immutable version and
     // its scan lifecycle. Neither path had a file.
-    expect(routeFiles.length).toBe(240);
+    // 249 with the nine P1-18 evidence-contract modules: the evidence-binding trio,
+    // the capture override, the signature event and list, and the capture-policy
+    // and damage-map-template catalogues.
+    expect(routeFiles.length).toBe(249);
 
     // Non-vacuity. A discovery assertion that only checks a count would pass
     // against a set with one route swapped for another, so the comparison that
@@ -213,7 +216,9 @@ describe('the API application lives in the workspace', () => {
     // — one operation per new module. 292 with the FE-007 receiving-employee
     // picker (one) and the two P1-OD-025 evidence reads (two), each of which
     // moves both counts by one per new module, for the same reason.
-    expect(report.operations).toHaveLength(292);
+    // 305: the same nine modules publish thirteen operations, because the catalogue
+    // modules co-locate a read and a write on one path.
+    expect(report.operations).toHaveLength(305);
 
     // ~1 s per process by construction, not by slowness. The budget is stated
     // here rather than raised globally, so it cannot quietly cover a different

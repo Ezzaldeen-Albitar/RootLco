@@ -137,13 +137,18 @@ describe('every module row mirrors the generated manifest and the published docu
 
   it('partitions the table into an operator and an administration surface', () => {
     // Anti-vacuity for the partition the narrowed pins below depend on.
-    // 21 since the FE-007 receiving-employee picker. It is an OPERATOR row, not
-    // an administration one: the partition is drawn by permission, and it
-    // registers `rec.reception.manage` — the authority to take a vehicle in —
-    // rather than `rec.catalogue.manage`, the authority to define what the
-    // catalogues are.
-    expect(OPERATOR_OPERATIONS.length).toBe(21);
-    expect(ADMINISTRATION_OPERATIONS.length).toBe(16);
+    // 27 / 23, from a base of 20 / 16 plus two independent additions.
+    //
+    // P1-18 adds the reception evidence, capture-policy and damage-map template
+    // contracts: six operator rows and seven administration ones.
+    //
+    // FE-007 adds the receiving-employee picker, and it lands on the OPERATOR
+    // side even though its route sits among the catalogues: the partition is
+    // drawn by PERMISSION, and it registers `rec.reception.manage` — the
+    // authority to take a vehicle in — rather than `rec.catalogue.manage`, which
+    // is the authority to define what the catalogues are.
+    expect(OPERATOR_OPERATIONS.length).toBe(27);
+    expect(ADMINISTRATION_OPERATIONS.length).toBe(23);
     expect(OPERATOR_OPERATIONS.length + ADMINISTRATION_OPERATIONS.length).toBe(
       RECEPTION_OPERATIONS.length
     );
@@ -218,6 +223,7 @@ describe('the contract facts the archaeology pinned', () => {
       .map((row) => row.operationId)
       .sort();
     expect(guarded).toEqual([
+      'rec.catalogue-damage-map-template-status-set',
       'rec.catalogue-fuel-level-status-set',
       'rec.catalogue-fuel-level-update',
       'rec.catalogue-refusal-reason-status-set',
@@ -245,7 +251,7 @@ describe('the contract facts the archaeology pinned', () => {
     expect(approvals).toEqual(['rec.reception-approve', 'rec.reception-authorization']);
   });
 
-  it('spreads the write surface across seven distinct permission codes', () => {
+  it('spreads the write surface across eight distinct permission codes', () => {
     // Evidence capture, signature capture, authorization verification,
     // approval, conversion and closure are DIFFERENT authorities. A screen
     // gated on one code must not render another code's controls.
@@ -262,6 +268,7 @@ describe('the contract facts the archaeology pinned', () => {
       'rec.reception.close',
       'rec.reception.convert',
       'rec.reception.evidence.manage',
+      'rec.reception.evidence.override',
       'rec.reception.manage',
       'rec.reception.party.manage',
       'rec.reception.signature.manage',
