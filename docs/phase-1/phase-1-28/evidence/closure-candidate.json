@@ -251,8 +251,8 @@
       "localLedger": {
         "path": "docs/phase-1/phase-1-27/evidence/local-run-ledger.json",
         "tier": "unit",
-        "atCommit": "fa0a3c0a6c546e913f38d2cf01551ca7558e5a32",
-        "howChecked": "`git show fa0a3c0a6c546e913f38d2cf01551ca7558e5a32:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD when this measurement was recorded, rather than the working copy, which would let an uncommitted edit vouch for itself."
+        "atCommit": "e8fa045946ef5b6e4599ccd04e2bf686c509b0e5",
+        "howChecked": "`git show e8fa045946ef5b6e4599ccd04e2bf686c509b0e5:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD when this measurement was recorded, rather than the working copy, which would let an uncommitted edit vouch for itself."
       },
       "hostedAttestation": {
         "runId": 31885987461,
@@ -277,8 +277,8 @@
       "localLedger": {
         "path": "docs/phase-1/phase-1-27/evidence/local-run-ledger.json",
         "tier": "web",
-        "atCommit": "fa0a3c0a6c546e913f38d2cf01551ca7558e5a32",
-        "howChecked": "`git show fa0a3c0a6c546e913f38d2cf01551ca7558e5a32:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD when this measurement was recorded, rather than the working copy, which would let an uncommitted edit vouch for itself."
+        "atCommit": "e8fa045946ef5b6e4599ccd04e2bf686c509b0e5",
+        "howChecked": "`git show e8fa045946ef5b6e4599ccd04e2bf686c509b0e5:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD when this measurement was recorded, rather than the working copy, which would let an uncommitted edit vouch for itself."
       },
       "hostedAttestation": {
         "runId": 31885987461,
