@@ -126,8 +126,10 @@ export interface ReceptionCreateInput {
   readonly evSocPercent?: number | null;
 }
 
-export interface ReceptionCreatePlan
-  extends Omit<ReceptionCreateInput, 'evSocPercent' | 'receivingEmployeeId'> {
+export interface ReceptionCreatePlan extends Omit<
+  ReceptionCreateInput,
+  'evSocPercent' | 'receivingEmployeeId'
+> {
   readonly evSocPercent: number | null;
   readonly odometerReadingId: string | null;
   readonly fuelLevelId: string | null;
