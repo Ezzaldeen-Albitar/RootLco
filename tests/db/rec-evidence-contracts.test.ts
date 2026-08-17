@@ -160,14 +160,27 @@ async function seedDocument(input: {
   if (state === 'accepted') {
     await admin.query(
       `INSERT INTO shared.file_scan_results
-         (tenant_id, version_id, scanner, scan_status, scanned_at, created_by)
+         (tenant_id, version_id, scanner_code, scan_status, scanned_at, created_by)
        VALUES ($1,$2,'harness','clean',now(),$3)`,
       [tenantId, versionId, USER_A]
     );
-    await admin.query(
-      `UPDATE shared.document_versions SET status='accepted', accepted_at=now() WHERE id=$1`,
-      [versionId]
-    );
+    /*
+     * Through `scanning`, not around it. P1-15's
+     * `guard_document_version_transition` refuses pending -> accepted outright:
+     * a version reaches `accepted` only from `scanning`, and only with a clean
+     * scan and no infected one. Jumping the step raised "document version must
+     * enter scanning before acceptance" and took three cases with it.
+     *
+     * The fixture consumes that lifecycle rather than restating it, which is the
+     * point of P1-15 owning it — the guard stamps `scanning_at` and `accepted_at`
+     * itself, so neither is set here.
+     */
+    await admin.query(`UPDATE shared.document_versions SET status='scanning' WHERE id=$1`, [
+      versionId,
+    ]);
+    await admin.query(`UPDATE shared.document_versions SET status='accepted' WHERE id=$1`, [
+      versionId,
+    ]);
   } else if (state === 'quarantined' || state === 'rejected') {
     await admin.query(
       `UPDATE shared.document_versions
@@ -325,14 +338,16 @@ describe('FE-018 — a version that is not accepted can never become evidence', 
     });
 
     await admin.query(
-      `INSERT INTO shared.file_scan_results (tenant_id, version_id, scanner, scan_status, scanned_at, created_by)
+      `INSERT INTO shared.file_scan_results (tenant_id, version_id, scanner_code, scan_status, scanned_at, created_by)
        VALUES ($1,$2,'harness','clean',now(),$3)`,
       [TENANT_A, doc.versionId, USER_A]
     );
-    await admin.query(
-      `UPDATE shared.document_versions SET status='accepted', accepted_at=now() WHERE id=$1`,
-      [doc.versionId]
-    );
+    await admin.query(`UPDATE shared.document_versions SET status='scanning' WHERE id=$1`, [
+      versionId,
+    ]);
+    await admin.query(`UPDATE shared.document_versions SET status='accepted' WHERE id=$1`, [
+      doc.versionId,
+    ]);
 
     await withRolledBackTx(runtime, contextA(), async (c) => {
       const id = (

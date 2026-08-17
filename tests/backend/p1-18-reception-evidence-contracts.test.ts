@@ -307,14 +307,16 @@ async function seedEvidenceDocument(input: {
   if (input.accept === true) {
     await admin.query(
       `INSERT INTO shared.file_scan_results
-         (tenant_id, version_id, scanner, scan_status, scanned_at, created_by)
+         (tenant_id, version_id, scanner_code, scan_status, scanned_at, created_by)
        VALUES ($1,$2,'harness','clean',now(),$3)`,
       [tenantId, versionId, USER_A]
     );
-    await admin.query(
-      `UPDATE shared.document_versions SET status='accepted', accepted_at=now() WHERE id=$1`,
-      [versionId]
-    );
+    await admin.query(`UPDATE shared.document_versions SET status='scanning' WHERE id=$1`, [
+      versionId,
+    ]);
+    await admin.query(`UPDATE shared.document_versions SET status='accepted' WHERE id=$1`, [
+      versionId,
+    ]);
   } else if (input.terminal !== undefined) {
     await admin.query(
       `UPDATE shared.document_versions
@@ -603,14 +605,16 @@ describe('FE-018 / capture — only an accepted version can ever count', () => {
     expect(early.status).toBe(422);
 
     await admin.query(
-      `INSERT INTO shared.file_scan_results (tenant_id, version_id, scanner, scan_status, scanned_at, created_by)
+      `INSERT INTO shared.file_scan_results (tenant_id, version_id, scanner_code, scan_status, scanned_at, created_by)
        VALUES ($1,$2,'harness','clean',now(),$3)`,
       [TENANT_A, doc.versionId, USER_A]
     );
-    await admin.query(
-      `UPDATE shared.document_versions SET status='accepted', accepted_at=now() WHERE id=$1`,
-      [doc.versionId]
-    );
+    await admin.query(`UPDATE shared.document_versions SET status='scanning' WHERE id=$1`, [
+      versionId,
+    ]);
+    await admin.query(`UPDATE shared.document_versions SET status='accepted' WHERE id=$1`, [
+      doc.versionId,
+    ]);
 
     authAs(SUBJ_FULL);
     const finalized = await FINALIZE_BINDING(

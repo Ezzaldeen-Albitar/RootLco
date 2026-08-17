@@ -874,3 +874,58 @@ GRANT SELECT ON rec.signature_events TO app_readonly;
 -- a TABLE-level INSERT grant to app_runtime, which covers every column including
 -- one added later. A column grant here would read as a narrowing that does not
 -- exist.
+
+-- ---------------------------------------------------------------------------
+-- Covering indexes for the six foreign keys that had none.
+--
+-- Derived from the rebuilt database, not from reading this file: for every FK on
+-- the six tables above, the FK's columns were compared against each index's
+-- LEADING columns. Seven were already served -- the two visit bindings, the
+-- template/version pair, the signature-event pair and the two tenant-only keys,
+-- each covered by a unique constraint whose leading columns match. Six were not.
+--
+-- An index that merely mentions the columns does not serve the key: a lookup on
+-- (tenant_id, document_id) cannot use an index led by
+-- (tenant_id, company_id, branch_id, reception_visit_id). That is why "there are
+-- already six CREATE INDEX statements in this migration" was not an answer to
+-- the question, and why the check that found these compared column ORDER rather
+-- than counting index statements.
+--
+-- Each matters at delete/update time on the PARENT: without them PostgreSQL
+-- sequentially scans the child to enforce the constraint, and the document
+-- tables these reference are exactly the ones P1-15 made append-heavy.
+CREATE INDEX ix_capture_policy_rules_branch
+  ON rec.capture_policy_rules (tenant_id, company_id, branch_id);
+
+CREATE INDEX ix_damage_map_templates_branch
+  ON rec.damage_map_templates (tenant_id, company_id, branch_id);
+
+CREATE INDEX ix_damage_map_template_versions_document
+  ON rec.damage_map_template_versions (tenant_id, document_id);
+
+CREATE INDEX ix_damage_map_template_versions_file
+  ON rec.damage_map_template_versions (tenant_id, document_version_id);
+
+CREATE INDEX ix_reception_evidence_bindings_document
+  ON rec.reception_evidence_bindings (tenant_id, document_id);
+
+CREATE INDEX ix_reception_evidence_bindings_version
+  ON rec.reception_evidence_bindings (tenant_id, document_version_id);
+
+-- Two more, found by the repository's OWN gate (P1-03-DB-017) after the six
+-- above, and both are cases a hand-rolled check waves through:
+--
+--  * fk_signature_event_signature is "covered" by uq_signature_event_finalized,
+--    whose leading columns match exactly -- but that index is PARTIAL, so it
+--    serves only the rows its predicate admits and cannot enforce the key. An
+--    index that matches on column order and still does not cover is precisely
+--    why the count of CREATE INDEX statements is never the answer.
+--
+--  * fk_signatures_replaces sits on rec.signatures, an EXISTING table this
+--    migration adds a column to. A sweep scoped to "the six new tables" cannot
+--    see it, which is how it survived the first pass.
+CREATE INDEX ix_signature_events_signature
+  ON rec.signature_events (tenant_id, signature_id);
+
+CREATE INDEX ix_signatures_replaces
+  ON rec.signatures (tenant_id, replaces_signature_id);

@@ -460,6 +460,8 @@ export async function deleteTenantCascade(admin: Pool, tenantIds: string[]): Pro
   await deleteFrom('rec.custody_history');
   await deleteFrom('rec.authorizations');
   await deleteFrom('rec.refusals');
+  // P1-18 signature events reference rec.signatures, so they unwind first.
+  await deleteFrom('rec.signature_events');
   await deleteFrom('rec.signatures');
   await deleteFrom('rec.vehicle_content_details');
   await deleteFrom('rec.vehicle_contents');
@@ -469,6 +471,25 @@ export async function deleteTenantCascade(admin: Pool, tenantIds: string[]): Pro
   await deleteFrom('rec.visual_inspections');
   await deleteFrom('rec.damage_marks');
   await deleteFrom('rec.damage_maps');
+  /*
+   * P1-18 reception evidence contracts. Order is the FK graph, not the alphabet:
+   *
+   *  - damage_map_template_versions is referenced BY rec.damage_maps, so it goes
+   *    after it and before its own parent, damage_map_templates;
+   *  - reception_evidence_bindings and capture_requirement_overrides reference
+   *    rec.reception_visits, deleted below;
+   *  - capture_policy_rules is referenced by nothing and only needs to precede
+   *    the tenant itself.
+   *
+   * All six were absent from this cascade when the contracts landed. A tenant-
+   * scoped table missing here does not fail loudly: it survives cleanup, and the
+   * next suite inherits its rows.
+   */
+  await deleteFrom('rec.damage_map_template_versions');
+  await deleteFrom('rec.damage_map_templates');
+  await deleteFrom('rec.reception_evidence_bindings');
+  await deleteFrom('rec.capture_requirement_overrides');
+  await deleteFrom('rec.capture_policy_rules');
   await deleteFrom('rec.warning_light_observations');
   await deleteFrom('rec.leak_observations');
   await deleteFrom('rec.reception_party_roles');
