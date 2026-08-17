@@ -14,8 +14,8 @@
  * tell them apart. The SQL column POSITION is what distinguishes them, and that
  * is what this reads.
  */
-import { readFileSync } from 'node:fs';
-import { globSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
@@ -41,8 +41,21 @@ function insertColumnLists(source: string): readonly (readonly string[])[] {
   return lists;
 }
 
-const FILES = globSync('{tests,apps,scripts}/**/*.{ts,tsx,mjs}', { cwd: ROOT })
-  .map((relative) => [relative, readFileSync(`${ROOT}${relative}`, 'utf8')] as const)
+/** Every source under a root, following no symlink (`readdir` reports the link). */
+function walk(dir: string): readonly string[] {
+  const out: string[] = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (entry.name === 'node_modules' || entry.name === '.next') continue;
+    const full = join(dir, entry.name);
+    if (statSync(full).isDirectory()) out.push(...walk(full));
+    else if (/\.(ts|tsx|mjs)$/.test(entry.name)) out.push(full);
+  }
+  return out;
+}
+
+const FILES: readonly (readonly [string, string])[] = ['tests', 'apps', 'scripts']
+  .flatMap((top) => walk(join(ROOT, top)))
+  .map((full): readonly [string, string] => [full, readFileSync(full, 'utf8')])
   .filter(([, source]) => /INSERT\s+INTO\s+shared\.file_scan_results/i.test(source));
 
 describe('shared.file_scan_results is written by its real column names', () => {
@@ -51,7 +64,7 @@ describe('shared.file_scan_results is written by its real column names', () => {
     const lists = FILES.flatMap(([, source]) => insertColumnLists(source));
     expect(lists.length).toBeGreaterThan(0);
     expect(
-      lists.some((columns) => columns.includes(REAL)),
+      lists.some((columns: readonly string[]) => columns.includes(REAL)),
       `no INSERT names ${REAL}; the parser has probably stopped matching`
     ).toBe(true);
   });

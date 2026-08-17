@@ -610,7 +610,7 @@ describe('FE-018 / capture — only an accepted version can ever count', () => {
       [TENANT_A, doc.versionId, USER_A]
     );
     await admin.query(`UPDATE shared.document_versions SET status='scanning' WHERE id=$1`, [
-      versionId,
+      doc.versionId,
     ]);
     await admin.query(`UPDATE shared.document_versions SET status='accepted' WHERE id=$1`, [
       doc.versionId,
@@ -1218,7 +1218,11 @@ describe('idempotency — a replayed command writes once', () => {
       { params: Promise.resolve({ receptionId: visit }) }
     );
     expect(one.status).toBe(201);
-    expect(two.status).toBe(201);
+    // The REPLAY answers 200 with the stored body, even though the first answer
+    // was 201 — the platform idempotency contract (`route-handler.ts`, restated
+    // in `receptions-contract.ts:48-50`). Asserting 201 here asserted the
+    // opposite of what the platform implements.
+    expect(two.status).toBe(200);
     expect(((await two.json()) as BindingBody).bindingId).toBe(
       ((await one.json()) as BindingBody).bindingId
     );
@@ -1237,7 +1241,7 @@ describe('idempotency — a replayed command writes once', () => {
       json(`/receptions/${visit}/capture-overrides`, overrideBody, overrideKey),
       { params: Promise.resolve({ receptionId: visit }) }
     );
-    expect(overrideReplay.status).toBe(201);
+    expect(overrideReplay.status).toBe(200);
     const overrides = await admin.query<{ n: string }>(
       `SELECT count(*)::text AS n FROM rec.capture_requirement_overrides WHERE reception_visit_id = $1`,
       [visit]
@@ -1264,7 +1268,7 @@ describe('idempotency — a replayed command writes once', () => {
     const policyReplay = await SET_POLICY(
       json('/reception-catalogue/capture-policies', policyBody, policyKey)
     );
-    expect(policyReplay.status).toBe(201);
+    expect(policyReplay.status).toBe(200);
     const live = await admin.query<{ n: string }>(
       `SELECT count(*)::text AS n FROM rec.capture_policy_rules
         WHERE tenant_id = $1 AND requirement_code = 'exterior' AND retired_at IS NULL`,
@@ -1306,7 +1310,7 @@ describe('idempotency — a replayed command writes once', () => {
       json(`/receptions/${visit}/signatures/${signature}/events`, eventBody, eventKey),
       { params: Promise.resolve({ receptionId: visit, signatureId: signature }) }
     );
-    expect(eventReplay.status).toBe(201);
+    expect(eventReplay.status).toBe(200);
     const events = await admin.query<{ n: string }>(
       `SELECT count(*)::text AS n FROM rec.signature_events WHERE signature_id = $1`,
       [signature]

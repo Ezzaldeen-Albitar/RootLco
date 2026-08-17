@@ -972,14 +972,14 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
      whose regexes read the label and the number as adjacent cells. -->
 
 <!-- derived: files apps/web/tests = 98 -->
-<!-- derived: files tests/ci = 50 -->
+<!-- derived: files tests/ci = 51 -->
 <!-- derived: files scripts/ci = 53 -->
 <!-- derived: files apps/web/scripts = 4 -->
-<!-- derived: files supabase/migrations = 122 -->
-<!-- derived: files tests/db = 141 -->
-<!-- derived: files tests/db:all = 145 -->
-<!-- derived: files tests/backend = 87 -->
-<!-- derived: files tests/backend:all = 92 -->
+<!-- derived: files supabase/migrations = 123 -->
+<!-- derived: files tests/db = 143 -->
+<!-- derived: files tests/db:all = 147 -->
+<!-- derived: files tests/backend = 88 -->
+<!-- derived: files tests/backend:all = 93 -->
 <!-- derived: files apps/web/src/features/crm = 20 -->
 <!-- derived: files apps/web/src/features/vehicles = 23 -->
 <!-- derived: files p1-27-frontend-gate = 123 -->

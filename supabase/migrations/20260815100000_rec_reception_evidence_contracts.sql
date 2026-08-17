@@ -561,14 +561,41 @@ CREATE TRIGGER tg_damage_maps_template_immutable
 CREATE OR REPLACE FUNCTION rec.guard_signature_evidence()
 RETURNS trigger LANGUAGE plpgsql SECURITY INVOKER SET search_path = '' AS $$
 DECLARE v_status text; v_category text; v_link_purpose text; v_prior_visit uuid;
+        v_owner_document uuid;
 BEGIN
-  SELECT v.status, c.category_code, c.business_link_purpose
-    INTO v_status, v_category, v_link_purpose
+  -- Two DIFFERENT failures, deliberately told apart.
+  --
+  -- Resolving the version and the document in ONE predicate collapses them: a
+  -- version that belongs to another document in the SAME tenant then reports
+  -- "not visible", the service maps foreign_key_violation to ERR-RES-001, and the
+  -- caller gets 404 for a pair it can see both halves of. That is wrong twice —
+  -- it hides a client error behind a missing-resource answer, and it contradicts
+  -- rec.guard_signature_version (Phase 1-8), which calls the same mismatch a
+  -- check_violation.
+  --
+  -- So: resolve the VERSION within the tenant first. Absent means genuinely not
+  -- visible, and stays a foreign_key_violation — the anti-probing answer, which
+  -- must not become a hint that the row exists somewhere. Only once the version
+  -- is visible do we ask whether it belongs to the named document, and a
+  -- mismatch there is an incoherent reference the caller supplied: 23514, which
+  -- the service already maps to ERR-VAL-001.
+  SELECT v.status, v.document_id INTO v_status, v_owner_document
     FROM shared.document_versions v
-    JOIN shared.documents d ON d.tenant_id = v.tenant_id AND d.id = v.document_id
+   WHERE v.tenant_id = NEW.tenant_id AND v.id = NEW.signature_document_version_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'signature document/version is not visible'
+      USING ERRCODE = 'foreign_key_violation';
+  END IF;
+  IF v_owner_document IS DISTINCT FROM NEW.signature_document_id THEN
+    RAISE EXCEPTION 'signature version % does not belong to document %',
+      NEW.signature_document_version_id, NEW.signature_document_id
+      USING ERRCODE = 'check_violation';
+  END IF;
+  SELECT c.category_code, c.business_link_purpose INTO v_category, v_link_purpose
+    FROM shared.documents d
     JOIN shared.document_categories c ON c.id = d.category_id
-   WHERE v.tenant_id = NEW.tenant_id AND v.id = NEW.signature_document_version_id
-     AND d.id = NEW.signature_document_id AND d.deleted_at IS NULL;
+   WHERE d.tenant_id = NEW.tenant_id AND d.id = NEW.signature_document_id
+     AND d.deleted_at IS NULL;
   IF NOT FOUND THEN
     RAISE EXCEPTION 'signature document/version is not visible'
       USING ERRCODE = 'foreign_key_violation';
