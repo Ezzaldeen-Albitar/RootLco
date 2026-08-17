@@ -186,17 +186,17 @@
     "unit": {
       "label": "root unit and foundation",
       "tests": 2660,
-      "passed": 2660,
-      "failed": 0,
+      "passed": 2650,
+      "failed": 10,
       "skipped": 0,
       "files": 100,
-      "measuredAtCommit": "99aee45562c9f3efb13ac1ae7e30c9fdcabdc294",
+      "measuredAtCommit": "3403f0959bc47223838a5dffdc8ef17a05697c7a",
       "provenance": "LOCAL_COMPUTED_HOSTED_PENDING",
       "localLedger": {
         "path": "docs/phase-1/phase-1-27/evidence/local-run-ledger.json",
         "tier": "unit",
-        "atCommit": "d2593fc93aa7a0cbeffc0901e0110d900e2d1103",
-        "howChecked": "`git show d2593fc93aa7a0cbeffc0901e0110d900e2d1103:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD when this measurement was recorded, rather than the working copy, which would let an uncommitted edit vouch for itself."
+        "atCommit": "27c362069d4fd0af560832daae52754bb282221b",
+        "howChecked": "`git show 27c362069d4fd0af560832daae52754bb282221b:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD when this measurement was recorded, rather than the working copy, which would let an uncommitted edit vouch for itself."
       },
       "hostedAttestation": {
         "runId": 31885987461,
@@ -207,7 +207,7 @@
         "describesSupersededHead": true,
         "supersededBy": "The hosted run taken at a head that DESCENDS from candidate 526a3b39 — the pull request CI for branch `p1-28/od-025-policy-enforcement`. Until that run exists this figure describes an ancestor and is cited as such; it is replaced by re-citing the same fields (run id, job id, head, artefact) at the descending head, never by relaxing the rule that refused it."
       },
-      "note": "Measured at f01eec52, a documentation-only successor of the candidate: the commits between them carry evidence records and nothing executable."
+      "note": "Measured at 3403f095, a documentation-only successor of the candidate: the commits between them carry evidence records and nothing executable."
     },
     "web": {
       "label": "web component and DOM",
@@ -216,13 +216,13 @@
       "failed": 0,
       "skipped": 0,
       "files": 98,
-      "measuredAtCommit": "99aee45562c9f3efb13ac1ae7e30c9fdcabdc294",
+      "measuredAtCommit": "bf744ded5d0c6808d6dfa8bb7e9fd9dc69a8a950",
       "provenance": "LOCAL_COMPUTED_HOSTED_PENDING",
       "localLedger": {
         "path": "docs/phase-1/phase-1-27/evidence/local-run-ledger.json",
         "tier": "web",
-        "atCommit": "d2593fc93aa7a0cbeffc0901e0110d900e2d1103",
-        "howChecked": "`git show d2593fc93aa7a0cbeffc0901e0110d900e2d1103:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD when this measurement was recorded, rather than the working copy, which would let an uncommitted edit vouch for itself."
+        "atCommit": "27c362069d4fd0af560832daae52754bb282221b",
+        "howChecked": "`git show 27c362069d4fd0af560832daae52754bb282221b:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD when this measurement was recorded, rather than the working copy, which would let an uncommitted edit vouch for itself."
       },
       "hostedAttestation": {
         "runId": 31885987461,
@@ -233,7 +233,42 @@
         "describesSupersededHead": true,
         "supersededBy": "The hosted run taken at a head that DESCENDS from candidate 526a3b39 — the pull request CI for branch `p1-28/od-025-policy-enforcement`. Until that run exists this figure describes an ancestor and is cited as such; it is replaced by re-citing the same fields (run id, job id, head, artefact) at the descending head, never by relaxing the rule that refused it."
       },
-      "note": "Measured at bf744ded, a documentation-only successor of the candidate: the commits between them carry evidence records and nothing executable."
+      "note": "Measured at bf744ded, a documentation-only successor of the candidate: the commits between them carry evidence records and nothing executable.",
+      "measurementDrift": [
+        ".github/ci-baselines/schema-baseline.json",
+        "apps/api/src/app/api/v1/reception-catalogue/receiving-employees/route.ts",
+        "apps/api/src/app/api/v1/receptions/route.ts",
+        "apps/api/src/modules/reception/application/reception-read-service.ts",
+        "apps/api/src/modules/reception/application/reception-service.ts",
+        "apps/api/src/modules/reception/data/reception-read-repository.ts",
+        "apps/api/src/modules/reception/domain/reception.ts",
+        "apps/api/src/modules/reception/index.ts",
+        "apps/api/src/server/db/repository.ts",
+        "apps/api/src/server/http/route-templates.ts",
+        "apps/web/src/lib/api/idempotent-operations.ts",
+        "scripts/check-operation-test-coverage.mjs",
+        "supabase/migrations/20260815093000_rec_receiving_employee_identity.sql",
+        "supabase/seeds/04_iam_permission_catalog.sql",
+        "tests/backend/p1-18-intake-catalogue-management.test.ts",
+        "tests/backend/p1-18-reception-approval.test.ts",
+        "tests/backend/p1-18-reception-closure.test.ts",
+        "tests/backend/p1-18-reception-conversion.test.ts",
+        "tests/backend/p1-18-reception-create.test.ts",
+        "tests/backend/p1-18-reception-evidence.test.ts",
+        "tests/backend/p1-18-reception-parties.test.ts",
+        "tests/backend/p1-18-scope-containment.test.ts",
+        "tests/backend/p1-19-helpers.ts",
+        "tests/backend/p1-27-reception-reads.test.ts",
+        "tests/ci/baseline-integrity.test.ts",
+        "tests/ci/repository-paths.test.ts",
+        "tests/db/foundation.test.ts",
+        "tests/db/helpers.ts",
+        "tests/db/p1-15-shared-services-runtime-capabilities.test.ts",
+        "tests/db/rec-receiving-employee-identity.test.ts",
+        "tests/db/shared-message-templates.test.ts",
+        "tests/db/shared-outbound-messages.test.ts",
+        "tests/openapi-contract.test.ts"
+      ]
     },
     "backend": {
       "label": "backend integration, against a real PostgreSQL",
