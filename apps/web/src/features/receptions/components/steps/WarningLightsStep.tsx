@@ -93,9 +93,31 @@ export function WarningLightsStep({
 
   useEffect(() => {
     let cancelled = false;
-    listWarningLightCodes().then((result) => {
-      if (!cancelled) setCatalogue(result);
-    });
+    listWarningLightCodes()
+      .then((result) => {
+        if (!cancelled) setCatalogue(result);
+      })
+      /*
+       * A REJECTION IS A STATE, not a reason to stay loading for ever.
+       *
+       * `readCatalogue` returns a failure rather than throwing, so this branch
+       * is for the call ITSELF failing — the Server Action not completing.
+       * Without it the promise rejects, `catalogue` stays `null`, and the
+       * branch below renders `EvidenceStates status="loading"`, which is a
+       * skeleton: three grey bars with no text. The operator is shown a screen
+       * that says the catalogue is on its way, for ever, and no retry.
+       *
+       * That is the failure this project keeps finding under a different name —
+       * a failed read presented as something other than a failure. Observed
+       * here against a production build: the action never reached the API and
+       * the step waited silently. The state below at least says so and offers
+       * the retry the loading skeleton cannot.
+       */
+      .catch(() => {
+        if (!cancelled) {
+          setCatalogue({ status: 'error', options: [], truncated: false, correlationId: null });
+        }
+      });
     return () => {
       cancelled = true;
     };

@@ -135,9 +135,15 @@ export function ConfirmationStep({
     if (!capabilities.readCustomers || requesterPartnerId === null) return;
     let cancelled = false;
     const key = `${requesterPartnerId}:${readKey}`;
-    readCustomerSummary(requesterPartnerId).then((result) => {
-      if (!cancelled) setCustomer({ key, result });
-    });
+    readCustomerSummary(requesterPartnerId)
+      .then((result) => {
+        if (!cancelled) setCustomer({ key, result });
+      })
+      // A rejected call is a STATE, not a permanent absence of one.
+      // `WarningLightsStep` carries the full reasoning.
+      .catch(() => {
+        if (!cancelled) setCustomer({ key, result: { status: 'error', correlationId: null } });
+      });
     return () => {
       cancelled = true;
     };
@@ -158,9 +164,16 @@ export function ConfirmationStep({
   useEffect(() => {
     if (!capabilities.readVehicles) return;
     let cancelled = false;
-    readVehicleSummary(detail.vehicleId).then((result) => {
-      if (!cancelled) setVehicle({ key: readKey, result });
-    });
+    readVehicleSummary(detail.vehicleId)
+      .then((result) => {
+        if (!cancelled) setVehicle({ key: readKey, result });
+      })
+      // A rejected call is a STATE, not a permanent absence of one.
+      // `WarningLightsStep` carries the full reasoning.
+      .catch(() => {
+        if (!cancelled)
+          setVehicle({ key: readKey, result: { status: 'error', correlationId: null } });
+      });
     return () => {
       cancelled = true;
     };
