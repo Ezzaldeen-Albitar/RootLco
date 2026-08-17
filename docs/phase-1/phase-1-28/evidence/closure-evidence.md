@@ -33,13 +33,13 @@ the candidate, and refuses either half that fails to name an unclosed task.
 
 ## The frozen candidate
 
-| Binding           | Value                                                              |
-| ----------------- | ------------------------------------------------------------------ |
-| `FINAL_CODE_SHA`  | `8df9ff88483625396b8e9347fdf7e6b117a6798e`                         |
-| `FINAL_CODE_TREE` | `ecefe560d31d618547ebe1115456868c2b561895`                         |
-| Branch            | `remediation/p1-15-reception-document-foundation`                  |
-| Pull request      | **#232**, base `develop`, 25 commits ahead                         |
-| Subject           | `feat(p1-28): the PENDING_FRONTEND_ADAPTER lifecycle, fail-closed` |
+| Binding           | Value                                                                                     |
+| ----------------- | ----------------------------------------------------------------------------------------- |
+| `FINAL_CODE_SHA`  | `0807a44082f53b960ea5d0678880a7dd32b362f4`                                                |
+| `FINAL_CODE_TREE` | `7d9646100fd78deb9f8bf24e8ced8dfe0a0c6f02`                                                |
+| Branch            | `remediation/p1-15-reception-document-foundation`                                         |
+| Pull request      | **#232**, base `develop`, 25 commits ahead                                                |
+| Subject           | `fix(ci): the reachability suite is contract bookkeeping a Backend branch is forced into` |
 
 The previous candidate was `7b1252edebb5d7f48451213c71ab832cb44e46b5`, tree
 `1ef831d2ecfcf94d07b73857b7448c3b424faca3`, on
