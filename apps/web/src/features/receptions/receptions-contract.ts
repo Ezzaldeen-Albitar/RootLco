@@ -142,11 +142,10 @@ export const RECEPTION_PERMISSIONS = {
    * satisfy it. Named here because the backend registers it and this layer must
    * know every code its domain can be denied for. `P1-OD-025` (document and
    * media file policy) is RESOLVED — private, versioned evidence, only an
-   * ACCEPTED version finalized — so the capture surface is no longer blocked;
-   * this commit publishes the CONTRACT for it, and the screen that consults the
-   * code is delivered by the P1-28 Frontend integration. Until that screen
-   * lands, this write stays recorded in
-   * `docs/phase-1/phase-1-28/write-reachability.json`.
+   * ACCEPTED version finalized — and the screen that consults this code has
+   * now landed: `components/steps/MediaStep.tsx` withholds the waiver control
+   * with its reason stated when the operator does not hold it, rather than
+   * greying one out.
    */
   evidenceOverride: 'rec.reception.evidence.override',
 } as const;

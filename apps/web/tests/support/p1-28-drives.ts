@@ -64,6 +64,8 @@ export const DOCUMENT_VERSION = '88888888-8888-4888-8888-888888888888';
 export const REASON = '99999999-9999-4999-8999-999999999999';
 export const TYPE = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 export const WORK_ORDER = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+export const BINDING = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+export const SIGNATURE = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 
 /**
  * The branch a branch-target read is ABOUT.
@@ -134,6 +136,16 @@ export const READ_DRIVES: readonly AdapterDrive[] = Object.freeze([
     name: 'listAuthorizations',
     channel: 'get',
     call: () => recApi.listAuthorizations(VISIT, REQUEST, null),
+  },
+  {
+    name: 'readCaptureContract',
+    channel: 'get',
+    call: () => recApi.readCaptureContract(VISIT),
+  },
+  {
+    name: 'readSignatures',
+    channel: 'get',
+    call: () => recApi.readSignatures(VISIT),
   },
   {
     name: 'listConditionEvidence',
@@ -308,6 +320,36 @@ export const WRITE_DRIVES: readonly AdapterDrive[] = Object.freeze([
     name: 'recordRefusal',
     channel: 'send',
     call: () => recApi.recordRefusal(VISIT, { refusalType: 'inspection_item' }),
+  },
+  {
+    name: 'bindEvidence',
+    channel: 'send',
+    call: () =>
+      recApi.bindEvidence(VISIT, {
+        requirementCode: 'vin',
+        documentId: DOCUMENT,
+        documentVersionId: DOCUMENT_VERSION,
+        qualityStatus: 'readable',
+      }),
+  },
+  {
+    name: 'finalizeEvidenceBinding',
+    channel: 'send',
+    call: () => recApi.finalizeEvidenceBinding(VISIT, BINDING),
+  },
+  {
+    name: 'overrideCaptureRequirement',
+    channel: 'send',
+    call: () =>
+      recApi.overrideCaptureRequirement(VISIT, {
+        requirementCode: 'ev_soc',
+        reason: 'The vehicle is not electric.',
+      }),
+  },
+  {
+    name: 'recordSignatureEvent',
+    channel: 'send',
+    call: () => recApi.recordSignatureEvent(VISIT, SIGNATURE, { eventType: 'finalized' }),
   },
   {
     name: 'approveReception',

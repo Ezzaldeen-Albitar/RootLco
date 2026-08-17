@@ -1,6 +1,15 @@
 'use client';
 
-import { useMemo, useState, useTransition, type KeyboardEvent, type MouseEvent } from 'react';
+import {
+  useCallback,
+  useMemo,
+  useState,
+  useTransition,
+  type KeyboardEvent,
+  type MouseEvent,
+} from 'react';
+import { INITIAL_REQUEST } from '@/components/data-table/table-state';
+import { useServerTable, type ServerPage } from '@/components/data-table/use-server-table';
 import { SelectField, TextField } from '@/components/forms/Field';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
 import type { Locale } from '@/i18n/config';
@@ -8,11 +17,12 @@ import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import { formatDateTime } from '@/lib/format';
 import type { ActionState } from '@/lib/forms/action-result';
-import { recordConditionEvidence } from '../../api';
+import { readCaptureContract, recordConditionEvidence } from '../../api';
 import {
   DAMAGE_MARK_TYPES,
   MAX_NOTE,
   MAX_ZONE,
+  type BindableTemplateEntry,
   type DamageMarkType,
 } from '../../receptions-contract';
 import {
@@ -115,6 +125,58 @@ export function DamageMapStep({
 
   const canWrite = !writesLocked && capabilities.manageEvidence;
 
+  /*
+   * The templates this visit may draw on (`FE-012`).
+   *
+   * From the visit`s own capture contract, NOT from the damage-map-template
+   * catalogue. Both operations exist and only one of them is the reception
+   * desk`s: the catalogue costs `rec.catalogue.manage`, which decides what the
+   * whole workshop draws on and which no receptionist holds. The bindable set
+   * for one branch travels with `rec.reception-evidence-binding-list` behind
+   * `rec.reception.read` — that split is what keeps the manage code meaningful,
+   * and it is why there is no template administration on this screen.
+   */
+  const loadTemplates = useCallback(async (): Promise<ServerPage<BindableTemplateEntry>> => {
+    const read = await readCaptureContract(visitId);
+    if (read.status === 'ok' && read.data !== null) {
+      return {
+        status: 'ok',
+        rows: read.data.bindableTemplates,
+        nextCursor: null,
+        hasMore: false,
+        correlationId: read.correlationId,
+      };
+    }
+    return {
+      status: read.status === 'ok' ? 'error' : read.status,
+      rows: [],
+      nextCursor: null,
+      hasMore: false,
+      correlationId: read.correlationId,
+    };
+  }, [visitId]);
+  const templateTable = useServerTable<BindableTemplateEntry>(loadTemplates, {
+    initial: { ...INITIAL_REQUEST, pageSize: 50 },
+    loadKey: readKey,
+  });
+  const templates = templateTable.response?.rows ?? null;
+  const templatesFailed = templateTable.status !== 'idle' && templateTable.status !== 'loading';
+
+  /*
+   * SELECTABLE is narrower than readable, and deliberately.
+   *
+   * A retired template stays readable — every mark ever placed is anchored to
+   * the revision that was live when it was drawn, so a visit that used one must
+   * still say which — but it may not be chosen for a NEW map. A slot with no
+   * published revision has no geometry to draw on either, which is a different
+   * reason and is stated as one.
+   */
+  const selectableTemplates = (templates ?? []).filter(
+    (entry) =>
+      entry.status === 'active' && entry.documentId !== null && entry.documentVersionId !== null
+  );
+  const retiredTemplates = (templates ?? []).filter((entry) => entry.status !== 'active');
+
   /**
    * The maps a mark may hang off — this visit's own, labelled by their map type
    * and when they were recorded rather than by their uuid.
@@ -145,8 +207,71 @@ export function DamageMapStep({
         headingKey="receptions.damage.mapHeading"
       >
         <EvidenceReadBack locale={locale} messages={messages} kind="damage_map" table={maps} />
-        {/* Where the "open a damage map" control would have been. */}
-        <CoverageNotice locale={locale} messages={messages} kind="damage_map" />
+
+        {retiredTemplates.length > 0 ? (
+          <p
+            data-testid="damage-map-retired"
+            className="text-caption text-text-muted"
+            lang={locale}
+          >
+            {translate(messages, 'receptions.damage.templateRetired')}
+          </p>
+        ) : null}
+
+        {!canWrite ? (
+          <WriteWithdrawn
+            locale={locale}
+            messages={messages}
+            messageKey={
+              writesLocked ? 'receptions.evidence.lockedNote' : 'receptions.evidence.readOnly'
+            }
+          />
+        ) : templatesFailed ? (
+          <p data-testid="damage-map-unread" className="text-caption" lang={locale}>
+            {translate(messages, 'receptions.damage.templateUnread')}
+          </p>
+        ) : templates === null ? null : selectableTemplates.length === 0 ? (
+          <p data-testid="damage-map-none" className="text-caption" lang={locale}>
+            {translate(messages, 'receptions.damage.templateNone')}
+          </p>
+        ) : (
+          <MapForm
+            messages={messages}
+            templates={selectableTemplates}
+            onSubmit={async (template, attempt) => {
+              /*
+               * The EXACT revision, not the slot. `damage_map` requires both
+               * uuids because a mark is anchored to the drawing it was placed
+               * on, and a template that is later revised must not silently
+               * move every historical mark onto a different diagram.
+               */
+              const result = await recordConditionEvidence(
+                visitId,
+                {
+                  kind: 'damage_map',
+                  documentId: template.documentId as string,
+                  documentVersionId: template.documentVersionId as string,
+                  mapType: template.mapType,
+                  ...(template.perspective === null ? {} : { perspective: template.perspective }),
+                },
+                attempt
+              );
+              const recorded = result.recorded;
+              if (result.status === 'success' && recorded !== undefined) {
+                setCaptured((current) =>
+                  appendSessionEvidence(current, {
+                    evidenceId: recorded.evidenceId,
+                    kind: 'damage_map',
+                    summary: template.mapType,
+                  })
+                );
+                await refresh();
+                templateTable.refresh();
+              }
+              return result;
+            }}
+          />
+        )}
       </EvidenceSection>
 
       <EvidenceSection
@@ -526,5 +651,68 @@ function DamageDiagram({
         </span>
       </p>
     </div>
+  );
+}
+
+/**
+ * Choosing which diagram this visit is drawn on (`FE-012`).
+ *
+ * A SELECT and nothing else: the operator picks a template, and the exact
+ * revision that template currently publishes travels with it. There is no
+ * control here for creating, revising or retiring a template — that is
+ * `rec.catalogue.manage` and belongs to whoever administers the workshop, not
+ * to the desk receiving a vehicle.
+ */
+function MapForm({
+  messages,
+  templates,
+  onSubmit,
+}: {
+  readonly messages: Messages;
+  readonly templates: readonly BindableTemplateEntry[];
+  readonly onSubmit: (template: BindableTemplateEntry, attempt: number) => Promise<ActionState>;
+}) {
+  const [chosen, setChosen] = useState(templates[0]?.id ?? '');
+  const [state, setState] = useState<ActionState>({ status: 'idle' });
+  const [attempt, setAttempt] = useState(1);
+  const [pending, startTransition] = useTransition();
+
+  const template = templates.find((entry) => entry.id === chosen) ?? templates[0];
+
+  return (
+    <form
+      className="flex flex-col gap-2"
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (!template) return;
+        startTransition(async () => {
+          const result = await onSubmit(template, attempt);
+          setState(result);
+          setAttempt((current) => current + 1);
+          notifyActionResult(result, messages);
+        });
+      }}
+    >
+      <SelectField
+        label={translate(messages, 'receptions.damage.templateLabel')}
+        value={chosen}
+        onChange={(event) => setChosen(event.target.value)}
+        options={templates.map((entry) => ({
+          value: entry.id,
+          label:
+            entry.perspective === null
+              ? translateDynamic(messages, `receptions.damage.mapType.${entry.mapType}`)
+              : `${translateDynamic(messages, `receptions.damage.mapType.${entry.mapType}`)} · ${entry.perspective}`,
+        }))}
+      />
+      {/* The revision the mark will be anchored to, shown rather than implied. */}
+      <p className="text-caption text-text-muted" dir="ltr">
+        {template?.activeVersionNumber ?? ''}
+      </p>
+      <button type="submit" disabled={pending || !template} className={PRIMARY_BUTTON}>
+        {translate(messages, 'receptions.damage.templateSubmit')}
+      </button>
+      <StepOutcome messages={messages} state={state} />
+    </form>
   );
 }

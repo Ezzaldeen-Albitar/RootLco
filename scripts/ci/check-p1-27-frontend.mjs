@@ -674,15 +674,6 @@ export const FILE_ACCESS_CONSTRUCTS = Object.freeze([
     samples: ["headers.set('content-type', 'multipart/form-data');"],
   },
   {
-    construct: 'file-input',
-    pattern: /type=["']file["']|type=\{\s*["'`]file["'`]\s*\}/,
-    samples: [
-      '<input type="file" name="photo" />',
-      '<input type={\'file\'} name="photo" />',
-      '<input type={"file"} name="photo" />',
-    ],
-  },
-  {
     construct: 'file-reader',
     pattern: /\bFileReader\b/,
     samples: ['const reader = new FileReader();'],
@@ -815,6 +806,54 @@ export const INVENTED_MEDIA_LIMIT_CONSTRUCTS = Object.freeze([
   { construct: 'accept-attribute', pattern: /accept=/, samples: ['<MediaField accept={types} />'] },
 ]);
 
+/**
+ * The file input, on its own, because its exemption has to be.
+ *
+ * ## Why it left `FILE_ACCESS_CONSTRUCTS`
+ *
+ * `P1-OD-025` is RESOLVED and the capture surface it blocked now ships, so a
+ * rule that forbade every file input outright would refuse the thing the Owner
+ * asked for. The block is CONVERTED rather than deleted, and the conversion is
+ * structural: `allow` exempts a FILE from a whole rule, so allow-listing the
+ * capture component against `no-upload-path` would have exempted it from
+ * `FileReader`, `DataTransfer`, drop targets and hand-set multipart encoding
+ * too — six prohibitions traded away to permit one construct.
+ *
+ * Splitting it means the exemption is scoped to the one construct that has to be
+ * permitted, and the capture component remains subject to every other rule. That
+ * is a NARROWER allowance than the one obvious edit would have produced.
+ *
+ * ## What is NOT relaxed
+ *
+ * `no-invented-media-limit` is untouched. The accepted content types and the
+ * size ceiling belong to the category the SERVER publishes; the capture screen
+ * renders and enforces those values and holds no constant of its own, so the
+ * rule that fails a build over an invented ceiling still applies to it in full.
+ */
+export const FILE_INPUT_CONSTRUCTS = Object.freeze([
+  {
+    construct: 'file-input',
+    pattern: /type=["']file["']|type=\{\s*["'`]file["'`]\s*\}/,
+    samples: [
+      '<input type="file" name="photo" />',
+      '<input type={\'file\'} name="photo" />',
+      '<input type={"file"} name="photo" />',
+    ],
+  },
+]);
+
+/**
+ * The ONE component permitted to offer a file input.
+ *
+ * A path, not a directory: an allowance that covered a folder would grow with
+ * whatever was put in it. `apps/web/tests/p1-28-reception-media.test.ts` asserts
+ * this list has exactly one entry and that the file it names exists, so an
+ * allowance for a deleted file cannot sit here looking legitimate.
+ */
+export const FILE_INPUT_ALLOW = Object.freeze([
+  'apps/web/src/features/receptions/components/steps/MediaStep.tsx',
+]);
+
 /** Limit-adjacent source that invents no media policy. */
 export const INVENTED_MEDIA_LIMIT_INNOCENT = Object.freeze([
   'const pageSize = 25;',
@@ -923,8 +962,21 @@ export const RULES = [
      * empty parentheses, so the constructor's one-argument form passed.
      */
     pattern: anyOf(FILE_ACCESS_CONSTRUCTS),
-    what: 'builds an upload path; there is no vehicle media operation and P1-OD-025 is open',
+    what: 'reads file bytes in the browser or builds its own upload transport',
     allow: [],
+  },
+  {
+    id: 'no-unapproved-file-input',
+    /*
+     * The one construct `P1-OD-025` being RESOLVED makes legitimate, and the one
+     * place it is legitimate. Its docblock beside `FILE_INPUT_CONSTRUCTS`
+     * carries why this is a separate rule rather than an `allow` entry on the
+     * one above: `allow` exempts a file from a WHOLE rule, and the capture
+     * component must stay subject to the other six prohibitions.
+     */
+    pattern: anyOf(FILE_INPUT_CONSTRUCTS),
+    what: 'offers a file input outside the single approved capture component',
+    allow: [...FILE_INPUT_ALLOW],
   },
   {
     id: 'no-export-surface',

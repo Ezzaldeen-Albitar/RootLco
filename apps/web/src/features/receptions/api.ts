@@ -41,13 +41,27 @@ import {
   MAX_ZONE,
   MIN_COORD,
   MIN_SOC_PERCENT,
+  CAPTURE_QUALITY_STATUSES,
+  CAPTURE_REQUIREMENTS,
+  MAX_OVERRIDE_REASON,
+  MAX_REPUDIATION_REASON,
   RECEPTION_PARTY_ROLES,
+  SIGNATURE_EVENT_TYPES,
   REFUSAL_TYPES,
   SIGNATURE_CAPTURE_METHODS,
   SIGNATURE_PURPOSES,
   SIGNER_ROLES,
   WARNING_LIGHT_STATES,
   type AuthorizationEntry,
+  type CaptureContract,
+  type CaptureOverrideInput,
+  type CaptureOverrideRecorded,
+  type EvidenceBindingFinalized,
+  type EvidenceBindingInput,
+  type EvidenceBindingRecorded,
+  type SignatureEventInput,
+  type SignatureEventRecorded,
+  type SignatureLedger,
   type AuthorizationInput,
   type AuthorizationRecorded,
   type CloseReceptionInput,
@@ -717,3 +731,212 @@ async function closeVisit(
  * need the vocabulary imports `EVIDENCE_KINDS` from `receptions-contract.ts`,
  * where the contract test already holds it to the operation's own union.
  */
+
+/* ------------------------------------------------------------------ *
+ * The reception capture contract — Owner decisions FE-012 / FE-017 / FE-018
+ * ------------------------------------------------------------------ */
+
+/**
+ * What this visit still owes (`rec.reception-evidence-binding-list`).
+ *
+ * One read, four answers: the resolved capture policy for the visit's branch,
+ * every binding with its version state, every override, and the damage-map
+ * templates the visit may be bound to. `satisfied` counts FINALIZED bindings
+ * only, so a screen cannot report a visit complete on the strength of versions
+ * that are still pending.
+ *
+ * This is also FE-012's template read. The `rec.catalogue.manage` catalogue is
+ * NOT the reception desk's to open — deciding which diagram the workshop draws
+ * on is a configuration act with a long tail, and the route that publishes it
+ * says so. What a receptionist needs is the bindable set for THIS visit, and it
+ * arrives here, behind `rec.reception.read`.
+ */
+export async function readCaptureContract(
+  receptionId: string
+): Promise<ReadState<CaptureContract>> {
+  return readOperation<CaptureContract>(visitPath(receptionId, '/evidence-bindings'));
+}
+
+/** The signature ledger of one visit (`rec.reception-signature-list`). */
+export async function readSignatures(receptionId: string): Promise<ReadState<SignatureLedger>> {
+  return readOperation<SignatureLedger>(visitPath(receptionId, '/signatures'));
+}
+
+const bindingSchema = z
+  .object({
+    requirementCode: z.enum(CAPTURE_REQUIREMENTS),
+    documentId: uuid,
+    documentVersionId: uuid,
+    deviceCapturedAt: z.string().min(1).max(64).nullable().optional(),
+    qualityStatus: z.enum(CAPTURE_QUALITY_STATUSES).optional(),
+  })
+  .strict();
+
+export interface EvidenceBindingState extends ActionState {
+  readonly recorded?: EvidenceBindingRecorded;
+}
+
+/**
+ * Bind an exact immutable version to one capture requirement
+ * (`rec.reception-evidence-binding`).
+ *
+ * The binding is created UNFINALIZED, always. Recording what was captured and
+ * declaring it sufficient are two acts with two audit records, and the second is
+ * refused unless the version has been ACCEPTED — which is why this adapter takes
+ * no `finalized` flag to pass through.
+ */
+export async function bindEvidence(
+  receptionId: string,
+  input: EvidenceBindingInput,
+  attempt = 1
+): Promise<EvidenceBindingState> {
+  const parsed = bindingSchema.safeParse(input);
+  if (!parsed.success) return invalid(fieldErrorsFrom(parsed.error), attempt);
+
+  const client = await authorizedClient();
+  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
+
+  const result = await client.send<EvidenceBindingRecorded>(
+    'POST',
+    visitPath(receptionId, '/evidence-bindings'),
+    parsed.data
+  );
+  if (!result.ok) return fromFailure(result, attempt);
+
+  return { status: 'success', correlationId: result.correlationId, attempt, recorded: result.data };
+}
+
+export interface EvidenceFinalizeState extends ActionState {
+  readonly finalized?: EvidenceBindingFinalized;
+}
+
+/**
+ * Declare a binding sufficient (`rec.reception-evidence-binding-finalize`).
+ *
+ * The act that makes the evidence COUNT against its requirement. Refused unless
+ * the bound version is accepted, and refused twice on the same binding — both by
+ * the database, which is why this adapter neither pre-checks nor pretends to.
+ */
+export async function finalizeEvidenceBinding(
+  receptionId: string,
+  bindingId: string,
+  attempt = 1
+): Promise<EvidenceFinalizeState> {
+  if (!uuid.safeParse(bindingId).success) {
+    return invalid({ bindingId: 'form.invalid' }, attempt);
+  }
+
+  const client = await authorizedClient();
+  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
+
+  const result = await client.send<EvidenceBindingFinalized>(
+    'POST',
+    visitPath(receptionId, `/evidence-bindings/${encodeURIComponent(bindingId)}/finalization`),
+    {}
+  );
+  if (!result.ok) return fromFailure(result, attempt);
+
+  return {
+    status: 'success',
+    correlationId: result.correlationId,
+    attempt,
+    finalized: result.data,
+  };
+}
+
+const overrideSchema = z
+  .object({
+    requirementCode: z.enum(CAPTURE_REQUIREMENTS),
+    reason: z.string().trim().min(1).max(MAX_OVERRIDE_REASON),
+  })
+  .strict();
+
+export interface CaptureOverrideState extends ActionState {
+  readonly recorded?: CaptureOverrideRecorded;
+}
+
+/**
+ * Waive a required capture, with a reason (`rec.reception-capture-override`).
+ *
+ * A SEPARATE authority from performing one: `rec.reception.evidence.override`,
+ * not `rec.reception.evidence.manage`. A receptionist who may photograph a
+ * vehicle must not thereby be able to record that no photograph was needed, and
+ * the two codes are what keeps those apart.
+ *
+ * The reason is required and stored. An override with no attribution is
+ * indistinguishable afterwards from a requirement nobody noticed.
+ */
+export async function overrideCaptureRequirement(
+  receptionId: string,
+  input: CaptureOverrideInput,
+  attempt = 1
+): Promise<CaptureOverrideState> {
+  const parsed = overrideSchema.safeParse(input);
+  if (!parsed.success) return invalid(fieldErrorsFrom(parsed.error), attempt);
+
+  const client = await authorizedClient();
+  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
+
+  const result = await client.send<CaptureOverrideRecorded>(
+    'POST',
+    visitPath(receptionId, '/capture-overrides'),
+    parsed.data
+  );
+  if (!result.ok) return fromFailure(result, attempt);
+
+  return { status: 'success', correlationId: result.correlationId, attempt, recorded: result.data };
+}
+
+const signatureEventSchema = z
+  .object({
+    eventType: z.enum(SIGNATURE_EVENT_TYPES),
+    reason: z.string().trim().min(1).max(MAX_REPUDIATION_REASON).nullable().optional(),
+  })
+  .strict();
+
+export interface SignatureEventState extends ActionState {
+  readonly recorded?: SignatureEventRecorded;
+}
+
+/**
+ * Finalize or repudiate one signature (`rec.reception-signature-event`).
+ *
+ * Both directions through one command because they are one ledger, and the
+ * ordering rules between them — finalize once, repudiate only what was
+ * finalized, never finalize what was repudiated — belong to
+ * `rec.guard_signature_event()` where a second code path cannot avoid them.
+ *
+ * A repudiation REQUIRES a reason and a finalization refuses one. Checked here
+ * so the operator is told which field is wrong, and checked again by the module,
+ * which is the authority.
+ */
+export async function recordSignatureEvent(
+  receptionId: string,
+  signatureId: string,
+  input: SignatureEventInput,
+  attempt = 1
+): Promise<SignatureEventState> {
+  if (!uuid.safeParse(signatureId).success) {
+    return invalid({ signatureId: 'form.invalid' }, attempt);
+  }
+  const parsed = signatureEventSchema.safeParse(input);
+  if (!parsed.success) return invalid(fieldErrorsFrom(parsed.error), attempt);
+  if (parsed.data.eventType === 'repudiated' && !parsed.data.reason) {
+    return invalid({ reason: 'form.required' }, attempt);
+  }
+  if (parsed.data.eventType === 'finalized' && parsed.data.reason) {
+    return invalid({ reason: 'form.notAllowed' }, attempt);
+  }
+
+  const client = await authorizedClient();
+  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
+
+  const result = await client.send<SignatureEventRecorded>(
+    'POST',
+    visitPath(receptionId, `/signatures/${encodeURIComponent(signatureId)}/events`),
+    parsed.data
+  );
+  if (!result.ok) return fromFailure(result, attempt);
+
+  return { status: 'success', correlationId: result.correlationId, attempt, recorded: result.data };
+}

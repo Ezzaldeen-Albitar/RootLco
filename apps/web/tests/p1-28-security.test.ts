@@ -897,6 +897,7 @@ function fullCapabilities(over: Partial<CheckInCapabilities>): CheckInCapabiliti
     readCustomers: true,
     readVehicles: true,
     manageEvidence: true,
+    overrideEvidence: true,
     viewSensitiveNarratives: true,
     manageSignatures: true,
     recordOdometer: true,

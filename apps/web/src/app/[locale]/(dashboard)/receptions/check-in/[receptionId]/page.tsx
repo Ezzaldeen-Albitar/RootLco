@@ -137,6 +137,9 @@ export default async function CheckInWizardPage({
         readCustomers: holds(session.permissions, CRM_PERMISSIONS.customerRead),
         readVehicles: holds(session.permissions, VEHICLE_PERMISSIONS.vehicleRead),
         manageEvidence: holds(session.permissions, RECEPTION_PERMISSIONS.evidenceManage),
+        // A SEPARATE code, deliberately: performing a capture and recording
+        // that none was needed are different authorities (`FE-017`).
+        overrideEvidence: holds(session.permissions, RECEPTION_PERMISSIONS.evidenceOverride),
         // `P1-28-SEC-002` / WF-27. The SECOND permission the complaint and
         // contents writes need — the operation's own check passes without it and
         // the database then refuses the narrative row. Resolved here with every

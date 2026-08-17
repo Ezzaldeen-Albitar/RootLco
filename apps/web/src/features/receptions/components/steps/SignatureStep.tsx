@@ -2,11 +2,12 @@
 
 import { useCallback } from 'react';
 import { INITIAL_REQUEST, type TableRequest } from '@/components/data-table/table-state';
-import { useServerTable } from '@/components/data-table/use-server-table';
+import { useServerTable, type ServerPage } from '@/components/data-table/use-server-table';
 import { PartyLabel } from '@/components/party/PartyLabel';
 import { translate, translateDynamic } from '@/i18n/get-messages';
-import { listPartyRoles } from '../../api';
+import { listPartyRoles, readSignatures } from '../../api';
 import {
+  type SignatureEntry,
   MAX_SIGNATURE_HASH_INPUT,
   SIGNATURE_CAPTURE_METHODS,
   SIGNATURE_PURPOSES,
@@ -92,6 +93,30 @@ export function SignatureStep({ locale, messages, visitId, recordVersion }: Chec
     loadKey: `${visitId}:${recordVersion}`,
   });
 
+  /*
+   * The signature ledger (`rec.reception-signature-list`, `FE-018`).
+   *
+   * EVERY signature, including superseded and repudiated ones. Hiding a
+   * superseded signature would be the overwrite the Owner decision forbids,
+   * achieved through a read filter instead of an UPDATE — so the panel shows
+   * the whole ledger and says what became of each entry.
+   */
+  const loadLedger = useCallback(async (): Promise<ServerPage<SignatureEntry>> => {
+    const read = await readSignatures(visitId);
+    return {
+      status: read.status === 'ok' && read.data === null ? 'not-found' : read.status,
+      rows: read.status === 'ok' && read.data !== null ? read.data.signatures : [],
+      nextCursor: null,
+      hasMore: false,
+      correlationId: read.correlationId,
+    };
+  }, [visitId]);
+  const ledger = useServerTable<SignatureEntry>(loadLedger, {
+    initial: { ...INITIAL_REQUEST, pageSize: 50 },
+    loadKey: `${visitId}:${recordVersion}`,
+  });
+  const signatures = ledger.response?.rows ?? [];
+
   const rows = parties.response?.rows ?? [];
 
   return (
@@ -101,26 +126,50 @@ export function SignatureStep({ locale, messages, visitId, recordVersion }: Chec
         messages={messages}
         headingKey="receptions.signature.heading"
       >
-        <div
-          role="note"
-          data-testid="signature-blocked"
-          className="rounded-md border border-border bg-surface-subtle p-3"
-        >
-          <p className="text-body text-text-primary" lang={locale}>
-            {translate(messages, 'receptions.signature.blocked')}
+        {ledger.status !== 'idle' ? (
+          <EvidenceStates
+            messages={messages}
+            status={ledger.status}
+            correlationId={ledger.correlationId}
+            onRetry={ledger.refresh}
+          />
+        ) : signatures.length === 0 ? (
+          <p data-testid="signature-none" className="text-caption" lang={locale}>
+            {translate(messages, 'receptions.signature.none')}
           </p>
-          <p className="mt-2 text-caption text-text-muted" lang={locale}>
-            {/* "registered, pending" — never "uploaded". P1-OD-025 is open. */}
-            {translate(messages, 'receptions.signature.mediaState')}
-          </p>
-          <p className="mt-2 text-caption text-text-muted" lang={locale}>
-            {translate(messages, 'receptions.signature.decision')}
-          </p>
-        </div>
-
-        <p className="text-caption text-text-muted" lang={locale}>
-          {translate(messages, 'receptions.signature.noReadBack')}
-        </p>
+        ) : (
+          <ul data-testid="signature-ledger" className="flex flex-col gap-2">
+            {signatures.map((entry) => (
+              <li key={entry.id} className="rounded-md border border-border p-2 text-caption">
+                <p className="text-body text-text-primary">
+                  {translateDynamic(messages, `receptions.signature.role.${entry.signerRole}`)}
+                  {' · '}
+                  {translateDynamic(messages, `receptions.signature.purpose.${entry.purpose}`)}
+                </p>
+                {/* What became of it — a repudiated signature stays on the
+                    ledger, because removing it would be the overwrite the
+                    Owner decision forbids. */}
+                <p className="text-text-secondary">
+                  {translateDynamic(messages, `receptions.signature.status.${entry.status}`)}
+                  {entry.replacedBySignatureId !== null
+                    ? ` · ${translate(messages, 'receptions.signature.superseded')}`
+                    : ''}
+                </p>
+                {/* The bound VERSION state. A signature whose evidence is not
+                    accepted is not final, and this is where that shows. */}
+                <p className="text-text-muted">
+                  {translateDynamic(
+                    messages,
+                    `receptions.capture.version.${entry.documentVersionStatus}`
+                  )}
+                </p>
+                {entry.repudiationReason !== null ? (
+                  <p className="text-text-muted">{entry.repudiationReason}</p>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        )}
 
         <dl className="grid gap-x-6 gap-y-2 sm:grid-cols-2">
           <div>
