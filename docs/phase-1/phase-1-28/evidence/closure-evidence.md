@@ -33,13 +33,13 @@ the candidate, and refuses either half that fails to name an unclosed task.
 
 ## The frozen candidate
 
-| Binding           | Value                                                                                 |
-| ----------------- | ------------------------------------------------------------------------------------- |
-| `FINAL_CODE_SHA`  | `45c8f533d4507bdc56fa8480c54387f71980d933`                                            |
-| `FINAL_CODE_TREE` | `c5d925eb818c8c62d1005a42f89508e7b2e936eb`                                            |
-| Branch            | `remediation/p1-15-reception-document-foundation`                                     |
-| Pull request      | **#232**, base `develop`, 25 commits ahead                                            |
-| Subject           | `fix(p1-15): grant the column the register writes, and stop narrowing two operations` |
+| Binding           | Value                                                                              |
+| ----------------- | ---------------------------------------------------------------------------------- |
+| `FINAL_CODE_SHA`  | `99aee45562c9f3efb13ac1ae7e30c9fdcabdc294`                                         |
+| `FINAL_CODE_TREE` | `03f2dc2e73782aa7e24e4f9670640cfef593d072`                                         |
+| Branch            | `remediation/p1-15-reception-document-foundation`                                  |
+| Pull request      | **#232**, base `develop`, 25 commits ahead                                         |
+| Subject           | `fix(p1-27): move the CURRENT counts to 122, and leave every historical one alone` |
 
 The previous candidate was `7b1252edebb5d7f48451213c71ab832cb44e46b5`, tree
 `1ef831d2ecfcf94d07b73857b7448c3b424faca3`, on
