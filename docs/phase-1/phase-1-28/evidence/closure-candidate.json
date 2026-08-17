@@ -202,17 +202,17 @@
     "unit": {
       "label": "root unit and foundation",
       "tests": 2681,
-      "passed": 2681,
-      "failed": 0,
+      "passed": 2679,
+      "failed": 2,
       "skipped": 0,
       "files": 101,
-      "measuredAtCommit": "0807a44082f53b960ea5d0678880a7dd32b362f4",
+      "measuredAtCommit": "d5767747441d93d2423fb2706454818b733da8e4",
       "provenance": "LOCAL_COMPUTED_HOSTED_PENDING",
       "localLedger": {
         "path": "docs/phase-1/phase-1-27/evidence/local-run-ledger.json",
         "tier": "unit",
-        "atCommit": "f8c1b95f10781a3917a3037ef635519a0e37ccd9",
-        "howChecked": "`git show f8c1b95f10781a3917a3037ef635519a0e37ccd9:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD when this measurement was recorded, rather than the working copy, which would let an uncommitted edit vouch for itself."
+        "atCommit": "56574d2e343f3676cfe20e3f2ae23c0060f1dd50",
+        "howChecked": "`git show 56574d2e343f3676cfe20e3f2ae23c0060f1dd50:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD when this measurement was recorded, rather than the working copy, which would let an uncommitted edit vouch for itself."
       },
       "hostedAttestation": {
         "runId": 31885987461,
@@ -223,7 +223,7 @@
         "describesSupersededHead": true,
         "supersededBy": "The hosted run taken at a head that DESCENDS from candidate 526a3b39 — the pull request CI for branch `p1-28/od-025-policy-enforcement`. Until that run exists this figure describes an ancestor and is cited as such; it is replaced by re-citing the same fields (run id, job id, head, artefact) at the descending head, never by relaxing the rule that refused it."
       },
-      "note": "Measured at fa1584d8, a documentation-only successor of the candidate: the commits between them carry evidence records and nothing executable."
+      "note": "Measured at d5767747, a documentation-only successor of the candidate: the commits between them carry evidence records and nothing executable."
     },
     "web": {
       "label": "web component and DOM",
@@ -232,13 +232,13 @@
       "failed": 0,
       "skipped": 0,
       "files": 98,
-      "measuredAtCommit": "0807a44082f53b960ea5d0678880a7dd32b362f4",
+      "measuredAtCommit": "255c911ecb981929e921c416bd382e18e9ad4aa2",
       "provenance": "LOCAL_COMPUTED_HOSTED_PENDING",
       "localLedger": {
         "path": "docs/phase-1/phase-1-27/evidence/local-run-ledger.json",
         "tier": "web",
-        "atCommit": "f8c1b95f10781a3917a3037ef635519a0e37ccd9",
-        "howChecked": "`git show f8c1b95f10781a3917a3037ef635519a0e37ccd9:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD when this measurement was recorded, rather than the working copy, which would let an uncommitted edit vouch for itself."
+        "atCommit": "56574d2e343f3676cfe20e3f2ae23c0060f1dd50",
+        "howChecked": "`git show 56574d2e343f3676cfe20e3f2ae23c0060f1dd50:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD when this measurement was recorded, rather than the working copy, which would let an uncommitted edit vouch for itself."
       },
       "hostedAttestation": {
         "runId": 31885987461,
@@ -249,7 +249,11 @@
         "describesSupersededHead": true,
         "supersededBy": "The hosted run taken at a head that DESCENDS from candidate 526a3b39 — the pull request CI for branch `p1-28/od-025-policy-enforcement`. Until that run exists this figure describes an ancestor and is cited as such; it is replaced by re-citing the same fields (run id, job id, head, artefact) at the descending head, never by relaxing the rule that refused it."
       },
-      "note": "Measured at 255c911e, a documentation-only successor of the candidate: the commits between them carry evidence records and nothing executable."
+      "note": "Measured at 255c911e, a documentation-only successor of the candidate: the commits between them carry evidence records and nothing executable.",
+      "measurementDrift": [
+        "apps/api/src/modules/reception/domain/reception.ts",
+        "scripts/ci/check-phase-ownership.mjs"
+      ]
     },
     "backend": {
       "label": "backend integration, against a real PostgreSQL",
