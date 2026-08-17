@@ -8,10 +8,20 @@
  * because a proof that edits the repository to prove a point can lose the edit.
  *
  * The eleven negatives the Owner adjudication requires are cases 1-11; case 12 is
- * the forward-looking one, that removing the future adapter after FE-007
- * integration makes reachability red again. Reachability itself is measured in
+ * the forward-looking one, that removing an adapter after integration makes
+ * reachability red again. Reachability itself is measured in
  * `apps/web/tests/p1-28-qa.test.ts`, which runs the adapters; the staleness half
  * of case 6/7 is asserted there, and case 12 here proves the shape of it.
+ *
+ * ## The entry under test moves as the lifecycle empties
+ *
+ * It was `rec.receiving-employee-list` / FE-007, and the FE-007 integration
+ * DELETED that entry — which is the lifecycle working, and which took eleven
+ * cases red with it because they mutated an entry that no longer existed. That
+ * is the anti-vacuity case doing its job on this file rather than on the gate:
+ * a suite pointed at a pending entry must fail loudly when the entry is wired,
+ * not quietly test nothing. `OPERATION` and `TASK` below are the two knobs, and
+ * they move to whichever entry is still pending until none is.
  */
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -39,7 +49,15 @@ interface Entry {
   reason?: string | undefined;
 }
 
-const OPERATION = 'rec.receiving-employee-list';
+/**
+ * The pending entry every mutation below is applied to.
+ *
+ * FE-018 owns it and is still PARTIAL, which cases 8 and 9 depend on: they
+ * assert the gate refuses a PASS while the task still owes an adapter, and a
+ * task that had already closed would make both vacuous.
+ */
+const OPERATION = 'rec.reception-signature-list';
+const TASK = 'FE-018';
 
 /** The real inputs, so a mutation is one edit away from the shipped truth. */
 function world(): Record<string, unknown> {
@@ -199,12 +217,12 @@ describe('P1-28 adapter reachability — the gate can be made to fail', () => {
     expect(suite).toMatch(/reached\.add\(operation\.operationId\)/);
   });
 
-  it('8. refuses FE-007 being marked PASS while its operation is pending', () => {
+  it('8. refuses the owning task being marked PASS while its operation is pending', () => {
     const base = world();
     const verdicts = structuredClone(base.verdicts) as Record<string, { FINAL_VERDICT?: string }>;
-    verdicts['FE-007'] = { ...(verdicts['FE-007'] ?? {}), FINAL_VERDICT: 'PASS' };
+    verdicts[TASK] = { ...(verdicts[TASK] ?? {}), FINAL_VERDICT: 'PASS' };
     expect(problemsOf({ ...base, verdicts }).join('\n')).toMatch(
-      /canonical task P1-28-FE-007 is recorded PASS/
+      new RegExp(`canonical task P1-28-${TASK} is recorded PASS`)
     );
   });
 
@@ -222,12 +240,12 @@ describe('P1-28 adapter reachability — the gate can be made to fail', () => {
     for (const key of Object.keys(verdicts))
       verdicts[key] = { ...(verdicts[key] ?? {}), FINAL_VERDICT: 'PASS' };
     expect(problemsOf({ ...base, verdicts }).join('\n')).toMatch(
-      /canonical task P1-28-FE-007 is recorded PASS/
+      new RegExp(`canonical task P1-28-${TASK} is recorded PASS`)
     );
     // And the shipped world really does still carry a PARTIAL, so the claim this
     // case refuses is a claim somebody could otherwise have made.
     const shipped = world().verdicts as Record<string, { FINAL_VERDICT?: string }>;
-    expect(shipped['FE-007']?.FINAL_VERDICT).toBe('PARTIAL');
+    expect(shipped[TASK]?.FINAL_VERDICT).toBe('PARTIAL');
   });
 
   it('10. refuses closure while pending remains, because closure needs the task closed', () => {
@@ -308,7 +326,7 @@ describe('P1-28 adapter reachability — the gate can be made to fail', () => {
 
   it('16. keeps the two non-REACHABLE states mutually exclusive', () => {
     // DELIBERATELY_ABSENT means no canonical task binds it. This operation is now
-    // bound by FE-007, so the same entry re-labelled must be refused — otherwise
+    // bound by a canonical task, so the same entry re-labelled must be refused —
     // an unfinished operation could be parked as a decision.
     expect(problemsOf(withEntry({ classification: 'DELIBERATELY_ABSENT' })).join('\n')).toMatch(
       /DELIBERATELY_ABSENT_BUT_BOUND/
@@ -323,7 +341,7 @@ describe('P1-28 adapter reachability — the gate can be made to fail', () => {
 });
 
 describe('P1-28 adapter reachability — the helpers mean what the gate assumes', () => {
-  it('binds the operation to FE-007 in the generated matrix, not merely in prose', () => {
+  it('binds the operation to its canonical task in the generated matrix, not merely in prose', () => {
     const matrix = world().matrix as Parameters<typeof boundByCanonicalTask>[0];
     expect(boundByCanonicalTask(matrix, OPERATION)).toBe(true);
     expect(boundByCanonicalTask(matrix, 'rec.not-a-real-operation')).toBe(false);

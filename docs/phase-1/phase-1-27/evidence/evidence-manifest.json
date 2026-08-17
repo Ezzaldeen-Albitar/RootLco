@@ -48,7 +48,7 @@
       "bytes": 24145
     },
     "docs/phase-1/phase-1-27/deliverable-manifest.md": {
-      "sha256": "88170318ec9f375da0329b628c399d1501ed8d205523417c8363c1d3a48e61ad",
+      "sha256": "cb06398052e8aa20221b6e3d6f5a8e4c79084b8921e5cab6c77082aef3198472",
       "bytes": 144646
     },
     "docs/phase-1/phase-1-27/developer-guide.md": {
@@ -120,7 +120,7 @@
       "bytes": 14530
     },
     "docs/phase-1/phase-1-27/open-decisions.md": {
-      "sha256": "b1c6f305db15dc096fa8d15beeeee8f02c12363ca930e7e86cbf9b70924362e6",
+      "sha256": "c4cb715db281dffbf00b4cf9dded172ec8828d5b34751ff6995aaa2e6609d4f5",
       "bytes": 124614
     },
     "docs/phase-1/phase-1-27/operator-guide.md": {
@@ -132,7 +132,7 @@
       "bytes": 5776
     },
     "docs/phase-1/phase-1-27/owner-acceptance-fail-remediation.md": {
-      "sha256": "cbd69bd5a8cd1d62324dbce8fbd7649a359c171e254e2db07e94e97933f33c64",
+      "sha256": "4760d3e3454bb7f332880cd98eb774bf332310c81457a2dbaa35e3f3fa5bcd83",
       "bytes": 13549
     },
     "docs/phase-1/phase-1-27/p1-27-int-113-unregistered-rate-limit-policy.md": {
@@ -152,7 +152,7 @@
       "bytes": 62211
     },
     "docs/phase-1/phase-1-27/risk-register.md": {
-      "sha256": "9411a5d5006eda81485bac286722467c46125fa846c672a6753b6fd7a5f455a2",
+      "sha256": "192b311725c02645422815bc7f00b52f6249ea334109b321384a409a0194e693",
       "bytes": 187800
     },
     "docs/phase-1/phase-1-27/task-matrix-verdicts.json": {
