@@ -331,6 +331,25 @@ export function run(injected = {}) {
     const base = entry.introducedAgainstBase;
     if (typeof base !== 'string' || base.length === 0) {
       problem(`${where}: names no \`introducedAgainstBase\`, so "new here" cannot be checked.`);
+    } else if (!/^[0-9a-f]{40}$/.test(base)) {
+      /*
+       * The base must be an IMMUTABLE commit, never a branch name.
+       *
+       * This entry originally named `origin/develop`, and the claim was true on
+       * the pull request and FALSE the instant the merge landed — develop then
+       * contained the operation, so this gate refused its own entry on protected
+       * develop and took the reproof down with it. A moving reference cannot
+       * support a statement about what a branch INTRODUCED, because the thing it
+       * points at is exactly what the merge changed.
+       *
+       * Refusing the shape rather than the one instance is the point: a full
+       * 40-character sha is the only kind of base whose answer cannot drift.
+       */
+      problem(
+        `${where}: \`introducedAgainstBase\` is \`${base}\`, which is not a full 40-character ` +
+          'commit sha. A moving ref answers differently before and after the merge, so it ' +
+          'cannot support a claim about what this branch introduced. Pin the commit.'
+      );
     } else {
       const isNew = introducedHere(id, base);
       if (isNew === null) {
