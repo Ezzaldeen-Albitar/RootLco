@@ -11,9 +11,9 @@
       "failed": 2,
       "skipped": 0,
       "files": 101,
-      "measuredAtCommit": "0d04ffc3cd9ac84e0772c50cfa1c4417299c0682",
+      "measuredAtCommit": "c10671f6f32ed2527bf9c739c679b014a578b929",
       "dirtyExecutablePaths": [],
-      "measuredAt": "2026-08-17T09:10:17.204Z"
+      "measuredAt": "2026-08-17T09:18:22.977Z"
     },
     "web": {
       "command": "npm run test --workspace @rootlco/web -- --reporter=json",
