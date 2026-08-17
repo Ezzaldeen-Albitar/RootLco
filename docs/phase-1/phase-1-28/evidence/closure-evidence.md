@@ -33,13 +33,13 @@ the candidate, and refuses either half that fails to name an unclosed task.
 
 ## The frozen candidate
 
-| Binding           | Value                                                      |
-| ----------------- | ---------------------------------------------------------- |
-| `FINAL_CODE_SHA`  | `3ca04325241389e7d8d83efd9c3e7f27acda51e2`                 |
-| `FINAL_CODE_TREE` | `74ea1fafbff58f51323f85753b35174ffd6147b7`                 |
-| Branch            | `remediation/p1-15-reception-document-foundation`          |
-| Pull request      | **#232**, base `develop`, 25 commits ahead                 |
-| Subject           | `test(ci): the route and operation pins move to 249 / 305` |
+| Binding           | Value                                                                       |
+| ----------------- | --------------------------------------------------------------------------- |
+| `FINAL_CODE_SHA`  | `4174cb15b5f50f5be7ec1dcce3c6700f15c560b8`                                  |
+| `FINAL_CODE_TREE` | `fd66f3a30d66029af78da3046fe6e44667d4015f`                                  |
+| Branch            | `remediation/p1-15-reception-document-foundation`                           |
+| Pull request      | **#232**, base `develop`, 25 commits ahead                                  |
+| Subject           | `style: format the canonical plan and the QA suite in their own workspaces` |
 
 The previous candidate was `7b1252edebb5d7f48451213c71ab832cb44e46b5`, tree
 `1ef831d2ecfcf94d07b73857b7448c3b424faca3`, on
