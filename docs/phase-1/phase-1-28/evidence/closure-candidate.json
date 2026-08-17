@@ -187,8 +187,8 @@
       "localLedger": {
         "path": "docs/phase-1/phase-1-27/evidence/local-run-ledger.json",
         "tier": "unit",
-        "atCommit": "bb35ac60194539b2654d3672af32f5589712e763",
-        "howChecked": "`git show bb35ac60194539b2654d3672af32f5589712e763:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD when this measurement was recorded, rather than the working copy, which would let an uncommitted edit vouch for itself."
+        "atCommit": "d2593fc93aa7a0cbeffc0901e0110d900e2d1103",
+        "howChecked": "`git show d2593fc93aa7a0cbeffc0901e0110d900e2d1103:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD when this measurement was recorded, rather than the working copy, which would let an uncommitted edit vouch for itself."
       },
       "hostedAttestation": {
         "runId": 31885987461,
@@ -208,13 +208,13 @@
       "failed": 0,
       "skipped": 0,
       "files": 98,
-      "measuredAtCommit": "4621768e63440a350eb25e0a8842861653dbe929",
+      "measuredAtCommit": "bf744ded5d0c6808d6dfa8bb7e9fd9dc69a8a950",
       "provenance": "LOCAL_COMPUTED_HOSTED_PENDING",
       "localLedger": {
         "path": "docs/phase-1/phase-1-27/evidence/local-run-ledger.json",
         "tier": "web",
-        "atCommit": "bb35ac60194539b2654d3672af32f5589712e763",
-        "howChecked": "`git show bb35ac60194539b2654d3672af32f5589712e763:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD when this measurement was recorded, rather than the working copy, which would let an uncommitted edit vouch for itself."
+        "atCommit": "d2593fc93aa7a0cbeffc0901e0110d900e2d1103",
+        "howChecked": "`git show d2593fc93aa7a0cbeffc0901e0110d900e2d1103:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD when this measurement was recorded, rather than the working copy, which would let an uncommitted edit vouch for itself."
       },
       "hostedAttestation": {
         "runId": 31885987461,
@@ -225,7 +225,7 @@
         "describesSupersededHead": true,
         "supersededBy": "The hosted run taken at a head that DESCENDS from candidate 526a3b39 — the pull request CI for branch `p1-28/od-025-policy-enforcement`. Until that run exists this figure describes an ancestor and is cited as such; it is replaced by re-citing the same fields (run id, job id, head, artefact) at the descending head, never by relaxing the rule that refused it."
       },
-      "note": "Measured at 4621768e, a documentation-only successor of the candidate: the commits between them carry evidence records and nothing executable."
+      "note": "Measured at bf744ded, a documentation-only successor of the candidate: the commits between them carry evidence records and nothing executable."
     },
     "backend": {
       "label": "backend integration, against a real PostgreSQL",
