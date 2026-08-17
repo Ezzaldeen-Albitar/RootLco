@@ -691,8 +691,9 @@ describe('the detail and the If-Match round trip', () => {
       'id',
       'odometerReadingId',
       'origin',
-      'receivingEmployeeId',
+      // Sorted, because the assertion sorts: 'D' precedes 'I'.
       'receivingEmployeeDisplayName',
+      'receivingEmployeeId',
       'receptionStatus',
       'recordVersion',
       'updatedAt',
