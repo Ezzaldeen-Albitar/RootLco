@@ -165,12 +165,12 @@ export const READ_DRIVES: readonly AdapterDrive[] = Object.freeze([
   {
     name: 'listReceivingEmployeeCandidates',
     channel: 'get',
-    call: () => recSupport.listReceivingEmployeeCandidates('  ', REQUEST, null),
+    call: () => recSupport.listReceivingEmployeeCandidates(TARGET, REQUEST, null),
   },
   {
-    name: 'readReceivingEmployeeIdentity',
+    name: 'readUserIdentity',
     channel: 'get',
-    call: () => recSupport.readReceivingEmployeeIdentity(EMPLOYEE),
+    call: () => recSupport.readUserIdentity(EMPLOYEE),
   },
   {
     name: 'listConfirmedAppointments',

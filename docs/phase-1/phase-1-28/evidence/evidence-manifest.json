@@ -47,8 +47,8 @@
   "fileCount": 15,
   "files": {
     "docs/phase-1/phase-1-28/adapter-reachability.json": {
-      "sha256": "db8ae260a089144b1cd8203934ed1eedb6b89571368d07db2e07ba4b223ffb19",
-      "bytes": 9611
+      "sha256": "c751ff0668850514b4fdb5c7195f147b74fa8387b9dcfcc66399d97465909419",
+      "bytes": 7761
     },
     "docs/phase-1/phase-1-28/canonical-plan.md": {
       "sha256": "8086aca74af716cf9ae9227ae84a2d41f3adf73a5a4494c4a82dafa06dc3fa1c",
@@ -91,8 +91,8 @@
       "bytes": 13381
     },
     "docs/phase-1/phase-1-28/operator-guide.md": {
-      "sha256": "a5a1b18fcd1d82492696d7e52c93396d2b91cd20d3c44497060a1016532353ac",
-      "bytes": 15930
+      "sha256": "8e4fa049cfdb7f7434789fc1bdfab59afc40400f0e2bab6f3b164e461f6bf017",
+      "bytes": 16213
     },
     "docs/phase-1/phase-1-28/task-matrix-verdicts.json": {
       "sha256": "d3352e5885ffe02ea214808fc499fd54d728fb37194dedc8d51aed6158a34cee",

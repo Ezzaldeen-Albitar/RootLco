@@ -1209,6 +1209,10 @@ describe('P1-28-QA-003 — scope is resolved by the server, and asserted by nobo
       'createReception',
       'listAppointments',
       'listConfirmedAppointments',
+      // FE-007: the receiving-employee picker is BRANCH-targeted. It is on this
+      // list because it now carries the pair — the read it replaced was
+      // tenant-scoped and carried nothing, which was the disclosure.
+      'listReceivingEmployeeCandidates',
       'listReceptions',
     ]);
   });

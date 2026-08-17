@@ -1197,8 +1197,24 @@ export interface ReceptionDetail {
   readonly fuelLevelName: string | null;
   /** `numeric(5,2)` — a STRING on the wire, never a JS float. */
   readonly evSocPercent: string | null;
-  /** Bare id — the column has no FK, so no label can be joined honestly (G-EMP). */
   readonly receivingEmployeeId: string;
+  /**
+   * The custodian's name AS IT WAS when custody was accepted (Owner decision
+   * FE-007, `DBCR-P1-18-002`).
+   *
+   * A SNAPSHOT, not a join. `rec.stamp_receiving_employee_identity()` writes it
+   * at insert from `iam.user_accounts.display_name` and
+   * `tg_reception_visits_receiving_employee` refuses to let it be edited
+   * afterwards, so a later rename or a disabled account cannot rewrite who a
+   * customer was told received their vehicle. That is why the acknowledgement
+   * sheet reads THIS field rather than resolving the id: the sheet is evidence
+   * of a handover that already happened.
+   *
+   * `NOT NULL` with a non-blank CHECK, and the id now carries a same-tenant
+   * foreign key, so the dangling-identifier state G-EMP described is no longer
+   * reachable — see `check-in/receiving-employee.ts` for what that removed.
+   */
+  readonly receivingEmployeeDisplayName: string;
   readonly custodyAcceptedAt: string;
   readonly custodyReleasedAt: string | null;
   readonly recordVersion: number;

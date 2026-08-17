@@ -180,6 +180,7 @@ const DETAIL: ReceptionDetail = {
   fuelLevelName: null,
   evSocPercent: null,
   receivingEmployeeId: 'user-77',
+  receivingEmployeeDisplayName: 'Dana Receiver',
   custodyAcceptedAt: '2026-08-13T07:00:00.000Z',
   custodyReleasedAt: null,
   recordVersion: 3,
@@ -217,7 +218,6 @@ const CAPABILITIES = {
 const SESSION = { userId: 'user-1', displayName: 'Front Desk' };
 
 /** The receiving employee the route resolved (G-EMP). Not this suite's subject. */
-const RECEIVING_EMPLOYEE = { status: 'named', displayName: 'Rana Odeh' } as const;
 
 function startProps(messages: typeof en) {
   return {
@@ -238,6 +238,12 @@ function startProps(messages: typeof en) {
 beforeEach(() => {
   vi.clearAllMocks();
   listReceptions.mockResolvedValue(page([]));
+  // The operator is eligible in the chosen branch — the ordinary case. A test
+  // that wants the OTHER case says so, because an empty list now withdraws the
+  // default rather than leaving an ineligible custodian selected.
+  listReceivingEmployeeCandidates.mockResolvedValue(
+    page([{ id: 'user-1', displayName: 'Front Desk' }])
+  );
   listConfirmedAppointments.mockResolvedValue(page([]));
   listCustomerVehicles.mockResolvedValue(page([]));
   listPartyRoles.mockResolvedValue(page([]));
@@ -493,7 +499,6 @@ describe('P1-28-FE-017 — no upload affordance anywhere on the reception surfac
         steps={CHECK_IN_STEPS}
         capabilities={CAPABILITIES}
         session={SESSION}
-        receivingEmployee={RECEIVING_EMPLOYEE}
       />
     );
 
@@ -545,7 +550,6 @@ describe('P1-28-FE-017 — no upload affordance anywhere on the reception surfac
         steps={CHECK_IN_STEPS}
         capabilities={CAPABILITIES}
         session={SESSION}
-        receivingEmployee={RECEIVING_EMPLOYEE}
       />
     );
 
@@ -576,7 +580,6 @@ describe('P1-28-FE-017 — no upload affordance anywhere on the reception surfac
         steps={CHECK_IN_STEPS}
         capabilities={CAPABILITIES}
         session={SESSION}
-        receivingEmployee={RECEIVING_EMPLOYEE}
       />
     );
 

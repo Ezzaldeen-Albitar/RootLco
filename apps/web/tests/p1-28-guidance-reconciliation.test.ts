@@ -254,10 +254,29 @@ describe('the reception sentences', () => {
     expect(RECEPTION_PERMISSIONS.read).not.toBe(RECEPTION_PERMISSIONS.manage);
   });
 
-  it('"recorded as an identifier, not as an employee" — G-EMP is stated on screen', () => {
-    expect(OPERATOR).toContain('recorded as an identifier, not as an employee');
-    expect(en['receptions.wizard.receivingEmployeeNote']).toContain('G-EMP');
-    expect(en['receptions.checkIn.employeeHint']).toContain('G-EMP');
+  it('"only people eligible for that branch" — and the catalogues no longer name a closed decision', () => {
+    /*
+     * This case pinned the OPPOSITE sentence, and both halves were true when
+     * it was written: the guide said an identifier was recorded rather than an
+     * employee, and both notes named G-EMP as the open decision behind it.
+     *
+     * `DBCR-P1-18-002` closed it. What is stored is a same-tenant account with
+     * a foreign key and an immutable name snapshot, so a guide still describing
+     * a bare identifier would be telling an operator something false about
+     * their own product — the exact failure this suite exists to catch, with
+     * the direction reversed.
+     */
+    expect(OPERATOR).toContain('only people eligible for that branch');
+    expect(OPERATOR).toContain('as it was at check-in');
+    expect(OPERATOR).not.toContain('recorded as an identifier, not as an employee');
+
+    // A closed decision must not still be named as open, in either catalogue.
+    for (const key of [
+      'receptions.wizard.receivingEmployeeNote',
+      'receptions.checkIn.employeeHint',
+    ] as const) {
+      expect(en[key], key).not.toContain('G-EMP');
+    }
   });
 
   it('"it never shows you a raw identifier in place of a name" — and neither surface does', () => {

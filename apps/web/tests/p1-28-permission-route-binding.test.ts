@@ -169,7 +169,7 @@ vi.mock('@/features/receptions/support-api', () => ({
   // no case here can pass on an identity this suite never set up — what it is
   // about is the permission binding, and `p1-28-reception-routes.test.ts` owns
   // the three outcomes.
-  readReceivingEmployeeIdentity: async () => ({ status: 'not-found', correlationId: null }),
+  readUserIdentity: async () => ({ status: 'not-found', correlationId: null }),
 }));
 
 const { NotFoundState, PermissionDeniedState } = await import('@/components/states/States');

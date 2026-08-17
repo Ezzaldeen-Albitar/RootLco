@@ -9,10 +9,6 @@ import { ErrorState } from '@/components/states/States';
 import { readReception } from '../api';
 import type { ReceptionDetail } from '../receptions-contract';
 import {
-  RECEIVING_EMPLOYEE_NOTICE_KEYS,
-  type ReceivingEmployee,
-} from '../check-in/receiving-employee';
-import {
   activeStep,
   writesLocked as writesLockedFor,
   type CheckInCapabilities,
@@ -45,21 +41,21 @@ import {
  * A step holding its own copy of the version is the defect this shape exists
  * to prevent.
  *
- * ## The receiving employee renders as a NAME, and says what that name is (G-EMP)
+ * ## The receiving employee renders as a NAME, from the visit's own snapshot
  *
  * This header used to print `receivingEmployeeId` in a `<code>` element, and a
  * DOM case asserted it did. `canonical-plan.md` §7 disposes of G-EMP with the
  * sentence "The UI shows names, never UUIDs", so the identifier on screen was
  * the defect and the case was holding it there.
  *
- * The identifier still has no foreign key and there is still no employee master.
- * What it does have is a directory the check-in screen already reads: the route
- * resolves the name through `iam.user-detail` under `iam.user.read` — the same
- * code the employee picker consumes — and hands the outcome down as
- * `receivingEmployee`. Where no name could be learned, the reason is stated in
- * words; the identifier is never shown, because it is not a name and no reader
- * of this screen can do anything with it. The G-EMP note stays beneath either
- * way: what is recorded is a user account, not an employee record.
+ * It was then fixed by RESOLVING the identifier through `iam.user-detail`, which
+ * put a name on screen and left two things wrong: the read could fail, so the
+ * header carried three "no name was learned" branches, and it answered with the
+ * account's name TODAY. `DBCR-P1-18-002` ends both.
+ * `rec.reception_visits.receiving_employee_display_name` is written at insert by
+ * `rec.stamp_receiving_employee_identity()` and refused any later edit, so the
+ * name arrives WITH the visit — no second read, no failure branch, and a rename
+ * or a disabled account cannot rewrite who accepted custody.
  *
  * ## A terminal visit still renders
  *
@@ -84,16 +80,6 @@ interface Props {
    * (G-EMP) and the only nameable identity is the operator's own.
    */
   readonly session: CheckInSessionIdentity;
-  /**
-   * Who received the vehicle, resolved by the ROUTE (G-EMP).
-   *
-   * Resolved there rather than here for the same reason `capabilities` is: the
-   * route is the single place that consults the session, and the outcome — a
-   * name, or the reason there is none — is what the interface renders. The
-   * value does not move under a `refresh()`: no published operation changes
-   * `receiving_employee_id` after the visit is created.
-   */
-  readonly receivingEmployee: ReceivingEmployee;
 }
 
 export function CheckInWizardShell({
@@ -103,7 +89,6 @@ export function CheckInWizardShell({
   steps,
   capabilities,
   session,
-  receivingEmployee,
 }: Props) {
   const [detail, setDetail] = useState<ReceptionDetail>(initialDetail);
   const [chosenStepId, setChosenStepId] = useState<string | null>(null);
@@ -198,19 +183,10 @@ export function CheckInWizardShell({
             <dt className="text-caption text-text-secondary">
               {translate(messages, 'receptions.wizard.receivingEmployee')}
             </dt>
-            <dd className="text-body text-text-primary">
-              {receivingEmployee.status === 'named' ? (
-                receivingEmployee.displayName
-              ) : (
-                /* No name was learned, and the reason is said instead. The
-                   identifier is NOT shown: it is not a name, and on the
-                   `unresolved` branch it would present a value naming nobody as
-                   if it were a person. */
-                <span className="text-text-muted" lang={locale}>
-                  {translate(messages, RECEIVING_EMPLOYEE_NOTICE_KEYS[receivingEmployee.status])}
-                </span>
-              )}
-            </dd>
+            {/* The SNAPSHOT the visit carries, never a directory lookup. It is
+                `NOT NULL` with a non-blank CHECK, so there is no absent case to
+                render — and no live read that a later rename could move. */}
+            <dd className="text-body text-text-primary">{detail.receivingEmployeeDisplayName}</dd>
           </div>
         </dl>
 

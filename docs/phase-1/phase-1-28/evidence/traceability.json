@@ -370,7 +370,10 @@
           "file": "apps/web/tests/reception-checkin.dom.test.tsx",
           "cases": [
             "a successful create offers the wizard, by the visit the backend named",
-            "defaults the receiving employee to the operator and states the G-EMP disposition",
+            "defaults the receiving employee to the operator, and states what the picker reads",
+            "offers the BRANCH-eligible list, and asks the operation for that branch",
+            "withdraws the default when the operator is NOT eligible in the chosen branch",
+            "says nothing about eligibility when the read did not happen or did not answer",
             "a 409 on create renders the copy that does NOT guess which rule refused",
             "renders in Arabic, RTL, from the same catalogue"
           ]

@@ -23,13 +23,21 @@ import {
   narrativeGate,
 } from '@/features/receptions/check-in/sensitive';
 import {
-  STAFF_DIRECTORY_BOOTSTRAP_OPERATION,
-  STAFF_DIRECTORY_NOTICE_KEY,
-  STAFF_DIRECTORY_OPEN_DECISION,
-  STAFF_DIRECTORY_OPERATIONS,
-  STAFF_DIRECTORY_PERMISSION,
-  STAFF_DIRECTORY_SCOPE,
-} from '@/features/receptions/staff-directory';
+  RECEIVING_EMPLOYEE_CROSS_BRANCH_PERMISSION,
+  RECEIVING_EMPLOYEE_NOTICE_KEY,
+  RECEIVING_EMPLOYEE_OPERATION,
+  RECEIVING_EMPLOYEE_PERMISSION,
+  RECEIVING_EMPLOYEE_SCOPE,
+  RECEIVING_EMPLOYEE_SUPERSEDED,
+} from '@/features/receptions/people/receiving-employee-directory';
+import {
+  USER_DIRECTORY_ACTOR_OPERATION,
+  USER_DIRECTORY_BOOTSTRAP_OPERATION,
+  USER_DIRECTORY_FORBIDDEN_OPERATION,
+  USER_DIRECTORY_OPERATIONS,
+  USER_DIRECTORY_PERMISSION,
+  USER_DIRECTORY_SCOPE,
+} from '@/features/receptions/people/user-directory';
 import type { CheckInCapabilities } from '@/features/receptions/check-in/wizard';
 import { branchTargetQuery, query } from '@/lib/api/read-operation';
 import enMessages from '../src/i18n/messages/en.json';
@@ -212,97 +220,195 @@ describe('P1-28-SEC-001 — the permission surface is the operations, and no wid
   });
 });
 
-describe('P1-28-SEC-001 — the iam.user.read staff-directory overload, disposed of in writing', () => {
-  it('names three operations, and every one of them really registers that code', () => {
-    expect(STAFF_DIRECTORY_PERMISSION).toBe('iam.user.read');
-    expect(STAFF_DIRECTORY_OPERATIONS.length).toBe(3);
-    for (const id of STAFF_DIRECTORY_OPERATIONS) {
-      expect(operation(id).permissions, id).toContain(STAFF_DIRECTORY_PERMISSION);
+describe('P1-28-SEC-001 — the receiving-employee picker, and what iam.user.read is still spent on', () => {
+  it('reads the BRANCH-eligible picker, at the code that opens a check-in', () => {
+    /*
+     * The narrowing, on every axis at once. This case is the whole of SEC-001
+     * after `DBCR-P1-18-002`: the picker no longer reads a tenant-wide account
+     * directory, so the disposition it needed is gone rather than restated.
+     */
+    expect(RECEIVING_EMPLOYEE_OPERATION).toBe('rec.receiving-employee-list');
+    expect(RECEIVING_EMPLOYEE_PERMISSION).toBe('rec.reception.manage');
+    expect(RECEIVING_EMPLOYEE_SCOPE).toBe('branch');
+
+    const published = operation(RECEIVING_EMPLOYEE_OPERATION);
+    expect(published.permissions).toEqual([RECEIVING_EMPLOYEE_PERMISSION]);
+    expect(published.scope).toBe(RECEIVING_EMPLOYEE_SCOPE);
+    expect(published.method).toBe('GET');
+
+    // The SAME code the create costs. A screen that cannot open a visit cannot
+    // read who might have received one, and that is checked rather than assumed.
+    expect(operation('rec.reception-create').permissions).toContain(RECEIVING_EMPLOYEE_PERMISSION);
+  });
+
+  it('the picker is REACHABLE — the adapter and the screen both call it', () => {
+    /*
+     * The conjunct this suite used to record as outstanding, in the words it
+     * used: "the wizard has not been moved onto the narrow read yet". It has.
+     * Asserting the operation is published would have gone on passing while the
+     * screen still read the directory, which is the shape that kept FE-007
+     * PARTIAL, so the call site is what is checked.
+     */
+    const adapter = webFile('features', 'receptions', 'support-api.ts');
+    expect(adapter).toContain('/api/v1/reception-catalogue/receiving-employees');
+    expect(adapter).toContain('branchTargetQuery');
+
+    const screen = webFile('features', 'receptions', 'components', 'CheckInStartScreen.tsx');
+    expect(screen).toContain('listReceivingEmployeeCandidates');
+  });
+
+  it('NO P1-28 surface reads the tenant-wide account list any more', () => {
+    /*
+     * The removal, made falsifiable. `iam.user-list` still exists and the
+     * administration screens still use it legitimately; what may not happen is a
+     * reception or appointment surface reading it, which is what this phase did
+     * and stopped doing.
+     */
+    expect(USER_DIRECTORY_FORBIDDEN_OPERATION).toBe('iam.user-list');
+    expect(operation(USER_DIRECTORY_FORBIDDEN_OPERATION).scope).toBe(USER_DIRECTORY_SCOPE);
+    expect(USER_DIRECTORY_SCOPE).toBe('tenant');
+
+    for (const file of [
+      ['features', 'receptions', 'support-api.ts'],
+      ['features', 'receptions', 'api.ts'],
+      ['features', 'receptions', 'components', 'CheckInStartScreen.tsx'],
+      ['features', 'appointments', 'api.ts'],
+    ] as const) {
+      expect(webFile(...file), `${file.join('/')} reads the tenant-wide user list`).not.toMatch(
+        /\/api\/v1\/iam\/users(?!\/)/
+      );
     }
-    // Nothing else in the platform registers it, so the disposition is complete
-    // rather than a sample of what the code opens.
-    const everywhere = REGISTER.filter((entry) =>
-      entry.permissions.includes(STAFF_DIRECTORY_PERMISSION)
-    ).map((entry) => entry.id);
-    expect(everywhere.sort()).toEqual([...STAFF_DIRECTORY_OPERATIONS].sort());
   });
 
-  it('rests on the fact that makes the code universal — the session bootstrap needs it', () => {
-    /*
-     * This is the whole argument. `GET /auth/session` registers `iam.user.read`,
-     * so every operator who can load the application at all already holds it and
-     * the receiving-employee picker widens nobody's access. If that ever stops
-     * being true the disposition has to be rewritten, and this case is what says
-     * so instead of the sentence quietly becoming false.
-     */
-    expect(STAFF_DIRECTORY_BOOTSTRAP_OPERATION).toBe('iam.auth-session');
-    expect(operation('iam.auth-session').permissions).toContain(STAFF_DIRECTORY_PERMISSION);
+  it('what it REPLACED is recorded, so the narrowing cannot be quietly undone', () => {
+    // A removed disclosure that nothing remembers is one waiting to be re-added
+    // by somebody who was not here. Each recorded axis is checked against the
+    // register, so the record cannot drift into flattery.
+    expect(RECEIVING_EMPLOYEE_SUPERSEDED.operation).toBe('iam.user-list');
+    expect(RECEIVING_EMPLOYEE_SUPERSEDED.permission).toBe('iam.user.read');
+    expect(RECEIVING_EMPLOYEE_SUPERSEDED.scope).toBe('tenant');
+
+    const before = operation(RECEIVING_EMPLOYEE_SUPERSEDED.operation);
+    expect(before.permissions).toContain(RECEIVING_EMPLOYEE_SUPERSEDED.permission);
+    expect(before.scope).toBe(RECEIVING_EMPLOYEE_SUPERSEDED.scope);
+    // Narrower on the axis that matters, not merely by name.
+    expect(operation(RECEIVING_EMPLOYEE_OPERATION).scope).not.toBe(before.scope);
   });
 
-  it('states the overload rather than softening it: the directory read is TENANT-wide', () => {
-    // The uncomfortable half, pinned. A branch-scoped receptionist who holds the
-    // code reads accounts from every branch, because the operation's scope is
-    // the tenant.
-    expect(STAFF_DIRECTORY_SCOPE).toBe('tenant');
-    expect(operation('iam.user-list').scope).toBe(STAFF_DIRECTORY_SCOPE);
-    expect(operation('iam.user-list').scope).not.toBe('branch');
-
+  it('does NOT widen for the cross-branch permission — that is an administrative act', () => {
     /*
-     * This clause used to require that NO narrower staff read existed anywhere,
-     * and it fired the moment DBCR-P1-18-002 published one. That is the tripwire
-     * doing its job: the disposition WAS stale, because the debt it recorded
-     * (G-EMP / R6) has now been paid at the API layer.
-     *
-     * So the claim moves rather than relaxes. A narrower read must now exist, it
-     * must be exactly the branch-scoped picker this decision built, and it must
-     * be narrower on the axis that matters — scope, not merely name. What has NOT
-     * happened yet is the screen switching onto it: that is handwritten Frontend,
-     * which this Backend profile forbids, so it is named here as the outstanding
-     * step instead of being quietly assumed done.
+     * The Owner's decision, and the reason it is a permission no operation
+     * declares: a picker that silently grew under a capability the operator
+     * cannot see would reintroduce the disclosure this change removed. The
+     * authority is spent inside `rec.stamp_receiving_employee_identity()`.
      */
-    const narrower = REGISTER.filter(
-      (entry) => /employee/i.test(entry.id) && entry.method === 'GET'
+    expect(RECEIVING_EMPLOYEE_CROSS_BRANCH_PERMISSION).toBe(
+      'rec.reception.receiving_employee.assign_any'
     );
     expect(
-      narrower.map((entry) => entry.id),
-      'the narrower staff read this disposition now rests on has gone missing'
-    ).toEqual(['rec.receiving-employee-list']);
-    expect(operation('rec.receiving-employee-list').scope).toBe('branch');
-    expect(operation('rec.receiving-employee-list').permissions).not.toContain(
-      STAFF_DIRECTORY_PERMISSION
-    );
+      REGISTER.filter((entry) =>
+        entry.permissions.includes(RECEIVING_EMPLOYEE_CROSS_BRANCH_PERMISSION)
+      ),
+      'the cross-branch authority is declared by an operation; it belongs in the database'
+    ).toEqual([]);
 
-    // Still true, and the reason the on-screen notice below stays: the wizard has
-    // not been moved onto the narrow read yet. When a Frontend change does move
-    // it, this expectation fails and the notice is reconsidered with it.
-    const screen = webFile('features', 'receptions', 'components', 'CheckInStartScreen.tsx');
-    expect(screen).not.toContain('rec.receiving-employee-list');
+    const migration = repoFile(
+      'supabase',
+      'migrations',
+      '20260815093000_rec_receiving_employee_identity.sql'
+    );
+    expect(migration).toContain(RECEIVING_EMPLOYEE_CROSS_BRANCH_PERMISSION);
+
+    const route = repoFile(
+      'apps',
+      'api',
+      'src',
+      'app',
+      'api',
+      'v1',
+      'reception-catalogue',
+      'receiving-employees',
+      'route.ts'
+    );
+    expect(route).not.toContain(RECEIVING_EMPLOYEE_CROSS_BRANCH_PERMISSION.replace(/^rec\./, "'"));
   });
 
   it('says it ON SCREEN, in both catalogues, from the module that carries the decision', () => {
     for (const catalogue of [EN, AR]) {
-      expect(Object.keys(catalogue)).toContain(STAFF_DIRECTORY_NOTICE_KEY);
-      expect(catalogue[STAFF_DIRECTORY_NOTICE_KEY]?.length ?? 0).toBeGreaterThan(80);
+      expect(Object.keys(catalogue)).toContain(RECEIVING_EMPLOYEE_NOTICE_KEY);
+      expect(catalogue[RECEIVING_EMPLOYEE_NOTICE_KEY]?.length ?? 0).toBeGreaterThan(80);
     }
     // Real Arabic, not the English string copied across.
-    expect(AR[STAFF_DIRECTORY_NOTICE_KEY]).not.toBe(EN[STAFF_DIRECTORY_NOTICE_KEY]);
-    expect(AR[STAFF_DIRECTORY_NOTICE_KEY]).toMatch(/[؀-ۿ]/);
+    expect(AR[RECEIVING_EMPLOYEE_NOTICE_KEY]).not.toBe(EN[RECEIVING_EMPLOYEE_NOTICE_KEY]);
+    expect(AR[RECEIVING_EMPLOYEE_NOTICE_KEY]).toMatch(/[؀-ۿ]/);
+
+    // The notice must describe THIS read. The sentence it replaced said the
+    // control searches the whole workspace directory, and that would now be a
+    // false statement rendered to an operator.
+    expect(EN[RECEIVING_EMPLOYEE_NOTICE_KEY]).toMatch(/branch/i);
+    expect(EN[RECEIVING_EMPLOYEE_NOTICE_KEY]).not.toMatch(/whole workspace|every account/i);
 
     // The screen renders it through the constant, so the statement an operator
     // reads and the one this suite checks cannot drift apart.
     const screen = webFile('features', 'receptions', 'components', 'CheckInStartScreen.tsx');
-    expect(screen).toContain('STAFF_DIRECTORY_NOTICE_KEY');
-    expect(screen).toContain("from '../staff-directory'");
+    expect(screen).toContain('RECEIVING_EMPLOYEE_NOTICE_KEY');
+    expect(screen).toContain("from '../people/receiving-employee-directory'");
   });
 
-  it('keeps the debt named instead of presenting the stand-in as the answer', () => {
-    expect(STAFF_DIRECTORY_OPEN_DECISION).toBe('G-EMP');
-    const archaeology = repoFile('docs', 'phase-1', 'phase-1-28', 'contract-archaeology.md');
-    expect(archaeology).toContain(STAFF_DIRECTORY_OPEN_DECISION);
-    expect(archaeology).toContain('receivingEmployeeId');
-    // The remediation is owned by a Backend phase, which is why this branch
-    // records it rather than building it.
-    expect(archaeology).toMatch(/R6\s*\|/);
+  it('iam.user.read is still spent — on ACTOR names, and the bootstrap is still why', () => {
+    /*
+     * The old disposition is not deleted, it is narrowed to the population that
+     * genuinely has no snapshot: who recorded an inspection, who bound evidence,
+     * who signed. Those are audit identifiers already on the page.
+     */
+    expect(USER_DIRECTORY_PERMISSION).toBe('iam.user.read');
+    expect(USER_DIRECTORY_ACTOR_OPERATION).toBe('iam.user-detail');
+    expect(operation(USER_DIRECTORY_ACTOR_OPERATION).permissions).toContain(
+      USER_DIRECTORY_PERMISSION
+    );
+
+    expect(USER_DIRECTORY_OPERATIONS.length).toBe(3);
+    for (const id of USER_DIRECTORY_OPERATIONS) {
+      expect(operation(id).permissions, id).toContain(USER_DIRECTORY_PERMISSION);
+    }
+    // Nothing else in the platform registers it, so the disposition is complete
+    // rather than a sample of what the code opens.
+    const everywhere = REGISTER.filter((entry) =>
+      entry.permissions.includes(USER_DIRECTORY_PERMISSION)
+    ).map((entry) => entry.id);
+    expect(everywhere.sort()).toEqual([...USER_DIRECTORY_OPERATIONS].sort());
+
+    // The argument that makes the code universal, unchanged and still load-bearing.
+    expect(USER_DIRECTORY_BOOTSTRAP_OPERATION).toBe('iam.auth-session');
+    expect(operation('iam.auth-session').permissions).toContain(USER_DIRECTORY_PERMISSION);
+  });
+
+  it('G-EMP is CLOSED, and the closure is read from the migration rather than asserted', () => {
+    /*
+     * The debt this section used to keep named. It was: `receiving_employee_id`
+     * has no foreign key and no employee master exists, so any uuid at all was a
+     * legal custodian. Three artefacts of `DBCR-P1-18-002` end it, and each is
+     * opened here rather than described — a closure recorded only in prose is
+     * how a stale justification survives.
+     */
+    const migration = repoFile(
+      'supabase',
+      'migrations',
+      '20260815093000_rec_receiving_employee_identity.sql'
+    );
+    expect(migration).toContain('fk_reception_visits_receiving_employee');
+    expect(migration).toContain('receiving_employee_display_name');
+    expect(migration).toContain('rec.stamp_receiving_employee_identity');
+
+    // The snapshot is what the read-back surfaces render, so the wizard header
+    // and the customer's sheet cannot be moved back onto a live directory read.
+    for (const file of [
+      ['features', 'receptions', 'components', 'CheckInWizardShell.tsx'],
+      ['features', 'receptions', 'components', 'AcknowledgementDocument.tsx'],
+    ] as const) {
+      expect(webFile(...file), file.join('/')).toContain('receivingEmployeeDisplayName');
+      expect(webFile(...file), file.join('/')).not.toContain('readUserIdentity');
+    }
   });
 });
 

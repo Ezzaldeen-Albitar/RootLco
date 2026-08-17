@@ -96,10 +96,13 @@ A vehicle may have only one open visit at a time. If a visit is already open for
 that vehicle you are told so and offered the open one, rather than being allowed
 to create a second.
 
-**The receiving employee is recorded as an identifier, not as an employee.**
-There is no employee register in the product yet. The screen offers platform
-users and says plainly what is being stored; it never shows you a raw identifier
-in place of a name.
+**The receiving employee is the account that accepts custody, and the picker
+offers only people eligible for that branch.** You are the default. If your own
+account is not eligible in the branch you are receiving into, the default is
+removed and you are told why, so you choose someone who is rather than being
+refused at the moment you submit. The name is kept **as it was at check-in**: it
+appears unchanged on the customer's copy afterwards even if the account is
+renamed later. It never shows you a raw identifier in place of a name.
 
 The fuel level and state of charge are recorded **when the visit is opened** and
 no operation changes them afterwards, so the wizard shows them and offers

@@ -62,9 +62,9 @@ vi.mock('@/lib/customers/directory', () => ({
  * an unhandled rejection Vitest reports at file level, which is a failing suite
  * whose individual cases all pass.
  */
-const readReceivingEmployeeIdentity = vi.fn();
+const readUserIdentity = vi.fn();
 vi.mock('@/features/receptions/support-api', () => ({
-  readReceivingEmployeeIdentity: (...args: unknown[]) => readReceivingEmployeeIdentity(...args),
+  readUserIdentity: (...args: unknown[]) => readUserIdentity(...args),
 }));
 
 const { ComplaintsStep } = await import('@/features/receptions/components/steps/ComplaintsStep');
@@ -109,6 +109,7 @@ const DETAIL: ReceptionDetail = {
   fuelLevelName: null,
   evSocPercent: null,
   receivingEmployeeId: 'user-77',
+  receivingEmployeeDisplayName: 'Dana Receiver',
   custodyAcceptedAt: '2026-08-13T07:00:00.000Z',
   custodyReleasedAt: null,
   recordVersion: 3,
@@ -175,7 +176,7 @@ beforeEach(() => {
   listFuelLevels.mockResolvedValue(EMPTY_CATALOGUE);
   listRefusalReasons.mockResolvedValue(EMPTY_CATALOGUE);
   searchCustomerDirectory.mockResolvedValue(page([]));
-  readReceivingEmployeeIdentity.mockResolvedValue({
+  readUserIdentity.mockResolvedValue({
     status: 'ok',
     data: { id: 'user-77', displayName: 'Nadia Suleiman' },
     correlationId: 'corr-user',
@@ -1153,7 +1154,7 @@ describe('F8 — the inspection read-back shows a name, never an account identif
   }
 
   it('resolves the account and renders the name', async () => {
-    readReceivingEmployeeIdentity.mockResolvedValue({
+    readUserIdentity.mockResolvedValue({
       status: 'ok',
       data: { id: INSPECTOR_ID, displayName: 'Nadia Suleiman' },
       correlationId: 'corr-user',
@@ -1164,11 +1165,11 @@ describe('F8 — the inspection read-back shows a name, never an account identif
     expect(await screen.findByText('Nadia Suleiman')).toBeInTheDocument();
     // The identifier is nowhere on the surface, in any element.
     expect(screen.queryByText(INSPECTOR_ID)).not.toBeInTheDocument();
-    await waitFor(() => expect(readReceivingEmployeeIdentity).toHaveBeenCalledWith(INSPECTOR_ID));
+    await waitFor(() => expect(readUserIdentity).toHaveBeenCalledWith(INSPECTOR_ID));
   });
 
   it('reads each distinct account once, however many rows carry it', async () => {
-    readReceivingEmployeeIdentity.mockResolvedValue({
+    readUserIdentity.mockResolvedValue({
       status: 'ok',
       data: { id: INSPECTOR_ID, displayName: 'Nadia Suleiman' },
       correlationId: 'corr-user',
@@ -1182,16 +1183,16 @@ describe('F8 — the inspection read-back shows a name, never an account identif
     });
     renderLtr(<InspectionStep {...stepProps()} />);
 
-    await waitFor(() => expect(readReceivingEmployeeIdentity).toHaveBeenCalled());
+    await waitFor(() => expect(readUserIdentity).toHaveBeenCalled());
     // The list operation is `expensive-read`; three rows by one person are one
     // directory read, not three.
-    expect(readReceivingEmployeeIdentity.mock.calls).toHaveLength(1);
+    expect(readUserIdentity.mock.calls).toHaveLength(1);
   });
 
   it('says the identifier names nobody rather than printing it, on a 404', async () => {
     // `inspector_id` has NO foreign key (G-EMP), so this is a state the database
     // permits — and the one case where showing the value would read as a person.
-    readReceivingEmployeeIdentity.mockResolvedValue({
+    readUserIdentity.mockResolvedValue({
       status: 'not-found',
       data: null,
       correlationId: 'corr-404',
@@ -1207,7 +1208,7 @@ describe('F8 — the inspection read-back shows a name, never an account identif
   });
 
   it('says the read did not answer rather than printing the identifier', async () => {
-    readReceivingEmployeeIdentity.mockResolvedValue({
+    readUserIdentity.mockResolvedValue({
       status: 'error',
       data: null,
       correlationId: 'corr-500',
@@ -1234,7 +1235,7 @@ describe('F8 — the inspection read-back shows a name, never an account identif
     await waitFor(() =>
       expect(list).toHaveTextContent(EN['receptions.wizard.receivingEmployeeUnavailable']!)
     );
-    expect(readReceivingEmployeeIdentity).not.toHaveBeenCalled();
+    expect(readUserIdentity).not.toHaveBeenCalled();
     expect(screen.queryByText(INSPECTOR_ID)).not.toBeInTheDocument();
   });
 

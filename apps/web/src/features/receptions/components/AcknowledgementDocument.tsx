@@ -12,10 +12,6 @@ import type {
   ReceptionDetail,
 } from '../receptions-contract';
 import { hasRegisteredMedia, isCustomerReported } from '../check-in/closure';
-import {
-  RECEIVING_EMPLOYEE_NOTICE_KEYS,
-  type ReceivingEmployee,
-} from '../check-in/receiving-employee';
 
 /**
  * The reception acknowledgement document (`FE-021`).
@@ -59,13 +55,14 @@ import {
  *   - **The receiving employee's identifier.** This sheet used to print it, in
  *     a `<code>` element, on the copy a customer signs and takes away — and
  *     `canonical-plan.md` §7 disposes of G-EMP with the sentence "The UI shows
- *     names, never UUIDs". The page now resolves the name through
- *     `iam.user-detail` (`iam.user.read`, the code the check-in picker already
- *     consumes) and prints THAT. Where no name could be learned, the sheet says
- *     which of the three reasons applies and prints no identifier: an internal
- *     value in the place a person's name goes reads to a customer as a person.
- *     The G-EMP note stays, because what is recorded is a user account and not
- *     an employee record, and that is worth saying on a handover document.
+ *     names, never UUIDs". It was then fixed by resolving the name through
+ *     `iam.user-detail`, which was better and still wrong for THIS document: a
+ *     live directory read answers with the account's name today, so renaming an
+ *     operator would silently reprint a past handover under a different person's
+ *     name. It now prints `receivingEmployeeDisplayName`, the snapshot
+ *     `rec.stamp_receiving_employee_identity()` wrote when custody was accepted
+ *     and no later statement may edit. A sheet that records an event should say
+ *     what was true at the event.
  */
 
 /**
@@ -98,14 +95,11 @@ export function AcknowledgementDocument({
   locale,
   messages,
   detail,
-  receivingEmployee,
   sections,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly detail: ReceptionDetail;
-  /** Who received the vehicle, resolved by the ROUTE (G-EMP). */
-  readonly receivingEmployee: ReceivingEmployee;
   readonly sections: AcknowledgementSections;
 }) {
   const title =
@@ -154,15 +148,12 @@ export function AcknowledgementDocument({
               <span dir="ltr">{detail.evSocPercent}%</span>
             </Fact>
           ) : null}
+          {/* The name recorded WHEN CUSTODY WAS ACCEPTED, not the account's name
+              today. This sheet is evidence of a handover that already happened,
+              so a live directory read would have been the wrong answer even when
+              it succeeded. See the docblock. */}
           <Fact label={translate(messages, 'receptions.wizard.receivingEmployee')}>
-            {receivingEmployee.status === 'named' ? (
-              receivingEmployee.displayName
-            ) : (
-              /* The reason, never the identifier. See the docblock. */
-              <span className="text-text-muted" lang={locale}>
-                {translate(messages, RECEIVING_EMPLOYEE_NOTICE_KEYS[receivingEmployee.status])}
-              </span>
-            )}
+            {detail.receivingEmployeeDisplayName}
           </Fact>
         </dl>
         <p className="mt-2 text-supporting text-text-muted" lang={locale}>

@@ -1,16 +1,6 @@
 {
   "$comment": "Declared non-REACHABLE states for published apt.*/rec.* operations. REACHABLE is never declared here: it is DERIVED by apps/web/tests/p1-28-qa.test.ts, which mocks the transport, runs every real adapter body and reads back the path actually requested. This file records only what that derivation cannot justify on its own, and scripts/ci/check-p1-28-adapter-reachability.mjs refuses any entry that does not satisfy every condition in its docblock. Adding an entry here is not a way to make a red gate green; it is a way to owe something in public.",
   "operations": {
-    "rec.receiving-employee-list": {
-      "classification": "PENDING_FRONTEND_ADAPTER",
-      "canonicalTask": "P1-28-FE-007",
-      "ownerDecision": "The receiving employee is a SELECTED ACTIVE IAM USER who accepts custody, not free text.",
-      "introducedAgainstBase": "592cfe6ef0870b5f84341fd7699656d31cfddae4",
-      "blockedByOwnershipProfile": "p1-18-read-surface",
-      "frontendBranch": "feature/p1-28-owner-decisions-frontend",
-      "reason": "DBCR-P1-18-002 publishes GET /reception-catalogue/receiving-employees so the check-in wizard can offer branch-eligible active IAM users instead of the tenant-wide iam.user.read staff directory it reads today (P1-28-SEC-001, debt G-EMP / R6). The Backend half is complete and mirrored; the production adapter and the picker that consumes it are handwritten Frontend, which the p1-18-read-surface ownership profile forbids on this branch. Widening that profile would let Frontend ride inside a Backend remediation reviewed by nobody, so the transition is named instead. This entry is deleted by the same change that adds the adapter and its consumer on feature/p1-28-owner-decisions-frontend, at which point QA-001 derives REACHABLE; until then P1-28-FE-007 stays PARTIAL and no 35/35 claim is possible, because writing PASS into task-matrix-verdicts.json while this entry stands is refused by condition 5.",
-      "introducedAgainstBaseNote": "PINNED to an immutable commit, not a moving ref. It was origin/develop, which was true on the pull request and FALSE the moment the merge landed: develop then contained the operation, so the gate correctly refused its own entry on protected develop. A base that moves cannot support a claim about what a branch INTRODUCED. 592cfe6e is the develop this work was reviewed against (P1-15 merge), and the operation was absent there permanently."
-    },
     "rec.reception-capture-override": {
       "classification": "PENDING_FRONTEND_ADAPTER",
       "canonicalTask": "P1-28-FE-017",

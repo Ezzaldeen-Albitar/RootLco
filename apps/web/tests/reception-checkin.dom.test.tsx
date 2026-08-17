@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from '@testing-library/react';
+import { cleanup, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
@@ -123,6 +123,7 @@ const DETAIL: ReceptionDetail = {
   fuelLevelName: null,
   evSocPercent: null,
   receivingEmployeeId: 'user-77',
+  receivingEmployeeDisplayName: 'Dana Receiver',
   custodyAcceptedAt: '2026-08-13T07:00:00.000Z',
   custodyReleasedAt: null,
   recordVersion: 3,
@@ -161,7 +162,6 @@ const SESSION = { userId: 'user-1', displayName: 'Front Desk' };
  * what came back. The three states where no name could be learned each have
  * their own case below.
  */
-const RECEIVING_EMPLOYEE = { status: 'named', displayName: 'Rana Odeh' } as const;
 
 function startProps(over: Record<string, unknown> = {}) {
   return {
@@ -189,6 +189,12 @@ beforeEach(() => {
   vi.clearAllMocks();
   listReceptions.mockResolvedValue(page([]));
   listConfirmedAppointments.mockResolvedValue(page([APPOINTMENT_ROW]));
+  // The operator is eligible in the chosen branch — the ordinary case. A test
+  // that wants the OTHER case says so, because an empty list now withdraws the
+  // default rather than leaving an ineligible custodian selected.
+  listReceivingEmployeeCandidates.mockResolvedValue(
+    page([{ id: 'user-1', displayName: 'Front Desk' }])
+  );
   listCustomerVehicles.mockResolvedValue(page([]));
   listPartyRoles.mockResolvedValue(page([]));
   listAuthorizations.mockResolvedValue(page([]));
@@ -324,15 +330,102 @@ describe('the start screen — origin XOR', () => {
     });
   });
 
-  it('defaults the receiving employee to the operator and states the G-EMP disposition', () => {
+  it('defaults the receiving employee to the operator, and states what the picker reads', () => {
     renderLtr(<CheckInStartScreen {...startProps()} />);
     expect(
       screen.getByText(`${EN['receptions.checkIn.employeeSelf']} — Front Desk`)
     ).toBeInTheDocument();
-    // The named open decision, on screen — not a name the platform cannot join.
     expect(screen.getByText(EN['receptions.checkIn.employeeHint']!)).toBeInTheDocument();
-    // Without `iam.user.read` there is no picker to offer.
+    // Without the capability there is no picker to offer.
     expect(screen.queryByText(EN['receptions.checkIn.employeeChoose']!)).not.toBeInTheDocument();
+  });
+
+  it('offers the BRANCH-eligible list, and asks the operation for that branch', async () => {
+    const user = userEvent.setup();
+    renderLtr(<CheckInStartScreen {...startProps({ canPickEmployee: true })} />);
+
+    await waitFor(() => expect(listReceivingEmployeeCandidates).toHaveBeenCalled());
+    // The branch target travels. A picker that asked tenant-wide would answer
+    // with accounts this branch has no relationship with, which is the
+    // disclosure `rec.receiving-employee-list` was published to end.
+    const [target] = listReceivingEmployeeCandidates.mock.calls.at(-1)!;
+    expect(target).toEqual({ companyId: 'company-1', branchId: 'branch-1' });
+
+    await user.click(
+      screen.getByRole('button', { name: EN['receptions.checkIn.employeeChoose']! })
+    );
+    expect(await screen.findByText('Front Desk')).toBeInTheDocument();
+  });
+
+  it('withdraws the default when the operator is NOT eligible in the chosen branch', async () => {
+    /*
+     * The Owner conjunct: the authenticated user is the default WHERE
+     * ELIGIBLE. An operator may hold the capability in one branch and be
+     * receiving into another, and offering themselves there would be offering
+     * a value `rec.stamp_receiving_employee_identity()` refuses — a create that
+     * fails at a database guard rather than at a choice.
+     */
+    listReceivingEmployeeCandidates.mockResolvedValue(
+      page([{ id: 'user-9', displayName: 'Other Branch Person' }])
+    );
+    renderLtr(<CheckInStartScreen {...startProps({ canPickEmployee: true })} />);
+
+    // TWO awaited settles sit behind this — the list resolving, then the effect
+    // withdrawing the default — so the wait is explicit and generous rather than
+    // left on findBy's default, which flaked once under a loaded worker pool and
+    // passed alone twice.
+    await waitFor(
+      () => {
+        expect(screen.getByTestId('employee-self-ineligible')).toHaveTextContent(
+          EN['receptions.checkIn.employeeSelfIneligible']!
+        );
+        expect(screen.getByTestId('employee-chosen')).toHaveTextContent(
+          EN['receptions.checkIn.employeeUnset']!
+        );
+      },
+      { timeout: 5000 }
+    );
+  });
+
+  it('says nothing about eligibility when the read did not happen or did not answer', async () => {
+    /*
+     * `F1` again, on a new surface. Three of these would have printed "you are
+     * not eligible" from an observation nobody made: no capability to ask, no
+     * branch chosen yet, and a read that failed. The component shipped with the
+     * first of them and three cases in this file caught it.
+     */
+    renderLtr(<CheckInStartScreen {...startProps({ canPickEmployee: false })} />);
+    expect(
+      screen.queryByText(EN['receptions.checkIn.employeeSelfIneligible']!)
+    ).not.toBeInTheDocument();
+    cleanup();
+
+    renderLtr(
+      <CheckInStartScreen
+        {...startProps({ canPickEmployee: true, companyIds: [], branchIds: [] })}
+      />
+    );
+    expect(
+      screen.queryByText(EN['receptions.checkIn.employeeSelfIneligible']!)
+    ).not.toBeInTheDocument();
+    expect(screen.getByTestId('employee-needs-branch')).toBeInTheDocument();
+    cleanup();
+
+    listReceivingEmployeeCandidates.mockResolvedValue({
+      status: 'unavailable' as const,
+      rows: [],
+      nextCursor: null,
+      hasMore: false,
+      correlationId: 'corr-fail',
+    });
+    renderLtr(<CheckInStartScreen {...startProps({ canPickEmployee: true })} />);
+    await waitFor(() => expect(listReceivingEmployeeCandidates).toHaveBeenCalled());
+    expect(
+      screen.queryByText(EN['receptions.checkIn.employeeSelfIneligible']!)
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText(`${EN['receptions.checkIn.employeeSelf']} — Front Desk`)
+    ).toBeInTheDocument();
   });
 
   it('without rec.reception.manage the create form is withdrawn, with the reason', () => {
@@ -556,7 +649,6 @@ describe('the wizard shell', () => {
         ]}
         capabilities={CAPABILITIES}
         session={SESSION}
-        receivingEmployee={RECEIVING_EMPLOYEE}
       />
     );
 
@@ -586,7 +678,6 @@ describe('the wizard shell', () => {
         steps={CHECK_IN_STEPS}
         capabilities={CAPABILITIES}
         session={SESSION}
-        receivingEmployee={RECEIVING_EMPLOYEE}
       />
     );
 
@@ -622,7 +713,6 @@ describe('the wizard shell', () => {
         ]}
         capabilities={CAPABILITIES}
         session={SESSION}
-        receivingEmployee={RECEIVING_EMPLOYEE}
       />
     );
     // The status name appears in the header AND in the banner — scope to the
@@ -652,43 +742,14 @@ describe('the wizard shell', () => {
         steps={CHECK_IN_STEPS}
         capabilities={CAPABILITIES}
         session={SESSION}
-        receivingEmployee={RECEIVING_EMPLOYEE}
       />
     );
-    expect(screen.getByText('Rana Odeh')).toBeInTheDocument();
+    // The SNAPSHOT the visit carries. It used to be a prop the route resolved
+    // through `iam.user-detail`, which answered with the account name TODAY.
+    expect(screen.getByText(DETAIL.receivingEmployeeDisplayName)).toBeInTheDocument();
     expect(screen.queryByText(DETAIL.receivingEmployeeId)).not.toBeInTheDocument();
     expect(screen.getByText(EN['receptions.wizard.receivingEmployeeNote']!)).toBeInTheDocument();
   });
-
-  for (const { status, key } of [
-    { status: 'denied', key: 'receptions.wizard.receivingEmployeeDenied' },
-    { status: 'unresolved', key: 'receptions.wizard.receivingEmployeeUnresolved' },
-    { status: 'unavailable', key: 'receptions.wizard.receivingEmployeeUnavailable' },
-  ] as const) {
-    it(`says why there is no name when the read came back ${status}, and shows no identifier`, () => {
-      /*
-       * Three states the platform genuinely has, and none of them is a licence
-       * to print the identifier. `unresolved` is the sharpest: the column has no
-       * foreign key, so an identifier naming nobody is a state the database
-       * permits, and rendering it where a person's name goes reads as a person.
-       */
-      renderLtr(
-        <CheckInWizardShell
-          locale="en"
-          messages={en}
-          initialDetail={DETAIL}
-          steps={CHECK_IN_STEPS}
-          capabilities={CAPABILITIES}
-          session={SESSION}
-          receivingEmployee={{ status }}
-        />
-      );
-      expect(screen.getByText(EN[key]!)).toBeInTheDocument();
-      expect(screen.queryByText(DETAIL.receivingEmployeeId)).not.toBeInTheDocument();
-      // The disposition is stated whether or not a name was learned.
-      expect(screen.getByText(EN['receptions.wizard.receivingEmployeeNote']!)).toBeInTheDocument();
-    });
-  }
 });
 
 /* --- FE-008: the confirmation step ----------------------------------------- */

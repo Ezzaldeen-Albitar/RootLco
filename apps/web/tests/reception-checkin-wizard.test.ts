@@ -12,9 +12,9 @@ import {
   type CreateDraft,
 } from '@/features/receptions/check-in/wizard';
 import {
-  RECEIVING_EMPLOYEE_NOTICE_KEYS,
-  resolveReceivingEmployee,
-} from '@/features/receptions/check-in/receiving-employee';
+  PERSON_NAME_NOTICE_KEYS,
+  resolvePersonName,
+} from '@/features/receptions/people/person-name';
 import { CHECK_IN_STEPS } from '@/features/receptions/check-in/steps';
 import {
   RECEPTION_STATUSES,
@@ -349,7 +349,7 @@ describe('the receiving employee, resolved from the directory read', () => {
   });
 
   it('names the employee when the directory answered', () => {
-    expect(resolveReceivingEmployee(identity('Rana Odeh'))).toEqual({
+    expect(resolvePersonName(identity('Rana Odeh'))).toEqual({
       status: 'named',
       displayName: 'Rana Odeh',
     });
@@ -360,8 +360,8 @@ describe('the receiving employee, resolved from the directory read', () => {
     // was made. A backend 403 is the same answer to the operator, and naming
     // which tier refused would tell a customer's copy about the workshop's own
     // permissions.
-    expect(resolveReceivingEmployee(null)).toEqual({ status: 'denied' });
-    expect(resolveReceivingEmployee({ status: 'denied', correlationId: 'c' })).toEqual({
+    expect(resolvePersonName(null)).toEqual({ status: 'denied' });
+    expect(resolvePersonName({ status: 'denied', correlationId: 'c' })).toEqual({
       status: 'denied',
     });
   });
@@ -373,12 +373,12 @@ describe('the receiving employee, resolved from the directory read', () => {
      * where rendering the raw value would be actively misleading — an internal
      * value in the slot where a person's name goes reads as a person.
      */
-    expect(resolveReceivingEmployee({ status: 'not-found', correlationId: 'c' })).toEqual({
+    expect(resolvePersonName({ status: 'not-found', correlationId: 'c' })).toEqual({
       status: 'unresolved',
     });
     // An account that exists with nothing to show is the same fact to a reader,
     // and better said than rendered as empty space.
-    expect(resolveReceivingEmployee(identity('   '))).toEqual({ status: 'unresolved' });
+    expect(resolvePersonName(identity('   '))).toEqual({ status: 'unresolved' });
   });
 
   it('keeps a failed read distinct from an identifier that names nobody', () => {
@@ -389,7 +389,7 @@ describe('the receiving employee, resolved from the directory read', () => {
      * about the identifier.
      */
     for (const status of ['error', 'unavailable', 'expired'] as const) {
-      expect(resolveReceivingEmployee({ status, correlationId: 'c' }), status).toEqual({
+      expect(resolvePersonName({ status, correlationId: 'c' }), status).toEqual({
         status: 'unavailable',
       });
     }
@@ -398,11 +398,11 @@ describe('the receiving employee, resolved from the directory read', () => {
   it('has something to say for every outcome that is not a name', () => {
     // The union and the catalogue cannot drift: a fourth state added without a
     // message would render a raw key at an operator.
-    for (const [state, key] of Object.entries(RECEIVING_EMPLOYEE_NOTICE_KEYS)) {
+    for (const [state, key] of Object.entries(PERSON_NAME_NOTICE_KEYS)) {
       expect(EN[key], `${state}: ${key} missing from en`).toBeTruthy();
       expect(AR[key], `${state}: ${key} missing from ar`).toBeTruthy();
     }
-    expect(Object.keys(RECEIVING_EMPLOYEE_NOTICE_KEYS).sort()).toEqual([
+    expect(Object.keys(PERSON_NAME_NOTICE_KEYS).sort()).toEqual([
       'denied',
       'unavailable',
       'unresolved',

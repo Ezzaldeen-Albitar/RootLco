@@ -88,6 +88,7 @@ const DETAIL: ReceptionDetail = {
   fuelLevelName: null,
   evSocPercent: null,
   receivingEmployeeId: 'user-77',
+  receivingEmployeeDisplayName: 'Dana Receiver',
   custodyAcceptedAt: '2026-08-13T07:00:00.000Z',
   custodyReleasedAt: null,
   recordVersion: 7,
