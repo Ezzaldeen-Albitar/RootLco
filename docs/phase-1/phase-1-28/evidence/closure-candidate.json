@@ -226,17 +226,17 @@
     "unit": {
       "label": "root unit and foundation",
       "tests": 2717,
-      "passed": 2717,
-      "failed": 0,
+      "passed": 2714,
+      "failed": 3,
       "skipped": 0,
       "files": 102,
-      "measuredAtCommit": "f1f8656805a07776f443626b944c8632020c376a",
+      "measuredAtCommit": "4174cb15b5f50f5be7ec1dcce3c6700f15c560b8",
       "provenance": "LOCAL_COMPUTED_HOSTED_PENDING",
       "localLedger": {
         "path": "docs/phase-1/phase-1-27/evidence/local-run-ledger.json",
         "tier": "unit",
-        "atCommit": "cb517db4505f8f68e1d80ce15f76e56b11de081e",
-        "howChecked": "`git show cb517db4505f8f68e1d80ce15f76e56b11de081e:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD when this measurement was recorded, rather than the working copy, which would let an uncommitted edit vouch for itself."
+        "atCommit": "6faac4a854cd63dfc144f5f3f9574780511b11b7",
+        "howChecked": "`git show 6faac4a854cd63dfc144f5f3f9574780511b11b7:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD when this measurement was recorded, rather than the working copy, which would let an uncommitted edit vouch for itself."
       },
       "hostedAttestation": {
         "runId": 31885987461,
@@ -247,7 +247,8 @@
         "describesSupersededHead": true,
         "supersededBy": "The hosted run taken at a head that DESCENDS from candidate 526a3b39 — the pull request CI for branch `p1-28/od-025-policy-enforcement`. Until that run exists this figure describes an ancestor and is cited as such; it is replaced by re-citing the same fields (run id, job id, head, artefact) at the descending head, never by relaxing the rule that refused it."
       },
-      "note": "Measured at f1f86568, a documentation-only successor of the candidate: the commits between them carry evidence records and nothing executable."
+      "note": "Measured at 4174cb15, a documentation-only successor of the candidate: the commits between them carry evidence records and nothing executable.",
+      "measurementDrift": ["apps/web/tests/p1-28-qa.test.ts"]
     },
     "web": {
       "label": "web component and DOM",
@@ -261,8 +262,8 @@
       "localLedger": {
         "path": "docs/phase-1/phase-1-27/evidence/local-run-ledger.json",
         "tier": "web",
-        "atCommit": "cb517db4505f8f68e1d80ce15f76e56b11de081e",
-        "howChecked": "`git show cb517db4505f8f68e1d80ce15f76e56b11de081e:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD when this measurement was recorded, rather than the working copy, which would let an uncommitted edit vouch for itself."
+        "atCommit": "6faac4a854cd63dfc144f5f3f9574780511b11b7",
+        "howChecked": "`git show 6faac4a854cd63dfc144f5f3f9574780511b11b7:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD when this measurement was recorded, rather than the working copy, which would let an uncommitted edit vouch for itself."
       },
       "hostedAttestation": {
         "runId": 31885987461,
