@@ -13,16 +13,21 @@ import { STATUS_BY_KIND } from '@/lib/api/read-operation';
  * Every P1-28 `.dom` suite mocks its adapter module wholesale, so it exercises
  * the SCREEN and structurally cannot exercise the adapter. Every P1-28 unit
  * suite exercises a pure module — the contract tables, the wizard rules, the
- * closure graph. **Nothing was executing the forty-four adapters this phase
+ * closure graph. **Nothing was executing the forty-seven adapters this phase
  * ships.** That is the P1-27 Wave 5 finding recurring one phase later: mutating
  * an adapter left twenty DOM tests green, because every reference to it in the
  * whole suite was a `vi.fn()` that replaces the thing under test.
  *
- * So this file drives all twenty-four reads and all twenty writes through all
- * eleven transport kinds, through the four refusal branches the contract names
- * (428 / 409 / 422 / 403), and through the three replay shapes — and it asserts
- * the paths they actually produce against the published contract, in both
- * directions.
+ * So this file drives all twenty-five reads and all twenty-two writes through
+ * all eleven transport kinds, through the four refusal branches the contract
+ * names (428 / 409 / 422 / 403), and through the three replay shapes — and it
+ * asserts the paths they actually produce against the published contract, in
+ * both directions.
+ *
+ * Forty-seven rather than forty-four because `src/features/attachments` became
+ * an adapter root: three `'use server'` exports had been ineligible for
+ * discovery, so the sweep and the table agreed perfectly about a tree neither
+ * could see. Nothing about them changed — only whether anything looks.
  *
  * Two of those twenty writes are COMPOSITE Server Actions — the FE-017 evidence
  * capture and the FE-018 signature capture — which walk the shared document
@@ -1675,16 +1680,36 @@ describe('P1-28-QA-003 — scope is resolved by the server, and asserted by nobo
 describe('P1-28-QA-004 — idempotency is read off the contract, never off the verb', () => {
   it('requires a key on every write this phase performs', async () => {
     /*
-     * Twenty, and every one of them verified rather than counted. The pin moved
-     * from fourteen because six writes entered scope when `P1-OD-025` resolved:
-     * the four commands the decision unblocked (`bindEvidence`,
-     * `finalizeEvidenceBinding`, `overrideCaptureRequirement`,
+     * Twenty-three, and every one of them verified rather than counted. The pin
+     * moved from fourteen to twenty because six writes entered scope when
+     * `P1-OD-025` resolved: the four commands the decision unblocked
+     * (`bindEvidence`, `finalizeEvidenceBinding`, `overrideCaptureRequirement`,
      * `recordSignatureEvent`) and the two composite captures that walk the
      * document chain to reach one. Each was checked against the registry before
      * the number was allowed to move — all six resolve to an operation
      * registered `idempotent: true`, and no adapter among them passes an options
      * object to `client.send`, so none mints a key the contract-derived client
      * would then be unable to own.
+     *
+     * It moved again, to twenty-two, when `adapterRoots()` was pointed at
+     * `src/features/attachments`. Those two writes — `captureDocument` and
+     * `createDocumentLink` — did not enter scope then; they had shipped
+     * undriven, because the tree they live in was under no root and so the
+     * exhaustiveness sweep above could not see them. The number rising is
+     * therefore the honest record of a blind spot closing, not of new work: both
+     * resolve to an operation registered `idempotent: true`
+     * (`shared.attachment-upload-authorize`, `shared.attachment-link-create`)
+     * and neither passes an options object, checked here on the same terms as
+     * the twenty before them.
+     *
+     * It moved once more, to twenty-three, when `finalizeCapturedEvidence`
+     * was added — and that one IS new work rather than a blind spot closing.
+     * The capture chain attempts its finalization exactly once, so a call that
+     * did not answer left a real binding over an accepted version counting
+     * towards nothing; the retry is a second entry point on the same adapter,
+     * `rec.reception-evidence-binding-finalize`, which is registered
+     * `idempotent: true` and takes no options object. It is checked here on the
+     * same terms as the twenty-two before it.
      *
      * The assertion inside the loop is what makes that a check rather than a
      * claim: it reads the requirement off the PATH the adapter really built. A
@@ -1700,7 +1725,7 @@ describe('P1-28-QA-004 — idempotency is read off the contract, never off the v
       expect(requiresIdempotencyKey(method, path), `${drive.name} → ${method} ${path}`).toBe(true);
       seen.push(drive.name);
     }
-    expect(seen.length, 'no writes were driven').toBe(20);
+    expect(seen.length, 'no writes were driven').toBe(23);
   });
 
   it('is not vacuous: the same check refuses a path the registry does not make idempotent', () => {

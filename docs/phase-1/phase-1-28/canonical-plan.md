@@ -148,7 +148,7 @@ tasks are cross-domain: `FE-006` (walk-in intake composes CRM and Vehicle),
 | id             | canonical name                                  | primary Backend operation(s)                                                                                                                                                                                                                                                              | test id            |
 | -------------- | ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------ |
 | `P1-28-FE-006` | Walk-in customer and vehicle intake             | `crm.customer-search`, `crm.individual-create`, `crm.company-create`, `veh.vehicle-search`, `veh.vehicle-create`, `crm.vehicle-link`                                                                                                                                                      | `TC-P1-28-XD-001`  |
-| `P1-28-FE-007` | Reception check-in wizard                       | `rec.reception-create`, `iam.user-list`, `rec.receiving-employee-list`, `rec.reception-list`, `rec.reception-detail`                                                                                                                                                                      | `TC-P1-28-REC-001` |
+| `P1-28-FE-007` | Reception check-in wizard                       | `rec.reception-create`, `rec.receiving-employee-list`, `rec.reception-list`, `rec.reception-detail`                                                                                                                                                                                       | `TC-P1-28-REC-001` |
 | `P1-28-FE-008` | Reception customer and vehicle confirmation     | `crm.customer-read`, `veh.vehicle-read`, `veh.vehicle-relationship-list`, `crm.customer-vehicle-list`                                                                                                                                                                                     | `TC-P1-28-XD-002`  |
 | `P1-28-FE-009` | Reception party roles and authorization         | `rec.reception-party-role`, `rec.reception-authorization`, `rec.reception-party-role-list`, `rec.reception-authorization-list`                                                                                                                                                            | `TC-P1-28-REC-002` |
 | `P1-28-FE-010` | Reception customer complaint capture            | `rec.reception-condition-evidence [kind complaint]`                                                                                                                                                                                                                                       | `TC-P1-28-REC-003` |
@@ -247,25 +247,49 @@ entry because the two are halves of one question. The section is no longer
 titled "inherited" because that word would have made the new entry a lie in a
 heading.
 
-### `P1-OD-025` — document and media file policy · **OPEN**
+### `P1-OD-025` — document and media file policy · **RESOLVED FOR RECEPTION EVIDENCE**
 
-**Disposition: decision-neutral foundation.**
+**Disposition: decided for this phase’s surface; still open for the rest.**
 
-- **Blocks:** all capture in `FE-017`; the signature-image half of `FE-018`;
-  the template-document half of `FE-012`.
-- **What ships instead:** the safe foundation with **upload acceptance
-  blocked** — no approved file types asserted, no size limit invented, no
-  object store assumed, and the open decision named on-screen. The honest
-  ceiling of the shipped attachment chain is "registered, pending, never
-  downloadable": no storage provider is configured and no scanner exists, so
-  no version can reach `accepted`
-  (`docs/product/workshop/reception-media-checklist.md:208-210`).
-- **Enforced by:** the `no-upload-path` and `no-invented-media-limit` gate
-  rules (`scripts/ci/check-p1-27-frontend.mjs:910`, `:953`), which ban any capture
-  UI while the decision is open.
-- The Owner media rows 12-14 are themselves **Blocked** (`INT-093/094/095`),
-  and only the COUNT of seven exterior angles is fixed — the angle set is an
-  unconfirmed proposal (`reception-media-checklist.md:102-105`).
+The scope matters more than the word, so it is stated first. The Owner
+answered this decision **for reception evidence**, and for nothing else. What
+that answer consists of is not a sentence in a document — it is seven rows:
+`shared.document_categories` holds `reception_exterior`, `reception_vin`,
+`reception_dashboard`, `reception_damage`, `reception_damage_map_template`,
+`reception_signature` and `reception_refusal_evidence`, each admitting
+`image/jpeg`, `image/png` and `image/webp` at 10485760 bytes, each with its
+business link purpose. There is no vehicle, catalogue, inspection or
+task-evidence category, so every other surface `P1-OD-025` binds is still
+waiting, and the documents that say so are right.
+
+- **No longer blocks:** capture in `FE-017`. The chain is real and driven
+  end to end against a running store — authorize, PUT, register, scan, link,
+  bind, finalize — and an EICAR file is quarantined rather than accepted.
+- **Still blocks:** nothing in P1-28. `FE-012`’s template half and `FE-018`’s
+  signature-image half are blocked by the absence of a **published template
+  document and a registered signature document**, which is a capability gap
+  and not this decision.
+- **The application still asserts no policy of its own.** The types and the
+  ceiling are read from the category the SERVER publishes; the
+  `no-upload-path` and `no-invented-media-limit` rules
+  (`scripts/ci/check-p1-27-frontend.mjs`) are unchanged and now scan the
+  reception tree as well, with exactly one sanctioned file input
+  (`components/CaptureFileField.tsx`). A decided policy read from the server
+  and an invented one are different things, and only the second was ever
+  banned.
+- The Owner media rows 12-14 (`INT-093/094/095`) and the exterior ANGLE SET
+  are a separate question: only the COUNT of seven is fixed
+  (`reception-media-checklist.md:102-105`). This phase asserts neither, and
+  the resolution above did not answer them.
+
+**Superseded — what this entry said before the decision, kept as provenance.**
+Disposition: decision-neutral foundation. It recorded that capture was
+blocked in `FE-017`, `FE-018` and `FE-012`; that the honest ceiling of the
+attachment chain was "registered, pending, never downloadable" because no
+storage provider was configured and no scanner existed, so no version could
+reach `accepted`; and that the two gate rules banned any capture UI while the
+decision was open. Every clause of that was true when written and the first
+three are now false in fact.
 
 ### Warning-light catalogue population · **OPEN**
 
@@ -372,18 +396,43 @@ number the Owner assigns supersedes this one and this section is corrected.
   a different question badly, and the rows would then be the product's own
   invented data.
 
-### Receiving-employee referent — Owner register question A · **OPEN**
+### Receiving-employee referent — Owner register question A · **RESOLVED**
 
-- **Blocks:** the receiving-employee field of `FE-007` only.
-- **The gap:** `rec.reception_visits.receiving_employee_id` is NOT NULL with
-  **no foreign key and no defined referent** (migration `20260721097000:62`);
-  the employee master never shipped (`20260718090000:166-196`). An
-  `iam.user-list` picker is technically fillable, but nothing defines that an
-  `iam.user` id is a legal value, and nothing resolves a stored id to a name
-  in any future read.
-- **What ships instead:** the field is populated only after the Owner register
-  question A (`owner-workflow-requirements.md:199-216`) receives an explicit
-  disposition (R6). The UI shows names, never UUIDs.
+The Owner answered register question A and the Backend landed the answer, so
+this entry is a record of a decision rather than a block. Both states are kept
+below: erasing the pre-decision reasoning would make the current binding look
+arbitrary, and leaving only the pre-decision reasoning is what put a superseded
+operation in `FE-007`'s canonical set.
+
+**AFTER the Owner decision — the canonical binding.**
+
+- **Operation:** `rec.receiving-employee-list`
+  (`GET /api/v1/reception-catalogue/receiving-employees`).
+- **Permission:** `rec.reception.manage` — the code the operation itself
+  declares, and the one `RECEIVING_EMPLOYEE_PERMISSION` exports.
+- **Scope:** branch-scoped, returning the active IAM users eligible to accept
+  custody in that branch.
+- **The referent is real:** `receiving_employee_id` is now an IAM reference
+  under `fk_reception_visits_receiving_employee` with `ON DELETE RESTRICT`,
+  and eligibility is enforced by `tg_reception_visits_receiving_employee`.
+- **History reads a snapshot, not a directory:** the acknowledgement prints
+  `receivingEmployeeDisplayName`, written when custody was accepted, so a past
+  handover cannot be reprinted under a name the account acquired afterwards.
+  No `iam.user-detail` read exists on that page.
+
+**BEFORE the Owner decision — superseded, kept as provenance.**
+
+- **Blocked:** the receiving-employee field of `FE-007` only.
+- **The gap, as it stood:** `rec.reception_visits.receiving_employee_id` was
+  NOT NULL with **no foreign key and no defined referent** (migration
+  `20260721097000:62`); the employee master never shipped
+  (`20260718090000:166-196`). An `iam.user-list` picker was technically
+  fillable, but nothing defined that an `iam.user` id was a legal value, and
+  nothing resolved a stored id to a name in any future read.
+- **Why that mattered:** it is the reason `iam.user-list` appeared in
+  `FE-007`'s operation set at all. It was a provisional assumption about a
+  column with no referent, never an approved requirement, and it is no longer
+  part of the current binding above.
 
 ### Road-test structure — `WF-10` · **OPEN**
 
@@ -413,9 +462,11 @@ the appointment catalogues alike — 21 management operations across all seven
 tables. What remains is neither a read gap nor a write gap: the tables still
 ship zero rows because nothing in the product reaches those operations, and who
 may reach them is `P1-28-OD-001`, recorded above as a decision rather than
-carried here as a backlog item. `G-CRM-PHONE`, `G-EMP` and `G-MEDIA` remain
-open, and the first of those is the one an operator meets daily: a walk-in
-cannot be found by telephone number.
+carried here as a backlog item. `G-EMP` is CLOSED — the Owner answered register
+question A, the referent is a real IAM reference with an eligibility guard, and
+`rec.receiving-employee-list` is the canonical operation (recorded above).
+`G-CRM-PHONE` and `G-MEDIA` remain open, and the first of those is the one an
+operator meets daily: a walk-in cannot be found by telephone number.
 
 ---
 
@@ -473,5 +524,9 @@ riskiest contract facts (`contract-archaeology.md` §5):
   as an operation — confirmation is a side effect of
   `apt.appointment-reschedule` — so no control may say "Confirm" unless it
   truthfully calls that operation and says so.
-- Media state is described as what it is: "registered, pending" — never
-  "uploaded" — while `P1-OD-025` is open.
+- Media state is described as what the SERVER says it is — `pending`,
+  `scanning`, `accepted`, `quarantined`, `rejected` — and a requirement counts
+  only finalized bindings. The rule this replaced ("registered, pending",
+  never "uploaded", while `P1-OD-025` is open) was written when no version
+  could reach `accepted`; the vocabulary is now read from the version rather
+  than fixed by a disposition.

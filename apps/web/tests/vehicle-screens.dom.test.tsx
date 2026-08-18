@@ -807,6 +807,116 @@ describe('the attribute-change ledger', () => {
   const render = () =>
     renderLtr(<VehicleAttributeHistorySection locale="en" messages={en} vehicleId="v1" />);
 
+  /*
+   * Every case in this block used the default `fieldCode: 'color'` — free
+   * text — so no fixture could reach the two kinds of value the ledger
+   * actually mishandled. The trigger writes eleven columns:
+   * `veh.emit_vehicle_attribute_history()` records three closed vocabularies,
+   * five catalogue uuids and three free-text fields, and the renderer printed
+   * all of them as whatever the database stored.
+   */
+
+  it('translates the three closed vocabularies instead of printing their tokens', async () => {
+    listAttributeHistory.mockResolvedValue(
+      page([
+        entry({
+          id: 'h-w',
+          fieldCode: 'workshop_status',
+          oldValue: 'in_workshop',
+          newValue: 'ready_for_delivery',
+        }),
+        entry({ id: 'h-l', fieldCode: 'lifecycle_status', oldValue: 'draft', newValue: 'active' }),
+        entry({ id: 'h-p', fieldCode: 'powertrain_category', oldValue: 'ice', newValue: 'phev' }),
+      ])
+    );
+    const { container } = render();
+
+    await screen.findByText(en['vehicles.workshop.ready_for_delivery']!);
+    const text = container.textContent ?? '';
+
+    // The human words, from the catalogues that already existed.
+    expect(text).toContain(en['vehicles.workshop.ready_for_delivery']!);
+    expect(text).toContain(en['vehicles.lifecycle.active']!);
+    expect(text).toContain(en['vehicles.powertrain.phev']!);
+
+    // And not the stored tokens, which is what shipped.
+    for (const token of ['in_workshop', 'ready_for_delivery', 'draft', 'phev']) {
+      expect(text, `the stored token ${token} reached the operator`).not.toContain(token);
+    }
+  });
+
+  it('never prints a catalogue uuid, and says what it can instead', async () => {
+    listAttributeHistory.mockResolvedValue(
+      page([
+        entry({
+          id: 'h-mk',
+          fieldCode: 'make_id',
+          oldValue: null,
+          newValue: 'c1780000-0000-4000-8000-0000000000a2',
+        }),
+        entry({
+          id: 'h-md',
+          fieldCode: 'model_id',
+          oldValue: 'c1780000-0000-4000-8000-0000000000b1',
+          newValue: 'c1780000-0000-4000-8000-0000000000b2',
+        }),
+        entry({
+          id: 'h-tr',
+          fieldCode: 'trim_id',
+          oldValue: 'c1780000-0000-4000-8000-0000000000c1',
+          newValue: null,
+        }),
+      ])
+    );
+    const { container } = render();
+
+    await screen.findByText(en['vehicles.history.catalogueSet']!);
+    const text = container.textContent ?? '';
+
+    // The rule, scoped to this surface: no uuid-shaped text anywhere in it.
+    expect(
+      /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.test(text),
+      'a bare uuid reached the operator'
+    ).toBe(false);
+
+    // …and each shape still says which way the field moved.
+    expect(text).toContain(en['vehicles.history.catalogueSet']!);
+    expect(text).toContain(en['vehicles.history.catalogueChanged']!);
+    expect(text).toContain(en['vehicles.history.catalogueCleared']!);
+  });
+
+  it('renders both kinds in Arabic, with no token and no uuid', async () => {
+    listAttributeHistory.mockResolvedValue(
+      page([
+        entry({
+          id: 'h-w',
+          fieldCode: 'workshop_status',
+          oldValue: 'in_workshop',
+          newValue: 'ready_for_delivery',
+        }),
+        entry({
+          id: 'h-mk',
+          fieldCode: 'make_id',
+          oldValue: null,
+          newValue: 'c1780000-0000-4000-8000-0000000000a2',
+        }),
+      ])
+    );
+    const { container } = renderRtl(
+      <VehicleAttributeHistorySection locale="ar" messages={ar as typeof en} vehicleId="v1" />
+    );
+
+    await screen.findByText(ar['vehicles.history.catalogueSet']!);
+    const text = container.textContent ?? '';
+
+    expect(text).toContain(ar['vehicles.workshop.ready_for_delivery']!);
+    expect(text).toContain(ar['vehicles.history.catalogueSet']!);
+    expect(text).not.toContain('ready_for_delivery');
+    expect(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.test(text)).toBe(false);
+
+    // No dotted key escaped either — a missing Arabic message renders its key.
+    expect(/\bvehicles\.[a-z]+\.[a-z_]+/i.test(text), 'a raw message key rendered').toBe(false);
+  });
   it('never prints the word null to a reader', async () => {
     listAttributeHistory.mockResolvedValue(
       page([

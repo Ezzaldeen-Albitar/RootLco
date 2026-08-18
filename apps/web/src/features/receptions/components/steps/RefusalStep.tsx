@@ -150,7 +150,7 @@ export function RefusalStep({
    * below reaches the rows the filter could not.
    */
   const rows = (table.response?.rows ?? []).filter((row) => row.kind === 'refusal');
-  const completeness = readCompleteness(table.status, table.response?.hasMore);
+  const completeness = readCompleteness(table.status, table.response?.hasMore, table.request.page);
 
   const submit = () => {
     const nextAttempt = (state.attempt ?? 0) + 1;

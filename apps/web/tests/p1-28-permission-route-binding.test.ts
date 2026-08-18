@@ -296,8 +296,15 @@ const ROUTES: readonly RouteCase[] = [
     capabilities: {
       canCreate: 'rec.reception.manage',
       canListAppointments: 'apt.appointment.read',
-      // The staff-directory overload, wired to its own code and to no other.
-      canPickEmployee: 'iam.user.read',
+      /*
+       * The code the OPERATION declares. This pinned `iam.user.read` — the
+       * superseded one — under a header reading "the ONE permission that must
+       * grant it", so correcting the page to the documented and
+       * server-declared code turned this test red. A binding test that pins
+       * the wrong half of a disagreement does not detect the disagreement, it
+       * enforces it.
+       */
+      canPickEmployee: 'rec.reception.manage',
       canSearchCustomers: 'crm.customer.read',
     },
   },

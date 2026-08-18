@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
@@ -647,6 +647,47 @@ function controlNames(): string[] {
   return controls.map((control) => control.getAttribute('aria-label') ?? control.textContent ?? '');
 }
 
+/**
+ * A read that did not answer.
+ *
+ * It reports `hasMore: false` exactly like a complete empty page, because every
+ * adapter's failure branch does — which is the whole reason a gate may not read
+ * "no rows" as "there are none".
+ */
+function failedPage(
+  status: 'denied' | 'expired' | 'unavailable' | 'error' | 'not-found',
+  correlationId: string
+) {
+  return { status, rows: [], nextCursor: null, hasMore: false, correlationId };
+}
+
+/** Routes only the DAMAGE-MAP read, so the mark read-back is never the variable. */
+function mapsRead(answer: () => Promise<unknown>) {
+  listConditionEvidence.mockImplementation((_visitId: string, kind: string) =>
+    kind === 'damage_map' ? answer() : Promise.resolve(page([]))
+  );
+}
+
+/**
+ * What the mark panel's write slot is showing, as ONE comparable value.
+ *
+ * A signature, not a boolean. "The empty-visit notice is absent" is satisfied by
+ * a skeleton, by a blank slot and by any other sentence, so a suite built out of
+ * absence checks cannot tell a state that was handled from a state that rendered
+ * nothing at all — which is precisely how a read failure went on being printed
+ * as an established absence here.
+ */
+function markSlot(): string {
+  if (screen.queryByRole('form', { name: EN['receptions.damage.formLabel']! }) !== null) {
+    return 'form';
+  }
+  for (const id of ['damage-mark-denied', 'damage-mark-unread', 'evidence-notice-damage_mark']) {
+    const node = screen.queryByTestId(id);
+    if (node !== null) return `${id}: ${node.textContent ?? ''}`;
+  }
+  return 'nothing';
+}
+
 describe('the damage step (FE-012)', () => {
   it('reads the bindable diagrams from the VISIT, and calls no catalogue', async () => {
     /*
@@ -1025,6 +1066,91 @@ describe('the damage step (FE-012)', () => {
     expect(
       within(mapsPanel()).getByRole('button', { name: EN['receptions.damage.templateSubmit']! })
     ).toBeInTheDocument();
+  });
+
+  it('never renders an unfinished or refused map read as a visit with no map', async () => {
+    /*
+     * The mark gate, driven through every answer its read can give.
+     *
+     * `mapChoices.length === 0` was the whole gate, and six of the seven states
+     * a `useServerTable` can be in leave that list empty — so a denial, an
+     * expired session, a rate limit, a transport failure, a not-found and a read
+     * still in flight all printed "A mark is placed on a damage map, and this
+     * visit has none. Open one above first." The sentence is an OBSERVATION, and
+     * making it off a read nobody answered sends an operator to open a second
+     * map on a visit that may already carry one.
+     *
+     * Asserted by SIGNATURE rather than by "the empty message is absent": a
+     * skeleton, a blank slot and a different sentence all satisfy an absence
+     * check, which is how this class survived here before. Comparing the
+     * signatures makes "two of these states look the same" a failure.
+     */
+    const slots = new Map<string, string>();
+
+    // 1 — the read has not answered. Only the MAPS read is held open, so the
+    // mark read-back beside it settles and proves the step is mounted: a slot
+    // that is empty because nothing rendered would pass every assertion here.
+    mapsRead(() => new Promise(() => {}));
+    const pending = renderLtr(<DamageMapStep {...stepProps()} />);
+    expect(await screen.findByText(EN['receptions.evidence.readBackEmpty']!)).toBeInTheDocument();
+    expect(screen.queryByTestId('evidence-notice-damage_mark')).not.toBeInTheDocument();
+    slots.set('pending', markSlot());
+    pending.unmount();
+
+    // 2 — refused. The panel above states the refusal; the gate below must not
+    // contradict it with an absence, and must not invite a retry that cannot
+    // work.
+    mapsRead(() => Promise.resolve(failedPage('denied', 'corr-403')));
+    const denied = renderLtr(<DamageMapStep {...stepProps()} />);
+    expect(await screen.findByTestId('damage-mark-denied')).toHaveTextContent(
+      EN['receptions.damage.markMapsDenied']!
+    );
+    // The two panels agree about one read: the refusal is named where the rows
+    // would have been, and the gate says what follows from it.
+    expect(screen.getByText(EN['state.denied.title']!)).toBeInTheDocument();
+    slots.set('denied', markSlot());
+    denied.unmount();
+
+    // 3 — every other way the read can fail to establish anything, including a
+    // page the server itself says is not the whole set.
+    const unestablished = [
+      failedPage('expired', 'corr-401'),
+      failedPage('unavailable', 'corr-429'),
+      failedPage('error', 'corr-500'),
+      failedPage('not-found', 'corr-404'),
+      page([], true),
+    ];
+    expect(unestablished).toHaveLength(5);
+    for (const answer of unestablished) {
+      mapsRead(() => Promise.resolve(answer));
+      const failed = renderLtr(<DamageMapStep {...stepProps()} />);
+      expect(await screen.findByTestId('damage-mark-unread'), answer.status).toHaveTextContent(
+        EN['receptions.damage.markMapsUnknown']!
+      );
+      slots.set(`unknown:${answer.status}:${answer.hasMore}`, markSlot());
+      failed.unmount();
+    }
+
+    // 4 — the control, and the only state entitled to the coverage notice: the
+    // read covered the set and this visit genuinely holds no map.
+    mapsRead(() => Promise.resolve(page([])));
+    const none = renderLtr(<DamageMapStep {...stepProps()} />);
+    expect(await screen.findByTestId('evidence-notice-damage_mark')).toHaveTextContent(
+      EN['receptions.evidence.damageMapRequired']!
+    );
+    slots.set('none', markSlot());
+    none.unmount();
+
+    // The claim itself: the coverage notice is reached by ONE of the eight
+    // answers, and no two distinguishable facts render alike.
+    const claimed = [...slots.entries()].filter(([, slot]) =>
+      slot.includes(EN['receptions.evidence.damageMapRequired']!)
+    );
+    expect(claimed.map(([state]) => state)).toEqual(['none']);
+    // The four failing statuses share one sentence, deliberately — the panel
+    // above names which — so the distinct renderings are the four FACTS.
+    expect(new Set(slots.values()).size).toBe(4);
+    expect(slots.get('pending')).toBe('nothing');
   });
 
   it('records a mark against an existing map, with 0..1 coordinates', async () => {
@@ -1575,11 +1701,52 @@ describe('the contents step (FE-016)', () => {
 /* --- F1: the inspection read-back is one page, and says so ------------------ */
 
 describe('F1 — an unread page is never "this visit has none"', () => {
-  /** Routes the list operation by kind, and marks the answer as truncated. */
+  /**
+   * Every fixture in this block used to ignore the `cursor` argument, so page one
+   * and page two answered identically and `hasMore` could not change across a page
+   * move. The four completeness values were therefore only ever driven at
+   * `request.page === 1` — the one page where `hasMore: false` really does mean
+   * the whole set. The block certified a guarantee it could not test, and the
+   * corner it could not reach was the corner that was broken.
+   *
+   * `evidenceWalk` takes the cursor and hands page two a DIFFERENT payload,
+   * which is what makes a page move observable at all.
+   */
   function evidenceTruncated(rows: Partial<Record<string, readonly unknown[]>>) {
     listConditionEvidence.mockImplementation((_visitId: string, kind: string) =>
       Promise.resolve(page(rows[kind] ?? [], true))
     );
+  }
+
+  /** Page one, then the page the cursor opens — each with its own `hasMore`. */
+  function evidenceWalk(
+    first: readonly unknown[],
+    second: readonly unknown[],
+    moreOnFirst: boolean,
+    moreOnSecond: boolean
+  ) {
+    listConditionEvidence.mockImplementation(
+      (_visitId: string, kind: string, _request: unknown, cursor: string | null) =>
+        Promise.resolve(
+          kind !== 'inspection'
+            ? page([])
+            : cursor === null
+              ? // A cursor MUST come back, or `useCursorPages` remembers nothing and
+                // page two re-sends `null` — which is how a page-two fixture can
+                // silently re-read page one and look like it proved something.
+                { ...page(first, moreOnFirst), nextCursor: 'cur-2' }
+              : { ...page(second, moreOnSecond), nextCursor: moreOnSecond ? 'cur-3' : null }
+        )
+    );
+  }
+
+  /** Walks to page two through the pager the step renders. */
+  async function toPageTwo(user: ReturnType<typeof userEvent.setup>) {
+    const pager = await screen.findByRole('navigation', {
+      name: EN['receptions.inspection.pagerLabel']!,
+    });
+    await user.click(within(pager).getByRole('button', { name: EN['table.nextPage']! }));
+    await waitFor(() => expect(listConditionEvidence.mock.calls.length).toBeGreaterThan(2));
   }
 
   function evidenceUnreadable() {
@@ -1594,6 +1761,93 @@ describe('F1 — an unread page is never "this visit has none"', () => {
     );
   }
 
+  /** Holds the `inspection` read open so it never settles. */
+  function evidenceInFlight() {
+    listConditionEvidence.mockImplementation((_visit: string, kind: string) =>
+      kind === 'inspection'
+        ? new Promise(() => {})
+        : Promise.resolve({
+            status: 'ok' as const,
+            rows: [],
+            nextCursor: null,
+            hasMore: false,
+            correlationId: 'corr',
+          })
+    );
+  }
+
+  it('says nothing about the visit while the read is still in flight', async () => {
+    /*
+     * The fourth value, and the one this block did not assert.
+     * `readCompleteness` publishes `'pending' | 'complete' | 'truncated' | 'unreadable'`,
+     * and the step consumed two of them: `'complete'` took the coverage notice
+     * and EVERYTHING else fell to a ternary asking only `=== 'truncated'`, so a
+     * read that had not answered printed "The inspections for this visit could
+     * not be read". That is a conclusion about a question still in flight, and
+     * it rendered on every mount before the read settled.
+     *
+     * The three cases below are named for the three values they drive, which
+     * is what made the fourth look accounted for.
+     */
+    evidenceInFlight();
+    renderLtr(<InspectionStep {...stepProps()} />);
+
+    const pending = await screen.findByTestId('finding-inspections-pending');
+    expect(pending).toHaveTextContent(EN['receptions.finding.inspectionsLoading']!);
+
+    // Neither conclusion may be on screen: not the failure, not the absence.
+    expect(screen.queryByTestId('finding-inspections-unknown')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('evidence-notice-condition_item')).not.toBeInTheDocument();
+  });
+
+  it('moves from in flight to the established absence once the read answers', async () => {
+    /*
+     * The transition, driven rather than asserted from two separate mounts: a
+     * loading sentence that never becomes a conclusion is its own defect.
+     */
+    let settle: (value: unknown) => void = () => {};
+    listConditionEvidence.mockImplementation((_visit: string, kind: string) =>
+      kind === 'inspection'
+        ? new Promise((resolve) => {
+            settle = resolve;
+          })
+        : Promise.resolve({
+            status: 'ok' as const,
+            rows: [],
+            nextCursor: null,
+            hasMore: false,
+            correlationId: 'corr',
+          })
+    );
+
+    renderLtr(<InspectionStep {...stepProps()} />);
+    await screen.findByTestId('finding-inspections-pending');
+
+    await act(async () => {
+      settle({
+        status: 'ok' as const,
+        rows: [{ ...OPEN_INSPECTION, inspectionStatus: 'completed', completedAt: 'x' }],
+        nextCursor: null,
+        hasMore: false,
+        correlationId: 'corr',
+      });
+    });
+
+    expect(await screen.findByTestId('evidence-notice-condition_item')).toBeInTheDocument();
+    expect(screen.queryByTestId('finding-inspections-pending')).not.toBeInTheDocument();
+  });
+
+  it('offers a retry on a FAILED read, and the retry re-reads', async () => {
+    evidenceUnreadable();
+    const user = userEvent.setup();
+    renderLtr(<InspectionStep {...stepProps()} />);
+
+    await screen.findByTestId('finding-inspections-unknown');
+    const before = listConditionEvidence.mock.calls.length;
+
+    await user.click(screen.getByTestId('finding-inspections-retry'));
+    await waitFor(() => expect(listConditionEvidence.mock.calls.length).toBeGreaterThan(before));
+  });
   it('says none is open only when the read covered this visit', async () => {
     // The control, unchanged: a complete read holding one completed header.
     evidenceByKind({
@@ -1654,6 +1908,85 @@ describe('F1 — an unread page is never "this visit has none"', () => {
     ).toBeInTheDocument();
   });
 
+  it('does not say the visit has none once the walk has left page one', async () => {
+    /*
+     * The defect this whole block exists for, restored by one click of the
+     * pager the block itself drives two cases above.
+     *
+     * Page one holds the open inspection and reports more exists. Page two is
+     * the tail — a completed header, `hasMore: false` — and the first form of
+     * `readCompleteness` called that `'complete'`. So the step printed the coverage
+     * notice for a visit whose open inspection sat on the page the operator had
+     * just left, and the finding form was withdrawn with it.
+     */
+    const COMPLETED = { ...OPEN_INSPECTION, inspectionStatus: 'completed', completedAt: 'x' };
+    evidenceWalk([OPEN_INSPECTION], [COMPLETED], true, false);
+    const user = userEvent.setup();
+    renderLtr(<InspectionStep {...stepProps()} />);
+
+    // Page one: the open inspection is here, so the form is offered.
+    expect(
+      await screen.findByRole('button', { name: EN['receptions.finding.record']! })
+    ).toBeInTheDocument();
+
+    await toPageTwo(user);
+
+    /*
+     * On page two the open inspection is out of view. That is a WINDOW, not an
+     * observation, so the step may say it does not know — and may not print the
+     * coverage notice, which is a claim about the whole visit.
+     */
+    expect(await screen.findByTestId('finding-inspections-unknown')).toHaveTextContent(
+      EN['receptions.finding.inspectionsTruncated']!
+    );
+    expect(screen.queryByTestId('evidence-notice-condition_item')).not.toBeInTheDocument();
+  });
+
+  it('states the coverage notice ONLY from page one with nothing further', async () => {
+    /*
+     * The one corner entitled to conclude, kept beside the three that are not,
+     * so the block cannot drift back to certifying page one alone.
+     */
+    evidenceWalk([], [], false, false);
+    renderLtr(<InspectionStep {...stepProps()} />);
+
+    expect(await screen.findByTestId('evidence-notice-condition_item')).toBeInTheDocument();
+    expect(screen.queryByTestId('finding-inspections-unknown')).not.toBeInTheDocument();
+    // Nothing further exists, so there is no pager to leave page one with.
+    expect(
+      screen.queryByRole('navigation', { name: EN['receptions.inspection.pagerLabel']! })
+    ).not.toBeInTheDocument();
+  });
+
+  it('refuses the coverage notice on page two even when page two ends the walk', async () => {
+    // page 2 + hasMore false — the corner no fixture in this block could reach.
+    evidenceWalk([], [], true, false);
+    const user = userEvent.setup();
+    renderLtr(<InspectionStep {...stepProps()} />);
+    await screen.findByTestId('finding-inspections-unknown');
+
+    await toPageTwo(user);
+
+    expect(await screen.findByTestId('finding-inspections-unknown')).toHaveTextContent(
+      EN['receptions.finding.inspectionsTruncated']!
+    );
+    expect(screen.queryByTestId('evidence-notice-condition_item')).not.toBeInTheDocument();
+  });
+
+  it('refuses it on page two when more still lies ahead', async () => {
+    // page 2 + hasMore true — unread in both directions.
+    evidenceWalk([], [], true, true);
+    const user = userEvent.setup();
+    renderLtr(<InspectionStep {...stepProps()} />);
+    await screen.findByTestId('finding-inspections-unknown');
+
+    await toPageTwo(user);
+
+    expect(await screen.findByTestId('finding-inspections-unknown')).toHaveTextContent(
+      EN['receptions.finding.inspectionsTruncated']!
+    );
+    expect(screen.queryByTestId('evidence-notice-condition_item')).not.toBeInTheDocument();
+  });
   it('renders the truncated sentence in Arabic, not as a key', async () => {
     evidenceTruncated({
       inspection: [{ ...OPEN_INSPECTION, inspectionStatus: 'completed', completedAt: 'x' }],

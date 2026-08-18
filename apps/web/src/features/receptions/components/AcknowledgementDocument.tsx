@@ -38,10 +38,20 @@ import { hasRegisteredMedia, isCustomerReported } from '../check-in/closure';
  *
  *   - **Storage keys and document identifiers.** Media reaches the record as a
  *     document REFERENCE; a customer's copy has no use for an internal
- *     identifier and printing one leaks the shape of the store. What prints is
- *     the STATE: *registered, pending*. Never "uploaded" — `P1-OD-025` is open,
- *     no upload path exists in this phase, and a document that said "uploaded"
- *     would be asserting something the platform has not done.
+ *     identifier and printing one leaks the shape of the store.
+ *   - **Any lifecycle state for that media.** What prints is EXISTENCE and
+ *     nothing else — *A file is on record* — and it is deliberately status-free.
+ *     Capture is real on this branch, so the reason is not that nothing was ever
+ *     uploaded; it is that this READ does not publish a status.
+ *     `rec.reception-condition-evidence-list` projects each arm's
+ *     `evidence_document_id` and joins no document or version table, so no
+ *     `pending`, `scanning` or `accepted` travels with the reference. A sheet
+ *     that named one would be naming a state it never read — and would be wrong
+ *     precisely when the version had already been accepted. The surfaces that DO
+ *     have a status (`CaptureBindingEntry`, `SignatureEntry`, both carrying
+ *     `documentVersionStatus`) render it from that field; `hasRegisteredMedia`
+ *     in `check-in/closure.ts` carries the same reasoning beside the predicate
+ *     that decides this cell.
  *   - **The customer's complaint wording.** `rec.complaint_details` is a
  *     restricted narrative table the evidence read excludes on purpose, so the
  *     words are not available to print. The document says so rather than

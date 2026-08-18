@@ -10,7 +10,6 @@ import {
   MAX_CAPTURED_AT,
   MAX_FILE_NAME,
   type DocumentCategory,
-  type DocumentVersion,
   type RegisteredVersion,
 } from './attachments-contract';
 
@@ -22,8 +21,12 @@ import {
  * | `shared.document-category-list`      | `/attachments/categories`             | `shared.document.read`  |
  * | `shared.attachment-upload-authorize` | `/attachments/upload-authorizations`  | `shared.document.manage`|
  * | `shared.attachment-version-register` | `/attachments/versions`               | `shared.document.manage`|
- * | `shared.document-version-read`       | `/attachments/versions/{versionId}`   | `shared.document.read`  |
  * | `shared.attachment-link-create`      | `/attachments/documents/{id}/links`   | `shared.document.manage`|
+ *
+ * The table is what this module CALLS, not what the platform publishes. The
+ * evidence chain publishes more than four operations, and one of them — the
+ * version read-back — was adapted here and reached by nothing; the tombstone
+ * below records what went and why the operation is unaffected.
  *
  * ## Where the bytes go, and why the browser never touches storage
  *
@@ -93,12 +96,47 @@ export async function listDocumentCategories(): Promise<
   );
 }
 
-/** One immutable version and its scan lifecycle (`shared.document-version-read`). */
-export async function readDocumentVersion(versionId: string): Promise<ReadState<DocumentVersion>> {
-  return readOperation<DocumentVersion>(
-    `/api/v1/attachments/versions/${encodeURIComponent(versionId)}`
-  );
-}
+/*
+ * `readDocumentVersion` — a `ReadState<DocumentVersion>` over
+ * `shared.document-version-read` — stood here, and is gone.
+ *
+ * ## Why, and on what precedent
+ *
+ * The name occurred EXACTLY ONCE in this repository: its own definition. No
+ * screen, no Server Action, no contract table, no test and no mock factory
+ * named it. An adapter nobody calls is not reach — it is `P1-27-INT-113` read
+ * backwards, a published operation credited to a caller that never existed, and
+ * a completeness sweep counting it as consumed. This repository has removed the
+ * same shape three times on the record: `crm/customers/identity-api.ts` under
+ * `P1-27-QA-002`, and `listVisitReasons` and `conditionEvidenceKinds` under
+ * `P1-28-F9`. Each left a tombstone rather than a silent deletion, so the next
+ * reader finds out that the absence was decided.
+ *
+ * ## What this was NOT, stated precisely
+ *
+ * It was not an open endpoint. A `'use server'` export becomes invocable from a
+ * browser only when something imports it into a client component, which is what
+ * mints the server reference the runtime dispatches on; nothing imported it, so
+ * it appears in no server-reference manifest and no request could have reached
+ * it. The honest description is dead code, not exposed surface, and overstating
+ * that would misdescribe both the risk and the fix.
+ *
+ * ## The operation is untouched
+ *
+ * `shared.document-version-read` is still published, still permissioned
+ * `shared.document.read`, and still covered end to end —
+ * `apps/api/src/app/api/v1/attachments/versions/[versionId]/route.ts` serves it
+ * and `tests/backend/p1-15-evidence-foundation.test.ts` drives it through
+ * route, service, authorization, success and denial. What changed is only that
+ * this tier no longer claims to call it.
+ *
+ * And it has no caller here because it needs none: the lifecycle the web tier
+ * acts on arrives with the registration. `captureDocument` returns
+ * `RegisteredVersion`, which carries `status`, `scanStatus` and
+ * `scannerAvailable` — the three facts `isFinalizedEvidence` and `isSettled`
+ * decide on — so a second round trip to re-read what the first call already
+ * answered was never part of the flow.
+ */
 
 /**
  * What a capture needs before it can start.

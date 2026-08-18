@@ -80,9 +80,9 @@ executable case · 0 with no proof at all.**
 
 <!-- derived: catalogue ids = 29 -->
 <!-- derived: catalogue files = 20 -->
-<!-- derived: catalogue titles = 139 -->
+<!-- derived: catalogue titles = 138 -->
 
-**20** distinct test files carry them, and **139** quoted case titles are checked
+**20** distinct test files carry them, and **138** quoted case titles are checked
 against the file that is said to hold them. Those two figures were prose — "16
 distinct test files" and "109 quoted case titles" — until the rebinding below
 moved both and nothing said so. They are read out of the JSON now.

@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState } from 'react';
+import { useActionState, useState } from 'react';
 import { TextField } from '@/components/forms/Field';
 import type { Messages } from '@/i18n/get-messages';
 import { translate } from '@/i18n/get-messages';
@@ -22,6 +22,11 @@ import { SubmitButton } from './SubmitButton';
  * for every address by design.
  */
 export function ForgotPasswordForm({ messages }: { readonly messages: Messages }) {
+  /*
+   * Retained across a refused submit. React resets the form DOM once the
+   * Server Action settles, and an uncontrolled text box is emptied by it.
+   */
+  const [email, setEmail] = useState('');
   const [state, formAction] = useActionState<ActionState, FormData>(
     requestPasswordResetAction,
     IDLE
@@ -46,12 +51,15 @@ export function ForgotPasswordForm({ messages }: { readonly messages: Messages }
     <form action={formAction} className="flex flex-col gap-5" noValidate>
       <FormFeedback state={state} messages={messages} />
       <TextField
+        key={`email-${state.attempt ?? 0}`}
         name="email"
         type="email"
         label={translate(messages, 'auth.forgot.email')}
         required
         autoComplete="username"
         spellCheck={false}
+        defaultValue={email}
+        onChange={(event) => setEmail(event.target.value)}
         error={fieldError ? translate(messages, fieldError as keyof Messages) : undefined}
       />
       <SubmitButton

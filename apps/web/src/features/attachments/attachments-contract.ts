@@ -1,11 +1,39 @@
 /**
  * The web-layer mirror of the shared document contract (`P1-15`, `P1-OD-025`).
  *
- * Every value here is a copy of something the API publishes, and copies drift.
- * `apps/web/tests/attachments-contract.test.ts` derives each one from
- * `docs/api/openapi.v1.json` and the operation register, so a vocabulary that
- * grows a member on the Backend fails here rather than reaching a screen as an
- * unhandled case.
+ * MOST of what is here is a copy of something the Backend governs, and copies
+ * drift. `apps/web/tests/attachments-contract.test.ts` derives those and fails
+ * when they move, so a vocabulary that grows a member on the Backend fails there
+ * rather than reaching a screen as an unhandled case.
+ *
+ * This header used to say "every value", and to name `docs/api/openapi.v1.json`
+ * and the operation register as the sources. Both halves were wrong. The
+ * published contract carries neither these enums nor these bounds — no `enum` in
+ * it contains `quarantined` or `infected`, and no `maxLength` of 400 appears —
+ * and one value below mirrors no Backend authority at all, so "every value" was
+ * a promise this module could not keep and the enumeration that followed it
+ * quietly listed one fewer bullet than there are values. Both are corrected
+ * here rather than 145 lines down, because a reader trusts the header.
+ *
+ * What governs each value is:
+ *
+ *   - the version vocabulary: `ck_document_versions_status`, a DATABASE
+ *     constraint, in its latest definition (migration `20260815090000` widened
+ *     it from four members to five, so this list has already moved once);
+ *   - the terminal subset of that vocabulary: not a second list, but the
+ *     members `shared.guard_document_version_transition` admits no transition
+ *     out of;
+ *   - the scan vocabulary: what `attachment-service.ts` REPORTS, which differs
+ *     by one member from what the table stores — `scan_status` admits
+ *     `pending` where the service reports `not_started`;
+ *   - the file-name bound: the request schema the upload-authorization route
+ *     really parses;
+ *   - `MAX_CAPTURED_AT`: **nothing on the Backend.** The versions route parses
+ *     `capturedAt` as a date, not a string, so there is no bound to mirror. It
+ *     is this tree's own ceiling on the TEXT it sends, and its test checks it as
+ *     a property — long enough for the instants this application produces —
+ *     rather than pretending to derive it. Stated here because a value that is
+ *     ours and a value that is theirs fail in different ways.
  *
  * ## The lifecycle, and why only one state is evidence
  *
@@ -39,6 +67,30 @@ export type DocumentVersionStatus = (typeof DOCUMENT_VERSION_STATUSES)[number];
  * spelled out four times is a rule that can be relaxed in three of them.
  */
 export const ACCEPTED_VERSION_STATUS = 'accepted';
+
+/**
+ * The states a version can never leave.
+ *
+ * `shared.guard_document_version_transition` admits no transition out of either
+ * of these, so a screen that offers a retry over one is offering an act that
+ * cannot succeed — and, worse, is telling an operator to wait for a verdict that
+ * has already been reached against them. The difference matters at exactly one
+ * place in this product: a capture that stopped before its binding looks the
+ * same whether the scan refused the file or the network dropped the link call,
+ * and only one of those two is worth trying again.
+ *
+ * Derived, not decided here: the guard is the authority, and
+ * `attachments-contract.test.ts` reads it.
+ */
+export const TERMINAL_VERSION_STATUSES: readonly DocumentVersionStatus[] = [
+  'quarantined',
+  'rejected',
+];
+
+/** Has the check concluded AGAINST this version, permanently? */
+export function isTerminalVersion(status: string | undefined): boolean {
+  return (TERMINAL_VERSION_STATUSES as readonly string[]).includes(status ?? '');
+}
 
 /** What the scanner concluded, as `registerVersionAndScan` reports it. */
 export const SCAN_OUTCOMES = ['not_started', 'clean', 'infected', 'error'] as const;
@@ -128,8 +180,32 @@ export function isSettled(registered: {
   return registered.status !== 'scanning';
 }
 
-/** The maximum a caller may send as a captured-at instant. Mirrors the route. */
+/**
+ * The maximum a caller may send as a captured-at instant.
+ *
+ * It mirrors NO route, and the sentence here said it did. The versions route
+ * parses `capturedAt` as a DATE — `z.coerce.date().nullable().optional()` — so
+ * there is no string bound on the server to mirror, and the upload
+ * authorization carries no captured-at field at all.
+ *
+ * What this is: the ceiling this tree puts on the TEXT it sends, chosen so an
+ * ISO instant with milliseconds and an offset fits. `attachments-contract.test.ts`
+ * checks it as that property rather than pinning it to a figure nothing else
+ * states.
+ */
 export const MAX_CAPTURED_AT = 64;
 
-/** `shared.documents.file_name`, per `attachments/upload-authorizations`. */
+/**
+ * The file-name bound the upload-authorization route really parses.
+ *
+ * This cited `shared.documents.file_name` as the authority. That column does not
+ * exist: a search of the whole `supabase/` tree for `file_name` returns nothing,
+ * and `CREATE TABLE shared.documents` has no such field — a document carries a
+ * `title`, and the NAME travels with the version.
+ *
+ * The real authority is the request schema:
+ * `fileName: z.string().min(1).max(400)` in
+ * `attachments/upload-authorizations/route.ts`, which is what
+ * `attachments-contract.test.ts` now reads this value against.
+ */
 export const MAX_FILE_NAME = 400;

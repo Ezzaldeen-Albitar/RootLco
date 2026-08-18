@@ -45,16 +45,23 @@
  * for a download nobody performed. Nothing here prefetches, and no download URL
  * is ever constructed speculatively.
  *
- * ## `FE-027` media: blocked on `P1-OD-025`, and not simulated
+ * ## `FE-027` media: a capability gap, and not simulated
  *
  * There is no vehicle media operation at all — no upload, no thumbnail, no
- * gallery. `P1-OD-025` is the policy authority for accepted types, size limits
- * and storage placement, and it is **unresolved**.
+ * gallery. A disabled upload control would advertise a capability the platform
+ * does not publish, so `FE-027` ships as an explicit statement of what is
+ * missing, with no control at all.
  *
- * A disabled upload control would advertise a capability the product does not
- * have and cannot have until that decision is made. So `FE-027` ships as an
- * explicit statement of what is missing and why, with no control at all. This is
- * a **capability gap and an open Owner decision**, not a defect.
+ * The REASON changed and this paragraph did not. It read "`P1-OD-025` is the
+ * policy authority … and it is **unresolved**" and called the situation "a
+ * capability gap and an open Owner decision" — twenty lines above the
+ * tombstone in this same file recording that the decision was RESOLVED.
+ * `features/receptions/media/media-decision.ts` holds that record and
+ * `MEDIA_DECISION_RESOLVED` is `true`.
+ *
+ * So: a capability gap, and nothing else. The decision is taken, private
+ * versioned evidence ships, and what keeps media off THIS screen is that no
+ * vehicle media operation exists to call — not a policy anybody is waiting on.
  */
 
 /** The permission the documents tab actually needs. */
@@ -66,13 +73,37 @@ export interface VehicleDocuments {
   readonly documentIds: readonly string[];
 }
 
-/**
- * What this build can say about vehicle media.
+/*
+ * `MEDIA_STATUS` and `MEDIA_BLOCKING_DECISION` stood here, and are gone.
  *
- * Deliberately a single closed value rather than a feature flag: a flag implies
- * something to turn on, and there is no implementation behind it to enable.
+ * ## What they were, and what went wrong with them
+ *
+ * They dated from when `P1-OD-025` — the document and media file policy — was
+ * an OPEN Owner decision, and they encoded that: the status read
+ * `'blocked-on-p1-od-025'` and the reference was documented as "the open
+ * decision `FE-027` waits on". The decision has since been RESOLVED, and the
+ * record of the four things that closed it is
+ * `features/receptions/media/media-decision.ts`.
+ *
+ * The reference was not merely stale in a comment. `VehicleDocumentsSection`
+ * RENDERED it, so every operator opening a vehicle read a bare `P1-OD-025`
+ * beneath the media heading — an internal identifier in operator-facing text,
+ * meaning nothing to the person reading it and, by then, naming a decision that
+ * was no longer open. Two tests read it back off the DOM and off the constant
+ * and so pinned it in place rather than catching it.
+ *
+ * ## Why removal rather than a localized label
+ *
+ * The paragraph above it already states the true reason in the operator's own
+ * language: the platform publishes no vehicle media operation, so there is
+ * nothing for a control to call. A decision identifier adds nothing an operator
+ * can act on. The traceability it was carrying belongs in source — here, and in
+ * the media section's own comment — where it stays checkable without being
+ * published to people it does not help.
+ *
+ * With the render gone both constants had zero production consumers, which is
+ * the shape this repository has removed on the record four times rather than
+ * keep for symmetry: `crm/customers/identity-api.ts` (`P1-27-QA-002`),
+ * `listVisitReasons` and `conditionEvidenceKinds` (`P1-28-F9`), and
+ * `readDocumentVersion` beside this wave.
  */
-export const MEDIA_STATUS = 'blocked-on-p1-od-025' as const;
-
-/** The open decision `FE-027` waits on, named so it can be tracked. */
-export const MEDIA_BLOCKING_DECISION = 'P1-OD-025';

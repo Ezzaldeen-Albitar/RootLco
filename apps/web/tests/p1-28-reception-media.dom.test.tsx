@@ -91,8 +91,17 @@ vi.mock('@/features/receptions/api', () => ({
  * therefore driving the branch selector, not simulating it.
  */
 const captureRequirementEvidence = vi.fn();
+/*
+ * The retry is a SECOND export of the same module, not the chain step it ends
+ * in: a component that named `finalizeEvidenceBinding` would be driving the
+ * sequence from the browser, which `p1-28-reception-media.test.ts` forbids by
+ * name. That the action really finalizes is proved statically there; what is
+ * driven here is what the SCREEN does with its answer.
+ */
+const finalizeCapturedEvidence = vi.fn();
 vi.mock('@/features/receptions/evidence-capture', () => ({
   captureRequirementEvidence: (...args: unknown[]) => captureRequirementEvidence(...args),
+  finalizeCapturedEvidence: (...args: unknown[]) => finalizeCapturedEvidence(...args),
 }));
 
 /** `EvidencePanels` resolves account identifiers to names through this one. */
@@ -223,12 +232,20 @@ const WAIVER: CaptureOverrideEntry = {
 };
 
 /**
- * FOUR requirements for four states, one each.
+ * FIVE requirements for five states, one each.
  *
  * A branch resolved to the same value twice cannot be told apart by a case that
  * only asserts each row's own copy — the wrong-state row would be masked by a
  * sibling that happens to be right — so each state is published exactly once and
- * the four rendered sentences are then asserted distinct.
+ * the five rendered sentences are then asserted distinct.
+ *
+ * `vin` is the state this suite used to have no fixture for and, worse, used to
+ * assert the contradiction of: one accepted photograph counted out of the two
+ * the requirement asks for. It is PARTLY met. The screen printed "Recorded but
+ * not counted — nothing here has been accepted yet." above a line reading
+ * "Accepted · counted", and this file asserted that sentence by key, so the
+ * contradiction was pinned rather than caught. `warning_lamp` is what that
+ * sentence is actually for: two versions bound, neither of them counting.
  *
  * `ev_soc` is deliberately BOTH `satisfied` and `overridden`, which is what
  * `rec.reception-evidence-binding-list` answers for a waived requirement, since
@@ -236,15 +253,28 @@ const WAIVER: CaptureOverrideEntry = {
  * fixture that can prove the precedence: a screen that read `satisfied` first
  * would print "Met." over a requirement nobody evidenced.
  */
-const PUBLISHED: readonly CaptureRequirement[] = ['exterior', 'vin', 'damage', 'ev_soc'];
+const PUBLISHED: readonly CaptureRequirement[] = [
+  'exterior',
+  'vin',
+  'warning_lamp',
+  'damage',
+  'ev_soc',
+];
 
 const CONTRACT: CaptureContract = {
   receptionVisitId: VISIT,
   requirements: [
     requirement('exterior', { minCount: 2, finalizedCount: 2, recordedCount: 2, satisfied: true }),
-    // Three files bound, one accepted: the case the whole "finalized only" rule
-    // exists for.
+    // Three files bound, one of them counted: partly met, and the case the whole
+    // "finalized only" rule exists for.
     requirement('vin', { minCount: 2, finalizedCount: 1, recordedCount: 3 }),
+    /*
+     * Two bound, neither counted — and one of them ACCEPTED but never
+     * finalized, which is where the capture's sixth call leaves a binding when
+     * it does not answer. The requirement is not met by it and the operator can
+     * still count it, so this one fixture carries both halves.
+     */
+    requirement('warning_lamp', { minCount: 1, finalizedCount: 0, recordedCount: 2 }),
     requirement('damage'),
     requirement('ev_soc', { satisfied: true, overridden: true }),
   ],
@@ -254,8 +284,40 @@ const CONTRACT: CaptureContract = {
     binding('vin-1', 'vin', 'accepted', '2026-08-13T08:07:00.000Z'),
     binding('vin-2', 'vin', 'pending', null),
     binding('vin-3', 'vin', 'scanning', null),
+    binding('lamp-1', 'warning_lamp', 'pending', null),
+    binding('lamp-2', 'warning_lamp', 'accepted', null),
   ],
   overrides: [WAIVER],
+  bindableTemplates: [],
+};
+
+/**
+ * The SHIPPED DEFAULT, on its own, because it is not an edge case.
+ *
+ * `rec.capture_policy_rules` ships empty, so the read model falls back to its
+ * baseline and `exterior` asks for SEVEN photographs. Three taken, accepted and
+ * counted is therefore what every visit looks like partway through its first
+ * requirement — and it is the exact shape the old branch mis-read, because
+ * `recordedCount > finalizedCount` is FALSE when every recorded photograph has
+ * been counted, so the row fell through to "Nothing recorded yet." above three
+ * counted lines.
+ */
+const BASELINE_EXTERIOR: CaptureContract = {
+  receptionVisitId: VISIT,
+  requirements: [
+    requirement('exterior', {
+      minCount: 7,
+      deviceCapturedAtRequired: true,
+      finalizedCount: 3,
+      recordedCount: 3,
+    }),
+  ],
+  bindings: [
+    binding('base-1', 'exterior', 'accepted', '2026-08-13T08:01:00.000Z'),
+    binding('base-2', 'exterior', 'accepted', '2026-08-13T08:02:00.000Z'),
+    binding('base-3', 'exterior', 'accepted', '2026-08-13T08:03:00.000Z'),
+  ],
+  overrides: [],
   bindableTemplates: [],
 };
 
@@ -276,6 +338,19 @@ function waiverRecorded(code: CaptureRequirement) {
 beforeEach(() => {
   vi.clearAllMocks();
   readCaptureContract.mockResolvedValue(contractRead());
+  /*
+   * A `CaptureOutcome`, which is what the action returns — not the adapter's
+   * `EvidenceFinalizeState`. `stage` is the field the outcome line reads, so a
+   * stub shaped like the layer underneath would print the sentence for a
+   * capture that never finalized.
+   */
+  finalizeCapturedEvidence.mockResolvedValue({
+    status: 'success' as const,
+    attempt: 1,
+    correlationId: 'corr-finalize',
+    stage: 'finalized' as const,
+    bindingId: 'lamp-2',
+  });
   listConditionEvidence.mockResolvedValue({
     status: 'ok',
     rows: [],
@@ -340,21 +415,26 @@ describe('P1-28-FE-017 — one row per requirement the contract published', () =
      */
     const unpublished = CAPTURE_REQUIREMENTS.filter((code) => !PUBLISHED.includes(code));
     expect(unpublished.length, 'every requirement is published — the absence proves nothing').toBe(
-      2
+      1
     );
     for (const code of unpublished) {
       expect(screen.queryByTestId(`capture-${code}`), code).toBeNull();
     }
   });
 
-  it('chooses a different state for each of the four, and the four are distinct', async () => {
+  it('chooses a different state for each of the five, and the five are distinct', async () => {
     renderLtr(<MediaStep {...stepProps()} />);
     const rows = await rowsRendered();
 
     const expected: Record<string, string> = {
       exterior: EN['receptions.capture.state.satisfied']!,
-      // Bound, not accepted. The count says `1/2` and this says why.
-      vin: EN['receptions.capture.state.recordedNotCounted']!,
+      // One of the two counted. The count says `1/2` and this says what that
+      // means: some of this requirement is evidenced and some of it is not.
+      vin: EN['receptions.capture.state.partiallyMet']!,
+      // Two bound, neither counted — which is a different fact from `vin`'s and
+      // from `damage`'s, and the only one of the three an operator can resolve
+      // by waiting.
+      warning_lamp: EN['receptions.capture.state.recordedNotCounted']!,
       damage: EN['receptions.capture.state.outstanding']!,
       ev_soc: EN['receptions.capture.state.overridden']!,
     };
@@ -364,10 +444,10 @@ describe('P1-28-FE-017 — one row per requirement the contract published', () =
       expect(state.textContent, code).toBe(expected[code]);
     }
 
-    // Four rows saying four things. A catalogue in which two of these sentences
-    // were identical would make the four assertions above pass over three
+    // Five rows saying five things. A catalogue in which two of these sentences
+    // were identical would make the five assertions above pass over four
     // states, so the distinctness is asserted rather than assumed.
-    expect(new Set(Object.values(expected)).size).toBe(4);
+    expect(new Set(Object.values(expected)).size).toBe(5);
   });
 
   it('reads the waiver ahead of the tick, so a waived requirement never reads as met', async () => {
@@ -414,6 +494,112 @@ describe('P1-28-FE-017 — one row per requirement the contract published', () =
     expect(lines.filter((line) => line.includes(EN['receptions.capture.counted']!))).toHaveLength(
       1
     );
+
+    /*
+     * …and the sentence above those lines does not deny them.
+     *
+     * This is where the suite used to pin a contradiction: it asserted
+     * `recordedNotCounted` — "nothing here has been accepted yet" — on the row
+     * it had just proved carries an "Accepted · counted" line. A screen may say
+     * one or the other of those things about a requirement, never both, so both
+     * of the sentences that would deny the counted line are refused by name.
+     */
+    const state = within(row).getByTestId('capture-state-vin').textContent;
+    expect(state).toBe(EN['receptions.capture.state.partiallyMet']);
+    expect(state).not.toBe(EN['receptions.capture.state.recordedNotCounted']);
+    expect(state).not.toBe(EN['receptions.capture.state.outstanding']);
+  });
+
+  it('reports the SHIPPED DEFAULT honestly — three of seven photographs is not nothing', async () => {
+    /*
+     * The reachability of this is the whole finding. `rec.capture_policy_rules`
+     * ships empty, so `exterior` resolves to the baseline's SEVEN, and a visit
+     * whose first three photographs have all been taken, accepted and counted
+     * was told "Nothing recorded yet." — printed directly above the three
+     * "Accepted · counted" lines it was denying. This is photographs one to six
+     * of every single visit, not a contrived fixture.
+     */
+    readCaptureContract.mockResolvedValue(contractRead(BASELINE_EXTERIOR));
+    renderLtr(<MediaStep {...stepProps()} />);
+    const row = (await rowsRendered(['exterior'])).get('exterior')!;
+
+    const counted = within(row)
+      .getAllByRole('listitem')
+      .map((entry) => entry.textContent ?? '')
+      .filter((line) => line.includes(EN['receptions.capture.counted']!));
+    expect(counted, 'nothing was counted — this case would prove nothing').toHaveLength(3);
+    expect(within(row).getByTestId('capture-count-exterior').textContent).toBe('3/7');
+
+    const state = within(row).getByTestId('capture-state-exterior').textContent;
+    expect(state).toBe(EN['receptions.capture.state.partiallyMet']);
+    // The sentence that was printed, named so a regression fails as itself.
+    expect(state, 'three counted photographs are being reported as nothing').not.toBe(
+      EN['receptions.capture.state.outstanding']
+    );
+    // …and partly met is not met: the tick still belongs to seven of seven.
+    expect(state).not.toBe(EN['receptions.capture.state.satisfied']);
+  });
+
+  it('separates the LAST outstanding photograph from the finished set — 6/7 then 7/7', async () => {
+    /*
+     * The boundary the floor comparison is decided on, driven from both sides.
+     *
+     * `partiallyMet` and `satisfied` differ by exactly one finalized binding
+     * here, so an off-by-one in the comparison — `>` for `>=`, or the reverse —
+     * is invisible to every other case in this file: three of seven and none of
+     * seven are both far enough from the floor to survive either mistake. At the
+     * boundary one of the two directions declares a visit complete a photograph
+     * early, which is the expensive one: the vehicle leaves with its condition
+     * under-evidenced and the screen showing a tick.
+     */
+    const exteriorAt = (finalized: number): CaptureContract => ({
+      receptionVisitId: VISIT,
+      requirements: [
+        requirement('exterior', {
+          minCount: 7,
+          deviceCapturedAtRequired: true,
+          finalizedCount: finalized,
+          recordedCount: finalized,
+          /*
+           * Satisfaction is the SERVER's judgement, carried on the row, and the
+           * screen does not recompute it from the two counts. That is the right
+           * division — `rec.capture_policy_rules` and the baseline behind it are
+           * branch policy, and a comparison done here would be a second opinion
+           * that disagrees the moment the policy gains a rule this tree has
+           * never heard of. So the fixture supplies what the API would.
+           */
+          satisfied: finalized >= 7,
+        }),
+      ],
+      bindings: Array.from({ length: finalized }, (_unused, index) =>
+        binding(`edge-${index + 1}`, 'exterior', 'accepted', '2026-08-13T08:0' + index + ':00.000Z')
+      ),
+      overrides: [],
+      bindableTemplates: [],
+    });
+
+    // Six of seven: one short, and NOT met.
+    readCaptureContract.mockResolvedValue(contractRead(exteriorAt(6)));
+    const six = renderLtr(<MediaStep {...stepProps()} />);
+    const sixRow = (await rowsRendered(['exterior'])).get('exterior')!;
+    expect(within(sixRow).getByTestId('capture-count-exterior').textContent).toBe('6/7');
+    expect(within(sixRow).getByTestId('capture-state-exterior').textContent).toBe(
+      EN['receptions.capture.state.partiallyMet']
+    );
+    expect(
+      within(sixRow).getByTestId('capture-state-exterior').textContent,
+      'a visit one photograph short is being reported as met'
+    ).not.toBe(EN['receptions.capture.state.satisfied']);
+    six.unmount();
+
+    // Seven of seven: met, and the ONLY one of the five states that is a tick.
+    readCaptureContract.mockResolvedValue(contractRead(exteriorAt(7)));
+    renderLtr(<MediaStep {...stepProps()} />);
+    const sevenRow = (await rowsRendered(['exterior'])).get('exterior')!;
+    expect(within(sevenRow).getByTestId('capture-count-exterior').textContent).toBe('7/7');
+    expect(within(sevenRow).getByTestId('capture-state-exterior').textContent).toBe(
+      EN['receptions.capture.state.satisfied']
+    );
   });
 
   it('states the failed read, with its correlation id and a retry — never an empty area', async () => {
@@ -443,13 +629,13 @@ describe('P1-28-FE-017 — the capture form', () => {
     const rows = await rowsRendered();
 
     /*
-     * Three forms, not four: a requirement whose waiver stands is not offered a
+     * Four forms, not five: a requirement whose waiver stands is not offered a
      * capture control, because recording evidence against a waived requirement
      * is not a thing the operator was asked for. `exterior` IS offered one
      * despite being satisfied — a second exterior photograph is always legal.
      */
     const inputs = container.querySelectorAll('input[type="file"]');
-    expect(inputs.length, 'the step offered no capture control at all').toBe(3);
+    expect(inputs.length, 'the step offered no capture control at all').toBe(4);
     expect(within(rows.get('ev_soc')!).queryByLabelText(EN['receptions.capture.chooseFile']!)).toBe(
       null
     );
@@ -551,51 +737,423 @@ describe('P1-28-FE-017 — the capture form', () => {
 });
 
 /* ------------------------------------------------------------------ *
+ * The finalization, where the capture's own attempt did not answer
+ * ------------------------------------------------------------------ */
+
+/**
+ * An accepted binding that was never counted, and the way out of it.
+ *
+ * `evidence-capture.ts` attempts the finalization once and reports stage `bound`
+ * when it fails — an expired session, a transport failure, a refusal. The
+ * version is accepted, the binding is real, and nothing else on this screen can
+ * make it count: capturing the file again would leave a second document
+ * standing for the same panel and the first one uncounted for ever. `lamp-2` is
+ * that binding.
+ *
+ * The control is derived from the ENTRY, not from the requirement, because the
+ * database refuses on the entry's own two facts — the RLS policy admits the
+ * update only while `finalized_at IS NULL`, and the binding guard refuses a
+ * version that is not accepted — so a control offered anywhere else could only
+ * fail.
+ */
+/**
+ * The outcome line — what the operator is told an act DID.
+ *
+ * Three of these states were unreachable by any fixture in this file, which is
+ * how each of them shipped saying something false:
+ *
+ *   - a capture whose finalization was refused comes back as
+ *     `{ status: 'denied', stage: 'bound' }`, and the reporter read the status
+ *     first, so it announced "Nothing was recorded." over a document that had
+ *     been registered, linked AND bound;
+ *   - a successful WAIVER was cast to a capture outcome, so it fell through to
+ *     the last branch and told an operator who had waived a requirement that
+ *     "the file is still being checked" — there is no file;
+ *   - a refused waiver reported nothing at all, leaving whatever sentence was
+ *     on screen before it standing as though it still applied.
+ */
+describe('P1-28-FE-017 — the outcome line reports what the act really did', () => {
+  const requirementRow = async (code: CaptureRequirement) => (await rowsRendered()).get(code)!;
+
+  it('says what was recorded when the finalization is REFUSED, not that nothing was', async () => {
+    /*
+     * The exact shape `evidence-capture.ts` returns when the sixth call does
+     * not answer: the failure spread over the stage it had reached. `bindingId`
+     * is real — the binding exists on the visit — so "Nothing was recorded." is
+     * false about every part of it.
+     */
+    captureRequirementEvidence.mockResolvedValue({
+      status: 'denied' as const,
+      attempt: 1,
+      messageKey: 'state.denied.title',
+      correlationId: 'corr-403',
+      stage: 'bound' as const,
+      documentId: 'doc-9',
+      versionId: 'ver-9',
+      bindingId: 'bind-9',
+      versionStatus: 'accepted',
+      scannerAvailable: true,
+    });
+
+    const user = userEvent.setup();
+    renderLtr(<MediaStep {...stepProps()} />);
+    const row = await requirementRow('vin');
+
+    const input = within(row).getByLabelText(EN['receptions.capture.chooseFile']!);
+    await user.upload(input, new File(['x'], 'vin.jpg', { type: 'image/jpeg' }));
+    await user.click(within(row).getByRole('button', { name: EN['receptions.capture.submit']! }));
+
+    const outcome = await screen.findByTestId('capture-outcome');
+    await waitFor(() =>
+      expect(outcome.textContent).toBe(EN['receptions.capture.boundNotCounted']!)
+    );
+    // The sentence that used to be printed, named so a regression fails as itself.
+    expect(outcome.textContent, 'a bound capture is reported as nothing recorded').not.toBe(
+      EN['receptions.capture.failed']!
+    );
+  });
+
+  it('reports a WAIVER as a waiver, in both scripts', async () => {
+    overrideCaptureRequirement.mockResolvedValue({
+      status: 'success' as const,
+      correlationId: 'corr-waiver',
+      attempt: 1,
+      recorded: { receptionVisitId: VISIT, overrideId: 'ovr-1', requirementCode: 'vin' },
+    });
+
+    const user = userEvent.setup();
+    const ltr = renderLtr(<MediaStep {...stepProps()} />);
+    const row = await requirementRow('vin');
+
+    await user.click(within(row).getByTestId('capture-override-open-vin'));
+    await user.type(
+      within(row).getByLabelText(EN['receptions.capture.overrideReason']!),
+      'The bay is flooded'
+    );
+    await user.click(
+      within(row).getByRole('button', { name: EN['receptions.capture.overrideSubmit']! })
+    );
+
+    const outcome = await screen.findByTestId('capture-outcome');
+    await waitFor(() =>
+      expect(outcome.textContent).toBe(EN['receptions.capture.overrideRecorded']!)
+    );
+    /*
+     * And explicitly NOT the capture vocabulary. A waiver is a statement that
+     * no file will be taken, so every sentence about a file is wrong here —
+     * checked against the whole ladder rather than against one member of it,
+     * since the member this used to name has since been deleted for having no
+     * producer, and a negative assertion against a missing key asserts nothing.
+     */
+    for (const key of [
+      'receptions.capture.finalized',
+      'receptions.capture.finalizedPartial',
+      'receptions.capture.boundNoScanner',
+      'receptions.capture.boundNotCounted',
+      'receptions.capture.capturedNotBound',
+      'receptions.capture.capturedStored',
+      'receptions.capture.capturedTerminal',
+      'receptions.capture.failed',
+    ]) {
+      expect(EN[key], key).toBeDefined();
+      expect(outcome.textContent, key).not.toBe(EN[key]!);
+    }
+    ltr.unmount();
+
+    // The Arabic half, because the defect was a wrong SENTENCE and a catalogue
+    // that carried it in one script only would ship it in the other.
+    const rtl = renderRtl(
+      <MediaStep {...stepProps({ locale: 'ar', messages: ar as typeof en })} />
+    );
+    const arRow = await requirementRow('vin');
+    await user.click(within(arRow).getByTestId('capture-override-open-vin'));
+    await user.type(
+      within(arRow).getByLabelText(AR['receptions.capture.overrideReason']!),
+      'الساحة مغمورة'
+    );
+    await user.click(
+      within(arRow).getByRole('button', { name: AR['receptions.capture.overrideSubmit']! })
+    );
+    const arOutcome = await screen.findByTestId('capture-outcome');
+    await waitFor(() =>
+      expect(arOutcome.textContent).toBe(AR['receptions.capture.overrideRecorded']!)
+    );
+    rtl.unmount();
+  });
+
+  it('reports a REFUSED waiver, and keeps the reason it is asking about', async () => {
+    overrideCaptureRequirement.mockResolvedValue({
+      status: 'denied' as const,
+      attempt: 1,
+      messageKey: 'state.denied.title',
+      correlationId: 'corr-403',
+    });
+
+    const user = userEvent.setup();
+    renderLtr(<MediaStep {...stepProps()} />);
+    const row = await requirementRow('vin');
+
+    await user.click(within(row).getByTestId('capture-override-open-vin'));
+    const reason = within(row).getByLabelText(EN['receptions.capture.overrideReason']!);
+    await user.type(reason, 'The bay is flooded');
+    await user.click(
+      within(row).getByRole('button', { name: EN['receptions.capture.overrideSubmit']! })
+    );
+
+    const outcome = await screen.findByTestId('capture-outcome');
+    await waitFor(() => expect(outcome.textContent).toBe(EN['receptions.capture.overrideFailed']!));
+    // Reporting the refusal must not cost the operator the text it is about:
+    // the row is NOT re-read, so the form and its reason survive.
+    expect(reason).toHaveValue('The bay is flooded');
+    expect(readCaptureContract).toHaveBeenCalledTimes(1);
+  });
+});
+describe('P1-28-FE-017 — an accepted binding that missed its finalization', () => {
+  it('offers the finalization on that binding, and on no other', async () => {
+    renderLtr(<MediaStep {...stepProps()} />);
+    const rows = await rowsRendered();
+
+    expect(
+      within(rows.get('warning_lamp')!).getByTestId('capture-finalize-lamp-2')
+    ).toHaveTextContent(EN['receptions.capture.finalize']!);
+
+    /*
+     * And nowhere else, which is the half that makes the control a statement
+     * rather than a button. Every other binding in the contract is either not
+     * accepted — `lamp-1` pending, `vin-2` pending, `vin-3` scanning, which the
+     * guard would refuse — or already counted, which the RLS policy would.
+     */
+    for (const id of ['lamp-1', 'vin-1', 'vin-2', 'vin-3', 'ex-1', 'ex-2']) {
+      expect(screen.queryByTestId(`capture-finalize-${id}`), id).toBeNull();
+    }
+  });
+
+  it('counts it through the sanctioned action, then re-reads and says so', async () => {
+    /*
+     * The re-read answers what a re-read really would: `warning_lamp` asks for
+     * one, and counting `lamp-2` is the one. Before this the fixture returned
+     * the SAME contract afterwards — `finalizedCount: 0`, unsatisfied — and the
+     * case still expected "this requirement is now met", which passed only
+     * while the sentence was derived from the stage and ignored the server.
+     */
+    readCaptureContract.mockResolvedValueOnce(contractRead()).mockResolvedValue(
+      contractRead({
+        ...CONTRACT,
+        requirements: CONTRACT.requirements.map((entry) =>
+          entry.requirementCode === 'warning_lamp'
+            ? { ...entry, finalizedCount: 1, satisfied: true }
+            : entry
+        ),
+      })
+    );
+    const user = userEvent.setup();
+    renderLtr(<MediaStep {...stepProps()} />);
+    const row = (await rowsRendered()).get('warning_lamp')!;
+
+    expect(readCaptureContract).toHaveBeenCalledTimes(1);
+    await user.click(within(row).getByTestId('capture-finalize-lamp-2'));
+
+    await waitFor(() => expect(finalizeCapturedEvidence).toHaveBeenCalled());
+    // The visit and the BINDING — not the requirement, which the operation's
+    // path does not carry and which could not identify one version of three.
+    expect(finalizeCapturedEvidence.mock.calls.at(-1)).toEqual([VISIT, 'lamp-2']);
+
+    // The count is the server's afterwards, exactly as it is after a capture:
+    // this screen adds nothing locally, it asks again.
+    await waitFor(() => expect(readCaptureContract.mock.calls.length).toBeGreaterThan(1));
+
+    /*
+     * And the sentence is the one a completed capture earns, because that is
+     * what the visit now holds AND what the re-read reports about the
+     * requirement. A version that has been accepted and counted must not be
+     * described as still being checked, and a requirement the server calls
+     * satisfied must not be described as needing more.
+     */
+    const outcome = await screen.findByTestId('capture-outcome');
+    await waitFor(() => expect(outcome.textContent).toBe(EN['receptions.capture.finalized']!));
+    expect(screen.queryByText(EN['receptions.capture.finalizedPartial']!)).toBeNull();
+    expect(screen.queryByText(EN['receptions.capture.boundNoScanner']!)).toBeNull();
+  });
+
+  it('keeps the binding uncounted when the finalization is refused', async () => {
+    /*
+     * A refusal is not a count. The screen must not report the requirement
+     * moved, and — since it re-reads rather than incrementing — the way to prove
+     * that is that no re-read was even asked for and no outcome was claimed.
+     */
+    finalizeCapturedEvidence.mockResolvedValue({
+      status: 'denied',
+      attempt: 1,
+      messageKey: 'state.denied.title',
+      correlationId: 'corr-403',
+    });
+    const user = userEvent.setup();
+    renderLtr(<MediaStep {...stepProps()} />);
+    const row = (await rowsRendered()).get('warning_lamp')!;
+
+    await user.click(within(row).getByTestId('capture-finalize-lamp-2'));
+
+    await waitFor(() => expect(finalizeCapturedEvidence).toHaveBeenCalled());
+    expect(screen.queryByTestId('capture-outcome')).toBeNull();
+    expect(readCaptureContract).toHaveBeenCalledTimes(1);
+    // The control stays, so the operator can try again rather than re-capture.
+    expect(within(row).getByTestId('capture-finalize-lamp-2')).toBeInTheDocument();
+  });
+
+  it('costs the capture permission, and is withdrawn with it and on a locked visit', async () => {
+    /*
+     * `rec.reception-evidence-binding-finalize` is registered against
+     * `rec.reception.evidence.manage` — the capture code, not the waiver's.
+     * Declaring a photograph that was taken sufficient is the second half of
+     * taking it, so an operator who may not capture may not count either, and
+     * holding the WAIVER code alone buys nothing here.
+     */
+    const withoutManage = renderLtr(
+      <MediaStep {...stepProps({ capabilities: { ...CAPABILITIES, manageEvidence: false } })} />
+    );
+    let rows = await rowsRendered();
+    expect(within(rows.get('warning_lamp')!).queryByTestId('capture-finalize-lamp-2')).toBeNull();
+    // …while the waiver code this operator does hold is still spending itself
+    // on its own control, so the absence above is about the right permission.
+    expect(
+      within(rows.get('warning_lamp')!).getByTestId('capture-override-open-warning_lamp')
+    ).toBeInTheDocument();
+    withoutManage.unmount();
+
+    const locked = renderLtr(<MediaStep {...stepProps({ writesLocked: true })} />);
+    rows = await rowsRendered();
+    expect(within(rows.get('warning_lamp')!).queryByTestId('capture-finalize-lamp-2')).toBeNull();
+    // The record itself stays: a converted visit still reports what it holds.
+    expect(within(rows.get('warning_lamp')!).getAllByRole('listitem')).toHaveLength(2);
+    locked.unmount();
+
+    // The positive control. Without it the three absences above are equally
+    // true of a screen that never renders this control at all.
+    renderLtr(<MediaStep {...stepProps()} />);
+    rows = await rowsRendered();
+    expect(
+      within(rows.get('warning_lamp')!).getByTestId('capture-finalize-lamp-2')
+    ).toBeInTheDocument();
+  });
+});
+
+/* ------------------------------------------------------------------ *
  * What the operator is told after a capture
  * ------------------------------------------------------------------ */
 
 /**
- * The four outcomes, and the sentence each one earns.
+ * Every outcome the chain can reach, and the sentence each one earns.
  *
- * Three of them are a SUCCESS that did not satisfy the requirement, and the
- * distinction between them is the whole point: "the scan has not concluded" and
- * "nothing in this environment can scan it" are different facts about whether
- * waiting will help, and neither is an error.
+ * This table used to hold FOUR rows and the guard beside it asserted four, so
+ * the count agreed with itself and with nothing else. It spent one of the four
+ * on `boundPending`, a state the chain provably cannot return, and had no row at
+ * all for the `captured` stage — the only new state the live acceptance database
+ * actually produced, and the one where a permanent scan refusal and a retryable
+ * link failure printed the same provisional sentence.
+ *
+ * Each row is a REACHABLE combination, and the comment on each says how it is
+ * reached, because a fixture nobody can trace back to the chain is a fixture
+ * that can drift away from it silently.
  */
 const OUTCOME_BRANCHES = [
   {
-    name: 'a finalized capture',
-    outcome: { status: 'success', attempt: 1, stage: 'finalized', scannerAvailable: true },
-    key: 'receptions.capture.finalized',
+    name: 'a capture that recorded nothing',
+    // `captureDocument` failed: no document, no version, nothing on the visit.
+    outcome: { status: 'error', attempt: 1, messageKey: 'attachments.capture.storeUnavailable' },
+    key: 'receptions.capture.failed',
   },
   {
-    name: 'a bound version still being checked',
-    outcome: { status: 'success', attempt: 1, stage: 'bound', scannerAvailable: true },
-    key: 'receptions.capture.boundPending',
+    name: 'a file the scan refused',
+    /*
+     * TERMINAL. `registerVersionAndScan` scans synchronously and returns
+     * `quarantined`; `rec.guard_reception_evidence_binding` admits only
+     * `pending` and `accepted`, so the bind is refused and the chain stops at
+     * `captured`. `shared.guard_document_version_transition` admits no way out
+     * of a terminal status, so trying the same file again cannot help.
+     */
+    outcome: {
+      status: 'error',
+      attempt: 1,
+      stage: 'captured',
+      versionStatus: 'quarantined',
+      scannerAvailable: true,
+    },
+    key: 'receptions.capture.capturedTerminal',
   },
   {
-    name: 'a bound version nothing can check here',
-    outcome: { status: 'success', attempt: 1, stage: 'bound', scannerAvailable: false },
+    name: 'a stored file the link call left unattached',
+    // Stored, unchecked, unattached: the store could not be read, so the version
+    // stayed `pending`, and the link or bind call then failed. Retryable.
+    outcome: {
+      status: 'unavailable',
+      attempt: 1,
+      stage: 'captured',
+      versionStatus: 'pending',
+      scannerAvailable: false,
+    },
+    key: 'receptions.capture.capturedStored',
+  },
+  {
+    name: 'an accepted file the bind call left unattached',
+    // Accepted and real, and the bind did not answer. The same file, again, works.
+    outcome: {
+      status: 'unavailable',
+      attempt: 1,
+      stage: 'captured',
+      versionStatus: 'accepted',
+      scannerAvailable: true,
+    },
+    key: 'receptions.capture.capturedNotBound',
+  },
+  {
+    name: 'a bound version nothing in this environment can check',
+    // The one way a bound version is not accepted: `pending`, from the branch
+    // that reports `scannerAvailable: false`. It will never count here.
+    outcome: {
+      status: 'success',
+      attempt: 1,
+      stage: 'bound',
+      versionStatus: 'pending',
+      scannerAvailable: false,
+    },
     key: 'receptions.capture.boundNoScanner',
   },
   {
-    name: 'a capture that recorded nothing',
-    outcome: { status: 'error', attempt: 1, messageKey: 'attachments.capture.storeUnavailable' },
-    key: 'receptions.capture.failed',
+    name: 'a bound, accepted version whose finalization did not answer',
+    // The only outcome with a control the operator can press, named in its own
+    // sentence: "Count this evidence" on the entry below.
+    outcome: {
+      status: 'denied',
+      attempt: 1,
+      stage: 'bound',
+      versionStatus: 'accepted',
+      scannerAvailable: true,
+      bindingId: 'bind-1',
+    },
+    key: 'receptions.capture.boundNotCounted',
   },
 ] as const;
 
 describe('P1-28-FE-017 — the outcome line', () => {
-  it('has four sentences to choose between, and they are four', () => {
-    // Without this the four cases below could all be asserting the same string,
-    // and a step that printed one sentence for every outcome would pass every one
-    // of them. A missing key is caught here too: it would arrive as `undefined`
-    // through the non-null assertions the cases below use.
-    const sentences = OUTCOME_BRANCHES.map((branch) => EN[branch.key]);
+  it('has a distinct sentence for every reachable state, and they are distinct', () => {
+    /*
+     * Without this the cases below could all be asserting the same string, and a
+     * step that printed one sentence for every outcome would pass every one of
+     * them. A missing key is caught here too: it would arrive as `undefined`
+     * through the non-null assertions the cases use.
+     *
+     * The two finalized sentences are asserted with them, since they are part of
+     * the same ladder and are driven by their own cases below.
+     */
+    const sentences = [
+      ...OUTCOME_BRANCHES.map((branch) => EN[branch.key]),
+      EN['receptions.capture.finalized'],
+      EN['receptions.capture.finalizedPartial'],
+    ];
     expect(sentences.every((sentence) => typeof sentence === 'string' && sentence !== '')).toBe(
       true
     );
-    expect(new Set(sentences).size).toBe(4);
+    expect(new Set(sentences).size).toBe(OUTCOME_BRANCHES.length + 2);
   });
 
   for (const branch of OUTCOME_BRANCHES) {
@@ -617,6 +1175,72 @@ describe('P1-28-FE-017 — the outcome line', () => {
       }
     });
   }
+
+  /*
+   * The last rung is not the stage at all: it is whether the SERVER now
+   * considers the requirement met. The chain cannot know that — finalizing the
+   * second of seven photographs succeeds exactly as the seventh does — so it is
+   * read from the contract the step re-reads afterwards.
+   */
+  const FINALIZED = {
+    status: 'success',
+    attempt: 1,
+    stage: 'finalized',
+    versionStatus: 'accepted',
+    scannerAvailable: true,
+  } as const;
+
+  async function captureDamage() {
+    const user = userEvent.setup();
+    renderLtr(<MediaStep {...stepProps()} />);
+    const row = (await rowsRendered()).get('damage')!;
+    await user.click(within(row).getByRole('button', { name: EN['receptions.capture.submit']! }));
+    await waitFor(() => expect(readCaptureContract.mock.calls.length).toBeGreaterThan(1));
+  }
+
+  it('says the requirement is MET when the re-read says so', async () => {
+    captureRequirementEvidence.mockResolvedValue(FINALIZED);
+    readCaptureContract.mockResolvedValueOnce(contractRead()).mockResolvedValue(
+      contractRead({
+        ...CONTRACT,
+        requirements: CONTRACT.requirements.map((entry) =>
+          entry.requirementCode === 'damage'
+            ? { ...entry, finalizedCount: 1, recordedCount: 1, satisfied: true }
+            : entry
+        ),
+      })
+    );
+
+    await captureDamage();
+    const outcome = await screen.findByTestId('capture-outcome');
+    await waitFor(() => expect(outcome.textContent).toBe(EN['receptions.capture.finalized']!));
+  });
+
+  it('says more is still needed when the re-read says the floor is not reached', async () => {
+    /*
+     * The ordinary case, not the edge one: `exterior` asks for seven, so
+     * photographs one to six of every visit land here. Telling an operator "this
+     * requirement is now met" after the second of seven is the same class of
+     * false statement the rest of this file exists to remove.
+     */
+    captureRequirementEvidence.mockResolvedValue(FINALIZED);
+    readCaptureContract.mockResolvedValueOnce(contractRead()).mockResolvedValue(
+      contractRead({
+        ...CONTRACT,
+        requirements: CONTRACT.requirements.map((entry) =>
+          entry.requirementCode === 'damage'
+            ? { ...entry, minCount: 4, finalizedCount: 1, recordedCount: 1, satisfied: false }
+            : entry
+        ),
+      })
+    );
+
+    await captureDamage();
+    const outcome = await screen.findByTestId('capture-outcome');
+    await waitFor(() =>
+      expect(outcome.textContent).toBe(EN['receptions.capture.finalizedPartial']!)
+    );
+  });
 });
 
 /* ------------------------------------------------------------------ *

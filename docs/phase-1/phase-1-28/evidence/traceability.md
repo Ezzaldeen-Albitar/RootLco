@@ -44,8 +44,8 @@ nothing lists" cannot come to exist. That state is exactly what P1-27 paid five
 adversarial rounds for.
 
 The judged matrix at this head holds
-<!-- derived: matrix PASS = 31 --> **31** PASS,
-<!-- derived: matrix PARTIAL = 4 --> **4** PARTIAL and
+<!-- derived: matrix PASS = 35 --> **35** PASS,
+<!-- derived: matrix PARTIAL = 0 --> **0** PARTIAL and
 <!-- derived: matrix FAIL = 0 --> **0** FAIL across
 <!-- derived: matrix taskCount = 35 --> **35** rows. Those verdicts are
 

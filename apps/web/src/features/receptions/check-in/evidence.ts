@@ -273,7 +273,29 @@ export const EVIDENCE_ROW_FIELDS: Readonly<Record<EvidenceKind, readonly Evidenc
     { field: 'findingNote', labelKey: 'receptions.finding.note', kind: 'text' },
   ],
   damage_map: [
-    { field: 'mapType', labelKey: 'receptions.damage.mapType', kind: 'text' },
+    {
+      // A closed database vocabulary — `ck_damage_maps_type` admits exactly
+      // `exterior`, `interior`, `undercarriage` and `other`
+      // (`20260721101000_rec_damage_maps_marks.sql:66-67`) — so it is read back
+      // TRANSLATED rather than as the stored token. `undercarriage` printed
+      // under "Map type" is an internal name reaching an operator, the same
+      // defect as `flashing` and `brake_fluid` in the two arms below.
+      //
+      // The CAPTURE side never needed the list restating and so never showed
+      // the flaw: `DamageMapStep` offers the templates the catalogue read
+      // returned and already labels each one through this prefix. The read-back
+      // is the half that had no select to borrow a label from, which is exactly
+      // how it kept the raw value while the screen beside it did not.
+      field: 'mapType',
+      labelKey: 'receptions.damage.mapType',
+      kind: 'vocabulary',
+      vocabularyPrefix: 'receptions.damage.mapType.',
+    },
+    // `perspective` stays `text`, and the difference is the point:
+    // `ck_damage_maps_perspective_not_blank` is the ONLY constraint the column
+    // carries, so it genuinely is an open bounded string with no list to
+    // translate against. Declaring it `vocabulary` would render the operator a
+    // missing message key for every value they ever recorded.
     { field: 'perspective', labelKey: 'receptions.damage.perspective', kind: 'text' },
   ],
   damage_mark: [

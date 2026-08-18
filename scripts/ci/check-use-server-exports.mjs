@@ -62,47 +62,76 @@ export function declaresUseServer(source) {
 }
 
 /**
- * The exports a `'use server'` module may not have.
+ * The exports a `'use server'` module may have — a WHITELIST.
  *
- * Returns one message per offending export. A file with none is compliant, and
- * `check()` is a pure function of (path, source) so the test can hand it sources
- * that do not exist on disk — the anti-vacuity idiom this repository uses
- * everywhere, and the reason a passing sweep means something.
+ * This was written as a blacklist of four shapes (`export const|let|var|class`,
+ * a non-async `export function`, and value members of an `export { … }` list)
+ * while the rule above it was stated as a whitelist. The gap was not
+ * theoretical: `export default { … }` and `export enum Status { … }` are both
+ * plain runtime objects — literally the "found object" refusal this gate
+ * quotes — and both passed, as did `export * from`, which re-exports every value
+ * another module has.
+ *
+ * So the question asked of each export is now "is this one of the two things
+ * that are allowed?" rather than "is this one of the four things I remembered
+ * to forbid". The two allowed things are:
+ *
+ *   - an ASYNC FUNCTION DECLARATION, named or default. This is the contract.
+ *   - a TYPE-ONLY export — `export type`, `export interface`, or an export list
+ *     whose every member is `type`-qualified. TypeScript erases these before
+ *     Next sees the module, so they are not exports at runtime at all.
+ *
+ * Everything else is reported, including shapes nobody has written yet. That
+ * is the point of the inversion: a blacklist is only ever as complete as the
+ * last defect somebody remembered.
+ *
+ * `offendingExports` is a pure function of (path, source) so the test can hand
+ * it sources that do not exist on disk — the anti-vacuity idiom this
+ * repository uses everywhere, and the reason a passing sweep means something.
  */
 export function offendingExports(path, source) {
   if (!declaresUseServer(source)) return [];
   const code = stripComments(source);
   const problems = [];
 
-  // `export const x = …`, `export let`, `export var`, `export class`.
-  for (const match of code.matchAll(/^export\s+(const|let|var|class)\s+([A-Za-z0-9_$]+)/gm)) {
-    problems.push(
-      `${path}: exports ${match[1]} ${match[2]} — a 'use server' file may export only async functions`
-    );
-  }
+  for (const match of code.matchAll(/^export\b/gm)) {
+    const rest = code.slice(match.index ?? 0);
 
-  // `export function foo` without `async`.
-  for (const match of code.matchAll(/^export\s+(?:default\s+)?function\s+([A-Za-z0-9_$]+)/gm)) {
-    problems.push(
-      `${path}: exports a NON-ASYNC function ${match[1]} — every export must be an async function`
-    );
-  }
+    // ALLOWED: an async function declaration, named or default.
+    if (/^export\s+(?:default\s+)?async\s+function\b/.test(rest)) continue;
 
-  /*
-   * `export { … }` lists. A `type` member is erased, so only value members
-   * count; a list of nothing but types is legal and must not be reported.
-   */
-  for (const match of code.matchAll(/^export\s*\{([^}]*)\}\s*(?:from\s*['"][^'"]+['"])?\s*;?/gm)) {
-    const values = (match[1] ?? '')
-      .split(',')
-      .map((member) => member.trim())
-      .filter((member) => member.length > 0 && !/^type\s/.test(member));
-    for (const member of values) {
-      problems.push(
-        `${path}: re-exports ${member} — a 'use server' file may export only async functions, ` +
-          'and a value in an export list is exactly the shape that broke the server chunk'
-      );
+    // ALLOWED: a type or interface declaration — erased before runtime.
+    if (/^export\s+(?:declare\s+)?(?:type|interface)\b/.test(rest)) continue;
+
+    /*
+     * An export LIST is allowed only when every member is type-qualified. A
+     * single value member is exactly the shape that broke the server chunk.
+     */
+    const list = /^export\s*\{([^}]*)\}/.exec(rest);
+    if (list) {
+      const values = (list[1] ?? '')
+        .split(',')
+        .map((member) => member.trim())
+        .filter((member) => member.length > 0 && !/^type\s/.test(member));
+      for (const member of values) {
+        problems.push(
+          `${path}: re-exports ${member} — a 'use server' file may export only async ` +
+            'functions, and a value in an export list is exactly the shape that broke the ' +
+            'server chunk'
+        );
+      }
+      continue;
     }
+
+    /*
+     * Everything else. Reported with the head of the statement so the message
+     * names the thing a reader has to go and look at, whatever shape it is.
+     */
+    const line = rest.slice(0, rest.indexOf('\n') === -1 ? rest.length : rest.indexOf('\n'));
+    problems.push(
+      `${path}: ${line.trim().slice(0, 90)} — a 'use server' file may export only async ` +
+        'functions and types'
+    );
   }
 
   return problems;

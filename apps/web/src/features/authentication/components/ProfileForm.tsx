@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState } from 'react';
+import { useActionState, useState } from 'react';
 import { TextField } from '@/components/forms/Field';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
@@ -29,6 +29,12 @@ export function ProfileForm({
   readonly displayName: string;
   readonly recordVersion: number;
 }) {
+  /*
+   * Seeded from the saved display name and then owned by the draft: without
+   * it a refused save restores the SERVER value, which reads as the edit
+   * having been silently reverted.
+   */
+  const [draftName, setDraftName] = useState(displayName);
   const [state, formAction] = useActionState<ActionState, FormData>(updateOwnProfileAction, IDLE);
   const error = state.fieldErrors?.displayName;
 
@@ -40,9 +46,11 @@ export function ProfileForm({
       <FormFeedback state={state} messages={messages} />
 
       <TextField
+        key={`displayName-${state.attempt ?? 0}`}
         name="displayName"
         label={translate(messages, 'profile.displayName')}
-        defaultValue={displayName}
+        defaultValue={draftName}
+        onChange={(event) => setDraftName(event.target.value)}
         required
         autoComplete="name"
         error={error ? translate(messages, error as keyof Messages) : undefined}

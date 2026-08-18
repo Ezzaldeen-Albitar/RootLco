@@ -223,7 +223,8 @@ export function ConfirmationStep({
   const linkVerdict = membershipVerdict(
     customerVehicles.status,
     customerVehicles.response,
-    (row) => row.vehicleId === detail.vehicleId && row.active
+    (row) => row.vehicleId === detail.vehicleId && row.active,
+    customerVehicles.request.page
   );
 
   return (
@@ -333,8 +334,11 @@ export function ConfirmationStep({
                 "none recorded" when the read covered the set. */}
             {translate(
               messages,
-              readCompleteness(relationships.status, relationships.response?.hasMore) ===
-                'truncated'
+              readCompleteness(
+                relationships.status,
+                relationships.response?.hasMore,
+                relationships.request.page
+              ) !== 'complete'
                 ? 'receptions.confirm.relationshipsTruncated'
                 : 'receptions.confirm.relationshipsEmpty'
             )}

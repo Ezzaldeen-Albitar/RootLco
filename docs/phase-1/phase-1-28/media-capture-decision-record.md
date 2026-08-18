@@ -2,10 +2,22 @@
 
 **Task:** `FE-017` (reception camera and media upload), with the template-document
 half of `FE-012` and the signature-image half of `FE-018`.
-**Status:** built as a **named-open-decision notice**. No capture UI exists, and
-that is the deliverable rather than a shortfall.
-**Decision this waits on:** `P1-OD-025` — document and media file policy, **OPEN**
-(`canonical-plan.md` §7).
+**Status:** **SUPERSEDED BY THE DECISION IT WAS WRITTEN FOR.** The Owner
+answered `P1-OD-025` for reception evidence, and `FE-017` ships a working
+capture: seven `reception_*` document categories, three image types, a
+10485760-byte ceiling, a real store and a real scan. Everything below is the
+record of what was asked and what the decision had to settle — which is why it
+is kept rather than deleted — but the STATUS and the "what P1-28 ships instead"
+sections describe a tree that no longer exists.
+
+**What is still open, and is a different question:** the exterior ANGLE SET
+(§1.1 — only the count of seven is fixed), Owner rows `OR-12`/`OR-13`/`OR-14`
+(`INT-093/094/095`), and `P1-OD-025` itself for every surface other than
+reception evidence — vehicle documents, catalogue assets, inspection media,
+technician task evidence. No category exists for any of those.
+
+**Decision this waited on:** `P1-OD-025` — document and media file policy,
+then **OPEN** (`canonical-plan.md` §7, now RESOLVED FOR RECEPTION EVIDENCE).
 
 This document exists so the decision can be taken **without re-deriving it**. It
 records what the Owner asked for, which part of that is fixed and which part is a

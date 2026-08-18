@@ -38,12 +38,75 @@ interface Props {
 }
 
 /** One side of a change. Empty and null are the same absence to a reader. */
-function Value({ value }: { readonly value: string | null }) {
-  return value === null || value === '' ? (
-    <span className="text-text-muted">—</span>
-  ) : (
-    <span>{value}</span>
-  );
+/**
+ * What each tracked field HOLDS, taken from the trigger that writes the row.
+ *
+ * `veh.emit_vehicle_attribute_history()` records eleven columns and they are
+ * three different kinds of thing, which the ledger rendered identically — as
+ * whatever text the database happened to store:
+ *
+ *   - three CLOSED VOCABULARIES, whose stored tokens (`in_workshop`,
+ *     `ready_for_delivery`, `phev`) reached the operator untranslated, and in
+ *     Arabic reached them untranslated inside an Arabic sentence;
+ *   - five CATALOGUE REFERENCES, whose stored value is a uuid. "Set to
+ *     c1780000-0000-4000-8000-0000000000a2" is what an operator was shown for
+ *     a change of make;
+ *   - three free-text columns, which are the only ones the old renderer was
+ *     right about.
+ */
+const VOCABULARY_PREFIX: Readonly<Record<string, string>> = {
+  lifecycle_status: 'vehicles.lifecycle.',
+  workshop_status: 'vehicles.workshop.',
+  powertrain_category: 'vehicles.powertrain.',
+};
+
+/**
+ * The five columns holding a uuid.
+ *
+ * The history read model publishes `fieldCode`, `oldValue` and `newValue` and
+ * nothing else — no display name travels with the row — so there is no name to
+ * show. The change is stated and the reference is not: the FIELD column already
+ * says which attribute moved, which is the part an operator can act on.
+ *
+ * ## The reason is not an authorisation limit, and this said it was
+ *
+ * The sentence here read "resolving one would mean this ledger issuing
+ * catalogue reads the product does not authorise it to make". That is false and
+ * checkably so: all five catalogue reads cost `veh.vehicle.read`
+ * (`catalogue-api.ts` tabulates them, and each route declares it), which is the
+ * same code that already gates this page — two sibling screens spend it for
+ * their pickers. Nothing is being withheld for want of permission.
+ *
+ * What is really true is a different and weaker claim, so it is stated as the
+ * weaker one: a HISTORY row names the value a column held at a moment in the
+ * past, and a catalogue read answers what that identifier means NOW. A make
+ * renamed or retired since the change would be printed under its current name
+ * beside a change that happened under the old one — a ledger reporting the
+ * present as though it were the past. Five reads per page to do that is the
+ * cost; being wrong about history is the reason.
+ */
+const CATALOGUE_REFERENCE: ReadonlySet<string> = new Set([
+  'make_id',
+  'model_id',
+  'trim_id',
+  'body_type_id',
+  'powertrain_type_id',
+]);
+
+function Value({
+  value,
+  fieldCode,
+  messages,
+}: {
+  readonly value: string | null;
+  readonly fieldCode: string;
+  readonly messages: Messages;
+}) {
+  if (value === null || value === '') return <span className="text-text-muted">—</span>;
+  const prefix = VOCABULARY_PREFIX[fieldCode];
+  // A vocabulary member is rendered through its catalogue; anything else is
+  // free text the operator typed, and is shown as they typed it.
+  return <span>{prefix ? translateDynamic(messages, prefix + value) : value}</span>;
 }
 
 export function VehicleAttributeHistorySection({ locale, messages, vehicleId }: Props) {
@@ -78,6 +141,27 @@ export function VehicleAttributeHistorySection({ locale, messages, vehicleId }: 
         headerKey: 'vehicles.history.change',
         cell: (row) => {
           const shape = changeShape(row);
+          if (CATALOGUE_REFERENCE.has(row.fieldCode)) {
+            /*
+             * A uuid change, stated as a change. Rendered before the shapes
+             * below because those print the VALUES, and the value here is an
+             * internal identifier that means nothing to the person reading it.
+             */
+            return (
+              <span className="text-caption">
+                {translate(
+                  messages,
+                  shape === 'set'
+                    ? 'vehicles.history.catalogueSet'
+                    : shape === 'cleared'
+                      ? 'vehicles.history.catalogueCleared'
+                      : shape === 'empty'
+                        ? 'vehicles.history.noDetail'
+                        : 'vehicles.history.catalogueChanged'
+                )}
+              </span>
+            );
+          }
           if (shape === 'empty') {
             // The ledger recorded a change carrying no values — possible for a
             // field whose value is not audit-safe. Saying so beats "— → —".
@@ -90,20 +174,22 @@ export function VehicleAttributeHistorySection({ locale, messages, vehicleId }: 
           if (shape === 'set') {
             return (
               <span className="text-caption">
-                {translate(messages, 'vehicles.history.set')} <Value value={row.newValue} />
+                {translate(messages, 'vehicles.history.set')}{' '}
+                <Value value={row.newValue} fieldCode={row.fieldCode} messages={messages} />
               </span>
             );
           }
           if (shape === 'cleared') {
             return (
               <span className="text-caption">
-                {translate(messages, 'vehicles.history.cleared')} <Value value={row.oldValue} />
+                {translate(messages, 'vehicles.history.cleared')}{' '}
+                <Value value={row.oldValue} fieldCode={row.fieldCode} messages={messages} />
               </span>
             );
           }
           return (
             <span className="flex flex-wrap items-baseline gap-1 text-caption">
-              <Value value={row.oldValue} />
+              <Value value={row.oldValue} fieldCode={row.fieldCode} messages={messages} />
               {/* A literal arrow, not `&#8594;`: the numeric entity is four hex
                   digits behind a `#` and the design-token scanner reads it as a
                   raw colour. */}
@@ -111,7 +197,7 @@ export function VehicleAttributeHistorySection({ locale, messages, vehicleId }: 
                 →
               </span>
               <span className="sr-only">{translate(messages, 'vehicles.history.becomes')}</span>
-              <Value value={row.newValue} />
+              <Value value={row.newValue} fieldCode={row.fieldCode} messages={messages} />
             </span>
           );
         },

@@ -27,7 +27,7 @@
  *     (`docs/api/openapi.v1.json`): every `apt.*` / `rec.*` operation whose
  *     parameters include `#/components/parameters/IfMatch`.
  *   - The GUARDED ADAPTERS come from the tree: every function exported by a
- *     `'use server'` module of the two feature trees whose parameter list
+ *     `'use server'` module of every DERIVED feature root whose parameter list
  *     declares `ifMatch`. Their count must EQUAL the number of guarded
  *     operations this application is expected to reach — an operation the
  *     contract guards with no adapter demanding a version, or an adapter
@@ -90,6 +90,12 @@
 import { readFileSync, readdirSync, lstatSync, statSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import { REPOSITORY_ROOT } from '../lib/repository-paths.mjs';
+import {
+  callsToNode,
+  declaredFunctionsOf,
+  enclosingFunctionNode,
+  parseModule,
+} from '../lib/typescript-source.mjs';
 import { recordedDecisions } from './check-p1-28-write-reachability.mjs';
 
 const ROOT = REPOSITORY_ROOT;
@@ -100,12 +106,76 @@ const MANIFEST = join(ROOT, 'docs', 'phase-1', 'phase-1-28', 'write-reachability
 const PLAN = join(ROOT, 'docs', 'phase-1', 'phase-1-28', 'canonical-plan.md');
 const WEB_SRC = join(ROOT, 'apps', 'web', 'src');
 
-/** The trees whose `'use server'` modules hold the guarded adapters. */
-const ADAPTER_ROOTS = Object.freeze([
-  join('apps', 'web', 'src', 'features', 'appointments'),
-  join('apps', 'web', 'src', 'features', 'receptions'),
-]);
+const WEB_SRC_RELATIVE = join('apps', 'web', 'src');
 
+/**
+ * The trees whose `'use server'` modules hold the guarded adapters — DERIVED.
+ *
+ * This was a hand-written pair, `appointments` and `receptions`, and the omission
+ * it produced was not theoretical: `features/attachments` holds the document
+ * adapters this phase’s whole evidence chain runs through, and the walk never
+ * opened it. That matters most for the rule at the bottom of this file — "no
+ * guarded adapter was found" — which exists to stop the gate reporting a clean
+ * sweep of nothing. A hand-listed root set makes that anti-vacuity check answer
+ * for the trees somebody remembered, so the sweep can be clean, non-empty, and
+ * still blind to a whole feature.
+ *
+ * ## …and the derivation that replaced it was blind to a whole TREE
+ *
+ * It enumerated the children of `apps/web/src/features` — which is a derivation
+ * of the feature roots, not of the roots. Two `'use server'` modules live under
+ * `apps/web/src/lib`, so a defective guarded adapter written in either of them
+ * was never opened by this gate, and the anti-vacuity check went on reporting a
+ * clean non-empty sweep. Replacing a hand-written list with a derivation of the
+ * wrong thing keeps the failure and removes the evidence of it.
+ *
+ * The roots are now the immediate children of `apps/web/src` — the whole web
+ * source tree, one root per subtree, plus the tree itself so a module sitting
+ * directly in `src/` is covered. A tree added tomorrow is scanned on the day it
+ * appears.
+ *
+ * The root set is no longer TRUSTED either: `run` checks that every
+ * `'use server'` module in the sources falls inside one, so a filter that starts
+ * excluding real adapters turns the gate red instead of quietly narrowing it.
+ */
+export function adapterRootsFromRepository() {
+  let entries;
+  try {
+    entries = readdirSync(WEB_SRC, { withFileTypes: true });
+  } catch (error) {
+    fail(`Cannot enumerate the web source roots at ${WEB_SRC_RELATIVE}: ${error.message}`);
+  }
+  const roots = entries
+    .filter((entry) => entry.isDirectory() && !SKIP_DIRS.has(entry.name))
+    .map((entry) => join(WEB_SRC_RELATIVE, entry.name));
+  // Fail closed. An empty derivation would scan nothing and satisfy every rule
+  // below having examined nothing — the exact shape this replaced, twice.
+  if (roots.length === 0) fail(`No source root was derived under ${WEB_SRC_RELATIVE}.`);
+  // …and the tree itself, so a module at `src/actions.ts` is not outside every root.
+  return Object.freeze([...roots, WEB_SRC_RELATIVE]);
+}
+/**
+ * Whether a module opts into the Server Action contract.
+ *
+ * Read off COMMENT-STRIPPED source, and that is the whole point. The test was
+ * `/^\s*['\"]use server['\"]/` against the raw file, so a module written in
+ * this repository's own house style — a docblock, then the directive — did not
+ * look like a Server Action module at all and the adapter walk skipped it
+ * entirely. A guarded adapter inside such a file could declare `ifMatch`
+ * optional or defaulted, the exact defect this gate exists for, and the gate
+ * reported zero violations.
+ *
+ * Worse than a miss: the adapter-count equality below then judges a set that
+ * is missing the adapter, so the anti-vacuity rule is satisfied by a sweep
+ * that never opened the file.
+ *
+ * Stripping first also removes the other half — a directive QUOTED inside a
+ * docblock no longer makes an ordinary module look like a server one, which is
+ * the prose-read-as-code failure this repository has hit repeatedly.
+ */
+export function declaresUseServer(content) {
+  return /^\s*(['"])use server\1\s*;?/.test(stripComments(content));
+}
 const IF_MATCH_REF = '#/components/parameters/IfMatch';
 
 /** Names a re-read may hide behind, beyond a parameter of the enclosing function. */
@@ -569,48 +639,103 @@ export function classifyVersionExpression(expression, context, depth = 0) {
 }
 
 /**
- * The function declaration enclosing `index`, with the names it binds and the
- * region it covers.
- */
-function enclosingFunction(text, index) {
-  const functions = allFunctions(text);
-  let nearest = null;
-  let next = null;
-  for (const candidate of functions) {
-    if (candidate.index <= index) nearest = candidate;
-    else if (next === null) next = candidate;
-  }
-  if (nearest === null) return null;
-  const parts = argumentsAt(text, nearest.open) ?? [];
-  const binds = new Set();
-  for (const part of parts) for (const name of boundNames(part)) binds.add(name);
-  return { name: nearest.name, binds, end: next ? next.index : text.length };
-}
-
-/**
- * Every call to one of `names`, as `{ name, index, args }`.
+ * The function a call site is INSIDE, with the names it binds and where it ends.
  *
- * The DECLARATION of an adapter matches the same `name(` shape as a call to it,
- * and its "argument" at the version position is the parameter `ifMatch: number`
- * — which is not a version and would be reported as untraceable in every module
- * that declares one. So a match preceded by the `function` keyword is a
- * declaration and is skipped.
+ * ## What this replaced
+ *
+ * "The last `function` declaration whose index precedes the call, ending at the
+ * next declaration or at the end of the file." Two failures in one line.
+ *
+ * It was PROXIMITY, not containment — the identical defect that was removed
+ * from the sibling reachability gate in the same wave and left standing here.
+ * An arrow-function component is invisible to a `function`-keyword scan, so a
+ * guarded call inside one was credited to whatever declaration happened to sit
+ * above it. And because the region ran to the NEXT declaration rather than to
+ * the end of the real body, `renewsAfter` scanned forward past the component’s
+ * own closing brace: an unrelated neighbour’s `refresh()` then satisfied the
+ * renewal rule for a component that renews nothing.
+ *
+ * Both are the same mistake — describing a scope from outside it — and the
+ * parser describes it from inside. `end` is now the end of the function’s own
+ * body, so the renewal search cannot leave it.
  */
-export function callsTo(text, names) {
-  if (names.size === 0) return [];
-  const escaped = [...names].map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-  const pattern = new RegExp(`\\b(${escaped.join('|')})\\s*\\(`, 'g');
+function enclosingFunctionAt(sourceFile, declarations, node) {
+  /*
+   * The nearest NAMED function-like ancestor, not simply the nearest one.
+   *
+   * Every guarded command in this tree is sent from inside an inline callback —
+   * `action={async () => { … }}`, an `onClick`, a `startTransition` body. A
+   * callback has no name and no export, but it is lexically INSIDE the component
+   * that defines it, shares its bindings, and returns into its body. The scope
+   * whose renewal is in question is that component.
+   *
+   * This is where this gate and the write-reachability gate legitimately
+   * differ, and the difference is the question rather than the mechanism. That
+   * gate asks whether an EXPORT is consumed, so a site with no nameable owner
+   * has no question to answer and fails closed. This one asks whether a SCOPE
+   * hands its outcome onward, and an anonymous callback is part of the scope
+   * that wrote it.
+   */
+  let enclosing = enclosingFunctionNode(node);
+  let described = enclosing === null ? undefined : declarations.get(enclosing);
+  while (enclosing !== null && (described === undefined || described.name === null)) {
+    enclosing = enclosingFunctionNode(enclosing);
+    described = enclosing === null ? undefined : declarations.get(enclosing);
+  }
+  if (enclosing === null || described === undefined || described.name === null) return null;
+
+  /*
+   * The bindings are the LEXICAL SCOPE, not one function’s parameter list.
+   *
+   * `settle` is a prop of the component and is called from inside `submit`, an
+   * arrow const nested in it. Reading only the innermost named function’s own
+   * parameters finds nothing bound and reports a component that hands its
+   * outcome to a callback as one that keeps its own counsel — which is how a
+   * correct file turns red. Every function-like ancestor contributes what it
+   * binds, because all of it is in scope at the call.
+   */
+  const binds = new Set();
+  for (
+    let scope = enclosingFunctionNode(node) === null ? null : enclosingFunctionNode(node);
+    scope !== null;
+    scope = enclosingFunctionNode(scope)
+  ) {
+    for (const parameter of scope.parameters) {
+      for (const name of boundNames(parameter.getText())) binds.add(name);
+    }
+  }
+
+  return {
+    name: described.name,
+    binds,
+    // The body’s own extent. A renewal outside it belongs to somebody else.
+    end: enclosing.body ? enclosing.body.getEnd() : enclosing.getEnd(),
+  };
+}
+/**
+ * Every call to one of `names`, as `{ name, node, args }`.
+ *
+ * The DECLARATION of an adapter matched the same `name(` shape as a call to it,
+ * and its "argument" at the version position was the parameter `ifMatch: number`
+ * — not a version, and reported as untraceable in every module that declares
+ * one. So the text scan had to special-case a preceding `function` keyword. A
+ * `CallExpression` is not a declaration, so the special case is gone along with
+ * the class of near-misses it stood for.
+ */
+export function callsTo(sourceFile, names) {
+  if (sourceFile === null || names.size === 0) return [];
   const found = [];
-  let match;
-  while ((match = pattern.exec(text)) !== null) {
-    if (/\bfunction\s+$/.test(text.slice(Math.max(0, match.index - 40), match.index))) continue;
-    const args = argumentsAt(text, match.index + match[0].length - 1);
-    if (args === null) continue;
-    found.push({ name: match[1], index: match.index, args });
+  for (const name of names) {
+    for (const call of callsToNode(sourceFile, name)) {
+      found.push({
+        name,
+        node: call,
+        args: call.arguments.map((argument) => argument.getText()),
+      });
+    }
   }
   return found;
 }
-
 /**
  * Whether the outcome leaves the component after a guarded call.
  *
@@ -622,6 +747,14 @@ export function callsTo(text, names) {
  * like.
  */
 export function renewsAfter(text, from, to, binds) {
+  /*
+   * `to` is the end of the enclosing function’s OWN body, supplied by the
+   * parser. It used to be the index of the next `function` declaration, which
+   * is a different place: for every shape without the `function` keyword it
+   * lay past the component’s closing brace, so an unrelated neighbour’s
+   * `refresh()` satisfied the renewal rule for a component that renews
+   * nothing.
+   */
   const region = text.slice(from, to);
   const call = /\b([A-Za-z_$][\w$]*)\s*(?:\.([A-Za-z_$][\w$]*))?\s*\(/g;
   let match;
@@ -660,7 +793,7 @@ export function run(injected = {}) {
       readFileSync(file, 'utf8'),
     ]);
 
-  const adapterRoots = (injected.adapterRoots ?? ADAPTER_ROOTS).map((one) =>
+  const adapterRoots = (injected.adapterRoots ?? adapterRootsFromRepository()).map((one) =>
     one.split(sep).join('/')
   );
 
@@ -697,9 +830,20 @@ export function run(injected = {}) {
   /* --- the adapters ---------------------------------------------------- */
 
   const adapters = new Map();
+  /*
+   * The root filter is CHECKED, not trusted. Its whole job is to say which
+   * trees hold adapters, and both times it has been wrong it was wrong
+   * silently: the sweep stayed clean and non-empty while a tree full of
+   * `'use server'` modules went unopened. A module the filter excludes is
+   * therefore reported rather than skipped.
+   */
+  const excludedServerModules = [];
   for (const [path, content] of sources) {
-    if (!adapterRoots.some((root) => path.startsWith(root))) continue;
-    if (!/^\s*['"]use server['"]/.test(content)) continue;
+    if (!declaresUseServer(content)) continue;
+    if (!adapterRoots.some((root) => path.startsWith(root))) {
+      excludedServerModules.push(path);
+      continue;
+    }
     for (const adapter of guardedAdaptersIn(content)) {
       adapters.set(adapter.name, { ...adapter, file: path });
     }
@@ -726,9 +870,10 @@ export function run(injected = {}) {
   const names = new Set(adapters.keys());
   const sites = [];
 
+  const unparsed = [];
   for (const [path, content] of sources) {
     const text = stripComments(content);
-    if (!new RegExp(`\\b(?:${[...names].join('|')})\\b`).test(text) || names.size === 0) continue;
+    if (names.size === 0 || !new RegExp(`\\b(?:${[...names].join('|')})\\b`).test(text)) continue;
 
     const context = {
       declarations: declarations(text),
@@ -736,7 +881,19 @@ export function run(injected = {}) {
       parameters: parameterNames(text),
     };
 
-    for (const call of callsTo(text, names)) {
+    /*
+     * Parsed ONCE per file. A file the parser refuses yields no call sites at
+     * all, which would be a silent narrowing — so it is recorded and reported
+     * rather than skipped.
+     */
+    const sourceFile = parseModule(content);
+    if (sourceFile === null) {
+      unparsed.push(path);
+      continue;
+    }
+    const fileDeclarations = declaredFunctionsOf(sourceFile);
+
+    for (const call of callsTo(sourceFile, names)) {
       const adapter = adapters.get(call.name);
       // A call with fewer arguments than the version position cannot be sending
       // one — a re-export or a partial application, neither of which is a
@@ -745,7 +902,7 @@ export function run(injected = {}) {
 
       const argument = call.args[adapter.position];
       const verdict = classifyVersionExpression(argument, context);
-      const enclosing = enclosingFunction(text, call.index);
+      const enclosing = enclosingFunctionAt(sourceFile, fileDeclarations, call.node);
       const site = {
         file: path,
         adapter: call.name,
@@ -768,7 +925,7 @@ export function run(injected = {}) {
             'that the outcome is handed onward and the version renewed.'
         );
       } else {
-        const renews = renewsAfter(text, call.index, enclosing.end, enclosing.binds);
+        const renews = renewsAfter(content, call.node.getStart(), enclosing.end, enclosing.binds);
         site.renews = renews;
         if (!renews) {
           violations.push(
@@ -786,6 +943,18 @@ export function run(injected = {}) {
   /* --- anti-vacuity ---------------------------------------------------- */
 
   if (sources.length === 0) violations.push('no files were scanned');
+  for (const path of excludedServerModules) {
+    violations.push(
+      `${path}: a 'use server' module outside every derived adapter root, so this gate never ` +
+        'opened it. The root derivation is narrower than the tree it claims to cover.'
+    );
+  }
+  for (const path of unparsed) {
+    violations.push(
+      `${path}: this gate could not parse the module, so its guarded call sites were not ` +
+        'examined. That is the check failing to run, not a clean run.'
+    );
+  }
   if (guarded.length === 0) {
     violations.push('no version-guarded apt/rec operation was derived from the published contract');
   }

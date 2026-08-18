@@ -250,12 +250,21 @@ classification cannot be entered without a reviewer seeing the number move.
   `FE-022`)**. Conversion is the only way a work order comes to exist, and a
   replay on a converted visit answers 200 `alreadyConverted: true`, which the
   step renders as the success it is.
-- **H — media (`FE-017`)**: the named-open-decision notice, and the ban proved.
-  Nothing on that screen takes, chooses or records a picture or a file. Two CI
-  rules refuse an upload control and refuse an invented size or file-type limit
-  while `P1-OD-025` is open, so a "sensible default" of 10 MB and JPEG/PNG —
-  which looks like care and is an undecided policy presented as though it had
-  been decided — cannot be added back quietly.
+- **H — media (`FE-017`)**: a WORKING capture, and the ban still proved. This
+  wave shipped as a named-open-decision notice — "nothing on that screen takes,
+  chooses or records a picture or a file" — and then the Owner resolved
+  `P1-OD-025` for reception evidence and the notice was replaced by the
+  capability it described. The chain runs authorize → PUT → register → scan →
+  link → bind → finalize against a real store, and an EICAR file is
+  quarantined rather than accepted.
+
+  The two CI rules are unchanged and now scan the reception tree as well:
+  exactly one file input is sanctioned (`components/CaptureFileField.tsx`),
+  and the accepted types and the ceiling are read from the category the SERVER
+  publishes. A "sensible default" of 10 MB and JPEG/PNG written into this tree
+  — which looks like care and is an undecided policy presented as though it
+  had been decided — still cannot be added back quietly. What changed is that
+  the policy now exists; it did not become ours to invent.
 
 ## Security, QA and DevOps riders
 
@@ -646,10 +655,13 @@ citation half of `P1-28-DOC-001` had never been checked at all.
 
 Stated here so the absence is a record rather than a discovery:
 
-- **Media capture** — `P1-OD-025` is open. No approved file types, no invented
-  size limit, no object store assumed. Even after the decision the honest state
-  of a registered file is "registered, pending": no storage provider and no
-  scanner are configured, so nothing can be retrieved back out.
+- **Media capture beyond reception evidence** — `P1-OD-025` is resolved for
+  the seven `reception_*` categories and for nothing else, so vehicle
+  documents, catalogue assets, inspection media and technician task evidence
+  still have no approved types, no ceiling and no category. This entry
+  previously read "`P1-OD-025` is open … no storage provider and no scanner
+  are configured, so nothing can be retrieved back out", which was true of the
+  tree it was written against and is not true of this one.
 - **The signature image** — the write requires a registered signature document
   and its exact version, and nothing in this product registers a document. The
   step shows what a signature would attribute and records nothing.

@@ -1,5 +1,6 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { vi } from 'vitest';
 import * as aptApi from '@/features/appointments/api';
 import * as aptCatalogue from '@/features/appointments/catalogue-api';
 import * as recApi from '@/features/receptions/api';
@@ -12,6 +13,31 @@ import * as customerDirectory from '@/lib/customers/directory';
 import * as customerVehicles from '@/lib/customers/vehicles';
 
 /**
+ * The attachments adapters, taken REAL rather than through the tier mock.
+ *
+ * `p1-28-qa.test.ts` mocks `@/features/attachments/api` at the module boundary,
+ * because that is the only way the two composite captures can be driven at all:
+ * without it a single drive would issue five requests plus an object PUT, and
+ * every sweep asserting "exactly one request, on the channel it declares" would
+ * have to be weakened to accommodate them.
+ *
+ * That mock is also what made this tree invisible. A static import here would
+ * resolve to the mock, so a drive over it would record a call into the
+ * recorder, reach no client, and prove nothing — the sweep would grow three
+ * entries and measure the same nothing it measured before. `vi.importActual`
+ * bypasses the mock for THIS module only; its own imports still resolve
+ * normally, so `@/lib/api/server-client` stays mocked and these drives land on
+ * the same recorded transport as every other entry in the table.
+ *
+ * Top-level `await` rather than a lazy handle inside each `call`, so a module
+ * that fails to load fails when the table is built rather than as one confusing
+ * assertion inside whichever sweep happened to run first.
+ */
+const attachmentsApi = await vi.importActual<typeof import('@/features/attachments/api')>(
+  '@/features/attachments/api'
+);
+
+/**
  * One accepted call for **every** adapter the P1-28 trees export
  * (`P1-28-QA-001`).
  *
@@ -22,9 +48,9 @@ import * as customerVehicles from '@/lib/customers/vehicles';
  * nothing was executing the adapters themselves. That is precisely the P1-27
  * Wave 5 finding: mutating an adapter left twenty DOM tests green, because the
  * only references to it in the whole suite were `vi.fn()` stubs that replace the
- * thing under test. Twenty-four reads and twenty writes ship in this phase with
- * contract-table coverage only, and a contract table cannot say which path a
- * function builds, whether it sends a scope, or what it returns for a 403.
+ * thing under test. Twenty-five reads and twenty-two writes ship in this phase
+ * with contract-table coverage only, and a contract table cannot say which path
+ * a function builds, whether it sends a scope, or what it returns for a 403.
  *
  * ## Not a test file
  *
@@ -43,11 +69,19 @@ import * as customerVehicles from '@/lib/customers/vehicles';
  *
  * ## The set is DERIVED and the derivation is checked
  *
- * `exportedP1_28Adapters()` walks the `'use server'` modules of the two feature
- * trees plus the customer→vehicle read the intake flow depends on, and reports
- * every exported async function. `p1-28-qa.test.ts` holds `DRIVES` to that set
- * by NAME — not by count, because adding one adapter while driving another would
- * balance a count and hide both.
+ * `exportedP1_28Adapters()` walks the `'use server'` modules of the three
+ * feature trees plus the customer→vehicle read the intake flow depends on, and
+ * reports every exported async function. `p1-28-qa.test.ts` holds `DRIVES` to
+ * that set by NAME — not by count, because adding one adapter while driving
+ * another would balance a count and hide both.
+ *
+ * The derivation is only as wide as its ROOTS, and that is where it failed once
+ * already: `src/features/attachments` is a `'use server'` tree this branch
+ * created, it was not a root, and so the walk never saw it. The exhaustiveness
+ * case stayed green over three undriven adapters and its own anti-vacuity floor
+ * — `toBeGreaterThan(30)` — was satisfied by the trees it could see. A sweep is
+ * blind to the tree it was never pointed at, which is the same failure as a hand
+ * list wearing a derivation's clothes.
  */
 
 /* ------------------------------------------------------------------ *
@@ -242,6 +276,17 @@ export const READ_DRIVES: readonly AdapterDrive[] = Object.freeze([
     // every sweep over it vacuous.
     call: () => customerDirectory.searchCustomerDirectory(REQUEST, null, { name: 'Nadia' }),
   },
+  {
+    /*
+     * The governed category policy, and the one read of the shared evidence
+     * chain this tier performs. It is what tells a capture which content types
+     * and which ceiling apply, so `no-invented-media-limit` has a server answer
+     * to point at instead of a constant somebody chose.
+     */
+    name: 'listDocumentCategories',
+    channel: 'get',
+    call: () => attachmentsApi.listDocumentCategories(),
+  },
 ]);
 
 /** A window whose halves carry an explicit offset and end strictly after the start. */
@@ -249,6 +294,49 @@ const WINDOW = Object.freeze({
   from: '2026-09-01T09:00:00Z',
   to: '2026-09-01T10:00:00Z',
 });
+
+/**
+ * Run one drive with the object store answering as UNREACHABLE.
+ *
+ * `captureDocument` is three acts: authorize, PUT the bytes, register. Only the
+ * first and third are requests to our API; the PUT goes through the global
+ * `fetch` to a host the API named, and nothing in this table mocks that.
+ *
+ * Two things follow, and both are decisions rather than conveniences.
+ *
+ *   - **It must be stubbed.** Left alone, the drive would depend on an
+ *     unmocked `fetch` happening to reject — which it does today, because the
+ *     mocked authorization carries no `uploadUrl` to parse — and a drive that
+ *     passes because a URL was malformed is a drive that stops passing for a
+ *     reason unrelated to the product. Worse, a fixture that ever did carry a
+ *     plausible URL would put a real outbound request in a unit run.
+ *   - **It must fail.** A store that accepted the bytes would send the action
+ *     on to `shared.attachment-version-register`, which is a SECOND request,
+ *     and every consumer of this table asserts exactly one. That is the same
+ *     decision the `captureRequirementEvidence` entry makes for the same reason
+ *     — its registered version stays `pending` so the action does not go on to
+ *     finalize.
+ *
+ * So what this drive measures is the AUTHORIZE half: the path built, the body
+ * sent, the scope not sent, the key not minted, and every transport kind mapped
+ * to a state that is never success. The store→register half issues a second
+ * request and is therefore outside what a one-request-per-drive table can say
+ * about it; `p1-28-reception-media.test.ts` pins its ORDER, and no drive here
+ * claims to have executed it.
+ *
+ * The global is restored in a `finally`, so a drive that throws cannot leave a
+ * stubbed `fetch` behind for whatever runs next.
+ */
+async function withUnreachableStore<T>(run: () => Promise<T>): Promise<T> {
+  const real = globalThis.fetch;
+  globalThis.fetch = (async () =>
+    new Response(null, { status: 503 })) as unknown as typeof globalThis.fetch;
+  try {
+    return await run();
+  } finally {
+    globalThis.fetch = real;
+  }
+}
 
 /**
  * Every write adapter, with a call that reaches `client.send`.
@@ -283,8 +371,23 @@ const WINDOW = Object.freeze({
  * two entries prove is therefore what this file is for: that the reception
  * request the composite finally issues is the one the contract publishes, on the
  * right path, carrying no scope and no key of its own. What they deliberately do
- * NOT measure is the `shared.*` half, which belongs to the attachments tier and
- * is driven there.
+ * NOT measure is the `shared.*` half — that half is driven by the two entries
+ * below, against the real module.
+ *
+ * ## And the shared half, which had been driven by nothing
+ *
+ * `captureDocument` and `createDocumentLink` are the two writes of the evidence
+ * chain, and until now the only statement any suite made about them was the
+ * mock that replaces them. They are adapters of this application by every test
+ * this repository applies — `'use server'`, exported, called by production code
+ * — and they were invisible because the walk was never pointed at their tree.
+ *
+ * Both resolve to an operation the registry marks `idempotent: true`
+ * (`shared.attachment-upload-authorize`, `shared.attachment-link-create`), and
+ * neither passes an options object to `client.send`, so neither mints a key the
+ * contract-derived client would then be unable to own. Neither is version
+ * guarded: a document version is immutable and a link is an append, so there is
+ * no record version for `If-Match` to protect.
  */
 export const WRITE_DRIVES: readonly AdapterDrive[] = Object.freeze([
   {
@@ -433,6 +536,30 @@ export const WRITE_DRIVES: readonly AdapterDrive[] = Object.freeze([
   },
   {
     /*
+     * The chain's SECOND entry point: the finalization offered again on a
+     * binding whose capture reached `bound` and stopped there.
+     *
+     * It exists because `captureRequirementEvidence` attempts the sixth call
+     * exactly once — an expired session or a transport failure leaves a real
+     * binding over an accepted version that counts towards nothing, and
+     * re-capturing would leave a second document standing for the same panel.
+     * It lives in `evidence-capture.ts` rather than on the screen because
+     * `finalizeEvidenceBinding` is a step of the chain, and a step of the chain
+     * called from a component is the sequence living in the browser.
+     *
+     * One request, on the `send` channel: the action delegates straight to the
+     * adapter and adds no read of its own. It deliberately checks NOTHING about
+     * the binding first — the RLS policy admits the update only while
+     * `finalized_at IS NULL` and the binding guard refuses a version that is not
+     * accepted, so the database is the authority and a check here would be a
+     * second opinion about rows this tree cannot see.
+     */
+    name: 'finalizeCapturedEvidence',
+    channel: 'send',
+    call: () => recEvidenceCapture.finalizeCapturedEvidence(VISIT, BINDING),
+  },
+  {
+    /*
      * FE-018's composite. The form fields are the ones `SignatureStep` really
      * submits — role, purpose, an optional party and the image — because a drive
      * that invented a field would prove the action accepts something no screen
@@ -448,6 +575,56 @@ export const WRITE_DRIVES: readonly AdapterDrive[] = Object.freeze([
       form.set('signerPartnerId', PARTNER);
       return recSignatureCapture.captureSignatureEvidence(VISIT, form);
     },
+  },
+  {
+    /*
+     * The first act of the evidence chain, driven against the real module.
+     *
+     * The category is `reception_vin` and the entity is the visit, because that
+     * is the pair `captureRequirementEvidence` derives for the `vin`
+     * requirement — a drive that invented a category would prove the adapter
+     * accepts something no caller sends. The bytes are the same JPEG
+     * start-of-image marker `capturedFile` writes, and being non-empty is
+     * load-bearing: a zero-byte file is refused before a session is even
+     * resolved, so such a drive would reach no client and make every sweep over
+     * it vacuous.
+     *
+     * `withUnreachableStore` explains why the PUT is stubbed to fail and what
+     * this entry therefore does and does not measure.
+     */
+    name: 'captureDocument',
+    channel: 'send',
+    call: () =>
+      withUnreachableStore(() =>
+        attachmentsApi.captureDocument({
+          categoryCode: 'reception_vin',
+          entityType: 'rec.receptions',
+          entityId: VISIT,
+          fileName: 'vin-plate.jpg',
+          contentType: 'image/jpeg',
+          bytes: new Uint8Array([0xff, 0xd8, 0xff, 0xdb]),
+          capturedAt: CAPTURED_AT,
+        })
+      ),
+  },
+  {
+    /*
+     * The last act: what makes a captured document reachable to somebody who
+     * holds the visit rather than the document id. `identity_document` is the
+     * `business_link_purpose` the seeded `reception_vin` category publishes
+     * (`supabase/seeds/05_shared_reference.sql`), not a convenient invention —
+     * a purpose the category does not admit is refused by
+     * `ck_document_categories_link_purpose`, so a drive using one would prove
+     * the adapter builds a request production could not make.
+     */
+    name: 'createDocumentLink',
+    channel: 'send',
+    call: () =>
+      attachmentsApi.createDocumentLink(DOCUMENT, {
+        entityType: 'rec.receptions',
+        entityId: VISIT,
+        linkPurpose: 'identity_document',
+      }),
   },
   {
     name: 'approveReception',
@@ -538,10 +715,26 @@ export function adapterModules(roots: readonly string[] = adapterRoots()): reado
   return files.sort();
 }
 
-/** The three trees P1-28 adapters live in. */
+/**
+ * The four trees P1-28 adapters live in.
+ *
+ * A root that is missing is not a smaller sweep, it is a SILENT one: the walk
+ * reports what the roots contain, the exhaustiveness case compares that against
+ * the table, and both agree perfectly about a tree neither can see.
+ * `src/features/attachments` was exactly that — the `'use server'` module this
+ * branch added for the P1-15 evidence chain, under no root, so its three
+ * adapters were driven by nothing while `QA-001` read green.
+ *
+ * So the rule for adding one is the rule the walk itself uses: a tree
+ * containing a module that opens with `'use server'` belongs here. There is no
+ * third state in which an adapter is exempt from being discovered — an adapter
+ * that should not be driven is excluded by NAME in `NOT_DRIVEN`, with a reason,
+ * where the exclusion is checked.
+ */
 function adapterRoots(): readonly string[] {
   return [
     join(process.cwd(), 'src', 'features', 'appointments'),
+    join(process.cwd(), 'src', 'features', 'attachments'),
     join(process.cwd(), 'src', 'features', 'receptions'),
     join(process.cwd(), 'src', 'lib', 'customers'),
   ];

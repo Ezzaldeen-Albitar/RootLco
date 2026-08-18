@@ -8,6 +8,8 @@ import {
   type KeyboardEvent,
   type MouseEvent,
 } from 'react';
+import type { TableStatus } from '@/components/data-table/DataTable';
+import { readCompleteness } from '@/components/data-table/read-completeness';
 import { INITIAL_REQUEST } from '@/components/data-table/table-state';
 import { useServerTable, type ServerPage } from '@/components/data-table/use-server-table';
 import { SelectField, TextField } from '@/components/forms/Field';
@@ -117,6 +119,26 @@ import {
  * once rendered as the fields' own `value`, which silently rewrote `0.125` to
  * `0.13` on the operator's screen while the draft still carried `0.125`.
  *
+ * ## "This visit has no map" is a READ that said so, never a read that failed
+ *
+ * A mark needs an existing `damageMapId`, so the mark form is offered only once
+ * this visit is KNOWN to hold a map — and the gate that decided it was
+ * `mapChoices.length === 0`, one boolean over a read that answers in seven ways.
+ * All six non-idle statuses leave the choices empty, so a denial, an expired
+ * session, a rate limit, a transport failure, a not-found and a read still in
+ * flight each rendered the coverage notice: *"A mark is placed on a damage map,
+ * and this visit has none. Open one above first."* That is an observation
+ * printed for a question nobody answered, and the direction of the error is the
+ * expensive one — it tells an operator to open a SECOND map on a visit that may
+ * already carry one, on a screen whose own read-back a few lines above is
+ * simultaneously showing them the refusal.
+ *
+ * `markGateOf` states the five answers instead, and the coverage notice belongs
+ * to exactly one of them. The five-way diagnosis of WHY a read did not answer is
+ * deliberately NOT repeated in the gate: `EvidenceReadBack` renders it for this
+ * very table immediately above, with the Retry that can act on it, and two
+ * sentences about one read would be two authorities on it.
+ *
  * ## The diagram is a shortcut, not the control
  *
  * The two number fields are the authoritative inputs and are fully operable by
@@ -135,6 +157,51 @@ const IDLE: ActionState = { status: 'idle' };
 
 /** How far one arrow key moves the mark, as a fraction of the map. */
 const KEYBOARD_STEP = 0.05;
+
+/**
+ * What the damage-map read established about this visit — the mark form's gate.
+ *
+ * Five answers, because they are five different facts and only one of them is an
+ * observed absence:
+ *
+ *   - `offered` — a map is on the read-back. POSITIVE proof, so it is decided by
+ *     the rows themselves and survives a page boundary: finding one settles the
+ *     question whatever else went unread.
+ *   - `pending` — the read has not answered. Nothing is rendered in the write
+ *     slot, because the read-back directly above is already showing this table's
+ *     own skeleton and a sentence here would be a claim about a question still
+ *     in flight.
+ *   - `denied` — this operator may not read the maps. Stated as the permanent
+ *     thing it is: a retry cannot change it, and the mark form is not coming.
+ *   - `unknown` — the read failed, or covered only part of the list. Nothing is
+ *     established either way. `readCompleteness` supplies both halves, so this
+ *     screen holds no second opinion about what `hasMore: false` means on a
+ *     failure branch.
+ *   - `none` — the read covered the whole set and this visit holds no map. The
+ *     ONLY branch entitled to the coverage notice's "Open one above first".
+ */
+type MarkGate = 'offered' | 'pending' | 'denied' | 'unknown' | 'none';
+
+function markGateOf(
+  status: TableStatus,
+  hasMore: boolean | undefined,
+  page: number,
+  choices: number
+): MarkGate {
+  if (choices > 0) return 'offered';
+  if (status === 'denied') return 'denied';
+  switch (readCompleteness(status, hasMore, page)) {
+    case 'pending':
+      return 'pending';
+    case 'complete':
+      return 'none';
+    // `truncated` and `unreadable` are one answer HERE. They differ in cause —
+    // and the panel above names the cause — but not in what an operator may
+    // conclude from them, which is nothing.
+    default:
+      return 'unknown';
+  }
+}
 
 export function DamageMapStep({
   locale,
@@ -225,6 +292,18 @@ export function DamageMapStep({
       };
     });
   }, [maps.response, locale]);
+
+  /*
+   * Whether a mark can be hung off anything — asked of the READ, not of the
+   * length of a list that is empty on six failure branches as well as on a
+   * genuinely empty visit.
+   */
+  const markGate = markGateOf(
+    maps.status,
+    maps.response?.hasMore,
+    maps.request.page,
+    mapChoices.length
+  );
 
   return (
     <div className="flex flex-col gap-4">
@@ -334,7 +413,15 @@ export function DamageMapStep({
               writesLocked ? 'receptions.evidence.lockedNote' : 'receptions.evidence.readOnly'
             }
           />
-        ) : mapChoices.length === 0 ? (
+        ) : markGate === 'pending' ? null : markGate === 'denied' ? (
+          <p data-testid="damage-mark-denied" className="text-caption" lang={locale}>
+            {translate(messages, 'receptions.damage.markMapsDenied')}
+          </p>
+        ) : markGate === 'unknown' ? (
+          <p data-testid="damage-mark-unread" className="text-caption" lang={locale}>
+            {translate(messages, 'receptions.damage.markMapsUnknown')}
+          </p>
+        ) : markGate === 'none' ? (
           <CoverageNotice locale={locale} messages={messages} kind="damage_mark" />
         ) : (
           <MarkForm

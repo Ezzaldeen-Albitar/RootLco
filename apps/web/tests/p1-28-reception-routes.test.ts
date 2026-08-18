@@ -1,5 +1,13 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import type { ReactElement } from 'react';
+
+/** The acknowledgement route, read as SOURCE — a spy cannot see an absent call. */
+const ACKNOWLEDGEMENT_PAGE = join(
+  process.cwd(),
+  'src/app/[locale]/(dashboard)/receptions/check-in/[receptionId]/acknowledgement/page.tsx'
+);
 
 /**
  * The JOINT between a session's permissions and the reception routes' props
@@ -296,11 +304,47 @@ describe('the acknowledgement route', () => {
     expect(listPartyRoles.mock.calls[0]?.[1]).toBe('active');
   });
 
-  it('does not spend the directory read on a visit that does not exist', async () => {
-    PERMISSIONS = [RECEPTION_PERMISSIONS.read, USER_DIRECTORY_PERMISSION];
-    readReception.mockResolvedValue({ status: 'not-found', correlationId: 'cid-404' });
-    await AcknowledgementPage({ params });
-    expect(readUserIdentity).not.toHaveBeenCalled();
+  it('makes NO directory read at all, on any input', async () => {
+    /*
+     * This case was titled "does not spend the directory read on a visit that
+     * does not exist", which describes a conditional efficiency property of a
+     * read that was REMOVED. It granted the directory permission, forced a
+     * not-found, and asserted the resolver was not called — an assertion that
+     * cannot fail, because the page holds no call to it under any input. A
+     * reviewer checking that the removal really happened read a green case whose
+     * title says the read exists and behaves well.
+     *
+     * What replaced it is the property that is actually true and actually
+     * falsifiable: the acknowledgement prints the immutable
+     * `receivingEmployeeDisplayName` snapshot taken when custody was accepted,
+     * so no directory read is issued — for a visit that exists, for one that does
+     * not, and with the directory permission granted or withheld.
+     */
+    for (const permissions of [
+      [RECEPTION_PERMISSIONS.read],
+      [RECEPTION_PERMISSIONS.read, USER_DIRECTORY_PERMISSION],
+    ]) {
+      for (const detail of [null, { status: 'not-found' as const, correlationId: 'cid-404' }]) {
+        vi.clearAllMocks();
+        PERMISSIONS = permissions;
+        if (detail !== null) readReception.mockResolvedValue(detail);
+        await AcknowledgementPage({ params });
+        expect(
+          readUserIdentity,
+          `permissions=${permissions.join(',')} detail=${detail?.status ?? 'ok'}`
+        ).not.toHaveBeenCalled();
+      }
+    }
+
+    /*
+     * …and the source carries no call to make, so this is a property of the page
+     * rather than of four fixtures. A mock that is never called and a function
+     * that is never referenced look identical from a spy; only one of them is a
+     * guarantee.
+     */
+    const page = readFileSync(ACKNOWLEDGEMENT_PAGE, 'utf8');
+    expect(page).not.toContain('readUserIdentity');
+    expect(page).toContain('receivingEmployeeDisplayName');
   });
 
   it('carries the backend correlation reference on a backend denial', async () => {

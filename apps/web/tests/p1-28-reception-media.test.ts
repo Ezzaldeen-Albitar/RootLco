@@ -418,6 +418,44 @@ describe('P1-28-FE-017 — there is EXACTLY ONE approved file-input surface', ()
       expect(GATE.stripComments(source), `${path} — ${rule.what}`).not.toMatch(rule.pattern);
     }
   });
+
+  it('and no source in the WHOLE web tier does — the claim is tier-wide or it is nothing', () => {
+    /*
+     * The case above sweeps the reception surface, which is where a capture
+     * belongs and therefore the only place anybody looks. That is precisely why
+     * it was not enough: `components/gallery/GalleryClient.tsx` carried a
+     * second real `<input type="file">` — `TextField` spreads its rest props
+     * onto the element — and every gate and case in this phase reported clean
+     * over it. `check-p1-27-frontend.mjs` collects five roots, none covering
+     * `components/`, so the gate could not see it either.
+     *
+     * That input was NOT a live upload path — no handler, no action, no submit,
+     * and `galleryEnabled()` 404s its route in production without an explicit
+     * opt-in. This case is therefore about the CLAIM rather than about a defect
+     * it caught: "there is exactly one approved file-input surface" was being
+     * checked over five roots and asserted over the tier.
+     *
+     * So the sweep is the tier. `WEB_SOURCES` is every source under `src`,
+     * which is what makes the sentence "there is exactly one approved
+     * file-input surface" a measurement rather than a habit.
+     */
+    const rule = ruleFor('no-unapproved-file-input');
+    const offenders = WEB_SOURCES.filter(
+      ({ path, source }) =>
+        !path.endsWith(CAPTURE_FIELD) && rule.pattern.test(GATE.stripComments(source))
+    ).map(({ path }) => path);
+
+    // Anti-vacuity: a corpus that opened nothing would satisfy the rule below
+    // having examined nothing, which is the shape that hid this to begin with.
+    expect(WEB_SOURCES.length, 'the tier corpus is empty').toBeGreaterThan(200);
+    // …and it really contains the tree the reception sweep never reaches.
+    expect(WEB_SOURCES.some(({ path }) => path.includes('components/gallery/'))).toBe(true);
+
+    expect(offenders, 'a file input outside the one approved surface').toEqual([]);
+
+    // The rule can still fire, so an empty result means something.
+    expect(rule.pattern.test('<TextField label={x} type="file" />')).toBe(true);
+  });
 });
 
 /* ------------------------------------------------------------------ *
@@ -516,8 +554,38 @@ describe('P1-28-FE-017/FE-018 — the sanctioned capture flow, in order', () => 
     // what every earlier stopping point reports.
     const finalizedStage = at(CAPTURE, "stage: 'finalized'", 'the finalized stage');
     expect(finalize).toBeLessThan(finalizedStage);
-    expect(CAPTURE.match(/stage: 'finalized'/g) ?? []).toHaveLength(1);
     expect((CAPTURE.match(/stage: 'bound'/g) ?? []).length).toBeGreaterThan(0);
+
+    /*
+     * The module has a SECOND entry point — the retry offered on a binding
+     * whose capture reached `bound` — so counting `finalized` across the whole
+     * file would now count two honest claims and read as one dishonest one.
+     * The rule is therefore applied per function, which is what it always
+     * meant: each exported action claims the finalized stage at most once, and
+     * only after its own finalize call answered.
+     */
+    const split = at(CAPTURE, 'export async function finalizeCapturedEvidence', 'the retry');
+    for (const [label, body] of [
+      ['captureRequirementEvidence', CAPTURE.slice(0, split)],
+      ['finalizeCapturedEvidence', CAPTURE.slice(split)],
+    ] as const) {
+      expect(body.match(/stage: 'finalized'/g) ?? [], label).toHaveLength(1);
+      expect(
+        body.indexOf('finalizeEvidenceBinding('),
+        `${label} finalizes before it claims to have finalized`
+      ).toBeLessThan(body.indexOf("stage: 'finalized'"));
+      // And it is the API's answer that decides, never the call having returned.
+      expect(body, label).toMatch(/finalized.status !== 'success'/);
+    }
+    /*
+     * The acceptance guard belongs to the capture alone. The retry is offered
+     * only on a binding the screen already read as accepted, and the DATABASE
+     * is the authority on that: the RLS policy admits the update only while
+     * `finalized_at IS NULL` and `tg_reception_evidence_binding_guard` refuses
+     * a version that is not accepted. A guard here would be a second opinion
+     * about rows this tree cannot see.
+     */
+    expect(CAPTURE.slice(split)).not.toContain('ACCEPTED_VERSION_STATUS');
 
     // The literal is imported from the contract, never spelled locally: a rule
     // written out four times is a rule that can be relaxed in three of them.
@@ -960,11 +1028,15 @@ describe('P1-28-FE-017 — the media policy is the server category policy', () =
      * move and it would not be free.
      *
      * `byte-size-limit` matches `MAX_(?:FILE|UPLOAD|IMAGE|MEDIA|ATTACHMENT)_`,
-     * and `MAX_FILE_NAME` matches it — a mirror of `shared.documents.file_name`,
-     * the column bound the upload-authorization route itself parses with. It
-     * governs how long a NAME may be, decides nothing about media, and is
-     * exactly the kind of correct line the gate's own docblock warns a wider
-     * scan would turn red.
+     * and `MAX_FILE_NAME` matches it. What that constant mirrors is the
+     * REQUEST SCHEMA of the upload-authorization route,
+     * `fileName: z.string().min(1).max(400)` — not a database column. This
+     * comment used to cite `shared.documents.file_name` as the authority; that
+     * column does not exist anywhere in `supabase/`, and the constant’s own
+     * docblock was corrected to say so while this line, inside an executing
+     * case, went on asserting it. It governs how long a NAME may be, decides
+     * nothing about media, and is exactly the kind of correct line the gate’s
+     * own docblock warns a wider scan would turn red.
      *
      * So both halves are pinned: that construct matches this file for that
      * reason and no other, and the four constructs that WOULD constitute an
@@ -1019,16 +1091,28 @@ describe('P1-28-FE-017 — only finalized accepted evidence satisfies a requirem
     }
 
     expect(STEP).toContain('{requirement.finalizedCount}/{requirement.minCount}');
-    // `recordedCount` reaches the screen for ONE purpose: telling an operator
-    // that something is held and does not count yet.
+    // `recordedCount` does NOT reach the screen. It occurs once, in the branch
+    // that chooses between "recorded but not counted" and "nothing recorded" —
+    // and this assertion is what keeps it out of the rendered count, which is
+    // why the component's docblock claiming it was printed beside the figure
+    // could not have been true.
     expect(STEP.match(/requirement\.recordedCount/g) ?? []).toHaveLength(1);
     expect(STEP).toContain('requirement.recordedCount > requirement.finalizedCount');
   });
 
-  it('renders four distinct states, and only one of them is a tick', () => {
+  it('renders five distinct states, and only one of them is a tick', () => {
+    /*
+     * FIVE, not four. This case pinned four while the ladder rendered five,
+     * so the whole `partiallyMet` branch could be deleted and it stayed
+     * green — the state that covers photographs one to six of every visit was
+     * the one nothing asserted. The mutation below is what stops that
+     * returning: each key must be rendered by the step, so removing any branch
+     * fails here rather than somewhere downstream.
+     */
     const STATES = {
       satisfied: 'receptions.capture.state.satisfied',
       overridden: 'receptions.capture.state.overridden',
+      partiallyMet: 'receptions.capture.state.partiallyMet',
       recordedNotCounted: 'receptions.capture.state.recordedNotCounted',
       outstanding: 'receptions.capture.state.outstanding',
     } as const;
@@ -1041,40 +1125,115 @@ describe('P1-28-FE-017 — only finalized accepted evidence satisfies a requirem
       expect(AR[key], `${key} carries no Arabic script`).toMatch(/[؀-ۿ]/);
     }
 
-    // Four states, four different sentences. A waiver that read the same as a
-    // satisfied requirement would be the silent satisfaction `G` forbids.
-    expect(new Set(Object.values(STATES).map((key) => EN[key])).size).toBe(4);
-    expect(new Set(Object.values(STATES).map((key) => AR[key])).size).toBe(4);
+    // Five states, five different sentences. A waiver that read the same as a
+    // satisfied requirement would be the silent satisfaction `G` forbids, and
+    // a partly-met one reading the same as an outstanding one is the defect
+    // this ladder was rebuilt for.
+    expect(new Set(Object.values(STATES).map((key) => EN[key])).size).toBe(5);
+    expect(new Set(Object.values(STATES).map((key) => AR[key])).size).toBe(5);
     expect((EN[STATES.recordedNotCounted] ?? '').toLowerCase()).toContain('not counted');
+
+    /*
+     * And the two that are easiest to confuse are held apart by meaning, not
+     * only by being different strings: 'partly met' must not read as nothing,
+     * and the outstanding sentence must be the one that says nothing is here.
+     */
+    expect((EN[STATES.outstanding] ?? '').toLowerCase()).toContain('nothing recorded');
+    expect((EN[STATES.partiallyMet] ?? '').toLowerCase()).not.toContain('nothing');
+    expect((EN[STATES.partiallyMet] ?? '').toLowerCase()).toContain('partly');
   });
 
-  it('a capture reports `finalized` only where the finalization answered', () => {
+  it('names every outcome the chain can reach, and no outcome it cannot', () => {
     /*
-     * The outcome an operator is shown is derived from what the API said, and
-     * the two ways a version can fail to count are different facts: no store
-     * could be read at all, or the scan has not concluded. Neither is an error
-     * and both are shown as themselves rather than as a tick.
+     * The DOM-independent twin of the outcome ladder, and the reason it exists:
+     * a DOM case proves ONE branch answers one sentence, and cannot notice that
+     * a branch was deleted along with the case that drove it.
+     *
+     * It had drifted to the opposite of that. It pinned three keys of a ladder
+     * that had grown to six, named `boundPending` — which has no producer at
+     * all — and mentioned neither of the states the wave added, so both new
+     * branches could be deleted with this file green.
+     *
+     * The pin is now DERIVED: every `receptions.capture.*` key the step returns
+     * is read out of the step, and that set is compared with the set the
+     * catalogues carry. Either side moving fails, which is what a pin is for.
      */
-    expect(STEP).toContain(
-      "if (outcome.stage === 'finalized') return 'receptions.capture.finalized'"
-    );
-    expect(STEP).toContain(
-      "if (outcome.scannerAvailable === false) return 'receptions.capture.boundNoScanner'"
-    );
-    expect(STEP).toContain("return 'receptions.capture.boundPending'");
-    for (const key of [
-      'receptions.capture.finalized',
+    const reader = STEP.slice(at(STEP, 'function outcomeKey(', 'the outcome reader'));
+    const readerBody = reader.slice(0, at(reader, '\nfunction ', 'the reader ends'));
+    const reachable = [
+      ...new Set(
+        [...readerBody.matchAll(/'(receptions\.capture\.[A-Za-z]+)'/g)].map((match) => match[1]!)
+      ),
+    ].sort();
+
+    /*
+     * The exact set, not a subset. A subset assertion is what let the ladder
+     * grow and shrink underneath this file without a word.
+     */
+    expect(reachable).toEqual([
       'receptions.capture.boundNoScanner',
-      'receptions.capture.boundPending',
+      'receptions.capture.boundNotCounted',
+      'receptions.capture.capturedNotBound',
+      'receptions.capture.capturedStored',
+      'receptions.capture.capturedTerminal',
       'receptions.capture.failed',
-    ]) {
+      'receptions.capture.finalized',
+      'receptions.capture.finalizedPartial',
+      'receptions.capture.overrideFailed',
+      'receptions.capture.overrideRecorded',
+    ]);
+
+    // Every one of them is a real sentence, in both scripts.
+    for (const key of reachable) {
       expect(Object.keys(EN), key).toContain(key);
       expect(Object.keys(AR), key).toContain(key);
+      expect(EN[key], key).not.toBe(AR[key]);
     }
-    // The two "not counted" outcomes say so, so an operator is never told a
-    // stored file met the requirement.
-    expect((EN['receptions.capture.boundPending'] ?? '').toLowerCase()).toContain('not count');
+
+    /*
+     * And the deleted state stays deleted. `boundPending` required a bound
+     * version that is neither accepted nor unscannable; binding admits only
+     * `pending` and `accepted`, and `pending` is produced only by the branch
+     * that reports `scannerAvailable: false`. A key nothing can produce is a
+     * sentence an operator can never be shown, and leaving it in the catalogue
+     * is how a reader comes to believe the state exists.
+     */
+    expect(STEP).not.toContain('boundPending');
+    expect(Object.keys(EN)).not.toContain('receptions.capture.boundPending');
+    expect(Object.keys(AR)).not.toContain('receptions.capture.boundPending');
+
+    /*
+     * The distinctions the ladder exists for, asserted as MEANING rather than as
+     * inequality — two different strings that both read as "wait and see" would
+     * pass an inequality check and fail an operator.
+     */
     expect((EN['receptions.capture.boundNoScanner'] ?? '').toLowerCase()).toContain('not count');
+    expect((EN['receptions.capture.boundNotCounted'] ?? '').toLowerCase()).toContain(
+      'count this evidence'
+    );
+    expect((EN['receptions.capture.capturedTerminal'] ?? '').toLowerCase()).toContain('refused');
+    expect((EN['receptions.capture.finalized'] ?? '').toLowerCase()).toContain('met');
+    expect((EN['receptions.capture.finalizedPartial'] ?? '').toLowerCase()).toContain('more');
+
+    /*
+     * The terminal sentence must not offer a retry, and the two retryable ones
+     * must. That is the distinction the live database produced and the screen
+     * could not make: a quarantined version and a dropped link call rendered the
+     * same words.
+     */
+    expect((EN['receptions.capture.capturedTerminal'] ?? '').toLowerCase()).toContain(
+      'a different file'
+    );
+    for (const key of [
+      'receptions.capture.capturedStored',
+      'receptions.capture.capturedNotBound',
+    ]) {
+      expect((EN[key] ?? '').toLowerCase(), key).toContain('again');
+      expect((EN[key] ?? '').toLowerCase(), key).not.toContain('a different file');
+    }
+
+    // And the derivation itself is real: the step is read, not assumed.
+    expect(reachable.length, 'the outcome reader was not found in the step').toBeGreaterThan(0);
   });
 
   it('is registered as a wizard step, so the operator meets it where they expect the camera', () => {
@@ -1275,7 +1434,7 @@ describe('P1-28 — P1-OD-025 is recorded as RESOLVED, and no copy says otherwis
     expect(AR_OPEN.test(AR['receptions.capture.intro'] ?? '')).toBe(false);
   });
 
-  it('exactly three strings anywhere still defer to an Owner decision — measured, not waved away', () => {
+  it('exactly two strings anywhere still defer to an Owner decision — measured, not waved away', () => {
     /*
      * A pin rather than a sweep, because the honest answer is not zero and
      * pretending otherwise would hide the interesting one.
@@ -1283,13 +1442,18 @@ describe('P1-28 — P1-OD-025 is recorded as RESOLVED, and no copy says otherwis
      * The two `mergePendingDecision` strings are about `P1-OD-017` — duplicate
      * and merge rules — which is genuinely still open, and they are correct.
      *
-     * `vehicles.media.blocked` is not. It tells an operator that accepted file
-     * types, size limits and storage are pending an Owner decision, and that
-     * decision has been taken; what actually blocks vehicle media is that the
-     * platform publishes no vehicle media operation. It lives in P1-27's tree,
-     * which this wave does not own, so it is REPORTED here rather than edited
-     * here — and pinned, so a fourth deferral cannot join it unnoticed and this
-     * one cannot be forgotten once its tree is opened.
+     * There used to be a third. `vehicles.media.blocked` told an operator that
+     * accepted file types, size limits and storage were pending an Owner
+     * decision, and that decision had been taken; what actually keeps media off
+     * the vehicle screen is that the platform publishes no vehicle media
+     * operation. It lived in P1-27's tree, which this wave did not own, so this
+     * case REPORTED it — and pinning it is what carried it across the boundary
+     * rather than losing it in a note. That tree has since been opened and the
+     * string rewritten to the truth, so the count falls to two.
+     *
+     * The pin stays, and stays exact: `toEqual` on a sorted list is what makes a
+     * FOURTH deferral fail here rather than pass unnoticed, and it is equally
+     * what would fail if the vehicle string quietly reverted.
      */
     const deferring = (catalogue: Record<string, string>, matcher: RegExp): string[] =>
       Object.entries(catalogue)
@@ -1300,10 +1464,18 @@ describe('P1-28 — P1-OD-025 is recorded as RESOLVED, and no copy says otherwis
     const expected = [
       'crm.duplicates.mergePendingDecision',
       'vehicles.duplicates.mergePendingDecision',
-      'vehicles.media.blocked',
     ];
     expect(deferring(EN, EN_OPEN)).toEqual(expected);
     expect(deferring(AR, AR_OPEN)).toEqual(expected);
+
+    /*
+     * Non-vacuity for the removal, not just for the matcher: the two matchers
+     * are proved to fire above, but nothing there proves this catalogue still
+     * CONTAINS the key that left the list. A `vehicles.media.blocked` deleted
+     * outright would satisfy the assertion above having examined nothing.
+     */
+    expect(EN['vehicles.media.blocked'], 'the key is gone rather than fixed').toBeTruthy();
+    expect(AR['vehicles.media.blocked'], 'the key is gone rather than fixed').toBeTruthy();
   });
 });
 

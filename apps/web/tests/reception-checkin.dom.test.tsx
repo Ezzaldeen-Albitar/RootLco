@@ -388,6 +388,241 @@ describe('the start screen — origin XOR', () => {
     );
   });
 
+  /**
+   * The open-visit lookup, which shipped with no assertion anywhere.
+   *
+   * A repository-wide grep for the seven notice keys returned seven hits, all
+   * seven of them the key table in the component; `open-visit-lookup` appeared
+   * in no test at all. The matrix row citing this work was re-derived to PASS
+   * on it regardless, which is the shape this phase has paid for repeatedly: a
+   * verdict resting on code nothing exercises.
+   *
+   * The rule is one sentence — only `'none'`, a read that covered the set and
+   * found nothing, may say nothing — so each outcome is driven and read back.
+   */
+  describe('the open-visit lookup states what it established, and only that', () => {
+    const OUTCOMES = [
+      {
+        label: 'denied',
+        status: 'denied',
+        key: 'receptions.checkIn.openVisitDenied',
+        reference: true,
+        retry: false,
+      },
+      {
+        label: 'expired',
+        status: 'expired',
+        key: 'receptions.checkIn.openVisitExpired',
+        reference: false,
+        retry: false,
+      },
+      {
+        label: 'unavailable',
+        status: 'unavailable',
+        key: 'receptions.checkIn.openVisitUnavailable',
+        reference: true,
+        retry: true,
+      },
+      {
+        label: 'not-found',
+        status: 'not-found',
+        key: 'receptions.checkIn.openVisitScopeUnknown',
+        reference: false,
+        retry: false,
+      },
+      {
+        label: 'error',
+        status: 'error',
+        key: 'receptions.checkIn.openVisitUnread',
+        reference: true,
+        retry: true,
+      },
+    ] as const;
+
+    for (const outcome of OUTCOMES) {
+      it(`states the ${outcome.label} outcome, with its reference and retry`, async () => {
+        listReceptions.mockResolvedValue({
+          status: outcome.status,
+          rows: [],
+          nextCursor: null,
+          hasMore: false,
+          correlationId: 'corr-open-visit',
+        });
+
+        const user = userEvent.setup();
+        renderLtr(<CheckInStartScreen {...startProps()} />);
+
+        // The lookup asks only once a vehicle is chosen.
+        await user.click(screen.getByRole('radio', { name: /Appointment/ }));
+        await user.click(screen.getByText(EN['receptions.checkIn.loadAppointments']!));
+        await user.click(await screen.findByText(/Layla Haddad/));
+        const notice = await screen.findByTestId('open-visit-lookup');
+        expect(notice).toHaveTextContent(EN[outcome.key]!);
+
+        /*
+         * The reference is the only thing tying an operator’s telephone call to
+         * the server-side log, and it belongs to the three outcomes somebody
+         * telephones about — not to an expired session or an unknown scope,
+         * which are the operator’s own to fix.
+         */
+        if (outcome.reference) {
+          expect(notice).toHaveTextContent('corr-open-visit');
+        } else {
+          expect(notice).not.toHaveTextContent('corr-open-visit');
+        }
+
+        const retry = within(notice).queryByRole('button', { name: EN['state.retry']! });
+        expect(Boolean(retry), `${outcome.label} retry`).toBe(outcome.retry);
+      });
+    }
+
+    it('says NOTHING when the read covered the set and found no open visit', async () => {
+      listReceptions.mockResolvedValue({
+        status: 'ok' as const,
+        rows: [],
+        nextCursor: null,
+        hasMore: false,
+        correlationId: 'corr-none',
+      });
+
+      const user = userEvent.setup();
+      renderLtr(<CheckInStartScreen {...startProps()} />);
+      await user.click(screen.getByRole('radio', { name: /Appointment/ }));
+      await user.click(screen.getByText(EN['receptions.checkIn.loadAppointments']!));
+      await user.click(await screen.findByText(/Layla Haddad/));
+      await waitFor(() => expect(listReceptions).toHaveBeenCalled());
+
+      // The one outcome entitled to silence. Everything else above speaks.
+      expect(screen.queryByTestId('open-visit-lookup')).not.toBeInTheDocument();
+    });
+
+    it('does not claim the vehicle is free when the page was TRUNCATED', async () => {
+      /*
+       * The defect this whole block exists for, in its original form: the
+       * absence of a banner used to be the entire answer, so "this vehicle is
+       * free" and "we could not find out" were the same screen.
+       */
+      listReceptions.mockResolvedValue({
+        status: 'ok' as const,
+        rows: [],
+        nextCursor: 'cur-2',
+        hasMore: true,
+        correlationId: 'corr-truncated',
+      });
+
+      const user = userEvent.setup();
+      renderLtr(<CheckInStartScreen {...startProps()} />);
+      await user.click(screen.getByRole('radio', { name: /Appointment/ }));
+      await user.click(screen.getByText(EN['receptions.checkIn.loadAppointments']!));
+      await user.click(await screen.findByText(/Layla Haddad/));
+      const notice = await screen.findByTestId('open-visit-lookup');
+      expect(notice).toHaveTextContent(EN['receptions.checkIn.openVisitTruncated']!);
+    });
+  });
+  it('says nothing about eligibility when the directory page was TRUNCATED', async () => {
+    /*
+     * The fourth way the read fails to answer, and the one that survived the
+     * three cases above. The branch directory is a keyset page: with more
+     * eligible colleagues than one page holds, an operator listed on page two
+     * is simply absent from the rows this screen has. The derivation asked
+     * `rows.some(id === me)` and answered false, so the screen stated the
+     * operator was not eligible to accept custody in this branch and withdrew
+     * their own default — from a read that never covered them.
+     *
+     * `hasMore` was discarded. It is now read through `readCompleteness`, the
+     * same primitive the evidence surfaces use, and only a COMPLETE read is an
+     * answer.
+     */
+    listReceivingEmployeeCandidates.mockResolvedValue({
+      status: 'ok' as const,
+      rows: [{ id: 'someone-else', displayName: 'A Colleague' }],
+      nextCursor: 'cur-2',
+      hasMore: true,
+      correlationId: 'corr-page-1',
+    });
+
+    renderLtr(<CheckInStartScreen {...startProps({ canPickEmployee: true })} />);
+    await waitFor(() => expect(listReceivingEmployeeCandidates).toHaveBeenCalled());
+
+    expect(
+      screen.queryByTestId('employee-self-ineligible'),
+      'an unread page is stated as an established ineligibility'
+    ).not.toBeInTheDocument();
+    // …and the default the operator arrived with is still theirs.
+    expect(screen.getByTestId('employee-chosen')).not.toHaveTextContent(
+      EN['receptions.checkIn.employeeUnset']!
+    );
+    cleanup();
+  });
+  it('does not withdraw the operator\u2019s own custody default on page two', async () => {
+    /*
+     * The eligibility repair, defeated by the pager the repair renders.
+     *
+     * The truncation case above proves page one is safe: more exists, so
+     * nothing is claimed. This is the SAME branch directory one click later.
+     * Page two ends the walk, so the server publishes `hasMore: false` — and the
+     * first form of `readCompleteness` read that as "the set was covered". The
+     * operator, who is on page ONE of that directory, is absent from the rows
+     * in hand, so `some(id === me)` answered false and the screen stated they
+     * are not eligible to accept custody in the branch they are standing in
+     * and emptied the receiving-employee field. `buildCreateInput` then refuses
+     * locally, so the check-in cannot be opened at all until the operator
+     * guesses that paging BACK restores them.
+     *
+     * Opening the picker to see who else is available is the ordinary reason
+     * the picker exists.
+     */
+    listReceivingEmployeeCandidates.mockImplementation(
+      (_target: unknown, _request: unknown, cursor: string | null) =>
+        Promise.resolve(
+          cursor === null
+            ? {
+                status: 'ok' as const,
+                rows: [{ id: 'user-1', displayName: 'Front Desk' }],
+                nextCursor: 'cur-2',
+                hasMore: true,
+                correlationId: 'corr-page-1',
+              }
+            : {
+                status: 'ok' as const,
+                rows: [{ id: 'user-9', displayName: 'Other Person' }],
+                nextCursor: null,
+                hasMore: false,
+                correlationId: 'corr-page-2',
+              }
+        )
+    );
+
+    const user = userEvent.setup();
+    renderLtr(<CheckInStartScreen {...startProps({ canPickEmployee: true })} />);
+    await waitFor(() => expect(listReceivingEmployeeCandidates).toHaveBeenCalled());
+
+    // Page one: the operator holds their own default, as the earlier case proves.
+    expect(screen.getByTestId('employee-chosen')).not.toHaveTextContent(
+      EN['receptions.checkIn.employeeUnset']!
+    );
+
+    await user.click(
+      screen.getByRole('button', { name: EN['receptions.checkIn.employeeChoose']! })
+    );
+    const pager = await screen.findByRole('navigation', {
+      name: EN['receptions.checkIn.employeePagerLabel']!,
+    });
+    await user.click(within(pager).getByRole('button', { name: EN['table.nextPage']! }));
+    await waitFor(() => expect(listReceivingEmployeeCandidates).toHaveBeenCalledTimes(2));
+
+    // Page two establishes nothing about an operator who is on page one.
+    await waitFor(() =>
+      expect(screen.getByText('Other Person', { exact: false })).toBeInTheDocument()
+    );
+    expect(
+      screen.queryByTestId('employee-self-ineligible'),
+      'the last page of a walk is stated as an established ineligibility'
+    ).not.toBeInTheDocument();
+    expect(screen.getByTestId('employee-chosen')).not.toHaveTextContent(
+      EN['receptions.checkIn.employeeUnset']!
+    );
+  });
   it('says nothing about eligibility when the read did not happen or did not answer', async () => {
     /*
      * `F1` again, on a new surface. Three of these would have printed "you are
@@ -1340,6 +1575,79 @@ describe('F1 — the three states a paged read can report', () => {
       renderLtr(<CheckInStartScreen {...startProps({ walkInHandoff: handoff })} />);
 
       expect(await screen.findByTestId('checkin-vehicles-truncated')).toHaveTextContent(
+        EN['receptions.checkIn.vehiclesTruncated']!
+      );
+    });
+
+    it('does not withdraw the pre-selection after ONE click of its own pager', async () => {
+      /*
+       * The truncation repair, defeated by the control the repair renders.
+       *
+       * Page one holds the handed-over vehicle and reports more exists, so the
+       * notice correctly reads "applied" and the row is pressed. The operator
+       * then does the ordinary thing the pager exists for — looks at the rest of
+       * the list. Page two does not hold that row and reports
+       * `hasMore: false`, which the first form of `readCompleteness` read as "the
+       * set was covered": verdict `absent`, notice "not in this
+       * customer’s list", the selection dropped. The vehicle had not moved and
+       * nothing had failed.
+       */
+      listCustomerVehicles.mockImplementation(
+        (_customerId: string, _request: unknown, cursor: string | null) =>
+          Promise.resolve(cursor === null ? truncated([MATCHING_LINK]) : page([OTHER_LINK]))
+      );
+      const user = userEvent.setup();
+      renderLtr(<CheckInStartScreen {...startProps({ walkInHandoff: handoff })} />);
+
+      await waitFor(() =>
+        expect(screen.getByTestId('walk-in-handoff-notice')).toHaveTextContent(
+          EN['receptions.checkIn.handoffApplied']!
+        )
+      );
+
+      const pager = await screen.findByRole('navigation', {
+        name: EN['receptions.checkIn.vehiclePagerLabel']!,
+      });
+      await user.click(within(pager).getByRole('button', { name: EN['table.nextPage']! }));
+
+      await waitFor(() => expect(listCustomerVehicles).toHaveBeenCalledTimes(2));
+      // The row is off-screen, so nothing may be CLAIMED about it either way.
+      await waitFor(() =>
+        expect(screen.getByTestId('walk-in-handoff-notice')).toHaveTextContent(
+          EN['receptions.checkIn.handoffVehicleUnconfirmed']!
+        )
+      );
+      expect(screen.getByTestId('walk-in-handoff-notice')).not.toHaveTextContent(
+        EN['receptions.checkIn.handoffVehicleMissing']!
+      );
+    });
+
+    it('states truncation on page two, where hasMore is false and the set is unseen', async () => {
+      listCustomerVehicles.mockImplementation(
+        (_customerId: string, _request: unknown, cursor: string | null) =>
+          Promise.resolve(cursor === null ? truncated([OTHER_LINK]) : page([MATCHING_LINK]))
+      );
+      const user = userEvent.setup();
+      renderLtr(<CheckInStartScreen {...startProps({ walkInHandoff: handoff })} />);
+      await screen.findByTestId('checkin-vehicles-truncated');
+
+      const pager = await screen.findByRole('navigation', {
+        name: EN['receptions.checkIn.vehiclePagerLabel']!,
+      });
+      await user.click(within(pager).getByRole('button', { name: EN['table.nextPage']! }));
+      await waitFor(() => expect(listCustomerVehicles).toHaveBeenCalledTimes(2));
+
+      /*
+       * Finding the row IS positive proof, so the notice reads "applied" here.
+       * The LIST beside it is still a window — page one is behind the operator —
+       * so the coverage sentence stays, and the pager stays with it.
+       */
+      await waitFor(() =>
+        expect(screen.getByTestId('walk-in-handoff-notice')).toHaveTextContent(
+          EN['receptions.checkIn.handoffApplied']!
+        )
+      );
+      expect(screen.getByTestId('checkin-vehicles-truncated')).toHaveTextContent(
         EN['receptions.checkIn.vehiclesTruncated']!
       );
     });

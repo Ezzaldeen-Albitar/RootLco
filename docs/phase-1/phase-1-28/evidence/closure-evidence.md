@@ -747,9 +747,12 @@ from the verdicts file on every run: a fourth task turning PARTIAL fails
 
 ### `P1-28-FE-012` — exterior damage marking · **PARTIAL**
 
-- **Blocker:** `P1-OD-025` — document and media file policy, an **OPEN Owner
-  decision this phase is forbidden to pre-empt** — with `G-MEDIA` / **R8** behind
-  it.
+- **Blocker:** the absence of a PUBLISHED TEMPLATE DOCUMENT. This entry named
+  `P1-OD-025` — "an OPEN Owner decision this phase is forbidden to pre-empt",
+  with `G-MEDIA` / **R8** behind it — and that was true when written. The Owner
+  has since resolved it for reception evidence, and
+  `reception_damage_map_template` is one of the seven categories, so the
+  decision is no longer what stands in the way.
 - **OWNER: the Product Owner** (the decision) and **P1-15 / P1-18** (the contract
   half). Neither is P1-28's to close.
 - **What is open:** the damage-map half. `damage_map` requires a registered
@@ -767,8 +770,10 @@ from the verdicts file on every run: a fourth task turning PARTIAL fails
 
 ### `P1-28-FE-018` — customer signature capture · **PARTIAL**
 
-- **Blockers:** `P1-OD-025` (**OWNER: the Product Owner**), and the unowned
-  signature read-back gap (**OWNER: P1-18, unassigned**).
+- **Blockers:** the unowned signature read-back gap (**OWNER: P1-18,
+  unassigned**). This entry also named `P1-OD-025` (**OWNER: the Product
+  Owner**); that half is answered — `reception_signature` is one of the seven
+  categories the decision established — and what remains is the read-back.
 - **What is open:** the task binds exactly one operation,
   `rec.reception-signature`, and the product calls it **zero** times. The write
   needs a registered document and its exact version, and nothing in this product

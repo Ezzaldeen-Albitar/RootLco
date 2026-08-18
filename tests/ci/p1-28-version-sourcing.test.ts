@@ -1,9 +1,12 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { parseModule } from '../../scripts/lib/typescript-source.mjs';
 import { REPOSITORY_ROOT } from '../../scripts/lib/repository-paths.mjs';
 import {
   RENEWAL_NAMES,
+  adapterRootsFromRepository,
+  declaresUseServer,
   argumentsAt,
   boundNames,
   cachedNames,
@@ -114,7 +117,14 @@ interface Report {
   expected: { id: string }[];
   withheld: { id: string; decisionRef: string }[];
   adapters: { name: string; required: boolean; used: boolean }[];
-  sites: { adapter: string; argument: string; ok: boolean; renews?: boolean }[];
+  sites: {
+    file: string;
+    adapter: string;
+    argument: string;
+    enclosing: string | null;
+    ok: boolean;
+    renews?: boolean;
+  }[];
   violations: string[];
 }
 
@@ -506,6 +516,283 @@ describe('anti-vacuity — a check that examines nothing passes everything', () 
  * The helpers this gate is built on
  * ------------------------------------------------------------------ */
 
+/* ------------------------------------------------------------------ *
+ * The adapter roots are read off the repository, not remembered
+ * ------------------------------------------------------------------ */
+
+/**
+ * The root set was two hand-written names, `appointments` and `receptions`.
+ *
+ * `features/attachments` — which holds the document adapters this phase's
+ * entire evidence chain runs through — was not one of them, so the adapter walk
+ * never opened that tree. The consequence is not a missed violation in the
+ * ordinary sense: it is that `no guarded adapter was found`, the rule at the
+ * bottom of the gate whose whole job is to refuse a sweep of nothing, answered
+ * for the two trees somebody had remembered. The sweep was clean, non-empty and
+ * blind to an entire feature at the same time.
+ */
+/**
+ * The `'use server'` directive, read off COMMENT-STRIPPED source.
+ *
+ * The walk tested the RAW file, so a module written in this repository’s own
+ * house style — a docblock, then the directive — did not look like a Server
+ * Action module and was skipped whole. A guarded adapter inside such a file
+ * could declare `ifMatch` defaulted, the exact defect this gate exists for, and
+ * the gate reported zero violations over it.
+ */
+describe('a leading docblock does not hide a module from the adapter walk', () => {
+  const DEFECTIVE = [
+    '/**',
+    ' * The house style everywhere else in this repository.',
+    ' */',
+    "'use server';",
+    'export async function sealSyntheticDocument(documentId: string, ifMatch = 1) {',
+    "  return client.send('POST', docPath(documentId, '/seal'), undefined, { ifMatch });",
+    '}',
+  ].join('\n');
+  const FILE = 'apps/web/src/features/attachments/seal-actions.ts';
+
+  it('sees the module and catches the defective adapter inside it', () => {
+    const report = judge({
+      sources: [...sources, [FILE, DEFECTIVE] as const],
+      adapterRoots: adapterRootsFromRepository().map((one: string) => one.split('\\').join('/')),
+    });
+    expect(report.adapters.map((a) => a.name)).toContain('sealSyntheticDocument');
+    expect(report.violations.join('\n')).toContain('declares ifMatch as optional or defaulted');
+  });
+
+  it('was BLIND to it while the directive was read off raw content', () => {
+    // The old predicate, applied to the same source: the module never matched.
+    expect(/^\\s*['\"]use server['\"]/.test(DEFECTIVE)).toBe(false);
+    expect(declaresUseServer(DEFECTIVE)).toBe(true);
+  });
+
+  it('still refuses a directive that is only QUOTED in a comment', () => {
+    const prose = [
+      '/**',
+      " * A `'use server'` file may only export async functions.",
+      ' */',
+      'export const NOT_A_SERVER_MODULE = 1;',
+    ].join('\n');
+    expect(declaresUseServer(prose)).toBe(false);
+  });
+});
+describe('the adapter roots are DERIVED from the repository', () => {
+  const derived = adapterRootsFromRepository().map((one: string) => one.split('\\').join('/'));
+
+  it('reads every tree that is really there, attachments and lib included', () => {
+    /*
+     * COVERED, not listed. The roots are prefixes, so the assertion that matters
+     * is that each tree falls inside one — which is what the gate actually asks.
+     * Asserting membership of the list instead is how this case came to describe
+     * one particular derivation rather than the property it exists to protect.
+     */
+    const covers = (path: string) => derived.some((root: string) => path.startsWith(root));
+    // The original omission, asserted by name so it cannot silently return.
+    expect(covers('apps/web/src/features/attachments')).toBe(true);
+    // …and the pair that used to be the whole list, so this is a widening.
+    expect(covers('apps/web/src/features/appointments')).toBe(true);
+    expect(covers('apps/web/src/features/receptions')).toBe(true);
+
+    /*
+     * The SECOND omission, which the first derivation kept: it enumerated the
+     * children of `features/`, which derives the feature roots rather than the
+     * roots. Two real `'use server'` modules live under `apps/web/src/lib`, so
+     * a defective guarded adapter written in either of them was never opened
+     * while the anti-vacuity check reported a clean non-empty sweep.
+     */
+    expect(derived).toContain('apps/web/src/lib');
+    expect(derived).toContain('apps/web/src');
+    expect(covers('apps/web/src/lib/customers/directory.ts')).toBe(true);
+
+    // Every derived root is a directory that exists — a derivation that
+    // invented a path would scan nothing and still read as clean.
+    for (const root of derived) {
+      expect(statSync(join(REPOSITORY_ROOT, root)).isDirectory(), root).toBe(true);
+    }
+
+    // Anti-vacuity across MORE THAN ONE root: a derivation that collapsed to a
+    // single tree would satisfy every assertion a one-root suite could make.
+    expect(derived.length).toBeGreaterThan(3);
+    expect(new Set(derived).size).toBe(derived.length);
+  });
+
+  it('matches the web source tree on disk exactly — no more, no fewer', () => {
+    const onDisk = readdirSync(join(REPOSITORY_ROOT, 'apps/web/src'), {
+      withFileTypes: true,
+    })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => `apps/web/src/${entry.name}`)
+      .concat('apps/web/src')
+      .sort();
+    expect([...derived].sort()).toEqual(onDisk);
+  });
+
+  it('catches a defective guarded adapter written under src/lib', () => {
+    /*
+     * R2-08 as a planted defect rather than as a list comparison. The adapter
+     * takes `ifMatch` with a DEFAULT, which is the violation this gate exists
+     * for: the backend answers 428 ERR-CON-002 without the header, so a
+     * defaulted version is one the application invented.
+     *
+     * Under the features-only derivation this file was never opened and the
+     * gate reported a clean, non-empty sweep. Two real `'use server'` modules
+     * already live in that tree, so the blind spot was occupied.
+     */
+    const PLANTED_LIB = [
+      "'use server';",
+      'export async function sealSyntheticCustomer(customerId: string, ifMatch = 1) {',
+      "  return client.send('POST', custPath(customerId, '/seal'), undefined, { ifMatch });",
+      '}',
+    ].join('\n');
+    const LIB_FILE = 'apps/web/src/lib/customers/seal-actions.ts';
+
+    const blind = judge({
+      sources: [...sources, [LIB_FILE, PLANTED_LIB] as const],
+      adapterRoots: [ADAPTER_ROOT],
+    });
+    // Not merely absent from the violations — absent from what the gate SAW.
+    expect(
+      blind.adapters.some((one) => one.name === 'sealSyntheticCustomer'),
+      'the features-only derivation opened a tree it should not have'
+    ).toBe(false);
+
+    const seeing = judge({
+      sources: [...sources, [LIB_FILE, PLANTED_LIB] as const],
+      adapterRoots: [ADAPTER_ROOT, 'apps/web/src/lib'],
+    });
+    expect(seeing.violations.join('\n')).toContain('sealSyntheticCustomer');
+    expect(seeing.violations.join('\n')).toContain('optional or defaulted');
+
+    // …and the real derivation covers that tree, so the widening is not just a
+    // parameter a case passed itself.
+    expect(
+      adapterRootsFromRepository()
+        .map((one: string) => one.split('\\').join('/'))
+        .some((root: string) => LIB_FILE.startsWith(root))
+    ).toBe(true);
+  });
+
+  it('attributes a call to the function it is IN, not the one written beside it', () => {
+    /*
+     * R2-07, planted. The renewal question is asked of the scope that sent the
+     * command, and the previous derivation took "the last `function` declared
+     * before the call" with a region running to the NEXT declaration — so an
+     * arrow-function component was invisible, its call was credited to whatever
+     * sat above it, and the search for a renewal ran on past its closing brace
+     * into an unrelated neighbour.
+     *
+     * Both components below are arrow constants, which the old scanner could
+     * not see at all. `Renewing` hands its outcome to a callback and `Hoarding`
+     * keeps it; `Hoarding` is written FIRST, so the forward scan from its call
+     * would reach `Renewing`'s `settle(result)` and vouch for it.
+     */
+    const NEIGHBOURS = [
+      "'use client';",
+      "import { lockSyntheticVisit } from '../lock-actions';",
+      'export const Hoarding = ({ visitId, recordVersion }) => {',
+      '  const submit = async () => {',
+      '    await lockSyntheticVisit(visitId, recordVersion, 1);',
+      '  };',
+      '  return submit;',
+      '};',
+      'export const Renewing = ({ visitId, recordVersion, settle }) => {',
+      '  const submit = async () => {',
+      '    const result = await lockSyntheticVisit(visitId, recordVersion, 1);',
+      '    await settle(result);',
+      '  };',
+      '  return submit;',
+      '};',
+    ].join('\n');
+
+    const NEIGHBOURS_FILE = `${ADAPTER_ROOT}/components/Neighbours.tsx`;
+    const report = judge({ sources: [...sources, [NEIGHBOURS_FILE, NEIGHBOURS] as const] });
+
+    const planted = report.sites.filter((site) => site.file === NEIGHBOURS_FILE);
+    expect(planted, 'neither call in the planted file was seen at all').toHaveLength(2);
+
+    /*
+     * The scope reported is `submit` for both — the innermost named function,
+     * which is where the command is sent and whose body bounds the search. The
+     * two share a name, so they are read in source ORDER rather than by name:
+     * `Hoarding` is written first.
+     */
+    expect(planted.map((site) => site.enclosing)).toEqual(['submit', 'submit']);
+    expect(
+      planted[0]?.renews,
+      'the neighbour’s settle() vouched for a scope that renews nothing'
+    ).toBe(false);
+    expect(planted[1]?.renews, 'a scope that hands its outcome onward').toBe(true);
+  });
+  it('reports a `use server` module that falls outside every root', () => {
+    /*
+     * The class fix, not the instance. A root set is a claim about which trees
+     * hold adapters, and this gate has now been given the wrong claim twice —
+     * silently both times, because a narrower sweep is still a clean sweep. So
+     * the claim is CHECKED: a module the filter excludes is a violation rather
+     * than a file that quietly never opened.
+     */
+    const report = judge({
+      sources: [
+        ...sources,
+        [
+          'apps/web/src/elsewhere/actions.ts',
+          ["'use server';", 'export async function f(ifMatch: number) { return ifMatch; }'].join(
+            '\n'
+          ),
+        ] as const,
+      ],
+      adapterRoots: ['apps/web/src/features', 'apps/web/src/lib'],
+    });
+    expect(report.violations.join('\n')).toContain('apps/web/src/elsewhere/actions.ts');
+    expect(report.violations.join('\n')).toContain('outside every derived adapter root');
+  });
+  /**
+   * The defect, planted and measured against both root sets.
+   *
+   * The adapter takes `ifMatch` with a DEFAULT, which is the violation this
+   * gate exists to catch: the backend answers 428 ERR-CON-002 without the
+   * header, so a defaulted version is one the application invented. Planted
+   * under `features/attachments` it is invisible to the old pair and caught by
+   * the derivation — the same tree, the same file, two different answers.
+   */
+  const PLANTED = [
+    "'use server';",
+    'export async function sealSyntheticDocument(documentId: string, ifMatch = 1) {',
+    "  return client.send('POST', docPath(documentId, '/seal'), undefined, { ifMatch });",
+    '}',
+  ].join('\n');
+  const PLANTED_FILE = 'apps/web/src/features/attachments/seal-actions.ts';
+
+  it('was BLIND to a defective adapter under attachments while the roots were a hand list', () => {
+    const report = judge({
+      sources: [...sources, [PLANTED_FILE, PLANTED] as const],
+      adapterRoots: ['apps/web/src/features/appointments', 'apps/web/src/features/receptions'],
+    });
+    // Not merely absent from the violations — absent from what the gate SAW,
+    // which is the stronger statement and the actual defect.
+    expect(report.adapters.map((a) => a.name)).not.toContain('sealSyntheticDocument');
+    expect(report.violations.join('\n')).not.toContain('sealSyntheticDocument');
+  });
+
+  it('SEES it once the roots are derived, and goes red', () => {
+    const report = judge({
+      sources: [...sources, [PLANTED_FILE, PLANTED] as const],
+      adapterRoots: derived,
+    });
+    expect(report.adapters.map((a) => a.name)).toContain('sealSyntheticDocument');
+    expect(report.violations.join('\n')).toContain('sealSyntheticDocument');
+    expect(report.violations.join('\n')).toContain('declares ifMatch as optional or defaulted');
+  });
+
+  it('fails closed when the feature tree yields nothing', () => {
+    // A derivation that returned an empty set would scan no file and satisfy
+    // every rule below it — the failure mode it was written to end.
+    const report = judge({ adapterRoots: [] });
+    expect(report.violations.join('\n')).toContain('no guarded adapter was found');
+  });
+});
+
 describe('the helpers this gate is built on', () => {
   it('strips comments without destroying a URL in a string', () => {
     const stripped = stripComments(`const u = 'https://example.test/keep'; // gone`);
@@ -611,15 +898,34 @@ describe('the helpers this gate is built on', () => {
   });
 
   it('does not read a DECLARATION as a call to itself', () => {
-    // The declaration matches the same `name(` shape as a call, and its
-    // "argument" at the version position is the parameter `ifMatch: number` —
-    // which would be reported untraceable in every module that declares one.
+    /*
+     * The declaration matched the same `name(` shape as a call, and its
+     * "argument" at the version position was the parameter `ifMatch: number` —
+     * reported untraceable in every module that declares one. The text scan
+     * needed a look-behind for the `function` keyword to avoid it; a
+     * `CallExpression` is not a declaration, so nothing needs avoiding.
+     */
     const text = 'export async function lockIt(a, ifMatch: number) {}\nlockIt(id, version);';
-    const calls = callsTo(text, new Set(['lockIt'])) as { args: string[] }[];
+    const calls = callsTo(parseModule(text), new Set(['lockIt'])) as { args: string[] }[];
     expect(calls).toHaveLength(1);
     expect(calls[0]?.args[1]?.trim()).toBe('version');
   });
 
+  it('is not fooled by an identifier that merely CONTAINS an adapter name', () => {
+    /*
+     * What a word-boundary regex over text gets right by luck and a parser
+     * gets right by construction: a call to `lockItTwice` is a call to a
+     * different function, and the string `lockIt(` inside a comment or a
+     * template literal is not a call at all.
+     */
+    const text = [
+      'function lockItTwice(a, b) { return b; }',
+      'lockItTwice(id, version);',
+      'const note = `lockIt(id, 3)`;',
+      '// lockIt(id, 4);',
+    ].join('\n');
+    expect(callsTo(parseModule(text), new Set(['lockIt']))).toHaveLength(0);
+  });
   it('takes the FIRST declaration of a name, so an inner shadow cannot vouch for an outer use', () => {
     const found = declarations('const v = detail.recordVersion;\nfunction f() { const v = 3; }');
     expect(found.get('v')).toBe('detail.recordVersion');

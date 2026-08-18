@@ -205,3 +205,43 @@ export async function captureRequirementEvidence(
     scannerAvailable,
   };
 }
+
+/**
+ * Finalize a binding whose capture reached `bound` and stopped there.
+ *
+ * The chain above attempts the sixth call exactly once. When that attempt does
+ * not answer — an expired session, a transport failure, a refusal — what is left
+ * behind is a real binding over an ACCEPTED version that counts towards nothing,
+ * and the operator's only other recourse is to photograph the panel again and
+ * leave a second document standing for the same thing.
+ *
+ * So the sixth call is offered a second time, and it is offered HERE rather than
+ * from the screen: `finalizeEvidenceBinding` is a step of the chain, and a step
+ * of the chain reached from a component is the sequence living in the browser —
+ * the thing this module exists to prevent. The screen calls one action, as it
+ * does for the capture itself.
+ *
+ * No state is checked before spending the call. The database is the authority on
+ * both facts that matter: the RLS policy admits the update only while
+ * `finalized_at IS NULL`, and `tg_reception_evidence_binding_guard` refuses a
+ * version that is not accepted. A check here would be a second opinion about
+ * rows this tree cannot see, and would disagree with the first the moment the
+ * screen's read model went stale.
+ */
+export async function finalizeCapturedEvidence(
+  receptionId: string,
+  bindingId: string
+): Promise<CaptureOutcome> {
+  const finalized = await finalizeEvidenceBinding(receptionId, bindingId);
+  if (finalized.status !== 'success') {
+    return { ...finalized, stage: 'bound', bindingId };
+  }
+
+  return {
+    status: 'success',
+    correlationId: finalized.correlationId ?? null,
+    attempt: 1,
+    stage: 'finalized',
+    bindingId,
+  };
+}

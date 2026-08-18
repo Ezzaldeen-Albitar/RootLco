@@ -566,7 +566,7 @@
           "file": "apps/web/tests/p1-28-reception-media.dom.test.tsx",
           "cases": [
             "renders exactly one file input per offered requirement, and it is CaptureFileField",
-            "chooses a different state for each of the four, and the four are distinct",
+            "chooses a different state for each of the five, and the five are distinct",
             "counts FINALIZED bindings only — three recorded files do not move 1/2",
             "withdraws it, with the reason stated, without rec.reception.evidence.override"
           ]

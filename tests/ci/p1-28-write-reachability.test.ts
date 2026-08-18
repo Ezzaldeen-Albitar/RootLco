@@ -707,6 +707,7 @@ export async function probeSyntheticSeal(id) {
         method: 'POST',
         path: '/api/v1/synthetic-other-things',
         owner: 'recordSyntheticThing',
+        attributable: true,
       },
     ]);
 
@@ -742,6 +743,7 @@ describe('a path built by a helper is still a call site', () => {
         method: 'POST',
         path: '/api/v1/synthetic-receptions/:p/seal',
         owner: 'sealSyntheticVisit',
+        attributable: true,
       },
     ]);
   });
@@ -783,6 +785,7 @@ export async function closeSyntheticVisit(receptionId, tail) {
         method: 'POST',
         path: '/api/v1/synthetic-receptions/:p:p',
         owner: 'closeSyntheticVisit',
+        attributable: true,
       },
     ]);
     expect(normaliseRoutePath('/api/v1/synthetic-receptions/{receptionId}/seal')).not.toBe(
@@ -794,15 +797,21 @@ export async function closeSyntheticVisit(receptionId, tail) {
    * The Waves F/G extension, and the reason it is an extension rather than a
    * loosening.
    *
-   * The real reception adapter forwards a tail typed
-   * `'/close-without-work' | '/refuse'` through `visitPath`, so the two terminal
-   * exits were wired by their screen while this gate could see neither path.
-   * The type has already enumerated what the call can be, and a value outside
-   * the union is a compile error — so expanding it reports exactly the paths the
-   * code can build, and never one it cannot. The untyped case above is what
-   * proves the two are distinguished.
+   * The real reception adapter forwards a tail typed as the union of its two
+   * terminal exits through `visitPath`, so both were wired by their screen while
+   * this gate could see neither path. The type has already enumerated what the
+   * call can be, and a value outside the union is a compile error — so expanding
+   * it reports exactly the paths the code can build, and never one it cannot.
+   * The untyped case above is what proves the two are distinguished.
+   *
+   * The fixture below is the shape where ONE EXPORTED function both takes the
+   * union and sends it, and that is all it proves. It is deliberately not the
+   * real adapter's shape — two exports delegating to an internal helper declared
+   * after both — and modelling only this one is why this harness could not see
+   * the attribution defect that "a delegated write is credited to the export
+   * that delegates" now holds. Both shapes are live rules, so both are pinned.
    */
-  it('enumerates a tail typed as a union of string literals', () => {
+  it('enumerates a tail typed as a union of string literals, sent by the export itself', () => {
     const TYPED_TAIL = `
 function synthPath(receptionId: string, tail = ''): string {
   return \`/api/v1/synthetic-receptions/\${encodeURIComponent(receptionId)}\${tail}\`;
@@ -820,11 +829,13 @@ export async function endSyntheticVisit(
         method: 'POST',
         path: '/api/v1/synthetic-receptions/:p/seal',
         owner: 'endSyntheticVisit',
+        attributable: true,
       },
       {
         method: 'POST',
         path: '/api/v1/synthetic-receptions/:p/void',
         owner: 'endSyntheticVisit',
+        attributable: true,
       },
     ]);
   });
@@ -867,6 +878,7 @@ export async function endSyntheticVisit(receptionId: string, tail: string) {
         method: 'POST',
         path: '/api/v1/synthetic-receptions/:p:p',
         owner: 'endSyntheticVisit',
+        attributable: true,
       },
     ]);
   });
@@ -886,6 +898,281 @@ export async function endSyntheticVisit(receptionId: string, tail: string) {
     expect(report.violations).toEqual([]);
     const seal = report.results.find((r) => r.id === 'rec.synthetic-seal');
     expect(seal?.callSite).toBe('apps/web/src/features/synthetic-receptions/seal-actions.ts');
+  });
+});
+
+describe('a delegated write is credited to the export that delegates', () => {
+  /*
+   * The blind spot this section closes, and the shape it was hiding in.
+   *
+   * Attribution used to read "the last `export function` declared before the
+   * site index". The real reception adapter exports two terminal closes that
+   * both delegate to ONE internal helper declared AFTER both of them, and that
+   * helper holds the only `client.send` between them — so both enumerated paths
+   * were credited to whichever export came last, and the other export's
+   * consumption was never asked about at all.
+   *
+   * Driving the gate's own `run({ sources })` over the real tree said so
+   * outright. Orphaning the FIRST export — removing every consumer of it —
+   * changed nothing: still REACHABLE, still zero violations, an operation
+   * nobody could invoke certified by the gate built to catch exactly that.
+   * Orphaning the LAST one instead produced two violations, one of them false
+   * against an operation whose screen demonstrably wires it. A rule that is
+   * silent on one mutant and wrong on the other is not attribution; it is
+   * proximity.
+   *
+   * Every fixture here is in the real shape, because the shape is the defect.
+   */
+  const DELEGATED_CLOSES = `
+'use server';
+function synthPath(receptionId: string, tail = ''): string {
+  return \`/api/v1/synthetic-receptions/\${encodeURIComponent(receptionId)}\${tail}\`;
+}
+export async function sealSyntheticVisit(receptionId: string, input: unknown) {
+  return endSyntheticVisit(receptionId, '/seal', input);
+}
+export async function eraseSyntheticVisit(receptionId: string, input: unknown) {
+  return endSyntheticVisit(receptionId, '/erase', input);
+}
+async function endSyntheticVisit(
+  receptionId: string,
+  tail: '/seal' | '/erase',
+  input: unknown
+) {
+  return client.send('POST', synthPath(receptionId, tail), input);
+}
+`;
+
+  const ADAPTER = 'apps/web/src/features/synthetic-receptions/close-actions.ts';
+  const SCREEN_FILE =
+    'apps/web/src/features/synthetic-receptions/components/SyntheticCloseScreen.tsx';
+
+  /** A screen consuming the named exports, and nothing else. */
+  const screenFor = (...names: string[]) => `
+'use client';
+import { ${names.join(', ')} } from '../close-actions';
+export function SyntheticCloseScreen() {
+  return [${names.join(', ')}];
+}
+`;
+
+  /** Both closes claimed REACHABLE, with only `screen` consuming the adapter. */
+  const delegated = (screen: string) =>
+    judge({
+      manifest: {
+        operations: {
+          ...manifest.operations,
+          'rec.synthetic-seal': { classification: 'REACHABLE' },
+          'rec.synthetic-erase': { classification: 'REACHABLE' },
+        },
+      },
+      sources: [...sources, [ADAPTER, DELEGATED_CLOSES] as const, [SCREEN_FILE, screen] as const],
+    });
+
+  it('credits each export with the path ITS OWN delegation builds', () => {
+    // Not one export with both paths, and not both exports with both paths:
+    // the literal each one passes pins the tail for that owner alone. The
+    // union stays the fallback for a tail nothing pins — the case above.
+    expect(mutationCallSites(DELEGATED_CLOSES)).toEqual([
+      {
+        method: 'POST',
+        path: '/api/v1/synthetic-receptions/:p/seal',
+        owner: 'sealSyntheticVisit',
+        attributable: true,
+      },
+      {
+        method: 'POST',
+        path: '/api/v1/synthetic-receptions/:p/erase',
+        owner: 'eraseSyntheticVisit',
+        attributable: true,
+      },
+    ]);
+  });
+
+  it('follows the CALL, not the declaration order, past an unrelated export', () => {
+    // The old rule's answer here was `unrelatedSyntheticThing` — the last
+    // export declared before the site, which delegates nothing, sends nothing
+    // and is named by nobody. Attribution that reads declaration order can be
+    // made to say anything by moving a function.
+    const UNRELATED_LAST = `
+function synthPath(receptionId: string, tail = ''): string {
+  return \`/api/v1/synthetic-receptions/\${encodeURIComponent(receptionId)}\${tail}\`;
+}
+export async function sealSyntheticVisit(receptionId: string, input: unknown) {
+  return endSyntheticVisit(receptionId, '/seal', input);
+}
+export function unrelatedSyntheticThing() {
+  return 1;
+}
+async function endSyntheticVisit(receptionId: string, tail: '/seal' | '/erase', input: unknown) {
+  return client.send('POST', synthPath(receptionId, tail), input);
+}
+`;
+    expect(mutationCallSites(UNRELATED_LAST)).toEqual([
+      {
+        method: 'POST',
+        path: '/api/v1/synthetic-receptions/:p/seal',
+        owner: 'sealSyntheticVisit',
+        attributable: true,
+      },
+    ]);
+  });
+
+  it('is green while both exports are consumed', () => {
+    const report = delegated(screenFor('sealSyntheticVisit', 'eraseSyntheticVisit'));
+    expect(report.violations).toEqual([]);
+    expect(report.results.find((r) => r.id === 'rec.synthetic-seal')?.callSite).toBe(ADAPTER);
+    expect(report.results.find((r) => r.id === 'rec.synthetic-erase')?.callSite).toBe(ADAPTER);
+  });
+
+  it('MUTANT A — orphaning the first-declared export turns ONLY its write red', () => {
+    // The mutant the old rule passed in silence. Its site was credited to the
+    // other export, which is consumed, so the gate answered a question nobody
+    // had asked and reported a write reachable that nothing reaches.
+    const report = delegated(screenFor('eraseSyntheticVisit'));
+    expect(report.violations).toHaveLength(1);
+    expect(report.violations[0]).toContain('rec.synthetic-seal');
+    expect(report.violations[0]).toContain('no production call site');
+    expect(report.violations.join('\n')).not.toContain('rec.synthetic-erase');
+  });
+
+  it('MUTANT B — orphaning the last-declared export turns ONLY its write red', () => {
+    // The mutant the old rule failed WRONGLY: both writes went red because both
+    // paths hung off the orphaned export, and the surviving one was a false
+    // violation against an operation its screen still wires.
+    const report = delegated(screenFor('sealSyntheticVisit'));
+    expect(report.violations).toHaveLength(1);
+    expect(report.violations[0]).toContain('rec.synthetic-erase');
+    expect(report.violations[0]).toContain('no production call site');
+    expect(report.violations.join('\n')).not.toContain('rec.synthetic-seal');
+  });
+
+  it('fails closed when the helper is reached by no export at all', () => {
+    // Nothing calls the helper, so no export reaches the site and the site is
+    // credited to the helper's own unexported name — which no module can
+    // import. A REACHABLE claim behind it goes red, which is the direction the
+    // gate's docblock promises and the direction the old rule got wrong: it
+    // would have handed the site to whatever export was declared above.
+    const UNREACHED = `
+'use server';
+function synthPath(receptionId: string, tail = ''): string {
+  return \`/api/v1/synthetic-receptions/\${encodeURIComponent(receptionId)}\${tail}\`;
+}
+export async function unrelatedSyntheticThing(id: string) {
+  return id;
+}
+async function endSyntheticVisit(receptionId: string, tail: '/seal' | '/erase', input: unknown) {
+  return client.send('POST', synthPath(receptionId, tail), input);
+}
+`;
+    // The scanner still SEES both paths — the site is counted, then dropped for
+    // want of a consumer, which is why `found` and `sites` stay distinguishable.
+    expect(mutationCallSites(UNREACHED).map((s) => s.owner)).toEqual([
+      'endSyntheticVisit',
+      'endSyntheticVisit',
+    ]);
+
+    const report = judge({
+      manifest: withEntry('rec.synthetic-seal', { classification: 'REACHABLE' }),
+      sources: [
+        ...sources,
+        [ADAPTER, UNREACHED] as const,
+        [SCREEN_FILE, screenFor('unrelatedSyntheticThing')] as const,
+      ],
+    });
+    expect(report.violations.join('\n')).toContain('rec.synthetic-seal');
+    expect(report.violations.join('\n')).toContain('no production call site');
+  });
+
+  it('binds positionally through a parameter list that carries a generic type', () => {
+    /*
+     * This case used to assert the opposite, and the opposite was a defect.
+     *
+     * Arguments and parameters were split by counting top-level commas, which
+     * does not track angle brackets — so `input: Record<string, unknown>` split
+     * in two, every position after it shifted, and the whole list was refused
+     * to avoid crediting an export with a path its delegation never builds.
+     * The fallback reported BOTH paths of the union: more candidates rather
+     * than a wrong one, which was the right trade to make from a wrong reading.
+     *
+     * The parser has no such difficulty. The list is read, the binding pins
+     * `tail` to the value THIS export supplies, and the export is credited with
+     * the one path it actually sends.
+     */
+    const GENERIC_PARAMETER = `
+function synthPath(receptionId: string, tail = ''): string {
+  return \`/api/v1/synthetic-receptions/\${encodeURIComponent(receptionId)}\${tail}\`;
+}
+export async function sealSyntheticVisit(receptionId: string, input: Record<string, unknown>) {
+  return endSyntheticVisit(receptionId, '/seal', input);
+}
+async function endSyntheticVisit(
+  receptionId: string,
+  tail: '/seal' | '/erase',
+  input: Record<string, unknown>
+) {
+  return client.send('POST', synthPath(receptionId, tail), input);
+}
+`;
+    expect(mutationCallSites(GENERIC_PARAMETER)).toEqual([
+      {
+        method: 'POST',
+        path: '/api/v1/synthetic-receptions/:p/seal',
+        owner: 'sealSyntheticVisit',
+        attributable: true,
+      },
+    ]);
+  });
+
+  it('still refuses a parameter list nothing can be bound through', () => {
+    /*
+     * The refusal is not gone, it moved to where it belongs: a DESTRUCTURED
+     * parameter has no name a positional argument can bind to, whatever parses
+     * it. So the type-level enumeration takes over and both union members are
+     * reported — the same "more candidates rather than a wrong one" trade, now
+     * made for a real reason rather than for a comma-splitting bug.
+     */
+    const DESTRUCTURED = `
+function synthPath(receptionId: string, tail = ''): string {
+  return \`/api/v1/synthetic-receptions/\${encodeURIComponent(receptionId)}\${tail}\`;
+}
+export async function sealSyntheticVisit(receptionId: string) {
+  return endSyntheticVisit({ receptionId }, '/seal');
+}
+async function endSyntheticVisit({ receptionId }: { receptionId: string }, tail: '/seal' | '/erase') {
+  return client.send('POST', synthPath(receptionId, tail), {});
+}
+`;
+    expect(
+      mutationCallSites(DESTRUCTURED)
+        .map((site) => site.path)
+        .sort()
+    ).toEqual(['/api/v1/synthetic-receptions/:p/erase', '/api/v1/synthetic-receptions/:p/seal']);
+  });
+  it('terminates on a delegation cycle instead of recurring', () => {
+    // Two internal helpers that call each other reach no export, and a name
+    // already being resolved is not followed twice. The site survives as the
+    // enclosing helper's own, and is dropped for want of a consumer.
+    const CYCLE = `
+export async function sealSyntheticVisit(receptionId: string) {
+  return receptionId;
+}
+async function ping(receptionId: string) {
+  return pong(receptionId);
+}
+async function pong(receptionId: string) {
+  await ping(receptionId);
+  return client.send('POST', \`/api/v1/synthetic-receptions/\${encodeURIComponent(receptionId)}/seal\`, {});
+}
+`;
+    expect(mutationCallSites(CYCLE)).toEqual([
+      {
+        method: 'POST',
+        path: '/api/v1/synthetic-receptions/:p/seal',
+        owner: 'pong',
+        attributable: true,
+      },
+    ]);
   });
 });
 
@@ -940,6 +1227,199 @@ describe('an adapter nobody consumes is not reachability', () => {
   });
 });
 
+/* ------------------------------------------------------------------ *
+ * Fail-closed, exercised on shapes that are NOT `function` declarations
+ * ------------------------------------------------------------------ */
+
+/**
+ * The guarantee, tested where it used to be false.
+ *
+ * The case named 'fails closed when the helper is reached by no export at all'
+ * states a universal claim, and every fixture behind it — UNREACHED,
+ * GENERIC_PARAMETER, CYCLE, MUTANT A and B — is written entirely with
+ * `function` declarations, which is the one shape for which the old rule held.
+ * Substituting an arrow const into the same judgement left the gate GREEN over
+ * an export nothing consumes, so the suite certified a guarantee it could not
+ * exhibit a counterexample to.
+ *
+ * A census of `apps/web/src` finds ZERO arrow-const adapters today, so these are
+ * fixtures for a shape the repository does not yet write — which is exactly
+ * why they belong here. The gate must be right about the next one, not only
+ * about the ones already committed.
+ */
+describe('reach attribution is structural, and fails closed where it must', () => {
+  const ARROW_ADAPTER = [
+    "'use server';",
+    'export async function bookSynthetic(input) {',
+    "  return client.send('POST', '/api/v1/synthetic-appointments', input);",
+    '}',
+    // Declared AFTER an exported function, which is what the ORIGINAL rule —
+    // "the last declaration before the site" — credited it to.
+    'export const makeSyntheticReception = async (input) => {',
+    "  return client.send('POST', '/api/v1/synthetic-receptions', input);",
+    '};',
+  ].join('\n');
+
+  const METHOD_ADAPTER = [
+    "'use server';",
+    'export async function bookSynthetic(input) {',
+    "  return client.send('POST', '/api/v1/synthetic-appointments', input);",
+    '}',
+    'export const receptionApi = {',
+    '  async make(input) {',
+    "    return client.send('POST', '/api/v1/synthetic-receptions', input);",
+    '  },',
+    '};',
+  ].join('\n');
+
+  const REGISTER = {
+    operations: [
+      { id: 'apt.synthetic-book', method: 'POST', route: '/api/v1/synthetic-appointments' },
+      { id: 'rec.synthetic-make', method: 'POST', route: '/api/v1/synthetic-receptions' },
+    ],
+  };
+  const MANIFEST = {
+    operations: {
+      'apt.synthetic-book': { classification: 'REACHABLE' },
+      'rec.synthetic-make': { classification: 'REACHABLE' },
+    },
+  };
+  const ADAPTER_FILE = 'apps/web/src/features/appointments/booking-actions.ts';
+  const SCREEN = 'apps/web/src/features/appointments/components/Desk.tsx';
+
+  const desk = (...names: readonly string[]) =>
+    [
+      "'use client';",
+      `import { ${names.join(', ')} } from '../booking-actions';`,
+      'export function Desk() {',
+      `  return [${names.join(', ')}];`,
+      '}',
+    ].join('\n');
+
+  const judgeShape = (adapter: string, consumer: string) =>
+    run({
+      register: REGISTER,
+      manifest: MANIFEST,
+      sources: [[ADAPTER_FILE, adapter] as const, [SCREEN, consumer] as const],
+      decisions: [{ id: 'X', reason: 'synthetic' }],
+    }) as { violations: string[] };
+
+  it('turns RED for an orphaned ARROW-CONST adapter, and names it', () => {
+    const report = judgeShape(ARROW_ADAPTER, desk('bookSynthetic'));
+    expect(report.violations).toHaveLength(1);
+    expect(report.violations[0]).toContain('rec.synthetic-make');
+    expect(report.violations[0]).toContain('no production call site');
+    // …and the consumed neighbour it used to be credited to stays green.
+    expect(report.violations.join('\n')).not.toContain('apt.synthetic-book');
+  });
+
+  it('turns GREEN for the same arrow-const adapter once it is CONSUMED', () => {
+    /*
+     * This case used to assert the opposite, and said so: the gate refused an
+     * arrow const in both directions, producing a loud false positive on a
+     * shape it could not read rather than the silent false negative that had
+     * passed an unreachable write as REACHABLE. The trade was written down and
+     * priced — a census found zero arrow-const adapters in `apps/web/src`.
+     *
+     * The trade is no longer being made, because the shape is no longer
+     * unreadable. `export const f = async () => {}` is a variable statement
+     * carrying an arrow function; the parser gives its name and its export
+     * modifier, so the gate can ask the same question of it that it asks of a
+     * `function` declaration — is anything importing this — and answer.
+     *
+     * The direction that matters is preserved by the case above: orphaned is
+     * still RED. What is gone is the false positive on a correct file.
+     */
+    const report = judgeShape(ARROW_ADAPTER, desk('bookSynthetic', 'makeSyntheticReception'));
+    expect(report.violations).toEqual([]);
+  });
+
+  it('turns RED for an orphaned OBJECT-METHOD adapter', () => {
+    const report = judgeShape(METHOD_ADAPTER, desk('bookSynthetic'));
+    expect(report.violations.join('\n')).toContain('rec.synthetic-make');
+  });
+
+  it('is not defeated by a NESTED template literal', () => {
+    /*
+     * The reproducer that ended the brace arithmetic.
+     *
+     * The old pipeline collapsed interpolations with `/\\$\\{[^}]*\\}/g`, which
+     * cannot cross a `}`. An interpolation containing a template of its own was
+     * therefore left half-rewritten — a stray `}` that decremented the brace
+     * depth, and a stray backtick that sent the literal-skipper past the end of
+     * the file. The write below then had no enclosing declaration AND a brace
+     * depth of zero, so it was re-labelled a top-level statement: attributable,
+     * owner `null`, counted, REACHABLE. A fail-CLOSED guarantee turned into a
+     * fail-open one by a string nobody was looking at.
+     *
+     * A parser does not have a view about what is inside a template literal.
+     */
+    const NESTED = [
+      "'use server';",
+      "const label = `${`${'inner'}`}`;",
+      'export async function makeSyntheticReception(input) {',
+      "  return client.send('POST', '/api/v1/synthetic-receptions', input);",
+      '}',
+    ].join('\n');
+
+    expect(mutationCallSites(NESTED)).toEqual([
+      {
+        method: 'POST',
+        path: '/api/v1/synthetic-receptions',
+        owner: 'makeSyntheticReception',
+        attributable: true,
+      },
+    ]);
+  });
+
+  it('refuses a write in a shape with no nameable owner', () => {
+    /*
+     * Where fail-closed still lives. An anonymous callback has no name, so
+     * there is no export whose consumption could be asked about — and crediting
+     * it to the function that happens to enclose the callback would be the
+     * proximity guess this gate was rebuilt to remove.
+     */
+    const ANONYMOUS = [
+      "'use server';",
+      'export const ready = [1].map(async (input) => {',
+      "  return client.send('POST', '/api/v1/synthetic-receptions', input);",
+      '});',
+    ].join('\n');
+
+    const sites = mutationCallSites(ANONYMOUS);
+    expect(sites).toHaveLength(1);
+    expect(sites[0]!.attributable).toBe(false);
+
+    // And the claim resting on it goes red, however it is consumed.
+    const report = judgeShape(ANONYMOUS, desk('ready'));
+    expect(report.violations.join('\n')).toContain('rec.synthetic-make');
+  });
+
+  it('refuses a file the parser cannot read, rather than guessing at it', () => {
+    // The whole-file fail-closed rule, stated once as a case.
+    expect(mutationCallSites('export function f( {')).toEqual([]);
+  });
+
+  it('still counts a genuine TOP-LEVEL write, which is a different fact', () => {
+    /*
+     * A module-scope statement runs on import. It has no enclosing export whose
+     * consumption could be asked about, and refusing it would be the gate
+     * failing closed on the one case it has always documented as legitimate.
+     * What separates it from an unreadable construct is no longer a brace
+     * count: it is whether the statement enclosing the site is one the module
+     * EXECUTES when imported.
+     */
+    const TOP_LEVEL = [
+      "'use server';",
+      'export async function bookSynthetic(input) {',
+      "  return client.send('POST', '/api/v1/synthetic-appointments', input);",
+      '}',
+      "const started = client.send('POST', '/api/v1/synthetic-receptions', {});",
+    ].join('\n');
+    const report = judgeShape(TOP_LEVEL, desk('bookSynthetic'));
+    expect(report.violations).toEqual([]);
+  });
+});
 describe('the helpers this gate is built on', () => {
   it('strips comments without destroying a URL in a string', () => {
     const stripped = stripComments(`const u = 'https://example.test/keep'; // gone`);

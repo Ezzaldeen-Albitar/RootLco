@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useCallback, useState, useTransition } from 'react';
 import { CursorPager } from '@/components/data-table/CursorPager';
+import type { TableStatus } from '@/components/data-table/DataTable';
 import {
   membershipVerdict,
   readCompleteness,
@@ -70,6 +71,12 @@ import {
  * create itself answers 409 `ERR-RES-002` the copy states BOTH readings —
  * "already has an open visit" and "origin already consumed" arrive as the SAME
  * code, so guessing which would be lying half the time.
+ *
+ * A lookup that did not answer is NOT a vehicle with nothing open, and the
+ * difference is now on screen rather than in this paragraph:
+ * `OpenVisitOutcome` names the eight things the lookup can have established and
+ * only one of them — the read covered the set and found no open visit — renders
+ * as the empty space the screen used to render for all of them.
  *
  * ## The receiving employee (Owner decision `FE-007`)
  *
@@ -149,6 +156,87 @@ const HANDOFF_NOTICE_KEYS = {
   'unknown-truncated': 'receptions.checkIn.handoffVehicleUnconfirmed',
   'unknown-unreadable': 'receptions.checkIn.handoffVehicleUnreadable',
 } as const satisfies Readonly<Record<MembershipVerdict, string>>;
+
+/**
+ * What the open-visit lookup ESTABLISHED — one value, and only one silence.
+ *
+ * `openVisitAmong(rows)` answers a vehicle-filtered `rec.reception-list` page,
+ * and the screen used to take its `null` as the whole story: no resumable visit
+ * on the page meant no banner, and no banner meant nothing on screen at all. Six
+ * of `TableStatus`'s seven names produce that same `null` — `loading`, `denied`,
+ * `expired`, `unavailable`, `error` and `not-found` — so a read that was refused,
+ * that timed out, that was rate-limited or that had simply not come back yet was
+ * rendered exactly like a vehicle with a clean history. Silence is a claim here:
+ * the operator reads it as "this vehicle is free", fills the rest of the form,
+ * and meets `ERR-RES-002` at the create — a 409 whose copy deliberately refuses
+ * to guess which of its two readings applies, because it cannot.
+ *
+ * Each of the six now has its own sentence, and each names a different next
+ * step: wait, ask for the permission, sign in again, try again shortly, try
+ * again, or check the branch. That is the platform's own five-way read boundary
+ * (`ScreenStates.ReadBoundary`) plus the pending state, restated inline because
+ * this lookup has no other surface — a picker announces its own failure in the
+ * space its rows would have filled, whereas this one is invisible until it has
+ * something to say.
+ *
+ * `truncated` is the seventh, and it is not a failure: the read succeeded and
+ * the server says more rows exist for this vehicle than were returned. An open
+ * visit could be among them, so the absence is not established and the notice
+ * says so — with the pager the rule in `read-completeness.ts` requires, because
+ * a sentence that says "more exists" and offers no way to reach it tells an
+ * operator their answer is somewhere they cannot go.
+ *
+ * `none` — the read covered the set and found no open visit — is the one state
+ * whose honest rendering is nothing at all: the create form beneath it is the
+ * answer.
+ */
+type OpenVisitOutcome =
+  'none' | 'truncated' | 'pending' | 'denied' | 'expired' | 'unavailable' | 'not-found' | 'error';
+
+/**
+ * The lookup's outcome from the table's own two published facts.
+ *
+ * The five failure names are RETURNED rather than re-listed, so a seventh
+ * `TableStatus` cannot be introduced without failing to compile here — the
+ * silent-collapse this function exists to end is exactly what a `default` arm
+ * would quietly restore.
+ */
+function openVisitOutcome(status: TableStatus, hasMore: boolean | undefined): OpenVisitOutcome {
+  if (status === 'loading') return 'pending';
+  if (status === 'idle') return hasMore === true ? 'truncated' : 'none';
+  return status;
+}
+
+/**
+ * What each outcome says, in both catalogues.
+ *
+ * `none` is deliberately absent: it has no sentence because it needs none, and
+ * `as const satisfies` makes that a compile error to forget rather than a
+ * missing key rendered on a screen.
+ */
+const OPEN_VISIT_NOTICE_KEYS = {
+  pending: 'receptions.checkIn.openVisitChecking',
+  denied: 'receptions.checkIn.openVisitDenied',
+  expired: 'receptions.checkIn.openVisitExpired',
+  unavailable: 'receptions.checkIn.openVisitUnavailable',
+  'not-found': 'receptions.checkIn.openVisitScopeUnknown',
+  error: 'receptions.checkIn.openVisitUnread',
+  truncated: 'receptions.checkIn.openVisitTruncated',
+} as const satisfies Readonly<Record<Exclude<OpenVisitOutcome, 'none'>, string>>;
+
+/**
+ * The outcomes that carry the backend reference, and the ones that must not.
+ *
+ * `P1-27-DO-002`, and the rule `ScreenStates` states for the whole platform: a
+ * refusal, a rate limit and a failure are what an operator telephones about, and
+ * the reference is the only thing that ties their call to the server-side log.
+ * An expired session and an unknown branch are not faults, and printing a
+ * reference beside them invites a support ticket for a working system.
+ */
+const OPEN_VISIT_REFERENCED: readonly OpenVisitOutcome[] = ['denied', 'unavailable', 'error'];
+
+/** The outcomes a Retry can actually change. */
+const OPEN_VISIT_RETRYABLE: readonly OpenVisitOutcome[] = ['unavailable', 'error'];
 
 interface Props {
   readonly locale: Locale;
@@ -299,7 +387,8 @@ export function CheckInStartScreen({
       : membershipVerdict(
           vehicles.status,
           vehicles.response,
-          (row) => row.vehicleId === handoff.vehicleId
+          (row) => row.vehicleId === handoff.vehicleId,
+          vehicles.request.page
         );
   /** What the form actually submits: the explicit choice, else the handed-over row. */
   const effectiveVehicle = walkInVehicle ?? handoffVehicle;
@@ -324,6 +413,18 @@ export function CheckInStartScreen({
   });
   // `useServerTable` reports a loaded page as 'idle' (loading is derived).
   const openVisit = visits.status === 'idle' ? openVisitAmong(visits.response?.rows ?? []) : null;
+  /*
+   * Whether the lookup was ASKED at all, in the loader's own words.
+   *
+   * `UNASKED` answers `ok` with no rows, which is indistinguishable at the table
+   * from a branch that read the vehicle's whole history and found nothing — so
+   * the condition that decides whether the read happens is the condition that
+   * decides whether anything may be concluded from it. Before a target and a
+   * vehicle exist there is no question, and a screen with no question owes no
+   * answer.
+   */
+  const openVisitAsked = targetReady && chosenVehicleId !== null;
+  const openVisitLookup = openVisitOutcome(visits.status, visits.response?.hasMore);
 
   /* --- receiving employee (Owner decision `FE-007`) ------------------------- */
 
@@ -373,8 +474,30 @@ export function CheckInStartScreen({
    * document: a read that did not happen, printed as an observed absence.
    */
   const eligible = employees.response?.rows ?? [];
+  /*
+   * A TRUNCATED read is not an answer either, and that was the hole left in
+   * the reasoning above. The branch directory is a keyset page: with more
+   * candidates than one page holds, an operator listed on page two was absent
+   * from the rows this screen had, so `some()` answered false and the screen
+   * stated "Your account is not eligible to accept custody in this branch" and
+   * withdrew their own default — from a read that never covered them.
+   *
+   * `readCompleteness` is the same primitive `InspectionStep` and
+   * `EvidenceReadBack` use, and it already separates the four cases. Only
+   * `complete` is an answer; loading, unreadable and truncated are all "not
+   * known", which is what `null` means here and what the notice below refuses
+   * to render.
+   */
+  const eligibilityRead = readCompleteness(
+    employees.status,
+    employees.response?.hasMore,
+    employees.request.page
+  );
   const selfEligible: boolean | null =
-    !canPickEmployee || !targetReady || employees.status !== 'idle' || employees.response === null
+    !canPickEmployee ||
+    !targetReady ||
+    eligibilityRead !== 'complete' ||
+    employees.response === null
       ? null
       : eligible.some((row) => row.id === sessionUserId);
 
@@ -693,6 +816,48 @@ export function CheckInStartScreen({
             {translate(messages, 'receptions.checkIn.resume')}
           </Link>
         </div>
+      ) : openVisitAsked && openVisitLookup !== 'none' ? (
+        /*
+         * No resume offer, and WHY there is none.
+         *
+         * The absence of the banner above used to be the whole answer, which
+         * made "this vehicle is free" and "we could not find out" the same
+         * screen. Only `none` — a read that covered the set and found nothing —
+         * is entitled to say nothing.
+         */
+        <div
+          role="status"
+          data-testid="open-visit-lookup"
+          className="flex flex-col gap-2 rounded-lg border border-border bg-surface-subtle p-4"
+        >
+          <p className="text-body text-text-secondary" lang={locale}>
+            {translate(messages, OPEN_VISIT_NOTICE_KEYS[openVisitLookup])}
+          </p>
+          {OPEN_VISIT_REFERENCED.includes(openVisitLookup) && visits.correlationId ? (
+            <p className="text-caption text-text-muted">
+              {translate(messages, 'state.correlationId')}{' '}
+              <code className="font-mono">{visits.correlationId}</code>
+            </p>
+          ) : null}
+          {OPEN_VISIT_RETRYABLE.includes(openVisitLookup) ? (
+            <div>
+              <button
+                type="button"
+                onClick={visits.refresh}
+                className="rounded-md border border-border px-3 py-1.5 text-body text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+              >
+                {translate(messages, 'state.retry')}
+              </button>
+            </div>
+          ) : null}
+          {openVisitLookup === 'truncated' ? (
+            <CursorPager
+              messages={messages}
+              table={visits}
+              label={translate(messages, 'receptions.checkIn.openVisitPagerLabel')}
+            />
+          ) : null}
+        </div>
       ) : null}
 
       <fieldset className="rounded-lg border border-border bg-surface p-4">
@@ -970,7 +1135,7 @@ function VehicleChoice({
     );
   }
   const rows = table.response?.rows ?? [];
-  const completeness = readCompleteness(table.status, table.response?.hasMore);
+  const completeness = readCompleteness(table.status, table.response?.hasMore, table.request.page);
   if (rows.length === 0) {
     return (
       <div className="flex flex-col gap-2">

@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-// @ts-expect-error -- a CI gate, deliberately plain JavaScript.
 import {
   declaresUseServer,
   offendingExports,
@@ -51,6 +50,40 @@ describe("the 'use server' export gate", () => {
     }
   });
 
+  it('fires on the shapes a BLACKLIST let through — the whole reason it is a whitelist', () => {
+    /*
+     * These four passed while the rule was four remembered shapes.
+     * `export default { … }` and `export enum` are plain runtime objects —
+     * literally the "found object" refusal this gate quotes — and
+     * `export * from` re-exports every value another module has.
+     */
+    for (const [label, source] of [
+      [
+        'export default object',
+        "'use server';\nexport async function a() {}\nexport default { a: 1 };",
+      ],
+      ['export enum', "'use server';\nexport async function a() {}\nexport enum Status { A }"],
+      ['export star', "'use server';\nexport async function a() {}\nexport * from './constants';"],
+      [
+        'export default identifier',
+        "'use server';\nexport async function a() {}\nexport default a;",
+      ],
+    ] as const) {
+      expect(offendingExports('p.ts', source), label).toHaveLength(1);
+    }
+  });
+
+  it('does not fire on a docblock that merely quotes a forbidden shape', () => {
+    // The prose-read-as-code failure, in the gate that exists to read code.
+    const source = [
+      "'use server';",
+      '/**',
+      ' * A `use server` file may not `export default { … }` or `export enum`.',
+      ' */',
+      'export async function handler() {}',
+    ].join('\n');
+    expect(offendingExports('p.ts', source)).toEqual([]);
+  });
   it('accepts what the contract allows, so it is not simply always red', () => {
     for (const [label, source] of [
       ['an async function', "'use server';\nexport async function handler() {}"],

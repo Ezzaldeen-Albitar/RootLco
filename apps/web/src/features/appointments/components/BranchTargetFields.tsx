@@ -22,6 +22,23 @@ import { translate } from '@/i18n/get-messages';
  * An EMPTY resolved list means unrestricted within the workspace, not "no
  * access" (`session.ts`), and for that operator the reference is typed rather
  * than chosen, exactly as the approval-limits screen decided first.
+ *
+ * ## Why the select is uncontrolled and remounted on `attempt`
+ *
+ * React resets the form DOM once a Server Action settles, and a controlled
+ * `value=` that is unchanged between renders is never re-written by the
+ * reconciler — so the reset wins. On an ordinary field that loses a keystroke;
+ * here it loses the AUTHORIZATION TARGET. The pair went blank after a refused
+ * booking while the caller's state kept both ids, so the next submit sent a
+ * company and a branch that nothing on screen was naming.
+ *
+ * The shape that survives is `key` + `defaultValue` + `onChange` together, the
+ * same one `RecordForm` and `CustomerSelector` carry. The remount counter has to
+ * come from the caller, because only the caller holds the action state — which
+ * is why `form-reset-class.test.ts` checks every `<form action={…}>` call site
+ * passes `attempt`, and why the prop defaults rather than being required: the
+ * calendar screen renders this pair inside a `<form onSubmit={…}>`, which React
+ * never resets, so an attempt counter there would describe nothing.
  */
 
 function PairField({
@@ -31,6 +48,8 @@ function PairField({
   value,
   onChange,
   error,
+  attempt,
+  field,
 }: {
   readonly messages: Messages;
   readonly label: string;
@@ -38,14 +57,18 @@ function PairField({
   readonly value: string;
   readonly onChange: (next: string) => void;
   readonly error: string | undefined;
+  readonly attempt: number;
+  /** Names the remount key, so the two pairs cannot share one. */
+  readonly field: 'company' | 'branch';
 }) {
   if (ids.length > 0) {
     return (
       <SelectField
+        key={`${field}-target-${attempt}`}
         label={label}
         description={translate(messages, 'admin.contractGap.noDirectory')}
         required
-        value={value}
+        defaultValue={value}
         onChange={(event) => onChange(event.target.value)}
         options={ids.map((id) => ({ value: id, label: id }))}
         placeholder={translate(messages, 'field.selectPlaceholder')}
@@ -77,6 +100,7 @@ export function BranchTargetFields({
   onBranchChange,
   companyError,
   branchError,
+  attempt = 0,
 }: {
   readonly messages: Messages;
   /** The session's resolved scope. Empty means unrestricted, not "none". */
@@ -88,6 +112,12 @@ export function BranchTargetFields({
   readonly onBranchChange: (next: string) => void;
   readonly companyError?: string | undefined;
   readonly branchError?: string | undefined;
+  /**
+   * The caller's submission counter, so a settled Server Action remounts the
+   * pair instead of leaving it blank while the caller's state keeps the ids.
+   * Every `<form action={…}>` call site must pass it — see the docblock above.
+   */
+  readonly attempt?: number;
 }) {
   return (
     <>
@@ -98,6 +128,8 @@ export function BranchTargetFields({
         value={companyId}
         onChange={onCompanyChange}
         error={companyError}
+        attempt={attempt}
+        field="company"
       />
       <PairField
         messages={messages}
@@ -106,6 +138,8 @@ export function BranchTargetFields({
         value={branchId}
         onChange={onBranchChange}
         error={branchError}
+        attempt={attempt}
+        field="branch"
       />
     </>
   );

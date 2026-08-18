@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState } from 'react';
+import { useActionState, useState } from 'react';
 import { TextField } from '@/components/forms/Field';
 import type { Messages } from '@/i18n/get-messages';
 import { translate } from '@/i18n/get-messages';
@@ -35,6 +35,19 @@ export function TenantForm({
   readonly canWrite: boolean;
 }) {
   const [state, formAction] = useActionState<ActionState, FormData>(updateTenantAction, IDLE);
+  /*
+   * Seeded from the SAVED values so an untouched form still submits them,
+   * then owned by the draft so a refused save restores what the operator
+   * typed rather than what the server already held.
+   */
+  const [draft, setDraft] = useState<Record<string, string>>({
+    displayName: tenant.displayName,
+    defaultLocale: tenant.defaultLocale,
+    defaultTimezone: tenant.defaultTimezone,
+  });
+  const retained = (name: string) => draft[name] ?? '';
+  const retain = (name: string) => (event: { target: { value: string } }) =>
+    setDraft((current) => ({ ...current, [name]: event.target.value }));
   const t = (key: string) => translate(messages, key as keyof Messages);
 
   if (!canWrite) {
@@ -68,24 +81,37 @@ export function TenantForm({
         <Fact label={t('organization.status')} value={tenant.status} />
       </dl>
 
+      {/*
+        Seeded from the SAVED value and then owned by the draft. The
+        difference matters on a refused save: without the draft the reset
+        restores `tenant.displayName` — the value on the server — so the
+        operator’s edit is replaced by the thing they were trying to change,
+        which reads as the save having silently succeeded in reverse.
+      */}
       <TextField
+        key={`displayName-${state.attempt ?? 0}`}
         name="displayName"
         label={t('organization.displayName')}
-        defaultValue={tenant.displayName}
+        defaultValue={retained('displayName')}
+        onChange={retain('displayName')}
         required
       />
       <TextField
+        key={`defaultLocale-${state.attempt ?? 0}`}
         name="defaultLocale"
         label={t('organization.defaultLocale')}
         description={t('organization.defaultLocaleHint')}
-        defaultValue={tenant.defaultLocale}
+        defaultValue={retained('defaultLocale')}
+        onChange={retain('defaultLocale')}
         spellCheck={false}
       />
       <TextField
+        key={`defaultTimezone-${state.attempt ?? 0}`}
         name="defaultTimezone"
         label={t('organization.defaultTimezone')}
         description={t('organization.defaultTimezoneHint')}
-        defaultValue={tenant.defaultTimezone}
+        defaultValue={retained('defaultTimezone')}
+        onChange={retain('defaultTimezone')}
         spellCheck={false}
       />
 

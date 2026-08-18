@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useActionState } from 'react';
+import { useActionState, useState } from 'react';
 import { PasswordField, TextField } from '@/components/forms/Field';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
@@ -36,6 +36,11 @@ export function LoginForm({
   readonly locale: Locale;
   readonly messages: Messages;
 }) {
+  /*
+   * Retained across a refused submit. React resets the form DOM once the
+   * Server Action settles, and an uncontrolled text box is emptied by it.
+   */
+  const [email, setEmail] = useState('');
   const [state, formAction] = useActionState<ActionState, FormData>(loginAction, IDLE);
   const fieldError = (name: string) => {
     const key = state.fieldErrors?.[name];
@@ -48,13 +53,22 @@ export function LoginForm({
 
       <FormFeedback state={state} messages={messages} />
 
+      {/*
+        The address is retained; the PASSWORD beside it is deliberately not,
+        and the reason is recorded in `CLEARS_ON_REFUSAL` in
+        `form-reset-class.test.ts`. A refused sign-in made the operator
+        re-type both, when only one of them is plausibly what was wrong.
+      */}
       <TextField
+        key={`email-${state.attempt ?? 0}`}
         name="email"
         type="email"
         label={translate(messages, 'auth.login.email')}
         required
         autoComplete="username"
         spellCheck={false}
+        defaultValue={email}
+        onChange={(event) => setEmail(event.target.value)}
         error={fieldError('email')}
       />
 

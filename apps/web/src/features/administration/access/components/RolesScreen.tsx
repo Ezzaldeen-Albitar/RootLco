@@ -173,6 +173,15 @@ function CreateRoleDialog({
   readonly onClose: () => void;
 }) {
   const [state, formAction] = useActionState<ActionState, FormData>(createRoleAction, IDLE);
+  /*
+   * The typed values, retained across a refused submit. React resets the form
+   * DOM once the Server Action settles, and an UNCONTROLLED text box or
+   * textarea is emptied by it exactly like a select — measured, not assumed.
+   */
+  const [draft, setDraft] = useState<Record<string, string>>({});
+  const retained = (name: string) => draft[name] ?? '';
+  const retain = (name: string) => (event: { target: { value: string } }) =>
+    setDraft((current) => ({ ...current, [name]: event.target.value }));
   const t = (key: string) => translate(messages, key as keyof Messages);
 
   return (
@@ -186,20 +195,39 @@ function CreateRoleDialog({
       <form action={formAction} className="flex flex-col gap-4" noValidate>
         <FormFeedback state={state} messages={messages} />
         <TextField
+          key={`roleCode-${state.attempt ?? 0}`}
           name="roleCode"
           label={t('roles.field.code')}
           description={t('roles.field.codeHint')}
           required
           spellCheck={false}
+          defaultValue={retained('roleCode')}
+          onChange={retain('roleCode')}
           error={state.fieldErrors?.roleCode ? t(state.fieldErrors.roleCode) : undefined}
         />
         <TextField
+          key={`name-${state.attempt ?? 0}`}
           name="name"
           label={t('roles.field.name')}
           required
+          defaultValue={retained('name')}
+          onChange={retain('name')}
           error={state.fieldErrors?.name ? t(state.fieldErrors.name) : undefined}
         />
-        <TextAreaField name="description" label={t('roles.field.description')} rows={3} />
+        {/*
+          The longest thing an operator types on this form, and the one whose
+          loss costs the most: a refusal is normally about the CODE above it
+          (`ROLE_CODE` rejects spaces), so the description was discarded by a
+          refusal that had nothing to do with it.
+        */}
+        <TextAreaField
+          key={`description-${state.attempt ?? 0}`}
+          name="description"
+          label={t('roles.field.description')}
+          rows={3}
+          defaultValue={retained('description')}
+          onChange={retain('description')}
+        />
         <div className="flex justify-end gap-2">
           {state.status === 'success' ? (
             <button
