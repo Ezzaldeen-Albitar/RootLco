@@ -33,31 +33,61 @@ the candidate, and refuses either half that fails to name an unclosed task.
 
 ## The frozen candidate
 
-| Binding           | Value                                                  |
-| ----------------- | ------------------------------------------------------ |
-| `FINAL_CODE_SHA`  | `d9492ed680d287db6ca5c45297c0674ef6feea9a`             |
-| `FINAL_CODE_TREE` | `e5d78364d1c68ed245ed56cb414a2c1bda8fe379`             |
-| Branch            | `remediation/p1-15-reception-document-foundation`      |
-| Pull request      | **#232**, base `develop`, 25 commits ahead             |
-| Subject           | `fix(ci): raise the schema baseline for migration 123` |
+| Binding           | Value                                                    |
+| ----------------- | -------------------------------------------------------- |
+| `FINAL_CODE_SHA`  | `b6902e3ce2151b9a863220fba9ec67d23c87a850`               |
+| `FINAL_CODE_TREE` | `e7f699bc18561bb257e13a7b8c350a26af5c374d`               |
+| Branch            | `feature/p1-28-owner-decisions-frontend`                 |
+| Pull request      | none yet, base `develop`, 20 commits ahead               |
+| Subject           | `fix(p1-28): close all 28 regression round-two findings` |
 
-The previous candidate was `7b1252edebb5d7f48451213c71ab832cb44e46b5`, tree
-`1ef831d2ecfcf94d07b73857b7448c3b424faca3`, on
-`feature/p1-28-appointment-vehicle-reception-frontend` (**#226**). It was
-superseded because the Owner **resolved `P1-OD-025`**, and the gate that encoded
-that decision as OPEN became the thing blocking the approved foundation:
-`apps/web/tests/p1-28-reception-media.test.ts` proved that no SQL could create a
-document category, and the approved private/versioned model seeds seven reception
-categories. Reproduced as `1 failed | 56 passed` before the conversion existed.
+The previous candidate was `d9492ed680d287db6ca5c45297c0674ef6feea9a`, tree
+`e5d78364d1c68ed245ed56cb414a2c1bda8fe379`, on
+`remediation/p1-15-reception-document-foundation` (**#232**). It was superseded
+by **regression round two**: a finite refuter attacked this wave’s own repairs
+and confirmed 28 findings, of which two were reachable product defects. A paged
+read answered for the whole SET from page two — restoring, with one click of the
+pager the repair itself renders, every sentence that repair had removed — and the
+media outcome reported a TERMINAL scan refusal in the words of a retryable
+failure, because it discarded the `versionStatus` that told them apart.
 
-That path lives under `apps/**`, so
-`git diff --name-only 7b1252ed..526a3b39 -- apps supabase` is **not** empty and
-the successor apparatus was unavailable: this had to be a re-freeze. Every hosted
-binding therefore returns to PENDING and is listed in `pendingHostedBindings`,
-because moving the candidate moves the code the package describes and cannot
-manufacture an observation of it. The full account, including what the re-freeze
-cost and what it did not buy, is in `closure-candidate.json` under
-`reFrozenFrom.history`.
+Closing those changed 82 files under `apps/**`, so
+`git diff --name-only d9492ed6..b6902e3c -- apps supabase` is **not** empty and
+the successor apparatus — which exists only for a commit that leaves the product
+tree byte-identical — was unavailable: this had to be a re-freeze. The gate
+COMPUTES that difference rather than reading this sentence, which is the reason
+the re-freeze could not be skipped by asserting one.
+
+Every hosted binding therefore returns to PENDING and is listed in
+`pendingHostedBindings`, because moving the candidate moves the code the package
+describes and cannot manufacture an observation of it. What the re-freeze did NOT
+cost is the local evidence: both local tiers are re-measured at this head, and
+the production acceptance behaviours were re-driven against a build of it — a
+real capture reports "Recorded and counted. This requirement is now met." at 1/1,
+and an EICAR file reports "The file was checked and refused, so it cannot be used
+as evidence. Record a different file." The full account is in
+`closure-candidate.json` under `reFrozenFrom.history`.
+
+### What regression round two found, and where it is recorded
+
+Three ledgers, kept as separate documents because they answer separate
+questions and merging them would let one denominator hide inside another:
+
+- [`final-refuter-ledger.json`](final-refuter-ledger.json) — the 31 findings the
+  final refuter confirmed against the wave, all 31 closed, with the 5 REFUTED
+  candidates preserved as refuted. `FR-32`, discovered during the remediation
+  itself, is tracked separately inside it rather than folded into the 31.
+- [`regression-round-2-ledger.json`](regression-round-2-ledger.json) — the 28
+  findings of the round that attacked those repairs. **28 confirmed, 28 closed,
+  0 open, 5 refuted.** Each row carries its original reproducer and what closing
+  it consisted of, so a reader can re-run the failure rather than trust the fix.
+- [`od-025-statement-ledger.md`](od-025-statement-ledger.md) — every live
+  statement about `P1-OD-025` in the tree, classified CURRENT_TRUE,
+  HISTORICAL_SUPERSEDED or STALE. It exists because round two found six
+  half-finished repairs of that decision — one line of a document corrected and
+  another line of the same document left saying the opposite — and because the
+  decision is resolved for reception evidence and open everywhere else, which
+  means a grep result is never a verdict.
 
 ### This candidate is a RE-FREEZE, and the seal is why
 

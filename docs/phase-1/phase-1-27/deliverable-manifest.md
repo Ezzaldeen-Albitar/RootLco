@@ -162,7 +162,7 @@ fact in words did not, which is the gap this revision closes.
 | Source files under the P1-27 ownership gate                            | **111** (43 feature source + 34 route + 34 adopted reception)      | derived from the gate's own scan roots                                     |
 | Router pages (CRM and Vehicle)                                         | **8**                                                              | command 1                                                                  |
 | Shared-foundation source files changed by the phase or its remediation | **13** named in §5.5                                               | command 1, cross-read against the task register and the remediation record |
-| Web unit and component test files                                      | **101**                                                             | derived                                                                    |
+| Web unit and component test files                                      | **101**                                                            | derived                                                                    |
 | Playwright specification files                                         | **9** (2 anonymous, 7 authenticated)                               | commands 11 and 12 — **not re-measured**, §1.1.1                           |
 | Root CI-contract test files                                            | **46**                                                             | derived                                                                    |
 | CI gate scripts under `scripts/ci`                                     | **54** in the directory, **8** introduced or changed by this phase | derived; the eight are the `scripts/ci` rows of §7.1                       |
@@ -693,7 +693,7 @@ under-report itself by seven files.
 | `evidence/closing-value-ledger.json`              | 907   | Every closing value on the two evidence pages, classified, with its authority      |
 | `evidence/lifecycle-ledger.json`                  | 72    | The closure lifecycle's observations and the state this repository declares        |
 | `evidence/local-run-ledger.json`                  | 30    | What a tier DID when it was run — written only by `record:p1-27-run`               |
-| `evidence/task-traceability.md`                   | 435   | Every task, the operations it calls, the files it produced, the named proof        |
+| `evidence/task-traceability.md`                   | 437   | Every task, the operations it calls, the files it produced, the named proof        |
 | `evidence/test-catalogue-traceability.md`         | 406   | `DOC-001` — the 29 canonical `TC-P1-27-*` ids bound to executable tests            |
 | `evidence/test-catalogue-traceability.json`       | 863   | Its machine-readable form, checked by `validate:p1-27-doc-counts`                  |
 | `execution-checkpoint.md`                         | 290   | Base SHAs, surface baselines, the wave log                                         |
@@ -740,7 +740,7 @@ document says so in its own header.**
 | `README.md` — the index and the consolidated register | 443   |
 | `owner-workflow-requirements.md`                      | 356   |
 | `workshop/end-to-end-workshop-workflow.md`            | 1244  |
-| `workshop/frontend-implementation-program.md`         | 945   |
+| `workshop/frontend-implementation-program.md`         | 954   |
 | `workshop/pricing-payment-and-delivery.md`            | 1137  |
 | `workshop/vehicle-history-model.md`                   | 1039  |
 | `workshop/inspection-and-diagnostics.md`              | 901   |
@@ -971,7 +971,7 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
      an earlier revision put them in the label column and broke two other gates
      whose regexes read the label and the number as adjacent cells. -->
 
-<!-- derived: files apps/web/tests = 99 -->
+<!-- derived: files apps/web/tests = 101 -->
 <!-- derived: files tests/ci = 52 -->
 <!-- derived: files scripts/ci = 54 -->
 <!-- derived: files apps/web/scripts = 4 -->
@@ -991,7 +991,7 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
 <!-- derived: commands required = 84 -->
 <!-- derived: commands reachable = 84 -->
 <!-- derived: commands hosted-ci = 84 -->
-<!-- derived: cases vehicle-screens.dom.test.tsx = 40 -->
+<!-- derived: cases vehicle-screens.dom.test.tsx = 43 -->
 <!-- derived: cases tailwind-theme-gate.test.ts = 8 -->
 <!-- derived: cases navigation.test.ts = 22 -->
 <!-- LINE-COUNT MARKERS. Regenerated, never typed. -->
@@ -1012,7 +1012,7 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
 <!-- derived: lines docs/phase-1/phase-1-27/evidence/closing-value-ledger.json = 907 -->
 <!-- derived: lines docs/phase-1/phase-1-27/evidence/lifecycle-ledger.json = 72 -->
 <!-- derived: lines docs/phase-1/phase-1-27/evidence/local-run-ledger.json = 30 -->
-<!-- derived: lines docs/phase-1/phase-1-27/evidence/task-traceability.md = 435 -->
+<!-- derived: lines docs/phase-1/phase-1-27/evidence/task-traceability.md = 437 -->
 <!-- derived: lines docs/phase-1/phase-1-27/evidence/test-catalogue-traceability.json = 863 -->
 <!-- derived: lines docs/phase-1/phase-1-27/evidence/test-catalogue-traceability.md = 406 -->
 <!-- derived: lines docs/phase-1/phase-1-27/execution-checkpoint.md = 290 -->
@@ -1043,7 +1043,7 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
 <!-- derived: lines docs/product/vehicle-catalogue/provider-evaluation.md = 648 -->
 <!-- derived: lines docs/product/workshop/department-task-assignment.md = 751 -->
 <!-- derived: lines docs/product/workshop/end-to-end-workshop-workflow.md = 1244 -->
-<!-- derived: lines docs/product/workshop/frontend-implementation-program.md = 945 -->
+<!-- derived: lines docs/product/workshop/frontend-implementation-program.md = 954 -->
 <!-- derived: lines docs/product/workshop/inspection-and-diagnostics.md = 901 -->
 <!-- derived: lines docs/product/workshop/parts-and-procurement-flow.md = 798 -->
 <!-- derived: lines docs/product/workshop/pricing-payment-and-delivery.md = 1137 -->

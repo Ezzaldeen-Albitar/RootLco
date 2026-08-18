@@ -48,8 +48,8 @@
       "bytes": 24145
     },
     "docs/phase-1/phase-1-27/deliverable-manifest.md": {
-      "sha256": "cf84d3679c62270e3580ce9e3fd3be40edaa937f653d8b4f2dd4d0fc74ab1422",
-      "bytes": 144646
+      "sha256": "b2f89aecf5b97d91a8ff5e2586103f065eedb98ac12877edbd0a143a7d0567bd",
+      "bytes": 148837
     },
     "docs/phase-1/phase-1-27/developer-guide.md": {
       "sha256": "bc98ee5da71a3c4db635f4222c4e55b875610a6db9d81f6fcf643aee0c4858e1",
@@ -68,19 +68,19 @@
       "bytes": 9208
     },
     "docs/phase-1/phase-1-27/evidence/local-run-ledger.json": {
-      "sha256": "371f854421ae2aa20ae347457fae3826b1f31871eee7374a0422a466c86c35be",
-      "bytes": 1201
+      "sha256": "2357e354ca967f525e07cfa68cc52a6a3bbce6d630ea717be4eeab531954107c",
+      "bytes": 1202
     },
     "docs/phase-1/phase-1-27/evidence/task-traceability.md": {
-      "sha256": "92f48e1202dccd6f6d1e082045e2efd07e03792c7f392f2becb9cf784c52a976",
-      "bytes": 113862
+      "sha256": "e64fe996a88bca178409d690620cbdbd0e7f241d179b01fc8855dc106846afa1",
+      "bytes": 114007
     },
     "docs/phase-1/phase-1-27/evidence/test-catalogue-traceability.json": {
       "sha256": "89eed0e4a7c64ff836c6300a98fec158a8873db91d7c52d7bb21cf1b40dcec5e",
       "bytes": 34332
     },
     "docs/phase-1/phase-1-27/evidence/test-catalogue-traceability.md": {
-      "sha256": "2fa5be09cb37b8405fdcfe06e0c063bb5a673796fc930c3b9cc2551bbed15d54",
+      "sha256": "9622f5ea1ea08be618651b5688074c37619c34caaeb6ed19ad27ffbe0a04c954",
       "bytes": 30096
     },
     "docs/phase-1/phase-1-27/execution-checkpoint.md": {
@@ -152,16 +152,16 @@
       "bytes": 62211
     },
     "docs/phase-1/phase-1-27/risk-register.md": {
-      "sha256": "d2fb997bb4f52363ae540cc4b0659d6486adb9c02f8cc48b894d8dc143f55083",
+      "sha256": "2f61fdc2ea633ba5d60d6ebf9a694ce72b4eb724015a9fbbc9552a233e9ffdb6",
       "bytes": 187800
     },
     "docs/phase-1/phase-1-27/task-matrix-verdicts.json": {
-      "sha256": "bc32cf4be26667c11eb6d7b95db9739ebb68574ea95f12a4105304f6b590d98e",
-      "bytes": 262779
+      "sha256": "dfe54cdde9e5dd3495d16f061cfdd8289957c2138c12f9f0113576e74e7e499b",
+      "bytes": 264217
     },
     "docs/phase-1/phase-1-27/task-matrix.json": {
-      "sha256": "e4b9f8e47b46edf93095c5af539d4fba1e60fdb3d6b3e0f587b569db9fe33894",
-      "bytes": 282180
+      "sha256": "a8bcca7b38d502f78870a06a7f7a725450cd60e31cce5cc156c6778283883413",
+      "bytes": 283618
     },
     "docs/phase-1/phase-1-27/task-register.md": {
       "sha256": "9a395590ce32260cef2878e06077138a7a5d30663ffe5dd86e9ddb723e00fd04",

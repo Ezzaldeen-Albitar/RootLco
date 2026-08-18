@@ -5,19 +5,28 @@
   "howToCheck": "npm run validate:p1-28-evidence",
   "whatThisIsNot": "This is not a tamper-proof seal. The digests in evidence-manifest.json remove SILENT revision, not revision. It is ALSO not an Owner acceptance and not a closure record: the phase is OPEN and `OWNER ACCEPTANCE` has neither been asked for nor returned. What it now IS is a package whose current remediation half has been taken: nine bindings, including all five tiers, CodeQL, dependency security, browser-by-project and the database reproof, cite exact-head PR CI run 31885987461 at 1a186a7bcb7d0b97bb771753dacb584535692455. The unit and web figures agree with the authoritative local observation at ea045d88 pinned by ledger commit 2e0f2191. The earlier aggregate hostedCi and production-build records remain fetchable at product-identical 81cbd44b because the exact remediation run legitimately skipped those change-classified build jobs. Every cited head descends from the candidate, its apps/** and supabase/** are COMPUTED byte-identical to it, and each binding says so with `describesProductIdenticalSuccessor`. `pendingHostedBindings.bindings` is EMPTY by derivation. The two superseded citations this package has carried, 55b932cb and 38afa5c2, are kept in `supersededObservations`.",
   "candidate": {
-    "FINAL_CODE_SHA": "d9492ed680d287db6ca5c45297c0674ef6feea9a",
-    "FINAL_CODE_TREE": "e5d78364d1c68ed245ed56cb414a2c1bda8fe379",
-    "branch": "remediation/p1-18-reception-evidence-contracts",
+    "FINAL_CODE_SHA": "b6902e3ce2151b9a863220fba9ec67d23c87a850",
+    "FINAL_CODE_TREE": "e7f699bc18561bb257e13a7b8c350a26af5c374d",
+    "branch": "feature/p1-28-owner-decisions-frontend",
     "pullRequest": null,
     "baseBranch": "develop",
-    "commitsAheadOfDevelop": 41,
-    "subject": "fix(ci): raise the schema baseline for migration 123",
+    "commitsAheadOfDevelop": 20,
+    "subject": "fix(p1-28): close all 28 regression round-two findings",
     "whatFreezingMeans": "This commit freezes the PRODUCT: every later head cited by the package must leave apps/** and supabase/** byte-identical to it. Executable evidence machinery may follow only as a full-id successor, and every LOCAL measurement taken there must declare the exact non-product drift that Git computes. A successor that changes a product tree invalidates this package and the candidate must be re-frozen and re-measured; a successor that changes only evidence machinery is named and re-measured without pretending it was part of the frozen product.",
     "productIdentityCheck": "git diff --name-only d9492ed680d287db6ca5c45297c0674ef6feea9a..HEAD -- apps supabase",
     "productIdentityExpectation": "empty output — no product file differs between the candidate and any successor",
     "reFrozenFrom": {
       "what": "Every candidate this package has named, most recent first. Kept rather than overwritten: deleting the record of what was once frozen is the half-update this gate exists to catch.",
       "history": [
+        {
+          "previousCandidate": "d9492ed680d287db6ca5c45297c0674ef6feea9a",
+          "previousTree": "e5d78364d1c68ed245ed56cb414a2c1bda8fe379",
+          "whyItMoved": "Regression round two. A finite refuter attacked this wave’s own repairs and confirmed 28 findings, two of them reachable product defects: a paged read answering for the whole set from page two, and a media outcome that reported a TERMINAL scan refusal in the words of a retryable failure. Closing them changed the product.",
+          "whyReFrozenRatherThanNamed": "`git diff --name-only d9492ed6..b6902e3c -- apps supabase` lists 82 files, so the successor apparatus — which exists only for a commit that leaves the product tree byte-identical — was unavailable. The gate COMPUTES that difference rather than reading this sentence, which is why the re-freeze could not be skipped by asserting one.",
+          "whatThisCostAndWhatItDidNot": "Every hosted binding returns to PENDING and is listed in `pendingHostedBindings`: a run at an ancestor observed different code and may not be presented as describing this candidate. What it did NOT cost is the local evidence — the two local tiers are re-measured at this head, and the production acceptance behaviours were re-driven against a build of it.",
+          "supersededSuccessorRecord": "That candidate named no executable successor at the moment it was superseded; this commit is now the candidate itself.",
+          "productFilesThatMoved": 82
+        },
         {
           "previousCandidate": "4174cb15b5f50f5be7ec1dcce3c6700f15c560b8",
           "previousTree": "fd66f3a30d66029af78da3046fe6e44667d4015f",
@@ -222,7 +231,8 @@
       "FINAL_CODE_TREE": "The tree object of that commit. P1-27 records no equivalent field; it is added here because a tree id is what makes two checkouts comparable without trusting a commit message.",
       "EVIDENCE_RECORD_SHA": "P1-27's name for the commit carrying the evidence file — here, the documentation-only commit that carries this record, which the gate PRINTS rather than requires to be named because a commit cannot name itself.",
       "EXECUTABLE_DIFF_COUNT": "P1-27's derivation `git diff --name-only CODE_CANDIDATE_SHA..EVIDENCE_RECORD_SHA` excluding docs/ and *.md. It is non-zero here because six executable paths differ from the product candidate: the ownership profile, the seal, the seal suite, two acceptance-fixture commands and their boundary suite. This package therefore does NOT claim DOCUMENTATION_ONLY_RECORDING; it names all three executable successors in the current branch range and separately proves apps/** and supabase/** byte-identical."
-    }
+    },
+    "commitsAheadOfDevelopNote": "Counted against `origin/develop`. The local `develop` ref is a stale bootstrap pointer — counting against it reports 391 — and this project has already recorded that trap for `main`."
   },
   "sealSuiteInvariant": {
     "what": "tests/ci/p1-28-evidence-manifest.test.ts passes 96/96 with this package BOUND; the pending/forward-binding and absorbed-successor rules remain fixture-proved inside the same suite.",
@@ -615,35 +625,7 @@
     "partial": 3,
     "fail": 0
   },
-  "blockedTasks": {
-    "FE-007": {
-      "verdict": "PARTIAL",
-      "blocker": "G-EMP / R6 — Owner register question A",
-      "owner": "the Product Owner, with the contract half owned by P1-18",
-      "whatIsStillOpen": "The receiving-employee REFERENT. The wizard writes receiving_employee_id on every check-in while the column has no foreign key and no defined meaning. The UUID-on-screen defect this row used to carry is FIXED — both read-back surfaces resolve the name through iam.user-detail and never print the identifier — so what remains is an Owner question about what the column means, not a Frontend defect.",
-      "notThisPhaseToClose": true
-    },
-    "FE-012": {
-      "verdict": "PARTIAL",
-      "blocker": "P1-OD-025 — document and media file policy, with G-MEDIA / R8 behind it",
-      "owner": "the Product Owner (the decision) and P1-15 / P1-18 (the contract half)",
-      "whatIsStillOpen": "The damage-map half. damage_map requires a registered documentId AND the exact documentVersionId, and neither value can exist while the document-category table is empty, no storage provider is configured and no version can be accepted. The mark write itself is delivered and proved — exact coordinates, unrounded, keyboard-placeable, clamped at the contract bounds.",
-      "notThisPhaseToClose": true
-    },
-    "FE-017": {
-      "verdict": "PARTIAL",
-      "blocker": "PENDING_FRONTEND_ADAPTER — four contracts published with no adapter",
-      "owner": "the P1-28 Frontend branch (feature/p1-28-owner-decisions-frontend)",
-      "whatIsStillOpen": "The BINDING half of media capture. Uploading a version was already complete; P1-18 has now made the rest expressible, and none of it is wired: an uploaded version only counts against a capture requirement once it is bound to that requirement and the binding is finalised, and a required capture can be waived with an attributable reason. FE-017 canonically owns rec.reception-evidence-binding, -finalize, -list and rec.reception-capture-override (canonical-plan.md §5); all four are declared PENDING_FRONTEND_ADAPTER in docs/phase-1/phase-1-28/adapter-reachability.json and none has a production adapter."
-    },
-    "FE-018": {
-      "verdict": "PARTIAL",
-      "blocker": "P1-OD-025 — document and media file policy; and the unowned signature read-back gap",
-      "owner": "the Product Owner (P1-OD-025); P1-18, unassigned (the read-back gap)",
-      "whatIsStillOpen": "rec.reception-signature is called ZERO times by the product. The write needs a registered document and its exact version and nothing in this product registers a document. What ships states what a signature would attribute and records nothing, with the absence of a submit control asserted so it cannot creep back.",
-      "notThisPhaseToClose": true
-    }
-  },
+  "blockedTasks": {},
   "openDecisionsThisPackageDoesNotPreEmpt": {
     "P1-28-OD-001": {
       "title": "who administers the intake catalogues, and through which surface",
@@ -702,5 +684,11 @@
         "whatItSaid": "unit job 94614563908 — 2475 over 97 files; web job 94614564128 — 2669 over 98 files, reproduced by clean room job 94614564119; backend job 94614564122 — 2004 over 86 files; database job 94614564002 — 1647 over 139 files; browser job 94614564003 — 370 planned, 366 passed, 0 failed, 4 skipped, 141 phase-spec cases; hostedCi — 21 checks, 21 success, recorded as ONE run id, which was wrong for four of the twenty-one; CodeQL analyses 1616577501 and 1616569830, 0 results each; dependency-security job 94614564057; application-build job 94614563886; database jobs 94614563937 and 94614564119."
       }
     ]
+  },
+  "blockedTasksNote": {
+    "what": "EMPTY, and empty is a statement rather than an omission.",
+    "why": "This map named FE-007, FE-012, FE-017 and FE-018 as blocked. All four are PASS in the matrix at this head and the gate refuses a closed row presented as blocked — as wrong as the reverse — so the entries are removed rather than left standing with a note.",
+    "whatClosedThem": "FE-007: the Owner answered register question A; `receiving_employee_id` is an IAM reference under `fk_reception_visits_receiving_employee` with an eligibility trigger, and `rec.receiving-employee-list` is the canonical operation. FE-012, FE-017 and FE-018: the Owner resolved `P1-OD-025` for reception evidence — seven `reception_*` document categories with types and a ceiling — so capture, the damage-map template and the signature image are no longer blocked by a decision. What each of the three still lacks is recorded per task in the matrix and in `closure-evidence.md`, and none of it is this decision.",
+    "whatIsStillNotClosed": "The PHASE. `ownerAcceptance` is unchanged: P1-28 closes on an explicit Owner Pass and on nothing else."
   }
 }
