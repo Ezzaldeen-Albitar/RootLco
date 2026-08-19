@@ -22,9 +22,9 @@
       "failed": 0,
       "skipped": 0,
       "files": 101,
-      "measuredAtCommit": "ceafc16a797a7f00073de78bd358a4377f97313c",
+      "measuredAtCommit": "2f8a925d6e7d6577668a6810dfe45cea291e63e2",
       "dirtyExecutablePaths": [],
-      "measuredAt": "2026-08-19T00:57:17.672Z"
+      "measuredAt": "2026-08-19T01:46:51.180Z"
     }
   }
 }
