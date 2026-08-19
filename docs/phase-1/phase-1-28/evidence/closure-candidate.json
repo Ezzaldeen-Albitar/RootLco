@@ -271,17 +271,17 @@
     "unit": {
       "label": "root unit and foundation",
       "tests": 2775,
-      "passed": 2773,
-      "failed": 2,
+      "passed": 2775,
+      "failed": 0,
       "skipped": 0,
       "files": 104,
-      "measuredAtCommit": "7a584e99d7ab7c83179d712d37408691a19a0e8d",
+      "measuredAtCommit": "2c3bace0918077dec92e20e8cbab6922485da72c",
       "provenance": "LOCAL_COMPUTED_HOSTED_PENDING",
       "localLedger": {
         "path": "docs/phase-1/phase-1-27/evidence/local-run-ledger.json",
         "tier": "unit",
-        "atCommit": "d3566143114371795dea91c9a4079f35f0602840",
-        "howChecked": "`git show d3566143114371795dea91c9a4079f35f0602840:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD at the commit that carries this record, rather than the working copy, which would let an uncommitted edit vouch for itself. The run was taken at 7a584e99d7ab7c83179d712d37408691a19a0e8d, a head executable-identical to the candidate (the commits between them touch documentation only), and recorded into that commit."
+        "atCommit": "2c3bace0918077dec92e20e8cbab6922485da72c",
+        "howChecked": "`git show 2c3bace0918077dec92e20e8cbab6922485da72c:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD at the commit that carries this record, rather than the working copy, which would let an uncommitted edit vouch for itself. The run was taken at 2c3bace0918077dec92e20e8cbab6922485da72c, a head executable-identical to the candidate (the commits between them touch documentation only), and recorded into that commit."
       },
       "hostedAttestation": {
         "runId": 31885987461,
@@ -306,8 +306,8 @@
       "localLedger": {
         "path": "docs/phase-1/phase-1-27/evidence/local-run-ledger.json",
         "tier": "web",
-        "atCommit": "d3566143114371795dea91c9a4079f35f0602840",
-        "howChecked": "`git show d3566143114371795dea91c9a4079f35f0602840:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD at the commit that carries this record, rather than the working copy, which would let an uncommitted edit vouch for itself. The run was taken at 7a584e99d7ab7c83179d712d37408691a19a0e8d, a head executable-identical to the candidate (the commits between them touch documentation only), and recorded into that commit."
+        "atCommit": "2c3bace0918077dec92e20e8cbab6922485da72c",
+        "howChecked": "`git show 2c3bace0918077dec92e20e8cbab6922485da72c:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD at the commit that carries this record, rather than the working copy, which would let an uncommitted edit vouch for itself. The run was taken at 7a584e99d7ab7c83179d712d37408691a19a0e8d, a head executable-identical to the candidate (the commits between them touch documentation only), and recorded into that commit."
       },
       "hostedAttestation": {
         "runId": 31885987461,
@@ -380,7 +380,8 @@
         "supersededBy": "The hosted run taken at a head that DESCENDS from candidate 526a3b39 — the pull request CI for branch `p1-28/od-025-policy-enforcement`. Until that run exists this figure describes an ancestor and is cited as such; it is replaced by re-citing the same fields (run id, job id, head, artefact) at the descending head, never by relaxing the rule that refused it."
       },
       "note": "MEASURED. Exact remediation run 31885987461 job 95015291803 at 1a186a7b: `playwright-report.json` `stats` reports expected 366, skipped 4, unexpected 0, flaky 0, over 370 planned. The workspace-dependent skip count returned from 5 to 4; it is recorded rather than smoothed over. NO P1-28 CASE IS SKIPPED, checked from the run artefact: `authenticated/appointments-and-receptions.spec.ts` executed all 141 entries, 47 in each of authenticated-en, authenticated-ar and authenticated-tablet."
-    }
+    },
+    "reMeasuredBy": "DBCR-P1-28-001. The previous figures were taken at 2135d190 (unit) and 2f8a925d (web), and ten executable paths differ between those heads and this candidate — so they described a tree this candidate is not. Re-measured here rather than carried forward, which is the whole rule this package exists to enforce."
   },
   "browserByProject": {
     "spec": "authenticated/appointments-and-receptions.spec.ts",
