@@ -265,23 +265,29 @@
     "whatWouldFailThis": "Any executable commit in `git log <head under test> --not <candidate> <historical base>` that is not named here, any named id outside that computed range, any product-path difference under apps/** or supabase/**, or any Git/topology question that returns UNKNOWN."
   },
   "absorbedSuccessors": [],
-  "successors": [],
+  "successors": [
+    {
+      "commit": "85b1648e7467ae3caaffd3a7db65fd52736a1476",
+      "kind": "measurement head + evidence machinery",
+      "why": "The commit both tiers were run at. Named because a measurement head must be a named successor, and because it carries the re-freeze itself — documentation against the candidate, which the gate computes rather than takes on trust."
+    }
+  ],
   "howTierFiguresAreChecked": "Four obligations, because there are four kinds of claim. ARITHMETIC: `passed + failed + skipped` must equal the declared total. LOCAL: figures equal the P1-27 run ledger read out of Git at `localLedger.atCommit`. MEASUREMENT HEAD: both local tiers name successor ea045d88fd88843c82c8ecd7273b0772f65417f6, whose six declared non-product drift paths equal Git's path set, and are pinned to ledger commit 2e0f2191db4c118e766e9ca4b8ffff981b63d7c6. HOSTED: claims remain fetchable attestations at their recorded run heads; a non-candidate head must explicitly be a superseded ancestor or a product-identical descendant, and Git refusal is UNKNOWN rather than empty.",
   "tiers": {
     "unit": {
       "label": "root unit and foundation",
       "tests": 2777,
-      "passed": 2777,
-      "failed": 0,
+      "passed": 2773,
+      "failed": 4,
       "skipped": 0,
       "files": 104,
-      "measuredAtCommit": "44ed47f81aadc695751c6d742cc62bbfc3d5838d",
+      "measuredAtCommit": "85b1648e7467ae3caaffd3a7db65fd52736a1476",
       "provenance": "LOCAL_COMPUTED_HOSTED_PENDING",
       "localLedger": {
         "path": "docs/phase-1/phase-1-27/evidence/local-run-ledger.json",
         "tier": "unit",
-        "atCommit": "4a1e6e86987b33f7a0223defe06ee35ac177fe26",
-        "howChecked": "`git show 4a1e6e86987b33f7a0223defe06ee35ac177fe26:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD at the commit that carries this record, rather than the working copy, which would let an uncommitted edit vouch for itself."
+        "atCommit": "85b1648e7467ae3caaffd3a7db65fd52736a1476",
+        "howChecked": "`git show 85b1648e7467ae3caaffd3a7db65fd52736a1476:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD at the commit that carries this record, rather than the working copy, which would let an uncommitted edit vouch for itself."
       },
       "hostedAttestation": {
         "runId": 31885987461,
@@ -292,11 +298,7 @@
         "describesSupersededHead": true,
         "supersededBy": "The hosted run taken at a head that DESCENDS from candidate 526a3b39 — the pull request CI for branch `p1-28/od-025-policy-enforcement`. Until that run exists this figure describes an ancestor and is cited as such; it is replaced by re-citing the same fields (run id, job id, head, artefact) at the descending head, never by relaxing the rule that refused it."
       },
-      "note": "Measured at 2c3d4095, a documentation-only successor of the candidate: the commits between them carry evidence records and nothing executable.",
-      "measurementDrift": [
-        "scripts/ci/build-p1-28-evidence-manifest.mjs",
-        "tests/ci/p1-28-evidence-manifest.test.ts"
-      ]
+      "note": "Measured at 2c3d4095, a documentation-only successor of the candidate: the commits between them carry evidence records and nothing executable."
     },
     "web": {
       "label": "web component and DOM",
@@ -305,13 +307,13 @@
       "failed": 0,
       "skipped": 0,
       "files": 101,
-      "measuredAtCommit": "3c83add9816c295a43bd3ffc1712235e1acd0b49",
+      "measuredAtCommit": "85b1648e7467ae3caaffd3a7db65fd52736a1476",
       "provenance": "LOCAL_COMPUTED_HOSTED_PENDING",
       "localLedger": {
         "path": "docs/phase-1/phase-1-27/evidence/local-run-ledger.json",
         "tier": "web",
-        "atCommit": "4a1e6e86987b33f7a0223defe06ee35ac177fe26",
-        "howChecked": "`git show 4a1e6e86987b33f7a0223defe06ee35ac177fe26:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD at the commit that carries this record, rather than the working copy, which would let an uncommitted edit vouch for itself."
+        "atCommit": "85b1648e7467ae3caaffd3a7db65fd52736a1476",
+        "howChecked": "`git show 85b1648e7467ae3caaffd3a7db65fd52736a1476:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD at the commit that carries this record, rather than the working copy, which would let an uncommitted edit vouch for itself."
       },
       "hostedAttestation": {
         "runId": 31885987461,
@@ -322,11 +324,7 @@
         "describesSupersededHead": true,
         "supersededBy": "The hosted run taken at a head that DESCENDS from candidate 526a3b39 — the pull request CI for branch `p1-28/od-025-policy-enforcement`. Until that run exists this figure describes an ancestor and is cited as such; it is replaced by re-citing the same fields (run id, job id, head, artefact) at the descending head, never by relaxing the rule that refused it."
       },
-      "note": "Measured at 66ec6244, a documentation-only successor of the candidate: the commits between them carry evidence records and nothing executable.",
-      "measurementDrift": [
-        "scripts/ci/build-p1-28-evidence-manifest.mjs",
-        "tests/ci/p1-28-evidence-manifest.test.ts"
-      ]
+      "note": "Measured at 66ec6244, a documentation-only successor of the candidate: the commits between them carry evidence records and nothing executable."
     },
     "backend": {
       "label": "backend integration, against a real PostgreSQL",
