@@ -33,16 +33,16 @@ the candidate, and refuses either half that fails to name an unclosed task.
 
 ## The frozen candidate
 
-| Binding           | Value                                                    |
-| ----------------- | -------------------------------------------------------- |
-| `FINAL_CODE_SHA`  | `b6902e3ce2151b9a863220fba9ec67d23c87a850`               |
-| `FINAL_CODE_TREE` | `e7f699bc18561bb257e13a7b8c350a26af5c374d`               |
-| Branch            | `feature/p1-28-owner-decisions-frontend`                 |
-| Pull request      | none yet, base `develop`, 20 commits ahead               |
-| Subject           | `fix(p1-28): close all 28 regression round-two findings` |
+| Binding           | Value                                                           |
+| ----------------- | --------------------------------------------------------------- |
+| `FINAL_CODE_SHA`  | `d88504640d0b8aed44d80795aba8943d6f88bc3f`                      |
+| `FINAL_CODE_TREE` | `2844afe8c07f0ee926c64227968225a0399c8dc2`                      |
+| Branch            | `feature/p1-28-owner-decisions-frontend`                        |
+| Pull request      | **#237**, base `develop`, 30 commits ahead                      |
+| Subject           | `revert(api): take the Backend cleanup out of a Frontend phase` |
 
-The previous candidate was `d9492ed680d287db6ca5c45297c0674ef6feea9a`, tree
-`e5d78364d1c68ed245ed56cb414a2c1bda8fe379`, on
+The previous candidate was `b6902e3ce2151b9a863220fba9ec67d23c87a850`, tree
+`e7f699bc18561bb257e13a7b8c350a26af5c374d`, on
 `remediation/p1-15-reception-document-foundation` (**#232**). It was superseded
 by **regression round two**: a finite refuter attacked this wave’s own repairs
 and confirmed 28 findings, of which two were reachable product defects. A paged

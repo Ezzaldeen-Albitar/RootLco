@@ -6,8 +6,8 @@
   "whatThisDoesNotProve": "This is not a tamper-proof seal. Anyone able to edit a document is able to re-run the generator and commit both. It removes SILENT revision, not revision.",
   "selfExclusion": "This manifest is the only path excluded from its own digest set, because a file containing its own hash has no fixed point. tests/ci/p1-28-evidence-manifest.test.ts asserts the exclusion is exactly this one path.",
   "candidate": {
-    "FINAL_CODE_SHA": "b6902e3ce2151b9a863220fba9ec67d23c87a850",
-    "FINAL_CODE_TREE": "e7f699bc18561bb257e13a7b8c350a26af5c374d",
+    "FINAL_CODE_SHA": "d88504640d0b8aed44d80795aba8943d6f88bc3f",
+    "FINAL_CODE_TREE": "2844afe8c07f0ee926c64227968225a0399c8dc2",
     "pullRequest": null,
     "recordedIn": "docs/phase-1/phase-1-28/evidence/closure-candidate.json",
     "restatedIn": "docs/phase-1/phase-1-28/evidence/closure-evidence.md"
@@ -71,12 +71,12 @@
       "bytes": 43201
     },
     "docs/phase-1/phase-1-28/evidence/closure-candidate.json": {
-      "sha256": "7d444c9a220fd576e6a3be44aaa426e31688d10f7f75edc0002aa1a4c48f83f1",
-      "bytes": 86412
+      "sha256": "c4272aca03b0fbe61c87374ab067d6bf5b2a11e80505051c7e1b2d599ca90a77",
+      "bytes": 87916
     },
     "docs/phase-1/phase-1-28/evidence/closure-evidence.md": {
-      "sha256": "0a2b6756ab7ed80cba1f31d8b03b14eda7b6666194af13afae3efd469485e46c",
-      "bytes": 76480
+      "sha256": "01abd6a1a5ea7fab674cb71ba18f05818c20bc092f87f7e26185156389d06fdb",
+      "bytes": 76529
     },
     "docs/phase-1/phase-1-28/evidence/final-refuter-ledger.json": {
       "sha256": "ab09b77ddfa1b75fa9b708e494603b0bab2e321ad6dfce80a7e98e433cc69b10",
