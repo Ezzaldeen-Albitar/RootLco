@@ -507,6 +507,107 @@ async function seedDocument(documentId: string, versionId: string, title: string
   );
 }
 
+/**
+ * A real damage-map template revision bound to the fixture document.
+ *
+ * DBCR-P1-28-001 makes the revision MANDATORY on a new map: the route schema
+ * refuses a payload without it, and the database guard refuses a NULL. A
+ * fixture that named only the document and its version described a binding
+ * the product no longer admits.
+ */
+async function seedDamageMapTemplate(): Promise<string> {
+  const TPL = 'c1180000-0000-4000-8000-0000000000f1';
+  const REV = 'c1180000-0000-4000-8000-0000000000f2';
+  const cat = (
+    await admin.query<{ id: string; purpose: string }>(
+      `SELECT id, business_link_purpose AS purpose FROM shared.document_categories
+        WHERE category_code = 'reception_damage_map_template' AND deleted_at IS NULL
+        ORDER BY (tenant_id IS NOT NULL) DESC LIMIT 1`
+    )
+  ).rows[0];
+  if (!cat) throw new Error('the reception_damage_map_template category is absent');
+  await admin.query(
+    `INSERT INTO shared.documents
+       (id, tenant_id, category_id, title, classification, retention_class, status, created_by)
+     VALUES ($1,$2,$3,'DBCR-P1-28-001 damage-map template','internal','evidence-audit','pending',$4)
+     ON CONFLICT (id) DO NOTHING`,
+    [DOC_MAP, TENANT_A, cat.id, USER_A]
+  );
+  await admin.query(
+    `INSERT INTO shared.document_versions
+       (id, tenant_id, document_id, version_number, storage_key, content_type,
+        size_bytes, sha256, uploaded_by, created_by)
+     VALUES ($1,$2,$3,1,$4,'image/png',1024, decode($5,'hex'), $6, $6)
+     ON CONFLICT (id) DO NOTHING`,
+    [VER_MAP, TENANT_A, DOC_MAP, 'dbcr128/' + DOC_MAP, SHA_HEX, USER_A]
+  );
+  await admin.query(
+    `INSERT INTO shared.file_scan_results
+       (tenant_id, version_id, scanner_code, scan_status, scanned_at, created_by)
+     VALUES ($1,$2,'harness','clean',now(),$3) ON CONFLICT DO NOTHING`,
+    [TENANT_A, VER_MAP, USER_A]
+  );
+  await admin.query(
+    `UPDATE shared.document_versions SET status='scanning' WHERE id=$1 AND status='pending'`,
+    [VER_MAP]
+  );
+  await admin.query(
+    `UPDATE shared.document_versions SET status='accepted' WHERE id=$1 AND status='scanning'`,
+    [VER_MAP]
+  );
+  await admin.query(
+    `INSERT INTO rec.damage_map_templates
+       (id, tenant_id, company_id, branch_id, map_type, perspective, created_by)
+     VALUES ($1,$2,$3,$4,'exterior',NULL,$5) ON CONFLICT (id) DO NOTHING`,
+    [TPL, TENANT_A, COMPANY_A1, BRANCH_A1, USER_A]
+  );
+  await admin.query(
+    `INSERT INTO shared.document_links
+       (tenant_id, document_id, entity_type, entity_id, link_purpose, linked_by, created_by)
+     VALUES ($1,$2,'rec.damage_map_templates',$3,$4,$5,$5) ON CONFLICT DO NOTHING`,
+    [TENANT_A, DOC_MAP, TPL, cat.purpose, USER_A]
+  );
+  await admin.query(
+    `INSERT INTO rec.damage_map_template_versions
+       (id, tenant_id, template_id, version_number, document_id, document_version_id, created_by)
+     VALUES ($1,$2,$3,1,$4,$5,$6) ON CONFLICT (id) DO NOTHING`,
+    [REV, TENANT_A, TPL, DOC_MAP, VER_MAP, USER_A]
+  );
+  /*
+   * A second slot for the INTERIOR map the cross-visit case records. The guard
+   * requires the map type to equal the slot's, so one exterior slot cannot
+   * serve both, and `uq_damage_map_template_one_active` forbids two live
+   * revisions on one slot.
+   */
+  const TPL_INT = 'c1180000-0000-4000-8000-0000000000f3';
+  damageMapRevisionInterior = 'c1180000-0000-4000-8000-0000000000f4';
+  await admin.query(
+    `INSERT INTO rec.damage_map_templates
+       (id, tenant_id, company_id, branch_id, map_type, perspective, created_by)
+     VALUES ($1,$2,$3,$4,'interior',NULL,$5) ON CONFLICT (id) DO NOTHING`,
+    [TPL_INT, TENANT_A, COMPANY_A1, BRANCH_A1, USER_A]
+  );
+  await admin.query(
+    `INSERT INTO shared.document_links
+       (tenant_id, document_id, entity_type, entity_id, link_purpose, linked_by, created_by)
+     VALUES ($1,$2,'rec.damage_map_templates',$3,$4,$5,$5) ON CONFLICT DO NOTHING`,
+    [TENANT_A, DOC_MAP, TPL_INT, cat.purpose, USER_A]
+  );
+  await admin.query(
+    `INSERT INTO rec.damage_map_template_versions
+       (id, tenant_id, template_id, version_number, document_id, document_version_id, created_by)
+     VALUES ($1,$2,$3,1,$4,$5,$6) ON CONFLICT (id) DO NOTHING`,
+    [damageMapRevisionInterior, TENANT_A, TPL_INT, DOC_MAP, VER_MAP, USER_A]
+  );
+
+  return REV;
+}
+
+/** The revision every damage_map payload in this suite is bound to. */
+let damageMapRevision = '';
+/** The INTERIOR slot's revision — a different map type needs a different slot. */
+let damageMapRevisionInterior = '';
+
 beforeAll(async () => {
   admin = adminPool();
   await ensureTestLogins(admin);
@@ -621,6 +722,11 @@ beforeAll(async () => {
      ON CONFLICT (id) DO NOTHING`,
     [CATEGORY_A, TENANT_A, USER_A]
   );
+  // DBCR-P1-28-001: the template document must exist in the
+  // reception_damage_map_template category BEFORE the generic seeder runs —
+  // shared.documents.category_id is immutable and that seeder uses ON CONFLICT
+  // DO NOTHING, so whichever writes the row first decides its category.
+  damageMapRevision = await seedDamageMapTemplate();
   await seedDocument(DOC_MAP, VER_MAP, 'P1-18 damage map template');
   await seedDocument(DOC_SIG, VER_SIG, 'P1-18 signature capture');
 
@@ -786,10 +892,10 @@ describe('rec.reception-condition-evidence', () => {
 
     const map = await recordEvidence(visit, {
       kind: 'damage_map',
+      damageMapTemplateVersionId: damageMapRevision,
       documentId: DOC_MAP,
       documentVersionId: VER_MAP,
       mapType: 'exterior',
-      perspective: 'front',
     });
     expect(map.status).toBe(201);
     const damageMapId = (await json(map)).evidenceId ?? '';
@@ -856,6 +962,7 @@ describe('rec.reception-condition-evidence', () => {
         await json(
           await recordEvidence(visit, {
             kind: 'damage_map',
+            damageMapTemplateVersionId: damageMapRevision,
             documentId: DOC_MAP,
             documentVersionId: VER_MAP,
             mapType: 'exterior',
@@ -982,6 +1089,7 @@ describe('rec.reception-condition-evidence', () => {
 
     const refused = await recordEvidence(visit, {
       kind: 'damage_map',
+      damageMapTemplateVersionId: damageMapRevision,
       documentId: DOC_MAP,
       // A real, visible version of tenant A — but of the OTHER document.
       documentVersionId: VER_SIG,
@@ -1015,6 +1123,7 @@ describe('rec.reception-condition-evidence', () => {
         await json(
           await recordEvidence(other, {
             kind: 'damage_map',
+            damageMapTemplateVersionId: damageMapRevisionInterior,
             documentId: DOC_MAP,
             documentVersionId: VER_MAP,
             mapType: 'interior',
