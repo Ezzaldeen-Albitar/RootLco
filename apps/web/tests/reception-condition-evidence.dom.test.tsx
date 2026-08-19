@@ -751,6 +751,7 @@ describe('the damage step (FE-012)', () => {
           perspective: 'front',
           documentId: 'doc-2',
           documentVersionId: 'ver-2',
+          activeVersionId: 'tv-2',
           activeVersionNumber: 7,
         }),
       ])
@@ -780,9 +781,25 @@ describe('the damage step (FE-012)', () => {
       kind: 'damage_map',
       documentId: 'doc-2',
       documentVersionId: 'ver-2',
+      /*
+       * The REVISION id, and it is load-bearing rather than decorative.
+       *
+       * `rec.guard_damage_map_template_binding()` begins
+       * `IF NEW.damage_map_template_version_id IS NULL THEN RETURN NEW`, so a
+       * write that omits this field is admitted with no check that the slot is
+       * still active or the revision still live. Measured against the running
+       * API during Owner acceptance: a NEW visit binding a RETIRED template's
+       * document/version pair was answered 201 without this field and 422 with
+       * it. Omitting it is therefore not a smaller request — it is the same
+       * request with its guard disabled, and it also leaves the stored map
+       * unable to say which revision it was drawn on.
+       */
+      damageMapTemplateVersionId: 'tv-2',
       mapType: 'interior',
       perspective: 'front',
     });
+    // The chosen template's revision, never the default one's.
+    expect((input as Record<string, unknown>)['damageMapTemplateVersionId']).not.toBe('tv-1');
     // The chosen revision, not the default one — an assertion the equality above
     // would also satisfy if the two templates shared a document.
     expect((input as Record<string, unknown>)['documentId']).not.toBe('doc-1');
@@ -816,6 +833,9 @@ describe('the damage step (FE-012)', () => {
       kind: 'damage_map',
       documentId: 'doc-1',
       documentVersionId: 'ver-1',
+      // The revision the binding guard needs; see the exact-revision case above
+      // for why omitting it disables the check rather than shortening the call.
+      damageMapTemplateVersionId: 'tv-1',
       mapType: 'exterior',
     });
     expect('perspective' in input).toBe(false);
@@ -898,6 +918,9 @@ describe('the damage step (FE-012)', () => {
       kind: 'damage_map',
       documentId: 'doc-1',
       documentVersionId: 'ver-1',
+      // The revision the binding guard needs; see the exact-revision case above
+      // for why omitting it disables the check rather than shortening the call.
+      damageMapTemplateVersionId: 'tv-1',
       mapType: 'exterior',
     });
   });
@@ -1195,6 +1218,68 @@ describe('the damage step (FE-012)', () => {
     // alone cannot fail, because every value the form can hold is in bounds.
     expect(input['coordX']).toBe(0.5);
     expect(input['coordY']).toBe(0.5);
+  });
+
+  it('names the map in the MARK chooser in words, never the stored token', async () => {
+    /*
+     * Found by hand in the running product during Owner acceptance, with every
+     * automated tier green.
+     *
+     * The template picker translated `mapType` and the read-back translated
+     * `mapType`, so the closed vocabulary was covered twice — but the chooser
+     * that says WHICH MAP a mark hangs off built its label by joining the
+     * column, and it sits a few lines below both of them. One screen offered
+     * `exterior · top` directly beneath the same value rendered `Exterior`: an
+     * operator was shown a vehicle's outside two ways, one of them the
+     * database's name for it.
+     *
+     * The two halves are asserted apart because they are different kinds of
+     * value. `mapType` is `ck_damage_maps_type`, four frozen tokens, so it must
+     * arrive as a phrase from the catalogue. `perspective` is `text` the
+     * operator typed, so it must arrive UNCHANGED — translating it would be the
+     * mirror-image defect, inventing words nobody wrote.
+     *
+     * `/\bexterior\b/` is case-SENSITIVE on purpose: `Exterior` is the answer
+     * and `exterior` is the defect, and a case-insensitive sweep here could
+     * never tell them apart.
+     */
+    evidenceByKind({ damage_map: [DAMAGE_MAP] });
+    renderLtr(<DamageMapStep {...stepProps()} />);
+
+    const form = await screen.findByRole('form', { name: EN['receptions.damage.formLabel']! });
+    const chooser = within(form).getByLabelText(new RegExp(EN['receptions.damage.map']!));
+    const option = within(chooser)
+      .getAllByRole('option')
+      .find((entry) => (entry as HTMLOptionElement).value === 'map-1');
+
+    expect(option, 'the recorded map was not offered to hang a mark off').toBeDefined();
+    expect(option!.textContent).toContain(EN['receptions.damage.mapType.exterior']!);
+    expect(option!.textContent).toContain(DAMAGE_MAP.perspective);
+    expect(option!.textContent).not.toMatch(/\bexterior\b/);
+  });
+
+  it('says what the revision number IS, rather than printing a bare numeral', async () => {
+    /*
+     * Also found by hand during Owner acceptance. The bound revision was shown
+     * — the step is right that it must be — but as an unlabelled `1` floating
+     * between a select and a button, which is the number of nothing in
+     * particular. A correct value nobody can read costs an operator exactly
+     * what omitting it costs, and it is worse than omitting it in one respect:
+     * it looks like an answer.
+     *
+     * The digits keep `dir="ltr"` and the label does not, so `1` reads the same
+     * way in Arabic while the sentence around it follows the page.
+     */
+    readCaptureContract.mockResolvedValue(
+      captureContract([template({ id: 'tpl-1', activeVersionNumber: 4 })])
+    );
+    renderLtr(<DamageMapStep {...stepProps()} />);
+
+    const caption = await within(mapsPanel()).findByTestId('damage-template-revision');
+    expect(caption).toHaveTextContent(
+      new RegExp(`${EN['receptions.damage.templateRevision']!}\\s*4`)
+    );
+    expect(within(caption).getByText('4')).toHaveAttribute('dir', 'ltr');
   });
 
   it('submits the coordinate the operator TYPED, to the digit — `0.125` is not `0.13`', async () => {

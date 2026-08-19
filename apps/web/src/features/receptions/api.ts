@@ -186,6 +186,17 @@ const evidenceSchema = z.discriminatedUnion('kind', [
       kind: z.literal('damage_map'),
       documentId: uuid,
       documentVersionId: uuid,
+      /*
+       * The published revision the map is drawn on, and REQUIRED here.
+       *
+       * `rec.guard_damage_map_template_binding()` returns early when the column
+       * is NULL, so a map sent without this field is written with the FE-012
+       * retirement rule switched off — measured against the running API, which
+       * answered 201 to a new visit binding a retired template's document pair
+       * without it and 422 with it. Optional here would mean the guard is
+       * optional, which is not a choice a caller should have.
+       */
+      damageMapTemplateVersionId: uuid,
       mapType: z.string().min(1).max(MAX_MAP_TYPE),
       perspective: z.string().min(1).max(MAX_MAP_TYPE).nullable().optional(),
     })

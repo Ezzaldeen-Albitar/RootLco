@@ -995,6 +995,22 @@ export interface DamageMapEvidenceInput {
   readonly kind: 'damage_map';
   readonly documentId: string;
   readonly documentVersionId: string;
+  /**
+   * WHICH published revision this map was drawn on.
+   *
+   * Not optional, and the reason is that the whole FE-012 retirement rule hangs
+   * off it. `rec.guard_damage_map_template_binding()` opens with
+   * `IF NEW.damage_map_template_version_id IS NULL THEN RETURN NEW`, so a map
+   * that omits it is admitted without any check that the slot is still active
+   * or the revision still live — measured against the running API, which
+   * answered 201 to a NEW visit binding a RETIRED template's pair and 422 to
+   * the same request once this field named the revision.
+   *
+   * Sending the document and version alone is therefore not "the same binding,
+   * expressed differently": it is the binding with its guard switched off, and
+   * it leaves the map with no record of the revision it used.
+   */
+  readonly damageMapTemplateVersionId: string;
   /** Bounded string; membership belongs to the database CHECK. */
   readonly mapType: string;
   readonly perspective?: string | null;

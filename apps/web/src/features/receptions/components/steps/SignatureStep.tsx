@@ -7,6 +7,7 @@ import { SelectField, TextAreaField } from '@/components/forms/Field';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
 import { PartyLabel } from '@/components/party/PartyLabel';
 import { translate, translateDynamic } from '@/i18n/get-messages';
+import { formatDateTime } from '@/lib/format';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { ACCEPTED_VERSION_STATUS } from '@/features/attachments/attachments-contract';
@@ -171,6 +172,21 @@ export function SignatureStep({
     label: row.partnerDisplayName ?? translate(messages, 'receptions.parties.nameWithheld'),
   }));
 
+  /*
+   * The names the LEDGER resolves its signers against.
+   *
+   * From the party read already on this screen rather than a second call, and a
+   * `Map` rather than a scan because a ledger of any length would otherwise be
+   * quadratic in the party list.
+   *
+   * It is deliberately not exhaustive, and `signerNameOf` says so. The read is
+   * filtered to ACTIVE parties, so a signature given by somebody since removed
+   * from the visit resolves to nothing here — which is a fact worth stating in
+   * words, and never a reason to fall back to printing the uuid the row
+   * carries.
+   */
+  const partyNames = new Map(rows.map((row) => [row.partnerId, row.partnerDisplayName]));
+
   return (
     <div className="flex flex-col gap-4">
       <EvidenceSection
@@ -204,6 +220,7 @@ export function SignatureStep({
                 messages={messages}
                 visitId={visitId}
                 entry={entry}
+                partyNames={partyNames}
                 canSign={canSign}
                 onDone={() => {
                   startTransition(() => {
@@ -376,11 +393,37 @@ export function SignatureStep({
  * only fail is worse than none: `finalized` needs an ACCEPTED version and an
  * un-repudiated draft; `repudiated` needs a finalization to withdraw.
  */
+/**
+ * WHO the ledger says signed, in words.
+ *
+ * Four different facts, and a uuid is not one of the answers. `signerPartnerId`
+ * is nullable by contract — an employee signing in their own role is not a
+ * partner — and the party read this resolves against is filtered to ACTIVE
+ * parties, so a signature given by somebody since removed from the visit is
+ * genuinely unresolvable here. Each case is stated as itself rather than
+ * collapsed into one hedge, because "nobody was named" and "the person named is
+ * no longer on this visit" would send a reader looking in different places.
+ */
+function signerNameOf(
+  messages: Messages,
+  partyNames: ReadonlyMap<string, string | null>,
+  signerPartnerId: string | null
+): string {
+  if (signerPartnerId === null) {
+    return translate(messages, 'receptions.signature.signerUnattributed');
+  }
+  if (!partyNames.has(signerPartnerId)) {
+    return translate(messages, 'receptions.signature.signerNotOnVisit');
+  }
+  return partyNames.get(signerPartnerId) ?? translate(messages, 'receptions.parties.nameWithheld');
+}
+
 function SignatureRow({
   locale,
   messages,
   visitId,
   entry,
+  partyNames,
   canSign,
   onDone,
 }: {
@@ -388,6 +431,7 @@ function SignatureRow({
   readonly messages: Messages;
   readonly visitId: string;
   readonly entry: SignatureEntry;
+  readonly partyNames: ReadonlyMap<string, string | null>;
   readonly canSign: boolean;
   readonly onDone: () => void;
 }) {
@@ -407,6 +451,33 @@ function SignatureRow({
         {translateDynamic(messages, `receptions.signaturePurpose.${entry.purpose}`)}
       </p>
 
+      {/*
+        WHO signed, by what means, and when.
+
+        All three travel on `rec.reception-signature-list` — `signerPartnerId`,
+        `captureMethod`, `signedAt` — and the row used to render none of them,
+        so a finalized signature read back as a role and a purpose and nothing
+        else. That is not a record of who put their name to what: two people
+        signing the same visit for the same purpose were indistinguishable on
+        the ledger, and the means of capture, which is part of what makes a
+        signature evidence, was simply absent.
+
+        The capture method is a closed four-value vocabulary and is translated.
+        The date follows the page locale. Neither the partner uuid nor the
+        document uuid is ever printed.
+      */}
+      <p
+        data-testid={`signature-attribution-${entry.id}`}
+        className="text-caption text-text-secondary"
+      >
+        {signerNameOf(messages, partyNames, entry.signerPartnerId)}
+        {' · '}
+        {translateDynamic(messages, `receptions.signature.captureMethod.${entry.captureMethod}`)}
+        {' · '}
+        {translate(messages, 'receptions.signature.signedAtLabel')}{' '}
+        {formatDateTime(entry.signedAt, locale)}
+      </p>
+
       {/* What became of it. A repudiated signature stays on the ledger. */}
       <p data-testid={`signature-status-${entry.id}`} className="text-caption text-text-secondary">
         {translateDynamic(messages, `receptions.signature.status.${entry.status}`)}
@@ -414,6 +485,34 @@ function SignatureRow({
           ? ` · ${translate(messages, 'receptions.signature.superseded')}`
           : ''}
       </p>
+
+      {/*
+        The lifecycle events, each shown only once it has happened.
+
+        `finalizedAt` and `repudiatedAt` are the timestamps of the two rows in
+        `rec.signature_events`, so a ledger that showed only the current status
+        could say a signature is Final without ever saying WHEN it became so —
+        and for a repudiation, when the party withdrew it. Both are part of the
+        history the Owner decision requires to remain readable.
+      */}
+      {entry.finalizedAt !== null ? (
+        <p
+          data-testid={`signature-finalized-at-${entry.id}`}
+          className="text-caption text-text-muted"
+        >
+          {translate(messages, 'receptions.signature.finalizedAtLabel')}{' '}
+          {formatDateTime(entry.finalizedAt, locale)}
+        </p>
+      ) : null}
+      {entry.repudiatedAt !== null ? (
+        <p
+          data-testid={`signature-repudiated-at-${entry.id}`}
+          className="text-caption text-text-muted"
+        >
+          {translate(messages, 'receptions.signature.repudiatedAtLabel')}{' '}
+          {formatDateTime(entry.repudiatedAt, locale)}
+        </p>
+      ) : null}
 
       {/* The bound VERSION's state — what makes a signature final or not. */}
       <p data-testid={`signature-version-${entry.id}`} className="text-caption text-text-muted">

@@ -267,7 +267,14 @@ export function DamageMapStep({
    */
   const selectableTemplates = (templates ?? []).filter(
     (entry) =>
-      entry.status === 'active' && entry.documentId !== null && entry.documentVersionId !== null
+      entry.status === 'active' &&
+      entry.documentId !== null &&
+      entry.documentVersionId !== null &&
+      // The revision id travels to the write and the binding guard is inert
+      // without it, so a slot that cannot name its revision is not selectable —
+      // offering it would produce exactly the unguarded map this filter exists
+      // to prevent.
+      entry.activeVersionId !== null
   );
   const retiredTemplates = (templates ?? []).filter((entry) => entry.status !== 'active');
 
@@ -282,7 +289,24 @@ export function DamageMapStep({
     return rows.map((row) => {
       const mapType = primitiveField(row, 'mapType');
       const perspective = primitiveField(row, 'perspective');
-      const label = [mapType, perspective].filter((part) => part !== null).join(' · ');
+      /*
+       * The map type is TRANSLATED, exactly as the template picker and the
+       * read-back translate it.
+       *
+       * `ck_damage_maps_type` is a closed vocabulary, so the stored value is
+       * `exterior` and never a phrase. Joining the column straight into the
+       * label put the raw enum in front of an operator a few lines below the
+       * very same value rendered as `Exterior` by the read-back — one screen
+       * saying a vehicle's outside two ways, one of them the database's.
+       *
+       * The perspective is NOT translated and must not be: it is the operator's
+       * own words, bounded but never drawn from a vocabulary.
+       */
+      const typeLabel =
+        mapType === null
+          ? null
+          : translateDynamic(messages, `receptions.damage.mapType.${mapType}`);
+      const label = [typeLabel, perspective].filter((part) => part !== null).join(' · ');
       return {
         value: row.id,
         label:
@@ -291,7 +315,7 @@ export function DamageMapStep({
             : `${label} — ${formatDateTime(row.recordedAt, locale)}`,
       };
     });
-  }, [maps.response, locale]);
+  }, [maps.response, locale, messages]);
 
   /*
    * Whether a mark can be hung off anything — asked of the READ, not of the
@@ -357,6 +381,22 @@ export function DamageMapStep({
                   kind: 'damage_map',
                   documentId: template.documentId as string,
                   documentVersionId: template.documentVersionId as string,
+                  /*
+                   * The REVISION, named. Sending the document pair alone left
+                   * `rec.damage_maps.damage_map_template_version_id` NULL, and
+                   * the binding guard returns early on NULL — so the rule that
+                   * a retired slot cannot be bound to a NEW visit was enforced
+                   * only on a path this client never took. Measured: the API
+                   * answered 201 to a new visit binding a retired template's
+                   * pair without this field, and 422 with it.
+                   *
+                   * It also restores what the map is supposed to remember. A
+                   * map that carries only a document version can be resolved
+                   * back to a drawing, but not to the revision of the slot it
+                   * came from, which is what a later reader needs to say which
+                   * diagram the workshop was using that day.
+                   */
+                  damageMapTemplateVersionId: template.activeVersionId as string,
                   mapType: template.mapType,
                   ...(template.perspective === null ? {} : { perspective: template.perspective }),
                 },
@@ -831,10 +871,24 @@ function MapForm({
               : `${translateDynamic(messages, `receptions.damage.mapType.${entry.mapType}`)} · ${entry.perspective}`,
         }))}
       />
-      {/* The revision the mark will be anchored to, shown rather than implied. */}
-      <p className="text-caption text-text-muted" dir="ltr">
-        {template?.activeVersionNumber ?? ''}
-      </p>
+      {/*
+       * The revision the mark will be anchored to, NAMED rather than implied.
+       *
+       * It used to render as a bare numeral — a `1` floating between a select
+       * and a button, which is the number of nothing in particular. The value
+       * was correct and unreadable, which is the same cost to an operator as
+       * not showing it. `dir="ltr"` now wraps the DIGITS only, so they keep
+       * their order in Arabic while the label follows the page direction.
+       *
+       * Nothing is rendered when no template is chosen: a label with no number
+       * beside it would be a second way of saying nothing.
+       */}
+      {template === undefined ? null : (
+        <p className="text-caption text-text-muted" data-testid="damage-template-revision">
+          {translate(messages, 'receptions.damage.templateRevision')}{' '}
+          <span dir="ltr">{template.activeVersionNumber}</span>
+        </p>
+      )}
       <button type="submit" disabled={pending || !template} className={PRIMARY_BUTTON}>
         {translate(messages, 'receptions.damage.templateSubmit')}
       </button>
