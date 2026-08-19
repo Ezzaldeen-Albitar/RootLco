@@ -95,11 +95,28 @@ const DamageMap = z
     documentVersionId: schemas.uuid,
     mapType: z.string().min(1).max(MAX_MAP_TYPE),
     perspective: z.string().min(1).max(MAX_MAP_TYPE).nullable().optional(),
-    // The MANAGED template revision (Owner decision FE-012). Optional so the
-    // shipped contract is not withdrawn; when present the database requires it
-    // to be the active revision of an active slot carrying exactly the document
-    // and version above, and it is immutable from then on.
-    damageMapTemplateVersionId: schemas.uuid.nullable().optional(),
+    /*
+     * The MANAGED template revision (Owner decision FE-012), REQUIRED.
+     *
+     * It was optional, with the reasoning that the shipped contract should not
+     * be withdrawn and that "when present the database requires it" to be a live
+     * revision of an active slot. The second half was true and the first half
+     * made it irrelevant: `rec.guard_damage_map_template_binding()` opened with
+     * `IF NEW.damage_map_template_version_id IS NULL THEN RETURN NEW`, so a
+     * caller that simply omitted the field was admitted with the whole FE-012
+     * rule unevaluated — and the shipped web client omitted it.
+     *
+     * Measured on the running API before DBCR-P1-28-001: a NEW visit binding a
+     * RETIRED template's document/version pair answered 201 without this field
+     * and 422 with it. An optional field guarding a mandatory invariant is not a
+     * smaller contract, it is an unenforced one.
+     *
+     * Required HERE as well as in the database so the refusal is a named 422 on
+     * the field rather than a trigger exception surfacing as a 500, and
+     * `nullable()` is gone for the same reason: an explicit null was the same
+     * omission wearing different clothes.
+     */
+    damageMapTemplateVersionId: schemas.uuid,
   })
   .strict();
 

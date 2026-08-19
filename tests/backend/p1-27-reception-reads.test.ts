@@ -338,6 +338,78 @@ async function seedPrincipal(
   );
 }
 
+/**
+ * A real damage-map template revision bound to the fixture document.
+ *
+ * DBCR-P1-28-001 makes the revision MANDATORY on a new map: the route schema
+ * refuses a payload without it, and the database guard refuses a NULL. A
+ * fixture that named only the document and its version described a binding
+ * the product no longer admits.
+ */
+async function seedDamageMapTemplate(): Promise<string> {
+  const TPL = 'c1150000-0000-4000-8000-0000000000f1';
+  const REV = 'c1150000-0000-4000-8000-0000000000f2';
+  const cat = (
+    await admin.query<{ id: string; purpose: string }>(
+      `SELECT id, business_link_purpose AS purpose FROM shared.document_categories
+        WHERE category_code = 'reception_damage_map_template' AND deleted_at IS NULL
+        ORDER BY (tenant_id IS NOT NULL) DESC LIMIT 1`
+    )
+  ).rows[0];
+  if (!cat) throw new Error('the reception_damage_map_template category is absent');
+  await admin.query(
+    `INSERT INTO shared.documents
+       (id, tenant_id, category_id, title, classification, retention_class, status, created_by)
+     VALUES ($1,$2,$3,'DBCR-P1-28-001 damage-map template','internal','evidence-audit','pending',$4)
+     ON CONFLICT (id) DO NOTHING`,
+    [DOC_MAP, TENANT_A, cat.id, USER_A]
+  );
+  await admin.query(
+    `INSERT INTO shared.document_versions
+       (id, tenant_id, document_id, version_number, storage_key, content_type,
+        size_bytes, sha256, uploaded_by, created_by)
+     VALUES ($1,$2,$3,1,$4,'image/png',1024, decode($5,'hex'), $6, $6)
+     ON CONFLICT (id) DO NOTHING`,
+    [VER_MAP, TENANT_A, DOC_MAP, 'dbcr128/' + DOC_MAP, SHA_HEX, USER_A]
+  );
+  await admin.query(
+    `INSERT INTO shared.file_scan_results
+       (tenant_id, version_id, scanner_code, scan_status, scanned_at, created_by)
+     VALUES ($1,$2,'harness','clean',now(),$3) ON CONFLICT DO NOTHING`,
+    [TENANT_A, VER_MAP, USER_A]
+  );
+  await admin.query(
+    `UPDATE shared.document_versions SET status='scanning' WHERE id=$1 AND status='pending'`,
+    [VER_MAP]
+  );
+  await admin.query(
+    `UPDATE shared.document_versions SET status='accepted' WHERE id=$1 AND status='scanning'`,
+    [VER_MAP]
+  );
+  await admin.query(
+    `INSERT INTO rec.damage_map_templates
+       (id, tenant_id, company_id, branch_id, map_type, perspective, created_by)
+     VALUES ($1,$2,$3,$4,'exterior',NULL,$5) ON CONFLICT (id) DO NOTHING`,
+    [TPL, TENANT_A, COMPANY_A1, BRANCH_A1, USER_A]
+  );
+  await admin.query(
+    `INSERT INTO shared.document_links
+       (tenant_id, document_id, entity_type, entity_id, link_purpose, linked_by, created_by)
+     VALUES ($1,$2,'rec.damage_map_templates',$3,$4,$5,$5) ON CONFLICT DO NOTHING`,
+    [TENANT_A, DOC_MAP, TPL, cat.purpose, USER_A]
+  );
+  await admin.query(
+    `INSERT INTO rec.damage_map_template_versions
+       (id, tenant_id, template_id, version_number, document_id, document_version_id, created_by)
+     VALUES ($1,$2,$3,1,$4,$5,$6) ON CONFLICT (id) DO NOTHING`,
+    [REV, TENANT_A, TPL, DOC_MAP, VER_MAP, USER_A]
+  );
+  return REV;
+}
+
+/** The revision every damage_map payload in this suite is bound to. */
+let damageMapRevision = '';
+
 beforeAll(async () => {
   admin = adminPool();
   await ensureTestLogins(admin);
@@ -485,21 +557,11 @@ beforeAll(async () => {
      ON CONFLICT (id) DO NOTHING`,
     [CATEGORY_A, TENANT_A, USER_A]
   );
-  await admin.query(
-    `INSERT INTO shared.documents
-       (id, tenant_id, category_id, title, classification, retention_class, status, created_by)
-     VALUES ($1,$2,$3,'P1-27 damage map template','internal','evidence-audit','pending',$4)
-     ON CONFLICT (id) DO NOTHING`,
-    [DOC_MAP, TENANT_A, CATEGORY_A, USER_A]
-  );
-  await admin.query(
-    `INSERT INTO shared.document_versions
-       (id, tenant_id, document_id, version_number, storage_key, content_type,
-        size_bytes, sha256, uploaded_by, created_by)
-     VALUES ($1,$2,$3,1,'p127-read/map','application/pdf',1024, decode($4,'hex'), $5, $5)
-     ON CONFLICT (id) DO NOTHING`,
-    [VER_MAP, TENANT_A, DOC_MAP, SHA_HEX, USER_A]
-  );
+  // DBCR-P1-28-001: the damage-map document is created by the template seeder,
+  // in the reception_damage_map_template category the guard demands.
+  // shared.documents.category_id is immutable, so it cannot be created here
+  // under the generic fixture category and moved afterwards.
+  damageMapRevision = await seedDamageMapTemplate();
 
   runtime = runtimeAppPool();
   __setPrimaryPoolForTests(runtime);
@@ -876,6 +938,7 @@ describe('condition evidence — eight kinds, and the restricted narrative never
     });
     const mapId = await record({
       kind: 'damage_map',
+      damageMapTemplateVersionId: damageMapRevision,
       documentId: DOC_MAP,
       documentVersionId: VER_MAP,
       mapType: 'exterior',

@@ -33,15 +33,35 @@ the candidate, and refuses either half that fails to name an unclosed task.
 
 ## The frozen candidate
 
-| Binding           | Value                                              |
-| ----------------- | -------------------------------------------------- |
-| `FINAL_CODE_SHA`  | `bda8b12d29b268af09c5d8fdc0c900bddf577aa4`         |
-| `FINAL_CODE_TREE` | `f923539fe565b2d339c7f9cbd15de544b30817e8`         |
-| Branch            | `feature/p1-28-owner-decisions-frontend`           |
-| Pull request      | **#237**, base `develop`, 38 commits ahead         |
-| Subject           | `test: record why the storage round-trip may skip` |
+| Binding           | Value                                                                       |
+| ----------------- | --------------------------------------------------------------------------- |
+| `FINAL_CODE_SHA`  | `338a5ffc7da918f2a7e83ed353f175b62c20bc6d`                                  |
+| `FINAL_CODE_TREE` | `b088fb8a8e8ecd73723163ecae42e267eb1b1020`                                  |
+| Branch            | `remediation/p1-28-owner-qa-backend`                                        |
+| Pull request      | **#238**, base `develop`, 1 commit ahead                                    |
+| Subject           | `fix(p1-28): DBCR-P1-28-001 — a damage map must name its template revision` |
 
-The previous candidate was `d88504640d0b8aed44d80795aba8943d6f88bc3f`, tree
+**Why the candidate moved.** Owner acceptance drove the reception damage-map
+surface in a production build and found that
+`rec.guard_damage_map_template_binding()` opened with
+`IF NEW.damage_map_template_version_id IS NULL THEN RETURN NEW` — so every FE-012
+rule it states applied only to a caller that volunteered the revision id, and the
+shipped web client did not. Measured against the running API: a NEW visit binding
+a RETIRED template's document/version pair answered **201** without the field and
+**422** with it, so the retirement rule was enforced only on a path the product
+never took. Fixing it changes five files under `apps/**` and `supabase/**`, and
+this package's own rule is that a product change invalidates the candidate rather
+than travelling as a successor — so the candidate is re-frozen on the commit that
+CARRIES the product change, and the documentation commits that follow it are
+printed rather than named.
+
+The candidate before this one was `bda8b12d29b268af09c5d8fdc0c900bddf577aa4`,
+tree `f923539fe565b2d339c7f9cbd15de544b30817e8`, on
+`feature/p1-28-owner-decisions-frontend` (**#237**), subject
+`test: record why the storage round-trip may skip`. It is history, not evidence
+about this candidate, and nothing below is cited from it.
+
+The candidate before that was `d88504640d0b8aed44d80795aba8943d6f88bc3f`, tree
 `2844afe8c07f0ee926c64227968225a0399c8dc2`, on
 `remediation/p1-15-reception-document-foundation` (**#232**). It was superseded
 by **regression round two**: a finite refuter attacked this wave’s own repairs
