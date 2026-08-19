@@ -277,17 +277,17 @@
     "unit": {
       "label": "root unit and foundation",
       "tests": 2777,
-      "passed": 2772,
-      "failed": 5,
+      "passed": 2777,
+      "failed": 0,
       "skipped": 0,
       "files": 104,
-      "measuredAtCommit": "e1f6a2aa86f55dc90c450e5e1bcbfcaf1c40f647",
+      "measuredAtCommit": "44ed47f81aadc695751c6d742cc62bbfc3d5838d",
       "provenance": "LOCAL_COMPUTED_HOSTED_PENDING",
       "localLedger": {
         "path": "docs/phase-1/phase-1-27/evidence/local-run-ledger.json",
         "tier": "unit",
-        "atCommit": "3ddfd5db6a5eaf604288ab2e9e77826371e759a9",
-        "howChecked": "`git show 3ddfd5db6a5eaf604288ab2e9e77826371e759a9:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD at the commit that carries this record, rather than the working copy, which would let an uncommitted edit vouch for itself."
+        "atCommit": "3c83add9816c295a43bd3ffc1712235e1acd0b49",
+        "howChecked": "`git show 3c83add9816c295a43bd3ffc1712235e1acd0b49:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD at the commit that carries this record, rather than the working copy, which would let an uncommitted edit vouch for itself."
       },
       "hostedAttestation": {
         "runId": 31885987461,
@@ -316,8 +316,8 @@
       "localLedger": {
         "path": "docs/phase-1/phase-1-27/evidence/local-run-ledger.json",
         "tier": "web",
-        "atCommit": "3ddfd5db6a5eaf604288ab2e9e77826371e759a9",
-        "howChecked": "`git show 3ddfd5db6a5eaf604288ab2e9e77826371e759a9:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD at the commit that carries this record, rather than the working copy, which would let an uncommitted edit vouch for itself."
+        "atCommit": "3c83add9816c295a43bd3ffc1712235e1acd0b49",
+        "howChecked": "`git show 3c83add9816c295a43bd3ffc1712235e1acd0b49:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD at the commit that carries this record, rather than the working copy, which would let an uncommitted edit vouch for itself."
       },
       "hostedAttestation": {
         "runId": 31885987461,
