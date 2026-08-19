@@ -1,6 +1,13 @@
 -- ============================================================================
 -- DBCR-P1-28-001 — a damage map must NAME the revision it was drawn on.
 --
+-- Rollback classification: ROLL-FORWARD-ONLY. Forward-only — no down script.
+--   The guard replacement alone would be reversible, but the backfill is not:
+--   it writes `damage_map_template_version_id` on historical rows, and reverting
+--   would mean deciding which of those values had been NULL before — a fact this
+--   migration does not preserve because the column it fills is the only place it
+--   was ever recorded. A correction goes forward as a new migration.
+--
 -- Owner QA, 2026-08-19, against the running production build.
 --
 -- ## The defect

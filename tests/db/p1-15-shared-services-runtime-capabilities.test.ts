@@ -327,11 +327,11 @@ describe('P1-15 / global security posture', () => {
     // The tail is asserted FOUR deep, one per branch that contributed. A shorter
     // tail would go on passing with any one of them missing — the shape that
     // lets a migration vanish in a merge and take its grants with it.
-    expect(files).toHaveLength(123);
-    expect(files.at(-4)).toBe('20260731090000_rec_custody_release_visit_marker.sql');
-    expect(files.at(-3)).toBe('20260815090000_shared_reception_evidence_foundation.sql');
-    expect(files.at(-2)).toBe('20260815093000_rec_receiving_employee_identity.sql');
-    expect(files.at(-1)).toBe('20260815100000_rec_reception_evidence_contracts.sql');
+    expect(files).toHaveLength(124);
+    expect(files.at(-4)).toBe('20260815090000_shared_reception_evidence_foundation.sql');
+    expect(files.at(-3)).toBe('20260815093000_rec_receiving_employee_identity.sql');
+    expect(files.at(-2)).toBe('20260815100000_rec_reception_evidence_contracts.sql');
+    expect(files.at(-1)).toBe('20260819090000_rec_damage_map_revision_required.sql');
   });
 
   it('migration 121 changes the shared surface DELIBERATELY, and the change is bounded', () => {
