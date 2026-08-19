@@ -1127,6 +1127,108 @@ describe('P1-28-QA-005 — a re-freeze may not carry the old head’s numbers fo
     return { doc: doc as unknown as Record<string, unknown>, superseded };
   };
 
+  it('refuses a hosted binding whose head is neither the candidate nor DECLARED', () => {
+    /*
+     * Found by mutating the committed package, and the gate's own docblock had
+     * said so for as long as the code had not: *"An undeclared head, a head this
+     * repository does not contain, a head that is neither ancestor nor
+     * descendant … are all refused."*
+     *
+     * The line under it read `if (!marked) continue;`, deferring to "tierBinding /
+     * packageArithmetic own the undeclared case". True of the five
+     * `tiers.*.hostedAttestation` sites; NOT true of the six top-level ones —
+     * `hostedCi`, `codeql`, `database`, `browserByProject`,
+     * `dependencySecurity`, `productionBuild` — which nothing else validates.
+     *
+     * Measured by deleting `describesSupersededHead` from `codeql`: a head this
+     * repository does not contain was ACCEPTED, an unrelated commit was
+     * ACCEPTED, and a binding with no `supersededBy` was ACCEPTED. The rule "a
+     * head nobody can fetch is not a citation" sat three lines further down,
+     * unreachable on that path.
+     *
+     * Both bogus heads are asserted, not just one: an undeclared head that
+     * happens to be a real ancestor is still undeclared, and a rule that only
+     * caught the fabricated ones would leave the declaration optional.
+     */
+    const base = JSON.parse(readRepo(CANDIDATE_PATH)) as Record<string, never>;
+    const site = 'codeql';
+    expect(
+      (base as Record<string, { headSha?: string } | undefined>)[site],
+      `the package has no ${site} binding to undeclare`
+    ).toBeDefined();
+
+    // SOUND BEFORE THE MUTATION.
+    expect(
+      (pendingBinding(base as never, git) as unknown as { problems: string[] }).problems,
+      'the committed package already fails the pending rules'
+    ).toEqual([]);
+
+    const heads: readonly (readonly [string, string])[] = [
+      ['a real ancestor', String(git(['rev-parse', 'HEAD~1']) ?? '').trim()],
+      ['a head this repository does not contain', 'f'.repeat(40)],
+    ];
+    for (const [label, head] of heads) {
+      expect(head, `${label} did not resolve`).toMatch(/^[0-9a-f]{40}$/);
+      const doc = JSON.parse(JSON.stringify(base)) as Record<string, Record<string, unknown>>;
+      delete doc[site]!.describesSupersededHead;
+      doc[site]!.headSha = head;
+      const problems = (pendingBinding(doc as never, git) as unknown as { problems: string[] })
+        .problems;
+      expect(problems.join(' '), `an undeclared head (${label}) was accepted`).toContain(
+        'declares neither'
+      );
+    }
+  });
+
+  it('refuses a tier that relabels its LOCAL measurement as hosted-pending', () => {
+    /*
+     * THE ESCAPE-HATCH CASE, found by mutating the committed package.
+     *
+     * `HOSTED_PENDING_AT_CANDIDATE` is legitimate for a tier this repository
+     * cannot measure — `backend`, `database` and `browser` declare it because no
+     * local run exists to compute against. But it is absent from
+     * `LOCAL_PROVENANCES`, and the local half of `tierBinding` returns early on
+     * anything outside that list. So a tier that HAS a run ledger could adopt the
+     * label and take its figures, its ledger binding, its `measuredAtCommit` pin
+     * and its whole drift computation out of check — while still displaying the
+     * ledger it was no longer being checked against.
+     *
+     * Measured before the fix: setting `tiers.unit.provenance` to
+     * `HOSTED_PENDING_AT_CANDIDATE` left the gate GREEN. That is the pending mode
+     * working as a general escape hatch, which is the one thing it must not
+     * become — a HOSTED observation may be awaited, but a LOCAL figure is either
+     * computed here or it is not evidence.
+     *
+     * What is refused is the CONTRADICTION, not the provenance: saying "no local
+     * observation of this candidate exists" while carrying the local observation.
+     */
+    const doc = JSON.parse(readRepo(CANDIDATE_PATH)) as {
+      tiers: Record<string, Record<string, unknown>>;
+    };
+    const unit = doc.tiers.unit;
+    expect(unit, 'the package has no unit tier').toBeDefined();
+    expect(
+      unit!.localLedger,
+      'the unit tier carries no localLedger, so this case cannot measure the contradiction'
+    ).toBeDefined();
+    expect(
+      (LOCAL_PROVENANCES as readonly string[]).includes(String(unit!.provenance)),
+      'the unit tier is not local to begin with, so relabelling it proves nothing'
+    ).toBe(true);
+
+    // SOUND BEFORE THE MUTATION, or a rule that always complains would pass.
+    const before = tierBinding(doc as never, git) as unknown as { localProblems: string[] };
+    expect(before.localProblems, 'the committed package does not bind its local half').toEqual([]);
+
+    unit!.provenance = PROVENANCE_HOSTED_PENDING;
+    const after = tierBinding(doc as never, git) as unknown as { localProblems: string[] };
+    expect(
+      after.localProblems.join(' '),
+      'a local measurement was allowed to relabel itself hosted-pending'
+    ).toContain('must declare a local provenance');
+    expect(judge(soundInputsOver(ROOT, { tiers: after }), () => {}).tiersOk).toBe(false);
+  });
+
   it('refuses a tier that claims the two halves AGREE while its hosted half is superseded', () => {
     const { doc, superseded } = withOnePendingTier('browser');
     expect(

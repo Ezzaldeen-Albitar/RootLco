@@ -71,12 +71,12 @@
       "bytes": 43201
     },
     "docs/phase-1/phase-1-28/evidence/closure-candidate.json": {
-      "sha256": "004639c2747cc6b1ee095ca2edb2ca2276168d5efc3104872c6c3f3d4b9d19b2",
-      "bytes": 90709
+      "sha256": "50fe8e6100e479770e2d5ccab65ecb25d4f8e981f63856889a4a9545f4d6a103",
+      "bytes": 90659
     },
     "docs/phase-1/phase-1-28/evidence/closure-evidence.md": {
-      "sha256": "dc41324d44a09861179e9ab04d5157fcfcb79a489e629901b8031c5e74421239",
-      "bytes": 77937
+      "sha256": "4ee4caf9fc63dfea9d271b2c2bfd61a72296306ae7f99684c7a0452fce6e1616",
+      "bytes": 77885
     },
     "docs/phase-1/phase-1-28/evidence/final-refuter-ledger.json": {
       "sha256": "ab09b77ddfa1b75fa9b708e494603b0bab2e321ad6dfce80a7e98e433cc69b10",

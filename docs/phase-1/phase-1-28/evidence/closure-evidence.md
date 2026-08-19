@@ -33,13 +33,13 @@ the candidate, and refuses either half that fails to name an unclosed task.
 
 ## The frozen candidate
 
-| Binding           | Value                                                                             |
-| ----------------- | --------------------------------------------------------------------------------- |
-| `FINAL_CODE_SHA`  | `c7c2227cb4d5547246e8f67c3e6359ab829281e9`                                          |
-| `FINAL_CODE_TREE` | `ce589c0d5b779333a901284150a57eefc97ca2aa`                                          |
-| Branch            | `remediation/p1-28-owner-qa-backend`                                                |
-| Pull request      | **#238**, base `develop`, 1 commit ahead                                            |
-| Subject           | `fix(p1-28): DBCR-P1-28-001 — a damage map must name its template revision`         |
+| Binding           | Value                                                                       |
+| ----------------- | --------------------------------------------------------------------------- |
+| `FINAL_CODE_SHA`  | `c7c2227cb4d5547246e8f67c3e6359ab829281e9`                                  |
+| `FINAL_CODE_TREE` | `ce589c0d5b779333a901284150a57eefc97ca2aa`                                  |
+| Branch            | `remediation/p1-28-owner-qa-backend`                                        |
+| Pull request      | **#238**, base `develop`, 1 commit ahead                                    |
+| Subject           | `fix(p1-28): DBCR-P1-28-001 — a damage map must name its template revision` |
 
 **Why the candidate moved.** Owner acceptance drove the reception damage-map
 surface in a production build and found that
