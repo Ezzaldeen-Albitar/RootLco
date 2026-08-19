@@ -409,6 +409,52 @@ export class ReceptionCaptureRepository extends Repository {
     return result.rows.map(templateFromRow);
   }
 
+  /**
+   * How many diagrams this branch HAS published and can no longer bind.
+   *
+   * The reception desk needs to tell two states apart and could not: with an
+   * empty `listBindableTemplates`, "this branch never published a diagram" and
+   * "the diagram it published has been retired" are the same empty list. The
+   * screen said the first in both cases — *"no diagram published yet… ask
+   * whoever administers the workshop catalogues to publish one"* — which is
+   * false in effect after a retirement, and sends an administrator looking for
+   * the wrong problem. The repository already had a `receptions.damage.
+   * templateRetired` message with no way to reach it.
+   *
+   * A COUNT rather than the rows, deliberately. The desk needs to know only
+   * THAT such a diagram exists to choose the honest sentence; the names, ids,
+   * perspectives and lifecycle of retired slots are catalogue administration,
+   * which is `rec.catalogue.manage` and which no receptionist holds. Returning
+   * the rows here would hand that surface to every reader of a visit.
+   *
+   * "Published and not bindable" is the whole predicate: a slot with no revision
+   * at all has published nothing and belongs to the NEVER-published population,
+   * so it is excluded — otherwise creating an empty slot would make the screen
+   * claim a diagram had been retired.
+   *
+   * Scoped exactly like `listBindableTemplates` — same tenant, same branch-or-
+   * tenant-wide rule — because a count taken over a different population than
+   * the list it explains is a count of something else.
+   */
+  async countRetiredPublishedTemplates(db: DbHandle, branchId: string): Promise<number> {
+    const context = this.assertContext(db);
+    const result = await this.run<{ n: number }>(
+      db,
+      `SELECT count(*)::int AS n
+         FROM rec.damage_map_templates t
+        WHERE t.tenant_id = $1
+          AND (t.branch_id = $2 OR t.branch_id IS NULL)
+          AND EXISTS (SELECT 1 FROM rec.damage_map_template_versions tv
+                       WHERE tv.tenant_id = t.tenant_id AND tv.template_id = t.id)
+          AND NOT (t.status = 'active'
+                   AND EXISTS (SELECT 1 FROM rec.damage_map_template_versions tv
+                                WHERE tv.tenant_id = t.tenant_id AND tv.template_id = t.id
+                                  AND tv.status = 'active'))`,
+      [context.principal.tenantId, branchId]
+    );
+    return result.rows[0]?.n ?? 0;
+  }
+
   /** Every slot of the tenant, retired ones included. Management read-back. */
   async listAllTemplates(db: DbHandle): Promise<readonly DamageMapTemplateRow[]> {
     const context = this.assertContext(db);

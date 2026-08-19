@@ -130,6 +130,16 @@ export interface CaptureContract {
   readonly bindings: readonly CaptureBindingRow[];
   readonly overrides: readonly CaptureOverrideRow[];
   readonly bindableTemplates: readonly DamageMapTemplateRow[];
+  /**
+   * How many diagrams this branch has published and can no longer bind.
+   *
+   * Present so the desk can tell "never published" from "published and since
+   * retired": with only `bindableTemplates`, both are an empty array, and the
+   * screen stated the first in both cases. A count and not the rows — the desk
+   * needs to know THAT one exists to say so honestly, and the retired slots
+   * themselves are catalogue administration behind `rec.catalogue.manage`.
+   */
+  readonly retiredPublishedTemplateCount: number;
 }
 
 export interface SignatureLedger {
@@ -364,12 +374,17 @@ export class ReceptionCaptureService extends ApplicationService {
     authorizeScope: ScopeAuthorizer
   ): Promise<CaptureContract> {
     const scope = await this.requireVisitScope(db, receptionVisitId, authorizeScope);
-    const [policies, bindings, overrides, bindableTemplates] = await Promise.all([
-      this.capture.resolvedPolicies(db, scope.branchId),
-      this.capture.listBindings(db, receptionVisitId),
-      this.capture.listOverrides(db, receptionVisitId),
-      this.capture.listBindableTemplates(db, scope.branchId),
-    ]);
+    const [policies, bindings, overrides, bindableTemplates, retiredPublishedTemplateCount] =
+      await Promise.all([
+        this.capture.resolvedPolicies(db, scope.branchId),
+        this.capture.listBindings(db, receptionVisitId),
+        this.capture.listOverrides(db, receptionVisitId),
+        this.capture.listBindableTemplates(db, scope.branchId),
+        // Same branch scope as the list above, in the same round trip: a count
+        // taken over a different population than the list it explains would be
+        // a count of something else.
+        this.capture.countRetiredPublishedTemplates(db, scope.branchId),
+      ]);
 
     const overridden = new Set(overrides.map((entry) => entry.requirementCode));
     const requirements = CAPTURE_REQUIREMENTS.map((code): CaptureRequirementState => {
@@ -395,7 +410,14 @@ export class ReceptionCaptureService extends ApplicationService {
       };
     });
 
-    return { receptionVisitId, requirements, bindings, overrides, bindableTemplates };
+    return {
+      receptionVisitId,
+      requirements,
+      bindings,
+      overrides,
+      bindableTemplates,
+      retiredPublishedTemplateCount,
+    };
   }
 
   // ---- Signatures ---------------------------------------------------------

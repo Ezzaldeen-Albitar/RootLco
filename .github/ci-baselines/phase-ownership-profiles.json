@@ -75,6 +75,16 @@
       "why": "the P1-26 closure branch carries the same Frontend declaration"
     },
     {
+      "branchPrefix": "remediation/p1-28-owner-qa-backend",
+      "profile": "p1-28-backend-owner-qa",
+      "why": "the DBCR-P1-28-001 Backend remediation Owner QA forced — the damage-map revision made mandatory in the database instead of trusted from a compliant Frontend, and the read field that lets Reception tell `never published` from `published and retired`. Listed BEFORE the general `remediation/p1-28-` rule below, because the first matching prefix wins and this one is longer. Its own profile rather than `p1-18-read-surface`, which would also have permitted the diff: that profile describes new GET routes and close commands, and this branch publishes no operation, so borrowing it would have declared nothing"
+    },
+    {
+      "branchPrefix": "remediation/p1-28-",
+      "profile": "p1-27-frontend",
+      "why": "P1-28 remediation branches are Frontend unless they declare otherwise above — the same rule `remediation/p1-27-` states for its phase, and the same Frontend surface the P1-28 integration branch owns: apps/web, docs, tooling, tests and root config only"
+    },
+    {
       "branchPrefix": "fix/p1-28-",
       "profile": "p1-27-frontend",
       "why": "P1-28 seal remediations cut from develop after PR #226 merged. They change the evidence machinery under scripts/ci and tests/ci and the phase records under docs, which is the same surface the P1-28 integration branch owns."

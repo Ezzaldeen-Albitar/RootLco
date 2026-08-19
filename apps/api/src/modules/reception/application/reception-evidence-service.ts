@@ -117,13 +117,23 @@ export interface DamageMapEvidence {
   /**
    * The managed damage-map template revision this map is drawn on (FE-012).
    *
-   * Optional so the shipped contract keeps working, and the exact-version rule
-   * is not weakened by that: when supplied, the database requires the revision
-   * to be the ACTIVE one of an ACTIVE slot AND to carry exactly the document and
-   * version above, so the two cannot disagree. Bound revisions are immutable, so
-   * revising the template afterwards never moves this map.
+   * REQUIRED. It was optional, with the reasoning that the shipped contract
+   * should keep working and that "the exact-version rule is not weakened by
+   * that: when supplied, the database requires…". The conditional was the whole
+   * problem — `rec.guard_damage_map_template_binding()` returned early on NULL,
+   * so a caller that omitted the field was admitted with every FE-012 rule
+   * unevaluated, and the shipped web client omitted it.
+   *
+   * DBCR-P1-28-001 makes the guard refuse a NULL, so an optional field here
+   * would now merely move the refusal from a named 422 to a trigger exception.
+   * Required at all three layers — route schema, this input, the column the
+   * repository writes — because an invariant enforced at one of them and
+   * described at the others is how this one came to be unenforced.
+   *
+   * Bound revisions remain immutable, so revising the template afterwards never
+   * moves an existing map.
    */
-  readonly damageMapTemplateVersionId?: string | null | undefined;
+  readonly damageMapTemplateVersionId: string;
 }
 
 export interface DamageMarkEvidence {
@@ -517,7 +527,11 @@ export class ReceptionEvidenceService extends ApplicationService {
             documentVersionId: input.documentVersionId,
             mapType,
             perspective,
-            damageMapTemplateVersionId: input.damageMapTemplateVersionId ?? null,
+            // No `?? null` any more: the field is required at the route and on
+            // this input, and the database refuses a NULL. Defaulting it here
+            // would reintroduce, one layer down, exactly the omission the guard
+            // now exists to refuse.
+            damageMapTemplateVersionId: input.damageMapTemplateVersionId,
           }),
           'Binding the damage map'
         );
