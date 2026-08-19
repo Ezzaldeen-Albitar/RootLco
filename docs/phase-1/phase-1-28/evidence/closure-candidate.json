@@ -268,8 +268,13 @@
   "successors": [
     {
       "commit": "85b1648e7467ae3caaffd3a7db65fd52736a1476",
-      "kind": "measurement head + evidence machinery",
-      "why": "The commit both tiers were run at. Named because a measurement head must be a named successor, and because it carries the re-freeze itself — documentation against the candidate, which the gate computes rather than takes on trust."
+      "kind": "measurement head — web tier, and the re-freeze itself",
+      "why": "Named because a measurement head must be a named successor: a figure taken at a head nobody declared cannot be presented as a measurement of the candidate. Both are documentation-only against the candidate, which the gate computes."
+    },
+    {
+      "commit": "9342ea2e3cc59d204bf5abf3a4d1a3ffeb71d164",
+      "kind": "measurement head — root unit tier",
+      "why": "Named because a measurement head must be a named successor: a figure taken at a head nobody declared cannot be presented as a measurement of the candidate. Both are documentation-only against the candidate, which the gate computes."
     }
   ],
   "howTierFiguresAreChecked": "Four obligations, because there are four kinds of claim. ARITHMETIC: `passed + failed + skipped` must equal the declared total. LOCAL: figures equal the P1-27 run ledger read out of Git at `localLedger.atCommit`. MEASUREMENT HEAD: both local tiers name successor ea045d88fd88843c82c8ecd7273b0772f65417f6, whose six declared non-product drift paths equal Git's path set, and are pinned to ledger commit 2e0f2191db4c118e766e9ca4b8ffff981b63d7c6. HOSTED: claims remain fetchable attestations at their recorded run heads; a non-candidate head must explicitly be a superseded ancestor or a product-identical descendant, and Git refusal is UNKNOWN rather than empty.",
@@ -277,17 +282,17 @@
     "unit": {
       "label": "root unit and foundation",
       "tests": 2777,
-      "passed": 2773,
-      "failed": 4,
+      "passed": 2777,
+      "failed": 0,
       "skipped": 0,
       "files": 104,
-      "measuredAtCommit": "85b1648e7467ae3caaffd3a7db65fd52736a1476",
+      "measuredAtCommit": "9342ea2e3cc59d204bf5abf3a4d1a3ffeb71d164",
       "provenance": "LOCAL_COMPUTED_HOSTED_PENDING",
       "localLedger": {
         "path": "docs/phase-1/phase-1-27/evidence/local-run-ledger.json",
         "tier": "unit",
-        "atCommit": "185395f7625db6340dcd03df575423563488426b",
-        "howChecked": "`git show 185395f7625db6340dcd03df575423563488426b:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD at the commit that carries this record, rather than the working copy, which would let an uncommitted edit vouch for itself."
+        "atCommit": "549ed424e7101544258476d3ead0e29760c4a9ab",
+        "howChecked": "`git show 549ed424e7101544258476d3ead0e29760c4a9ab:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD at the commit that carries this record, rather than the working copy, which would let an uncommitted edit vouch for itself."
       },
       "hostedAttestation": {
         "runId": 31885987461,
@@ -312,8 +317,8 @@
       "localLedger": {
         "path": "docs/phase-1/phase-1-27/evidence/local-run-ledger.json",
         "tier": "web",
-        "atCommit": "185395f7625db6340dcd03df575423563488426b",
-        "howChecked": "`git show 185395f7625db6340dcd03df575423563488426b:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD at the commit that carries this record, rather than the working copy, which would let an uncommitted edit vouch for itself."
+        "atCommit": "549ed424e7101544258476d3ead0e29760c4a9ab",
+        "howChecked": "`git show 549ed424e7101544258476d3ead0e29760c4a9ab:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD at the commit that carries this record, rather than the working copy, which would let an uncommitted edit vouch for itself."
       },
       "hostedAttestation": {
         "runId": 31885987461,
