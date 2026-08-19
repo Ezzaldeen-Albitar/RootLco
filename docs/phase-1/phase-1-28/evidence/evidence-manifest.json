@@ -6,16 +6,16 @@
   "whatThisDoesNotProve": "This is not a tamper-proof seal. Anyone able to edit a document is able to re-run the generator and commit both. It removes SILENT revision, not revision.",
   "selfExclusion": "This manifest is the only path excluded from its own digest set, because a file containing its own hash has no fixed point. tests/ci/p1-28-evidence-manifest.test.ts asserts the exclusion is exactly this one path.",
   "candidate": {
-    "FINAL_CODE_SHA": "bda8b12d29b268af09c5d8fdc0c900bddf577aa4",
-    "FINAL_CODE_TREE": "f923539fe565b2d339c7f9cbd15de544b30817e8",
+    "FINAL_CODE_SHA": "c7c2227cb4d5547246e8f67c3e6359ab829281e9",
+    "FINAL_CODE_TREE": "ce589c0d5b779333a901284150a57eefc97ca2aa",
     "pullRequest": null,
     "recordedIn": "docs/phase-1/phase-1-28/evidence/closure-candidate.json",
     "restatedIn": "docs/phase-1/phase-1-28/evidence/closure-evidence.md"
   },
   "tierTotals": {
     "unit": {
-      "passed": 2775,
-      "failed": 0,
+      "passed": 2773,
+      "failed": 2,
       "skipped": 0,
       "provenance": "LOCAL_COMPUTED_HOSTED_PENDING"
     },
@@ -42,6 +42,12 @@
       "failed": 0,
       "skipped": 4,
       "provenance": "HOSTED_PENDING_AT_CANDIDATE"
+    },
+    "reMeasuredBy": {
+      "passed": null,
+      "failed": null,
+      "skipped": null,
+      "provenance": null
     }
   },
   "fileCount": 18,
@@ -71,12 +77,12 @@
       "bytes": 43201
     },
     "docs/phase-1/phase-1-28/evidence/closure-candidate.json": {
-      "sha256": "541be35858a55480a2dcc99a2d825035cc294dc0f9a6ec1117d9a3c95f4fa1e5",
-      "bytes": 89122
+      "sha256": "6d9971b2f6b25a43d050e735cb0af573f1235d048521629cf76f0b5536db0cb2",
+      "bytes": 90620
     },
     "docs/phase-1/phase-1-28/evidence/closure-evidence.md": {
-      "sha256": "32bc72ad489affa20bb70f710c0f6474ea867edfccc9aeb78af202bace33e200",
-      "bytes": 76438
+      "sha256": "dc41324d44a09861179e9ab04d5157fcfcb79a489e629901b8031c5e74421239",
+      "bytes": 77937
     },
     "docs/phase-1/phase-1-28/evidence/final-refuter-ledger.json": {
       "sha256": "ab09b77ddfa1b75fa9b708e494603b0bab2e321ad6dfce80a7e98e433cc69b10",

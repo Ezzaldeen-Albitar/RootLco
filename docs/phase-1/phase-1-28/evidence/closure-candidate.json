@@ -5,13 +5,13 @@
   "howToCheck": "npm run validate:p1-28-evidence",
   "whatThisIsNot": "This is not a tamper-proof seal. The digests in evidence-manifest.json remove SILENT revision, not revision. It is ALSO not an Owner acceptance and not a closure record: the phase is OPEN and `OWNER ACCEPTANCE` has neither been asked for nor returned. What it now IS is a package whose current remediation half has been taken: nine bindings, including all five tiers, CodeQL, dependency security, browser-by-project and the database reproof, cite exact-head PR CI run 31885987461 at 1a186a7bcb7d0b97bb771753dacb584535692455. The unit and web figures agree with the authoritative local observation at ea045d88 pinned by ledger commit 2e0f2191. The earlier aggregate hostedCi and production-build records remain fetchable at product-identical 81cbd44b because the exact remediation run legitimately skipped those change-classified build jobs. Every cited head descends from the candidate, its apps/** and supabase/** are COMPUTED byte-identical to it, and each binding says so with `describesProductIdenticalSuccessor`. `pendingHostedBindings.bindings` is EMPTY by derivation. The two superseded citations this package has carried, 55b932cb and 38afa5c2, are kept in `supersededObservations`.",
   "candidate": {
-    "FINAL_CODE_SHA": "bda8b12d29b268af09c5d8fdc0c900bddf577aa4",
-    "FINAL_CODE_TREE": "f923539fe565b2d339c7f9cbd15de544b30817e8",
-    "branch": "feature/p1-28-owner-decisions-frontend",
+    "FINAL_CODE_SHA": "c7c2227cb4d5547246e8f67c3e6359ab829281e9",
+    "FINAL_CODE_TREE": "ce589c0d5b779333a901284150a57eefc97ca2aa",
+    "branch": "remediation/p1-28-owner-qa-backend",
     "pullRequest": null,
     "baseBranch": "develop",
-    "commitsAheadOfDevelop": 38,
-    "subject": "test: record why the storage round-trip may skip",
+    "commitsAheadOfDevelop": 1,
+    "subject": "fix(p1-28): DBCR-P1-28-001 — a damage map must name its template revision",
     "whatFreezingMeans": "This commit freezes the PRODUCT: every later head cited by the package must leave apps/** and supabase/** byte-identical to it. Executable evidence machinery may follow only as a full-id successor, and every LOCAL measurement taken there must declare the exact non-product drift that Git computes. A successor that changes a product tree invalidates this package and the candidate must be re-frozen and re-measured; a successor that changes only evidence machinery is named and re-measured without pretending it was part of the frozen product.",
     "productIdentityCheck": "git diff --name-only d9492ed680d287db6ca5c45297c0674ef6feea9a..HEAD -- apps supabase",
     "productIdentityExpectation": "empty output — no product file differs between the candidate and any successor",
@@ -250,7 +250,8 @@
       "EVIDENCE_RECORD_SHA": "P1-27's name for the commit carrying the evidence file — here, the documentation-only commit that carries this record, which the gate PRINTS rather than requires to be named because a commit cannot name itself.",
       "EXECUTABLE_DIFF_COUNT": "P1-27's derivation `git diff --name-only CODE_CANDIDATE_SHA..EVIDENCE_RECORD_SHA` excluding docs/ and *.md. It is non-zero here because six executable paths differ from the product candidate: the ownership profile, the seal, the seal suite, two acceptance-fixture commands and their boundary suite. This package therefore does NOT claim DOCUMENTATION_ONLY_RECORDING; it names all three executable successors in the current branch range and separately proves apps/** and supabase/** byte-identical."
     },
-    "commitsAheadOfDevelopNote": "Counted against `origin/develop`. The local `develop` ref is a stale bootstrap pointer — counting against it reports 391 — and this project has already recorded that trap for `main`."
+    "commitsAheadOfDevelopNote": "Counted against `origin/develop`. The local `develop` ref is a stale bootstrap pointer — counting against it reports 391 — and this project has already recorded that trap for `main`.",
+    "reFrozenBy": "DBCR-P1-28-001. Owner QA found that rec.guard_damage_map_template_binding() returned early on a NULL revision, so the FE-012 retirement rule was never evaluated for any map the shipped client wrote — 201 without the revision id against a RETIRED template, 422 with it. That fix changes five product files under apps/** and supabase/**, and this package’s own rule is that a product change invalidates the candidate rather than travelling as a successor. So the candidate is re-frozen on the commit that CARRIES the product change, not on the documentation commit that follows it."
   },
   "sealSuiteInvariant": {
     "what": "tests/ci/p1-28-evidence-manifest.test.ts passes 96/96 with this package BOUND; the pending/forward-binding and absorbed-successor rules remain fixture-proved inside the same suite.",
@@ -270,17 +271,17 @@
     "unit": {
       "label": "root unit and foundation",
       "tests": 2775,
-      "passed": 2775,
-      "failed": 0,
+      "passed": 2773,
+      "failed": 2,
       "skipped": 0,
       "files": 104,
-      "measuredAtCommit": "2135d19082c9adcffbe966b8058cf71cfd4ab343",
+      "measuredAtCommit": "7a584e99d7ab7c83179d712d37408691a19a0e8d",
       "provenance": "LOCAL_COMPUTED_HOSTED_PENDING",
       "localLedger": {
         "path": "docs/phase-1/phase-1-27/evidence/local-run-ledger.json",
         "tier": "unit",
-        "atCommit": "04b6d8f40b48fecba181a51b29febf555a6fcad6",
-        "howChecked": "`git show 04b6d8f40b48fecba181a51b29febf555a6fcad6:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD at the commit that carries this record, rather than the working copy, which would let an uncommitted edit vouch for itself. The run was taken at 2135d190 and recorded into that commit."
+        "atCommit": "PLACEHOLDER_CARRIER",
+        "howChecked": "`git show PLACEHOLDER_CARRIER:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD at the commit that carries this record, rather than the working copy, which would let an uncommitted edit vouch for itself. The run was taken at 7a584e99d7ab7c83179d712d37408691a19a0e8d, a head executable-identical to the candidate (the commits between them touch documentation only), and recorded into that commit."
       },
       "hostedAttestation": {
         "runId": 31885987461,
@@ -300,13 +301,13 @@
       "failed": 0,
       "skipped": 0,
       "files": 101,
-      "measuredAtCommit": "2f8a925d6e7d6577668a6810dfe45cea291e63e2",
+      "measuredAtCommit": "7a584e99d7ab7c83179d712d37408691a19a0e8d",
       "provenance": "LOCAL_COMPUTED_HOSTED_PENDING",
       "localLedger": {
         "path": "docs/phase-1/phase-1-27/evidence/local-run-ledger.json",
         "tier": "web",
-        "atCommit": "04b6d8f40b48fecba181a51b29febf555a6fcad6",
-        "howChecked": "`git show 04b6d8f40b48fecba181a51b29febf555a6fcad6:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD at the commit that carries this record, rather than the working copy, which would let an uncommitted edit vouch for itself. The run was taken at 2f8a925d and recorded into that commit."
+        "atCommit": "PLACEHOLDER_CARRIER",
+        "howChecked": "`git show PLACEHOLDER_CARRIER:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD at the commit that carries this record, rather than the working copy, which would let an uncommitted edit vouch for itself. The run was taken at 7a584e99d7ab7c83179d712d37408691a19a0e8d, a head executable-identical to the candidate (the commits between them touch documentation only), and recorded into that commit."
       },
       "hostedAttestation": {
         "runId": 31885987461,
@@ -379,7 +380,8 @@
         "supersededBy": "The hosted run taken at a head that DESCENDS from candidate 526a3b39 — the pull request CI for branch `p1-28/od-025-policy-enforcement`. Until that run exists this figure describes an ancestor and is cited as such; it is replaced by re-citing the same fields (run id, job id, head, artefact) at the descending head, never by relaxing the rule that refused it."
       },
       "note": "MEASURED. Exact remediation run 31885987461 job 95015291803 at 1a186a7b: `playwright-report.json` `stats` reports expected 366, skipped 4, unexpected 0, flaky 0, over 370 planned. The workspace-dependent skip count returned from 5 to 4; it is recorded rather than smoothed over. NO P1-28 CASE IS SKIPPED, checked from the run artefact: `authenticated/appointments-and-receptions.spec.ts` executed all 141 entries, 47 in each of authenticated-en, authenticated-ar and authenticated-tablet."
-    }
+    },
+    "reMeasuredBy": "DBCR-P1-28-001. The previous figures were taken at 2135d190 (unit) and 2f8a925d (web), and ten executable paths differ between those heads and this candidate — so they described a tree this candidate is not. Re-measured here rather than carried forward, which is the whole rule this package exists to enforce."
   },
   "browserByProject": {
     "spec": "authenticated/appointments-and-receptions.spec.ts",
@@ -639,9 +641,10 @@
     "generator": "npm run matrix:p1-28",
     "gate": "npm run validate:p1-28-matrix",
     "taskCount": 35,
-    "pass": 32,
-    "partial": 3,
-    "fail": 0
+    "pass": 35,
+    "partial": 0,
+    "fail": 0,
+    "reMeasuredNote": "Re-derived from docs/phase-1/phase-1-28/task-matrix-verdicts.json at this candidate: `npm run validate:p1-28-matrix` reports 35 tasks, PASS 35 / PARTIAL 0 / FAIL 0. The 32/3/0 this package carried was measured at the superseded candidate bda8b12d and is not a figure about this one."
   },
   "blockedTasks": {},
   "openDecisionsThisPackageDoesNotPreEmpt": {
@@ -691,13 +694,18 @@
     "observations": [
       {
         "supersededHeadSha": "55b932cbd3e6a844457d452d64726a96a097415b",
-        "runIds": [31776114127, 31776113899],
+        "runIds": [
+          31776114127,
+          31776113899
+        ],
         "whyItIsHereRatherThanAbove": "It was the pending citation while 7b1252ed was frozen and unbound. `7b1252ed` — the seal-test fix — landed after it, so 55b932cb became an ancestor of the candidate, and a run at an ancestor cannot describe this code.",
         "whatItSaid": "unit job 94691823490 — 2559 over 98 files, one case short of this candidate because it predates the case the candidate adds; web job 94691823379 — 2726 over 98 files, reproduced by clean room job 94691823382; backend job 94691823497 — 2004 over 86 files, 566 suites; database job 94691823478 — 1647 over 139 files, 552 suites; browser job 94691823437 — 370 planned, 366 passed, 0 failed, FOUR skipped, with 141 phase-spec cases at 47 in each project; hostedCi — 21 checks, 21 success, across runs 31776114127 and 31776113899; CodeQL analyses 1617851873 and 1617844311, 0 results each; dependency-security job 94691823349 — 0 vulnerabilities across 830 dependencies; application-build job 94691823535 — 239 routes, 6249 files, 37 476 308 standalone bytes; database jobs 94691823456 and 94691823382 — 120 migrations, 242 tables, 631 policies, a 1356-cell matrix, schema hash f6b4f023."
       },
       {
         "supersededHeadSha": "38afa5c28e5b78d484a442cf6b8596fb2a5c34aa",
-        "runIds": [31750364479],
+        "runIds": [
+          31750364479
+        ],
         "whyItIsHereRatherThanAbove": "Superseded twice over. It was the pending citation while 3c75f49a was the candidate. Kept because it is still fetchable and still the only hosted reading of the tree as it stood before three finding-fix waves changed 37 files under apps/**.",
         "whatItSaid": "unit job 94614563908 — 2475 over 97 files; web job 94614564128 — 2669 over 98 files, reproduced by clean room job 94614564119; backend job 94614564122 — 2004 over 86 files; database job 94614564002 — 1647 over 139 files; browser job 94614564003 — 370 planned, 366 passed, 0 failed, 4 skipped, 141 phase-spec cases; hostedCi — 21 checks, 21 success, recorded as ONE run id, which was wrong for four of the twenty-one; CodeQL analyses 1616577501 and 1616569830, 0 results each; dependency-security job 94614564057; application-build job 94614563886; database jobs 94614563937 and 94614564119."
       }
