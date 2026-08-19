@@ -6,42 +6,42 @@
   "whatThisDoesNotProve": "This is not a tamper-proof seal. Anyone able to edit a document is able to re-run the generator and commit both. It removes SILENT revision, not revision.",
   "selfExclusion": "This manifest is the only path excluded from its own digest set, because a file containing its own hash has no fixed point. tests/ci/p1-28-evidence-manifest.test.ts asserts the exclusion is exactly this one path.",
   "candidate": {
-    "FINAL_CODE_SHA": "bda8b12d29b268af09c5d8fdc0c900bddf577aa4",
-    "FINAL_CODE_TREE": "f923539fe565b2d339c7f9cbd15de544b30817e8",
+    "FINAL_CODE_SHA": "338a5ffc7da918f2a7e83ed353f175b62c20bc6d",
+    "FINAL_CODE_TREE": "b088fb8a8e8ecd73723163ecae42e267eb1b1020",
     "pullRequest": null,
     "recordedIn": "docs/phase-1/phase-1-28/evidence/closure-candidate.json",
     "restatedIn": "docs/phase-1/phase-1-28/evidence/closure-evidence.md"
   },
   "tierTotals": {
     "unit": {
-      "passed": 2775,
+      "passed": 2777,
       "failed": 0,
       "skipped": 0,
-      "provenance": "LOCAL_COMPUTED_HOSTED_PENDING"
+      "provenance": "LOCAL_AND_HOSTED_AGREE"
     },
     "web": {
       "passed": 2867,
       "failed": 0,
       "skipped": 0,
-      "provenance": "LOCAL_COMPUTED_HOSTED_PENDING"
+      "provenance": "LOCAL_AND_HOSTED_AGREE"
     },
     "backend": {
       "passed": 2004,
       "failed": 0,
       "skipped": 0,
-      "provenance": "HOSTED_PENDING_AT_CANDIDATE"
+      "provenance": "HOSTED_ARTEFACT_ATTESTED"
     },
     "database": {
       "passed": 1647,
       "failed": 0,
       "skipped": 0,
-      "provenance": "HOSTED_PENDING_AT_CANDIDATE"
+      "provenance": "HOSTED_ARTEFACT_ATTESTED"
     },
     "browser": {
       "passed": 366,
       "failed": 0,
       "skipped": 4,
-      "provenance": "HOSTED_PENDING_AT_CANDIDATE"
+      "provenance": "HOSTED_ARTEFACT_ATTESTED"
     }
   },
   "fileCount": 18,
@@ -71,12 +71,12 @@
       "bytes": 43201
     },
     "docs/phase-1/phase-1-28/evidence/closure-candidate.json": {
-      "sha256": "541be35858a55480a2dcc99a2d825035cc294dc0f9a6ec1117d9a3c95f4fa1e5",
-      "bytes": 89122
+      "sha256": "b01aa7859d4c609320ebe7421bf069e4842801d332f545f1ec2f861a0755f75c",
+      "bytes": 90496
     },
     "docs/phase-1/phase-1-28/evidence/closure-evidence.md": {
-      "sha256": "32bc72ad489affa20bb70f710c0f6474ea867edfccc9aeb78af202bace33e200",
-      "bytes": 76438
+      "sha256": "5ea9d97c9008f5bf7ba94108f6af8f0bfd11f9e85166cc0e3d35b27ae1426836",
+      "bytes": 77885
     },
     "docs/phase-1/phase-1-28/evidence/final-refuter-ledger.json": {
       "sha256": "ab09b77ddfa1b75fa9b708e494603b0bab2e321ad6dfce80a7e98e433cc69b10",

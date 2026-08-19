@@ -636,6 +636,225 @@ describe('FE-012 — a retired revision is history, not a choice', () => {
   });
 });
 
+describe('DBCR-P1-28-001 — a NEW damage map must NAME its revision', () => {
+  /*
+   * Owner QA found this against the running product, with every tier green.
+   *
+   * `rec.guard_damage_map_template_binding()` opened with
+   * `IF NEW.damage_map_template_version_id IS NULL THEN RETURN NEW`, so every
+   * rule in the block above — including the FE-012 retirement rule the suite
+   * already proved — applied ONLY to a caller that volunteered the revision id.
+   * The shipped web client did not, so seven of the nine damage maps in the
+   * acceptance database carried NULL and none of them had been checked against
+   * anything.
+   *
+   * Measured on the running API before the fix: a NEW visit binding a RETIRED
+   * template's document/version pair answered 201 without the field and 422 with
+   * it. The Frontend chooser filtering retired slots was the only obstacle,
+   * which is a hidden control rather than an enforced rule.
+   *
+   * These cases go to the DATABASE through `app_runtime`. No Frontend filter and
+   * no API schema participates, because neither is what the rule rests on.
+   */
+
+  /** An active slot with one active revision, and its accepted document. */
+  async function activeTemplate(tenant: string, user: string) {
+    const template = crypto.randomUUID();
+    await admin.query(
+      `INSERT INTO rec.damage_map_templates (id, tenant_id, map_type, created_by)
+       VALUES ($1,$2,'exterior',$3)`,
+      [template, tenant, user]
+    );
+    const doc = await seedDocument({
+      categoryCode: 'reception_damage_map_template',
+      entityType: 'rec.damage_map_templates',
+      entityId: template,
+      state: 'accepted',
+      tenantId: tenant,
+    });
+    const version = crypto.randomUUID();
+    await admin.query(
+      `INSERT INTO rec.damage_map_template_versions
+         (id, tenant_id, template_id, version_number, document_id, document_version_id, created_by)
+       VALUES ($1,$2,$3,1,$4,$5,$6)`,
+      [version, tenant, template, doc.documentId, doc.versionId, user]
+    );
+    return { template, version, doc };
+  }
+
+  const insertMap = (
+    visit: string,
+    doc: { documentId: string; versionId: string },
+    revision: string | null
+  ) =>
+    `INSERT INTO rec.damage_maps
+       (tenant_id, company_id, branch_id, reception_visit_id, document_id,
+        document_version_id, map_type, damage_map_template_version_id, created_by)
+     VALUES ('${TENANT_A}','${COMPANY_A1}','${BRANCH_A1}','${visit}','${doc.documentId}',
+             '${doc.versionId}','exterior',${revision === null ? 'NULL' : `'${revision}'`},'${USER_A}')`;
+
+  it('refuses a map that names NO revision — the case that used to be admitted', async () => {
+    const { doc } = await activeTemplate(TENANT_A, USER_A);
+    const visit = await openVisit();
+    await withRolledBackTx(runtime, contextA(), async (c) => {
+      // 23502 not_null_violation: the guard says the column is required, in the
+      // vocabulary a missing mandatory value already has.
+      await expectSqlState(c.query(insertMap(visit, doc, null)), '23502');
+    });
+  });
+
+  it('accepts the SAME map once it names its active revision', async () => {
+    /*
+     * The positive half, and it is not decoration. A guard that refused every
+     * insert would satisfy all five negative cases in this block, so the rule
+     * has to be shown admitting the one shape it is supposed to admit — with
+     * everything else about the row held identical to the refusal above.
+     */
+    const { version, doc } = await activeTemplate(TENANT_A, USER_A);
+    const visit = await openVisit();
+    await withRolledBackTx(runtime, contextA(), async (c) => {
+      const inserted = await c.query(
+        `${insertMap(visit, doc, version)} RETURNING id, damage_map_template_version_id`
+      );
+      expect(inserted.rows).toHaveLength(1);
+      expect(inserted.rows[0].damage_map_template_version_id).toBe(version);
+    });
+  });
+
+  it('refuses a revision that does not carry this map’s document version', async () => {
+    // Two independent templates: the map cites template one's document pair
+    // while naming template two's revision. Each half is individually valid,
+    // which is exactly why the pair has to be checked.
+    const first = await activeTemplate(TENANT_A, USER_A);
+    const second = await activeTemplate(TENANT_A, USER_A);
+    const visit = await openVisit();
+    await withRolledBackTx(runtime, contextA(), async (c) => {
+      await expectSqlState(c.query(insertMap(visit, first.doc, second.version)), '23514');
+    });
+  });
+
+  it('refuses a revision belonging to a RETIRED SLOT, not only a retired revision', async () => {
+    /*
+     * The block above retires the REVISION. This retires the SLOT and leaves the
+     * revision active, which is the state the Owner acceptance actually produced
+     * — `.../status` sets the template to `retired` and its revision stays
+     * `active`. The two are separate columns and only one of them was covered.
+     */
+    const { template, version, doc } = await activeTemplate(TENANT_A, USER_A);
+    await admin.query(`UPDATE rec.damage_map_templates SET status='retired' WHERE id=$1`, [
+      template,
+    ]);
+    const stillActive = await admin.query(
+      `SELECT status FROM rec.damage_map_template_versions WHERE id=$1`,
+      [version]
+    );
+    expect(
+      stillActive.rows[0].status,
+      'the revision must still be active for this to test the SLOT'
+    ).toBe('active');
+
+    const visit = await openVisit();
+    await withRolledBackTx(runtime, contextA(), async (c) => {
+      await expectSqlState(c.query(insertMap(visit, doc, version)), '23514');
+    });
+  });
+
+  it('refuses ANOTHER TENANT’s revision, without disclosing that it exists', async () => {
+    /*
+     * The guard's lookup is scoped `tv.tenant_id = NEW.tenant_id`, so a revision
+     * belonging to tenant B is not merely refused to tenant A — it is invisible,
+     * and the refusal is the same `is not visible` a nonexistent id gets. The
+     * assertion is deliberately on that shared code: a distinct error for
+     * "exists but is not yours" would answer a question the caller may not ask.
+     */
+    const foreign = await activeTemplate(TENANT_B, USER_A);
+    const visit = await openVisit();
+    try {
+      await withRolledBackTx(runtime, contextA(), async (c) => {
+        await c.query('SAVEPOINT foreign_revision');
+        await expectSqlState(c.query(insertMap(visit, foreign.doc, foreign.version)), '23503');
+        await c.query('ROLLBACK TO SAVEPOINT foreign_revision');
+
+        const invented = crypto.randomUUID();
+        await expectSqlState(c.query(insertMap(visit, foreign.doc, invented)), '23503');
+      });
+    } finally {
+      /*
+       * This is the ONE case here that seeds outside TENANT_A, and the seeding
+       * is not rolled back — `admin` writes it before the transaction opens.
+       * `cleanFixtures` does not reach it, and the containment case later in
+       * this file asserts `rec.damage_map_templates` is EMPTY for tenant B, so
+       * leaving it behind turns a passing suite red in a file that never
+       * mentions this test. It caught exactly that on the first run.
+       *
+       * In a `finally` so a failed assertion above still cleans up: a leak that
+       * only happens on failure is the worst kind, because the next run then
+       * fails somewhere else and hides the original.
+       */
+      await admin.query(`DELETE FROM rec.damage_map_template_versions WHERE id=$1`, [
+        foreign.version,
+      ]);
+      await admin.query(`DELETE FROM rec.damage_map_templates WHERE id=$1`, [foreign.template]);
+      await admin.query(`DELETE FROM shared.document_links WHERE document_id=$1`, [
+        foreign.doc.documentId,
+      ]);
+      await admin.query(`DELETE FROM shared.file_scan_results WHERE version_id=$1`, [
+        foreign.doc.versionId,
+      ]);
+      await admin.query(`DELETE FROM shared.document_versions WHERE id=$1`, [
+        foreign.doc.versionId,
+      ]);
+      await admin.query(`DELETE FROM shared.documents WHERE id=$1`, [foreign.doc.documentId]);
+    }
+  });
+
+  it('keeps a HISTORICAL map bound to a since-retired revision fully readable', async () => {
+    /*
+     * The other half of the rule, and the one a stricter guard could quietly
+     * break. Retirement withdraws a slot from NEW visits; it does not reach back
+     * into a visit already bound to it. The map, its revision id and its marks
+     * all stay readable after the slot is retired.
+     */
+    const { template, version, doc } = await activeTemplate(TENANT_A, USER_A);
+    const visit = await openVisit();
+    const map = (
+      await admin.query(
+        `INSERT INTO rec.damage_maps
+           (tenant_id, company_id, branch_id, reception_visit_id, document_id,
+            document_version_id, map_type, damage_map_template_version_id, created_by)
+         VALUES ($1,$2,$3,$4,$5,$6,'exterior',$7,$8) RETURNING id`,
+        [TENANT_A, COMPANY_A1, BRANCH_A1, visit, doc.documentId, doc.versionId, version, USER_A]
+      )
+    ).rows[0].id;
+    await admin.query(
+      `INSERT INTO rec.damage_marks
+         (tenant_id, company_id, branch_id, damage_map_id, mark_type, vehicle_zone,
+          coord_x, coord_y, created_by)
+       VALUES ($1,$2,$3,$4,'dent','front left wing',0.17,0.25,$5)`,
+      [TENANT_A, COMPANY_A1, BRANCH_A1, map, USER_A]
+    );
+
+    await admin.query(`UPDATE rec.damage_map_templates SET status='retired' WHERE id=$1`, [
+      template,
+    ]);
+
+    await withRolledBackTx(runtime, contextA(), async (c) => {
+      const read = await c.query(
+        `SELECT damage_map_template_version_id FROM rec.damage_maps WHERE id='${map}'`
+      );
+      expect(read.rows[0].damage_map_template_version_id).toBe(version);
+      const marks = await c.query(
+        `SELECT mark_type, coord_x, coord_y FROM rec.damage_marks WHERE damage_map_id='${map}'`
+      );
+      expect(marks.rows).toHaveLength(1);
+      expect(marks.rows[0].mark_type).toBe('dent');
+    });
+
+    await admin.query(`DELETE FROM rec.damage_marks WHERE damage_map_id=$1`, [map]);
+    await admin.query(`DELETE FROM rec.damage_maps WHERE id=$1`, [map]);
+  });
+});
+
 describe('FE-019 — refusal media is optional by default', () => {
   it('accepts a refusal with no media, and refuses one only where a rule says so', async () => {
     const visit = await openVisit();

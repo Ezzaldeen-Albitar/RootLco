@@ -231,6 +231,51 @@ export const PROFILES = {
       supabase: 'the partner-identity remediation must not change the database',
     },
   },
+  'p1-28-backend-owner-qa': {
+    why:
+      'the DBCR-P1-28-001 Backend remediation Owner QA forced: a damage map must NAME the template ' +
+      'revision it was drawn on, enforced in the database rather than trusted from a compliant ' +
+      'Frontend, plus the read field that lets Reception tell "never published" from "published ' +
+      'and retired"',
+    // A NARROWER surface than `p1-18-read-surface`, which would also have
+    // permitted this diff. Borrowing it would have declared nothing — that
+    // profile's `why` describes new GET routes, close commands and permission
+    // seeds, and this branch publishes no operation at all. It changes one
+    // guard, one repository read, the route and service that carry them, one
+    // migration, and the tests that prove all of it.
+    allowed: ['apiSource', 'migrations', 'docs', 'tooling', 'tests', 'rootConfig'],
+    forbidden: {
+      // The reason every Backend profile forbids it, and the reason this
+      // remediation is split in two: the Frontend half of this change — sending
+      // the revision, and rendering the retired sentence — is reviewed as
+      // Frontend, against a Backend contract already merged. A profile
+      // permitting both halves would let a write-invariant change and the client
+      // that depends on it land in one unreviewed commit.
+      web: 'Backend-only — the Frontend half is a separate change under the P1-28 Frontend profile',
+      // Declared explicitly because it MUST be: `phase-ownership.test.ts` holds
+      // every profile to naming `webContract` in one list or the other, since
+      // the bucket sits before `web` in the classifier and silence about it
+      // reads as permission to nobody and as refusal to nobody.
+      //
+      // Forbidden here on the bucket's own stated rule: an entry belongs to it
+      // when the file is one half of a `toEqual(published)` pair forced by
+      // publishing an operation. This branch publishes NO operation — it adds a
+      // field to a response an existing operation already returns — so no
+      // exhaustiveness assertion reaches the mirror, and typing that field is a
+      // Frontend consumption decision rather than contract bookkeeping.
+      webContract:
+        'this remediation publishes no operation, so no exhaustiveness assertion forces a mirror ' +
+        'row on it; typing the new response field is the Frontend half',
+      webGenerated:
+        'no operation is published, so the idempotency manifest cannot move — a regenerated ' +
+        'manifest here would mean something else changed',
+      apiConfig:
+        'the API workspace configuration is untouched: this adds no dependency and no build setting',
+      supabase:
+        'nothing outside supabase/migrations — no seed, no config. A seed change would be a ' +
+        'different claim about the database and should be declared as one',
+    },
+  },
   'repository-tooling': {
     why:
       'a repository-wide GATE and its suite, owned by no phase — the no-fake-data guard, the ' +

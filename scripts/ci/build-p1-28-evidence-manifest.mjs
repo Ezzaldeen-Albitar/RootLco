@@ -1134,7 +1134,35 @@ export function pendingBinding(candidateFile, git) {
       continue;
     }
     superseded.push(name);
-    if (!marked) continue; // tierBinding / packageArithmetic own the undeclared case.
+    if (!marked) {
+      /*
+       * AN UNDECLARED HEAD IS REFUSED — which is what the docblock above has
+       * always said and what this line used to contradict.
+       *
+       * It read `if (!marked) continue;`, deferring to "tierBinding /
+       * packageArithmetic own the undeclared case". That is true of the five
+       * `tiers.*.hostedAttestation` sites, which `tierBinding` checks for
+       * fetchability. It is NOT true of the six top-level sites — `hostedCi`,
+       * `codeql`, `database`, `browserByProject`, `dependencySecurity`,
+       * `productionBuild` — which no other rule validates, so omitting the
+       * marker took the head out of check entirely while the binding stayed in
+       * the pending list and the package stayed green.
+       *
+       * Measured against the committed package by deleting the marker from
+       * `codeql`: a head this repository does not contain was ACCEPTED, a head
+       * that is not an ancestor of the candidate was ACCEPTED, and a binding
+       * with no `supersededBy` at all was ACCEPTED. "A head nobody can fetch is
+       * not a citation" was the rule three lines below, unreachable.
+       *
+       * So the declaration is now mandatory rather than merely load-bearing: a
+       * head that is not the candidate must SAY whether it precedes or follows
+       * it, and both answers are then checked.
+       */
+      problems.push(
+        `${name}: names head ${head.slice(0, 8) || '(none)'}, which is not the candidate, and declares neither \`describesSupersededHead\` nor \`${SUCCESSOR_MARKER}\`. A head that is not the candidate is either behind it or ahead of it, and the package must say which — an undeclared head is checked by nothing.`
+      );
+      continue;
+    }
     if (!/^[0-9a-f]{40}$/.test(head)) {
       problems.push(`${name}: declares a superseded head \`${head}\` that is not a commit id`);
       continue;
@@ -1299,6 +1327,38 @@ export function tierBinding(candidateFile, git) {
             ? ''
             : ` at the product-identical successor ${String(attestation.headSha).slice(0, 8)}`)
       );
+
+    /*
+     * A tier that HOLDS a local measurement may not relabel itself hosted-only.
+     *
+     * `HOSTED_PENDING_AT_CANDIDATE` is legitimate for a tier this repository
+     * cannot measure — `backend`, `database` and `browser` declare it because
+     * there is no local run to compute against. It is NOT a label a tier with a
+     * run ledger may adopt: `LOCAL_PROVENANCES` excludes it, so the line below
+     * skips the ledger binding, the figure comparison, the `measuredAtCommit`
+     * pin and the whole drift computation, and every one of those obligations
+     * disappears from a package that still shows the ledger it is no longer
+     * checked against.
+     *
+     * Found by mutating the committed package: setting `tiers.unit.provenance`
+     * to `HOSTED_PENDING_AT_CANDIDATE` left the gate GREEN while `unit` kept its
+     * `localLedger`, its tests, its files and its measured commit. That is the
+     * pending mode working as a general escape hatch, which is the one thing it
+     * must not become — a hosted binding may be awaited, but a LOCAL figure is
+     * either computed here or it is not evidence.
+     *
+     * The contradiction is what is refused, not the provenance: saying "no local
+     * observation exists" while carrying the local observation.
+     */
+    if (
+      !LOCAL_PROVENANCES.includes(tier.provenance) &&
+      tier.localLedger &&
+      typeof tier.localLedger === 'object'
+    ) {
+      localProblems.push(
+        `${name}: declares provenance ${String(tier.provenance)}, which claims no local observation of this candidate, while carrying a \`localLedger\` that names one — ${String(tier.localLedger.path ?? 'a ledger')}. A tier holding a local measurement must declare a local provenance (${LOCAL_PROVENANCES.join(' or ')}), because that label is what puts the figures, the ledger binding and the measurement head under check.`
+      );
+    }
 
     if (!LOCAL_PROVENANCES.includes(tier.provenance)) continue;
 

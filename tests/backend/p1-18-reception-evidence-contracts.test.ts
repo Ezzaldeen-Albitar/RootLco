@@ -173,6 +173,7 @@ interface ContractBody {
   }[];
   readonly overrides?: readonly { readonly id: string; readonly requirementCode: string }[];
   readonly bindableTemplates?: readonly { readonly id: string }[];
+  readonly retiredPublishedTemplateCount?: number;
 }
 interface SignatureLedgerBody {
   readonly signatures?: readonly {
@@ -1031,6 +1032,26 @@ describe('FE-012 — a template revision never moves under a historical visit', 
     expect(view.versions?.map((v) => v.versionNumber)).toEqual([1, 2]);
     expect(view.versions?.find((v) => v.versionNumber === 1)?.status).toBe('retired');
 
+    /*
+     * The retired-published COUNT, measured across the retirement.
+     *
+     * An absolute figure would depend on what every other test in this branch
+     * left behind, so the assertion is a DELTA of exactly one: retiring this
+     * slot moves the count by itself. That is also the property the screen
+     * needs — before, an empty bindable list means "never published"; after, the
+     * same empty list means "published and retired", and only this number tells
+     * the two apart.
+     */
+    const beforeVisit = await newVisit();
+    authAs(SUBJ_FULL);
+    const beforeContract = (await (
+      await LIST_BINDINGS(get(`/receptions/${beforeVisit}/evidence-bindings`), {
+        params: Promise.resolve({ receptionId: beforeVisit }),
+      })
+    ).json()) as ContractBody;
+    const retiredBefore = beforeContract.retiredPublishedTemplateCount ?? -1;
+    expect(retiredBefore, 'the count must be published on the contract').toBeGreaterThanOrEqual(0);
+
     // Retiring the slot withdraws it from the bindable list of a NEW visit.
     authAs(SUBJ_FULL);
     const retired = await SET_TEMPLATE_STATUS(
@@ -1058,6 +1079,9 @@ describe('FE-012 — a template revision never moves under a historical visit', 
       })
     ).json()) as ContractBody;
     expect(contract.bindableTemplates?.some((t) => t.id === first.templateId)).toBe(false);
+    // Withdrawn from selection AND accounted for: the desk can now say the
+    // diagram is retired instead of saying none was ever published.
+    expect(contract.retiredPublishedTemplateCount).toBe(retiredBefore + 1);
 
     // A stale If-Match is a version conflict, not a silent no-op.
     authAs(SUBJ_FULL);

@@ -104,8 +104,8 @@
       "class": "DERIVABLE_LOCAL",
       "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
-      "locator": "| Root unit tier — tests executed             | 2775  | `--record unit`, from the `vitest` JSON report                     |",
-      "value": "2775",
+      "locator": "| Root unit tier — tests executed             | 2777  | `--record unit`, from the `vitest` JSON report                     |",
+      "value": "2777",
       "binding": {
         "kind": "run",
         "tier": "unit",
@@ -157,8 +157,8 @@
       "class": "DERIVABLE_LOCAL",
       "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
-      "locator": "| Migrations on disk                          | 123   | a walk of `supabase/migrations`                                    |",
-      "value": "123",
+      "locator": "| Migrations on disk                          | 124   | a walk of `supabase/migrations`                                    |",
+      "value": "124",
       "binding": {
         "kind": "derived",
         "table": "counts",
@@ -212,8 +212,8 @@
       "class": "DERIVABLE_GIT",
       "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
-      "locator": "| Migrations tracked by git at `HEAD`                  | 123                                         |",
-      "value": "123",
+      "locator": "| Migrations tracked by git at `HEAD`                  | 124                                         |",
+      "value": "124",
       "binding": {
         "kind": "git",
         "op": "lsTree",
