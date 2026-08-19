@@ -126,53 +126,20 @@ export type SignatureEventType = (typeof SIGNATURE_EVENT_TYPES)[number];
 export const SIGNATURE_STATUSES = ['draft', 'finalized', 'repudiated'] as const;
 export type SignatureStatus = (typeof SIGNATURE_STATUSES)[number];
 
-/*
- * `EVIDENCE_USABLE_VERSION_STATES` and `EVIDENCE_FINAL_VERSION_STATE` stood
- * here, and are gone.
+/**
+ * Document-version states.
  *
- * ## Nothing consumed them, and the docblock above them was wrong three times
- *
- * Repository-wide the two names occurred in exactly two places: this
- * declaration, and the re-export in this module's barrel. No route validated
- * against them, no service compared to them, no test named them. That is the
- * shape this repository has now removed four times — `crm/customers/
- * identity-api.ts` (`P1-27-QA-002`), `listVisitReasons` and
- * `conditionEvidenceKinds` (`P1-28-F9`), and the attachments version read-back
- * in the same wave as this one: a declaration that READS as a rule while
- * nothing enforces it.
- *
- * Here the prose made that actively misleading rather than merely inert, and
- * each of its three claims is refutable against a file in this repository:
- *
- *   - it said `ck_document_versions_status` "admits exactly these four" over an
- *     array holding TWO members. Migration 121
- *     (`20260815090000_shared_reception_evidence_foundation.sql`) rewrote that
- *     constraint, and it admits FIVE — `pending`, `scanning`, `accepted`,
- *     `quarantined`, `rejected`. The sentence disagreed with the constraint, and
- *     with the array beneath it, in different directions at once;
- *   - it said "there is no `scanning` state". There is. The same migration adds
- *     the member and the `scanning_at` column, `shared.begin_document_scan`
- *     writes it, and the product ships copy for it — `DOCUMENT_VERSION_STATUSES`
- *     in `apps/web/src/features/attachments/attachments-contract.ts` carries all
- *     five, and `isSettled` exists precisely to tell a stalled `pending` from a
- *     version still moving through it;
- *   - it named `shared.document_scan_results`, which is not a relation this
- *     database has. The append-only verdict history is
- *     `shared.file_scan_results` (`20260718101000`).
- *
- * ## Why nothing replaces them
- *
- * This module owns the words the ROUTES validate against, and a document
- * version state is not one of them — it belongs to `shared`, and no route here
- * can check it without first reading a version it was not given. Which states
- * may be bound and which may be finalized is decided inside the write, where
- * the decision cannot be skipped: `rec.guard_reception_evidence_binding`
- * refuses a binding whose version is not `pending` or `accepted` and refuses a
- * finalization of anything other than `accepted`, and
- * `rec.guard_signature_evidence` and `rec.guard_signature_event` do the same for
- * a signature. A second copy checked by nobody could only ever drift away from
- * that, which is exactly what it had already done.
+ * `ck_document_versions_status` admits exactly these four. There is no
+ * `scanning` state — a version being scanned is `pending` with an unfinished
+ * `shared.document_scan_results` row — and writing one into a guard would have
+ * been a value that can never match.
  */
+export const EVIDENCE_USABLE_VERSION_STATES: readonly string[] = Object.freeze([
+  'pending',
+  'accepted',
+]);
+/** The only state that may be COUNTED. Finalization narrows to this. */
+export const EVIDENCE_FINAL_VERSION_STATE = 'accepted';
 
 export const MAX_CAPTURE_COUNT = 20;
 export const MAX_CAPTURE_OVERRIDE_REASON = 1000;
