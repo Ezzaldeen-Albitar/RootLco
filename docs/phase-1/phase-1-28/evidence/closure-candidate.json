@@ -255,7 +255,16 @@
     "whatWouldFailThis": "Any executable commit in `git log <head under test> --not <candidate> <historical base>` that is not named here, any named id outside that computed range, any product-path difference under apps/** or supabase/**, or any Git/topology question that returns UNKNOWN."
   },
   "absorbedSuccessors": [],
-  "successors": [],
+  "successors": [
+    {
+      "commit": "bda8b12d29b268af09c5d8fdc0c900bddf577aa4",
+      "subject": "test: record why the storage round-trip may skip",
+      "changes": ["tests/acceptance/storage-round-trip.test.ts"],
+      "whyItIsNotAReFreeze": "`git diff --name-only d8850464..bda8b12d -- apps supabase` is EMPTY. The product tree this package measures is byte-identical to the candidate, which is the whole condition the successor apparatus exists for — and the gate COMPUTES it rather than reading this sentence.",
+      "whatItChanged": "One test file, and only its comments: `check-test-honesty.mjs` refuses a `.skipIf` carrying no recorded reason, and reads only the line immediately above it. The skip itself, the condition and every assertion are unchanged, so no measurement in this package moves.",
+      "whyItIsNamedRatherThanAbsorbed": "It is executable — a file under `tests/` — so the gate requires it by name. A documentation-only successor is printed instead, because a commit cannot write its own id into a file it contains."
+    }
+  ],
   "howTierFiguresAreChecked": "Four obligations, because there are four kinds of claim. ARITHMETIC: `passed + failed + skipped` must equal the declared total. LOCAL: figures equal the P1-27 run ledger read out of Git at `localLedger.atCommit`. MEASUREMENT HEAD: both local tiers name successor ea045d88fd88843c82c8ecd7273b0772f65417f6, whose six declared non-product drift paths equal Git's path set, and are pinned to ledger commit 2e0f2191db4c118e766e9ca4b8ffff981b63d7c6. HOSTED: claims remain fetchable attestations at their recorded run heads; a non-candidate head must explicitly be a superseded ancestor or a product-identical descendant, and Git refusal is UNKNOWN rather than empty.",
   "tiers": {
     "unit": {
