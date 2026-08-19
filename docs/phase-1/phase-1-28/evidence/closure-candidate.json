@@ -277,8 +277,8 @@
     "unit": {
       "label": "root unit and foundation",
       "tests": 2777,
-      "passed": 2775,
-      "failed": 2,
+      "passed": 2772,
+      "failed": 5,
       "skipped": 0,
       "files": 104,
       "measuredAtCommit": "e1f6a2aa86f55dc90c450e5e1bcbfcaf1c40f647",
@@ -286,8 +286,8 @@
       "localLedger": {
         "path": "docs/phase-1/phase-1-27/evidence/local-run-ledger.json",
         "tier": "unit",
-        "atCommit": "06d34596a6600a214302b2607362e9eda7a54b58",
-        "howChecked": "`git show 06d34596a6600a214302b2607362e9eda7a54b58:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD at the commit that carries this record, rather than the working copy, which would let an uncommitted edit vouch for itself. The run was taken at e1f6a2aa86f55dc90c450e5e1bcbfcaf1c40f647, a head executable-identical to the candidate (the commits between them touch documentation only), and recorded into that commit."
+        "atCommit": "e0cdeecb01d45ce4ccead0199f95b1aa40eba160",
+        "howChecked": "`git show e0cdeecb01d45ce4ccead0199f95b1aa40eba160:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD at the commit that carries this record, rather than the working copy, which would let an uncommitted edit vouch for itself. The run was taken at e1f6a2aa86f55dc90c450e5e1bcbfcaf1c40f647, a head executable-identical to the candidate (the commits between them touch documentation only), and recorded into that commit."
       },
       "hostedAttestation": {
         "runId": 31885987461,
@@ -312,8 +312,8 @@
       "localLedger": {
         "path": "docs/phase-1/phase-1-27/evidence/local-run-ledger.json",
         "tier": "web",
-        "atCommit": "06d34596a6600a214302b2607362e9eda7a54b58",
-        "howChecked": "`git show 06d34596a6600a214302b2607362e9eda7a54b58:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD at the commit that carries this record, rather than the working copy, which would let an uncommitted edit vouch for itself. The run was taken at 7a584e99d7ab7c83179d712d37408691a19a0e8d, a head executable-identical to the candidate (the commits between them touch documentation only), and recorded into that commit."
+        "atCommit": "e0cdeecb01d45ce4ccead0199f95b1aa40eba160",
+        "howChecked": "`git show e0cdeecb01d45ce4ccead0199f95b1aa40eba160:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD at the commit that carries this record, rather than the working copy, which would let an uncommitted edit vouch for itself. The run was taken at 7a584e99d7ab7c83179d712d37408691a19a0e8d, a head executable-identical to the candidate (the commits between them touch documentation only), and recorded into that commit."
       },
       "hostedAttestation": {
         "runId": 31885987461,

@@ -32,7 +32,7 @@
       "bytes": 17702
     },
     "docs/phase-1/phase-1-27/clean-room-evidence.md": {
-      "sha256": "c8beb4a271252eeb523c20bc3f26f3c52fd80aae22622b3989595b2f449885bb",
+      "sha256": "418adad67e08f5afc37e3d42284abb96a8d320d88b12de81921bfe5f6078342d",
       "bytes": 23734
     },
     "docs/phase-1/phase-1-27/closure-record.md": {
@@ -60,7 +60,7 @@
       "bytes": 81669
     },
     "docs/phase-1/phase-1-27/evidence/closing-value-ledger.json": {
-      "sha256": "f3e564a97604f35aa614a2357776ef27ce7c696f0389e4652138317a950011f6",
+      "sha256": "1911a245bf0160f60e8160767f0d1fa2c79058465e70f192c82c2b1a4b59b83f",
       "bytes": 50344
     },
     "docs/phase-1/phase-1-27/evidence/lifecycle-ledger.json": {
