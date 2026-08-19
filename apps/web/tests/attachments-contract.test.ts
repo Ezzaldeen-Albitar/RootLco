@@ -176,6 +176,44 @@ describe('the attachments contract is DERIVED from what governs it', () => {
     expect([...DOCUMENT_VERSION_STATUSES].sort()).not.toEqual([...widened].sort());
   });
 
+  it('reaches a non-API host exactly ONCE, and only for the store upload', () => {
+    /*
+     * The other half of the boundary allowance.
+     *
+     * `check-api-boundary.mjs` forbids `fetch(` outside `src/lib/api`, and names
+     * this one file as the exception: the object-store `PUT` goes to an address
+     * the API minted, and routing it through the API client would attach our
+     * session bearer to somebody else’s host. The rule scans FILES, so a file is
+     * the smallest thing it can name — which means the allowance is exactly as
+     * wide as this file, and nothing in the gate stops a second call being added
+     * to it.
+     *
+     * This is what stops that. One call, inside `putObject`, sending a URL that
+     * came from the authorization rather than from anything this tree composes.
+     */
+    const source = readFileSync(join(WEB, 'src', 'features', 'attachments', 'api.ts'), 'utf8');
+    const stripped = source.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|\s)\/\/.*$/gm, '$1');
+
+    const calls = [...stripped.matchAll(/\bfetch\s*\(/g)];
+    expect(calls, 'this file may hold exactly one outbound call').toHaveLength(1);
+
+    /*
+     * …and it is the store upload. The call sits inside `putObject`, and its URL
+     * is `authorization.uploadUrl` — a value the API returned. A `fetch` built
+     * from anything this tree concatenates would be a destination we chose, which
+     * is the thing the boundary rule exists to refuse.
+     */
+    const opens = stripped.indexOf('async function putObject(');
+    expect(opens, 'putObject left this file').toBeGreaterThan(-1);
+    expect(calls[0]!.index, 'the outbound call moved out of putObject').toBeGreaterThan(opens);
+
+    const call = stripped.slice(calls[0]!.index, calls[0]!.index + 120);
+    expect(call).toContain('authorization.uploadUrl');
+
+    // And the two properties that keep OUR credential off that host.
+    expect(stripped).toContain("redirect: 'error'");
+    expect(stripped).not.toMatch(/credentials\s*:\s*['\"]include/);
+  });
   it('derives the terminal statuses from the guard, minus the one that is a pass', () => {
     /*
      * `TERMINAL_VERSION_STATUSES` is what lets a screen tell a permanent scan
