@@ -289,6 +289,8 @@ const CONTRACT: CaptureContract = {
   ],
   overrides: [WAIVER],
   bindableTemplates: [],
+  // No diagram published and none retired — the NEVER-PUBLISHED state.
+  retiredPublishedTemplateCount: 0,
 };
 
 /**
@@ -319,6 +321,8 @@ const BASELINE_EXTERIOR: CaptureContract = {
   ],
   overrides: [],
   bindableTemplates: [],
+  // No diagram published and none retired — the NEVER-PUBLISHED state.
+  retiredPublishedTemplateCount: 0,
 };
 
 function contractRead(contract: CaptureContract = CONTRACT) {
@@ -576,6 +580,8 @@ describe('P1-28-FE-017 — one row per requirement the contract published', () =
       ),
       overrides: [],
       bindableTemplates: [],
+      // No diagram published and none retired — the NEVER-PUBLISHED state.
+      retiredPublishedTemplateCount: 0,
     });
 
     // Six of seven: one short, and NOT met.

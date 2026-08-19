@@ -230,9 +230,22 @@ export function DamageMapStep({
    * `rec.reception.read` — that split is what keeps the manage code meaningful,
    * and it is why there is no template administration on this screen.
    */
+  /*
+   * The retired-published count travels beside the bindable rows, so it is kept
+   * here rather than squeezed into `ServerPage`: that shape is the table's, and
+   * a per-response field belonging to one step does not belong in it.
+   *
+   * Reset to 0 on every non-ok read. Leaving a stale count would let a FAILED
+   * read keep asserting "a diagram was retired" — a claim about the world made
+   * from a question nobody answered, which is the exact defect class this step
+   * already fixed once in `markGateOf`.
+   */
+  const [retiredCount, setRetiredCount] = useState(0);
+
   const loadTemplates = useCallback(async (): Promise<ServerPage<BindableTemplateEntry>> => {
     const read = await readCaptureContract(visitId);
     if (read.status === 'ok' && read.data !== null) {
+      setRetiredCount(read.data.retiredPublishedTemplateCount);
       return {
         status: 'ok',
         rows: read.data.bindableTemplates,
@@ -241,6 +254,7 @@ export function DamageMapStep({
         correlationId: read.correlationId,
       };
     }
+    setRetiredCount(0);
     return {
       status: read.status === 'ok' ? 'error' : read.status,
       rows: [],
@@ -276,7 +290,23 @@ export function DamageMapStep({
       // to prevent.
       entry.activeVersionId !== null
   );
-  const retiredTemplates = (templates ?? []).filter((entry) => entry.status !== 'active');
+  /*
+   * Whether this branch has published a diagram and can no longer bind it.
+   *
+   * This was `templates.filter((entry) => entry.status !== 'active')`, over the
+   * BINDABLE list — and `listBindableTemplates` filters on `t.status = 'active'`
+   * and `tv.status = 'active'` in SQL, so a retired row never reached the client
+   * and that array was permanently empty. The notice below could not render, and
+   * `receptions.damage.templateRetired` was an unreachable message: the screen
+   * always fell through to "no diagram published yet", which is false in effect
+   * after a retirement and sends an administrator looking for the wrong problem.
+   *
+   * DBCR-P1-28-001 publishes the count on the same read. It is a COUNT rather
+   * than the rows on purpose — the desk needs to know only THAT such a diagram
+   * exists to say so, and the retired slots themselves are catalogue
+   * administration behind `rec.catalogue.manage`, which no receptionist holds.
+   */
+  const retiredPublishedCount = templates === null ? 0 : retiredCount;
 
   /**
    * The maps a mark may hang off — this visit's own, labelled by their map type
@@ -338,7 +368,15 @@ export function DamageMapStep({
       >
         <EvidenceReadBack locale={locale} messages={messages} kind="damage_map" table={maps} />
 
-        {retiredTemplates.length > 0 ? (
+        {/*
+          A diagram was published for this branch and can no longer be bound.
+          Shown whenever it is TRUE, not only when the picker is empty: a branch
+          can hold one live diagram and one retired, and an operator choosing
+          between what is offered is entitled to know that a diagram they used
+          last week is not missing by accident. The maps already drawn on it stay
+          readable, which is what the sentence says.
+        */}
+        {retiredPublishedCount > 0 ? (
           <p
             data-testid="damage-map-retired"
             className="text-caption text-text-muted"
@@ -361,9 +399,21 @@ export function DamageMapStep({
             {translate(messages, 'receptions.damage.templateUnread')}
           </p>
         ) : templates === null ? null : selectableTemplates.length === 0 ? (
-          <p data-testid="damage-map-none" className="text-caption" lang={locale}>
-            {translate(messages, 'receptions.damage.templateNone')}
-          </p>
+          /*
+           * NOTHING to draw on — and the reason decides the sentence.
+           *
+           * "No diagram has been published yet, ask somebody to publish one" was
+           * said in BOTH cases, and after a retirement it is false in effect: one
+           * WAS published, and the administrator it sends looking for an empty
+           * catalogue will not find the problem. When the count says a diagram
+           * was published and withdrawn, the notice above has already said so and
+           * this slot stays empty rather than contradicting it.
+           */
+          retiredPublishedCount > 0 ? null : (
+            <p data-testid="damage-map-none" className="text-caption" lang={locale}>
+              {translate(messages, 'receptions.damage.templateNone')}
+            </p>
+          )
         ) : (
           <MapForm
             messages={messages}

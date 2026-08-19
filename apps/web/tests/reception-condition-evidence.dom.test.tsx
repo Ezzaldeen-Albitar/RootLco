@@ -217,7 +217,10 @@ function template(over: Partial<BindableTemplateEntry> = {}): BindableTemplateEn
 }
 
 /** The visit's own capture contract — the only place bindable templates arrive from. */
-function captureContract(bindableTemplates: readonly BindableTemplateEntry[]) {
+function captureContract(
+  bindableTemplates: readonly BindableTemplateEntry[],
+  retiredPublishedTemplateCount = 0
+) {
   return {
     status: 'ok' as const,
     data: {
@@ -226,6 +229,19 @@ function captureContract(bindableTemplates: readonly BindableTemplateEntry[]) {
       bindings: [],
       overrides: [],
       bindableTemplates,
+      /*
+       * How the RETIRED state actually arrives.
+       *
+       * These fixtures used to express it by putting a `status: 'retired'` row
+       * INTO `bindableTemplates` — data the server cannot produce.
+       * `listBindableTemplates` filters `t.status = 'active'` and
+       * `tv.status = 'active'` in SQL, so a retired row never reaches the
+       * client. The step derived its retired notice from that array, so the
+       * notice was unreachable in the running product and the test made the dead
+       * branch look alive — which is why Owner QA met "no diagram published yet"
+       * on a branch whose diagram had been retired minutes earlier.
+       */
+      retiredPublishedTemplateCount,
     },
     correlationId: 'corr-capture',
   };
@@ -883,18 +899,9 @@ describe('the damage step (FE-012)', () => {
   });
 
   it('does not offer a RETIRED diagram for a new map, and says the old ones stay readable', async () => {
-    readCaptureContract.mockResolvedValue(
-      captureContract([
-        template({ id: 'tpl-live' }),
-        template({
-          id: 'tpl-old',
-          mapType: 'interior',
-          status: 'retired',
-          documentId: 'doc-old',
-          documentVersionId: 'ver-old',
-        }),
-      ])
-    );
+    // A live diagram offered, and the contract reporting one retired beside it.
+    // The retired slot is NOT in the array, because the server never sends one.
+    readCaptureContract.mockResolvedValue(captureContract([template({ id: 'tpl-live' })], 1));
     recordConditionEvidence.mockResolvedValue(recorded('map-new', 'damage_map'));
     const user = userEvent.setup();
     renderLtr(<DamageMapStep {...stepProps()} />);
@@ -925,6 +932,58 @@ describe('the damage step (FE-012)', () => {
     });
   });
 
+  it('tells NEVER PUBLISHED and PUBLISHED-THEN-RETIRED apart, in both directions', async () => {
+    /*
+     * Found by hand during Owner acceptance, on a branch whose only diagram had
+     * been retired minutes earlier. The screen said *"This branch has no diagram
+     * published yet… ask whoever administers the workshop catalogues to publish
+     * one"* — false in effect, and it sends an administrator looking for an empty
+     * catalogue rather than for the retirement they just performed.
+     *
+     * `listBindableTemplates` filters `t.status = 'active'` and
+     * `tv.status = 'active'` in SQL, so `bindableTemplates` is empty in BOTH
+     * states and the client could not tell them apart. DBCR-P1-28-001 publishes
+     * `retiredPublishedTemplateCount` on the same read — a count, never the
+     * rows, because naming the retired slots would hand a
+     * `rec.catalogue.manage` surface to every reader of a visit.
+     *
+     * Both directions are asserted. A screen that always said "retired" would
+     * satisfy the second half alone, and it is just as wrong.
+     */
+    readCaptureContract.mockResolvedValue(captureContract([], 0));
+    const neverPublished = renderLtr(<DamageMapStep {...stepProps()} />);
+    expect(await within(mapsPanel()).findByTestId('damage-map-none')).toHaveTextContent(
+      EN['receptions.damage.templateNone']!
+    );
+    expect(within(mapsPanel()).queryByTestId('damage-map-retired')).not.toBeInTheDocument();
+    neverPublished.unmount();
+
+    readCaptureContract.mockResolvedValue(captureContract([], 2));
+    renderLtr(<DamageMapStep {...stepProps()} />);
+    expect(await within(mapsPanel()).findByTestId('damage-map-retired')).toHaveTextContent(
+      EN['receptions.damage.templateRetired']!
+    );
+    expect(within(mapsPanel()).queryByTestId('damage-map-none')).not.toBeInTheDocument();
+  });
+
+  it('does not claim a diagram was retired when the READ failed', async () => {
+    /*
+     * The count is a fact from an answered question, and a failed read answers
+     * nothing. Asserting "a diagram has been retired" from a read that did not
+     * return would be the same defect this step already fixed in `markGateOf`:
+     * a claim about the world derived from silence.
+     */
+    readCaptureContract.mockResolvedValue({
+      status: 'error' as const,
+      data: null,
+      correlationId: 'corr-fail',
+    });
+    renderLtr(<DamageMapStep {...stepProps()} />);
+    expect(await within(mapsPanel()).findByTestId('damage-map-unread')).toBeInTheDocument();
+    expect(within(mapsPanel()).queryByTestId('damage-map-retired')).not.toBeInTheDocument();
+    expect(within(mapsPanel()).queryByTestId('damage-map-none')).not.toBeInTheDocument();
+  });
+
   it('keeps a visit drawn on a retired diagram readable, and still markable', async () => {
     /*
      * Retirement is forward-looking. A map already drawn carries the exact
@@ -933,20 +992,34 @@ describe('the damage step (FE-012)', () => {
      * being opened on a drawing nobody maintains.
      */
     evidenceByKind({ damage_map: [DAMAGE_MAP] });
-    readCaptureContract.mockResolvedValue(
-      captureContract([template({ id: 'tpl-old', status: 'retired' })])
-    );
+    /*
+     * Nothing bindable, and the contract says WHY: one diagram was published for
+     * this branch and has been retired. The retired slot is not in the array —
+     * `listBindableTemplates` filters it out in SQL and the server cannot send
+     * one — so the count is the only thing that can distinguish this state from
+     * a branch that never published anything.
+     */
+    readCaptureContract.mockResolvedValue(captureContract([], 1));
     renderLtr(<DamageMapStep {...stepProps()} />);
 
     const panel = mapsPanel();
     // The map itself reads back — the record does not depend on the template's
     // lifecycle, which is the whole reason both uuids are stored on the row.
     expect(await within(panel).findByText('top')).toBeInTheDocument();
-    expect(within(panel).getByTestId('damage-map-retired')).toBeInTheDocument();
-    // …and no new one can be opened, stated as the configuration state it is.
-    expect(within(panel).getByTestId('damage-map-none')).toHaveTextContent(
-      EN['receptions.damage.templateNone']!
+    expect(within(panel).getByTestId('damage-map-retired')).toHaveTextContent(
+      EN['receptions.damage.templateRetired']!
     );
+    /*
+     * And it must NOT also say a diagram was never published.
+     *
+     * This case used to assert exactly that — `damage-map-none` carrying
+     * `templateNone` — beside the retired notice, so the suite held the screen
+     * to saying both "one was retired" and "none was ever published" about the
+     * same branch in the same breath. Owner QA met the second sentence on a
+     * branch whose diagram had been retired minutes earlier, and this assertion
+     * is the reason nothing caught it.
+     */
+    expect(within(panel).queryByTestId('damage-map-none')).not.toBeInTheDocument();
     expect(
       within(panel).queryByRole('button', { name: EN['receptions.damage.templateSubmit']! })
     ).not.toBeInTheDocument();
