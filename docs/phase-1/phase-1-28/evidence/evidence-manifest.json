@@ -17,31 +17,31 @@
       "passed": 2777,
       "failed": 0,
       "skipped": 0,
-      "provenance": "LOCAL_COMPUTED_HOSTED_PENDING"
+      "provenance": "LOCAL_AND_HOSTED_AGREE"
     },
     "web": {
       "passed": 2867,
       "failed": 0,
       "skipped": 0,
-      "provenance": "LOCAL_COMPUTED_HOSTED_PENDING"
+      "provenance": "LOCAL_AND_HOSTED_AGREE"
     },
     "backend": {
       "passed": 2004,
       "failed": 0,
       "skipped": 0,
-      "provenance": "HOSTED_PENDING_AT_CANDIDATE"
+      "provenance": "HOSTED_ARTEFACT_ATTESTED"
     },
     "database": {
       "passed": 1647,
       "failed": 0,
       "skipped": 0,
-      "provenance": "HOSTED_PENDING_AT_CANDIDATE"
+      "provenance": "HOSTED_ARTEFACT_ATTESTED"
     },
     "browser": {
       "passed": 366,
       "failed": 0,
       "skipped": 4,
-      "provenance": "HOSTED_PENDING_AT_CANDIDATE"
+      "provenance": "HOSTED_ARTEFACT_ATTESTED"
     }
   },
   "fileCount": 18,
@@ -71,8 +71,8 @@
       "bytes": 43201
     },
     "docs/phase-1/phase-1-28/evidence/closure-candidate.json": {
-      "sha256": "ddfb25d2ae56226cc1afbd771c202a6130771ba13d45319954691f75b22041c1",
-      "bytes": 91258
+      "sha256": "ab36988dd71b6b41a9bcac380eebdabcdd313a833f5831b0fbba281c80c04c59",
+      "bytes": 88893
     },
     "docs/phase-1/phase-1-28/evidence/closure-evidence.md": {
       "sha256": "5ea9d97c9008f5bf7ba94108f6af8f0bfd11f9e85166cc0e3d35b27ae1426836",
