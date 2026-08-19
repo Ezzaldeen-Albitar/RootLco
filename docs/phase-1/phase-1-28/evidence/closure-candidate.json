@@ -380,8 +380,7 @@
         "supersededBy": "The hosted run taken at a head that DESCENDS from candidate 526a3b39 — the pull request CI for branch `p1-28/od-025-policy-enforcement`. Until that run exists this figure describes an ancestor and is cited as such; it is replaced by re-citing the same fields (run id, job id, head, artefact) at the descending head, never by relaxing the rule that refused it."
       },
       "note": "MEASURED. Exact remediation run 31885987461 job 95015291803 at 1a186a7b: `playwright-report.json` `stats` reports expected 366, skipped 4, unexpected 0, flaky 0, over 370 planned. The workspace-dependent skip count returned from 5 to 4; it is recorded rather than smoothed over. NO P1-28 CASE IS SKIPPED, checked from the run artefact: `authenticated/appointments-and-receptions.spec.ts` executed all 141 entries, 47 in each of authenticated-en, authenticated-ar and authenticated-tablet."
-    },
-    "reMeasuredBy": "DBCR-P1-28-001. The previous figures were taken at 2135d190 (unit) and 2f8a925d (web), and ten executable paths differ between those heads and this candidate — so they described a tree this candidate is not. Re-measured here rather than carried forward, which is the whole rule this package exists to enforce."
+    }
   },
   "browserByProject": {
     "spec": "authenticated/appointments-and-receptions.spec.ts",
@@ -716,5 +715,6 @@
     "why": "This map named FE-007, FE-012, FE-017 and FE-018 as blocked. All four are PASS in the matrix at this head and the gate refuses a closed row presented as blocked — as wrong as the reverse — so the entries are removed rather than left standing with a note.",
     "whatClosedThem": "FE-007: the Owner answered register question A; `receiving_employee_id` is an IAM reference under `fk_reception_visits_receiving_employee` with an eligibility trigger, and `rec.receiving-employee-list` is the canonical operation. FE-012, FE-017 and FE-018: the Owner resolved `P1-OD-025` for reception evidence — seven `reception_*` document categories with types and a ceiling — so capture, the damage-map template and the signature image are no longer blocked by a decision. What each of the three still lacks is recorded per task in the matrix and in `closure-evidence.md`, and none of it is this decision.",
     "whatIsStillNotClosed": "The PHASE. `ownerAcceptance` is unchanged: P1-28 closes on an explicit Owner Pass and on nothing else."
-  }
+  },
+  "tiersReMeasuredNote": "DBCR-P1-28-001. The previous figures were taken at 2135d190 (unit) and 2f8a925d (web), and ten executable paths differ between those heads and this candidate — so they described a tree this candidate is not. Re-measured here rather than carried forward, which is the whole rule this package exists to enforce."
 }
