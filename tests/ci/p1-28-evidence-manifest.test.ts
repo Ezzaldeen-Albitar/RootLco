@@ -1186,8 +1186,33 @@ describe('P1-28-QA-005 — a re-freeze may not carry the old head’s numbers fo
       `${site} declares neither marker already, so undeclaring it would prove nothing`
     ).toBe(true);
 
+    /*
+     * A real ancestor that is NOT the candidate, walked back until it differs.
+     *
+     * This read `HEAD~1`, and a re-freeze then moved the candidate onto exactly
+     * that commit. The mutation was still a mutation — it removed the marker —
+     * but the head it substituted was the candidate itself, which is the BOUND
+     * state and not an undeclared one, so the gate said something true and
+     * different and the case went red. The pre-assertion added last time
+     * checked that a marker was present; it did not check that the head being
+     * substituted was capable of being undeclared. Both halves of a mutation
+     * have to be asserted, not just the half that broke first.
+     */
+    const candidateSha = (candidateFile as unknown as { candidate: { FINAL_CODE_SHA: string } })
+      .candidate.FINAL_CODE_SHA;
+    let ancestor = String(git(['rev-parse', 'HEAD']) ?? '').trim();
+    for (let hop = 0; hop < 20 && (ancestor === candidateSha || !ancestor); hop += 1) {
+      ancestor = String(git(['rev-parse', `${ancestor}^`]) ?? '').trim();
+    }
+    expect(ancestor, 'no ancestor distinct from the candidate was reachable').toMatch(
+      /^[0-9a-f]{40}$/
+    );
+    expect(ancestor, 'the "ancestor" IS the candidate, so it cannot be undeclared').not.toBe(
+      candidateSha
+    );
+
     const heads: readonly (readonly [string, string])[] = [
-      ['a real ancestor', String(git(['rev-parse', 'HEAD~1']) ?? '').trim()],
+      ['a real ancestor', ancestor],
       ['a head this repository does not contain', 'f'.repeat(40)],
     ];
     for (const [label, head] of heads) {
@@ -1201,6 +1226,119 @@ describe('P1-28-QA-005 — a re-freeze may not carry the old head’s numbers fo
         'declares neither'
       );
     }
+  });
+
+  it('refuses a tier headline that disagrees with the artefact it cites', () => {
+    /*
+     * FOUND IN THE SHIPPED PACKAGE, not by reasoning about it.
+     *
+     * `hostedTotals` was added when the pending bindings were resolved, carrying
+     * what the downloaded artefacts actually said. The tier headline beside it
+     * was left where it was, and NOTHING compared the two — so the package went
+     * green while stating `backend: 2004 tests, 86 files` next to its own
+     * attestation of 2056 and 88, and `database: 1647, 139` next to 1717 and
+     * 143. Arithmetic passed, because 2004 + 0 + 0 is 2004; fetchability passed,
+     * because the run and job ids were real. The two numbers simply never met.
+     *
+     * That is the HALF-UPDATE this package's own `supersededObservations`
+     * warns about one field lower down, committed by the person who wrote the
+     * warning.
+     */
+    for (const [field, hostedField] of [
+      ['tests', 'total'],
+      ['files', 'files'],
+      ['failed', 'failed'],
+    ] as const) {
+      const doc = JSON.parse(JSON.stringify(candidateFile)) as {
+        tiers: Record<string, Record<string, unknown>>;
+      };
+      const tier = doc.tiers.backend!;
+      const totals = tier.hostedAttestation as Record<string, Record<string, number>>;
+      expect(
+        totals.hostedTotals,
+        'the backend tier cites no hostedTotals, so this case would test nothing'
+      ).toBeDefined();
+
+      // A DIFFERENT number, taken from the attestation itself so the mutation
+      // cannot be satisfied by a coincidence.
+      totals.hostedTotals[hostedField] = Number(totals.hostedTotals[hostedField]) + 7;
+      const problems = (tierBinding(doc as never, git) as unknown as { hostedProblems: string[] })
+        .hostedProblems;
+      expect(
+        problems.join(' '),
+        `a ${field} headline disagreeing with the artefact was accepted`
+      ).toContain('not the same measurement');
+    }
+  });
+
+  it('admits a declared local-versus-hosted difference, and only a declared one', () => {
+    /*
+     * The counterpart, and the reason `passed` is not simply forced equal: the
+     * hosted unit run leaves the storage round-trip cases pending where no S3
+     * store is configured, so 2777-of-2777 locally beside 2774 hosted is a real
+     * difference and not an error. The package already said so in prose. This
+     * makes the sentence load-bearing — remove it and the difference is refused.
+     */
+    const doc = JSON.parse(JSON.stringify(candidateFile)) as {
+      tiers: Record<string, Record<string, unknown>>;
+    };
+    const attestation = doc.tiers.unit!.hostedAttestation as Record<string, unknown>;
+    const totals = attestation.hostedTotals as Record<string, number> | undefined;
+    expect(totals, 'the unit tier cites no hostedTotals').toBeDefined();
+    expect(
+      totals!.passed,
+      'local and hosted passed counts already agree, so this case would test nothing'
+    ).not.toBe(doc.tiers.unit!.passed);
+
+    /*
+     * Only this tier's problems. The first version of this case read the whole
+     * list and failed against a `backend:` line — the shipped package's own
+     * stale figures, which is the defect the case above exists for. An
+     * assertion about the unit tier that any other tier can satisfy is not an
+     * assertion about the unit tier.
+     */
+    const unitProblems = (doc2: unknown) =>
+      (tierBinding(doc2 as never, git) as unknown as { hostedProblems: string[] }).hostedProblems
+        .filter((p) => p.startsWith('unit:'))
+        .join(' ');
+
+    expect(unitProblems(doc), 'the DECLARED difference was refused').not.toContain(
+      'nothing says why'
+    );
+
+    delete attestation.localVersusHosted;
+    expect(
+      unitProblems(doc),
+      'an UNDECLARED difference between the local and hosted counts was accepted'
+    ).toContain('nothing says why');
+  });
+
+  it('refuses a hosted-only tier that names a measurement head it did not cite', () => {
+    /*
+     * Also found in the shipped package. `backend`, `database` and `browser`
+     * have no local run at all, and all three still carried
+     * `measuredAtCommit: 1a186a7b` after their attestations moved to 9d00a454 —
+     * a head the figures did not come from, sitting unchecked beside the one
+     * they did. A tier with nothing local to pin has no business naming a
+     * second head.
+     */
+    const doc = JSON.parse(JSON.stringify(candidateFile)) as {
+      tiers: Record<string, Record<string, unknown>>;
+    };
+    const tier = doc.tiers.database!;
+    const head = (tier.hostedAttestation as { headSha: string }).headSha;
+    expect(head, 'the database tier cites no head').toMatch(/^[0-9a-f]{40}$/);
+
+    tier.measuredAtCommit = String(git(['rev-parse', 'HEAD~1']) ?? '').trim();
+    expect(tier.measuredAtCommit, 'the second head did not resolve').toMatch(/^[0-9a-f]{40}$/);
+    expect(tier.measuredAtCommit, 'the two heads are the same').not.toBe(head);
+
+    const problems = (tierBinding(doc as never, git) as unknown as { hostedProblems: string[] })
+      .hostedProblems;
+    expect(
+      problems.join(' '),
+      'a hosted-only tier naming a head other than the one it cites was accepted'
+    ).toContain('the figures cannot have come from both');
   });
 
   it('refuses a tier that relabels its LOCAL measurement as hosted-pending', () => {
@@ -2467,6 +2605,19 @@ describe('P1-28-QA-005 — a record may not state what the candidate refutes', (
         site.record.describesSupersededHead = true;
         site.record.supersededBy = 'a run at the candidate';
       }
+      /*
+       * A tier with no local run may not name a measurement head other than the
+       * one it cites, so moving the citation moves that pin with it. Without
+       * this the helper builds a world it would itself refuse — the hosted-only
+       * tiers would name their original head beside a citation pointing
+       * somewhere else — and the cases below would fail for the fixture's
+       * incoherence rather than for the binding behaviour they are about.
+       */
+      const tier = String(site.name).match(/^tiers\.([^.]+)\.hostedAttestation$/)?.[1];
+      const record = tier
+        ? ((doc as { tiers: Record<string, Record<string, unknown>> }).tiers[tier] ?? {})
+        : {};
+      if (tier && typeof record.measuredAtCommit === 'string') record.measuredAtCommit = headSha;
     }
     const bound = new Set(
       (pendingBinding(doc as never, gitReader(ROOT)) as unknown as { bound: string[] }).bound
