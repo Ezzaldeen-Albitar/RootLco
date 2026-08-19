@@ -52,6 +52,21 @@ const PNG = Buffer.from(
   'base64'
 );
 
+/*
+ * Why this suite may skip, at length — the gate reads only the line below.
+ *
+ * It moves a REAL object through a REAL store, so it needs one.
+ * `resolveStorageEnv()` answers `null` when the six `STORAGE_*` variables are
+ * absent, which is every machine not configured for acceptance and every hosted
+ * job that is not the storage one. Running it there would fail for want of
+ * configuration and say nothing whatever about the code.
+ *
+ * The skip is not a silence. The first case sits OUTSIDE the skipped block and
+ * asserts that the configuration is complete or absent and never half — a
+ * fragment of `s3_compatible` throws at composition and takes the whole API
+ * down, which is the failure this file exists to make impossible.
+ */
+// test-honesty-allow: TH-002 -- needs a configured object store; `resolveStorageEnv()` answers null without one, and the completeness case runs outside the skip
 describe.skipIf(env === null)('the acceptance object store moves a real object', () => {
   it('is configured COMPLETELY, or not at all', () => {
     /*
