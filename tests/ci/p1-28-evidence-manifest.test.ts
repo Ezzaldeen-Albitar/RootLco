@@ -1163,6 +1163,29 @@ describe('P1-28-QA-005 — a re-freeze may not carry the old head’s numbers fo
       'the committed package already fails the pending rules'
     ).toEqual([]);
 
+    /*
+     * BOTH markers come off, and the package is asked FIRST whether it declared
+     * one at all.
+     *
+     * The earlier revision deleted only `describesSupersededHead`, which was the
+     * marker `codeql` carried while the hosted bindings were pending. Resolving
+     * them moved every binding to ${SUCCESSOR_MARKER}, and the deletion became a
+     * no-op against a key that was no longer there: the mutation left the site
+     * fully DECLARED, the gate correctly said something else about it, and this
+     * case went red for the one reason a mutation test may never go red — it had
+     * stopped mutating. Undeclaring a site means removing whichever declaration
+     * it has, not the one it happened to have when the case was written.
+     *
+     * The pre-assertion is the part that keeps it honest. Without it a future
+     * package whose ${site} carries NO marker would make this case vacuous and
+     * silently green, which is the same failure one level up.
+     */
+    const declared = [SUCCESSOR_MARKER, 'describesSupersededHead'] as const;
+    expect(
+      declared.some((k) => (base as Record<string, Record<string, unknown>>)[site]![k] === true),
+      `${site} declares neither marker already, so undeclaring it would prove nothing`
+    ).toBe(true);
+
     const heads: readonly (readonly [string, string])[] = [
       ['a real ancestor', String(git(['rev-parse', 'HEAD~1']) ?? '').trim()],
       ['a head this repository does not contain', 'f'.repeat(40)],
@@ -1170,7 +1193,7 @@ describe('P1-28-QA-005 — a re-freeze may not carry the old head’s numbers fo
     for (const [label, head] of heads) {
       expect(head, `${label} did not resolve`).toMatch(/^[0-9a-f]{40}$/);
       const doc = JSON.parse(JSON.stringify(base)) as Record<string, Record<string, unknown>>;
-      delete doc[site]!.describesSupersededHead;
+      for (const k of declared) delete doc[site]![k];
       doc[site]!.headSha = head;
       const problems = (pendingBinding(doc as never, git) as unknown as { problems: string[] })
         .problems;
