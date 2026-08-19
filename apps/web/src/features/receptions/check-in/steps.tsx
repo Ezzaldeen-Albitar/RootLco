@@ -28,16 +28,16 @@ import type { CheckInStepDefinition } from './wizard';
  * refusal steps appended below, and the shell was untouched except for the
  * session identity every step now receives (the referent-less `inspector_id`
  * and `witnessed_by_employee_id` fields, G-EMP). Wave F/G then appended the
- * two closing steps, and Wave H the media block (`FE-017`).
+ * two closing steps, and Wave H the media step (`FE-017`).
  *
  * Order is presentation order, and it follows the ramp: identity is confirmed,
  * the parties are recorded, then the condition of the vehicle is documented in
  * the order an operator walks it — what the customer said, what staff saw,
  * where the damage is, what the meters read, what the dashboard showed, what is
- * inside, and where photographs would go — then what anybody signed or
+ * inside, and then the photographs themselves — then what anybody signed or
  * declined. The media step sits at `FE-017`'s own place in that walk, between
- * the contents and the signatures, so the operator meets the block where they
- * would have reached for the camera. The two closing steps come last because
+ * the contents and the signatures, so the operator captures where they would
+ * have reached for the camera. The two closing steps come last because
  * they are the decision the rest is evidence for: the summary (`FE-020`,
  * approval and the two terminal exits) and then the conversion (`FE-022`),
  * which is legal only from `authorized` and so can only follow it.
@@ -93,12 +93,15 @@ export const CHECK_IN_STEPS: readonly CheckInStepDefinition[] = Object.freeze([
   },
   {
     /*
-     * `FE-017`, and it captures nothing — deliberately.
+     * `FE-017`, and it captures — which it did not always.
      *
-     * The step is registered so the operator meets the block where they would
-     * have reached for the camera, rather than searching the whole wizard for a
-     * control that cannot exist while `P1-OD-025` is open. See
-     * `../media/media-decision.ts`.
+     * The entry was registered while capture was blocked, so that an operator
+     * met the reason where they would have reached for the camera rather than
+     * searching the whole wizard for a control that could not exist. Its place
+     * in the walk is unchanged and its content is not: `MediaStep` renders the
+     * visit's resolved capture policy, takes one capture per requirement, and
+     * carries the waiver behind `rec.reception.evidence.override`. See
+     * `../media/media-decision.ts` for which fact closed which blocker.
      */
     id: 'media-and-photographs',
     titleKey: 'receptions.steps.media.title',

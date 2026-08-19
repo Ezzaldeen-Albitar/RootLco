@@ -406,6 +406,25 @@ function InviteDialog({
   readonly roles: readonly RoleOption[];
 }) {
   const [state, formAction] = useActionState<ActionState, FormData>(inviteUserAction, IDLE);
+  /*
+   * The two non-text controls are held in state so the safe shape has
+   * something to seed `defaultChecked` and `defaultValue` FROM.
+   *
+   * They were plain uncontrolled controls, which is the same defect as a
+   * controlled `value=` and slightly worse to read: React resets the form DOM
+   * once the Server Action settles, and an uncontrolled checkbox reverts to
+   * cleared while an uncontrolled multi-select reverts to nothing selected.
+   * So a refused invite — a duplicate address is the ordinary case — silently
+   * discarded both the MFA requirement and every role the operator had picked,
+   * and a retry that only corrected the address invited the user with no roles
+   * and no MFA. Nothing on the screen said so.
+   */
+  const [mfaRequired, setMfaRequired] = useState(false);
+  const [roleIds, setRoleIds] = useState<readonly string[]>([]);
+  const [draft, setDraft] = useState<Record<string, string>>({});
+  const retained = (name: string) => draft[name] ?? '';
+  const retain = (name: string) => (event: { target: { value: string } }) =>
+    setDraft((current) => ({ ...current, [name]: event.target.value }));
   const t = (key: string) => translate(messages, key as keyof Messages);
 
   return (
@@ -419,31 +438,64 @@ function InviteDialog({
       <form action={formAction} className="flex flex-col gap-4" noValidate>
         <FormFeedback state={state} messages={messages} />
 
+        {/*
+          The 409 this dialog exists to survive is a DUPLICATE ADDRESS, so the
+          refusal that emptied this box was the one whose message names it.
+        */}
         <TextField
+          key={`email-${state.attempt ?? 0}`}
           name="email"
           type="email"
           label={t('users.invite.email')}
           required
           autoComplete="off"
           spellCheck={false}
+          defaultValue={retained('email')}
+          onChange={retain('email')}
           error={state.fieldErrors?.email ? t(state.fieldErrors.email) : undefined}
         />
         <TextField
+          key={`displayName-${state.attempt ?? 0}`}
           name="displayName"
           label={t('users.invite.displayName')}
           required
           autoComplete="off"
+          defaultValue={retained('displayName')}
+          onChange={retain('displayName')}
           error={state.fieldErrors?.displayName ? t(state.fieldErrors.displayName) : undefined}
         />
-        <CheckboxField name="mfaRequired" label={t('users.invite.mfaRequired')} />
+        {/*
+          `key` + a default + `onChange`, the shape this repository has now had
+          to apply seven times. `key` on the attempt forces the remount,
+          `defaultChecked` seeds it from retained state and is what the reset
+          restores TO, and `onChange` keeps that state current.
+        */}
+        <CheckboxField
+          key={`mfaRequired-${state.attempt ?? 0}`}
+          name="mfaRequired"
+          label={t('users.invite.mfaRequired')}
+          defaultChecked={mfaRequired}
+          onChange={(event) => setMfaRequired(event.target.checked)}
+        />
 
         {roles.length > 0 ? (
           <SelectField
+            key={`roleIds-${state.attempt ?? 0}`}
             name="roleIds"
             multiple
             size={Math.min(roles.length, 6)}
             label={t('users.invite.roles')}
             description={t('users.invite.rolesHint')}
+            /*
+             * A MULTIPLE select takes an array default, and every selected
+             * option has to be read back on change — `event.target.value` is
+             * only ever the first of them, so seeding from it would restore one
+             * role out of however many were chosen.
+             */
+            defaultValue={[...roleIds]}
+            onChange={(event) =>
+              setRoleIds(Array.from(event.target.selectedOptions, (option) => option.value))
+            }
             options={roles.map((role) => ({ value: role.id, label: role.name }))}
           />
         ) : null}

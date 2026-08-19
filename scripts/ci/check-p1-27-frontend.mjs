@@ -29,12 +29,18 @@
  *   4. **No invented total.** Every list operation returns
  *      `{ items, nextCursor, hasMore }` and no count. A `total` computed in the
  *      client is right on page one and wrong from page two, invisibly.
- *   5. **No upload path.** There is no vehicle media operation at all;
- *      `P1-OD-025` must decide types, limits and storage first. Seven distinct
- *      constructs, not three — see `FILE_ACCESS_CONSTRUCTS`.
- *   6. **No console output.** A `console.log` in a Server Action prints server
- *      state into a log nobody is reading; in a client component it prints it
- *      into the browser.
+ *   5. **No upload path.** There is no vehicle media operation at all, and no
+ *      screen in these trees may read a file's bytes or assemble a transport of
+ *      its own. Six distinct constructs, not three — see
+ *      `FILE_ACCESS_CONSTRUCTS`. The file input was the seventh until
+ *      `P1-OD-025` resolved; it is rule 6 now, and the paragraph beside
+ *      `FILE_INPUT_CONSTRUCTS` carries why it moved rather than being exempted.
+ *   6. **No unapproved file input.** `P1-OD-025` is RESOLVED and reception
+ *      capture ships, so `type="file"` had to become legal somewhere. It is
+ *      legal in exactly one component — see `FILE_INPUT_ALLOW` — and the split
+ *      is what keeps that allowance narrow: `allow` exempts a file from a WHOLE
+ *      rule, so naming the capture component on rule 5 would have traded six
+ *      prohibitions away to permit one construct.
  *   7. **No export surface.** The canonical plan's task table names the operation
  *      behind every one of the 29 Frontend tasks and not one of them is an
  *      export. `shared.export-authorize` and `shared.export-catalogue` ARE
@@ -43,13 +49,19 @@
  *      test. The rule fires on an export caller in either of its two forms: the
  *      operation itself, and the browser-side substitute (a blob, an object URL,
  *      a `download` attribute, a CSV or PDF assembly, a `Content-Disposition`).
- *   8. **No invented media limit.** `P1-OD-025` is OPEN and §14's disposition is
- *      "keep upload acceptance blocked, do not invent limits". Rule 5 enforces
- *      the first half. This is the second, and it is the half a well-meaning
- *      implementation breaks: a "sensible default" of 10 MB and JPEG/PNG
- *      pre-empts the Owner's decision while looking like diligence. The rule
- *      fires on a hard-coded byte size, an accepted-MIME list, an extension
- *      allow-list or an `accept=` attribute.
+ *   8. **No invented media limit.** Resolving `P1-OD-025` relaxed nothing here,
+ *      and the reason is the same one §14's disposition gave while the decision
+ *      was open: this is the half a well-meaning implementation breaks. A
+ *      "sensible default" of 10 MB and JPEG/PNG looks like diligence and is a
+ *      policy nobody decided, shown to an operator as though somebody had. The
+ *      ceiling and the accepted types belong to the document category the SERVER
+ *      publishes — the upload authorization answers with `maxBytes` — so a
+ *      constant written in this tier is an invention whether or not a decision
+ *      exists. The rule fires on a hard-coded byte size, an accepted-MIME list,
+ *      an extension allow-list or an `accept=` attribute.
+ *   9. **No console output.** A `console.log` in a Server Action prints server
+ *      state into a log nobody is reading; in a client component it prints it
+ *      into the browser.
  *
  * ## Three properties this gate is built around
  *
@@ -61,7 +73,7 @@
  * hit exactly this on its first run.
  *
  * **The stripper is proven, not assumed.** A stripper that removed too much
- * would make every rule pass on an empty string, and all eight would report clean
+ * would make every rule pass on an empty string, and all nine would report clean
  * while measuring nothing. `selfTest()` runs on every invocation: the forbidden
  * names in a comment must vanish, and the same names in a string literal and a
  * URL must survive.
@@ -233,11 +245,14 @@ export const ROOT_AUTHORITY = 'docs/phase-1/phase-1-27/canonical-plan.md';
  *     markers, and four documents carry them —
  *     `deliverable-manifest.md`, `open-decisions.md`,
  *     `owner-acceptance-fail-remediation.md` and `risk-register.md`. A real run
- *     of this gate at this head reports **123 files across 5 trees**, and those
+ *     of this gate at this head reports **126 files across 5 trees**, and those
  *     are the values the four documents carry; this sentence used to name 69 and
  *     3, which were the values when the second tree was adopted and had been
- *     wrong since. The markers themselves are re-derived on every run, so the
- *     documents cannot drift — only prose like this can, which is why the
+ *     wrong since, and then 123. Measured rather than reasoned about: the tree
+ *     without reception capture's two new files reports 124, and adding
+ *     `CaptureFileField.tsx` and `signature-capture.ts` takes it to 126. The
+ *     markers themselves are re-derived on every run, so the documents cannot
+ *     drift — only prose like this can, which is why the
  *     numbers here now say which run produced them.
  *
  * And a wider widening is worse, not better: measured across the `.ts`/`.tsx`
@@ -650,11 +665,19 @@ export function anyOf(constructs) {
 }
 
 /**
- * The seven file-access constructs, mirroring what the security suite forbids.
+ * The six file-access constructs, mirroring what the security suite forbids.
+ *
+ * This was seven. The file input is the one that left, for
+ * `no-unapproved-file-input` and `FILE_INPUT_CONSTRUCTS`, when `P1-OD-025`
+ * resolved and the reception capture surface shipped — so the mirror is no
+ * longer one-to-one, and the paragraph beside `FILE_INPUT_CONSTRUCTS` records
+ * why splitting the rule was a NARROWER relaxation than allow-listing the
+ * capture component here.
  *
  * The suite's `FILE_ACCESS` regex spells the file input twice (`type="file"` and
- * `type={'file'}`); both are one construct here, generalised to cover the
- * backtick and double-quoted brace forms the suite's literal spelling misses.
+ * `type={'file'}`); both are one construct in the split-out table, generalised to
+ * cover the backtick and double-quoted brace forms the suite's literal spelling
+ * misses.
  *
  * `new FormData\(` deliberately drops the `\)` the old rule required:
  * `new FormData(existingForm)` is the same upload path and the old pattern let it
@@ -672,15 +695,6 @@ export const FILE_ACCESS_CONSTRUCTS = Object.freeze([
     construct: 'multipart-encoding',
     pattern: /multipart\/form-data/,
     samples: ["headers.set('content-type', 'multipart/form-data');"],
-  },
-  {
-    construct: 'file-input',
-    pattern: /type=["']file["']|type=\{\s*["'`]file["'`]\s*\}/,
-    samples: [
-      '<input type="file" name="photo" />',
-      '<input type={\'file\'} name="photo" />',
-      '<input type={"file"} name="photo" />',
-    ],
   },
   {
     construct: 'file-reader',
@@ -815,6 +829,62 @@ export const INVENTED_MEDIA_LIMIT_CONSTRUCTS = Object.freeze([
   { construct: 'accept-attribute', pattern: /accept=/, samples: ['<MediaField accept={types} />'] },
 ]);
 
+/**
+ * The file input, on its own, because its exemption has to be.
+ *
+ * ## Why it left `FILE_ACCESS_CONSTRUCTS`
+ *
+ * `P1-OD-025` is RESOLVED and the capture surface it blocked now ships, so a
+ * rule that forbade every file input outright would refuse the thing the Owner
+ * asked for. The block is CONVERTED rather than deleted, and the conversion is
+ * structural: `allow` exempts a FILE from a whole rule, so allow-listing the
+ * capture component against `no-upload-path` would have exempted it from
+ * `FileReader`, `DataTransfer`, drop targets and hand-set multipart encoding
+ * too — six prohibitions traded away to permit one construct.
+ *
+ * Splitting it means the exemption is scoped to the one construct that has to be
+ * permitted, and the capture component remains subject to every other rule. That
+ * is a NARROWER allowance than the one obvious edit would have produced.
+ *
+ * ## What is NOT relaxed
+ *
+ * `no-invented-media-limit` is untouched. The accepted content types and the
+ * size ceiling belong to the category the SERVER publishes; the capture screen
+ * renders and enforces those values and holds no constant of its own, so the
+ * rule that fails a build over an invented ceiling still applies to it in full.
+ */
+export const FILE_INPUT_CONSTRUCTS = Object.freeze([
+  {
+    construct: 'file-input',
+    pattern: /type=["']file["']|type=\{\s*["'`]file["'`]\s*\}/,
+    samples: [
+      '<input type="file" name="photo" />',
+      '<input type={\'file\'} name="photo" />',
+      '<input type={"file"} name="photo" />',
+    ],
+  },
+]);
+
+/**
+ * The ONE component permitted to offer a file input.
+ *
+ * A path, not a directory: an allowance that covered a folder would grow with
+ * whatever was put in it. `apps/web/tests/p1-28-reception-media.test.ts` asserts
+ * this list has exactly one entry and that the file it names exists, so an
+ * allowance for a deleted file cannot sit here looking legitimate.
+ *
+ * It named `steps/MediaStep.tsx` while reception evidence was the only thing
+ * captured. `FE-018` then needed a signature image, and the cheap move was a
+ * second entry — which would have turned "there is one approved capture
+ * surface" into "there are the approved capture surfaces", one screen at a time,
+ * with this list as the record of the decay. The input moved into a shared
+ * `CaptureFileField` instead: both steps render it, this list still holds one
+ * path, and a third capture surface widens nothing.
+ */
+export const FILE_INPUT_ALLOW = Object.freeze([
+  'apps/web/src/features/receptions/components/CaptureFileField.tsx',
+]);
+
 /** Limit-adjacent source that invents no media policy. */
 export const INVENTED_MEDIA_LIMIT_INNOCENT = Object.freeze([
   'const pageSize = 25;',
@@ -880,13 +950,17 @@ export const RULES = [
      * refuses — it is naming the resource, exactly as it names a vehicle.
      *
      * An `allow` entry would have been the wrong instrument, and this gate's own
-     * tests say so: `tests/ci/p1-27-frontend-gate.test.ts` asserts that NO rule
-     * carries an allowance, precisely so a false positive is answered with a
-     * distinction rather than an escape hatch. `allow` exempts FILES from a rule
-     * that applies to them; `roots` says where the rule's premise is true at all.
-     * The difference is visible the moment somebody adds a file: a new reception
+     * tests make that expensive to ignore: `tests/ci/p1-27-frontend-gate.test.ts`
+     * pins every allowance in the rule set to the exact rule and the exact path
+     * that carries it, so adding one is a deliberate argued act and never a
+     * quiet answer to a false positive. `allow` exempts FILES from a rule that
+     * applies to them; `roots` says where the rule's premise is true at all. The
+     * difference is visible the moment somebody adds a file: a new reception
      * screen is not something anyone has to remember to list, and a new CRM or
      * Vehicle screen is still caught.
+     *
+     * There is exactly ONE allowance in this file, on `no-unapproved-file-input`,
+     * and its docblock carries the argument for it. This rule has none.
      *
      * What the narrowing gives up is measured rather than waved away.
      * `tenantId`/`tenant_id` is a published selector on NO operation anywhere, so
@@ -909,7 +983,7 @@ export const RULES = [
   {
     id: 'no-upload-path',
     /*
-     * SEVEN constructs, not three.
+     * SIX constructs, not three — and seven until the file input left.
      *
      * This read `/new FormData\(\)|multipart\/form-data|type="file"/` while
      * `apps/web/tests/p1-27-security.test.ts` refused seven on the same surface.
@@ -923,8 +997,21 @@ export const RULES = [
      * empty parentheses, so the constructor's one-argument form passed.
      */
     pattern: anyOf(FILE_ACCESS_CONSTRUCTS),
-    what: 'builds an upload path; there is no vehicle media operation and P1-OD-025 is open',
+    what: 'reads file bytes in the browser or builds its own upload transport',
     allow: [],
+  },
+  {
+    id: 'no-unapproved-file-input',
+    /*
+     * The one construct `P1-OD-025` being RESOLVED makes legitimate, and the one
+     * place it is legitimate. Its docblock beside `FILE_INPUT_CONSTRUCTS`
+     * carries why this is a separate rule rather than an `allow` entry on the
+     * one above: `allow` exempts a file from a WHOLE rule, and the capture
+     * component must stay subject to the other six prohibitions.
+     */
+    pattern: anyOf(FILE_INPUT_CONSTRUCTS),
+    what: 'offers a file input outside the single approved capture component',
+    allow: [...FILE_INPUT_ALLOW],
   },
   {
     id: 'no-export-surface',
@@ -961,13 +1048,19 @@ export const RULES = [
      * looks like care and is a policy the Owner has not decided, presented to an
      * operator as though it had been.
      *
-     * A constant is enough to fail this. There is no decision to derive a number
-     * or a type list from, so a limit "waiting to be wired up" is already the
-     * invention — and `p1-27-security.test.ts` says so too, over the copy as well
-     * as the code.
+     * A constant is enough to fail this, and resolving `P1-OD-025` did not soften
+     * that. What changed is where the true numbers live, not whether this tier may
+     * hold its own: the ceiling and the accepted types are published per document
+     * category by the SERVER — the upload authorization answers with `maxBytes`,
+     * and `CaptureFileField` takes the type list as a prop and holds none — so a
+     * limit written here is still an invention, and now one that can silently
+     * disagree with the value the server will actually enforce. That is worse than
+     * the open-decision case, not better: it fails at the boundary rather than on
+     * screen. `p1-27-security.test.ts` says so too, over the copy as well as the
+     * code.
      */
     pattern: anyOf(INVENTED_MEDIA_LIMIT_CONSTRUCTS),
-    what: 'invents a media size, type or extension policy while P1-OD-025 is open',
+    what: 'invents a media size, type or extension policy the server does not publish',
     allow: [],
   },
   {
@@ -1090,7 +1183,7 @@ function allowed(relPath, allow) {
  * Is this file inside a tree the rule's premise holds over?
  *
  * A rule with no `roots` applies everywhere, which is the default and the case
- * for seven of the eight. `no-client-asserted-scope` is the exception and its
+ * for eight of the nine. `no-client-asserted-scope` is the exception and its
  * docblock carries the reason — the trees differ in what their OPERATIONS
  * publish, not in how carefully they are written.
  */

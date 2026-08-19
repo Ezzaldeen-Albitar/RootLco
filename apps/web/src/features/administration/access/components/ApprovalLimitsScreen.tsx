@@ -257,6 +257,42 @@ function CreateDialog({
     IDLE
   );
   const [subject, setSubject] = useState<'role' | 'user'>('role');
+  /*
+   * The company and the role are held in state for one reason only: the safe
+   * shape needs something for `defaultValue` to be seeded FROM. They were plain
+   * uncontrolled selects, which loses the operator's choice just as completely —
+   * a refused create silently reverted the company to the first resolved id and
+   * the role to the first row, and a retry that only corrected the amount then
+   * granted the limit against a company nobody had chosen.
+   *
+   * Seeded from the FIRST option rather than the empty string, because neither
+   * select offers a placeholder: with no matching option a browser selects the
+   * first one, and state that said `''` while the control displayed a real id
+   * would be the same divergence written the other way round.
+   */
+  /*
+   * The typed values, retained for the same reason the two selects above are:
+   * the Server Action settle resets the form DOM, and an UNCONTROLLED text box
+   * is emptied by it exactly like a select. Measured on these components:
+   *
+   *     BEFORE {"subject":"user","userId":"9f2c…","amount":"12500.0000","note":"…"}
+   *     AFTER  {"subject":"user","userId":"",     "amount":"",          "note":""}
+   *
+   * The amount is the one that matters most. A refusal here is usually ABOUT
+   * the amount — `limitSchema` rejects more than four decimal places — so the
+   * form was emptying the very field its error message names, and the operator
+   * re-typed a currency figure from memory to satisfy a message about it.
+   *
+   * Held as raw strings, never parsed. `12500.0000` must come back as the
+   * operator typed it: normalising it here would be this screen inventing a
+   * value the server never saw and the operator never wrote.
+   */
+  const [draft, setDraft] = useState<Record<string, string>>({});
+  const retained = (name: string) => draft[name] ?? '';
+  const retain = (name: string) => (event: { target: { value: string } }) =>
+    setDraft((current) => ({ ...current, [name]: event.target.value }));
+  const [companyId, setCompanyId] = useState(companyIds[0] ?? '');
+  const [roleId, setRoleId] = useState(roles[0]?.id ?? '');
   const t = (key: string) => translate(messages, key as keyof Messages);
   const error = (name: string) => {
     const key = state.fieldErrors?.[name];
@@ -273,29 +309,53 @@ function CreateDialog({
       <form action={formAction} className="flex flex-col gap-4" noValidate>
         <FormFeedback state={state} messages={messages} />
 
+        {/*
+          Every select in this dialog carries `key` + `defaultValue` + `onChange`
+          together. React resets the form DOM once the Server Action settles, and
+          neither a controlled `value=` nor a bare uncontrolled select survives
+          it: the first is not re-written by the reconciler because the prop did
+          not change, and the second reverts to its first option. `key` on the
+          attempt forces the remount, `defaultValue` seeds it from state and is
+          what `form.reset()` restores TO, and `onChange` keeps state current.
+        */}
         {companyIds.length > 0 ? (
           <SelectField
+            key={`companyId-${state.attempt ?? 0}`}
             name="companyId"
             label={t('approvalLimits.field.companyId')}
             description={t('admin.contractGap.noDirectory')}
+            defaultValue={companyId}
+            onChange={(event) => setCompanyId(event.target.value)}
             options={companyIds.map((id) => ({ value: id, label: id }))}
             error={error('companyId')}
           />
         ) : (
           <TextField
+            key={`companyId-text-${state.attempt ?? 0}`}
             name="companyId"
             label={t('approvalLimits.field.companyId')}
             description={t('admin.scope.noneResolved')}
             required
             spellCheck={false}
+            defaultValue={retained('companyId')}
+            onChange={retain('companyId')}
             error={error('companyId')}
           />
         )}
 
+        {/*
+          This one decides which of the two controls BELOW is rendered, so the
+          reset stranded the operator rather than merely inconveniencing them:
+          the select reverted to "Role" while `subject` state stayed `user`, so
+          the dialog showed a user-id box under a control reading Role — and
+          every retry failed the same way until the operator toggled it twice to
+          put the two back in agreement.
+        */}
         <SelectField
+          key={`subject-${state.attempt ?? 0}`}
           name="subject"
           label={t('approvalLimits.field.subject')}
-          value={subject}
+          defaultValue={subject}
           onChange={(event) => setSubject(event.target.value as 'role' | 'user')}
           options={[
             { value: 'role', label: t('approvalLimits.subject.role') },
@@ -306,27 +366,36 @@ function CreateDialog({
 
         {subject === 'role' ? (
           <SelectField
+            key={`roleId-${state.attempt ?? 0}`}
             name="roleId"
             label={t('approvalLimits.field.roleId')}
+            defaultValue={roleId}
+            onChange={(event) => setRoleId(event.target.value)}
             options={roles.map((role) => ({ value: role.id, label: role.name }))}
             error={error('roleId')}
           />
         ) : (
           <TextField
+            key={`userId-${state.attempt ?? 0}`}
             name="userId"
             label={t('approvalLimits.field.userId')}
             required
             spellCheck={false}
+            defaultValue={retained('userId')}
+            onChange={retain('userId')}
             error={error('userId')}
           />
         )}
 
         <TextField
+          key={`limitType-${state.attempt ?? 0}`}
           name="limitType"
           label={t('approvalLimits.field.limitType')}
           description={t('approvalLimits.field.limitTypeHint')}
           required
           spellCheck={false}
+          defaultValue={retained('limitType')}
+          onChange={retain('limitType')}
           error={error('limitType')}
         />
 
@@ -337,36 +406,48 @@ function CreateDialog({
           ways an exact amount stops being exact before it leaves the page.
         */}
         <TextField
+          key={`amount-${state.attempt ?? 0}`}
           name="amount"
           inputMode="decimal"
           label={t('approvalLimits.field.amount')}
           required
           spellCheck={false}
+          defaultValue={retained('amount')}
+          onChange={retain('amount')}
           error={error('amount')}
         />
 
         <TextField
+          key={`currency-${state.attempt ?? 0}`}
           name="currency"
           label={t('approvalLimits.field.currency')}
           description={t('approvalLimits.field.currencyHint')}
           required
           maxLength={3}
           spellCheck={false}
+          defaultValue={retained('currency')}
+          onChange={retain('currency')}
           error={error('currency')}
         />
 
         <TextField
+          key={`effectiveFrom-${state.attempt ?? 0}`}
           name="effectiveFrom"
           type="date"
           label={t('approvalLimits.field.effectiveFrom')}
           required
+          defaultValue={retained('effectiveFrom')}
+          onChange={retain('effectiveFrom')}
           error={error('effectiveFrom')}
         />
         <TextField
+          key={`effectiveTo-${state.attempt ?? 0}`}
           name="effectiveTo"
           type="date"
           label={t('approvalLimits.field.effectiveTo')}
           optionalHint={t('field.optional')}
+          defaultValue={retained('effectiveTo')}
+          onChange={retain('effectiveTo')}
           error={error('effectiveTo')}
         />
 

@@ -18,8 +18,11 @@
  * whose method is not GET. The canonical plan's §4 says "12 POST commands";
  * remediation R5 (PR #220) then added the two terminal closes
  * (`rec.reception-close-without-work`, `rec.reception-refuse`), and PR #227
- * added the 21 intake-catalogue management writes, so the derived set is 35
- * today — and the derivation, not the prose, is the authority. An operation in
+ * added the 21 intake-catalogue management writes. The derived set is 43
+ * today — counted from the register by this gate on every run, which is why the
+ * figure is stated here at all: a number in prose is a claim, and this one said
+ * 35 while the derivation answered 43 and the gate’s own test pinned 43. The
+ * derivation, not the prose, is the authority. An operation in
  * the register and not in the manifest is UNWIRED and fails.
  *
  * ## The allow-list, and why it only shrinks
@@ -98,15 +101,72 @@
  * hold: INT-113 blessed by the gate built to catch it.
  *
  * So a call site must be CONSUMED. Each one is attributed to the exported
- * function that encloses it, and that name must be mentioned by another
+ * function that REACHES it, and that name must be mentioned by another
  * production module (comments stripped, so a docblock naming an adapter is not
- * evidence anybody calls it). A site inside no exported function — a top-level
+ * evidence anybody calls it). A site inside no function at all — a top-level
  * statement — is counted as it always was, because there is no export whose
- * consumption could be asked about. The attribution is textual: a site inside an
- * INTERNAL helper is credited to the exported function declared above it, which
- * is right for this codebase's flat adapter modules and is conservative
- * elsewhere — an unconsumed attribution drops the site, so a wrong guess turns a
- * `REACHABLE` claim red rather than passing one silently.
+ * consumption could be asked about.
+ *
+ * Reaches, not encloses, and the distance between the two is a blind spot this
+ * gate shipped with. Attribution used to read "the last `export function`
+ * declared before the site index", which is a guess wearing a rule's clothes.
+ * `features/receptions/api.ts` exports two terminal closes that both delegate
+ * to ONE internal `closeVisit` helper declared AFTER both of them, so both of
+ * the paths that helper sends were credited to whichever export happened to be
+ * declared last. Deleting every consumer of the OTHER export changed nothing
+ * the gate reported — its `REACHABLE` claim stayed green while nobody could
+ * invoke it, INT-113 blessed by the gate built to catch it — and deleting the
+ * consumers of the last-declared one instead turned BOTH closes red, one of
+ * them falsely, against an operation its screen demonstrably wires.
+ *
+ * So a site inside an INTERNAL function is credited to every exported function
+ * that can reach it, by following the calls rather than the declaration order:
+ * each caller of the helper is resolved to its own owner, and a caller that is
+ * itself internal is resolved onwards through ITS callers. A name already being
+ * resolved is not followed a second time, so a cycle terminates instead of
+ * recurring.
+ *
+ * The delegation carries values as well as control, and both matter here:
+ * `closeReceptionWithoutWork` passes `'/close-without-work'` where
+ * `refuseReception` passes `'/refuse'`. A string literal supplied at the call
+ * BINDS that parameter for that owner, so each export is credited with the path
+ * its own delegation builds rather than with the union of everything the helper
+ * can send — which is what makes orphaning either one of them visible. A
+ * parameter the delegation does not pin keeps the type-level enumeration
+ * described above, and that is the conservative direction: more candidate paths
+ * for an owner, never fewer.
+ *
+ * An internal helper NOTHING calls reaches no export at all, and its site is
+ * credited to the helper's own name. No import can bring an unexported name
+ * into another module, so nothing outside the file has cause to write it, the
+ * consumption question answers no, and the site drops.
+ *
+ * ## What the fail-closed guarantee is, stated as narrowly as it is proved
+ *
+ * A site is attributed to an export only when it falls INSIDE that export’s
+ * body — containment, not "the last declaration above it". Three outcomes,
+ * and each is exercised by a mutation in
+ * `tests/ci/p1-28-write-reachability.test.ts`:
+ *
+ *   - inside a `function` declaration (the only adapter shape this repository
+ *     writes: a census of `apps/web/src` finds zero arrow-const and zero
+ *     function-expression adapters, and all 43 production sites resolve to
+ *     one). Attribution is the reaching export, followed through internal
+ *     helpers. Orphan its consumer and the claim turns RED.
+ *   - at brace depth zero — a genuine top-level statement, which runs on
+ *     import. Counted, as it always has been.
+ *   - inside anything else, an arrow const or an object method among them.
+ *     Attributed to NOTHING and dropped, so the claim behind it turns RED.
+ *
+ * The third is a deliberate false POSITIVE and is written down as one: the
+ * gate refuses such a shape whether or not it is really consumed, because it
+ * cannot tell. It is the direction a reachability gate should fail, and it is
+ * cheap only because the census above says no such adapter exists today.
+ *
+ * What this paragraph does NOT claim: that every declaration form is
+ * understood. It claims that a form which is not understood cannot pass a
+ * `REACHABLE` claim silently — which is the property the old rule stated
+ * here and did not have.
  *
  * These do NOT count, excluded structurally rather than by naming convention:
  *
@@ -156,6 +216,17 @@
  */
 import { readFileSync, readdirSync, lstatSync, statSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
+import ts from 'typescript';
+import {
+  argumentText,
+  callsToNode,
+  declaredFunctionsOf,
+  enclosingFunctionNode,
+  isTopLevelExecutable,
+  literalPathOf,
+  parseModule,
+  writeMethodOf,
+} from '../lib/typescript-source.mjs';
 import { REPOSITORY_ROOT } from '../lib/repository-paths.mjs';
 
 const ROOT = REPOSITORY_ROOT;
@@ -353,43 +424,6 @@ export function pathHelpers(strippedSource) {
   return helpers;
 }
 
-/** The argument list starting at `open` (the `(`), split on top-level commas. */
-function argumentsAt(text, open) {
-  let depth = 0;
-  let quote = null;
-  let start = open + 1;
-  const args = [];
-  for (let i = open; i < text.length; i += 1) {
-    const character = text[i];
-    if (quote !== null) {
-      if (character === '\\') i += 1;
-      else if (character === quote) quote = null;
-      continue;
-    }
-    if (character === "'" || character === '"' || character === '`') {
-      quote = character;
-      continue;
-    }
-    if (character === '(' || character === '[' || character === '{') {
-      depth += 1;
-      continue;
-    }
-    if (character === ')' || character === ']' || character === '}') {
-      depth -= 1;
-      if (depth === 0) {
-        args.push(text.slice(start, i));
-        return args;
-      }
-      continue;
-    }
-    if (character === ',' && depth === 1) {
-      args.push(text.slice(start, i));
-      start = i + 1;
-    }
-  }
-  return null;
-}
-
 /** A bare string literal's value, or `null` for anything a call site computes. */
 function literalValue(argument) {
   const trimmed = argument.trim();
@@ -428,18 +462,29 @@ export function literalUnionParameters(parameterTexts) {
   return unions;
 }
 
-/** The literal-union parameters of the nearest `function` header before `index`. */
-function enclosingLiteralUnions(text, index) {
-  const declaration = /\bfunction\s+[A-Za-z_$][\w$]*\s*\(/g;
-  let nearest = null;
-  let match;
-  while ((match = declaration.exec(text)) !== null) {
-    if (match.index > index) break;
-    nearest = match;
-  }
-  if (nearest === null) return new Map();
-  const parameters = argumentsAt(text, nearest.index + nearest[0].length - 1);
-  return parameters === null ? new Map() : literalUnionParameters(parameters);
+/**
+ * Every named `function` declaration in a file, in source order.
+ *
+ * Both halves of a record are load-bearing. `exported` is the name `run` can
+ * ask a consumption question about; the INTERNAL declarations are what a call
+ * site hides inside, and following those is the whole of the attribution below.
+ * The parameter texts travel with the record because two separate rules read
+ * them — the literal-union enumeration, and the delegation binding.
+ *
+ * A generic header (`function readVisitPage<T>(…)`) is admitted by taking the
+ * first `(` after the name, so type parameters are stepped over rather than
+ * parsed. A function EXPRESSION assigned to a `const` is deliberately not a
+ * declaration here: every adapter and server action in this tree is declared
+ * with `function`, and a second shape nothing exercises would be a rule this
+ * gate could not prove it implements.
+ */
+/** The literal-union parameters of the function a node sits inside. */
+function enclosingUnions(declarations, node) {
+  const enclosing = enclosingFunctionNode(node);
+  const described = enclosing === null ? null : declarations.get(enclosing);
+  return described === null || described === undefined
+    ? new Map()
+    : literalUnionParameters(described.parameters);
 }
 
 /**
@@ -455,8 +500,16 @@ function enclosingLiteralUnions(text, index) {
  * appears, because a value outside the union is a compile error.
  *
  * A parameter typed `string`, or absent, is still unknown and still `:p`.
+ *
+ * `alternatives` is what an identifier in the argument list may stand for,
+ * name → values, and it has two sources that answer two different questions.
+ * The enclosing function's literal-union types say what the helper CAN be asked
+ * to build; a delegation binding says what one particular exported caller DOES
+ * ask it to build, and the caller of this function lets that override, so an
+ * export is credited with its own path rather than with every path its shared
+ * helper can send.
  */
-function resolveHelperCall(helper, args, unions) {
+function resolveHelperCall(helper, args, alternatives) {
   let paths = [''];
   const extend = (candidates) => {
     const next = [];
@@ -481,99 +534,244 @@ function resolveHelperCall(helper, args, unions) {
         continue;
       }
       const identifier = /^\s*([A-Za-z_$][\w$]*)\s*$/.exec(supplied);
-      const union = identifier ? unions.get(identifier[1]) : undefined;
-      extend(union ?? [':p']);
+      const candidates = identifier ? alternatives.get(identifier[1]) : undefined;
+      extend(candidates ?? [':p']);
     }
   }
   return paths;
 }
 
-/** Exported function declarations, in source order, as `{ index, name }`. */
-function exportedFunctions(text) {
-  const declaration =
-    /\bexport\s+(?:default\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)\s*[(<]/g;
-  const found = [];
-  let match;
-  while ((match = declaration.exec(text)) !== null) {
-    found.push({ index: match.index, name: match[1] });
+/**
+ * Every call to `name(` in a file, as `{ index, open }` — where the call starts
+ * and where its argument list opens.
+ *
+ * The DECLARATION is skipped, because `function closeVisit(` matches the shape
+ * of a call to `closeVisit` exactly, and a helper that appeared to call itself
+ * would be a cycle invented by the scanner rather than written by anybody.
+ */
+/**
+ * The names a parameter list declares, POSITIONALLY — or `null` when it cannot
+ * be read, which is a refusal rather than a best effort.
+ *
+ * `argumentsAt` splits on top-level commas and tracks `()`, `[]` and `{}` but
+ * not angle brackets, so a parameter typed `Record<string, number>` splits in
+ * two and every position after it shifts by one. Binding by position over a
+ * shifted list would credit an export with a path its delegation never builds —
+ * precisely the false REACHABLE this attribution exists to remove — so a list
+ * carrying any entry that is not a plain `name`, `name: type` or `name = value`
+ * is refused WHOLE and the call falls back to the type-level enumeration.
+ * Destructured and rest parameters are refused for the same reason: neither has
+ * a name a call site's argument can be bound to by position.
+ */
+function parameterNames(parameterTexts) {
+  const names = [];
+  for (const part of parameterTexts) {
+    if (part.trim() === '') continue;
+    const declaration = /^\s*([A-Za-z_$][\w$]*)\s*\??\s*(?::|=|$)/.exec(part);
+    if (!declaration) return null;
+    names.push(declaration[1]);
   }
-  return found;
+  return names;
 }
 
 /**
+ * What one call pins of a callee's parameters, as name → string value.
+ *
+ * A string literal at the call site binds that parameter outright. An
+ * identifier binds it only when the CALLER's own parameter of that name is
+ * itself already bound — which is how a value survives two hops of delegation
+ * without this becoming a dataflow analysis. Anything else binds nothing and
+ * leaves the parameter to the type-level enumeration, which reports more
+ * candidate paths rather than fewer.
+ */
+function boundParameters(callee, args, callerBindings) {
+  const bindings = new Map();
+  const names = parameterNames(callee.parameters);
+  if (names === null) return bindings;
+
+  names.forEach((name, position) => {
+    const supplied = args[position];
+    if (supplied === undefined) return;
+    const value = literalValue(supplied);
+    if (value !== null) {
+      bindings.set(name, value);
+      return;
+    }
+    const identifier = /^\s*([A-Za-z_$][\w$]*)\s*$/.exec(supplied);
+    const inherited = identifier ? callerBindings.get(identifier[1]) : undefined;
+    if (inherited !== undefined) bindings.set(name, inherited);
+  });
+  return bindings;
+}
+
+/**
+ * Every exported function that reaches `fn`, with what the route to it binds.
+ *
+ * The three terminating cases first. A site in no function at all belongs to
+ * nobody, and is counted unconditionally because there is no export whose
+ * consumption could be asked about. A site in an EXPORTED function belongs to
+ * that export, with nothing bound — its parameters are supplied by callers this
+ * gate does not follow, which is exactly what the literal-union enumeration is
+ * for. And a name already on the current path is not followed again, so mutual
+ * recursion ends rather than recurring.
+ *
+ * Otherwise the function is internal and the question moves to its callers:
+ * every call to it in the same module is resolved to ITS owner, and the
+ * arguments of that call bind the internal function’s parameters for that owner
+ * alone. An internal helper nobody calls returns an EMPTY list, which the caller
+ * of this function turns into the fail-closed attribution — see
+ * `mutationCallSites`.
+ *
+ * Callers are found by ASKING THE PARSER for call expressions naming the
+ * function, not by a look-behind on the identifier. The look-behind had to
+ * special-case `function f(` to avoid counting a declaration as a call to
+ * itself; a `CallExpression` is not a declaration, so the special case is gone
+ * with the class of near-misses it stood for.
+ */
+function attributionsOf(sourceFile, declarations, fn, seen) {
+  if (fn === null) return [{ owner: null, bindings: new Map() }];
+  if (fn.exported) return [{ owner: fn.name, bindings: new Map() }];
+  if (fn.name === null || seen.has(fn.name)) return [];
+
+  const path = new Set(seen).add(fn.name);
+  const reached = [];
+  for (const call of callsToNode(sourceFile, fn.name)) {
+    const args = call.arguments.map((argument) => argumentText(argument));
+    const callerNode = enclosingFunctionNode(call);
+    const caller = callerNode === null ? null : (declarations.get(callerNode) ?? null);
+    for (const attribution of attributionsOf(sourceFile, declarations, caller, path)) {
+      reached.push({
+        owner: attribution.owner,
+        bindings: boundParameters(fn, args, attribution.bindings),
+      });
+    }
+  }
+  return reached;
+}
+/**
  * Every mutation call site in one file, as `{ method, path, owner }`.
  *
- * Found by locating each API path — an inline literal, or a call to one of the
- * file's own path helpers — and requiring the write-method literal to stand as
- * the argument IMMEDIATELY before it: only a comma and whitespace may separate
- * the two. Every call shape this codebase uses provides that adjacency:
- * `client.send('POST', path, …)` and the CRM-style
- * `write(previous, parse, 'POST', path, …)` helper both pass the method as the
- * argument directly before the path (the parse closure sits BEFORE the method,
- * so it never intervenes). A path with no adjacent write marker is a READ and
- * is ignored — which is what keeps a list GET from vouching for the POST that
- * shares its route, and what keeps a read from BORROWING the method of an
- * unrelated write elsewhere in the file: the previous any-marker-within-2000-
- * characters window did exactly that to `client.get(...)` calls placed after a
- * genuine write, and `tests/ci/p1-28-write-reachability.test.ts` holds the
- * borrowed-read fixture that refuses the regression.
+ * ## The rule, unchanged
  *
- * `owner` is the exported function the site sits inside, or `null` for a
+ * A site is an API path — an inline literal, or a call to one of the file’s own
+ * path helpers — with the write-method literal standing as the argument
+ * IMMEDIATELY before it. Every call shape this codebase uses provides that
+ * adjacency: `client.send('POST', path, …)` and the CRM-style
+ * `write(previous, parse, 'POST', path, …)` both pass the method as the argument
+ * directly before the path (the parse closure sits BEFORE the method, so it
+ * never intervenes). A path with no adjacent write marker is a READ and is
+ * ignored — which is what keeps a list GET from vouching for the POST that
+ * shares its route, and what keeps a read from BORROWING the method of an
+ * unrelated write elsewhere in the file.
+ *
+ * ## …and what "immediately before" now means
+ *
+ * Argument `i` and argument `i + 1` of the same call. It used to mean "the last
+ * two hundred characters of text before the path end with a method literal, a
+ * comma and whitespace", which is an approximation of that and was the second
+ * approximation in a row here: the one before it was a two-thousand-character
+ * proximity window that let a read borrow an unrelated write’s method. Both are
+ * describing argument positions from the outside. The parser hands them over.
+ *
+ * `owner` is the exported function that REACHES the site, or `null` for a
  * top-level statement. `run` uses it to ask whether anything consumes that
- * export; see the file docblock for why an unconsumed adapter is not reach.
+ * export; see the file docblock for why an unconsumed adapter is not reach, and
+ * for why one site inside a delegated-to helper yields one entry PER reaching
+ * export, each carrying the path that export’s own arguments build.
  */
 export function mutationCallSites(source) {
-  const stripped = stripComments(source);
-  const helpers = pathHelpers(stripped);
-  const text = normaliseSourcePaths(stripped);
-  const owners = exportedFunctions(text);
+  const helpers = pathHelpers(stripComments(source));
+  const sourceFile = parseModule(source);
+  // A file the parser refuses yields nothing, so every claim over it goes red.
+  if (sourceFile === null) return [];
+
+  const declarations = declaredFunctionsOf(sourceFile);
   const sites = [];
 
-  const ownerAt = (index) => {
-    let owner = null;
-    for (const candidate of owners) {
-      if (candidate.index > index) break;
-      owner = candidate.name;
+  /*
+   * Who a site is asked about, and what its route there pins. Exactly one entry
+   * for a site at the top level or inside an export; one per reaching export
+   * for a site inside an internal helper; and the helper’s OWN name when
+   * nothing reaches it — so the site is still counted by the scanner, still
+   * asked about, and then dropped, rather than disappearing from the tally that
+   * proves the scanner works at all.
+   */
+  const attributionsAt = (node) => {
+    const enclosingNode = enclosingFunctionNode(node);
+    if (enclosingNode === null) {
+      /*
+       * No function contains this site, and there are two very different
+       * reasons for that. A top-level STATEMENT runs when the module is
+       * imported, and that is the documented case this gate has always counted.
+       * Anything else in module scope — a class property initializer, say — is
+       * not executed on import, so it is marked unattributable and consumption
+       * refuses it rather than crediting it to a neighbour.
+       */
+      return [{ owner: null, bindings: new Map(), attributable: isTopLevelExecutable(node) }];
     }
-    return owner;
+    const enclosing = declarations.get(enclosingNode) ?? null;
+    /*
+     * A function-like node the namer could not name — an inline callback, an
+     * arrow inside an object literal — has no export whose consumption could be
+     * asked about. Refused rather than credited to its own enclosing scope.
+     */
+    if (enclosing === null || enclosing.name === null) {
+      return [{ owner: null, bindings: new Map(), attributable: false }];
+    }
+    const reached = attributionsOf(sourceFile, declarations, enclosing, new Set());
+    return reached.length > 0
+      ? reached.map((one) => ({ ...one, attributable: true }))
+      : [{ owner: enclosing.name, bindings: new Map(), attributable: true }];
   };
 
-  // Adjacency, not proximity: the method literal must end the text directly
-  // before the path, save for the argument comma and whitespace. The slice is
-  // only as long as a method literal plus formatting needs; the `$` anchor is
-  // what carries the rule.
-  const adjacentMethod = (index) => {
-    const window = text.slice(Math.max(0, index - 200), index);
-    const method = /['"](POST|PUT|PATCH)['"]\s*,\s*$/.exec(window);
-    return method ? method[1] : null;
-  };
+  const visit = (node) => {
+    if (ts.isCallExpression(node)) {
+      const args = node.arguments;
+      for (let i = 0; i + 1 < args.length; i += 1) {
+        const method = writeMethodOf(args[i]);
+        if (method === null) continue;
+        const target = args[i + 1];
 
-  const pathPattern = /['"`](\/api\/v1\/[^'"`\s]*)['"`]/g;
-  let match;
-  while ((match = pathPattern.exec(text)) !== null) {
-    const method = adjacentMethod(match.index);
-    if (method) sites.push({ method, path: match[1], owner: ownerAt(match.index) });
-  }
+        // An inline path literal, template or not.
+        const literal = literalPathOf(target);
+        if (literal !== null && literal.startsWith('/api/v1/')) {
+          for (const { owner, attributable } of attributionsAt(target)) {
+            sites.push({ method, path: literal, owner, attributable });
+          }
+          continue;
+        }
 
-  if (helpers.size > 0) {
-    const names = [...helpers.keys()].map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-    const helperCall = new RegExp(`\\b(${names.join('|')})\\s*\\(`, 'g');
-    let call;
-    while ((call = helperCall.exec(text)) !== null) {
-      const method = adjacentMethod(call.index);
-      if (!method) continue;
-      const args = argumentsAt(text, call.index + call[0].length - 1);
-      if (args === null) continue;
-      const unions = enclosingLiteralUnions(text, call.index);
-      for (const path of resolveHelperCall(helpers.get(call[1]), args, unions)) {
-        sites.push({ method, path, owner: ownerAt(call.index) });
+        // …or a call to one of this file’s own path helpers.
+        if (
+          ts.isCallExpression(target) &&
+          ts.isIdentifier(target.expression) &&
+          helpers.has(target.expression.text)
+        ) {
+          const helperArgs = target.arguments.map((argument) => argumentText(argument));
+          const unions = enclosingUnions(declarations, target);
+          for (const { owner, bindings, attributable } of attributionsAt(target)) {
+            // A value the delegation pins beats the type-level enumeration: the
+            // union says which paths the helper CAN send, the binding says which
+            // one THIS owner asks it to.
+            const values = new Map(unions);
+            for (const [name, value] of bindings) values.set(name, [value]);
+            for (const path of resolveHelperCall(
+              helpers.get(target.expression.text),
+              helperArgs,
+              values
+            )) {
+              sites.push({ method, path, owner, attributable });
+            }
+          }
+        }
       }
     }
-  }
+    ts.forEachChild(node, visit);
+  };
+  ts.forEachChild(sourceFile, visit);
 
   return sites;
 }
-
 /**
  * The whole check, as a function — importable by the mutation suite beside it
  * without running the check or calling `process.exit`. Every input is
@@ -648,14 +846,29 @@ export function run(injected = {}) {
    * names the export that holds it — an adapter nobody imports is a write
    * nobody can invoke, which is INT-113 itself. Comments are stripped first:
    * this repository's docblocks name adapters constantly, and a sentence about
-   * a function is not a call to it. A site with no enclosing export is kept as
-   * it always was; there is no export whose consumption could be asked about.
+   * a function is not a call to it.
+   *
+   * A site attributed to NOTHING is refused. This read "kept as it always was;
+   * there is no export whose consumption could be asked about" — a sentence
+   * about a top-level statement that had quietly become the escape hatch for
+   * every construct the scanner cannot read: once attribution required
+   * containment, an orphaned arrow-const or object method landed here and was
+   * counted as consumed, so the containment fix alone still passed a write
+   * nobody can reach.
+   *
+   * Refusing it is safe AND meaningful, which was measured rather than
+   * assumed: all 43 production write sites resolve to an enclosing exported
+   * function, so nothing real depends on the old branch, and anything that
+   * lands here in future is by definition a shape this gate cannot vouch for.
+   * Fail closed is the direction the docblock promises.
    */
   const code = new Map(scanned.map(([path, content]) => [path, stripComments(content)]));
   const consumption = new Map();
   const consumed = (owner, file) => {
+    // A genuine top-level statement runs on import; the unreadable-construct
+    // case never reaches here, having been dropped as unattributable above.
     if (owner === null) return true;
-    const key = `${file} ${owner}`;
+    const key = `${file}\u0000${owner}`;
     if (!consumption.has(key)) {
       const named = new RegExp(`\\b${owner}\\b`);
       consumption.set(
@@ -666,7 +879,9 @@ export function run(injected = {}) {
     return consumption.get(key);
   };
 
-  const sites = found.filter((site) => consumed(site.owner, site.file));
+  const sites = found.filter(
+    (site) => site.attributable !== false && consumed(site.owner, site.file)
+  );
 
   // The register's `route` field ALREADY carries the `/api/v1` prefix — read
   // from a live entry, not assumed (the P1-27 gate double-prefixed it once and

@@ -142,11 +142,10 @@ export const RECEPTION_PERMISSIONS = {
    * satisfy it. Named here because the backend registers it and this layer must
    * know every code its domain can be denied for. `P1-OD-025` (document and
    * media file policy) is RESOLVED — private, versioned evidence, only an
-   * ACCEPTED version finalized — so the capture surface is no longer blocked;
-   * this commit publishes the CONTRACT for it, and the screen that consults the
-   * code is delivered by the P1-28 Frontend integration. Until that screen
-   * lands, this write stays recorded in
-   * `docs/phase-1/phase-1-28/write-reachability.json`.
+   * ACCEPTED version finalized — and the screen that consults this code has
+   * now landed: `components/steps/MediaStep.tsx` withholds the waiver control
+   * with its reason stated when the operator does not hold it, rather than
+   * greying one out.
    */
   evidenceOverride: 'rec.reception.evidence.override',
 } as const;
@@ -1197,8 +1196,24 @@ export interface ReceptionDetail {
   readonly fuelLevelName: string | null;
   /** `numeric(5,2)` — a STRING on the wire, never a JS float. */
   readonly evSocPercent: string | null;
-  /** Bare id — the column has no FK, so no label can be joined honestly (G-EMP). */
   readonly receivingEmployeeId: string;
+  /**
+   * The custodian's name AS IT WAS when custody was accepted (Owner decision
+   * FE-007, `DBCR-P1-18-002`).
+   *
+   * A SNAPSHOT, not a join. `rec.stamp_receiving_employee_identity()` writes it
+   * at insert from `iam.user_accounts.display_name` and
+   * `tg_reception_visits_receiving_employee` refuses to let it be edited
+   * afterwards, so a later rename or a disabled account cannot rewrite who a
+   * customer was told received their vehicle. That is why the acknowledgement
+   * sheet reads THIS field rather than resolving the id: the sheet is evidence
+   * of a handover that already happened.
+   *
+   * `NOT NULL` with a non-blank CHECK, and the id now carries a same-tenant
+   * foreign key, so the dangling-identifier state G-EMP described is no longer
+   * reachable — see `check-in/receiving-employee.ts` for what that removed.
+   */
+  readonly receivingEmployeeDisplayName: string;
   readonly custodyAcceptedAt: string;
   readonly custodyReleasedAt: string | null;
   readonly recordVersion: number;
@@ -1273,3 +1288,219 @@ export interface ReceptionHistoryEntry {
   readonly releasingPartnerDisplayName: string | null;
   readonly evidenceDocumentId: string | null;
 }
+
+/* ------------------------------------------------------------------ *
+ * The reception capture contract — Owner decisions FE-012 / FE-017 / FE-018
+ * ------------------------------------------------------------------ */
+
+/**
+ * The captures a visit can be asked to evidence. Mirrors
+ * `ck_reception_evidence_binding_requirement`.
+ *
+ * `refusal_supporting_evidence` is deliberately ABSENT: it is a policy subject
+ * but never a binding, because a refusal carries its own document columns on
+ * `rec.refusals`. The database says the same thing in the same place.
+ */
+export const CAPTURE_REQUIREMENTS = [
+  'exterior',
+  'dashboard_odometer',
+  'ev_soc',
+  'warning_lamp',
+  'vin',
+  'damage',
+] as const;
+export type CaptureRequirement = (typeof CAPTURE_REQUIREMENTS)[number];
+
+/**
+ * Which document category may satisfy which requirement.
+ *
+ * `satisfies` rather than an annotation, so the keys stay a literal union and a
+ * requirement added above without a category here is a compile error rather
+ * than a value that silently maps to nothing (`P1-27-INT-113`).
+ * `rec.guard_reception_evidence_binding()` is the authority; this copy is what
+ * makes a wrong category a named message instead of a CHECK violation.
+ */
+export const CAPTURE_CATEGORY_BY_REQUIREMENT = {
+  exterior: 'reception_exterior',
+  dashboard_odometer: 'reception_dashboard',
+  ev_soc: 'reception_dashboard',
+  warning_lamp: 'reception_dashboard',
+  vin: 'reception_vin',
+  damage: 'reception_damage',
+} as const satisfies Readonly<Record<CaptureRequirement, string>>;
+
+/**
+ * Legibility of one captured VIN plate.
+ *
+ * `unreadable` exists only for `vin`, because a VIN plate that cannot be read
+ * is itself the finding. `ck_reception_evidence_binding_quality` enforces it.
+ */
+export const CAPTURE_QUALITY_STATUSES = ['readable', 'unreadable'] as const;
+export type CaptureQualityStatus = (typeof CAPTURE_QUALITY_STATUSES)[number];
+
+/** Where a resolved requirement's numbers came from. */
+export const CAPTURE_RULE_SOURCES = ['tenant', 'branch', 'baseline'] as const;
+
+/** One requirement, what it needs, and what it has. */
+export interface CaptureRequirementState {
+  readonly requirementCode: CaptureRequirement;
+  readonly minCount: number;
+  readonly deviceCapturedAtRequired: boolean;
+  readonly source: 'tenant' | 'branch' | 'baseline';
+  /**
+   * FINALIZED bindings only, which is why a screen cannot report a visit
+   * complete on the strength of versions that are still pending.
+   */
+  readonly finalizedCount: number;
+  readonly recordedCount: number;
+  readonly satisfied: boolean;
+  readonly overridden: boolean;
+}
+
+/** One binding of an exact immutable version to one requirement. */
+export interface CaptureBindingEntry {
+  readonly id: string;
+  readonly requirementCode: CaptureRequirement;
+  readonly documentId: string;
+  readonly documentVersionId: string;
+  readonly documentVersionStatus: string;
+  /** The version checksum, server-owned. Null until the store records one. */
+  readonly integritySha256: string | null;
+  readonly deviceCapturedAt: string | null;
+  readonly qualityStatus: CaptureQualityStatus;
+  readonly finalizedAt: string | null;
+  readonly finalizedBy: string | null;
+  readonly createdAt: string;
+  readonly createdBy: string;
+}
+
+/** One attributable waiver of a required capture. */
+export interface CaptureOverrideEntry {
+  readonly id: string;
+  readonly requirementCode: CaptureRequirement;
+  readonly reason: string;
+  readonly actorId: string;
+  readonly occurredAt: string;
+}
+
+/** One damage-map template revision this visit's branch may bind to. */
+export interface BindableTemplateEntry {
+  readonly id: string;
+  readonly scope: 'tenant' | 'branch';
+  readonly companyId: string | null;
+  readonly branchId: string | null;
+  readonly mapType: string;
+  readonly perspective: string | null;
+  readonly status: string;
+  readonly recordVersion: number;
+  readonly activeVersionId: string | null;
+  readonly activeVersionNumber: number | null;
+  readonly documentId: string | null;
+  readonly documentVersionId: string | null;
+}
+
+/**
+ * What this visit still owes (`rec.reception-evidence-binding-list`).
+ *
+ * One read answers four questions a capture screen would otherwise ask
+ * separately — the resolved policy, what is bound, what was waived, and which
+ * templates are bindable — which is also why it is an `expensive-read`.
+ */
+export interface CaptureContract {
+  readonly receptionVisitId: string;
+  readonly requirements: readonly CaptureRequirementState[];
+  readonly bindings: readonly CaptureBindingEntry[];
+  readonly overrides: readonly CaptureOverrideEntry[];
+  readonly bindableTemplates: readonly BindableTemplateEntry[];
+}
+
+export interface EvidenceBindingInput {
+  readonly requirementCode: CaptureRequirement;
+  readonly documentId: string;
+  readonly documentVersionId: string;
+  /** What the capturing device says. Never trusted as a fact. */
+  readonly deviceCapturedAt?: string | null | undefined;
+  readonly qualityStatus?: CaptureQualityStatus | undefined;
+}
+
+export interface EvidenceBindingRecorded {
+  readonly receptionVisitId: string;
+  readonly bindingId: string;
+  readonly requirementCode: CaptureRequirement;
+}
+
+export interface EvidenceBindingFinalized {
+  readonly receptionVisitId: string;
+  readonly bindingId: string;
+  readonly finalized: true;
+}
+
+export interface CaptureOverrideInput {
+  readonly requirementCode: CaptureRequirement;
+  readonly reason: string;
+}
+
+export interface CaptureOverrideRecorded {
+  readonly receptionVisitId: string;
+  readonly overrideId: string;
+  readonly requirementCode: CaptureRequirement;
+}
+
+/** `rec.capture_requirement_overrides.reason`. */
+export const MAX_OVERRIDE_REASON = 500;
+
+/** Signature lifecycle events. Mirrors `ck_signature_event_type`. */
+export const SIGNATURE_EVENT_TYPES = ['finalized', 'repudiated'] as const;
+export type SignatureEventType = (typeof SIGNATURE_EVENT_TYPES)[number];
+
+/** What a signature read-back reports. Derived by the API, never stored. */
+export const SIGNATURE_STATUSES = ['draft', 'finalized', 'repudiated'] as const;
+export type SignatureStatus = (typeof SIGNATURE_STATUSES)[number];
+
+/**
+ * One signature, as `rec.reception-signature-list` answers.
+ *
+ * EVERY signature is reported, including superseded and repudiated ones. Hiding
+ * a superseded signature would be the overwrite the Owner decision forbids,
+ * achieved through a read filter instead of an UPDATE.
+ */
+export interface SignatureEntry {
+  readonly id: string;
+  readonly signerRole: string;
+  readonly signerPartnerId: string | null;
+  readonly captureMethod: string;
+  readonly purpose: string;
+  readonly documentId: string;
+  readonly documentVersionId: string;
+  readonly documentVersionStatus: string;
+  readonly integritySha256: string | null;
+  readonly signedAt: string;
+  readonly actorId: string;
+  readonly replacesSignatureId: string | null;
+  readonly replacedBySignatureId: string | null;
+  readonly finalizedAt: string | null;
+  readonly repudiatedAt: string | null;
+  readonly repudiationReason: string | null;
+  readonly status: SignatureStatus;
+}
+
+export interface SignatureLedger {
+  readonly receptionVisitId: string;
+  readonly signatures: readonly SignatureEntry[];
+}
+
+export interface SignatureEventInput {
+  readonly eventType: SignatureEventType;
+  /** Required for `repudiated`, refused for `finalized`. */
+  readonly reason?: string | null | undefined;
+}
+
+export interface SignatureEventRecorded {
+  readonly receptionVisitId: string;
+  readonly signatureId: string;
+  readonly eventId: string;
+  readonly eventType: SignatureEventType;
+}
+
+/** `rec.signature_events.reason`. */
+export const MAX_REPUDIATION_REASON = 500;

@@ -12,6 +12,10 @@ import {
   unknownStatuses,
 } from '@/features/receptions/check-in/closure';
 import {
+  ACCEPTED_VERSION_STATUS,
+  DOCUMENT_VERSION_STATUSES,
+} from '@/features/attachments/attachments-contract';
+import {
   EVIDENCE_KINDS,
   MAX_CLOSURE_REASON,
   RECEPTION_STATUSES,
@@ -196,7 +200,116 @@ describe('a customer’s concern is not a technical finding', () => {
   });
 });
 
-describe('media is registered and pending, never uploaded', () => {
+type Catalogue = 'en' | 'ar';
+
+const CATALOGUES: readonly (readonly [Record<string, string>, Catalogue])[] = [
+  [EN, 'en'],
+  [AR, 'ar'],
+];
+
+/** Words that assert a version HAS become finalized evidence. */
+const ACCEPTANCE: Record<Catalogue, (value: string) => boolean> = {
+  en: (value) =>
+    /\b(accepted|satisfied|counted|met|complete[d]?|final(ised|ized)?|verified)\b/i.test(value),
+  ar: (value) =>
+    ['مقبول', 'مستوفى', 'محتسَب', 'محتسب', 'مكتمل', 'نهائي', 'موثَّق'].some((word) =>
+      value.includes(word)
+    ),
+};
+
+/** Words that assert the FILE exists — legitimate, and what the old ban forbade. */
+const ON_FILE: Record<Catalogue, (value: string) => boolean> = {
+  en: (value) => /\b(upload(ed|ing|s)?|record(ed)?|stored|attached|on file)\b/i.test(value),
+  ar: (value) =>
+    ['مرفوع', 'رفع', 'سُجِّل', 'مسجَّل', 'مخزَّن'].some((word) => value.includes(word)),
+};
+
+/** The denial that stops "the file is here" from reading as "this is met". */
+const DENIAL: Record<Catalogue, (value: string) => boolean> = {
+  en: (value) => /\b(not|no|nothing|never|yet|until|cannot)\b/i.test(value),
+  ar: (value) => ['لم', 'لا', 'ليس', 'غير', 'بعد'].some((word) => value.includes(word)),
+};
+
+/**
+ * The vocabulary a version's lifecycle is named in, per language.
+ *
+ * The English half is built FROM `DOCUMENT_VERSION_STATUSES`, because the status
+ * tokens are themselves the English words a screen would reach for, and then
+ * widened by the three the catalogue actually renders for the states whose copy
+ * avoids its token ("checked", "withheld", "refused"). The Arabic half cannot be
+ * derived that way — the tokens are English — so it is listed, and the case
+ * below proves both halves by requiring each to match all five labels.
+ */
+const LIFECYCLE: Record<Catalogue, (value: string) => boolean> = {
+  en: (value) =>
+    new RegExp(
+      `\\b(${[...DOCUMENT_VERSION_STATUSES, 'checked', 'withheld', 'refused'].join('|')})\\b`,
+      'i'
+    ).test(value),
+  ar: (value) =>
+    ['مقبول', 'مرفوض', 'محجوز', 'يُفحص', 'قيد', 'انتظار'].some((word) => value.includes(word)),
+};
+
+/**
+ * What is wrong with one capture label, or `null` when nothing is.
+ *
+ * A function rather than four inline assertions, so the one rule reaches the
+ * real catalogues, a planted breach it must reject, and a compliant form it must
+ * accept — the three applications this repository asks of a universal rule.
+ */
+function capturePhraseProblem(
+  value: string,
+  catalogue: Catalogue,
+  assertsAcceptance: boolean
+): string | null {
+  const asserts = ACCEPTANCE[catalogue](value);
+  if (asserts !== assertsAcceptance) {
+    return asserts
+      ? 'calls a version that is not accepted finalized evidence'
+      : 'does not say the version was accepted';
+  }
+  if (!assertsAcceptance && ON_FILE[catalogue](value) && !DENIAL[catalogue](value)) {
+    return 'says the file is on record without denying that it counts';
+  }
+  return null;
+}
+
+/**
+ * A file may be on record without being evidence (`P1-OD-025`, RESOLVED).
+ *
+ * ## What replaced a ban on the word "upload"
+ *
+ * This block used to assert that no string under `receptions.` mentioned
+ * uploading, because no upload path existed. One does now, and the ban had
+ * become a ban on an honest sentence: `receptions.capture.version.pending` reads
+ * "Uploaded, not yet checked", and every word of it is true. What has to hold
+ * instead is the Owner decision itself — a file may be described as being on
+ * record, but a requirement is satisfied ONLY by a finalized ACCEPTED version
+ * (`ACCEPTED_VERSION_STATUS`; `evidence-capture.ts` finalizes on nothing else).
+ * So no label may describe a pending, scanning, quarantined or rejected version
+ * as accepted, counted, satisfied, final or complete, and a label that says the
+ * file is on record must deny in the same breath that it counts.
+ *
+ * ## Why the sweep is over LABELS and not over the namespace
+ *
+ * A vocabulary check cannot tell `accepted` in a claim from `accepted` in a
+ * denial: `receptions.capture.state.recordedNotCounted` says "nothing here has
+ * been accepted yet", which is the honest form of what a label may not say. So
+ * the sweep is the five version labels — where the word is the entire statement
+ * — plus `attachments.capture.storeUnavailable`, which the same surface renders
+ * when a capture reaches no store at all. Widened to every reception string it
+ * would fail honest sentences, and a rule that has to be suppressed somewhere is
+ * a rule that stops being applied anywhere.
+ *
+ * ## Why the Arabic arm is a substring list and never a `\b` regex
+ *
+ * `\b` in JavaScript is a boundary in the ASCII `\w` class, and Arabic letters
+ * are not `\w`, so a `\b` written beside one can never bind. The sweep this
+ * replaces spelled `\bمرفوع` against an `ar.json` value that BEGINS with مرفوع:
+ * its Arabic arm had never once been able to fail, in either direction. Both
+ * halves of that are asserted below rather than described.
+ */
+describe('a file on record, and the one state that is evidence', () => {
   it('reads a document reference as registered media and nothing else as media', () => {
     expect(hasRegisteredMedia('11111111-1111-4111-8111-111111111111')).toBe(true);
     for (const value of [null, undefined, '', 0, false, {}]) {
@@ -204,37 +317,149 @@ describe('media is registered and pending, never uploaded', () => {
     }
   });
 
-  it('says "registered, pending" in both catalogues', () => {
+  it('says a file is on record in the summary, and names no lifecycle state', () => {
+    /*
+     * `rec.reception-condition-evidence-list` projects `evidence_document_id`
+     * and joins no document or version table, so no status travels with the
+     * reference — `hasRegisteredMedia` says exactly that, and `SummaryStep` and
+     * `AcknowledgementDocument` render this one string from that predicate
+     * alone. A sentence naming `pending` would therefore be naming a state
+     * nobody read, and it would be wrong precisely when the version had already
+     * been accepted — on the acknowledgement a customer takes away.
+     */
     const key = 'receptions.summary.mediaRegistered';
-    expect(EN[key]).toContain('registered');
-    expect(EN[key]).toContain('pending');
+    for (const [catalogue, name] of CATALOGUES) {
+      const value = catalogue[key];
+      expect(value, `${key} missing from ${name}`).toBeTruthy();
+      expect(ON_FILE[name](value as string), `${name} does not say a file is on record`).toBe(true);
+      expect(LIFECYCLE[name](value as string), `${name} names a lifecycle state`).toBe(false);
+      expect(ACCEPTANCE[name](value as string), `${name} claims the file is evidence`).toBe(false);
+    }
+    // Real Arabic, not an English string copied across.
     expect(/[؀-ۿ]/.test(AR[key] as string)).toBe(true);
+
+    // Non-vacuity, both ways. The vocabulary catches every state the product
+    // does name — all five labels, in both languages — and it catches the
+    // wording this very string used to carry, which is the regression it is
+    // here to stop returning.
+    for (const status of DOCUMENT_VERSION_STATUSES) {
+      const label = `receptions.capture.version.${status}`;
+      expect(LIFECYCLE.en(EN[label] as string), `en ${status}`).toBe(true);
+      expect(LIFECYCLE.ar(AR[label] as string), `ar ${status}`).toBe(true);
+    }
+    expect(LIFECYCLE.en('Media registered, pending')).toBe(true);
+    expect(LIFECYCLE.ar('الوسائط مسجَّلة، قيد الانتظار')).toBe(true);
   });
 
-  it('lets no reception string claim an upload, in either language', () => {
-    /*
-     * `P1-OD-025` is open: no upload path exists in this phase. The ONE place
-     * either catalogue mentions uploading is `vehicles.media.blocked`, and it
-     * mentions it to DENY it ("nothing is uploaded or stored until it is
-     * made") — a denial is the opposite of the claim this guards against, so
-     * the sweep is over the reception namespace, where a claim would be one.
-     */
-    for (const [catalogue, name] of [
-      [EN, 'en'],
-      [AR, 'ar'],
-    ] as const) {
-      const claims = Object.entries(catalogue)
-        .filter(([entry]) => entry.startsWith('receptions.'))
-        .filter(([, value]) => /\bupload(ed|ing|s)?\b|\bرفع\b|\bمرفوع/i.test(String(value)));
-      expect(
-        claims.map(([entry]) => entry),
-        `${name} claims an upload`
-      ).toEqual([]);
+  it('lets a version be called uploaded, and only an ACCEPTED one evidence', () => {
+    let examined = 0;
+    for (const status of DOCUMENT_VERSION_STATUSES) {
+      const key = `receptions.capture.version.${status}`;
+      // Derived from the contract, never listed: a sixth status added to
+      // `ck_document_versions_status` arrives here as a missing key rather than
+      // as a label nobody wrote a rule for.
+      const assertsAcceptance = status === ACCEPTED_VERSION_STATUS;
+      for (const [catalogue, name] of CATALOGUES) {
+        const value = catalogue[key];
+        expect(value, `${key} missing from ${name}`).toBeTruthy();
+        expect(
+          capturePhraseProblem(value as string, name, assertsAcceptance),
+          `${name} ${key}`
+        ).toBeNull();
+        examined += 1;
+      }
     }
 
-    // Anti-vacuity: the sweep really looked at the reception namespace.
+    // The failure notice rendered on the same surface (`attachments/api.ts`
+    // answers it when the store cannot be reached). It is not under
+    // `receptions.`, and the sweep it replaces stopped at that prefix.
+    for (const [catalogue, name] of CATALOGUES) {
+      const key = 'attachments.capture.storeUnavailable';
+      const value = catalogue[key];
+      expect(value, `${key} missing from ${name}`).toBeTruthy();
+      expect(capturePhraseProblem(value as string, name, false), `${name} ${key}`).toBeNull();
+      examined += 1;
+    }
+
+    // Anti-vacuity: the loop above really examined every label, in both
+    // languages, and the catalogues carry no version label outside the frozen
+    // vocabulary — an orphan `receptions.capture.version.*` key would be copy
+    // for a state the contract does not have, which no branch would ever render.
+    expect(examined).toBe((DOCUMENT_VERSION_STATUSES.length + 1) * 2);
+    expect(
+      Object.keys(EN)
+        .filter((key) => key.startsWith('receptions.capture.version.'))
+        .sort()
+    ).toEqual(
+      DOCUMENT_VERSION_STATUSES.map((status) => `receptions.capture.version.${status}`).sort()
+    );
     expect(Object.keys(EN).filter((key) => key.startsWith('receptions.')).length).toBeGreaterThan(
       100
     );
+  });
+
+  it('rejects the wordings that would make those labels dishonest', () => {
+    // A planted breach per shape the rule exists to catch, because no real
+    // catalogue value carries one and a rule proved only against compliant
+    // input has not been proved at all.
+    const breaches: readonly (readonly [string, Catalogue, boolean])[] = [
+      // On record, with nothing to say it does not count yet.
+      ['Uploaded', 'en', false],
+      ['مرفوع', 'ar', false],
+      ['Recorded as evidence', 'en', false],
+      // An acceptance word on a version that has not been accepted.
+      ['Accepted, being checked', 'en', false],
+      ['مقبول، قيد الفحص', 'ar', false],
+      // And the accepted label losing the only claim it is required to make.
+      ['Being checked', 'en', true],
+      ['قيد الفحص', 'ar', true],
+    ];
+    for (const [value, catalogue, assertsAcceptance] of breaches) {
+      expect(
+        capturePhraseProblem(value, catalogue, assertsAcceptance),
+        `${catalogue}: ${value}`
+      ).not.toBeNull();
+    }
+
+    // And the compliant forms it must ACCEPT, so the rule is a rule and not a
+    // ban on saying anything at all.
+    const compliant: readonly (readonly [string, Catalogue, boolean])[] = [
+      ['Uploaded, not yet checked', 'en', false],
+      ['Stored, but it does not count yet', 'en', false],
+      ['مرفوع ولا يُحتسب بعد', 'ar', false],
+      ['Accepted', 'en', true],
+      ['مقبول', 'ar', true],
+    ];
+    for (const [value, catalogue, assertsAcceptance] of compliant) {
+      expect(
+        capturePhraseProblem(value, catalogue, assertsAcceptance),
+        `${catalogue}: ${value}`
+      ).toBeNull();
+    }
+    expect(breaches.length + compliant.length).toBe(12);
+  });
+
+  it('proves the Arabic matcher can fire, which the sweep it replaces could not', () => {
+    const pending = AR['receptions.capture.version.pending'] as string;
+    // The trap, stated as an assertion: `\b` cannot bind beside an Arabic
+    // letter, so the old `\bمرفوع` did not match a value that STARTS with it.
+    expect(/\bمرفوع/.test(pending)).toBe(false);
+    expect(pending.startsWith('مرفوع')).toBe(true);
+
+    // The replacement fires, on the real catalogue, in both directions.
+    expect(ON_FILE.ar(pending)).toBe(true);
+    expect(DENIAL.ar(pending)).toBe(true);
+    expect(ACCEPTANCE.ar(pending)).toBe(false);
+    expect(ACCEPTANCE.ar(AR['receptions.capture.version.accepted'] as string)).toBe(true);
+    expect(ACCEPTANCE.ar('مقبول كدليل')).toBe(true);
+
+    // Every Arabic label is Arabic, so none of the above passed on English text
+    // that happened to be sitting in the Arabic catalogue.
+    for (const status of DOCUMENT_VERSION_STATUSES) {
+      expect(
+        /[؀-ۿ]/.test(AR[`receptions.capture.version.${status}`] as string),
+        `ar ${status} carries no Arabic`
+      ).toBe(true);
+    }
   });
 });

@@ -3,7 +3,6 @@ import { describe, expect, it } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
 import { renderLtr, renderRtl } from './render';
-import type { ReceivingEmployee } from '@/features/receptions/check-in/receiving-employee';
 import { AcknowledgementDocument } from '@/features/receptions/components/AcknowledgementDocument';
 import type { ReceptionDetail } from '@/features/receptions/receptions-contract';
 
@@ -37,6 +36,7 @@ const DETAIL: ReceptionDetail = {
   fuelLevelName: 'Half',
   evSocPercent: '42.50',
   receivingEmployeeId: 'user-77',
+  receivingEmployeeDisplayName: 'Dana Receiver',
   custodyAcceptedAt: '2026-08-13T07:00:00.000Z',
   custodyReleasedAt: null,
   recordVersion: 7,
@@ -109,24 +109,14 @@ function sections(over: Record<string, unknown> = {}) {
 
 /**
  * The receiving employee the ROUTE resolved (G-EMP).
- *
- * A name in the ordinary case. The sheet used to print `DETAIL`'s stored
- * identifier here, on the copy a customer signs.
  */
-const RECEIVING_EMPLOYEE = { status: 'named', displayName: 'Rana Odeh' } as const;
-
-function renderSheet(
-  over: Record<string, unknown> = {},
-  employee: ReceivingEmployee = RECEIVING_EMPLOYEE
-) {
+function renderSheet(over: Record<string, unknown> = {}) {
+  // `detail` is an override like any other: the sheet prints a SNAPSHOT of the
+  // receiving employee, and what it does with an empty one is a property worth
+  // driving rather than assuming.
+  const detail = (over['detail'] as typeof DETAIL | undefined) ?? DETAIL;
   return renderLtr(
-    <AcknowledgementDocument
-      locale="en"
-      messages={en}
-      detail={DETAIL}
-      receivingEmployee={employee}
-      sections={sections(over)}
-    />
+    <AcknowledgementDocument locale="en" messages={en} detail={detail} sections={sections(over)} />
   );
 }
 
@@ -201,39 +191,53 @@ describe('what the sheet refuses to print', () => {
     ).toBeVisible();
   });
 
-  it('prints the receiving employee by NAME, with the G-EMP note', () => {
+  it('prints the receiving employee by NAME, from the SNAPSHOT, with the note', () => {
     /*
      * This case used to assert the stored identifier was visible on the sheet —
      * on the copy a customer signs and takes away. `canonical-plan.md` §7
-     * disposes of G-EMP with the sentence "The UI shows names, never UUIDs",
-     * and the name is resolvable through `iam.user-detail`.
+     * disposes of G-EMP with the sentence "The UI shows names, never UUIDs".
+     *
+     * Where the name comes from changed after that, and it matters here: the
+     * sheet prints `receivingEmployeeDisplayName`, written when custody was
+     * accepted, rather than resolving the account through `iam.user-detail`. A
+     * live directory read would have been the wrong answer even when it
+     * succeeded — this document is evidence of a handover that already happened,
+     * and an account renamed since would reprint the past under a name nobody
+     * used at the time.
      */
     renderSheet();
-    expect(screen.getByText('Rana Odeh')).toBeVisible();
+    expect(screen.getByText(DETAIL.receivingEmployeeDisplayName)).toBeVisible();
     expect(screen.queryByText(DETAIL.receivingEmployeeId)).toBeNull();
     expect(screen.getByText(EN['receptions.wizard.receivingEmployeeNote'] as string)).toBeVisible();
   });
 
-  for (const { status, key } of [
-    { status: 'denied', key: 'receptions.wizard.receivingEmployeeDenied' },
-    { status: 'unresolved', key: 'receptions.wizard.receivingEmployeeUnresolved' },
-    { status: 'unavailable', key: 'receptions.wizard.receivingEmployeeUnavailable' },
-  ] as const) {
-    it(`prints the reason rather than an identifier when the name came back ${status}`, () => {
-      /*
-       * A customer's copy is the worst place for an internal value in the slot
-       * where a person's name goes — and `unresolved` would be the worst of the
-       * three, because the column carries no foreign key and the identifier may
-       * name nobody at all. Each reason is printed in words instead.
-       */
-      renderSheet({}, { status });
-      expect(screen.getByText(EN[key] as string)).toBeVisible();
-      expect(screen.queryByText(DETAIL.receivingEmployeeId)).toBeNull();
-      expect(
-        screen.getByText(EN['receptions.wizard.receivingEmployeeNote'] as string)
-      ).toBeVisible();
-    });
-  }
+  it('never prints the identifier, whatever the snapshot holds', () => {
+    /*
+     * The falsifiable half, and the reason this replaced a claim about "three
+     * non-named outcomes". There are no longer three outcomes: no read is made,
+     * so there is no denial, no unresolved and no unavailable to template over —
+     * the matrix cell asserting a case over all three named a case that does not
+     * exist in a file it also mis-counted.
+     *
+     * What CAN go wrong is the snapshot being empty or, worse, holding the
+     * identifier — which is exactly what the sheet printed before the fix, on the
+     * copy a customer takes away. Both are driven.
+     */
+    for (const snapshot of ['', '   ']) {
+      const { unmount } = renderSheet({
+        detail: { ...DETAIL, receivingEmployeeDisplayName: snapshot },
+      });
+      expect(screen.queryByText(DETAIL.receivingEmployeeId), snapshot).toBeNull();
+      unmount();
+    }
+
+    // …and the sheet holds no uuid anywhere, which is the property an operator
+    // and a customer actually meet.
+    renderSheet();
+    expect(document.body.textContent ?? '').not.toMatch(
+      /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i
+    );
+  });
 
   it('says it is not a diagnosis and not a quotation', () => {
     renderSheet();
@@ -307,13 +311,7 @@ describe('what the sheet says when a section is empty, unreadable or clipped', (
 describe('both directions', () => {
   it('renders in Arabic, right to left, with no English fallback', () => {
     const { container } = renderRtl(
-      <AcknowledgementDocument
-        locale="ar"
-        messages={ar}
-        detail={DETAIL}
-        receivingEmployee={RECEIVING_EMPLOYEE}
-        sections={sections()}
-      />
+      <AcknowledgementDocument locale="ar" messages={ar} detail={DETAIL} sections={sections()} />
     );
     expect(document.documentElement.dir).toBe('rtl');
     expect(screen.getByText(AR['receptions.summary.notVerified'] as string)).toBeVisible();

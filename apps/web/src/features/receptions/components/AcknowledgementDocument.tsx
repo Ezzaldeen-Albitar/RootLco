@@ -12,10 +12,6 @@ import type {
   ReceptionDetail,
 } from '../receptions-contract';
 import { hasRegisteredMedia, isCustomerReported } from '../check-in/closure';
-import {
-  RECEIVING_EMPLOYEE_NOTICE_KEYS,
-  type ReceivingEmployee,
-} from '../check-in/receiving-employee';
 
 /**
  * The reception acknowledgement document (`FE-021`).
@@ -42,10 +38,20 @@ import {
  *
  *   - **Storage keys and document identifiers.** Media reaches the record as a
  *     document REFERENCE; a customer's copy has no use for an internal
- *     identifier and printing one leaks the shape of the store. What prints is
- *     the STATE: *registered, pending*. Never "uploaded" — `P1-OD-025` is open,
- *     no upload path exists in this phase, and a document that said "uploaded"
- *     would be asserting something the platform has not done.
+ *     identifier and printing one leaks the shape of the store.
+ *   - **Any lifecycle state for that media.** What prints is EXISTENCE and
+ *     nothing else — *A file is on record* — and it is deliberately status-free.
+ *     Capture is real on this branch, so the reason is not that nothing was ever
+ *     uploaded; it is that this READ does not publish a status.
+ *     `rec.reception-condition-evidence-list` projects each arm's
+ *     `evidence_document_id` and joins no document or version table, so no
+ *     `pending`, `scanning` or `accepted` travels with the reference. A sheet
+ *     that named one would be naming a state it never read — and would be wrong
+ *     precisely when the version had already been accepted. The surfaces that DO
+ *     have a status (`CaptureBindingEntry`, `SignatureEntry`, both carrying
+ *     `documentVersionStatus`) render it from that field; `hasRegisteredMedia`
+ *     in `check-in/closure.ts` carries the same reasoning beside the predicate
+ *     that decides this cell.
  *   - **The customer's complaint wording.** `rec.complaint_details` is a
  *     restricted narrative table the evidence read excludes on purpose, so the
  *     words are not available to print. The document says so rather than
@@ -59,13 +65,14 @@ import {
  *   - **The receiving employee's identifier.** This sheet used to print it, in
  *     a `<code>` element, on the copy a customer signs and takes away — and
  *     `canonical-plan.md` §7 disposes of G-EMP with the sentence "The UI shows
- *     names, never UUIDs". The page now resolves the name through
- *     `iam.user-detail` (`iam.user.read`, the code the check-in picker already
- *     consumes) and prints THAT. Where no name could be learned, the sheet says
- *     which of the three reasons applies and prints no identifier: an internal
- *     value in the place a person's name goes reads to a customer as a person.
- *     The G-EMP note stays, because what is recorded is a user account and not
- *     an employee record, and that is worth saying on a handover document.
+ *     names, never UUIDs". It was then fixed by resolving the name through
+ *     `iam.user-detail`, which was better and still wrong for THIS document: a
+ *     live directory read answers with the account's name today, so renaming an
+ *     operator would silently reprint a past handover under a different person's
+ *     name. It now prints `receivingEmployeeDisplayName`, the snapshot
+ *     `rec.stamp_receiving_employee_identity()` wrote when custody was accepted
+ *     and no later statement may edit. A sheet that records an event should say
+ *     what was true at the event.
  */
 
 /**
@@ -98,14 +105,11 @@ export function AcknowledgementDocument({
   locale,
   messages,
   detail,
-  receivingEmployee,
   sections,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly detail: ReceptionDetail;
-  /** Who received the vehicle, resolved by the ROUTE (G-EMP). */
-  readonly receivingEmployee: ReceivingEmployee;
   readonly sections: AcknowledgementSections;
 }) {
   const title =
@@ -154,15 +158,12 @@ export function AcknowledgementDocument({
               <span dir="ltr">{detail.evSocPercent}%</span>
             </Fact>
           ) : null}
+          {/* The name recorded WHEN CUSTODY WAS ACCEPTED, not the account's name
+              today. This sheet is evidence of a handover that already happened,
+              so a live directory read would have been the wrong answer even when
+              it succeeded. See the docblock. */}
           <Fact label={translate(messages, 'receptions.wizard.receivingEmployee')}>
-            {receivingEmployee.status === 'named' ? (
-              receivingEmployee.displayName
-            ) : (
-              /* The reason, never the identifier. See the docblock. */
-              <span className="text-text-muted" lang={locale}>
-                {translate(messages, RECEIVING_EMPLOYEE_NOTICE_KEYS[receivingEmployee.status])}
-              </span>
-            )}
+            {detail.receivingEmployeeDisplayName}
           </Fact>
         </dl>
         <p className="mt-2 text-supporting text-text-muted" lang={locale}>
@@ -258,7 +259,9 @@ export function AcknowledgementDocument({
                   : 'receptions.summary.staffObserved'
               ),
               hasRegisteredMedia(row.evidenceDocumentId)
-                ? // The STATE, never the reference. See the docblock.
+                ? // EXISTENCE, never a state and never the reference: the row
+                  // carries no status, and this is the copy the customer takes
+                  // away. See the docblock on `hasRegisteredMedia`.
                   translate(messages, 'receptions.summary.mediaRegistered')
                 : translate(messages, 'receptions.acknowledgement.noMedia'),
               <bdi key={row.id}>{formatDateTime(row.recordedAt, locale)}</bdi>,

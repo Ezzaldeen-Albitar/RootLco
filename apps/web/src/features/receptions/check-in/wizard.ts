@@ -75,6 +75,15 @@ export interface CheckInCapabilities {
    */
   readonly manageEvidence: boolean;
   /**
+   * `rec.reception.evidence.override` — waiving a required capture (`FE-017`).
+   *
+   * A SEPARATE authority from performing one, and the separation is the Owner
+   * decision: a receptionist who may photograph a vehicle must not thereby be
+   * able to record that no photograph was needed. Resolved at the route with
+   * every other capability, so no step consults the session.
+   */
+  readonly overrideEvidence: boolean;
+  /**
    * `iam.sensitive.view` — the SECOND permission the two restricted-narrative
    * kinds need (`FE-010` complaint text, `FE-016` contents description).
    *

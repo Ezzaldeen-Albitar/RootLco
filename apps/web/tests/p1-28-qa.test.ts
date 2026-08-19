@@ -13,16 +13,28 @@ import { STATUS_BY_KIND } from '@/lib/api/read-operation';
  * Every P1-28 `.dom` suite mocks its adapter module wholesale, so it exercises
  * the SCREEN and structurally cannot exercise the adapter. Every P1-28 unit
  * suite exercises a pure module — the contract tables, the wizard rules, the
- * closure graph. **Nothing was executing the thirty-eight adapters this phase
+ * closure graph. **Nothing was executing the forty-seven adapters this phase
  * ships.** That is the P1-27 Wave 5 finding recurring one phase later: mutating
  * an adapter left twenty DOM tests green, because every reference to it in the
  * whole suite was a `vi.fn()` that replaces the thing under test.
  *
- * So this file drives all twenty-three reads and all fourteen writes through all
- * eleven transport kinds, through the four refusal branches the contract names
- * (428 / 409 / 422 / 403), and through the three replay shapes — and it asserts
- * the paths they actually produce against the published contract, in both
- * directions.
+ * So this file drives all twenty-five reads and all twenty-two writes through
+ * all eleven transport kinds, through the four refusal branches the contract
+ * names (428 / 409 / 422 / 403), and through the three replay shapes — and it
+ * asserts the paths they actually produce against the published contract, in
+ * both directions.
+ *
+ * Forty-seven rather than forty-four because `src/features/attachments` became
+ * an adapter root: three `'use server'` exports had been ineligible for
+ * discovery, so the sweep and the table agreed perfectly about a tree neither
+ * could see. Nothing about them changed — only whether anything looks.
+ *
+ * Two of those twenty writes are COMPOSITE Server Actions — the FE-017 evidence
+ * capture and the FE-018 signature capture — which walk the shared document
+ * chain before they reach a `rec.*` write. They are driven with that shared half
+ * mocked at its module boundary, so what this file measures of them is the half
+ * this phase owns. The mock's docblock carries why, and what it therefore does
+ * not claim.
  *
  * ## Nothing here is a hand list
  *
@@ -47,6 +59,92 @@ vi.mock('@/lib/api/server-client', () => ({
   authorizedClient: () => authorizedClient(),
 }));
 
+/**
+ * The SHARED half of a capture, mocked at the tier boundary.
+ *
+ * A capture is not one request. `captureRequirementEvidence` and
+ * `captureSignatureEvidence` walk a category read, an upload authorization, an
+ * object PUT, a version registration and a link before they reach the `rec.*`
+ * write at the end — and the first five of those are `shared.*` operations of
+ * the P1-15 evidence foundation, which this phase CONSUMES and does not own.
+ *
+ * Mocking them is what lets the two composites be driven at all: without it a
+ * single drive would issue five requests plus a raw `fetch` to an object store,
+ * and every sweep in this file that asserts "exactly one request, on the channel
+ * it declares" would have to be weakened to accommodate them. The mock is drawn
+ * at the module boundary rather than at the transport, so what remains real is
+ * exactly the half this phase is answerable for.
+ *
+ * The fixture is the SEEDED policy, value for value
+ * (`supabase/seeds/05_shared_reference.sql:43,45`), not a convenient invention:
+ * `identity_document` and `signature` are the business-link purposes those two
+ * categories publish, and both require a device capture timestamp. A fixture
+ * that softened either would let a capture pass here and be refused in
+ * production for a reason this file had assumed away.
+ *
+ * `vi.hoisted` because `vi.mock` is hoisted above every const: the recorder has
+ * to exist before the factory closes over it. Plain functions rather than
+ * `vi.fn`, so nothing that resets the transport mocks can silently empty this
+ * chain and leave the composites returning `undefined`.
+ */
+const attachments = vi.hoisted(() => ({
+  /** Every shared-tier call the composite under test made, in order. */
+  calls: [] as { readonly fn: string; readonly args: readonly unknown[] }[],
+  /** The lifecycle state the registration reports. `beforeEach` restores it. */
+  versionStatus: 'pending',
+}));
+
+const CATEGORIES = [
+  {
+    categoryCode: 'reception_vin',
+    allowedContentTypes: ['image/jpeg', 'image/png', 'image/webp'],
+    maxBytes: 10_485_760,
+    retentionClass: 'evidence-audit',
+    classification: 'restricted',
+    businessLinkPurpose: 'identity_document',
+    deviceCaptureTimestampRequired: true,
+  },
+  {
+    categoryCode: 'reception_signature',
+    allowedContentTypes: ['image/jpeg', 'image/png', 'image/webp'],
+    maxBytes: 10_485_760,
+    retentionClass: 'evidence-audit',
+    classification: 'restricted',
+    businessLinkPurpose: 'signature',
+    deviceCaptureTimestampRequired: true,
+  },
+] as const;
+
+const CAPTURED_DOCUMENT = '77777777-7777-4777-8777-777777777777';
+const CAPTURED_VERSION = '88888888-8888-4888-8888-888888888888';
+
+vi.mock('@/features/attachments/api', () => ({
+  listDocumentCategories: async () => {
+    attachments.calls.push({ fn: 'listDocumentCategories', args: [] });
+    return { status: 'ok', data: { items: CATEGORIES }, correlationId: 'corr-categories' };
+  },
+  captureDocument: async (input: unknown) => {
+    attachments.calls.push({ fn: 'captureDocument', args: [input] });
+    return {
+      status: 'success',
+      correlationId: 'corr-capture',
+      attempt: 1,
+      registered: {
+        documentId: CAPTURED_DOCUMENT,
+        versionId: CAPTURED_VERSION,
+        versionNumber: 1,
+        status: attachments.versionStatus,
+        scannerAvailable: true,
+        scanStatus: attachments.versionStatus === 'accepted' ? 'clean' : 'pending',
+      },
+    };
+  },
+  createDocumentLink: async (documentId: unknown, input: unknown) => {
+    attachments.calls.push({ fn: 'createDocumentLink', args: [documentId, input] });
+    return { status: 'success', correlationId: 'corr-link', attempt: 1 };
+  },
+}));
+
 /*
  * Imported after `vi.mock`, which is hoisted, so the adapters these modules pull
  * in resolve the mocked client. The table is shared rather than inlined for the
@@ -57,6 +155,10 @@ const {
   NOT_DRIVEN,
   READ_DRIVES,
   WRITE_DRIVES,
+  BINDING,
+  CAPTURED_AT,
+  PARTNER,
+  SIGNATURE,
   TARGET,
   VERSION,
   VISIT,
@@ -90,6 +192,11 @@ beforeEach(() => {
   authorizedClient.mockResolvedValue(client as unknown);
   get.mockResolvedValue(OK_PAGE);
   send.mockResolvedValue(OK_COMMAND);
+  // The shared-tier recorder is state, not a mock, so nothing above clears it.
+  // `pending` is restored rather than left where a case put it: a version left
+  // `accepted` would make every later capture drive issue a second request.
+  attachments.calls.length = 0;
+  attachments.versionStatus = 'pending';
 });
 
 /** The channel mock a drive uses. */
@@ -712,6 +819,220 @@ describe('P1-28-QA-001 — every adapter is executed, and this file proves it', 
 });
 
 /* ================================================================== *
+ * QA-001 — the two composite captures, which are not one request each
+ * ================================================================== */
+
+describe('P1-28-QA-001 — a capture, from a chosen file to a reception write', () => {
+  /**
+   * The reason these three cases exist beside the sweeps above.
+   *
+   * Every sweep in this file reads ONE request per drive, which is exactly the
+   * right measure for an adapter and exactly the wrong one for a composite: a
+   * capture that had stopped deriving its category, stopped reading the link
+   * purpose off the server, or quietly started finalizing whatever it captured
+   * would still issue one well-formed request to the right path and satisfy
+   * every one of them.
+   *
+   * So the chain itself is asserted here — in order, with the arguments each
+   * step really received — and the two branches that decide how many requests a
+   * capture makes are driven both ways. These cases are also what makes the
+   * drive fixtures honest: they PROVE that a pending version is what holds each
+   * drive to a single request, rather than leaving that a hopeful assumption.
+   */
+  const capture = WRITE_DRIVES.find((drive) => drive.name === 'captureRequirementEvidence');
+  const signature = WRITE_DRIVES.find((drive) => drive.name === 'captureSignatureEvidence');
+
+  /** The shared-tier chain a capture walks, as names, in the order it walked it. */
+  const walked = () => attachments.calls.map((one) => one.fn);
+
+  it('derives the category, reads the purpose, and binds the exact version it registered', async () => {
+    expect(capture, 'captureRequirementEvidence is not in the drive table').toBeDefined();
+    const outcome = (await capture?.call()) as {
+      status: string;
+      stage?: string;
+      versionStatus?: string;
+      documentId?: string;
+    };
+
+    // The chain, complete and in order. A composite that skipped the category
+    // read would have to invent a link purpose, which is a policy this tier does
+    // not own — `identity_document` is what the SERVER publishes for
+    // `reception_vin`, and this tree is not allowed to know that any other way.
+    expect(walked()).toEqual(['listDocumentCategories', 'captureDocument', 'createDocumentLink']);
+
+    const registered = attachments.calls[1]?.args[0] as {
+      categoryCode?: string;
+      entityType?: string;
+      entityId?: string;
+      contentType?: string;
+      capturedAt?: string;
+      bytes?: Uint8Array;
+    };
+    // DERIVED from the requirement — `vin` admits exactly one category, and
+    // offering a choice would be offering a way to be refused.
+    expect(registered.categoryCode).toBe('reception_vin');
+    expect(registered.entityType).toBe('rec.reception_visits');
+    expect(registered.entityId).toBe(VISIT);
+    expect(registered.contentType).toBe('image/jpeg');
+    expect(registered.bytes?.length, 'the file bytes never reached the store').toBeGreaterThan(0);
+    // The DEVICE's claim, carried as a claim. Never the server's clock.
+    expect(registered.capturedAt).toBe(CAPTURED_AT);
+
+    const linked = attachments.calls[2]?.args[1] as { linkPurpose?: string; entityId?: string };
+    expect(linked.linkPurpose, 'the link purpose was invented, not read').toBe('identity_document');
+    expect(linked.entityId).toBe(VISIT);
+
+    // And exactly one request reaches the transport: the reception write, naming
+    // the version that was just registered rather than one the caller supplied.
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send.mock.calls[0]?.[0]).toBe('POST');
+    expect(String(send.mock.calls[0]?.[1])).toBe(`/api/v1/receptions/${VISIT}/evidence-bindings`);
+    expect(send.mock.calls[0]?.[2]).toEqual({
+      requirementCode: 'vin',
+      documentId: '77777777-7777-4777-8777-777777777777',
+      documentVersionId: '88888888-8888-4888-8888-888888888888',
+      // Present because the seeded category requires it. A category that did not
+      // would send no such field, and sending one anyway would be this tier
+      // asserting a policy the server never published.
+      deviceCapturedAt: CAPTURED_AT,
+    });
+
+    // A pending version is BOUND, and the outcome says so instead of showing a
+    // tick. That is the state the step renders, and it is not a failure.
+    expect(outcome.status).toBe('success');
+    expect(outcome.stage).toBe('bound');
+    expect(outcome.versionStatus).toBe('pending');
+  });
+
+  it('finalizes only an ACCEPTED version, and that is the second request', async () => {
+    /*
+     * The branch that decides how many requests a capture makes, driven the
+     * other way. Only an accepted version is finalized evidence — the database
+     * refuses anything else — so a composite that finalized unconditionally
+     * would spend a request to be refused, and one that never finalized would
+     * leave every requirement unmet however good the photograph was.
+     */
+    attachments.versionStatus = 'accepted';
+    send.mockReset();
+    send.mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: { bindingId: BINDING },
+      correlationId: 'corr-bound',
+    });
+
+    const outcome = (await capture?.call()) as {
+      status: string;
+      stage?: string;
+      bindingId?: string;
+      versionStatus?: string;
+    };
+
+    expect(walked()).toEqual(['listDocumentCategories', 'captureDocument', 'createDocumentLink']);
+    expect(send, 'an accepted version must bind AND finalize').toHaveBeenCalledTimes(2);
+    expect(String(send.mock.calls[0]?.[1])).toBe(`/api/v1/receptions/${VISIT}/evidence-bindings`);
+    expect(String(send.mock.calls[1]?.[1])).toBe(
+      `/api/v1/receptions/${VISIT}/evidence-bindings/${BINDING}/finalization`
+    );
+    expect(outcome.status).toBe('success');
+    expect(outcome.stage).toBe('finalized');
+    expect(outcome.bindingId).toBe(BINDING);
+    // Which is precisely why the drive fixture keeps the version pending: the
+    // sweeps above assert one request per drive, and this is the shape that
+    // makes two.
+    expect(outcome.versionStatus).toBe('accepted');
+  });
+
+  it('records a signature with the method the SERVER fixes, and finalizes nothing', async () => {
+    /*
+     * `signature-capture.ts` states two things about itself that no adapter
+     * assertion can see, and both are asserted here against what it really sent:
+     *
+     *   - `captureMethod` is `uploaded`, fixed server-side, because this surface
+     *     takes a FILE. No form control offers the other three, so a screen
+     *     cannot disagree with it and a recorded claim about how a signature was
+     *     taken cannot be one nothing checked.
+     *   - it does NOT finalize. A signature may stand while its evidence is
+     *     pending, and finalizing is a separate attributable act
+     *     (`rec.reception-signature-event`). Driven with the version ACCEPTED,
+     *     which is the only state in which an auto-finalization could have crept
+     *     in unnoticed.
+     */
+    expect(signature, 'captureSignatureEvidence is not in the drive table').toBeDefined();
+    attachments.versionStatus = 'accepted';
+    send.mockReset();
+    send.mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: { signatureId: SIGNATURE },
+      correlationId: 'corr-signature',
+    });
+
+    const outcome = (await signature?.call()) as {
+      status: string;
+      stage?: string;
+      signatureId?: string;
+      versionStatus?: string;
+    };
+
+    expect(walked()).toEqual(['listDocumentCategories', 'captureDocument', 'createDocumentLink']);
+    const registered = attachments.calls[1]?.args[0] as { categoryCode?: string };
+    // A signature is not a capture REQUIREMENT of the visit, so its category is
+    // not in `CAPTURE_CATEGORY_BY_REQUIREMENT` and is named by this action.
+    expect(registered.categoryCode).toBe('reception_signature');
+    const linked = attachments.calls[2]?.args[1] as { linkPurpose?: string };
+    expect(linked.linkPurpose, 'the link purpose was invented, not read').toBe('signature');
+
+    expect(send, 'a signature capture finalizes nothing').toHaveBeenCalledTimes(1);
+    expect(String(send.mock.calls[0]?.[1])).toBe(`/api/v1/receptions/${VISIT}/signatures`);
+    expect(send.mock.calls[0]?.[2]).toEqual({
+      signerRole: 'service_requester',
+      purpose: 'reception_acknowledgement',
+      captureMethod: 'uploaded',
+      signatureDocumentId: '77777777-7777-4777-8777-777777777777',
+      signatureDocumentVersionId: '88888888-8888-4888-8888-888888888888',
+      signerPartnerId: PARTNER,
+    });
+    // The event ledger is reached by `recordSignatureEvent` and by nothing else.
+    expect(JSON.stringify(send.mock.calls)).not.toContain('/events');
+
+    expect(outcome.status).toBe('success');
+    expect(outcome.stage).toBe('recorded');
+    expect(outcome.signatureId).toBe(SIGNATURE);
+    expect(outcome.versionStatus).toBe('accepted');
+  });
+
+  it('spends nothing at all on a file the operator did not choose', async () => {
+    /*
+     * The refusal that makes the three cases above non-vacuous from the other
+     * side. Both composites check the file BEFORE the category read, so an empty
+     * one costs no rate-limit slot, no object and no request — and the sweeps
+     * that assert "exactly one request per drive" would be satisfied by an action
+     * that returned a hard-coded answer, which this is the control against.
+     */
+    const { captureRequirementEvidence } = await import('@/features/receptions/evidence-capture');
+    const { captureSignatureEvidence } = await import('@/features/receptions/signature-capture');
+
+    const empty = new FormData();
+    empty.set('evidenceFile', new File([], 'nothing.jpg', { type: 'image/jpeg' }));
+    const refusedEvidence = await captureRequirementEvidence(VISIT, 'vin', empty);
+    expect(refusedEvidence.status).toBe('invalid');
+    expect(refusedEvidence.fieldErrors?.evidenceFile).toBe('attachments.capture.empty');
+
+    const blank = new FormData();
+    blank.set('signerRole', 'service_requester');
+    blank.set('purpose', 'reception_acknowledgement');
+    blank.set('signatureFile', new File([], 'nothing.png', { type: 'image/png' }));
+    const refusedSignature = await captureSignatureEvidence(VISIT, blank);
+    expect(refusedSignature.status).toBe('invalid');
+    expect(refusedSignature.fieldErrors?.signatureFile).toBe('attachments.capture.empty');
+
+    expect(walked(), 'a refused capture reached the shared tier').toEqual([]);
+    expect(send, 'a refused capture spent a request').not.toHaveBeenCalled();
+  });
+});
+
+/* ================================================================== *
  * QA-002 — every operation through every refusal, and the three replays
  * ================================================================== */
 
@@ -1209,6 +1530,10 @@ describe('P1-28-QA-003 — scope is resolved by the server, and asserted by nobo
       'createReception',
       'listAppointments',
       'listConfirmedAppointments',
+      // FE-007: the receiving-employee picker is BRANCH-targeted. It is on this
+      // list because it now carries the pair — the read it replaced was
+      // tenant-scoped and carried nothing, which was the disclosure.
+      'listReceivingEmployeeCandidates',
       'listReceptions',
     ]);
   });
@@ -1354,6 +1679,43 @@ describe('P1-28-QA-003 — scope is resolved by the server, and asserted by nobo
 
 describe('P1-28-QA-004 — idempotency is read off the contract, never off the verb', () => {
   it('requires a key on every write this phase performs', async () => {
+    /*
+     * Twenty-three, and every one of them verified rather than counted. The pin
+     * moved from fourteen to twenty because six writes entered scope when
+     * `P1-OD-025` resolved: the four commands the decision unblocked
+     * (`bindEvidence`, `finalizeEvidenceBinding`, `overrideCaptureRequirement`,
+     * `recordSignatureEvent`) and the two composite captures that walk the
+     * document chain to reach one. Each was checked against the registry before
+     * the number was allowed to move — all six resolve to an operation
+     * registered `idempotent: true`, and no adapter among them passes an options
+     * object to `client.send`, so none mints a key the contract-derived client
+     * would then be unable to own.
+     *
+     * It moved again, to twenty-two, when `adapterRoots()` was pointed at
+     * `src/features/attachments`. Those two writes — `captureDocument` and
+     * `createDocumentLink` — did not enter scope then; they had shipped
+     * undriven, because the tree they live in was under no root and so the
+     * exhaustiveness sweep above could not see them. The number rising is
+     * therefore the honest record of a blind spot closing, not of new work: both
+     * resolve to an operation registered `idempotent: true`
+     * (`shared.attachment-upload-authorize`, `shared.attachment-link-create`)
+     * and neither passes an options object, checked here on the same terms as
+     * the twenty before them.
+     *
+     * It moved once more, to twenty-three, when `finalizeCapturedEvidence`
+     * was added — and that one IS new work rather than a blind spot closing.
+     * The capture chain attempts its finalization exactly once, so a call that
+     * did not answer left a real binding over an accepted version counting
+     * towards nothing; the retry is a second entry point on the same adapter,
+     * `rec.reception-evidence-binding-finalize`, which is registered
+     * `idempotent: true` and takes no options object. It is checked here on the
+     * same terms as the twenty-two before it.
+     *
+     * The assertion inside the loop is what makes that a check rather than a
+     * claim: it reads the requirement off the PATH the adapter really built. A
+     * write whose operation was registered `idempotent: false` would fail here
+     * whatever this number said.
+     */
     const seen: string[] = [];
     for (const drive of WRITE_DRIVES) {
       send.mockClear();
@@ -1363,7 +1725,28 @@ describe('P1-28-QA-004 — idempotency is read off the contract, never off the v
       expect(requiresIdempotencyKey(method, path), `${drive.name} → ${method} ${path}`).toBe(true);
       seen.push(drive.name);
     }
-    expect(seen.length, 'no writes were driven').toBe(14);
+    expect(seen.length, 'no writes were driven').toBe(23);
+  });
+
+  it('is not vacuous: the same check refuses a path the registry does not make idempotent', () => {
+    /*
+     * The positive control the sweep above cannot contain. Every entry in
+     * `WRITE_DRIVES` passes it, so on its own the loop cannot distinguish "each
+     * of these is registered idempotent" from "this function returns true".
+     *
+     * `rec.reception-evidence-binding-list` is the GET beside the binding write
+     * — registered `idempotent: false`, which is what every read is — so a POST
+     * the contract does not publish, and a GET that it does, are both refused
+     * here while the write beside them is accepted.
+     */
+    expect(
+      requiresIdempotencyKey('POST', '/api/v1/receptions/x/evidence-bindings'),
+      'the write the composites perform'
+    ).toBe(true);
+    expect(
+      requiresIdempotencyKey('GET', '/api/v1/receptions/x/evidence-bindings'),
+      'a read must never be asked for a key — it would answer 400 before authorization'
+    ).toBe(false);
   });
 
   it('requires no key on any read, so a GET never answers 400 before authorization', async () => {

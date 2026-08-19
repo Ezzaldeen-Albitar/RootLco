@@ -594,10 +594,26 @@ function CancelSection({
       >
         <form action={submit} noValidate className="flex flex-col gap-4">
           <Outcome messages={messages} state={state} onReload={onReload} />
+          {/*
+            Uncontrolled + remounted per attempt + `onChange`, never a controlled
+            `value=`. React resets the form DOM once the Server Action settles,
+            and on the render that follows an unchanged `value` prop is not
+            re-written by the reconciler — so the reset wins and the control
+            reads "Select…" while `reasonId` still holds the id.
+
+            On THIS control that is the worst version of the defect in the
+            product. Cancellation is irreversible and the reason is mandatory:
+            the operator sees an empty required field, presses Confirm again to
+            find out why, and the retained id is sent — an irreversible lifecycle
+            command executed against a reason nothing on screen was showing.
+            `key` forces the remount, `defaultValue` seeds it from state and is
+            what `form.reset()` restores TO, and `onChange` keeps state current.
+          */}
           <SelectField
+            key={`cancellation-reason-${state.attempt ?? 0}`}
             label={translate(messages, 'appointments.cancel.reason')}
             required
-            value={reasonId}
+            defaultValue={reasonId}
             onChange={(event) => setReasonId(event.target.value)}
             options={reasons.options.map((option) => ({ value: option.id, label: option.name }))}
             placeholder={translate(messages, 'field.selectPlaceholder')}

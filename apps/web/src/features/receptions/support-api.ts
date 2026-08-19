@@ -22,8 +22,7 @@ import {
  * | `crm.customer-read`              | `/customers/{customerId}`         | `crm.customer.read`  |
  * | `veh.vehicle-read`               | `/vehicles/{vehicleId}`           | `veh.vehicle.read`   |
  * | `veh.vehicle-relationship-list`  | `/vehicles/{vehicleId}/relationships` | `veh.vehicle.read` |
- * | `iam.user-list`                  | `/iam/users`                      | `iam.user.read`      |
- * | `iam.user-detail`                | `/iam/users/{userId}`             | `iam.user.read`      |
+ * | `rec.receiving-employee-list`    | `/reception-catalogue/receiving-employees` | `rec.reception.manage` |
  * | `apt.appointment-list`           | `/appointments`                   | `apt.appointment.read` |
  *
  * Thin copies of adapters that live in `features/crm` and `features/vehicles`,
@@ -33,27 +32,39 @@ import {
  * query names and interprets nothing. The row types name only the fields this
  * feature renders; every one is a subset of the published response.
  *
- * ## G-EMP — the receiving employee has NO referent (named open decision)
+ * ## G-EMP is CLOSED — and this file is where the stand-in was
  *
- * `rec.reception_visits.receiving_employee_id` has no foreign key and no
- * employee master exists anywhere in the platform — the P1-27 archaeology
- * recorded this as the named open decision G-EMP. The picker below offers
- * PLATFORM USERS (`iam.user-list`) as candidates because a user id is the only
- * identity the platform can resolve to a name, and the operator receiving a
- * vehicle is a signed-in user. That is a stand-in, not an employee register:
- * the stored value is a bare identifier the RECEPTION read cannot label, and
- * this module does NOT invent an employee master to hide that. The check-in
- * screen states the disposition beside the control.
+ * `rec.reception_visits.receiving_employee_id` carried no foreign key and no
+ * employee master existed, so the picker below offered PLATFORM USERS through
+ * `iam.user-list` and the read-back resolved a name through `iam.user-detail`.
+ * Both are gone. `DBCR-P1-18-002` (the Owner's FE-007 decision) gave the column
+ * a same-tenant foreign key to `iam.user_accounts`, an insert-time eligibility
+ * guard, and an immutable display-name snapshot, and published
+ * `rec.receiving-employee-list` as the picker the reception desk actually needs.
  *
- * What the stand-in DOES make possible is the other half, and the two read-back
- * surfaces used to skip it: the same directory that offered the candidate can be
- * asked what that identifier names. `readReceivingEmployeeIdentity` below is
- * that read — `iam.user-detail`, the SAME `iam.user.read` code the picker
- * already consumes and already discloses on screen, so nothing is widened. It
- * resolves a user ACCOUNT, never an employee record, and the disposition stays
- * stated wherever the name is shown. The column carries no foreign key, so an
- * identifier that names nobody is a state the platform genuinely has and the
- * caller is told which state it is rather than shown the identifier.
+ * Three things change here, and each of them is a NARROWING:
+ *
+ *   - The candidate read is `rec.receiving-employee-list`, behind
+ *     `rec.reception.manage` — the code that opens a check-in. It answers the
+ *     ACTIVE accounts whose live role grants cover the branch being received
+ *     into. `iam.user-list` answered every account in the tenant, at tenant
+ *     scope, behind a code every signed-in operator holds; so a receptionist who
+ *     could see the whole staff directory now sees the people eligible for one
+ *     branch.
+ *   - The read-back is not a read at all. `rec.reception-detail` carries
+ *     `receivingEmployeeDisplayName`, written at insert and immutable after, so
+ *     the wizard header and the customer's acknowledgement sheet name the
+ *     custodian without asking the user directory anything. A rename or a
+ *     disabled account cannot rewrite a handover that already happened.
+ *   - The picker does NOT widen for an actor holding
+ *     `rec.reception.receiving_employee.assign_any`. Naming somebody outside the
+ *     branch is an explicit administrative act taken against the user directory;
+ *     a picker that silently grew under a permission the operator cannot see
+ *     would be the same disclosure this change removed, reintroduced quietly.
+ *
+ * The authority is still not this screen. `rec.stamp_receiving_employee_identity()`
+ * decides inside the insert, against the ACTOR's authority in the visit's own
+ * scope, so a caller that never loads this picker is subject to the same rule.
  */
 
 const EMPTY = { rows: [], nextCursor: null, hasMore: false } as const;
@@ -138,23 +149,65 @@ export async function listVehicleRelationshipEntries(
   };
 }
 
-/** One receiving-employee candidate — a platform user (see G-EMP above). */
-export interface ReceivingEmployeeCandidate {
+/**
+ * The one account field the read-back surfaces render. Subset of
+ * `iam.user-detail`.
+ *
+ * `displayName` and nothing else, deliberately: a read-back needs the name of
+ * the person who acted, and an email address or an account status beside an
+ * inspection would be a disclosure nobody asked for.
+ */
+export interface UserIdentity {
   readonly id: string;
-  readonly email: string;
   readonly displayName: string;
-  readonly status: string;
 }
 
 /**
- * Candidates for the receiving-employee picker (`iam.user-list`).
+ * The name behind an ACTOR identifier (`iam.user-detail`).
  *
- * `search` is sent as an encoded parameter of a POST-backed Server Action and
- * never reaches the address bar. The read searches on intent — the picker's
- * Search button — never on a keystroke.
+ * Not the receiving employee — that name is a snapshot on the visit itself since
+ * `DBCR-P1-18-002`, and resolving it here would answer with the account's name
+ * today rather than the name recorded when custody was accepted. This read
+ * serves the identifiers that genuinely have no snapshot: who recorded an
+ * inspection, who bound evidence, who signed.
+ *
+ * The `not-found` outcome is not a fault. An audit identifier records who acted;
+ * it is not a live foreign key, so an identifier naming no current account is a
+ * state the platform permits. It reaches the caller as `not-found` and the
+ * surfaces say so in words — showing the raw identifier instead would present a
+ * dangling value as if it were a person.
+ */
+export async function readUserIdentity(userId: string): Promise<ReadState<UserIdentity>> {
+  return readOperation<UserIdentity>(`/api/v1/iam/users/${encodeURIComponent(userId)}`);
+}
+
+/**
+ * One eligible custodian.
+ *
+ * TWO fields, where the directory row had four. `email` and `status` are gone
+ * because neither is answerable from this operation and neither was ever the
+ * question: `status` is `active` for every row by construction — an inactive
+ * account is not offered — and an email address is a contact detail a
+ * receptionist choosing a custodian has no use for.
+ */
+export interface ReceivingEmployeeCandidate {
+  readonly id: string;
+  readonly displayName: string;
+}
+
+/**
+ * Candidates for the receiving-employee picker (`rec.receiving-employee-list`).
+ *
+ * BRANCH-TARGETED, not searched. The operation takes `companyId` and `branchId`
+ * and no search term, and that is the shape rather than an omission: the answer
+ * is "who may accept custody in the branch you are receiving into", which is a
+ * short list the operator scans, not a directory they query. The search box the
+ * old picker needed existed because `iam.user-list` answered the whole tenant.
+ *
+ * `retries: 0` — `low-risk-metadata`, and the picker offers Retry.
  */
 export async function listReceivingEmployeeCandidates(
-  search: string,
+  target: BranchTarget,
   request: TableRequest,
   cursor: string | null
 ): Promise<ServerPage<ReceivingEmployeeCandidate>> {
@@ -162,12 +215,8 @@ export async function listReceivingEmployeeCandidates(
   if (!client) return { ...EMPTY, status: 'expired', correlationId: null };
 
   const path =
-    '/api/v1/iam/users' +
-    query({
-      cursor,
-      limit: request.pageSize,
-      search: search.trim() || undefined,
-    });
+    '/api/v1/reception-catalogue/receiving-employees' +
+    branchTargetQuery(target, { cursor, limit: request.pageSize });
 
   const result = await client.get<CursorPage<ReceivingEmployeeCandidate>>(path, { retries: 0 });
   if (!result.ok) {
@@ -180,36 +229,6 @@ export async function listReceivingEmployeeCandidates(
     hasMore: result.data.hasMore,
     correlationId: result.correlationId,
   };
-}
-
-/**
- * The one account field the read-back surfaces render. Subset of
- * `iam.user-detail`.
- *
- * `displayName` and nothing else, deliberately: the wizard header and the
- * customer's acknowledgement sheet need a name, and an email address or an
- * account status on a handover document would be a disclosure nobody asked for.
- */
-export interface ReceivingEmployeeIdentity {
-  readonly id: string;
-  readonly displayName: string;
-}
-
-/**
- * The name behind `receivingEmployeeId` (`iam.user-detail`).
- *
- * The `not-found` outcome is the interesting one and it is NOT a fault: the
- * column has no foreign key (G-EMP), so an identifier naming no account is a
- * state the database permits. It reaches the caller as `not-found` and the
- * surfaces say so in words — showing the raw identifier instead would present a
- * dangling value as if it were a person.
- */
-export async function readReceivingEmployeeIdentity(
-  userId: string
-): Promise<ReadState<ReceivingEmployeeIdentity>> {
-  return readOperation<ReceivingEmployeeIdentity>(
-    `/api/v1/iam/users/${encodeURIComponent(userId)}`
-  );
 }
 
 /** One appointment the check-in screen can consume. Subset of the calendar row. */

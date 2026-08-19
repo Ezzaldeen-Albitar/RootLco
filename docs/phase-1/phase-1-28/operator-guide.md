@@ -96,10 +96,13 @@ A vehicle may have only one open visit at a time. If a visit is already open for
 that vehicle you are told so and offered the open one, rather than being allowed
 to create a second.
 
-**The receiving employee is recorded as an identifier, not as an employee.**
-There is no employee register in the product yet. The screen offers platform
-users and says plainly what is being stored; it never shows you a raw identifier
-in place of a name.
+**The receiving employee is the account that accepts custody, and the picker
+offers only people eligible for that branch.** You are the default. If your own
+account is not eligible in the branch you are receiving into, the default is
+removed and you are told why, so you choose someone who is rather than being
+refused at the moment you submit. The name is kept **as it was at check-in**: it
+appears unchanged on the customer's copy afterwards even if the account is
+renamed later. It never shows you a raw identifier in place of a name.
 
 The fuel level and state of charge are recorded **when the visit is opened** and
 no operation changes them afterwards, so the wizard shows them and offers
@@ -163,40 +166,72 @@ and from which screen, is an open decision — `P1-28-OD-001`.** It is not a
 defect and there is no setting to look for. The step says exactly that instead
 of offering a picker with nothing in it.
 
-**A damage map cannot be opened at all.** Placing marks needs a registered map
-template and the exact version drawn on, and nothing in this product registers a
-document yet, so there is no control for it and no mark can be placed either.
+**A damage map needs a diagram published for the branch.** A map is drawn on a
+registered diagram, at the exact revision you opened, so that a later reader can
+tell what the marks were placed on. Where a branch has published one the step
+offers it and marks can be placed; where it has not, the step says so and says
+who can publish one. That is the same catalogue question as the warning lamps,
+and not a missing capability — it stopped being one when a diagram became
+something this product can hold.
 
-Those two are the two kinds of unavailability this release distinguishes and
-records: a step that works but has no data to offer, and a step that has no
-control because the contract asks for something nothing can produce. The record
-of which is which is `EVIDENCE_KIND_COVERAGE` in
+Every unavailability in this release is now of one kind: a step that works and
+has nothing to offer yet. The record of which steps those are is
+`EVIDENCE_KIND_COVERAGE` in
 `apps/web/src/features/receptions/check-in/evidence.ts`: **four of the eight
-kinds record unconditionally, three wait on data, and one is blocked.**
+kinds record unconditionally, four wait on data, and none is blocked.**
 
 ### Photographs and media
 
-**Media capture is not available, and this is an Owner decision that has not
-been made.** Nothing on that screen takes, chooses or records a picture or a
-file, and no control is offered for doing so. The screen names the open decision
-and lists what has to be decided: which pictures a reception must carry, which
-file kinds and sizes are accepted, where files are held and for how long, and
-whether missing pictures should prevent approval.
+**You can photograph a vehicle now, and a file counts only once it has been
+accepted.** The step lists what this visit is expected to evidence — the
+exterior, the dashboard and odometer, the VIN plate, damage, warning lamps, the
+state of charge — and against each one it shows how many files count towards it
+out of how many it needs. Which of those a visit owes is the workshop's own
+policy for that branch, answered by the system rather than fixed by this screen.
 
-Two CI rules refuse any upload control and any invented size or file-type limit
-while that decision is open, so this cannot be quietly re-added.
+**Recorded and counted are different things, and the step keeps them apart.** A
+file you choose is on record at once, and every file is checked before it can
+count. While that check is outstanding the entry says the file is recorded and
+does not count yet; when the check accepts it, the requirement moves. If this
+installation has no file check running, the step says that too, in those words,
+rather than showing you a tick it cannot justify — a file nobody can check never
+counts towards a requirement.
 
-Even after the decision, the honest state of a registered file will be
-**pending**: there is no storage provider and no file scan configured, so
-nothing can be retrieved back out. Where the product refers to media it says
-"registered, pending" and never "uploaded".
+This is what the step says about a file, and what each of those states means:
+
+| What you see                | What it means                                                                                       |
+| --------------------------- | --------------------------------------------------------------------------------------------------- |
+| "Uploaded, not yet checked" | The file is held. Nothing has looked at it yet, so it does not count.                               |
+| "Being checked"             | The check is running. It does not count until the check finishes.                                   |
+| "Accepted"                  | The check passed. This is the only state that counts towards a requirement.                         |
+| "Withheld by the check"     | The check found a problem and the file is being held. It does not count, and it is not thrown away. |
+| "Refused"                   | The file was not accepted. It stays on the record as what happened.                                 |
+
+**Waiving a requirement is a different permission from taking the photograph.**
+Somebody who may photograph a vehicle is not thereby allowed to record that no
+photograph was needed. Where you do not hold that permission the waiver control
+is absent, with the reason stated, rather than offered and then refused.
+
+**There is one file control in this product**, and only this step and the
+signature step offer it. No screen reads the contents of your file, builds a
+transfer of its own or accepts a file dragged onto it: the file goes to the
+system in one submission and every decision about it is taken there. The file
+kinds and the size ceiling are the workshop system's, published with the
+document category, so no screen here states a limit of its own.
 
 ### Signatures
 
-The signature step shows what a signature would attribute — the roles, the
-purposes and the parties on the visit — and **records nothing.** A signature
-record requires a signature image and its exact version, and nothing in this
-product can produce one. There is no submit control on that step, deliberately.
+**A signature is recorded against the image that was signed, and it stays a
+draft until that image has been accepted.** You say who signed, what they signed
+for and which person on this visit they are, and you give the signed image. What
+is stored is a reference to that exact image, so a later reader can tell what was
+in front of the person who signed.
+
+**Making a signature final is a second, deliberate act.** The control for it
+appears only once the signed image has been accepted; until then the entry says
+it is recorded and not yet final. A signature can also be **repudiated**, with a
+reason. Neither a repudiation nor a replacement removes anything: every signature
+stays on the list, saying what became of it.
 
 ### Refusals
 

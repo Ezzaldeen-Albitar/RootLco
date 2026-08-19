@@ -517,10 +517,7 @@
       "provenBy": [
         {
           "file": "apps/web/tests/vehicle-duplicates.test.ts",
-          "cases": [
-            "records media as blocked on the open decision rather than as a feature flag",
-            "exposes no upload helper of any kind"
-          ]
+          "cases": ["exposes no upload helper of any kind"]
         }
       ]
     },

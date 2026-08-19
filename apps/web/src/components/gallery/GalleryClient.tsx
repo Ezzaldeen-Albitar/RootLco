@@ -273,7 +273,20 @@ export function GalleryClient({
               { value: 'closed', label: t('fixture.statusClosed') },
             ]}
           />
-          <TextField label={t('field.attachment')} type="file" />
+          {/*
+            A `type="file"` variant stood here and is deliberately gone.
+            `TextField` spreads its rest props straight onto the `<input>`, so
+            this really was a second `<input type="file">` in `apps/web/src`.
+
+            Stated precisely, because it was not a live upload path: it carried
+            no handler, no form action and no submit, and `galleryEnabled()`
+            404s this route in production unless an environment opts back in. So
+            removing it closes no operator-reachable defect. What it closes is
+            the gap between a rule and its evidence — the platform's rule is that
+            exactly one surface offers a file input, and a gallery entry
+            demonstrating a variant nothing may ship is that rule broken in order
+            to illustrate itself. The variants below are the ones a form uses.
+          */}
           <TextField label={t('field.name')} error={t('field.required')} defaultValue="" />
           <TextField label={t('field.name')} disabled defaultValue="—" />
           <TextField label={t('field.name')} loading readOnly defaultValue="…" />

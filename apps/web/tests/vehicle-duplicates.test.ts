@@ -9,7 +9,7 @@ import {
   type VehicleDuplicateCandidate,
   type VehicleHistoryEntry,
 } from '@/features/vehicles/duplicates-contract';
-import { MEDIA_STATUS, DOCUMENT_LIST_PERMISSION } from '@/features/vehicles/documents-contract';
+import { DOCUMENT_LIST_PERMISSION } from '@/features/vehicles/documents-contract';
 import { requiresIdempotencyKey, resolveOperation } from '@/lib/api/operation-contract';
 import { flattenNavigation } from '@/config/navigation';
 
@@ -200,12 +200,15 @@ describe('documents and media say what the platform actually has', () => {
     expect(DOCUMENT_LIST_PERMISSION).not.toBe('veh.vehicle.read');
   });
 
-  it('records media as blocked on the open decision rather than as a feature flag', () => {
-    // A flag implies something to switch on. There is no vehicle media
-    // operation at all, and `P1-OD-025` must decide types, limits and storage
-    // before there can be.
-    expect(MEDIA_STATUS).toBe('blocked-on-p1-od-025');
-  });
+  /*
+   * A case reading "records media as blocked on the open decision" stood here,
+   * asserting `MEDIA_STATUS === 'blocked-on-p1-od-025'`. The decision it named
+   * is RESOLVED and the constant is gone — it had no production consumer once
+   * the screen stopped printing its companion identifier at operators. What the
+   * case was really claiming is that this build has no vehicle media capability,
+   * which the next one measures against the module itself rather than against a
+   * string describing it.
+   */
 
   it('exposes no upload helper of any kind', async () => {
     const api = await import('@/features/vehicles/documents-api');

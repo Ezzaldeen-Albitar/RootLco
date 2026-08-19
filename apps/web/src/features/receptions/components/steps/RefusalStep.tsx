@@ -111,9 +111,19 @@ export function RefusalStep({
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     let cancelled = false;
-    listRefusalReasons().then((result) => {
-      if (!cancelled) setCatalogue(result);
-    });
+    listRefusalReasons()
+      .then((result) => {
+        if (!cancelled) setCatalogue(result);
+      })
+      // A rejected call is a STATE. Without this the promise rejects, the
+      // catalogue stays `null` for ever and the panel renders a loading
+      // skeleton with no text and no retry — a failed read shown as a read
+      // still in progress. `WarningLightsStep` carries the full reasoning.
+      .catch(() => {
+        if (!cancelled) {
+          setCatalogue({ status: 'error', options: [], truncated: false, correlationId: null });
+        }
+      });
     return () => {
       cancelled = true;
     };
@@ -140,7 +150,7 @@ export function RefusalStep({
    * below reaches the rows the filter could not.
    */
   const rows = (table.response?.rows ?? []).filter((row) => row.kind === 'refusal');
-  const completeness = readCompleteness(table.status, table.response?.hasMore);
+  const completeness = readCompleteness(table.status, table.response?.hasMore, table.request.page);
 
   const submit = () => {
     const nextAttempt = (state.attempt ?? 0) + 1;

@@ -180,6 +180,7 @@ export function AppointmentBookingScreen({
           onBranchChange={setBranchId}
           companyError={fieldError('companyId')}
           branchError={fieldError('branchId')}
+          attempt={state.attempt ?? 0}
         />
       </div>
 
@@ -232,6 +233,7 @@ export function AppointmentBookingScreen({
         required
         value={typeId}
         onChange={setTypeId}
+        attempt={state.attempt ?? 0}
         emptyKey="appointments.book.noTypes"
         error={fieldError('appointmentTypeId')}
       />
@@ -244,6 +246,7 @@ export function AppointmentBookingScreen({
         required={false}
         value={channelId}
         onChange={setChannelId}
+        attempt={state.attempt ?? 0}
         emptyKey="appointments.book.noChannels"
         error={fieldError('sourceChannelId')}
       />
@@ -284,6 +287,22 @@ export function AppointmentBookingScreen({
  * One catalogue-backed select, honest about all four catalogue outcomes:
  * usable options, a genuinely empty catalogue, a read that failed, and a walk
  * that was cut short before the end.
+ *
+ * ## Uncontrolled, remounted per attempt, never a controlled `value=`
+ *
+ * React resets the form DOM once a Server Action settles, and a controlled
+ * `value` that is unchanged between renders is never re-written by the
+ * reconciler, so the reset wins. This picker showed it in the ugliest way: the
+ * local `invalid()` refusal above IS a settled action, so the appointment type
+ * went blank on the very refusal that was complaining something else was
+ * missing — and because `typeId` state kept the id, the second submit passed the
+ * local guard with `aria-invalid` unset and no required error, from a control
+ * reading "Select…". The form proved it was working on retained state.
+ *
+ * `attempt` is REQUIRED rather than defaulted: this component is local to the
+ * booking form, both call sites are in this file, and a required prop makes the
+ * compiler the thing that notices a third one — cheaper than a scanner rule and
+ * impossible to satisfy vacuously.
  */
 function CataloguePicker({
   messages,
@@ -293,6 +312,7 @@ function CataloguePicker({
   required,
   value,
   onChange,
+  attempt,
   emptyKey,
   error,
 }: {
@@ -303,6 +323,8 @@ function CataloguePicker({
   readonly required: boolean;
   readonly value: string;
   readonly onChange: (next: string) => void;
+  /** The form's submission counter — what remounts the select after a reset. */
+  readonly attempt: number;
   /** What an EMPTY catalogue means for this field, stated in domain words. */
   readonly emptyKey: string;
   readonly error?: string | undefined;
@@ -343,9 +365,10 @@ function CataloguePicker({
   return (
     <div className="flex flex-col gap-1.5">
       <SelectField
+        key={`catalogue-${emptyKey}-${attempt}`}
         label={label}
         required={required}
-        value={value}
+        defaultValue={value}
         onChange={(event) => onChange(event.target.value)}
         options={result.options.map((option) => ({ value: option.id, label: option.name }))}
         placeholder={translate(
@@ -403,7 +426,7 @@ function VehiclePicker({
   const table = useServerTable<CustomerVehicleEntry>(load, {
     initial: { ...INITIAL_REQUEST, pageSize: 10 },
   });
-  const completeness = readCompleteness(table.status, table.response?.hasMore);
+  const completeness = readCompleteness(table.status, table.response?.hasMore, table.request.page);
 
   const labelOf = useMemo(
     () =>

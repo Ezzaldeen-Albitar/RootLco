@@ -158,7 +158,11 @@ export function InspectionStep({
       });
   }, [inspections.response, locale, messages]);
 
-  const inspectionsRead = readCompleteness(inspections.status, inspections.response?.hasMore);
+  const inspectionsRead = readCompleteness(
+    inspections.status,
+    inspections.response?.hasMore,
+    inspections.request.page
+  );
 
   /*
    * The inspector as a NAME (`F8`).
@@ -287,10 +291,31 @@ export function InspectionStep({
             }
           />
         ) : openInspections.length === 0 ? (
+          /*
+           * All FOUR values `readCompleteness` publishes, because it publishes
+           * four and this consumed two: `complete` took the coverage notice and
+           * everything else fell to a ternary asking only `=== truncated`. A
+           * read still in flight therefore printed "could not be read" — a
+           * conclusion about a question nobody had answered yet, rendered on
+           * every mount before the read settled.
+           *
+           * The vocabulary is the shared primitive's, not a second one invented
+           * here: `readCompleteness` owns these names and `EvidenceReadBack`
+           * renders the same distinction for the tables above.
+           */
           inspectionsRead === 'complete' ? (
             // Established: the read covered this visit's inspections and none is
             // open. The coverage table's own sentence, as before.
             <CoverageNotice locale={locale} messages={messages} kind="condition_item" />
+          ) : inspectionsRead === 'pending' ? (
+            <p
+              data-testid="finding-inspections-pending"
+              role="status"
+              className="rounded-md border border-border bg-surface-subtle p-3 text-body text-text-secondary"
+              lang={locale}
+            >
+              {translate(messages, 'receptions.finding.inspectionsLoading')}
+            </p>
           ) : (
             <p
               data-testid="finding-inspections-unknown"
@@ -304,6 +329,22 @@ export function InspectionStep({
                   ? 'receptions.finding.inspectionsTruncated'
                   : 'receptions.finding.inspectionsUnreadable'
               )}
+              {/*
+                A failed read is the one state an operator can act on, and the
+                table already knows how to ask again. A truncated read is not
+                offered it: the pages above are the way through that one, and a
+                retry would re-read the same first page.
+              */}
+              {inspectionsRead === 'unreadable' ? (
+                <button
+                  type="button"
+                  data-testid="finding-inspections-retry"
+                  onClick={() => inspections.refresh()}
+                  className="ms-2 underline underline-offset-2"
+                >
+                  {translate(messages, 'state.retry')}
+                </button>
+              ) : null}
             </p>
           )
         ) : (

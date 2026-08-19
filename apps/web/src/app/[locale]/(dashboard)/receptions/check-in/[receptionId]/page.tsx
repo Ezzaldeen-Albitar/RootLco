@@ -10,13 +10,11 @@ import {
 import { requireSession } from '@/features/authentication/api/session';
 import { CRM_PERMISSIONS, VEHICLE_PERMISSIONS, holds } from '@/features/crm/permissions';
 import { readReception } from '@/features/receptions/api';
-import { resolveReceivingEmployee } from '@/features/receptions/check-in/receiving-employee';
 import { CHECK_IN_STEPS } from '@/features/receptions/check-in/steps';
 import { SENSITIVE_NARRATIVE_PERMISSION } from '@/features/receptions/check-in/sensitive';
 import { CheckInWizardShell } from '@/features/receptions/components/CheckInWizardShell';
 import { RECEPTION_PERMISSIONS } from '@/features/receptions/receptions-contract';
-import { STAFF_DIRECTORY_PERMISSION } from '@/features/receptions/staff-directory';
-import { readReceivingEmployeeIdentity } from '@/features/receptions/support-api';
+import { USER_DIRECTORY_PERMISSION } from '@/features/receptions/people/user-directory';
 import { WORK_ORDER_READ_PERMISSION } from '@/features/receptions/work-order-contract';
 import { isLocale } from '@/i18n/config';
 import { getMessages } from '@/i18n/get-messages';
@@ -127,26 +125,11 @@ export default async function CheckInWizardPage({
     );
   }
 
-  /*
-   * The receiving employee's name, or the reason there is none.
-   *
-   * Gated BEFORE the request: a caller without `iam.user.read` would be spending
-   * a request to be refused, and the screen's answer is the same either way.
-   * The read is issued only once the visit is known to exist, so an unreadable
-   * visit costs nothing.
-   */
-  const receivingEmployee = resolveReceivingEmployee(
-    holds(session.permissions, STAFF_DIRECTORY_PERMISSION)
-      ? await readReceivingEmployeeIdentity(result.data.receivingEmployeeId)
-      : null
-  );
-
   return frame(
     <CheckInWizardShell
       locale={locale}
       messages={messages}
       initialDetail={result.data}
-      receivingEmployee={receivingEmployee}
       steps={CHECK_IN_STEPS}
       capabilities={{
         manageParties: holds(session.permissions, RECEPTION_PERMISSIONS.partyManage),
@@ -154,6 +137,9 @@ export default async function CheckInWizardPage({
         readCustomers: holds(session.permissions, CRM_PERMISSIONS.customerRead),
         readVehicles: holds(session.permissions, VEHICLE_PERMISSIONS.vehicleRead),
         manageEvidence: holds(session.permissions, RECEPTION_PERMISSIONS.evidenceManage),
+        // A SEPARATE code, deliberately: performing a capture and recording
+        // that none was needed are different authorities (`FE-017`).
+        overrideEvidence: holds(session.permissions, RECEPTION_PERMISSIONS.evidenceOverride),
         // `P1-28-SEC-002` / WF-27. The SECOND permission the complaint and
         // contents writes need — the operation's own check passes without it and
         // the database then refuses the narrative row. Resolved here with every
@@ -165,12 +151,14 @@ export default async function CheckInWizardPage({
         convertReceptions: holds(session.permissions, RECEPTION_PERMISSIONS.convert),
         closeReceptions: holds(session.permissions, RECEPTION_PERMISSIONS.close),
         readWorkOrders: holds(session.permissions, WORK_ORDER_READ_PERMISSION),
-        // The SAME code, and the same gate, as the receiving-employee name
-        // resolved a few lines above: `iam.user-detail` turns the inspection
-        // read-back's account identifiers into names (`F8`). Decided here rather
-        // than in the step, so a caller without it spends no request to be
-        // refused, and no component consults the session itself.
-        readStaffDirectory: holds(session.permissions, STAFF_DIRECTORY_PERMISSION),
+        // `iam.user-detail` turns the inspection read-back's ACTOR identifiers
+        // into names (`F8`). The receiving employee no longer comes through here
+        // — its name is a snapshot on the visit, so a rename cannot rewrite who
+        // accepted custody — which leaves this the phase’s only consumer of
+        // `iam.user.read`. Decided here rather than in the step, so a caller
+        // without it spends no request to be refused, and no component consults
+        // the session itself.
+        readStaffDirectory: holds(session.permissions, USER_DIRECTORY_PERMISSION),
       }}
       session={{ userId: session.userId, displayName: session.displayName }}
     />

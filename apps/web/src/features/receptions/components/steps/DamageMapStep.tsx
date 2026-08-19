@@ -1,6 +1,17 @@
 'use client';
 
-import { useMemo, useState, useTransition, type KeyboardEvent, type MouseEvent } from 'react';
+import {
+  useCallback,
+  useMemo,
+  useState,
+  useTransition,
+  type KeyboardEvent,
+  type MouseEvent,
+} from 'react';
+import type { TableStatus } from '@/components/data-table/DataTable';
+import { readCompleteness } from '@/components/data-table/read-completeness';
+import { INITIAL_REQUEST } from '@/components/data-table/table-state';
+import { useServerTable, type ServerPage } from '@/components/data-table/use-server-table';
 import { SelectField, TextField } from '@/components/forms/Field';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
 import type { Locale } from '@/i18n/config';
@@ -8,11 +19,12 @@ import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import { formatDateTime } from '@/lib/format';
 import type { ActionState } from '@/lib/forms/action-result';
-import { recordConditionEvidence } from '../../api';
+import { readCaptureContract, recordConditionEvidence } from '../../api';
 import {
   DAMAGE_MARK_TYPES,
   MAX_NOTE,
   MAX_ZONE,
+  type BindableTemplateEntry,
   type DamageMarkType,
 } from '../../receptions-contract';
 import {
@@ -37,36 +49,63 @@ import {
 
 /**
  * Damage map and marks — `rec.reception-condition-evidence` kinds `damage_map`
- * and `damage_mark` (`P1-28-FE-012`), the NON-MEDIA half.
+ * and `damage_mark` (`P1-28-FE-012`).
  *
- * ## Opening a map is BLOCKED, and this is where an operator would look for it
+ * ## What replaced a block
  *
- * `DamageMapEvidenceInput` requires `documentId` AND `documentVersionId`: a
- * registered map-template document and the exact version the marks were drawn
- * on, and `rec.damage_maps` holds both as NOT NULL foreign keys into
- * `shared.documents` / `shared.document_versions`.
+ * This step used to render no map form at all, and stated a reason where the
+ * form would have been. `DamageMapEvidenceInput` requires `documentId` AND
+ * `documentVersionId` — a registered map-template document and the exact version
+ * the marks were drawn on, held by `rec.damage_maps` as NOT NULL foreign keys
+ * into `shared.documents` / `shared.document_versions` — and while nothing in
+ * the product could produce either value, two uuid boxes would have been a
+ * control whose only outcome was a refusal.
  *
- * This docblock used to say "no operation in this product registers a document".
- * **The published surface does have one** — `shared.attachment-upload-authorize`
- * — so that sentence was refutable, and a refutable reason attached to a right
- * verdict is how the verdict gets overturned. The reason now lives in ONE place,
- * `DOCUMENT_CHAIN_BLOCKERS` in `../../media/media-decision.ts`: the chain cannot
- * complete for three independent, repository-derived reasons, so no tenant —
- * configured or otherwise — can hold a damage-map template. `P1-OD-025` governs
- * whether the chain may exist at all.
+ * Both uuids are still required and they still name the exact drawing. What
+ * changed is that a tenant can now HOLD one: the Owner resolved `P1-OD-025`,
+ * `P1-15` built the private versioned document chain, and `P1-18` publishes the
+ * revisions this visit's branch may bind to on the visit's own capture contract.
+ * So what an operator meets here is the capability — `MapForm`, a SELECT over
+ * what the branch already publishes — rather than an account of why there is not
+ * one, and no identifier is ever typed: the pair travels with the chosen
+ * revision, which is also what keeps the two halves coherent for
+ * `rec.guard_damage_map_version()`, the trigger that refuses a version not
+ * belonging to the named document.
  *
- * So there is no map form here at all: two uuid boxes would be a control whose
- * only outcome is a refusal, and the reason is stated where the control would
- * have been rather than left for an operator to discover.
+ * What can still be missing is a published revision, and that is a configuration
+ * state rather than an absent capability. `check-in/evidence.ts` carries this
+ * kind as `data_gated` on `receptions.damage.templateNone` for exactly that
+ * reason, and the notice is rendered in the form's place rather than left for an
+ * operator to discover.
+ *
+ * ## A bindable template is a REVISION, and it arrives with the visit
+ *
+ * A template is a slot — a `mapType`, an optional `perspective` and a lifecycle
+ * — and the geometry lives in the revisions it publishes. Only a slot with a
+ * published revision carries the `documentId`/`documentVersionId` pair a map can
+ * be bound to, which is what `selectableTemplates` filters for; a retired slot
+ * stays readable, because a map already drawn on one must still be able to say
+ * which drawing it used.
+ *
+ * That set is read from the visit's own capture contract and NOT from the
+ * damage-map-template catalogue, and the split is a permission one. Every
+ * `rec.catalogue-damage-map-template-*` operation costs `rec.catalogue.manage`,
+ * the authority to decide what the whole workshop draws on; the bindable set for
+ * this branch travels with `rec.reception-evidence-binding-list` behind
+ * `rec.reception.read`. Reading it through the visit is what lets the desk bind
+ * a revision without holding the authority to define one — which is why there is
+ * no template administration on this screen and why a receptionist who cannot
+ * see the catalogue can still open a map.
  *
  * ## Marks are real, and the diagram carries no template image
  *
  * `damage_mark` needs only an existing `damageMapId`, a type, a zone and a pair
- * of coordinates — so the capture is genuinely wired and submits genuinely. The
- * surface it is placed on is a plain schematic drawn in this file: no uploaded
- * image, no asserted vehicle body, no invented template. Media state anywhere in
- * this phase is "registered, pending" and never "uploaded"; here there is no
- * media at all.
+ * of coordinates. The surface it is placed on is a plain schematic drawn in this
+ * file: the bound revision is NAMED (`activeVersionNumber`) and never rendered,
+ * so no stored object is fetched to draw one and nothing here asserts a
+ * particular vehicle's shape. What the record carries is the fraction pair and
+ * the exact revision the map was bound to; a later reader resolves the drawing
+ * from that reference rather than from anything this screen draws.
  *
  * `coordX`/`coordY` are FRACTIONS of the map, `0..1` inclusive, exactly as the
  * contract states — which is why a mark survives the map being resized, and why
@@ -79,6 +118,26 @@ import {
  * the pointer and arrow keys move by — never a filter on the value sent. It was
  * once rendered as the fields' own `value`, which silently rewrote `0.125` to
  * `0.13` on the operator's screen while the draft still carried `0.125`.
+ *
+ * ## "This visit has no map" is a READ that said so, never a read that failed
+ *
+ * A mark needs an existing `damageMapId`, so the mark form is offered only once
+ * this visit is KNOWN to hold a map — and the gate that decided it was
+ * `mapChoices.length === 0`, one boolean over a read that answers in seven ways.
+ * All six non-idle statuses leave the choices empty, so a denial, an expired
+ * session, a rate limit, a transport failure, a not-found and a read still in
+ * flight each rendered the coverage notice: *"A mark is placed on a damage map,
+ * and this visit has none. Open one above first."* That is an observation
+ * printed for a question nobody answered, and the direction of the error is the
+ * expensive one — it tells an operator to open a SECOND map on a visit that may
+ * already carry one, on a screen whose own read-back a few lines above is
+ * simultaneously showing them the refusal.
+ *
+ * `markGateOf` states the five answers instead, and the coverage notice belongs
+ * to exactly one of them. The five-way diagnosis of WHY a read did not answer is
+ * deliberately NOT repeated in the gate: `EvidenceReadBack` renders it for this
+ * very table immediately above, with the Retry that can act on it, and two
+ * sentences about one read would be two authorities on it.
  *
  * ## The diagram is a shortcut, not the control
  *
@@ -99,6 +158,51 @@ const IDLE: ActionState = { status: 'idle' };
 /** How far one arrow key moves the mark, as a fraction of the map. */
 const KEYBOARD_STEP = 0.05;
 
+/**
+ * What the damage-map read established about this visit — the mark form's gate.
+ *
+ * Five answers, because they are five different facts and only one of them is an
+ * observed absence:
+ *
+ *   - `offered` — a map is on the read-back. POSITIVE proof, so it is decided by
+ *     the rows themselves and survives a page boundary: finding one settles the
+ *     question whatever else went unread.
+ *   - `pending` — the read has not answered. Nothing is rendered in the write
+ *     slot, because the read-back directly above is already showing this table's
+ *     own skeleton and a sentence here would be a claim about a question still
+ *     in flight.
+ *   - `denied` — this operator may not read the maps. Stated as the permanent
+ *     thing it is: a retry cannot change it, and the mark form is not coming.
+ *   - `unknown` — the read failed, or covered only part of the list. Nothing is
+ *     established either way. `readCompleteness` supplies both halves, so this
+ *     screen holds no second opinion about what `hasMore: false` means on a
+ *     failure branch.
+ *   - `none` — the read covered the whole set and this visit holds no map. The
+ *     ONLY branch entitled to the coverage notice's "Open one above first".
+ */
+type MarkGate = 'offered' | 'pending' | 'denied' | 'unknown' | 'none';
+
+function markGateOf(
+  status: TableStatus,
+  hasMore: boolean | undefined,
+  page: number,
+  choices: number
+): MarkGate {
+  if (choices > 0) return 'offered';
+  if (status === 'denied') return 'denied';
+  switch (readCompleteness(status, hasMore, page)) {
+    case 'pending':
+      return 'pending';
+    case 'complete':
+      return 'none';
+    // `truncated` and `unreadable` are one answer HERE. They differ in cause —
+    // and the panel above names the cause — but not in what an operator may
+    // conclude from them, which is nothing.
+    default:
+      return 'unknown';
+  }
+}
+
 export function DamageMapStep({
   locale,
   messages,
@@ -114,6 +218,58 @@ export function DamageMapStep({
   const [captured, setCaptured] = useState<readonly SessionEvidence[]>([]);
 
   const canWrite = !writesLocked && capabilities.manageEvidence;
+
+  /*
+   * The templates this visit may draw on (`FE-012`).
+   *
+   * From the visit`s own capture contract, NOT from the damage-map-template
+   * catalogue. Both operations exist and only one of them is the reception
+   * desk`s: the catalogue costs `rec.catalogue.manage`, which decides what the
+   * whole workshop draws on and which no receptionist holds. The bindable set
+   * for one branch travels with `rec.reception-evidence-binding-list` behind
+   * `rec.reception.read` — that split is what keeps the manage code meaningful,
+   * and it is why there is no template administration on this screen.
+   */
+  const loadTemplates = useCallback(async (): Promise<ServerPage<BindableTemplateEntry>> => {
+    const read = await readCaptureContract(visitId);
+    if (read.status === 'ok' && read.data !== null) {
+      return {
+        status: 'ok',
+        rows: read.data.bindableTemplates,
+        nextCursor: null,
+        hasMore: false,
+        correlationId: read.correlationId,
+      };
+    }
+    return {
+      status: read.status === 'ok' ? 'error' : read.status,
+      rows: [],
+      nextCursor: null,
+      hasMore: false,
+      correlationId: read.correlationId,
+    };
+  }, [visitId]);
+  const templateTable = useServerTable<BindableTemplateEntry>(loadTemplates, {
+    initial: { ...INITIAL_REQUEST, pageSize: 50 },
+    loadKey: readKey,
+  });
+  const templates = templateTable.response?.rows ?? null;
+  const templatesFailed = templateTable.status !== 'idle' && templateTable.status !== 'loading';
+
+  /*
+   * SELECTABLE is narrower than readable, and deliberately.
+   *
+   * A retired template stays readable — every mark ever placed is anchored to
+   * the revision that was live when it was drawn, so a visit that used one must
+   * still say which — but it may not be chosen for a NEW map. A slot with no
+   * published revision has no geometry to draw on either, which is a different
+   * reason and is stated as one.
+   */
+  const selectableTemplates = (templates ?? []).filter(
+    (entry) =>
+      entry.status === 'active' && entry.documentId !== null && entry.documentVersionId !== null
+  );
+  const retiredTemplates = (templates ?? []).filter((entry) => entry.status !== 'active');
 
   /**
    * The maps a mark may hang off — this visit's own, labelled by their map type
@@ -137,6 +293,18 @@ export function DamageMapStep({
     });
   }, [maps.response, locale]);
 
+  /*
+   * Whether a mark can be hung off anything — asked of the READ, not of the
+   * length of a list that is empty on six failure branches as well as on a
+   * genuinely empty visit.
+   */
+  const markGate = markGateOf(
+    maps.status,
+    maps.response?.hasMore,
+    maps.request.page,
+    mapChoices.length
+  );
+
   return (
     <div className="flex flex-col gap-4">
       <EvidenceSection
@@ -145,8 +313,83 @@ export function DamageMapStep({
         headingKey="receptions.damage.mapHeading"
       >
         <EvidenceReadBack locale={locale} messages={messages} kind="damage_map" table={maps} />
-        {/* Where the "open a damage map" control would have been. */}
-        <CoverageNotice locale={locale} messages={messages} kind="damage_map" />
+
+        {retiredTemplates.length > 0 ? (
+          <p
+            data-testid="damage-map-retired"
+            className="text-caption text-text-muted"
+            lang={locale}
+          >
+            {translate(messages, 'receptions.damage.templateRetired')}
+          </p>
+        ) : null}
+
+        {!canWrite ? (
+          <WriteWithdrawn
+            locale={locale}
+            messages={messages}
+            messageKey={
+              writesLocked ? 'receptions.evidence.lockedNote' : 'receptions.evidence.readOnly'
+            }
+          />
+        ) : templatesFailed ? (
+          <p data-testid="damage-map-unread" className="text-caption" lang={locale}>
+            {translate(messages, 'receptions.damage.templateUnread')}
+          </p>
+        ) : templates === null ? null : selectableTemplates.length === 0 ? (
+          <p data-testid="damage-map-none" className="text-caption" lang={locale}>
+            {translate(messages, 'receptions.damage.templateNone')}
+          </p>
+        ) : (
+          <MapForm
+            messages={messages}
+            templates={selectableTemplates}
+            onSubmit={async (template, attempt) => {
+              /*
+               * The EXACT revision, not the slot. `damage_map` requires both
+               * uuids because a mark is anchored to the drawing it was placed
+               * on, and a template that is later revised must not silently
+               * move every historical mark onto a different diagram.
+               */
+              const result = await recordConditionEvidence(
+                visitId,
+                {
+                  kind: 'damage_map',
+                  documentId: template.documentId as string,
+                  documentVersionId: template.documentVersionId as string,
+                  mapType: template.mapType,
+                  ...(template.perspective === null ? {} : { perspective: template.perspective }),
+                },
+                attempt
+              );
+              const recorded = result.recorded;
+              if (result.status === 'success' && recorded !== undefined) {
+                setCaptured((current) =>
+                  appendSessionEvidence(current, {
+                    evidenceId: recorded.evidenceId,
+                    kind: 'damage_map',
+                    summary: template.mapType,
+                  })
+                );
+                await refresh();
+                /*
+                 * The MAP read-back, and not only the template list.
+                 *
+                 * `mapChoices` is derived from `maps`, so a map that is not
+                 * re-read is a map no mark can hang off: the operator opens one,
+                 * is told it worked, and the section below still says this visit
+                 * has none. Nothing else brings the row back within the session
+                 * — `refresh()` re-reads the VISIT, and recording a child row
+                 * does not move `recordVersion`, so `readKey` does not move
+                 * either and neither evidence table re-runs.
+                 */
+                maps.refresh();
+                templateTable.refresh();
+              }
+              return result;
+            }}
+          />
+        )}
       </EvidenceSection>
 
       <EvidenceSection
@@ -170,7 +413,15 @@ export function DamageMapStep({
               writesLocked ? 'receptions.evidence.lockedNote' : 'receptions.evidence.readOnly'
             }
           />
-        ) : mapChoices.length === 0 ? (
+        ) : markGate === 'pending' ? null : markGate === 'denied' ? (
+          <p data-testid="damage-mark-denied" className="text-caption" lang={locale}>
+            {translate(messages, 'receptions.damage.markMapsDenied')}
+          </p>
+        ) : markGate === 'unknown' ? (
+          <p data-testid="damage-mark-unread" className="text-caption" lang={locale}>
+            {translate(messages, 'receptions.damage.markMapsUnknown')}
+          </p>
+        ) : markGate === 'none' ? (
           <CoverageNotice locale={locale} messages={messages} kind="damage_mark" />
         ) : (
           <MarkForm
@@ -526,5 +777,68 @@ function DamageDiagram({
         </span>
       </p>
     </div>
+  );
+}
+
+/**
+ * Choosing which diagram this visit is drawn on (`FE-012`).
+ *
+ * A SELECT and nothing else: the operator picks a template, and the exact
+ * revision that template currently publishes travels with it. There is no
+ * control here for creating, revising or retiring a template — that is
+ * `rec.catalogue.manage` and belongs to whoever administers the workshop, not
+ * to the desk receiving a vehicle.
+ */
+function MapForm({
+  messages,
+  templates,
+  onSubmit,
+}: {
+  readonly messages: Messages;
+  readonly templates: readonly BindableTemplateEntry[];
+  readonly onSubmit: (template: BindableTemplateEntry, attempt: number) => Promise<ActionState>;
+}) {
+  const [chosen, setChosen] = useState(templates[0]?.id ?? '');
+  const [state, setState] = useState<ActionState>({ status: 'idle' });
+  const [attempt, setAttempt] = useState(1);
+  const [pending, startTransition] = useTransition();
+
+  const template = templates.find((entry) => entry.id === chosen) ?? templates[0];
+
+  return (
+    <form
+      className="flex flex-col gap-2"
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (!template) return;
+        startTransition(async () => {
+          const result = await onSubmit(template, attempt);
+          setState(result);
+          setAttempt((current) => current + 1);
+          notifyActionResult(result, messages);
+        });
+      }}
+    >
+      <SelectField
+        label={translate(messages, 'receptions.damage.templateLabel')}
+        value={chosen}
+        onChange={(event) => setChosen(event.target.value)}
+        options={templates.map((entry) => ({
+          value: entry.id,
+          label:
+            entry.perspective === null
+              ? translateDynamic(messages, `receptions.damage.mapType.${entry.mapType}`)
+              : `${translateDynamic(messages, `receptions.damage.mapType.${entry.mapType}`)} · ${entry.perspective}`,
+        }))}
+      />
+      {/* The revision the mark will be anchored to, shown rather than implied. */}
+      <p className="text-caption text-text-muted" dir="ltr">
+        {template?.activeVersionNumber ?? ''}
+      </p>
+      <button type="submit" disabled={pending || !template} className={PRIMARY_BUTTON}>
+        {translate(messages, 'receptions.damage.templateSubmit')}
+      </button>
+      <StepOutcome messages={messages} state={state} />
+    </form>
   );
 }

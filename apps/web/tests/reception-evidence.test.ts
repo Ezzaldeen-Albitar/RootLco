@@ -20,6 +20,7 @@ import {
   rowFieldsFor,
   sessionEvidenceOf,
   type ContentsDraft,
+  type EvidenceKindCoverage,
   type SessionEvidence,
 } from '@/features/receptions/check-in/evidence';
 import { CHECK_IN_STEPS } from '@/features/receptions/check-in/steps';
@@ -37,9 +38,21 @@ import {
  * The centre of this file is the KIND-COVERAGE check. Wave E claims the eight
  * evidence kinds are accounted for; a table saying so proves nothing, so every
  * row is held against the contract's own vocabulary, against the registered
- * steps, and against the owning step's SOURCE — a `wired` row whose step does
- * not construct that kind fails, and a `blocked` row whose step does construct
- * one fails too. The claim and the code cannot drift apart quietly.
+ * steps, and against the owning step's SOURCE — a `wired` or `data_gated` row
+ * whose step does not construct that kind fails, and a `blocked` row whose step
+ * does construct one fails too. The claim and the code cannot drift apart
+ * quietly.
+ *
+ * ## The `blocked` direction is proved on a PLANTED row, because none is left
+ *
+ * `damage_map` was the only kind that ever carried `blocked`, and `P1-OD-025`
+ * resolving took it to `data_gated`: a branch with no published diagram still
+ * has nothing to draw on, which is configuration rather than a missing
+ * capability. So the partition is empty, and a loop over it would iterate
+ * nothing while reading as though it checked something — the vacuous guard this
+ * repository keeps being bitten by. The rule is kept as a function and applied
+ * to the whole table, to a planted `blocked` row whose step demonstrably DOES
+ * construct its kind, and to a compliant one it must accept.
  */
 
 // The registry import pulls the step COMPONENTS, whose adapter modules reach
@@ -66,6 +79,26 @@ function stepSource(stepId: string): string {
 /** Source with comments stripped, so a docblock naming a kind is not evidence. */
 function code(source: string): string {
   return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+}
+
+/**
+ * What is wrong with one row's `blocked` claim, or `null` when nothing is.
+ *
+ * `blocked` means there is no control at all, because the contract requires a
+ * value nothing in this product can produce. A row saying that while its step
+ * builds the kind is a label on a control that in fact ships — an operator told
+ * a capability is absent while looking straight at it — and it is the direction
+ * the positive case cannot see, because that one skips blocked rows.
+ *
+ * A function rather than a loop body so the rule survives its own partition
+ * going empty: it is applied below to every real row, to a planted breach and to
+ * a compliant blocked row, neither of which the table currently contains.
+ */
+function blockedClaimProblem(row: EvidenceKindCoverage): string | null {
+  if (row.status !== 'blocked') return null;
+  return code(stepSource(row.stepId)).includes(`kind: '${row.kind}'`)
+    ? `${row.kind} is called blocked, and ${row.stepId} constructs it`
+    : null;
 }
 
 function entry(over: Record<string, unknown> = {}): ConditionEvidenceEntry {
@@ -97,13 +130,21 @@ describe('evidence kind coverage — the claim, checked against the code', () =>
   });
 
   it('rejects a malformed table, so the guard is not vacuous', () => {
+    // Built by LOOKUP, never by position. These rows have been reordered and
+    // reclassified once already, and an index that quietly starts naming a
+    // different row changes what a negative test proves without changing a
+    // character of it.
+    const wired = coverageOf('complaint');
+    const gated = EVIDENCE_KIND_COVERAGE.find((row) => row.status !== 'wired');
+    expect(wired?.status).toBe('wired');
+    expect(gated?.noticeKey, 'no row states a reason, so the third case is empty').toBeTruthy();
     const bad = [
-      { ...EVIDENCE_KIND_COVERAGE[0]! },
-      // A duplicate kind, a wired row carrying an excuse, a blocked row with
-      // none, and a row naming no canonical task.
-      { ...EVIDENCE_KIND_COVERAGE[0]!, noticeKey: 'receptions.evidence.readOnly' },
-      { ...EVIDENCE_KIND_COVERAGE[4]!, noticeKey: null },
-      { ...EVIDENCE_KIND_COVERAGE[1]!, task: 'somewhere' },
+      { ...wired! },
+      // A duplicate kind, a wired row carrying an excuse, a gated row that
+      // states no reason, and a row naming no canonical task.
+      { ...wired!, noticeKey: 'receptions.evidence.readOnly' },
+      { ...gated!, noticeKey: null },
+      { ...coverageOf('inspection')!, task: 'somewhere' },
     ];
     const problems = coverageProblems(bad);
     expect(problems.some((p) => p.includes('duplicate kind'))).toBe(true);
@@ -131,6 +172,7 @@ describe('evidence kind coverage — the claim, checked against the code', () =>
     // exists" — the step's source must build `kind: '<kind>'` AND call the
     // condition-evidence adapter, with comments stripped so a docblock naming a
     // kind is not mistaken for a call site (the P1-27 scanner defect, six times).
+    let checked = 0;
     for (const row of EVIDENCE_KIND_COVERAGE) {
       if (row.status === 'blocked') continue;
       const source = code(stepSource(row.stepId));
@@ -140,16 +182,47 @@ describe('evidence kind coverage — the claim, checked against the code', () =>
       expect(source, `${row.stepId} never calls the evidence adapter`).toContain(
         'recordConditionEvidence('
       );
+      checked += 1;
     }
+    // The guard on the skip. Nothing carries `blocked` any more, so this loop
+    // owes the WHOLE contract vocabulary — and `damage_map`, which the skip
+    // exempted for as long as it was blocked, is inside its scope for the first
+    // time here rather than by anyone's say-so.
+    expect(checked, 'a skipped row left part of the vocabulary unchecked').toBe(
+      EVIDENCE_KINDS.length
+    );
   });
 
-  it('a BLOCKED kind is not constructed anywhere in its step', () => {
-    // The other direction, which is what stops "blocked" from being a label on
-    // a control that in fact ships.
+  it('rejects a BLOCKED kind whose step constructs it, on a planted row', () => {
+    // Every real row satisfies the rule — trivially today, since none is
+    // blocked, which is exactly why the two constructed rows below are what the
+    // rule is actually proved by.
     for (const row of EVIDENCE_KIND_COVERAGE) {
-      if (row.status !== 'blocked') continue;
-      expect(code(stepSource(row.stepId))).not.toContain(`kind: '${row.kind}'`);
+      expect(blockedClaimProblem(row), row.kind).toBeNull();
     }
+
+    // The breach: `damage_map` relabelled `blocked` while `DamageMapStep` goes
+    // on building it. That the rule REJECTS this is also the proof that the
+    // step constructs the kind — the problem is returned on nothing else.
+    const relabelled: EvidenceKindCoverage = { ...coverageOf('damage_map')!, status: 'blocked' };
+    expect(blockedClaimProblem(relabelled)).toContain('damage_map');
+    expect(blockedClaimProblem(relabelled)).toContain('condition-damage');
+
+    // And the compliant shape it must ACCEPT: a blocked row naming a step whose
+    // source does not build the kind, which is what a genuinely unproducible
+    // kind would look like if one returned.
+    const unbuilt: EvidenceKindCoverage = {
+      ...coverageOf('contents')!,
+      stepId: 'condition-damage',
+      status: 'blocked',
+    };
+    expect(blockedClaimProblem(unbuilt)).toBeNull();
+
+    // Positively, and loudly: nothing in this release is blocked. A commit that
+    // re-blocks a kind has to change this line and say which decision reopened.
+    expect(
+      EVIDENCE_KIND_COVERAGE.filter((row) => row.status === 'blocked').map((row) => row.kind)
+    ).toEqual([]);
   });
 
   it('states every gated or blocked reason in BOTH catalogues', () => {
@@ -160,19 +233,53 @@ describe('evidence kind coverage — the claim, checked against the code', () =>
     }
   });
 
-  it('classifies the two kinds this release cannot fully deliver, and says why', () => {
-    // Named explicitly rather than derived, because these two are the wave's
-    // honest partials and a silent reclassification is exactly what this row
-    // exists to make loud.
-    expect(coverageOf('damage_map')).toMatchObject({
-      status: 'blocked',
-      noticeKey: 'receptions.evidence.damageMapBlocked',
+  it('classifies the two kinds a fresh install cannot yet deliver, and says why', () => {
+    /*
+     * Named explicitly rather than derived, because these two are the wave's
+     * honest partials and a silent reclassification is exactly what these rows
+     * exist to make loud. `damage_map` is the reclassification: it was `blocked`
+     * on `P1-OD-025`, and with the decision resolved a template document CAN be
+     * registered — what a fresh install lacks is a published diagram to draw on,
+     * which is the same shape as `warning_light`'s empty code catalogue. Both
+     * are configuration, and both are stated on screen.
+     *
+     * The two reach an operator by different routes, so each is asserted where
+     * it is: `DamageMapStep` renders its notice as its own empty state, while
+     * `WarningLightsStep` passes the kind to `CoverageNotice`, which reads the
+     * key back out of this very table. Asserting the key without the render is
+     * how `receptions.evidence.damageMapBlocked` survived as copy no screen
+     * showed.
+     */
+    const damageMap = coverageOf('damage_map');
+    expect(damageMap).toMatchObject({
+      status: 'data_gated',
+      noticeKey: 'receptions.damage.templateNone',
     });
+    expect(code(stepSource('condition-damage')), 'the damage notice is not rendered').toContain(
+      damageMap!.noticeKey!
+    );
+
     expect(coverageOf('warning_light')).toMatchObject({
       status: 'data_gated',
       noticeKey: 'receptions.evidence.warningCatalogueEmpty',
     });
+    expect(
+      code(stepSource('condition-warning-lights')),
+      'the warning-light notice is not rendered'
+    ).toContain('kind="warning_light"');
+
     expect(coverageOf('complaint')?.status).toBe('wired');
+    // The retired key is gone from both catalogues, not merely unreferenced:
+    // copy that states an open decision is the stale prose this phase keeps
+    // finding, and it reads as true for as long as it is translated.
+    for (const [catalogue, name] of [
+      [EN, 'en'],
+      [AR, 'ar'],
+    ] as const) {
+      expect(catalogue['receptions.evidence.damageMapBlocked'], `${name} still carries it`).toBe(
+        undefined
+      );
+    }
   });
 });
 

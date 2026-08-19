@@ -39,6 +39,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 import { GuardFailure, assertLocalTarget } from './context.mjs';
 import { API_ORIGIN, API_PORT, API_READY_PATH, DEV_HOST } from '../dev-config.mjs';
+import { resolveStorageEnv } from '../storage-env.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(HERE, '..', '..', '..');
@@ -139,6 +140,10 @@ async function apiAnswering() {
  *
  * Only the API is started. The browser tier brings up its own web server against
  * a production build; a development web server would merely contend for a port.
+ *
+ * BOTH tiers are production here. The browser tier was already, through
+ * `next start`; the API was not, and the paragraph beside the build below
+ * carries what that cost.
  */
 async function ensureApi() {
   if (await apiAnswering()) return { started: false, child: null };
@@ -163,11 +168,61 @@ async function ensureApi() {
   // Handing the descriptor to the OS removes the dependency entirely: nothing in
   // this process has to be awake for the child to keep writing.
   const fd = openSync(log, 'a');
+
+  /*
+   * PRODUCTION, and this is not a preference.
+   *
+   * This started `next dev`, and `next dev` compiles a route bundle the first
+   * time that route is requested. The API's authenticator is a module-level
+   * singleton installed as a SIDE EFFECT of composing `iamModule()` inside the
+   * login handler, so a bundle compiled without that composition having run
+   * still holds `UnconfiguredAuthenticator` and fails closed. The observed
+   * result is a token accepted by `/receptions` and refused by `/vehicles` IN
+   * THE SAME PROCESS, and a second `next dev` refusing a different subset —
+   * phantom 401s that look exactly like real authorization defects and are not.
+   * An acceptance environment that invents defects is worse than none, because
+   * every hour spent on one is spent proving that nothing was wrong.
+   *
+   * `start-local.mjs` already ran this argument and serves the acceptance stack
+   * from a production build. This is the same decision for the tier that script
+   * does not start.
+   */
+  const build = spawnSync(
+    process.execPath,
+    [`${REPO_ROOT}/node_modules/next/dist/bin/next`, 'build', 'apps/api'],
+    {
+      cwd: REPO_ROOT,
+      env: { ...process.env, NEXT_TELEMETRY_DISABLED: '1' },
+      stdio: ['ignore', fd, fd],
+    }
+  );
+  if (build.status !== 0) {
+    console.log(' FAILED');
+    throw new Error(`The API production build failed. Its output is in ${log}.`);
+  }
+
+  /*
+   * The object store, given to the API process and to nothing else.
+   *
+   * Without it `STORAGE_PROVIDER` is unset, every upload authorization is
+   * refused, and no registered version can ever reach `accepted` — so the whole
+   * evidence chain the browser tier exercises would report a truthful "recorded,
+   * not counted" for reasons that are an artefact of the harness. `apps/web`
+   * receives none of it: the web tier's capture action PUTs to a URL the API
+   * issued rather than to one it worked out, which is what keeps a storage
+   * credential out of anything the browser can reach.
+   *
+   * A partial read yields `null` rather than a fragment — see `storage-env.mjs`
+   * — so a half-configured store takes the API down at composition instead of
+   * failing one request in ten.
+   */
+  const storageEnv = resolveStorageEnv() ?? {};
+
   const child = spawn(
     process.execPath,
     [
       `${REPO_ROOT}/node_modules/next/dist/bin/next`,
-      'dev',
+      'start',
       'apps/api',
       // Pinned to the same host the readiness probe above uses. A default bind
       // would answer on every loopback address and hide a disagreement between
@@ -179,7 +234,7 @@ async function ensureApi() {
     ],
     {
       cwd: REPO_ROOT,
-      env: { ...process.env, NEXT_TELEMETRY_DISABLED: '1' },
+      env: { ...process.env, ...storageEnv, NEXT_TELEMETRY_DISABLED: '1' },
       stdio: ['ignore', fd, fd],
     }
   );

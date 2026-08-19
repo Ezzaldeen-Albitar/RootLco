@@ -18,11 +18,7 @@ import {
 } from '@/components/data-table/table-state';
 import { PUBLISHED_OPERATIONS } from '@/lib/api/idempotent-operations';
 import { searchCustomerDirectory } from '@/lib/customers/directory';
-import {
-  DOCUMENT_LIST_PERMISSION,
-  MEDIA_BLOCKING_DECISION,
-  MEDIA_STATUS,
-} from '@/features/vehicles/documents-contract';
+import { DOCUMENT_LIST_PERMISSION } from '@/features/vehicles/documents-contract';
 import enMessages from '../src/i18n/messages/en.json';
 import arMessages from '../src/i18n/messages/ar.json';
 
@@ -691,8 +687,11 @@ describe('P1-27-SEC-002 — sensitive data, export, documents and media', () => 
   });
 
   it('offers no upload path of any kind', () => {
-    // `P1-OD-025` must decide accepted types, size limits and storage before a
-    // vehicle media operation can exist. There is none to call.
+    // Not because a decision is outstanding — `P1-OD-025` is RESOLVED and
+    // reception capture ships on the back of it. Because the platform publishes
+    // no VEHICLE media operation: there is nothing here to call, so a file
+    // construct on this surface could only be reaching for something that does
+    // not exist.
     for (const { path, source } of PHASE_SURFACE) {
       expect(source, path).not.toMatch(/FormData\(\)|multipart\/form-data|type="file"/);
     }
@@ -852,34 +851,116 @@ describe('P1-27-SEC-002 — five conjuncts, proved separately', () => {
     });
   });
 
-  describe('4/5 media — decision-neutral, and it says so rather than pretending', () => {
+  describe('4/5 media — a capability gap, stated as one', () => {
     /*
-     * Canonical plan §7: `P1-OD-025` is OPEN. The disposition is a
-     * decision-neutral foundation, upload acceptance BLOCKED, and no invented
-     * limits. Three separate obligations, and the third is the one a
-     * well-meaning implementation breaks: a "sensible default" of 10 MB and
-     * JPEG/PNG would pre-empt the decision while looking like diligence.
+     * This block used to read "Canonical plan §7: `P1-OD-025` is OPEN", and it
+     * pinned the copy to say so: the English string had to contain "pending"
+     * and "decision". That was right for as long as the decision was open. It
+     * is not right now, and the pin is what kept the stale sentence on a live
+     * screen — a rule holding copy to a world that had moved on.
+     *
+     * `P1-OD-025` is RESOLVED (`features/receptions/media/media-decision.ts`,
+     * which carries the record of the four things that closed it). Nothing
+     * about the resolution gave the VEHICLE screen a media capability: the
+     * platform still publishes no vehicle media operation — no upload, no
+     * thumbnail, no gallery — so the section still offers no control. What
+     * changed is the REASON, and therefore what the operator must be told. A
+     * capability gap and an open decision are different facts, and only one of
+     * them is true here.
+     *
+     * The three obligations that survive the resolution, restated:
+     *
+     *   1. no control, not even a disabled one (below, `renders the statement
+     *      with NO control beside it`);
+     *   2. the copy states what this screen offers, and defers to no decision;
+     *   3. no invented type, limit or storage placement anywhere.
+     *
+     * The third is still the one a well-meaning implementation breaks, and
+     * resolving the decision made it EASIER to break, not harder: there are
+     * real limits now, so a "sensible default" copied out of them looks like
+     * diligence rather than invention.
      */
-    it('carries one closed status and names the open decision', () => {
-      expect(MEDIA_STATUS).toBe('blocked-on-p1-od-025');
-      expect(MEDIA_BLOCKING_DECISION).toBe('P1-OD-025');
+    it('names no decision identifier in the contract or on the screen', () => {
+      /*
+       * This case used to read "carries the closed status value and the decision
+       * reference", and it pinned `MEDIA_STATUS = 'blocked-on-p1-od-025'` and
+       * `MEDIA_BLOCKING_DECISION = 'P1-OD-025'` in place. Its own comment
+       * called them "pinned, not endorsed" and named the problem — values that
+       * "read as a block imposed by a decision that has since been taken" —
+       * while asserting they stay. That is the shape where the test is part of
+       * the defect: the section RENDERED the reference, so an operator opening a
+       * vehicle read a bare `P1-OD-025`, and this case is what held it there.
+       *
+       * Both constants are gone, so the rule is the absence. It is checked on
+       * the module rather than through an import, because an import of a deleted
+       * export is a compile error rather than a readable failure.
+       */
+      const contract = readFileSync(join(FEATURES, 'vehicles', 'documents-contract.ts'), 'utf8');
+      for (const name of ['MEDIA_STATUS', 'MEDIA_BLOCKING_DECISION']) {
+        expect(code(contract), name).not.toMatch(new RegExp('export const ' + name + '\\b'));
+      }
+      // The tombstone stays — the removal was decided, not forgotten.
+      expect(contract).toContain('P1-OD-025');
     });
 
-    it('states the policy is PENDING, in both catalogues', () => {
+    it('states what the screen offers, and defers to no Owner decision', () => {
       for (const key of ['vehicles.media.heading', 'vehicles.media.blocked']) {
         expect(Object.keys(EN), key).toContain(key);
         expect(Object.keys(AR), key).toContain(key);
         expect(EN[key], key).not.toBe(AR[key]);
       }
-      // The English copy has to say the two things the disposition requires:
-      // that nothing is available yet, and that a decision is outstanding.
-      expect(EN['vehicles.media.blocked']?.toLowerCase()).toContain('pending');
-      expect(EN['vehicles.media.blocked']?.toLowerCase()).toContain('decision');
+
+      /*
+       * The same two matchers `p1-28-reception-media.test.ts` uses over the
+       * `receptions.*` catalogue, applied to the one key that lives in this
+       * tree. Deliberately duplicated rather than imported: a rule that only
+       * exists inside the wave that wrote it is a rule this tree can regress
+       * without noticing, which is precisely what happened to this string.
+       */
+      const EN_OPEN =
+        /pending an owner decision|open owner decision|owner decision|not yet decided/i;
+      const AR_OPEN = /قرار[^.،؛\n]{0,20}المالك|بانتظار قرار|قيد القرار/;
+
+      // Non-vacuity, against the copy that actually shipped: the English and
+      // Arabic strings this case replaced, verbatim. A matcher that cannot
+      // catch the sentence it was written to catch is a matcher that would have
+      // watched it ship — twice, since the Arabic one has no `\b` to lean on.
+      expect(
+        EN_OPEN.test(
+          'Vehicle photos and media are not available yet. Accepted file types, size limits and storage are pending an Owner decision, and nothing is uploaded or stored until it is made.'
+        )
+      ).toBe(true);
+      expect(
+        AR_OPEN.test(
+          'صور المركبة ووسائطها غير متاحة بعد. أنواع الملفات المقبولة وحدود الحجم والتخزين بانتظار قرار من المالك، ولا يُرفع أو يُخزَّن شيء قبل صدوره.'
+        )
+      ).toBe(true);
+
+      // …and neither fires on the copy this section ships now.
+      expect(EN['vehicles.media.blocked'], 'the English copy still defers').not.toMatch(EN_OPEN);
+      expect(AR['vehicles.media.blocked'], 'the Arabic copy still defers').not.toMatch(AR_OPEN);
+      for (const catalogue of [EN, AR]) {
+        expect(catalogue['vehicles.media.blocked']).not.toContain('P1-OD-025');
+      }
+
+      /*
+       * And it has to say the true thing, not merely stop saying the false one.
+       * Deleting the second sentence would pass every assertion above while
+       * leaving an operator with "not available yet" and no reason at all.
+       */
+      expect(EN['vehicles.media.blocked']?.toLowerCase()).toContain('no vehicle media operation');
     });
 
     it('invents no accepted type, no size limit and no storage placement', () => {
-      // A number or a file extension in this copy IS the invented limit. There
-      // is no decision to derive one from.
+      /*
+       * A number or a file extension in this copy IS the invented limit — and
+       * the resolution did not license one. The real values are per document
+       * CATEGORY, held in `shared.document_categories` (`allowed_content_types`,
+       * `max_size_bytes`, both NOT NULL) and read at capture time by the surface
+       * that captures. A figure restated in this string would be a second
+       * authority for a screen that captures nothing, and it would go stale
+       * silently the first time a category changed.
+       */
       for (const key of ['vehicles.media.blocked'] as const) {
         for (const catalogue of [EN, AR]) {
           expect(catalogue[key], key).not.toMatch(/\d/);
@@ -916,7 +997,15 @@ describe('P1-27-SEC-002 — five conjuncts, proved separately', () => {
         'the media section was not found — this case is measuring nothing'
       ).toBeDefined();
       expect(media).toContain('vehicles.media.blocked');
-      expect(media).toContain('MEDIA_BLOCKING_DECISION');
+      /*
+       * And it renders NO decision identifier. The section used to print
+       * `MEDIA_BLOCKING_DECISION` in a paragraph of its own, which put a raw
+       * `P1-OD-025` in front of every operator who opened a vehicle. The
+       * comment naming the decision is source, not screen, so the match is made
+       * against the section with comments stripped.
+       */
+      expect(media).not.toContain('MEDIA_BLOCKING_DECISION');
+      expect(media).not.toContain('P1-OD-025');
       for (const control of ['<button', '<input', '<form', '<a ', 'onClick', 'disabled']) {
         expect(media, `the media section renders ${control}`).not.toContain(control);
       }

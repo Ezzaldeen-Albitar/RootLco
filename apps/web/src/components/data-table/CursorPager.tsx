@@ -2,7 +2,7 @@
 
 import { withPage } from './table-state';
 import type { ServerTable } from './use-server-table';
-import { canPage, readCompleteness } from './read-completeness';
+import { canPage, hasFurtherPage, readCompleteness } from './read-completeness';
 import type { Messages } from '@/i18n/get-messages';
 import { translate } from '@/i18n/get-messages';
 
@@ -40,8 +40,10 @@ export function CursorPager<Row>({
 
   // Neither direction is offered while the page in hand is not a read page:
   // paging off an unreadable page would send a cursor nothing established.
-  const settled = readCompleteness(table.status, hasMore);
-  const atEnd = settled !== 'truncated';
+  const settled = readCompleteness(table.status, hasMore, page);
+  // The END of the walk is a different question from the coverage of the set:
+  // page five of five is `truncated` as a claim and still has no page six.
+  const atEnd = !hasFurtherPage(table.status, hasMore);
 
   return (
     <nav aria-label={label} className="flex flex-wrap items-center gap-2">

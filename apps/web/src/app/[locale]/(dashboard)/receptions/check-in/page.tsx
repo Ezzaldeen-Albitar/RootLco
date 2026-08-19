@@ -2,7 +2,6 @@ import { notFound } from 'next/navigation';
 import { PageBody, PageHeader } from '@/components/shell/PageHeader';
 import { PermissionDeniedState } from '@/components/states/States';
 import { requireSession } from '@/features/authentication/api/session';
-import { PERMISSIONS as ADMIN_PERMISSIONS } from '@/features/administration/shared/permissions';
 import { APPOINTMENT_PERMISSIONS } from '@/features/appointments/appointments-contract';
 import { CRM_PERMISSIONS, holds } from '@/features/crm/permissions';
 import { listFuelLevels, type IntakeCatalogueResult } from '@/features/receptions/catalogue-api';
@@ -11,6 +10,7 @@ import {
   type WalkInHandoffStart,
 } from '@/features/receptions/components/CheckInStartScreen';
 import { walkInHandoffFromQuery } from '@/features/receptions/intake/intake-handoff';
+import { RECEIVING_EMPLOYEE_PERMISSION } from '@/features/receptions/people/receiving-employee-directory';
 import { RECEPTION_PERMISSIONS } from '@/features/receptions/receptions-contract';
 import { readCustomerSummary } from '@/features/receptions/support-api';
 import { isLocale } from '@/i18n/config';
@@ -85,6 +85,25 @@ export default async function CheckInStartPage({
 
   const canCreate = holds(session.permissions, RECEPTION_PERMISSIONS.manage);
   const canSearchCustomers = holds(session.permissions, CRM_PERMISSIONS.customerRead);
+  /*
+   * The code the OPERATION declares, imported from the module that owns the
+   * directory rather than spelled again here. This read `iam.user.read`, left
+   * over from when the only staff read was the tenant-wide IAM directory. The
+   * operation behind the picker declares `rec.reception.manage`
+   * (`reception-catalogue/receiving-employees/route.ts`), and
+   * `CheckInStartScreen`'s own docblock said so while this page did not.
+   *
+   * Behaviourally inert today, in both directions, and the alignment is the
+   * point rather than a defect closed. `GET /api/v1/auth/session` itself
+   * declares `iam.user.read`, so nobody who reaches this dashboard lacks it;
+   * and `CheckInStartScreen` returns `PermissionDeniedState` when `canCreate`
+   * is false, so the effective gate on the whole form already was
+   * `rec.reception.manage`. What was wrong is that the page, the screen's
+   * docblock, the operation and the binding test did not all name the same code
+   * — and the binding test pinned the superseded one, so agreeing with the
+   * operation used to turn it red.
+   */
+  const canPickEmployee = holds(session.permissions, RECEIVING_EMPLOYEE_PERMISSION);
 
   const EMPTY_CATALOGUE: IntakeCatalogueResult = {
     status: 'ok',
@@ -117,7 +136,7 @@ export default async function CheckInStartPage({
           branchIds={session.branchIds}
           canCreate={canCreate}
           canListAppointments={holds(session.permissions, APPOINTMENT_PERMISSIONS.read)}
-          canPickEmployee={holds(session.permissions, ADMIN_PERMISSIONS.userRead)}
+          canPickEmployee={canPickEmployee}
           canSearchCustomers={canSearchCustomers}
           fuelLevels={fuelLevels}
           walkInHandoff={walkInHandoff}

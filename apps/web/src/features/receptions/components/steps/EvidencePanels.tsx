@@ -26,11 +26,11 @@ import {
   type SessionEvidence,
 } from '../../check-in/evidence';
 import {
-  RECEIVING_EMPLOYEE_NOTICE_KEYS,
-  resolveReceivingEmployee,
-  type ReceivingEmployee,
-} from '../../check-in/receiving-employee';
-import { readReceivingEmployeeIdentity } from '../../support-api';
+  PERSON_NAME_NOTICE_KEYS,
+  resolvePersonName,
+  type PersonName,
+} from '../../people/person-name';
+import { readUserIdentity } from '../../support-api';
 
 /**
  * The pieces every condition-evidence step renders (P1-28, Wave E).
@@ -139,7 +139,7 @@ function InstantOrRaw({ value, locale }: { readonly value: string; readonly loca
  * ---------------------------------------------------------------------- */
 
 /** What every `person` field on the page resolved to, keyed by account. */
-export type PersonNames = ReadonlyMap<string, ReceivingEmployee>;
+export type PersonNames = ReadonlyMap<string, PersonName>;
 
 const NO_PEOPLE: PersonNames = new Map();
 
@@ -148,18 +148,27 @@ const NO_PEOPLE: PersonNames = new Map();
  *
  * One `iam.user-detail` read per DISTINCT identifier, and only for identifiers
  * actually on the page — a read-back of twenty-five inspections opened by the
- * same person costs one read, not twenty-five. The same operation the check-in
- * employee picker already consumes and already discloses beside its control, so
- * this widens nobody's access and adds no new disposition (`staff-directory.ts`
- * names it as one of the three operations `iam.user.read` opens).
+ * same person costs one read, not twenty-five.
+ *
+ * ## This is now the ONLY consumer of `iam.user.read` in the phase
+ *
+ * It used to share the code with the receiving-employee picker, and the
+ * disposition leaned on that: the picker discloses the directory anyway, so
+ * resolving a name beside it adds nothing. `DBCR-P1-18-002` took the picker off
+ * `iam.user-list` entirely, so the argument has to stand on its own — and it
+ * does, on the stronger half it always had. `GET /auth/session` requires
+ * `iam.user.read`, so every operator who can load the application holds it; and
+ * the identifiers resolved here are ALREADY on the page. Turning one into the
+ * name of the person it names discloses nothing the reader was not looking at.
  *
  * Without the permission the hook makes no request at all and every identifier
  * resolves to `denied` — the same posture every P1-28 route takes toward a gate
  * it can decide itself, and one that keeps a rate-limited operation unspent.
  *
  * Nothing here ever yields the identifier. The four outcomes are
- * `receiving-employee.ts`'s, unchanged, because they are the four states the
- * platform genuinely has and the acknowledgement sheet already renders.
+ * `people/person-name.ts`'s, and this is the surface they were written for: an
+ * ACTOR has no stored display name, unlike the receiving employee, whose name is
+ * a snapshot on the visit and never comes through here.
  */
 export function usePersonNames(ids: readonly string[], canRead: boolean): PersonNames {
   // The identifiers as ONE stable string, so the effect re-runs when the SET
@@ -176,10 +185,7 @@ export function usePersonNames(ids: readonly string[], canRead: boolean): Person
     void (async () => {
       const wanted = key.split(',');
       const resolved = await Promise.all(
-        wanted.map(
-          async (id) =>
-            [id, resolveReceivingEmployee(await readReceivingEmployeeIdentity(id))] as const
-        )
+        wanted.map(async (id) => [id, resolvePersonName(await readUserIdentity(id))] as const)
       );
       // Awaited before the only state write, so this is not a synchronous
       // setState inside an effect body.
@@ -207,19 +213,19 @@ function PersonName({
   resolved,
 }: {
   readonly messages: Messages;
-  readonly resolved: ReceivingEmployee | undefined;
+  readonly resolved: PersonName | undefined;
 }) {
   if (resolved === undefined) {
     return (
       <span className="text-text-secondary">
-        {translate(messages, RECEIVING_EMPLOYEE_NOTICE_KEYS.unavailable)}
+        {translate(messages, PERSON_NAME_NOTICE_KEYS.unavailable)}
       </span>
     );
   }
   if (resolved.status === 'named') return <>{resolved.displayName}</>;
   return (
     <span className="text-text-secondary">
-      {translate(messages, RECEIVING_EMPLOYEE_NOTICE_KEYS[resolved.status])}
+      {translate(messages, PERSON_NAME_NOTICE_KEYS[resolved.status])}
     </span>
   );
 }

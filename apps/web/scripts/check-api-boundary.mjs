@@ -28,12 +28,49 @@ const ROOT = process.cwd();
 /** Only these may perform network I/O. */
 export const NETWORK_OWNERS = [join('src', 'lib', 'api')];
 
+/**
+ * The one file allowed to reach a host that is NOT the API, and why.
+ *
+ * ## What it does
+ *
+ * `putObject` in the attachments adapter sends the captured bytes to an object
+ * store, at a URL the API minted and handed back. That is the whole of it: one
+ * `PUT`, to an address this tree did not choose, with no credential of ours on
+ * it and `redirect: 'error'` so it cannot be bounced somewhere else.
+ *
+ * ## Why the API client is the WRONG instrument for it
+ *
+ * `src/lib/api` exists to talk to OUR API. It attaches the session, the
+ * correlation id and the problem-details mapping — every one of which is a
+ * reason the rule above exists, and every one of which would be wrong here:
+ * sending the session bearer to a presigned store URL hands our credential to
+ * somebody else's host, and a store answers bytes rather than problem details.
+ * Routing this through the client would satisfy the gate and weaken the
+ * product, which is the shape of allowance this repository refuses to make
+ * silently.
+ *
+ * ## Why the file rather than the function
+ *
+ * The rule scans files, so a file is the smallest thing it can name. What keeps
+ * the allowance from widening is a TEST, not this comment:
+ * `apps/web/tests/attachments-contract.test.ts` asserts that this file holds
+ * exactly ONE `fetch(`, that it is inside `putObject`, and that its URL comes
+ * from the authorization rather than from anything this tree composes. A second
+ * call here turns that red.
+ */
+export const STORE_UPLOAD_OWNER = join('src', 'features', 'attachments', 'api.ts');
+
 export const RULES = [
   {
     id: 'direct-fetch',
     pattern: /\bfetch\s*\(/,
     what: 'calls fetch() directly instead of using the API client',
     allow: NETWORK_OWNERS,
+    /*
+     * Exactly one file, named rather than pattern-matched: an allowance shaped
+     * like a directory grows by somebody putting a file in it.
+     */
+    allowFiles: [STORE_UPLOAD_OWNER],
   },
   {
     id: 'api-source-import',
@@ -68,8 +105,9 @@ export function stripComments(source) {
   return source.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|\s)\/\/.*$/gm, '$1');
 }
 
-function allowed(relPath, allow) {
+function allowed(relPath, allow, allowFiles = []) {
   const normalised = relPath.split('/').join(sep);
+  if (allowFiles.some((file) => normalised === file)) return true;
   return allow.some((dir) => normalised.startsWith(dir + sep));
 }
 
@@ -77,7 +115,7 @@ export function inspect(relPath, source) {
   const body = stripComments(source);
   const findings = [];
   for (const rule of RULES) {
-    if (allowed(relPath, rule.allow)) continue;
+    if (allowed(relPath, rule.allow, rule.allowFiles ?? [])) continue;
     if (rule.pattern.test(body)) findings.push({ path: relPath, rule: rule.id, what: rule.what });
   }
   return findings;

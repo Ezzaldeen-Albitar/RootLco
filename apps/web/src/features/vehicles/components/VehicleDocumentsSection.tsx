@@ -4,7 +4,6 @@ import type { Messages } from '@/i18n/get-messages';
 import { translate } from '@/i18n/get-messages';
 import type { Locale } from '@/i18n/config';
 import type { DocumentsState } from '../documents-api';
-import { MEDIA_BLOCKING_DECISION } from '../documents-contract';
 
 /**
  * Vehicle documents (`FE-026`) and media (`FE-027`).
@@ -108,13 +107,20 @@ export function VehicleDocumentsSection({
         </h2>
         <p className="mt-2 text-body text-text-secondary" lang={locale}>
           {/* No control at all — not a disabled one. A greyed-out upload button
-              advertises a capability the product does not have and cannot have
-              until P1-OD-025 decides accepted types, size limits and storage
-              placement. */}
+              advertises a capability the platform does not publish: there is no
+              vehicle media operation to call, so the control could only ever
+              fail.
+
+              The sentence says what THIS screen offers, and deliberately no
+              longer defers to an open Owner decision. `P1-OD-025` — the document
+              and media file policy — is RESOLVED; the record of the closure and
+              of the four things that closed it is
+              `features/receptions/media/media-decision.ts`, which puts the rule
+              in one line: copy still reporting the decision as open would be
+              telling an operator something false about their own product. What
+              actually keeps media off this screen is a capability gap, not a
+              decision, and the copy now says so. */}
           {translate(messages, 'vehicles.media.blocked')}
-        </p>
-        <p className="mt-2 text-caption text-text-muted" dir="ltr">
-          {MEDIA_BLOCKING_DECISION}
         </p>
       </section>
     </div>

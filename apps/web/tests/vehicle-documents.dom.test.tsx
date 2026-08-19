@@ -4,7 +4,6 @@ import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
 import { renderLtr, renderRtl } from './render';
 import { VehicleDocumentsSection } from '@/features/vehicles/components/VehicleDocumentsSection';
-import { MEDIA_BLOCKING_DECISION } from '@/features/vehicles/documents-contract';
 
 /**
  * The vehicle documents SECTION (`P1-27-FE-026`, `P1-27-FE-027`).
@@ -63,8 +62,15 @@ describe('there is no upload path, and no promise of one', () => {
     expect(screen.getByText(en['vehicles.media.blocked'])).toBeInTheDocument();
     // The decision reference, so an operator asking "why not?" has an answer
     // rather than a blank panel.
-    expect(container.textContent ?? '').toContain(MEDIA_BLOCKING_DECISION);
-    expect(MEDIA_BLOCKING_DECISION).toContain('P1-OD-025');
+    /*
+     * The inversion. This read the decision identifier back OFF the DOM and
+     * asserted it was there, which is how a bare `P1-OD-025` stayed in front of
+     * operators: the screen printed an internal reference and this case
+     * certified it. What the rendered text must carry is the reason, in the
+     * operator's language; what it must not carry is the identifier.
+     */
+    expect(container.textContent ?? '').not.toContain('P1-OD-025');
+    expect(container.textContent ?? '').toContain('no vehicle media operation');
   });
 
   it('offers no download control either', () => {

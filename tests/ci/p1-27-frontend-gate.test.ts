@@ -8,6 +8,8 @@ import {
   EXPORT_INNOCENT,
   FILE_ACCESS_CONSTRUCTS,
   FILE_ACCESS_INNOCENT,
+  FILE_INPUT_ALLOW,
+  FILE_INPUT_CONSTRUCTS,
   INVENTED_MEDIA_LIMIT_CONSTRUCTS,
   INVENTED_MEDIA_LIMIT_INNOCENT,
   MODULE_DISPOSITION,
@@ -138,7 +140,23 @@ describe('each rule catches its own violation', () => {
     ['no-client-asserted-scope', 'const p = { branch_id: session.branch };'],
     ['no-invented-total', 'const page = { rows, total: rows.length };'],
     ['no-upload-path', 'const body = new FormData();'],
-    ['no-upload-path', '<input type="file" name="photo" />'],
+    /*
+     * The file input belongs to `no-unapproved-file-input`, and this row is
+     * where the split is visible at a glance.
+     *
+     * It read `no-upload-path` while that rule owned all seven file-access
+     * constructs. `P1-OD-025` is now RESOLVED, reception capture ships, and the
+     * one construct that had to become legal was carved into a rule of its own
+     * so that its allowance could be scoped to the one construct rather than
+     * exempting the approved component from `FileReader`, `DataTransfer`, drop
+     * targets and hand-set multipart encoding as well.
+     *
+     * So the row MOVED with the rule instead of being deleted — the sample is
+     * unchanged and still planted through the gate's own `evaluate()`. The
+     * exclusivity of the split (this fires the scoped rule and NOTHING else) is
+     * asserted in `no-unapproved-file-input is the scoped carve-out` below.
+     */
+    ['no-unapproved-file-input', '<input type="file" name="photo" />'],
     ['no-console-output', "console.log('page', page);"],
   ])('%s catches: %s', (ruleId, source) => {
     const { failures } = evaluate(withViolation(source));
@@ -261,6 +279,124 @@ describe.each(CONSTRUCT_TABLES)('%s', (ruleId, constructs, innocent) => {
   });
 });
 
+/**
+ * `no-unapproved-file-input` — the fourth construct table, proved apart.
+ *
+ * ## Why it is not a fourth row of `CONSTRUCT_TABLES`
+ *
+ * The three tables above are SWEEPS: each forbids a surface that can be built
+ * more than one way, which is why that block's floor is `> 2` constructs and
+ * `> 2` innocent samples, and why the floor is worth having — a sweep that had
+ * decayed to a single construct would be the exact regression the block exists
+ * to catch.
+ *
+ * This rule is the opposite shape on purpose. `P1-OD-025` is RESOLVED, reception
+ * capture ships, and the narrowest thing that lets it ship is ONE construct
+ * exempted in ONE path. Admitting it to that block would have meant lowering the
+ * floor to one — trading away the measurement of the three sweeps to accommodate
+ * a rule that is deliberately not one of them.
+ *
+ * So it is proved here instead, and proved harder than the shared block can:
+ * every sample must fire this rule and NO other, the allowance must exempt the
+ * approved path from this rule and from nothing else, and the innocent set must
+ * clear the whole gate rather than just this rule.
+ */
+describe('no-unapproved-file-input is the scoped carve-out, not a second sweep', () => {
+  const rule = RULES.find((r) => r.id === 'no-unapproved-file-input');
+  const planted = FILE_INPUT_CONSTRUCTS.flatMap((construct) =>
+    construct.samples.map((source) => [construct.construct, source] as const)
+  );
+
+  /**
+   * File-input-adjacent source that offers no file input.
+   *
+   * Local rather than a gate export, because these are about the ONE construct
+   * this rule spells and not about a surface: a `type="text"` input, a `file`
+   * that is a variable rather than an input type, and the word in prose and in a
+   * translation key. The three gate-side innocent lists guard sweeps, and this
+   * rule is not one.
+   */
+  const INNOCENT = [
+    '<input type="text" name="plate" />',
+    '<input type="checkbox" name="agreed" />',
+    'const file = attachment.storageKey;',
+    "const label = t('receptions.capture.file');",
+    'const kind = record.type === "file" ? a : b;',
+  ] as const;
+
+  it('is a live rule with exactly ONE construct behind it', () => {
+    expect(rule, 'no-unapproved-file-input is not in RULES').toBeDefined();
+    /*
+     * The number is the rule. A second construct here would mean this carve-out
+     * had started covering something the Owner decision did not resolve, and it
+     * would inherit the allowance — an exemption argued for one construct,
+     * silently extended to another.
+     */
+    expect(FILE_INPUT_CONSTRUCTS.length, 'the carve-out has grown a second construct').toBe(1);
+    expect(planted.length, 'the construct carries fewer spellings than it did').toBe(3);
+    // The pattern really is assembled from the table, so the samples below are
+    // testing the rule CI runs rather than a regex that has drifted from it.
+    for (const construct of FILE_INPUT_CONSTRUCTS) {
+      expect(
+        rule?.pattern.source,
+        `${construct.construct} is in the table and not in the rule`
+      ).toContain(construct.pattern.source);
+    }
+  });
+
+  it.each(planted)('catches the %s construct: %s', (_construct, source) => {
+    const { failures } = evaluate(withViolation(source));
+    expect(
+      failures.filter((f) => f.startsWith('no-unapproved-file-input:')),
+      failures.join('\n')
+    ).toHaveLength(1);
+  });
+
+  it.each(planted)('and is the ONLY rule the %s construct trips: %s', (_construct, source) => {
+    /*
+     * The split asserted as an exclusivity rather than as a re-labelling.
+     *
+     * Folding the construct back into `no-upload-path` — or, worse, allow-listing
+     * the capture component there, which is the edit the gate's docblock records
+     * as rejected — would show up here, because it is the only assertion that
+     * says which side of the split the construct is on. A union check over both
+     * rules would pass either way.
+     */
+    expect(RULES.filter((r) => fires(r, source)).map((r) => r.id)).toEqual([
+      'no-unapproved-file-input',
+    ]);
+  });
+
+  it.each(INNOCENT.map((source) => [source]))('does not fire on innocent text: %s', (source) => {
+    // Over the WHOLE failure list, so a sample that trips some other rule fails
+    // here too.
+    expect(evaluate(withViolation(source)).failures).toEqual([]);
+  });
+
+  it('exempts the one approved path from THIS rule and from nothing else', () => {
+    /*
+     * The claim the split exists to make, measured through `evaluate()`.
+     *
+     * `allow` exempts a FILE from a WHOLE rule. Allow-listing the capture
+     * component against `no-upload-path` would therefore have permitted
+     * `FileReader`, `DataTransfer`, an `onDrop` target, a `.files` list and
+     * hand-set multipart encoding in that same file — six prohibitions traded
+     * away to legalise one construct. Both halves are asserted: the file input
+     * is permitted in the approved path, and a `FileReader` in that identical
+     * path is still refused.
+     */
+    const approved = FILE_INPUT_ALLOW[0] as string;
+    const permitted = evaluate([
+      ...CLEAN,
+      { path: approved, source: '<input type="file" name="photo" />' },
+    ]);
+    expect(permitted.failures, permitted.failures.join('\n')).toEqual([]);
+
+    const refused = evaluate([...CLEAN, { path: approved, source: 'const r = new FileReader();' }]);
+    expect(refused.failures.filter((f) => f.startsWith('no-upload-path:'))).toHaveLength(1);
+  });
+});
+
 describe('the gate catches everything the deletable security suite forbids', () => {
   /**
    * The whole reason these rules were added: `apps/web/tests/p1-27-security.test.ts`
@@ -293,21 +429,41 @@ describe('the gate catches everything the deletable security suite forbids', () 
    *     refuses before the gate is asked about it.
    *   - `none`: no gate rule, recorded as a residual rather than left silent.
    *   - `divergent`: mirroring it would be WRONG — see the note.
+   *
+   * ## `gateRules`, plural
+   *
+   * It was `gateRule`, singular, and that was an assumption rather than a fact:
+   * that the gate would answer one suite rule with one rule of its own. The
+   * suite's `file-access` refusal is now answered by TWO — `no-upload-path` for
+   * the six constructs that stay forbidden everywhere, and
+   * `no-unapproved-file-input` for the file input, which `P1-OD-025` being
+   * RESOLVED made legal in exactly one path. Parity is a claim about COVERAGE,
+   * so it is stated over the set; the cases below then require every rule named
+   * in a set to catch at least one alternative, so a set cannot be padded with a
+   * rule that covers nothing, and pin the file-access split by name.
    */
   const SUITE_PARITY: readonly {
     readonly suiteRule: string;
-    readonly gateRule: string | null;
+    readonly gateRules: readonly string[] | null;
     readonly how: 'every-alternative' | 'corpus' | 'none' | 'divergent';
     readonly corpus?: readonly string[];
   }[] = [
-    { suiteRule: 'export', gateRule: 'no-export-surface', how: 'every-alternative' },
-    { suiteRule: 'export-operation', gateRule: 'no-export-surface', how: 'every-alternative' },
-    { suiteRule: 'client-extraction', gateRule: 'no-export-surface', how: 'every-alternative' },
-    { suiteRule: 'attachment-download', gateRule: 'no-export-surface', how: 'every-alternative' },
-    { suiteRule: 'file-access', gateRule: 'no-upload-path', how: 'every-alternative' },
+    { suiteRule: 'export', gateRules: ['no-export-surface'], how: 'every-alternative' },
+    { suiteRule: 'export-operation', gateRules: ['no-export-surface'], how: 'every-alternative' },
+    { suiteRule: 'client-extraction', gateRules: ['no-export-surface'], how: 'every-alternative' },
+    {
+      suiteRule: 'attachment-download',
+      gateRules: ['no-export-surface'],
+      how: 'every-alternative',
+    },
+    {
+      suiteRule: 'file-access',
+      gateRules: ['no-upload-path', 'no-unapproved-file-input'],
+      how: 'every-alternative',
+    },
     {
       suiteRule: 'invented-limit',
-      gateRule: 'no-invented-media-limit',
+      gateRules: ['no-invented-media-limit'],
       how: 'corpus',
       corpus: [
         'const MAX_FILE_SIZE = n;',
@@ -330,8 +486,8 @@ describe('the gate catches everything the deletable security suite forbids', () 
      * property that currently holds — a decision, not a correction, and one this
      * branch was not asked to make.
      */
-    { suiteRule: 'storage', gateRule: null, how: 'none' },
-    { suiteRule: 'unescaped-html', gateRule: null, how: 'none' },
+    { suiteRule: 'storage', gateRules: null, how: 'none' },
+    { suiteRule: 'unescaped-html', gateRules: null, how: 'none' },
     /*
      * NOT mirrored, and mirroring it would be a regression.
      *
@@ -343,7 +499,11 @@ describe('the gate catches everything the deletable security suite forbids', () 
      * version over `PHASE_FILES` only, where no such construct exists; the gate
      * runs over the dashboard tree, where `profile/page.tsx` does exactly that.
      */
-    { suiteRule: 'client-asserted-scope', gateRule: 'no-client-asserted-scope', how: 'divergent' },
+    {
+      suiteRule: 'client-asserted-scope',
+      gateRules: ['no-client-asserted-scope'],
+      how: 'divergent',
+    },
   ];
 
   const suiteSource = existsSync(SUITE) ? readFileSync(SUITE, 'utf8') : '';
@@ -372,12 +532,30 @@ describe('the gate catches everything the deletable security suite forbids', () 
     ).toEqual(SUITE_PARITY.map((entry) => entry.suiteRule).sort());
   });
 
+  /**
+   * Which of the named gate rules catch this source — the whole set, not the
+   * first.
+   *
+   * Returning the SET is what lets the callers below assert coverage and
+   * attribution separately: that something caught each alternative, that every
+   * rule named in a parity entry caught something, and — for the file-access
+   * split — exactly which rule caught which construct.
+   */
+  function catchersOf(gateRules: readonly string[], sample: string): string[] {
+    return gateRules.filter((id) =>
+      fires(
+        RULES.find((r) => r.id === id),
+        sample
+      )
+    );
+  }
+
   it.each(
     SUITE_PARITY.filter((entry) => entry.how === 'every-alternative').map((entry) => [
       entry.suiteRule,
-      entry.gateRule as string,
+      entry.gateRules as readonly string[],
     ])
-  )('fires on every alternative the suite’s %s rule forbids', (suiteRule, gateRule) => {
+  )('fires on every alternative the suite’s %s rule forbids', (suiteRule, gateRules) => {
     const source = declared.get(suiteRule) as string;
     expect(source, `${suiteRule} was not parsed`).toBeDefined();
     // Flatness is the precondition of splitting on `|`. A future rewrite that
@@ -390,12 +568,33 @@ describe('the gate catches everything the deletable security suite forbids', () 
     ).not.toMatch(/[([]/);
     const alternatives = source.slice(1, -1).split('|');
     expect(alternatives.length, `${suiteRule} has one alternative`).toBeGreaterThan(1);
-    const rule = RULES.find((r) => r.id === gateRule);
-    for (const alternative of alternatives) {
-      const sample = literalOf(alternative);
+    for (const id of gateRules) {
       expect(
-        fires(rule, sample),
-        `the suite's ${suiteRule} rule refuses \`${alternative}\` and the gate's ${gateRule} does not`
+        RULES.some((r) => r.id === id),
+        `${suiteRule} is answered by ${id}, which is not in RULES`
+      ).toBe(true);
+    }
+
+    const earned = new Set<string>();
+    for (const alternative of alternatives) {
+      const catchers = catchersOf(gateRules, literalOf(alternative));
+      expect(
+        catchers.length,
+        `the suite's ${suiteRule} rule refuses \`${alternative}\` and none of the gate's ` +
+          `${gateRules.join(', ')} does`
+      ).toBeGreaterThan(0);
+      for (const id of catchers) earned.add(id);
+    }
+    /*
+     * The other direction, and the reason a set is safe to state coverage over.
+     * A parity entry naming two rules where one of them catches nothing would
+     * read as breadth and be an error — either the wrong rule was named, or a
+     * construct has silently moved out of it. Both fail here by name.
+     */
+    for (const id of gateRules) {
+      expect(
+        earned.has(id),
+        `${id} answers ${suiteRule} and catches none of its alternatives`
       ).toBe(true);
     }
   });
@@ -411,24 +610,46 @@ describe('the gate catches everything the deletable security suite forbids', () 
      * out of the last three and none of them needs an `<input type="file">` — and
      * it is the one the gate's three-construct rule missed entirely. Parsed
      * separately, because the parse above only reaches the `ABSENCE_RULES` table.
+     *
+     * The gate answers all eight with TWO rules since `P1-OD-025` was resolved,
+     * so this reads the pair out of `SUITE_PARITY` rather than naming one, and
+     * the two cannot drift apart.
      */
     const declaration = /const FILE_ACCESS\s*=\s*(\/.+\/);/.exec(suiteSource)?.[1];
     expect(declaration, 'the suite’s FILE_ACCESS declaration was not parsed').toBeDefined();
     const alternatives = (declaration as string).slice(1, -1).split('|');
     expect(alternatives.length, 'the FILE_ACCESS sweep lists fewer constructs than it did').toBe(8);
-    const rule = RULES.find((r) => r.id === 'no-upload-path');
+    const gateRules = SUITE_PARITY.find((entry) => entry.suiteRule === 'file-access')
+      ?.gateRules as readonly string[];
+
+    const attribution: Record<string, number> = {};
     for (const alternative of alternatives) {
+      const catchers = catchersOf(gateRules, literalOf(alternative));
       expect(
-        fires(rule, literalOf(alternative)),
-        `the suite refuses \`${alternative}\` on the whole phase surface and no-upload-path does not`
-      ).toBe(true);
+        catchers.length,
+        `the suite refuses \`${alternative}\` on the whole phase surface and neither ` +
+          `${gateRules.join(' nor ')} does`
+      ).toBe(1);
+      attribution[catchers[0] as string] = (attribution[catchers[0] as string] ?? 0) + 1;
     }
+    /*
+     * The split pinned by NAME and by number, which a coverage check cannot do.
+     *
+     * Six constructs stay forbidden everywhere; the two spellings of the file
+     * input are the ones `P1-OD-025` made legal in a single path, and they are
+     * the only two carrying an allowance. A construct that migrated between the
+     * rules — say `onDrop=` joining the exempted side — would satisfy "something
+     * caught it" while quietly becoming permitted in the capture component. It
+     * fails here instead, and moving these numbers is the deliberate act it
+     * ought to be.
+     */
+    expect(attribution).toEqual({ 'no-upload-path': 6, 'no-unapproved-file-input': 2 });
   });
 
   it.each(
     SUITE_PARITY.filter((entry) => entry.how === 'corpus').map((entry) => [
       entry.suiteRule,
-      entry.gateRule as string,
+      (entry.gateRules as readonly string[])[0] as string,
       entry.corpus as readonly string[],
     ])
   )('fires on a corpus that the suite’s %s rule already refuses', (suiteRule, gateRule, corpus) => {
@@ -451,7 +672,7 @@ describe('the gate catches everything the deletable security suite forbids', () 
   it('records the residual: two suite refusals have no gate rule, and why', () => {
     const residual = SUITE_PARITY.filter((entry) => entry.how === 'none');
     expect(residual.map((entry) => entry.suiteRule).sort()).toEqual(['storage', 'unescaped-html']);
-    for (const entry of residual) expect(entry.gateRule).toBeNull();
+    for (const entry of residual) expect(entry.gateRules).toBeNull();
     // And the property they assert does hold on this branch, which is what makes
     // the residual a scope decision rather than a live defect.
     const files = [
@@ -691,21 +912,47 @@ describe('a rule that measures nothing is a failure, not a pass', () => {
     expect(failures.some((f) => f.includes('no files were inspected'))).toBe(true);
   });
 
-  it('carries no rule whose allow-list could swallow every file', () => {
+  it('reports every rule whose allow-list swallows all the files it would have read', () => {
     /*
-     * This case used to drive `no-duplicate-scan-on-a-queue`, whose allowance is
-     * now empty because it exempted a file that never matched the rule
-     * (`P1-27-FE-003`, and see the invariant below).
+     * What this case measures, and why its pin moved rather than being deleted.
      *
-     * NO rule carries an allowance today, so the swallow scenario cannot be
-     * constructed from the real rule set — which the loop below states rather
-     * than hiding behind a `find` that silently returns nothing. It is
-     * deliberately empty NOW and becomes live the moment any allowance is added.
+     * `allow` exempts a FILE from a rule, so an allowance wide enough to cover
+     * everything handed to that rule turns it into a sweep over nothing — a rule
+     * reporting clean because it read no source at all. `evaluate()` has a
+     * per-rule branch for exactly that, and the loop below is what proves the
+     * branch answers for the REAL allowances rather than a hypothetical: each
+     * one is handed precisely the files it exempts, and the gate has to say so.
      *
-     * The title used to say "fails a rule whose allow-list has swallowed every
-     * file", which is what the NEXT case does. This one asserts an invariant.
+     * ## The pin, and what happened to it
+     *
+     * Until now the loop could not run. Every allowance was empty —
+     * `P1-27-FE-003` removed the last, which had exempted a file the rule never
+     * matched — so this case ended on `expect(withAllowances.map(r => r.id))
+     * .toEqual([])`. That was the loop's own anti-vacuity guard, not a claim
+     * about the gate's design: without it a future allowance could be added
+     * silently and this case would keep passing by iterating over nothing.
+     *
+     * `P1-OD-025` is RESOLVED and reception capture ships, so one allowance now
+     * exists deliberately: `no-unapproved-file-input` exempts the single
+     * approved capture component. The guard therefore MOVES from "no rule
+     * carries one" to exactly which rule carries exactly which path — the same
+     * job, stated over a set of one instead of a set of none — and the loop is
+     * live for the first time. A second allowance, a second path, or an
+     * allowance on a different rule still fails here and still has to be argued
+     * for, which is the whole point of pinning it.
+     *
+     * The path is spelled out rather than read from `FILE_INPUT_ALLOW`: a pin
+     * that imports the thing it pins would follow a second entry silently, which
+     * is precisely the change this must not permit.
      */
     const withAllowances = RULES.filter((r) => r.allow.length > 0);
+    expect(withAllowances.map((r) => [r.id, [...r.allow]])).toEqual([
+      [
+        'no-unapproved-file-input',
+        ['apps/web/src/features/receptions/components/CaptureFileField.tsx'],
+      ],
+    ]);
+
     for (const rule of withAllowances) {
       const onlyAllowed = rule.allow.map((path: string) => ({
         path,
@@ -717,27 +964,30 @@ describe('a rule that measures nothing is a failure, not a pass', () => {
         rule.id
       ).toBe(true);
     }
-    // The invariant that makes the emptiness above a FACT rather than an
-    // accident. Without it, a future allowance could reintroduce the hole and
-    // this case would keep passing by iterating over nothing.
-    expect(withAllowances.map((r) => r.id)).toEqual([]);
   });
 
   it('fails a rule that inspected zero files, proved on a synthetic rule', () => {
     /*
      * The per-rule anti-vacuity branch — `check-p1-27-frontend.mjs`'s
-     * "inspected 0 files — this rule is measuring nothing" — has had ZERO
-     * coverage since every allowance was emptied: the loop above iterates over
-     * nothing, and `evaluate([])` returns at the earlier whole-run guard before
-     * any rule is reached.
+     * "inspected 0 files — this rule is measuring nothing" — is now reached by
+     * the case above as well, because one real allowance exists. It was written
+     * when none did and the loop up there ran over nothing, and it is kept for
+     * two reasons that survive that change.
+     *
+     * The first is that the coverage above is CONTINGENT: it lasts exactly as
+     * long as some rule carries an allowance, and the last time every allowance
+     * was emptied this branch went dark without a single case going red. The
+     * second is that the two exercise different shapes — the real allowance is
+     * one exact path, this one is a directory prefix, and `allowed()` accepts
+     * both by `startsWith`, which is the form that can swallow a whole tree.
      *
      * A branch that exists to catch a gate measuring nothing must not itself be
      * deletable green. RULES is mutated for the length of this case only and
      * restored in `finally`, so the real rule set is unchanged either way.
      */
-    // `RULES` is inferred `allow: never[]` because every real rule's allowance
-    // is `[]` — which is the fact the case above pins. The cast is what lets a
-    // synthetic rule carry one; it widens the local view, not the export.
+    // The cast is what lets a synthetic rule be pushed onto `RULES`, whose
+    // element type is inferred from the real entries; it widens the local view,
+    // not the export.
     const rules = RULES as unknown as {
       id: string;
       pattern: RegExp;

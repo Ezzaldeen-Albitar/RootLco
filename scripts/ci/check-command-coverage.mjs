@@ -613,6 +613,33 @@ export const REGISTER = Object.freeze([
     why: 'domain classification validators — every one needs PostgreSQL (P1-25-F-023)',
   },
   {
+    name: 'validate:use-server-exports',
+    owner: ROOT,
+    tier: 'required',
+    // A `'use server'` file exporting a value breaks the whole server chunk in a
+    // PRODUCTION build and takes down Server Actions in other features that
+    // never imported it. `next dev` evaluates lazily and never shows it, so the
+    // defect survived a full green local battery and was found only when the
+    // acceptance environment was built the way the product ships.
+    why: "'use server' modules export async functions and nothing else",
+  },
+  {
+    name: 'verify:storage',
+    owner: ROOT,
+    tier: 'environment',
+    // The P1-OD-025 acceptance proof: it signs an upload, PUTs real bytes, reads
+    // them back and compares the hash, against whatever S3-compatible endpoint
+    // the launcher configured. That is the whole point of it — a class that
+    // COULD be configured is not a store that IS, and only moving an object
+    // tells the two apart — so it cannot be `required`: the aggregate would run
+    // it on a machine with no store, and hosted CI provisions none.
+    //
+    // `environment` rather than `informational` because failing it IS a verdict.
+    // It is the only check standing between "the acceptance environment has an
+    // object store" and a screen that offers capture into nothing.
+    why: 'the acceptance object store — needs a live S3-compatible endpoint (P1-OD-025)',
+  },
+  {
     name: 'build',
     owner: ROOT,
     tier: 'informational',

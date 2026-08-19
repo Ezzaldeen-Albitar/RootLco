@@ -162,10 +162,10 @@ fact in words did not, which is the gap this revision closes.
 | Source files under the P1-27 ownership gate                            | **111** (43 feature source + 34 route + 34 adopted reception)      | derived from the gate's own scan roots                                     |
 | Router pages (CRM and Vehicle)                                         | **8**                                                              | command 1                                                                  |
 | Shared-foundation source files changed by the phase or its remediation | **13** named in §5.5                                               | command 1, cross-read against the task register and the remediation record |
-| Web unit and component test files                                      | **98**                                                             | derived                                                                    |
+| Web unit and component test files                                      | **101**                                                            | derived                                                                    |
 | Playwright specification files                                         | **9** (2 anonymous, 7 authenticated)                               | commands 11 and 12 — **not re-measured**, §1.1.1                           |
 | Root CI-contract test files                                            | **46**                                                             | derived                                                                    |
-| CI gate scripts under `scripts/ci`                                     | **53** in the directory, **8** introduced or changed by this phase | derived; the eight are the `scripts/ci` rows of §7.1                       |
+| CI gate scripts under `scripts/ci`                                     | **54** in the directory, **8** introduced or changed by this phase | derived; the eight are the `scripts/ci` rows of §7.1                       |
 | Web gate scripts under `apps/web/scripts`                              | **4** in the directory, **1** introduced by this phase             | derived                                                                    |
 | Phase documentation under `docs/phase-1/phase-1-27`                    | **38** tracked, of which **30** are `.md`                          | derived from `git ls-files` — see §9.1                                     |
 | Product planning documentation under `docs/product`                    | **13** tracked                                                     | derived from `git ls-files` — see §9.2                                     |
@@ -224,18 +224,18 @@ every advance of local `develop` in the sequence above was a fast-forward from
 
 ## 5. Source files
 
-### 5.1 The five trees the P1-27 ownership gate owns — 123 files
+### 5.1 The five trees the P1-27 ownership gate owns — 126 files
 
-`validate:p1-27-frontend` reports **123 files across 5 trees, 0 failures**. Of
+`validate:p1-27-frontend` reports **126 files across 5 trees, 0 failures**. Of
 those, **43** are §5.2 and §5.3 together — the two feature trees — and both
 halves are derived from the trees the gate itself names, so the count follows the
 gate rather than a reader's memory of it. The next **34** are the third
 canonical tree, `apps/web/src/app/[locale]/(dashboard)`, which this manifest
 tables nowhere: §5.4 lists the eight CRM and Vehicle route pages only, and the
-other route files belong to earlier phases or to P1-28. The last **44** are the
+other route files belong to earlier phases or to P1-28. The last **47** are the
 two trees P1-28 adopted: **9** in `apps/web/src/features/appointments`, added
 when `P1-28-DO-001` found that the P1-28 plan names three Frontend trees and the
-gate had adopted only one of them, and **35** in
+gate had adopted only one of them, and **38** in
 `apps/web/src/features/receptions`, which is not a P1-27 tree at all either: P1-28
 ADOPTED these rules for it (`ADOPTED_ROOTS` in the gate, declared by
 `phase-1-28/canonical-plan.md` §9), because `no-upload-path` and
@@ -290,31 +290,31 @@ cannot be dropped without the build noticing.
 
 <!-- derived: rows vehicle-source = 23 -->
 
-| path                                            | carries                                                                                                                                     |
-| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `api.ts`                                        | `veh.vehicle-search`, `veh.vehicle-create` (permission **`veh.vehicle.manage`**)                                                            |
-| `write-support.ts`                              | The vehicle tree's own write path — the counterpart of the CRM `action-support.ts`                                                          |
-| `catalogue-api.ts`                              | The five catalogue reads — makes, models, trims, body types, powertrain types                                                               |
-| `contract.ts`                                   | `normalizeCriteria` over a frozen `CRITERIA_KEYS` list into an `Object.create(null)` target                                                 |
-| `documents-api.ts`                              | `veh.vehicle-document-list`, gated on **`shared.document.manage`**                                                                          |
-| `documents-contract.ts`                         | The document reference shape — a reference and nothing else. Holds `MEDIA_STATUS = 'blocked-on-p1-od-025'`, because **`P1-OD-025`** is open |
-| `duplicates-api.ts`                             | `veh.vehicle-duplicate-list`, `veh.vehicle-duplicate-review`, `veh.vehicle-history`                                                         |
-| `duplicates-contract.ts`                        | Candidate and attribute-history shapes                                                                                                      |
-| `history-api.ts`                                | Ownership, plate and odometer history reads                                                                                                 |
-| `history-contract.ts`                           | Their shapes                                                                                                                                |
-| `profile-api.ts`                                | `veh.vehicle-read`, `veh.vehicle-update`, `veh.vehicle-status-change`, and the VIN-uniqueness probe                                         |
-| `profile-contract.ts`                           | The vehicle detail shape, including `recordVersion`                                                                                         |
-| `relations-api.ts`                              | EV profile read and set; relationships; authorised-party add and retire                                                                     |
-| `relations-contract.ts`                         | Their shapes                                                                                                                                |
-| `components/VehicleSearchScreen.tsx`            | Vehicle search — exact VIN, plate and vehicle number, no substring                                                                          |
-| `components/VehicleCreateScreen.tsx`            | Creation with dependent catalogue selectors                                                                                                 |
-| `components/VinField.tsx`                       | Format validation at the edge; the server's uniqueness verdict                                                                              |
-| `components/VehicleProfileScreen.tsx`           | The profile and its tabs                                                                                                                    |
-| `components/VehicleHistorySections.tsx`         | Ownership, plate, odometer                                                                                                                  |
-| `components/VehicleRelationsSections.tsx`       | EV/hybrid information and vehicle-customer relationships                                                                                    |
-| `components/VehicleDocumentsSection.tsx`        | The document list, permission checked **before** the read is issued                                                                         |
-| `components/VehicleAttributeHistorySection.tsx` | The attribute-change ledger — not a timeline                                                                                                |
-| `components/VehicleDuplicateReviewScreen.tsx`   | The vehicle duplicate queue                                                                                                                 |
+| path                                            | carries                                                                                                                                                                                                                |
+| ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `api.ts`                                        | `veh.vehicle-search`, `veh.vehicle-create` (permission **`veh.vehicle.manage`**)                                                                                                                                       |
+| `write-support.ts`                              | The vehicle tree's own write path — the counterpart of the CRM `action-support.ts`                                                                                                                                     |
+| `catalogue-api.ts`                              | The five catalogue reads — makes, models, trims, body types, powertrain types                                                                                                                                          |
+| `contract.ts`                                   | `normalizeCriteria` over a frozen `CRITERIA_KEYS` list into an `Object.create(null)` target                                                                                                                            |
+| `documents-api.ts`                              | `veh.vehicle-document-list`, gated on **`shared.document.manage`**                                                                                                                                                     |
+| `documents-contract.ts`                         | The document reference shape — a reference and nothing else. Held `MEDIA_STATUS = 'blocked-on-p1-od-025'` while **`P1-OD-025`** was open; the decision is RESOLVED and both constants are now a tombstone in that file |
+| `duplicates-api.ts`                             | `veh.vehicle-duplicate-list`, `veh.vehicle-duplicate-review`, `veh.vehicle-history`                                                                                                                                    |
+| `duplicates-contract.ts`                        | Candidate and attribute-history shapes                                                                                                                                                                                 |
+| `history-api.ts`                                | Ownership, plate and odometer history reads                                                                                                                                                                            |
+| `history-contract.ts`                           | Their shapes                                                                                                                                                                                                           |
+| `profile-api.ts`                                | `veh.vehicle-read`, `veh.vehicle-update`, `veh.vehicle-status-change`, and the VIN-uniqueness probe                                                                                                                    |
+| `profile-contract.ts`                           | The vehicle detail shape, including `recordVersion`                                                                                                                                                                    |
+| `relations-api.ts`                              | EV profile read and set; relationships; authorised-party add and retire                                                                                                                                                |
+| `relations-contract.ts`                         | Their shapes                                                                                                                                                                                                           |
+| `components/VehicleSearchScreen.tsx`            | Vehicle search — exact VIN, plate and vehicle number, no substring                                                                                                                                                     |
+| `components/VehicleCreateScreen.tsx`            | Creation with dependent catalogue selectors                                                                                                                                                                            |
+| `components/VinField.tsx`                       | Format validation at the edge; the server's uniqueness verdict                                                                                                                                                         |
+| `components/VehicleProfileScreen.tsx`           | The profile and its tabs                                                                                                                                                                                               |
+| `components/VehicleHistorySections.tsx`         | Ownership, plate, odometer                                                                                                                                                                                             |
+| `components/VehicleRelationsSections.tsx`       | EV/hybrid information and vehicle-customer relationships                                                                                                                                                               |
+| `components/VehicleDocumentsSection.tsx`        | The document list, permission checked **before** the read is issued                                                                                                                                                    |
+| `components/VehicleAttributeHistorySection.tsx` | The attribute-change ledger — not a timeline                                                                                                                                                                           |
+| `components/VehicleDuplicateReviewScreen.tsx`   | The vehicle duplicate queue                                                                                                                                                                                            |
 
 ### 5.4 Router pages — `apps/web/src/app/[locale]/(dashboard)/` (8 files)
 
@@ -387,16 +387,16 @@ that rule covered three of the seven constructs `apps/web/tests/p1-27-security
 file-access constructs were held by one deletable test file. The last three rows
 below are what changed.
 
-| rule                           | what it refuses                                                                                                                                                                                                                 | why it exists                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `no-merge-caller`              | Any call to `crm.customer-merge` or `veh.vehicle-merge`                                                                                                                                                                         | **`P1-OD-017` — duplicate and merge rules — is an OPEN Owner decision.** The affordance is _absent_, not disabled: a disabled control asserts that the capability exists and that this operator lacks permission, which is a different and false statement. Both review screens say so in a sentence. Wave 6 shipped a working merge form; it was removed, and the gate exists because a green suite did not stop it                         |
-| `no-duplicate-scan-on-a-queue` | Any call to `crm.duplicate-scan` or `veh.vehicle-duplicate-scan` from a review surface                                                                                                                                          | Each reads like a query and is a privileged audited **write** that creates candidate rows and is throttled at 30/min. A queue that "refreshed" by scanning would write audit history every time an operator opened it                                                                                                                                                                                                                        |
-| `no-client-asserted-scope`     | `tenantId`, `companyId`, `branchId` and their snake_case forms, **asserted** rather than displayed                                                                                                                              | Scope is resolved server-side from the session on every operation these screens call. The rule is positional because adding §5.4's tree brought in `profile/page.tsx`, which renders the tenant the server resolved — a display, not an assertion                                                                                                                                                                                            |
-| `no-invented-total`            | `total: rows.length` and its variants                                                                                                                                                                                           | Every list is `{ items, nextCursor, hasMore }` with **no total**. A count derived from a page is correct on page one and wrong from page two, invisibly                                                                                                                                                                                                                                                                                      |
-| `no-upload-path`               | Seven constructs: `new FormData(` with or without an argument, `multipart/form-data`, a file input in any spelling, `FileReader`, an `input.files` list, an `onDrop=`/`onDragOver=` target, a `DataTransfer`                    | **`P1-OD-025` — vehicle document and media file policy — is an OPEN Owner decision.** There is no vehicle media operation in the platform at all. `MEDIA_STATUS` is `'blocked-on-p1-od-025'`, not a feature flag: a flag implies something to switch on. It refused three constructs until the security suite's own list was read: every drag-and-drop upload is built out of the last three and none of them needs an `<input type="file">` |
-| `no-export-surface`            | `shared.export-authorize`, `shared.export-catalogue`, an `/exports` path, an `exportSomething` caller, `attachment-download`, `download=`, `createObjectURL`, `new Blob(`, `text/csv`, `application/pdf`, `Content-Disposition` | **P1-27 publishes no export surface**, and §6 of the canonical plan records it: the task table names the operation behind all 29 Frontend tasks and none of them is an export. The platform DOES publish both export operations, so the absence is a decision rather than a gap. Both routes are refused, because bulk extraction assembled in the browser out of pages read one at a time is the same disclosure without the operation      |
-| `no-invented-media-limit`      | A `MAX_FILE_SIZE_`-style constant, byte arithmetic such as `10 * 1024`, an accepted-MIME list, an extension allow-list, an `accept=` attribute                                                                                  | **`P1-OD-025` is OPEN** and §14's disposition is "keep upload acceptance blocked **and** do not invent limits". `no-upload-path` enforces the second sentence; nothing enforced the third, and the third is the one broken by diligence rather than carelessness — a "sensible default" of 10 MB and JPEG/PNG is a policy the Owner has not decided, presented to an operator as though it had been                                          |
-| `no-console-output`            | Any `console.*` in a scanned tree — a feature module or a route page                                                                                                                                                            | Observability goes through the shared authority                                                                                                                                                                                                                                                                                                                                                                                              |
+| rule                           | what it refuses                                                                                                                                                                                                                 | why it exists                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `no-merge-caller`              | Any call to `crm.customer-merge` or `veh.vehicle-merge`                                                                                                                                                                         | **`P1-OD-017` — duplicate and merge rules — is an OPEN Owner decision.** The affordance is _absent_, not disabled: a disabled control asserts that the capability exists and that this operator lacks permission, which is a different and false statement. Both review screens say so in a sentence. Wave 6 shipped a working merge form; it was removed, and the gate exists because a green suite did not stop it                                                                                                                                                                                                                                                                |
+| `no-duplicate-scan-on-a-queue` | Any call to `crm.duplicate-scan` or `veh.vehicle-duplicate-scan` from a review surface                                                                                                                                          | Each reads like a query and is a privileged audited **write** that creates candidate rows and is throttled at 30/min. A queue that "refreshed" by scanning would write audit history every time an operator opened it                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `no-client-asserted-scope`     | `tenantId`, `companyId`, `branchId` and their snake_case forms, **asserted** rather than displayed                                                                                                                              | Scope is resolved server-side from the session on every operation these screens call. The rule is positional because adding §5.4's tree brought in `profile/page.tsx`, which renders the tenant the server resolved — a display, not an assertion                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `no-invented-total`            | `total: rows.length` and its variants                                                                                                                                                                                           | Every list is `{ items, nextCursor, hasMore }` with **no total**. A count derived from a page is correct on page one and wrong from page two, invisibly                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `no-upload-path`               | Seven constructs: `new FormData(` with or without an argument, `multipart/form-data`, a file input in any spelling, `FileReader`, an `input.files` list, an `onDrop=`/`onDragOver=` target, a `DataTransfer`                    | **`P1-OD-025` — vehicle document and media file policy — is an OPEN Owner decision FOR THIS TREE.** It was resolved for reception evidence, and for nothing this rule scans: there is no vehicle media operation in the platform at all, and no vehicle document category exists. `MEDIA_STATUS` held `'blocked-on-p1-od-025'` and is now a tombstone in `documents-contract.ts` (see the row above), which does not change what the rule refuses here. It refused three constructs until the security suite's own list was read: every drag-and-drop upload is built out of the last three and none of them needs an `<input type="file">`                                         |
+| `no-export-surface`            | `shared.export-authorize`, `shared.export-catalogue`, an `/exports` path, an `exportSomething` caller, `attachment-download`, `download=`, `createObjectURL`, `new Blob(`, `text/csv`, `application/pdf`, `Content-Disposition` | **P1-27 publishes no export surface**, and §6 of the canonical plan records it: the task table names the operation behind all 29 Frontend tasks and none of them is an export. The platform DOES publish both export operations, so the absence is a decision rather than a gap. Both routes are refused, because bulk extraction assembled in the browser out of pages read one at a time is the same disclosure without the operation                                                                                                                                                                                                                                             |
+| `no-invented-media-limit`      | A `MAX_FILE_SIZE_`-style constant, byte arithmetic such as `10 * 1024`, an accepted-MIME list, an extension allow-list, an `accept=` attribute                                                                                  | **`P1-OD-025` is OPEN for every surface this rule scans** — it was resolved for reception evidence only — and §14's disposition is "keep upload acceptance blocked **and** do not invent limits". The reception capture reads its accepted types and its ceiling from the category the SERVER publishes, which is what this rule has always distinguished from a limit the application invents. `no-upload-path` enforces the second sentence; nothing enforced the third, and the third is the one broken by diligence rather than carelessness — a "sensible default" of 10 MB and JPEG/PNG is a policy the Owner has not decided, presented to an operator as though it had been |
+| `no-console-output`            | Any `console.*` in a scanned tree — a feature module or a route page                                                                                                                                                            | Observability goes through the shared authority                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 
 **Neither duplicate queue shows a candidate count.** The read publishes
 `{ items, nextCursor, hasMore }` and no total, so a count would be a fabricated
@@ -407,7 +407,7 @@ records.
 
 ## 6. Test files
 
-### 6.1 Web unit and component — `apps/web/tests` (98 files, and no case total — `E-03`)
+### 6.1 Web unit and component — `apps/web/tests` (101 files, and no case total — `E-03`)
 
 **`E-03` is closed by DELETING the number, not by correcting it.** The heading
 used to read `(70 files, 1493 cases, 0 failed)`, and before that `(66 files, 1231
@@ -687,15 +687,15 @@ under-report itself by seven files.
 | `clean-room-evidence.md`                          | 379   | The clean-room record, and the six classes every closing value is sorted into      |
 | `contract-archaeology.md`                         | 416   | What the Backend actually publishes, read before anything was built                |
 | `deliverable-manifest.md`                         | 1051  | This file                                                                          |
-| `developer-guide.md`                              | 188   | `DOC-002` — the developer half                                                     |
+| `developer-guide.md`                              | 228   | `DOC-002` — the developer half                                                     |
 | `evidence/change-log.md`                          | 1135  | `DOC-002` — the change-log half; its rows are scraped by a test                    |
 | `evidence/evidence-manifest.json`                 | 171   | `QA-005` — a SHA-256 digest of every document in this directory                    |
 | `evidence/closing-value-ledger.json`              | 907   | Every closing value on the two evidence pages, classified, with its authority      |
 | `evidence/lifecycle-ledger.json`                  | 72    | The closure lifecycle's observations and the state this repository declares        |
 | `evidence/local-run-ledger.json`                  | 30    | What a tier DID when it was run — written only by `record:p1-27-run`               |
-| `evidence/task-traceability.md`                   | 435   | Every task, the operations it calls, the files it produced, the named proof        |
+| `evidence/task-traceability.md`                   | 437   | Every task, the operations it calls, the files it produced, the named proof        |
 | `evidence/test-catalogue-traceability.md`         | 406   | `DOC-001` — the 29 canonical `TC-P1-27-*` ids bound to executable tests            |
-| `evidence/test-catalogue-traceability.json`       | 866   | Its machine-readable form, checked by `validate:p1-27-doc-counts`                  |
+| `evidence/test-catalogue-traceability.json`       | 863   | Its machine-readable form, checked by `validate:p1-27-doc-counts`                  |
 | `execution-checkpoint.md`                         | 290   | Base SHAs, surface baselines, the wave log                                         |
 | `final-canonical-remediation.md`                  | 451   | The canonical remediation wave                                                     |
 | `final-task-adjudication.md`                      | 959   | The 33 adjudicated audit items, and the retraction of `42 / 42`                    |
@@ -740,7 +740,7 @@ document says so in its own header.**
 | `README.md` — the index and the consolidated register | 443   |
 | `owner-workflow-requirements.md`                      | 356   |
 | `workshop/end-to-end-workshop-workflow.md`            | 1244  |
-| `workshop/frontend-implementation-program.md`         | 945   |
+| `workshop/frontend-implementation-program.md`         | 954   |
 | `workshop/pricing-payment-and-delivery.md`            | 1137  |
 | `workshop/vehicle-history-model.md`                   | 1039  |
 | `workshop/inspection-and-diagnostics.md`              | 901   |
@@ -822,7 +822,7 @@ the branch.
 | **Any P1-28 artefact**                                                                           | P1-28 has not started. `P1_28_FILES=0` is a recorded boundary value of this phase                                                                                                                                                                                                                                                                                                                                                                                                                |
 | **A candidate count on either duplicate queue**                                                  | The read publishes no total. See §5.7                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | **A merge affordance anywhere**                                                                  | `P1-OD-017` is open. Absent, not disabled                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| **Any upload path**                                                                              | `P1-OD-025` is open, and no vehicle media operation exists in the platform                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| **Any upload path**                                                                              | No vehicle media operation exists in the platform, and `P1-OD-025` is open for vehicle documents (it was resolved for reception evidence only)                                                                                                                                                                                                                                                                                                                                                   |
 | **A vehicle document create path**                                                               | `/api/v1/vehicles/{id}/documents` is read-only; no create operation exists. Recorded as an integration finding rather than worked around                                                                                                                                                                                                                                                                                                                                                         |
 | **The fourteen progressive creation sections of the Owner's defect 6**                           | Most name fields whose backend contract this phase has not audited. This phase's own record contains four separate failures caused by guessing a contract — an invented `veh.vehicle.create` permission, an invented `ADDRESS_TYPES` list wrong in both directions, six invented enum vocabularies, and nine guessed fixture fields. That work belongs in a Frontend wave with contract archaeology in front of it                                                                               |
 | **Any implementation of the workshop journey or the vehicle catalogue**                          | Defects 10 and 11 are **documented, not implemented**. Eleven planning documents exist; none of it is built                                                                                                                                                                                                                                                                                                                                                                                      |
@@ -971,9 +971,9 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
      an earlier revision put them in the label column and broke two other gates
      whose regexes read the label and the number as adjacent cells. -->
 
-<!-- derived: files apps/web/tests = 98 -->
-<!-- derived: files tests/ci = 51 -->
-<!-- derived: files scripts/ci = 53 -->
+<!-- derived: files apps/web/tests = 101 -->
+<!-- derived: files tests/ci = 52 -->
+<!-- derived: files scripts/ci = 54 -->
 <!-- derived: files apps/web/scripts = 4 -->
 <!-- derived: files supabase/migrations = 123 -->
 <!-- derived: files tests/db = 143 -->
@@ -982,16 +982,16 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
 <!-- derived: files tests/backend:all = 93 -->
 <!-- derived: files apps/web/src/features/crm = 20 -->
 <!-- derived: files apps/web/src/features/vehicles = 23 -->
-<!-- derived: files p1-27-frontend-gate = 123 -->
+<!-- derived: files p1-27-frontend-gate = 126 -->
 <!-- derived: files p1-27-frontend-gate:trees = 5 -->
 <!-- derived: tracked docs/phase-1/phase-1-27 = 41 -->
 <!-- derived: tracked docs/phase-1/phase-1-27:md = 31 -->
 <!-- derived: tracked docs/product = 13 -->
-<!-- derived: commands registered = 162 -->
-<!-- derived: commands required = 83 -->
-<!-- derived: commands reachable = 83 -->
-<!-- derived: commands hosted-ci = 83 -->
-<!-- derived: cases vehicle-screens.dom.test.tsx = 40 -->
+<!-- derived: commands registered = 164 -->
+<!-- derived: commands required = 84 -->
+<!-- derived: commands reachable = 84 -->
+<!-- derived: commands hosted-ci = 84 -->
+<!-- derived: cases vehicle-screens.dom.test.tsx = 43 -->
 <!-- derived: cases tailwind-theme-gate.test.ts = 8 -->
 <!-- derived: cases navigation.test.ts = 22 -->
 <!-- LINE-COUNT MARKERS. Regenerated, never typed. -->
@@ -1006,14 +1006,14 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
 <!-- derived: lines docs/phase-1/phase-1-27/closure-record.md = 114 -->
 <!-- derived: lines docs/phase-1/phase-1-27/contract-archaeology.md = 416 -->
 <!-- derived: lines docs/phase-1/phase-1-27/deliverable-manifest.md = 1051 -->
-<!-- derived: lines docs/phase-1/phase-1-27/developer-guide.md = 188 -->
+<!-- derived: lines docs/phase-1/phase-1-27/developer-guide.md = 228 -->
 <!-- derived: lines docs/phase-1/phase-1-27/evidence/change-log.md = 1135 -->
 <!-- derived: lines docs/phase-1/phase-1-27/evidence/evidence-manifest.json = 171 -->
 <!-- derived: lines docs/phase-1/phase-1-27/evidence/closing-value-ledger.json = 907 -->
 <!-- derived: lines docs/phase-1/phase-1-27/evidence/lifecycle-ledger.json = 72 -->
 <!-- derived: lines docs/phase-1/phase-1-27/evidence/local-run-ledger.json = 30 -->
-<!-- derived: lines docs/phase-1/phase-1-27/evidence/task-traceability.md = 435 -->
-<!-- derived: lines docs/phase-1/phase-1-27/evidence/test-catalogue-traceability.json = 866 -->
+<!-- derived: lines docs/phase-1/phase-1-27/evidence/task-traceability.md = 437 -->
+<!-- derived: lines docs/phase-1/phase-1-27/evidence/test-catalogue-traceability.json = 863 -->
 <!-- derived: lines docs/phase-1/phase-1-27/evidence/test-catalogue-traceability.md = 406 -->
 <!-- derived: lines docs/phase-1/phase-1-27/execution-checkpoint.md = 290 -->
 <!-- derived: lines docs/phase-1/phase-1-27/final-canonical-remediation.md = 451 -->
@@ -1043,7 +1043,7 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
 <!-- derived: lines docs/product/vehicle-catalogue/provider-evaluation.md = 648 -->
 <!-- derived: lines docs/product/workshop/department-task-assignment.md = 751 -->
 <!-- derived: lines docs/product/workshop/end-to-end-workshop-workflow.md = 1244 -->
-<!-- derived: lines docs/product/workshop/frontend-implementation-program.md = 945 -->
+<!-- derived: lines docs/product/workshop/frontend-implementation-program.md = 954 -->
 <!-- derived: lines docs/product/workshop/inspection-and-diagnostics.md = 901 -->
 <!-- derived: lines docs/product/workshop/parts-and-procurement-flow.md = 798 -->
 <!-- derived: lines docs/product/workshop/pricing-payment-and-delivery.md = 1137 -->

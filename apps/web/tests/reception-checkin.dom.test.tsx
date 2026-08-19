@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from '@testing-library/react';
+import { cleanup, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
@@ -123,6 +123,7 @@ const DETAIL: ReceptionDetail = {
   fuelLevelName: null,
   evSocPercent: null,
   receivingEmployeeId: 'user-77',
+  receivingEmployeeDisplayName: 'Dana Receiver',
   custodyAcceptedAt: '2026-08-13T07:00:00.000Z',
   custodyReleasedAt: null,
   recordVersion: 3,
@@ -139,6 +140,7 @@ const CAPABILITIES = {
   // compiling against the widened contract; the evidence and closing steps have
   // their own suites.
   manageEvidence: true,
+  overrideEvidence: true,
   // P1-28-SEC-002: the WF-27 second permission, held here so the existing
   // cases keep exercising the capture forms they were written against.
   viewSensitiveNarratives: true,
@@ -161,7 +163,6 @@ const SESSION = { userId: 'user-1', displayName: 'Front Desk' };
  * what came back. The three states where no name could be learned each have
  * their own case below.
  */
-const RECEIVING_EMPLOYEE = { status: 'named', displayName: 'Rana Odeh' } as const;
 
 function startProps(over: Record<string, unknown> = {}) {
   return {
@@ -189,6 +190,12 @@ beforeEach(() => {
   vi.clearAllMocks();
   listReceptions.mockResolvedValue(page([]));
   listConfirmedAppointments.mockResolvedValue(page([APPOINTMENT_ROW]));
+  // The operator is eligible in the chosen branch — the ordinary case. A test
+  // that wants the OTHER case says so, because an empty list now withdraws the
+  // default rather than leaving an ineligible custodian selected.
+  listReceivingEmployeeCandidates.mockResolvedValue(
+    page([{ id: 'user-1', displayName: 'Front Desk' }])
+  );
   listCustomerVehicles.mockResolvedValue(page([]));
   listPartyRoles.mockResolvedValue(page([]));
   listAuthorizations.mockResolvedValue(page([]));
@@ -324,15 +331,337 @@ describe('the start screen — origin XOR', () => {
     });
   });
 
-  it('defaults the receiving employee to the operator and states the G-EMP disposition', () => {
+  it('defaults the receiving employee to the operator, and states what the picker reads', () => {
     renderLtr(<CheckInStartScreen {...startProps()} />);
     expect(
       screen.getByText(`${EN['receptions.checkIn.employeeSelf']} — Front Desk`)
     ).toBeInTheDocument();
-    // The named open decision, on screen — not a name the platform cannot join.
     expect(screen.getByText(EN['receptions.checkIn.employeeHint']!)).toBeInTheDocument();
-    // Without `iam.user.read` there is no picker to offer.
+    // Without the capability there is no picker to offer.
     expect(screen.queryByText(EN['receptions.checkIn.employeeChoose']!)).not.toBeInTheDocument();
+  });
+
+  it('offers the BRANCH-eligible list, and asks the operation for that branch', async () => {
+    const user = userEvent.setup();
+    renderLtr(<CheckInStartScreen {...startProps({ canPickEmployee: true })} />);
+
+    await waitFor(() => expect(listReceivingEmployeeCandidates).toHaveBeenCalled());
+    // The branch target travels. A picker that asked tenant-wide would answer
+    // with accounts this branch has no relationship with, which is the
+    // disclosure `rec.receiving-employee-list` was published to end.
+    const [target] = listReceivingEmployeeCandidates.mock.calls.at(-1)!;
+    expect(target).toEqual({ companyId: 'company-1', branchId: 'branch-1' });
+
+    await user.click(
+      screen.getByRole('button', { name: EN['receptions.checkIn.employeeChoose']! })
+    );
+    expect(await screen.findByText('Front Desk')).toBeInTheDocument();
+  });
+
+  it('withdraws the default when the operator is NOT eligible in the chosen branch', async () => {
+    /*
+     * The Owner conjunct: the authenticated user is the default WHERE
+     * ELIGIBLE. An operator may hold the capability in one branch and be
+     * receiving into another, and offering themselves there would be offering
+     * a value `rec.stamp_receiving_employee_identity()` refuses — a create that
+     * fails at a database guard rather than at a choice.
+     */
+    listReceivingEmployeeCandidates.mockResolvedValue(
+      page([{ id: 'user-9', displayName: 'Other Branch Person' }])
+    );
+    renderLtr(<CheckInStartScreen {...startProps({ canPickEmployee: true })} />);
+
+    // TWO awaited settles sit behind this — the list resolving, then the effect
+    // withdrawing the default — so the wait is explicit and generous rather than
+    // left on findBy's default, which flaked once under a loaded worker pool and
+    // passed alone twice.
+    await waitFor(
+      () => {
+        expect(screen.getByTestId('employee-self-ineligible')).toHaveTextContent(
+          EN['receptions.checkIn.employeeSelfIneligible']!
+        );
+        expect(screen.getByTestId('employee-chosen')).toHaveTextContent(
+          EN['receptions.checkIn.employeeUnset']!
+        );
+      },
+      { timeout: 5000 }
+    );
+  });
+
+  /**
+   * The open-visit lookup, which shipped with no assertion anywhere.
+   *
+   * A repository-wide grep for the seven notice keys returned seven hits, all
+   * seven of them the key table in the component; `open-visit-lookup` appeared
+   * in no test at all. The matrix row citing this work was re-derived to PASS
+   * on it regardless, which is the shape this phase has paid for repeatedly: a
+   * verdict resting on code nothing exercises.
+   *
+   * The rule is one sentence — only `'none'`, a read that covered the set and
+   * found nothing, may say nothing — so each outcome is driven and read back.
+   */
+  describe('the open-visit lookup states what it established, and only that', () => {
+    const OUTCOMES = [
+      {
+        label: 'denied',
+        status: 'denied',
+        key: 'receptions.checkIn.openVisitDenied',
+        reference: true,
+        retry: false,
+      },
+      {
+        label: 'expired',
+        status: 'expired',
+        key: 'receptions.checkIn.openVisitExpired',
+        reference: false,
+        retry: false,
+      },
+      {
+        label: 'unavailable',
+        status: 'unavailable',
+        key: 'receptions.checkIn.openVisitUnavailable',
+        reference: true,
+        retry: true,
+      },
+      {
+        label: 'not-found',
+        status: 'not-found',
+        key: 'receptions.checkIn.openVisitScopeUnknown',
+        reference: false,
+        retry: false,
+      },
+      {
+        label: 'error',
+        status: 'error',
+        key: 'receptions.checkIn.openVisitUnread',
+        reference: true,
+        retry: true,
+      },
+    ] as const;
+
+    for (const outcome of OUTCOMES) {
+      it(`states the ${outcome.label} outcome, with its reference and retry`, async () => {
+        listReceptions.mockResolvedValue({
+          status: outcome.status,
+          rows: [],
+          nextCursor: null,
+          hasMore: false,
+          correlationId: 'corr-open-visit',
+        });
+
+        const user = userEvent.setup();
+        renderLtr(<CheckInStartScreen {...startProps()} />);
+
+        // The lookup asks only once a vehicle is chosen.
+        await user.click(screen.getByRole('radio', { name: /Appointment/ }));
+        await user.click(screen.getByText(EN['receptions.checkIn.loadAppointments']!));
+        await user.click(await screen.findByText(/Layla Haddad/));
+        const notice = await screen.findByTestId('open-visit-lookup');
+        expect(notice).toHaveTextContent(EN[outcome.key]!);
+
+        /*
+         * The reference is the only thing tying an operator’s telephone call to
+         * the server-side log, and it belongs to the three outcomes somebody
+         * telephones about — not to an expired session or an unknown scope,
+         * which are the operator’s own to fix.
+         */
+        if (outcome.reference) {
+          expect(notice).toHaveTextContent('corr-open-visit');
+        } else {
+          expect(notice).not.toHaveTextContent('corr-open-visit');
+        }
+
+        const retry = within(notice).queryByRole('button', { name: EN['state.retry']! });
+        expect(Boolean(retry), `${outcome.label} retry`).toBe(outcome.retry);
+      });
+    }
+
+    it('says NOTHING when the read covered the set and found no open visit', async () => {
+      listReceptions.mockResolvedValue({
+        status: 'ok' as const,
+        rows: [],
+        nextCursor: null,
+        hasMore: false,
+        correlationId: 'corr-none',
+      });
+
+      const user = userEvent.setup();
+      renderLtr(<CheckInStartScreen {...startProps()} />);
+      await user.click(screen.getByRole('radio', { name: /Appointment/ }));
+      await user.click(screen.getByText(EN['receptions.checkIn.loadAppointments']!));
+      await user.click(await screen.findByText(/Layla Haddad/));
+      await waitFor(() => expect(listReceptions).toHaveBeenCalled());
+
+      // The one outcome entitled to silence. Everything else above speaks.
+      expect(screen.queryByTestId('open-visit-lookup')).not.toBeInTheDocument();
+    });
+
+    it('does not claim the vehicle is free when the page was TRUNCATED', async () => {
+      /*
+       * The defect this whole block exists for, in its original form: the
+       * absence of a banner used to be the entire answer, so "this vehicle is
+       * free" and "we could not find out" were the same screen.
+       */
+      listReceptions.mockResolvedValue({
+        status: 'ok' as const,
+        rows: [],
+        nextCursor: 'cur-2',
+        hasMore: true,
+        correlationId: 'corr-truncated',
+      });
+
+      const user = userEvent.setup();
+      renderLtr(<CheckInStartScreen {...startProps()} />);
+      await user.click(screen.getByRole('radio', { name: /Appointment/ }));
+      await user.click(screen.getByText(EN['receptions.checkIn.loadAppointments']!));
+      await user.click(await screen.findByText(/Layla Haddad/));
+      const notice = await screen.findByTestId('open-visit-lookup');
+      expect(notice).toHaveTextContent(EN['receptions.checkIn.openVisitTruncated']!);
+    });
+  });
+  it('says nothing about eligibility when the directory page was TRUNCATED', async () => {
+    /*
+     * The fourth way the read fails to answer, and the one that survived the
+     * three cases above. The branch directory is a keyset page: with more
+     * eligible colleagues than one page holds, an operator listed on page two
+     * is simply absent from the rows this screen has. The derivation asked
+     * `rows.some(id === me)` and answered false, so the screen stated the
+     * operator was not eligible to accept custody in this branch and withdrew
+     * their own default — from a read that never covered them.
+     *
+     * `hasMore` was discarded. It is now read through `readCompleteness`, the
+     * same primitive the evidence surfaces use, and only a COMPLETE read is an
+     * answer.
+     */
+    listReceivingEmployeeCandidates.mockResolvedValue({
+      status: 'ok' as const,
+      rows: [{ id: 'someone-else', displayName: 'A Colleague' }],
+      nextCursor: 'cur-2',
+      hasMore: true,
+      correlationId: 'corr-page-1',
+    });
+
+    renderLtr(<CheckInStartScreen {...startProps({ canPickEmployee: true })} />);
+    await waitFor(() => expect(listReceivingEmployeeCandidates).toHaveBeenCalled());
+
+    expect(
+      screen.queryByTestId('employee-self-ineligible'),
+      'an unread page is stated as an established ineligibility'
+    ).not.toBeInTheDocument();
+    // …and the default the operator arrived with is still theirs.
+    expect(screen.getByTestId('employee-chosen')).not.toHaveTextContent(
+      EN['receptions.checkIn.employeeUnset']!
+    );
+    cleanup();
+  });
+  it('does not withdraw the operator\u2019s own custody default on page two', async () => {
+    /*
+     * The eligibility repair, defeated by the pager the repair renders.
+     *
+     * The truncation case above proves page one is safe: more exists, so
+     * nothing is claimed. This is the SAME branch directory one click later.
+     * Page two ends the walk, so the server publishes `hasMore: false` — and the
+     * first form of `readCompleteness` read that as "the set was covered". The
+     * operator, who is on page ONE of that directory, is absent from the rows
+     * in hand, so `some(id === me)` answered false and the screen stated they
+     * are not eligible to accept custody in the branch they are standing in
+     * and emptied the receiving-employee field. `buildCreateInput` then refuses
+     * locally, so the check-in cannot be opened at all until the operator
+     * guesses that paging BACK restores them.
+     *
+     * Opening the picker to see who else is available is the ordinary reason
+     * the picker exists.
+     */
+    listReceivingEmployeeCandidates.mockImplementation(
+      (_target: unknown, _request: unknown, cursor: string | null) =>
+        Promise.resolve(
+          cursor === null
+            ? {
+                status: 'ok' as const,
+                rows: [{ id: 'user-1', displayName: 'Front Desk' }],
+                nextCursor: 'cur-2',
+                hasMore: true,
+                correlationId: 'corr-page-1',
+              }
+            : {
+                status: 'ok' as const,
+                rows: [{ id: 'user-9', displayName: 'Other Person' }],
+                nextCursor: null,
+                hasMore: false,
+                correlationId: 'corr-page-2',
+              }
+        )
+    );
+
+    const user = userEvent.setup();
+    renderLtr(<CheckInStartScreen {...startProps({ canPickEmployee: true })} />);
+    await waitFor(() => expect(listReceivingEmployeeCandidates).toHaveBeenCalled());
+
+    // Page one: the operator holds their own default, as the earlier case proves.
+    expect(screen.getByTestId('employee-chosen')).not.toHaveTextContent(
+      EN['receptions.checkIn.employeeUnset']!
+    );
+
+    await user.click(
+      screen.getByRole('button', { name: EN['receptions.checkIn.employeeChoose']! })
+    );
+    const pager = await screen.findByRole('navigation', {
+      name: EN['receptions.checkIn.employeePagerLabel']!,
+    });
+    await user.click(within(pager).getByRole('button', { name: EN['table.nextPage']! }));
+    await waitFor(() => expect(listReceivingEmployeeCandidates).toHaveBeenCalledTimes(2));
+
+    // Page two establishes nothing about an operator who is on page one.
+    await waitFor(() =>
+      expect(screen.getByText('Other Person', { exact: false })).toBeInTheDocument()
+    );
+    expect(
+      screen.queryByTestId('employee-self-ineligible'),
+      'the last page of a walk is stated as an established ineligibility'
+    ).not.toBeInTheDocument();
+    expect(screen.getByTestId('employee-chosen')).not.toHaveTextContent(
+      EN['receptions.checkIn.employeeUnset']!
+    );
+  });
+  it('says nothing about eligibility when the read did not happen or did not answer', async () => {
+    /*
+     * `F1` again, on a new surface. Three of these would have printed "you are
+     * not eligible" from an observation nobody made: no capability to ask, no
+     * branch chosen yet, and a read that failed. The component shipped with the
+     * first of them and three cases in this file caught it.
+     */
+    renderLtr(<CheckInStartScreen {...startProps({ canPickEmployee: false })} />);
+    expect(
+      screen.queryByText(EN['receptions.checkIn.employeeSelfIneligible']!)
+    ).not.toBeInTheDocument();
+    cleanup();
+
+    renderLtr(
+      <CheckInStartScreen
+        {...startProps({ canPickEmployee: true, companyIds: [], branchIds: [] })}
+      />
+    );
+    expect(
+      screen.queryByText(EN['receptions.checkIn.employeeSelfIneligible']!)
+    ).not.toBeInTheDocument();
+    expect(screen.getByTestId('employee-needs-branch')).toBeInTheDocument();
+    cleanup();
+
+    listReceivingEmployeeCandidates.mockResolvedValue({
+      status: 'unavailable' as const,
+      rows: [],
+      nextCursor: null,
+      hasMore: false,
+      correlationId: 'corr-fail',
+    });
+    renderLtr(<CheckInStartScreen {...startProps({ canPickEmployee: true })} />);
+    await waitFor(() => expect(listReceivingEmployeeCandidates).toHaveBeenCalled());
+    expect(
+      screen.queryByText(EN['receptions.checkIn.employeeSelfIneligible']!)
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText(`${EN['receptions.checkIn.employeeSelf']} — Front Desk`)
+    ).toBeInTheDocument();
   });
 
   it('without rec.reception.manage the create form is withdrawn, with the reason', () => {
@@ -556,7 +885,6 @@ describe('the wizard shell', () => {
         ]}
         capabilities={CAPABILITIES}
         session={SESSION}
-        receivingEmployee={RECEIVING_EMPLOYEE}
       />
     );
 
@@ -586,7 +914,6 @@ describe('the wizard shell', () => {
         steps={CHECK_IN_STEPS}
         capabilities={CAPABILITIES}
         session={SESSION}
-        receivingEmployee={RECEIVING_EMPLOYEE}
       />
     );
 
@@ -622,7 +949,6 @@ describe('the wizard shell', () => {
         ]}
         capabilities={CAPABILITIES}
         session={SESSION}
-        receivingEmployee={RECEIVING_EMPLOYEE}
       />
     );
     // The status name appears in the header AND in the banner — scope to the
@@ -652,43 +978,14 @@ describe('the wizard shell', () => {
         steps={CHECK_IN_STEPS}
         capabilities={CAPABILITIES}
         session={SESSION}
-        receivingEmployee={RECEIVING_EMPLOYEE}
       />
     );
-    expect(screen.getByText('Rana Odeh')).toBeInTheDocument();
+    // The SNAPSHOT the visit carries. It used to be a prop the route resolved
+    // through `iam.user-detail`, which answered with the account name TODAY.
+    expect(screen.getByText(DETAIL.receivingEmployeeDisplayName)).toBeInTheDocument();
     expect(screen.queryByText(DETAIL.receivingEmployeeId)).not.toBeInTheDocument();
     expect(screen.getByText(EN['receptions.wizard.receivingEmployeeNote']!)).toBeInTheDocument();
   });
-
-  for (const { status, key } of [
-    { status: 'denied', key: 'receptions.wizard.receivingEmployeeDenied' },
-    { status: 'unresolved', key: 'receptions.wizard.receivingEmployeeUnresolved' },
-    { status: 'unavailable', key: 'receptions.wizard.receivingEmployeeUnavailable' },
-  ] as const) {
-    it(`says why there is no name when the read came back ${status}, and shows no identifier`, () => {
-      /*
-       * Three states the platform genuinely has, and none of them is a licence
-       * to print the identifier. `unresolved` is the sharpest: the column has no
-       * foreign key, so an identifier naming nobody is a state the database
-       * permits, and rendering it where a person's name goes reads as a person.
-       */
-      renderLtr(
-        <CheckInWizardShell
-          locale="en"
-          messages={en}
-          initialDetail={DETAIL}
-          steps={CHECK_IN_STEPS}
-          capabilities={CAPABILITIES}
-          session={SESSION}
-          receivingEmployee={{ status }}
-        />
-      );
-      expect(screen.getByText(EN[key]!)).toBeInTheDocument();
-      expect(screen.queryByText(DETAIL.receivingEmployeeId)).not.toBeInTheDocument();
-      // The disposition is stated whether or not a name was learned.
-      expect(screen.getByText(EN['receptions.wizard.receivingEmployeeNote']!)).toBeInTheDocument();
-    });
-  }
 });
 
 /* --- FE-008: the confirmation step ----------------------------------------- */
@@ -1278,6 +1575,79 @@ describe('F1 — the three states a paged read can report', () => {
       renderLtr(<CheckInStartScreen {...startProps({ walkInHandoff: handoff })} />);
 
       expect(await screen.findByTestId('checkin-vehicles-truncated')).toHaveTextContent(
+        EN['receptions.checkIn.vehiclesTruncated']!
+      );
+    });
+
+    it('does not withdraw the pre-selection after ONE click of its own pager', async () => {
+      /*
+       * The truncation repair, defeated by the control the repair renders.
+       *
+       * Page one holds the handed-over vehicle and reports more exists, so the
+       * notice correctly reads "applied" and the row is pressed. The operator
+       * then does the ordinary thing the pager exists for — looks at the rest of
+       * the list. Page two does not hold that row and reports
+       * `hasMore: false`, which the first form of `readCompleteness` read as "the
+       * set was covered": verdict `absent`, notice "not in this
+       * customer’s list", the selection dropped. The vehicle had not moved and
+       * nothing had failed.
+       */
+      listCustomerVehicles.mockImplementation(
+        (_customerId: string, _request: unknown, cursor: string | null) =>
+          Promise.resolve(cursor === null ? truncated([MATCHING_LINK]) : page([OTHER_LINK]))
+      );
+      const user = userEvent.setup();
+      renderLtr(<CheckInStartScreen {...startProps({ walkInHandoff: handoff })} />);
+
+      await waitFor(() =>
+        expect(screen.getByTestId('walk-in-handoff-notice')).toHaveTextContent(
+          EN['receptions.checkIn.handoffApplied']!
+        )
+      );
+
+      const pager = await screen.findByRole('navigation', {
+        name: EN['receptions.checkIn.vehiclePagerLabel']!,
+      });
+      await user.click(within(pager).getByRole('button', { name: EN['table.nextPage']! }));
+
+      await waitFor(() => expect(listCustomerVehicles).toHaveBeenCalledTimes(2));
+      // The row is off-screen, so nothing may be CLAIMED about it either way.
+      await waitFor(() =>
+        expect(screen.getByTestId('walk-in-handoff-notice')).toHaveTextContent(
+          EN['receptions.checkIn.handoffVehicleUnconfirmed']!
+        )
+      );
+      expect(screen.getByTestId('walk-in-handoff-notice')).not.toHaveTextContent(
+        EN['receptions.checkIn.handoffVehicleMissing']!
+      );
+    });
+
+    it('states truncation on page two, where hasMore is false and the set is unseen', async () => {
+      listCustomerVehicles.mockImplementation(
+        (_customerId: string, _request: unknown, cursor: string | null) =>
+          Promise.resolve(cursor === null ? truncated([OTHER_LINK]) : page([MATCHING_LINK]))
+      );
+      const user = userEvent.setup();
+      renderLtr(<CheckInStartScreen {...startProps({ walkInHandoff: handoff })} />);
+      await screen.findByTestId('checkin-vehicles-truncated');
+
+      const pager = await screen.findByRole('navigation', {
+        name: EN['receptions.checkIn.vehiclePagerLabel']!,
+      });
+      await user.click(within(pager).getByRole('button', { name: EN['table.nextPage']! }));
+      await waitFor(() => expect(listCustomerVehicles).toHaveBeenCalledTimes(2));
+
+      /*
+       * Finding the row IS positive proof, so the notice reads "applied" here.
+       * The LIST beside it is still a window — page one is behind the operator —
+       * so the coverage sentence stays, and the pager stays with it.
+       */
+      await waitFor(() =>
+        expect(screen.getByTestId('walk-in-handoff-notice')).toHaveTextContent(
+          EN['receptions.checkIn.handoffApplied']!
+        )
+      );
+      expect(screen.getByTestId('checkin-vehicles-truncated')).toHaveTextContent(
         EN['receptions.checkIn.vehiclesTruncated']!
       );
     });

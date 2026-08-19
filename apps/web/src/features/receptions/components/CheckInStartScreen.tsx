@@ -3,13 +3,18 @@
 import Link from 'next/link';
 import { useCallback, useState, useTransition } from 'react';
 import { CursorPager } from '@/components/data-table/CursorPager';
+import type { TableStatus } from '@/components/data-table/DataTable';
 import {
   membershipVerdict,
   readCompleteness,
   type MembershipVerdict,
 } from '@/components/data-table/read-completeness';
 import { INITIAL_REQUEST, type TableRequest } from '@/components/data-table/table-state';
-import { useServerTable, type ServerPage } from '@/components/data-table/use-server-table';
+import {
+  useServerTable,
+  type ServerPage,
+  type ServerTable,
+} from '@/components/data-table/use-server-table';
 import { RadioGroupField, SelectField, TextAreaField, TextField } from '@/components/forms/Field';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
 import { CustomerSelector, type SelectedCustomer } from '@/components/party/CustomerSelector';
@@ -37,7 +42,7 @@ import {
   type ChosenAppointment,
   type OriginDraft,
 } from '../check-in/wizard';
-import { STAFF_DIRECTORY_NOTICE_KEY } from '../staff-directory';
+import { RECEIVING_EMPLOYEE_NOTICE_KEY } from '../people/receiving-employee-directory';
 import {
   listConfirmedAppointments,
   listReceivingEmployeeCandidates,
@@ -67,14 +72,22 @@ import {
  * "already has an open visit" and "origin already consumed" arrive as the SAME
  * code, so guessing which would be lying half the time.
  *
- * ## The receiving employee (G-EMP, named open decision)
+ * A lookup that did not answer is NOT a vehicle with nothing open, and the
+ * difference is now on screen rather than in this paragraph:
+ * `OpenVisitOutcome` names the eight things the lookup can have established and
+ * only one of them — the read covered the set and found no open visit — renders
+ * as the empty space the screen used to render for all of them.
  *
- * `receivingEmployeeId` has no foreign key and no employee master exists. The
- * default is the signed-in operator — the one identity that is certainly
- * present — and the picker offers PLATFORM USERS via `iam.user-list` for the
- * operator who is receiving on a colleague's behalf. The disposition is stated
- * beside the control rather than hidden: the platform records an identifier,
- * not an employee-register entry.
+ * ## The receiving employee (Owner decision `FE-007`)
+ *
+ * `receivingEmployeeId` now carries a same-tenant foreign key to
+ * `iam.user_accounts`, an insert-time eligibility guard and an immutable
+ * display-name snapshot (`DBCR-P1-18-002`). The default is the signed-in
+ * operator — the one identity certainly present — and the picker offers the
+ * accounts ELIGIBLE FOR THIS BRANCH via `rec.receiving-employee-list`, for the
+ * operator receiving on a colleague's behalf. An operator who is not themselves
+ * eligible for the chosen branch loses the default and is told why, because
+ * offering it would be offering a value the insert refuses.
  *
  * ## The walk-in handoff (`P1-28-FE-006` → this screen)
  *
@@ -144,6 +157,87 @@ const HANDOFF_NOTICE_KEYS = {
   'unknown-unreadable': 'receptions.checkIn.handoffVehicleUnreadable',
 } as const satisfies Readonly<Record<MembershipVerdict, string>>;
 
+/**
+ * What the open-visit lookup ESTABLISHED — one value, and only one silence.
+ *
+ * `openVisitAmong(rows)` answers a vehicle-filtered `rec.reception-list` page,
+ * and the screen used to take its `null` as the whole story: no resumable visit
+ * on the page meant no banner, and no banner meant nothing on screen at all. Six
+ * of `TableStatus`'s seven names produce that same `null` — `loading`, `denied`,
+ * `expired`, `unavailable`, `error` and `not-found` — so a read that was refused,
+ * that timed out, that was rate-limited or that had simply not come back yet was
+ * rendered exactly like a vehicle with a clean history. Silence is a claim here:
+ * the operator reads it as "this vehicle is free", fills the rest of the form,
+ * and meets `ERR-RES-002` at the create — a 409 whose copy deliberately refuses
+ * to guess which of its two readings applies, because it cannot.
+ *
+ * Each of the six now has its own sentence, and each names a different next
+ * step: wait, ask for the permission, sign in again, try again shortly, try
+ * again, or check the branch. That is the platform's own five-way read boundary
+ * (`ScreenStates.ReadBoundary`) plus the pending state, restated inline because
+ * this lookup has no other surface — a picker announces its own failure in the
+ * space its rows would have filled, whereas this one is invisible until it has
+ * something to say.
+ *
+ * `truncated` is the seventh, and it is not a failure: the read succeeded and
+ * the server says more rows exist for this vehicle than were returned. An open
+ * visit could be among them, so the absence is not established and the notice
+ * says so — with the pager the rule in `read-completeness.ts` requires, because
+ * a sentence that says "more exists" and offers no way to reach it tells an
+ * operator their answer is somewhere they cannot go.
+ *
+ * `none` — the read covered the set and found no open visit — is the one state
+ * whose honest rendering is nothing at all: the create form beneath it is the
+ * answer.
+ */
+type OpenVisitOutcome =
+  'none' | 'truncated' | 'pending' | 'denied' | 'expired' | 'unavailable' | 'not-found' | 'error';
+
+/**
+ * The lookup's outcome from the table's own two published facts.
+ *
+ * The five failure names are RETURNED rather than re-listed, so a seventh
+ * `TableStatus` cannot be introduced without failing to compile here — the
+ * silent-collapse this function exists to end is exactly what a `default` arm
+ * would quietly restore.
+ */
+function openVisitOutcome(status: TableStatus, hasMore: boolean | undefined): OpenVisitOutcome {
+  if (status === 'loading') return 'pending';
+  if (status === 'idle') return hasMore === true ? 'truncated' : 'none';
+  return status;
+}
+
+/**
+ * What each outcome says, in both catalogues.
+ *
+ * `none` is deliberately absent: it has no sentence because it needs none, and
+ * `as const satisfies` makes that a compile error to forget rather than a
+ * missing key rendered on a screen.
+ */
+const OPEN_VISIT_NOTICE_KEYS = {
+  pending: 'receptions.checkIn.openVisitChecking',
+  denied: 'receptions.checkIn.openVisitDenied',
+  expired: 'receptions.checkIn.openVisitExpired',
+  unavailable: 'receptions.checkIn.openVisitUnavailable',
+  'not-found': 'receptions.checkIn.openVisitScopeUnknown',
+  error: 'receptions.checkIn.openVisitUnread',
+  truncated: 'receptions.checkIn.openVisitTruncated',
+} as const satisfies Readonly<Record<Exclude<OpenVisitOutcome, 'none'>, string>>;
+
+/**
+ * The outcomes that carry the backend reference, and the ones that must not.
+ *
+ * `P1-27-DO-002`, and the rule `ScreenStates` states for the whole platform: a
+ * refusal, a rate limit and a failure are what an operator telephones about, and
+ * the reference is the only thing that ties their call to the server-side log.
+ * An expired session and an unknown branch are not faults, and printing a
+ * reference beside them invites a support ticket for a working system.
+ */
+const OPEN_VISIT_REFERENCED: readonly OpenVisitOutcome[] = ['denied', 'unavailable', 'error'];
+
+/** The outcomes a Retry can actually change. */
+const OPEN_VISIT_RETRYABLE: readonly OpenVisitOutcome[] = ['unavailable', 'error'];
+
 interface Props {
   readonly locale: Locale;
   readonly messages: Messages;
@@ -156,7 +250,13 @@ interface Props {
   readonly canCreate: boolean;
   /** `apt.appointment.read` — may the appointment picker read the calendar. */
   readonly canListAppointments: boolean;
-  /** `iam.user.read` — may the employee picker search platform users. */
+  /**
+   * `rec.reception.manage` — the SAME code as `canCreate`, deliberately.
+   *
+   * The picker and the create it feeds cost one capability, so a screen that
+   * cannot open a visit cannot read who might have received one either. It was
+   * `iam.user.read` while the only staff read was the tenant-wide directory.
+   */
   readonly canPickEmployee: boolean;
   /** `crm.customer.read` — may the requester search and vehicle list read. */
   readonly canSearchCustomers: boolean;
@@ -287,7 +387,8 @@ export function CheckInStartScreen({
       : membershipVerdict(
           vehicles.status,
           vehicles.response,
-          (row) => row.vehicleId === handoff.vehicleId
+          (row) => row.vehicleId === handoff.vehicleId,
+          vehicles.request.page
         );
   /** What the form actually submits: the explicit choice, else the handed-over row. */
   const effectiveVehicle = walkInVehicle ?? handoffVehicle;
@@ -312,13 +413,106 @@ export function CheckInStartScreen({
   });
   // `useServerTable` reports a loaded page as 'idle' (loading is derived).
   const openVisit = visits.status === 'idle' ? openVisitAmong(visits.response?.rows ?? []) : null;
+  /*
+   * Whether the lookup was ASKED at all, in the loader's own words.
+   *
+   * `UNASKED` answers `ok` with no rows, which is indistinguishable at the table
+   * from a branch that read the vehicle's whole history and found nothing — so
+   * the condition that decides whether the read happens is the condition that
+   * decides whether anything may be concluded from it. Before a target and a
+   * vehicle exist there is no question, and a screen with no question owes no
+   * answer.
+   */
+  const openVisitAsked = targetReady && chosenVehicleId !== null;
+  const openVisitLookup = openVisitOutcome(visits.status, visits.response?.hasMore);
 
-  /* --- receiving employee (G-EMP) ------------------------------------------ */
+  /* --- receiving employee (Owner decision `FE-007`) ------------------------- */
 
-  const [employee, setEmployee] = useState<{ readonly id: string; readonly label: string }>({
-    id: sessionUserId,
-    label: sessionUserName,
+  const [chosenEmployee, setChosenEmployee] = useState<{
+    readonly id: string;
+    readonly label: string;
+  }>({ id: sessionUserId, label: sessionUserName });
+
+  /*
+   * The eligible list is read HERE, not in the control that renders it.
+   *
+   * The first shape read it inside `EmployeeControl` and cleared the parent’s
+   * selection from an effect when the operator turned out to be ineligible.
+   * `react-hooks/set-state-in-effect` refused it, and the rule was right about
+   * more than style: a selection that a render can DERIVE should never be a
+   * second piece of state that an effect has to chase. Reading it here makes
+   * the withdrawal a derivation, and — the part that actually matters — makes
+   * `submit` see the same value the screen shows, rather than whatever the
+   * effect had managed to write by the time the operator clicked.
+   */
+  const loadEmployees = useCallback(
+    (
+      request: TableRequest,
+      cursor: string | null
+    ): Promise<ServerPage<ReceivingEmployeeCandidate>> =>
+      targetReady && canPickEmployee
+        ? listReceivingEmployeeCandidates({ companyId, branchId }, request, cursor)
+        : Promise.resolve(UNASKED),
+    [targetReady, canPickEmployee, companyId, branchId]
+  );
+  const employees = useServerTable<ReceivingEmployeeCandidate>(loadEmployees, {
+    initial: { ...INITIAL_REQUEST, pageSize: 25 },
+    loadKey: targetReady && canPickEmployee ? `${companyId}:${branchId}` : 'none',
   });
+
+  /*
+   * Whether the DEFAULT is eligible — and `null` while that is unknown.
+   *
+   * Three states, not two. `false` is an observation ("the branch answered,
+   * and the operator is not on it"); `null` is the absence of one, and they
+   * must not render the same way. FOUR ways it stays `null`, and
+   * `canPickEmployee` is the one this screen shipped without: the loader
+   * answers an empty page when the capability is absent, so a branch with
+   * nobody eligible and an operator who was never allowed to ask looked
+   * identical, and the default was withdrawn from the second. Three DOM cases
+   * caught it. It is the same defect `F1` found on the acknowledgement
+   * document: a read that did not happen, printed as an observed absence.
+   */
+  const eligible = employees.response?.rows ?? [];
+  /*
+   * A TRUNCATED read is not an answer either, and that was the hole left in
+   * the reasoning above. The branch directory is a keyset page: with more
+   * candidates than one page holds, an operator listed on page two was absent
+   * from the rows this screen had, so `some()` answered false and the screen
+   * stated "Your account is not eligible to accept custody in this branch" and
+   * withdrew their own default — from a read that never covered them.
+   *
+   * `readCompleteness` is the same primitive `InspectionStep` and
+   * `EvidenceReadBack` use, and it already separates the four cases. Only
+   * `complete` is an answer; loading, unreadable and truncated are all "not
+   * known", which is what `null` means here and what the notice below refuses
+   * to render.
+   */
+  const eligibilityRead = readCompleteness(
+    employees.status,
+    employees.response?.hasMore,
+    employees.request.page
+  );
+  const selfEligible: boolean | null =
+    !canPickEmployee ||
+    !targetReady ||
+    eligibilityRead !== 'complete' ||
+    employees.response === null
+      ? null
+      : eligible.some((row) => row.id === sessionUserId);
+
+  /*
+   * What the screen SHOWS and what `submit` sends, as one value.
+   *
+   * An operator who is not eligible in the branch they are receiving into no
+   * longer holds the default: offering it would offer a value
+   * `rec.stamp_receiving_employee_identity()` refuses, so the create would
+   * fail at a database guard instead of at a choice.
+   */
+  const employee =
+    selfEligible === false && chosenEmployee.id === sessionUserId
+      ? { id: '', label: '' }
+      : chosenEmployee;
 
   /* --- optional intake facts ----------------------------------------------- */
 
@@ -622,6 +816,48 @@ export function CheckInStartScreen({
             {translate(messages, 'receptions.checkIn.resume')}
           </Link>
         </div>
+      ) : openVisitAsked && openVisitLookup !== 'none' ? (
+        /*
+         * No resume offer, and WHY there is none.
+         *
+         * The absence of the banner above used to be the whole answer, which
+         * made "this vehicle is free" and "we could not find out" the same
+         * screen. Only `none` — a read that covered the set and found nothing —
+         * is entitled to say nothing.
+         */
+        <div
+          role="status"
+          data-testid="open-visit-lookup"
+          className="flex flex-col gap-2 rounded-lg border border-border bg-surface-subtle p-4"
+        >
+          <p className="text-body text-text-secondary" lang={locale}>
+            {translate(messages, OPEN_VISIT_NOTICE_KEYS[openVisitLookup])}
+          </p>
+          {OPEN_VISIT_REFERENCED.includes(openVisitLookup) && visits.correlationId ? (
+            <p className="text-caption text-text-muted">
+              {translate(messages, 'state.correlationId')}{' '}
+              <code className="font-mono">{visits.correlationId}</code>
+            </p>
+          ) : null}
+          {OPEN_VISIT_RETRYABLE.includes(openVisitLookup) ? (
+            <div>
+              <button
+                type="button"
+                onClick={visits.refresh}
+                className="rounded-md border border-border px-3 py-1.5 text-body text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+              >
+                {translate(messages, 'state.retry')}
+              </button>
+            </div>
+          ) : null}
+          {openVisitLookup === 'truncated' ? (
+            <CursorPager
+              messages={messages}
+              table={visits}
+              label={translate(messages, 'receptions.checkIn.openVisitPagerLabel')}
+            />
+          ) : null}
+        </div>
       ) : null}
 
       <fieldset className="rounded-lg border border-border bg-surface p-4">
@@ -632,10 +868,14 @@ export function CheckInStartScreen({
           locale={locale}
           messages={messages}
           canPickEmployee={canPickEmployee}
+          targetReady={targetReady}
+          table={employees}
+          eligible={eligible}
+          selfEligible={selfEligible}
           sessionUserId={sessionUserId}
           sessionUserName={sessionUserName}
           employee={employee}
-          onChange={setEmployee}
+          onChange={setChosenEmployee}
         />
       </fieldset>
 
@@ -895,7 +1135,7 @@ function VehicleChoice({
     );
   }
   const rows = table.response?.rows ?? [];
-  const completeness = readCompleteness(table.status, table.response?.hasMore);
+  const completeness = readCompleteness(table.status, table.response?.hasMore, table.request.page);
   if (rows.length === 0) {
     return (
       <div className="flex flex-col gap-2">
@@ -982,10 +1222,47 @@ function VehicleChoice({
   );
 }
 
+/**
+ * The receiving-employee control (Owner decision `FE-007`).
+ *
+ * PRESENTATIONAL. The screen above owns the eligible-list read and derives which
+ * account is selected, so what an operator sees and what `submit` sends are one
+ * value rather than two kept in step by an effect. The first shape of this file
+ * did read the list here and cleared the parent's selection from a `useEffect`;
+ * `react-hooks/set-state-in-effect` refused it, and the rule was right about more
+ * than style.
+ *
+ * ## What it offers, and why the list is short
+ *
+ * `rec.receiving-employee-list` answers the ACTIVE accounts whose live role
+ * grants cover the branch this visit is being received into. It takes no search
+ * term, and that is the shape rather than an omission: the question is "who may
+ * accept custody here", which is a list an operator scans. The control this
+ * replaced searched `iam.user-list` — every account in the tenant, at tenant
+ * scope — because there was nothing narrower to read.
+ *
+ * ## Three eligibility states, and `null` is not `false`
+ *
+ * `selfEligible` arrives as `true`, `false` or `null`, and only `false` is an
+ * observation. `null` means the question was not answered — no capability to
+ * ask, no branch chosen, the read still in flight, or the read failed — and
+ * saying "you are not eligible" from any of those would be reporting a
+ * conclusion nobody reached.
+ *
+ * ## Before a branch is chosen there is nothing to ask
+ *
+ * Eligibility is per branch, so the picker withholds itself with a stated reason
+ * until `companyId` and `branchId` are both set, rather than reading a list that
+ * would answer for the wrong branch or 422 on a half pair.
+ */
 function EmployeeControl({
   locale,
   messages,
   canPickEmployee,
+  targetReady,
+  table,
+  eligible,
+  selfEligible,
   sessionUserId,
   sessionUserName,
   employee,
@@ -994,39 +1271,37 @@ function EmployeeControl({
   readonly locale: Locale;
   readonly messages: Messages;
   readonly canPickEmployee: boolean;
+  /** Both halves of the branch target are set. Eligibility is per branch. */
+  readonly targetReady: boolean;
+  readonly table: ServerTable<ReceivingEmployeeCandidate>;
+  readonly eligible: readonly ReceivingEmployeeCandidate[];
+  /** `null` where the question was not answered. See the docblock. */
+  readonly selfEligible: boolean | null;
   readonly sessionUserId: string;
   readonly sessionUserName: string;
+  /** The EFFECTIVE selection, already derived by the screen. */
   readonly employee: { readonly id: string; readonly label: string };
   readonly onChange: (next: { readonly id: string; readonly label: string }) => void;
 }) {
-  const [searching, setSearching] = useState(false);
-  const [term, setTerm] = useState('');
-  const [asked, setAsked] = useState<string | null>(null);
+  const [showing, setShowing] = useState(false);
+  // Opened for the operator when their own default was withdrawn: they have to
+  // choose somebody, so the list is in front of them rather than behind a button.
+  const listOpen = showing || selfEligible === false;
 
-  const load = useCallback(
-    (
-      request: TableRequest,
-      cursor: string | null
-    ): Promise<ServerPage<ReceivingEmployeeCandidate>> =>
-      asked !== null && canPickEmployee
-        ? listReceivingEmployeeCandidates(asked, request, cursor)
-        : Promise.resolve(UNASKED),
-    [asked, canPickEmployee]
-  );
-  const table = useServerTable<ReceivingEmployeeCandidate>(load, {
-    initial: { ...INITIAL_REQUEST, pageSize: 10 },
-    loadKey: asked ?? 'none',
-  });
+  const chosenLabel =
+    employee.id === ''
+      ? translate(messages, 'receptions.checkIn.employeeUnset')
+      : employee.id === sessionUserId
+        ? `${translate(messages, 'receptions.checkIn.employeeSelf')} — ${sessionUserName}`
+        : employee.label;
 
   return (
     <div className="flex flex-col gap-2">
       <div className="flex flex-wrap items-center gap-3">
-        <span className="text-body text-text-primary">
-          {employee.id === sessionUserId
-            ? `${translate(messages, 'receptions.checkIn.employeeSelf')} — ${sessionUserName}`
-            : employee.label}
+        <span data-testid="employee-chosen" className="text-body text-text-primary">
+          {chosenLabel}
         </span>
-        {employee.id !== sessionUserId ? (
+        {employee.id !== sessionUserId && selfEligible !== false ? (
           <button
             type="button"
             onClick={() => onChange({ id: sessionUserId, label: sessionUserName })}
@@ -1035,10 +1310,10 @@ function EmployeeControl({
             {translate(messages, 'receptions.checkIn.employeeReset')}
           </button>
         ) : null}
-        {canPickEmployee ? (
+        {canPickEmployee && targetReady ? (
           <button
             type="button"
-            onClick={() => setSearching((current) => !current)}
+            onClick={() => setShowing((current) => !current)}
             className="rounded-md border border-border px-3 py-1.5 text-body text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
           >
             {translate(messages, 'receptions.checkIn.employeeChoose')}
@@ -1046,9 +1321,20 @@ function EmployeeControl({
         ) : null}
       </div>
 
+      {selfEligible === false ? (
+        <p
+          data-testid="employee-self-ineligible"
+          role="note"
+          className="text-caption text-warning"
+          lang={locale}
+        >
+          {translate(messages, 'receptions.checkIn.employeeSelfIneligible')}
+        </p>
+      ) : null}
+
       <p className="text-caption text-text-muted" lang={locale}>
-        {/* G-EMP, stated where the choice is made: an identifier is recorded;
-            no employee master exists to validate it against. */}
+        {/* Stated where the choice is made: the platform records a PLATFORM
+            ACCOUNT that accepted custody, not an employee-register entry. */}
         {translate(messages, 'receptions.checkIn.employeeHint')}
       </p>
 
@@ -1058,41 +1344,28 @@ function EmployeeControl({
           className="text-caption text-text-muted"
           lang={locale}
         >
-          {/* `P1-28-SEC-001`. The disposition for the `iam.user.read` overload,
-              stated where the capability is exercised rather than only in a
-              document: this control reads the WHOLE workspace user directory,
-              because that is the only staff read the platform publishes.
-              `features/receptions/staff-directory.ts` carries the reasoning and
-              names the operations the code opens. */}
-          {translate(messages, STAFF_DIRECTORY_NOTICE_KEY)}
+          {/* `P1-28-SEC-001`, stated where the capability is exercised rather
+              than only in a document: this control reads the accounts eligible
+              for ONE branch, behind the same code that opens a check-in.
+              `features/receptions/people/receiving-employee-directory.ts`
+              carries the reasoning and what it replaced. */}
+          {translate(messages, RECEIVING_EMPLOYEE_NOTICE_KEY)}
         </p>
       ) : null}
 
-      {searching && canPickEmployee ? (
+      {canPickEmployee && !targetReady ? (
+        <p
+          data-testid="employee-needs-branch"
+          className="text-caption text-text-muted"
+          lang={locale}
+        >
+          {translate(messages, 'receptions.checkIn.employeeNeedsBranch')}
+        </p>
+      ) : null}
+
+      {listOpen && canPickEmployee && targetReady ? (
         <div className="flex flex-col gap-2 rounded-md border border-border p-3">
-          <div className="flex items-end gap-2">
-            <TextField
-              label={translate(messages, 'receptions.checkIn.employeeSearch')}
-              value={term}
-              onChange={(event) => setTerm(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter') {
-                  event.preventDefault();
-                  if (term.trim() !== '') setAsked(term.trim());
-                }
-              }}
-            />
-            <button
-              type="button"
-              onClick={() => {
-                if (term.trim() !== '') setAsked(term.trim());
-              }}
-              className="rounded-md border border-border px-3 py-2 text-body text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
-            >
-              {translate(messages, 'customerSelector.search')}
-            </button>
-          </div>
-          {asked === null ? null : table.status === 'loading' ? (
+          {table.status === 'loading' ? (
             <LoadingState messages={messages} />
           ) : table.status === 'denied' ? (
             <PermissionDeniedState
@@ -1115,30 +1388,37 @@ function EmployeeControl({
               }
               {...(table.correlationId ? { correlationId: table.correlationId } : {})}
             />
-          ) : (table.response?.rows.length ?? 0) === 0 ? (
-            <p className="text-body text-text-secondary">
-              {translate(messages, 'state.noResults.title')}
+          ) : eligible.length === 0 ? (
+            <p data-testid="employee-none-eligible" className="text-body text-text-secondary">
+              {translate(messages, 'receptions.checkIn.employeeNoneEligible')}
             </p>
           ) : (
-            <ul className="flex flex-col divide-y divide-border rounded-md border border-border">
-              {(table.response?.rows ?? []).map((row) => (
-                <li key={row.id}>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onChange({ id: row.id, label: row.displayName });
-                      setSearching(false);
-                    }}
-                    className="flex w-full items-center gap-3 px-3 py-2 text-start transition-colors duration-fast ease-standard hover:bg-surface-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
-                  >
-                    <span className="text-body text-text-primary">{row.displayName}</span>
-                    <span className="text-caption text-text-muted" dir="ltr">
-                      {row.email}
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
+            <>
+              <ul className="flex flex-col divide-y divide-border rounded-md border border-border">
+                {eligible.map((row) => (
+                  <li key={row.id}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onChange({ id: row.id, label: row.displayName });
+                        setShowing(false);
+                      }}
+                      className="flex w-full items-center gap-3 px-3 py-2 text-start transition-colors duration-fast ease-standard hover:bg-surface-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+                    >
+                      {/* The NAME and nothing else. The operation answers no
+                          email and no status — an inactive account is not
+                          offered — so there is no second column to render. */}
+                      <span className="text-body text-text-primary">{row.displayName}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              <CursorPager
+                messages={messages}
+                table={table}
+                label={translate(messages, 'receptions.checkIn.employeePagerLabel')}
+              />
+            </>
           )}
         </div>
       ) : null}

@@ -24,8 +24,9 @@ import type { TableStatus } from './DataTable';
  *
  *   - `complete` — the read finished and covered the set. An absence found here
  *     IS a fact and may be stated as one.
- *   - `truncated` — the read finished and the server says more exists. Nothing
- *     is established about what was not read.
+ *   - `truncated` — the read finished and only part of the set was seen: either
+ *     the server says more exists ahead, or the walk has left page one behind.
+ *     Nothing is established about what was not read.
  *   - `unreadable` — the read did not answer (denied, expired, rate-limited,
  *     unavailable, error). Nothing is established at all.
  *
@@ -35,20 +36,56 @@ import type { TableStatus } from './DataTable';
 export type ReadCompleteness = 'pending' | 'complete' | 'truncated' | 'unreadable';
 
 /**
- * The completeness of one `useServerTable` page.
+ * Whether the SET was observed, from the page in hand.
  *
  * `hasMore` is read from the RESPONSE, never from the status: `useServerTable`
  * returns `response: null` for every non-`ok` page, so a caller passing
  * `table.response?.hasMore` hands `undefined` through on precisely the branch
  * where trusting `false` would be the bug.
+ *
+ * ## Why the page number is the other half
+ *
+ * `hasMore` describes what lies AHEAD of the page in hand. It says nothing about
+ * what lies behind it, and on the last page of a five-page walk the server
+ * correctly publishes `hasMore: false` — which the first form of this function
+ * read as "the set was covered" while four pages of it had scrolled out of view.
+ *
+ * That is not a hypothetical reading. Every surface that renders a truncation
+ * notice also renders `CursorPager` beside it, so the operator is INVITED to
+ * move, and one click of that pager restored every sentence this module exists
+ * to prevent: a custody default withdrawn as an established ineligibility, a
+ * finding gate stating the visit has no open inspection, a handoff notice
+ * dropping the vehicle it was handed.
+ *
+ * `use-cursor-pages.ts` states the model this is derived from: pages are walked
+ * in order from page one, no page can be jumped to, and only a walk that began
+ * at page one and reached a page reporting `hasMore: false` has seen the whole
+ * set. Anywhere else is a WINDOW, and a window establishes nothing about what it
+ * does not contain. Whether that window can be widened is a different question,
+ * answered by `hasFurtherPage` below.
  */
 export function readCompleteness(
   status: TableStatus,
-  hasMore: boolean | undefined
+  hasMore: boolean | undefined,
+  page: number
 ): ReadCompleteness {
   if (status === 'loading') return 'pending';
   if (status !== 'idle') return 'unreadable';
-  return hasMore === true ? 'truncated' : 'complete';
+  if (hasMore === true) return 'truncated';
+  return page <= 1 ? 'complete' : 'truncated';
+}
+
+/**
+ * Whether a page exists AFTER the one in hand.
+ *
+ * Deliberately not the same question as `readCompleteness`, and separated from
+ * it because conflating the two is what let a Next button stay enabled at the
+ * end of a list: page five of five is `truncated` as a claim about the set and
+ * simultaneously the end of the walk. A pager asks only this; a notice asks only
+ * the other.
+ */
+export function hasFurtherPage(status: TableStatus, hasMore: boolean | undefined): boolean {
+  return status === 'idle' && hasMore === true;
 }
 
 /**
@@ -65,10 +102,11 @@ export type MembershipVerdict =
 export function membershipVerdict<Row>(
   status: TableStatus,
   response: { readonly rows: readonly Row[]; readonly hasMore?: boolean } | null,
-  matches: (row: Row) => boolean
+  matches: (row: Row) => boolean,
+  page: number
 ): MembershipVerdict {
   if (response !== null && response.rows.some(matches)) return 'present';
-  switch (readCompleteness(status, response?.hasMore)) {
+  switch (readCompleteness(status, response?.hasMore, page)) {
     case 'pending':
       return 'pending';
     case 'unreadable':
@@ -89,5 +127,5 @@ export function membershipVerdict<Row>(
  * what both of them agree on.
  */
 export function canPage(page: number, status: TableStatus, hasMore: boolean | undefined): boolean {
-  return page > 1 || readCompleteness(status, hasMore) === 'truncated';
+  return page > 1 || hasFurtherPage(status, hasMore);
 }
