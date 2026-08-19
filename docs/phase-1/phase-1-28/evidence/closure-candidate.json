@@ -270,17 +270,17 @@
     "unit": {
       "label": "root unit and foundation",
       "tests": 2775,
-      "passed": 2772,
-      "failed": 3,
+      "passed": 2773,
+      "failed": 2,
       "skipped": 0,
       "files": 104,
-      "measuredAtCommit": "5f04cd9e35a3dfbd092ebfe2740789261b2cb4ef",
+      "measuredAtCommit": "36517e1f40843a55fe8561e16cb22e4a5312b1d1",
       "provenance": "LOCAL_COMPUTED_HOSTED_PENDING",
       "localLedger": {
         "path": "docs/phase-1/phase-1-27/evidence/local-run-ledger.json",
         "tier": "unit",
-        "atCommit": "204a0c53d6961a176c9de2c2eac48c79c202b8e9",
-        "howChecked": "`git show 204a0c53d6961a176c9de2c2eac48c79c202b8e9:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD at the commit that carries this record, rather than the working copy, which would let an uncommitted edit vouch for itself. The run was taken at 5f04cd9e and recorded into that commit."
+        "atCommit": "c6bc109e2b278c0a07dabbb3f58c33f62ea3d64a",
+        "howChecked": "`git show c6bc109e2b278c0a07dabbb3f58c33f62ea3d64a:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD at the commit that carries this record, rather than the working copy, which would let an uncommitted edit vouch for itself. The run was taken at 36517e1f and recorded into that commit."
       },
       "hostedAttestation": {
         "runId": 31885987461,
@@ -305,8 +305,8 @@
       "localLedger": {
         "path": "docs/phase-1/phase-1-27/evidence/local-run-ledger.json",
         "tier": "web",
-        "atCommit": "204a0c53d6961a176c9de2c2eac48c79c202b8e9",
-        "howChecked": "`git show 204a0c53d6961a176c9de2c2eac48c79c202b8e9:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD at the commit that carries this record, rather than the working copy, which would let an uncommitted edit vouch for itself. The run was taken at 2f8a925d and recorded into that commit."
+        "atCommit": "c6bc109e2b278c0a07dabbb3f58c33f62ea3d64a",
+        "howChecked": "`git show c6bc109e2b278c0a07dabbb3f58c33f62ea3d64a:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD at the commit that carries this record, rather than the working copy, which would let an uncommitted edit vouch for itself. The run was taken at 2f8a925d and recorded into that commit."
       },
       "hostedAttestation": {
         "runId": 31885987461,
