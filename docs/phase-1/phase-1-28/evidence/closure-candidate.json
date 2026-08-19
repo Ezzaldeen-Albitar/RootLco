@@ -280,8 +280,8 @@
       "localLedger": {
         "path": "docs/phase-1/phase-1-27/evidence/local-run-ledger.json",
         "tier": "unit",
-        "atCommit": "PLACEHOLDER_CARRIER",
-        "howChecked": "`git show PLACEHOLDER_CARRIER:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD at the commit that carries this record, rather than the working copy, which would let an uncommitted edit vouch for itself. The run was taken at 7a584e99d7ab7c83179d712d37408691a19a0e8d, a head executable-identical to the candidate (the commits between them touch documentation only), and recorded into that commit."
+        "atCommit": "d3566143114371795dea91c9a4079f35f0602840",
+        "howChecked": "`git show d3566143114371795dea91c9a4079f35f0602840:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD at the commit that carries this record, rather than the working copy, which would let an uncommitted edit vouch for itself. The run was taken at 7a584e99d7ab7c83179d712d37408691a19a0e8d, a head executable-identical to the candidate (the commits between them touch documentation only), and recorded into that commit."
       },
       "hostedAttestation": {
         "runId": 31885987461,
@@ -306,8 +306,8 @@
       "localLedger": {
         "path": "docs/phase-1/phase-1-27/evidence/local-run-ledger.json",
         "tier": "web",
-        "atCommit": "PLACEHOLDER_CARRIER",
-        "howChecked": "`git show PLACEHOLDER_CARRIER:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD at the commit that carries this record, rather than the working copy, which would let an uncommitted edit vouch for itself. The run was taken at 7a584e99d7ab7c83179d712d37408691a19a0e8d, a head executable-identical to the candidate (the commits between them touch documentation only), and recorded into that commit."
+        "atCommit": "d3566143114371795dea91c9a4079f35f0602840",
+        "howChecked": "`git show d3566143114371795dea91c9a4079f35f0602840:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD at the commit that carries this record, rather than the working copy, which would let an uncommitted edit vouch for itself. The run was taken at 7a584e99d7ab7c83179d712d37408691a19a0e8d, a head executable-identical to the candidate (the commits between them touch documentation only), and recorded into that commit."
       },
       "hostedAttestation": {
         "runId": 31885987461,
