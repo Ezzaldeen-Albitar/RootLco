@@ -267,14 +267,9 @@
   "absorbedSuccessors": [],
   "successors": [
     {
-      "commit": "85b1648e7467ae3caaffd3a7db65fd52736a1476",
-      "kind": "measurement head — web tier, and the re-freeze itself",
-      "why": "Named because a measurement head must be a named successor: a figure taken at a head nobody declared cannot be presented as a measurement of the candidate. Both are documentation-only against the candidate, which the gate computes."
-    },
-    {
-      "commit": "9342ea2e3cc59d204bf5abf3a4d1a3ffeb71d164",
-      "kind": "measurement head — root unit tier",
-      "why": "Named because a measurement head must be a named successor: a figure taken at a head nobody declared cannot be presented as a measurement of the candidate. Both are documentation-only against the candidate, which the gate computes."
+      "commit": "f73091a513e8ca8fecb47a682ac96a548a382139",
+      "kind": "evidence machinery — backend suite fixtures",
+      "why": "Gives the two backend suites a real damage-map template revision, which DBCR-P1-28-001 makes mandatory. tests/** only: apps/** and supabase/** are byte-identical to the candidate, which the gate computes rather than takes on trust."
     }
   ],
   "howTierFiguresAreChecked": "Four obligations, because there are four kinds of claim. ARITHMETIC: `passed + failed + skipped` must equal the declared total. LOCAL: figures equal the P1-27 run ledger read out of Git at `localLedger.atCommit`. MEASUREMENT HEAD: both local tiers name successor ea045d88fd88843c82c8ecd7273b0772f65417f6, whose six declared non-product drift paths equal Git's path set, and are pinned to ledger commit 2e0f2191db4c118e766e9ca4b8ffff981b63d7c6. HOSTED: claims remain fetchable attestations at their recorded run heads; a non-candidate head must explicitly be a superseded ancestor or a product-identical descendant, and Git refusal is UNKNOWN rather than empty.",
@@ -704,13 +699,18 @@
     "observations": [
       {
         "supersededHeadSha": "55b932cbd3e6a844457d452d64726a96a097415b",
-        "runIds": [31776114127, 31776113899],
+        "runIds": [
+          31776114127,
+          31776113899
+        ],
         "whyItIsHereRatherThanAbove": "It was the pending citation while 7b1252ed was frozen and unbound. `7b1252ed` — the seal-test fix — landed after it, so 55b932cb became an ancestor of the candidate, and a run at an ancestor cannot describe this code.",
         "whatItSaid": "unit job 94691823490 — 2559 over 98 files, one case short of this candidate because it predates the case the candidate adds; web job 94691823379 — 2726 over 98 files, reproduced by clean room job 94691823382; backend job 94691823497 — 2004 over 86 files, 566 suites; database job 94691823478 — 1647 over 139 files, 552 suites; browser job 94691823437 — 370 planned, 366 passed, 0 failed, FOUR skipped, with 141 phase-spec cases at 47 in each project; hostedCi — 21 checks, 21 success, across runs 31776114127 and 31776113899; CodeQL analyses 1617851873 and 1617844311, 0 results each; dependency-security job 94691823349 — 0 vulnerabilities across 830 dependencies; application-build job 94691823535 — 239 routes, 6249 files, 37 476 308 standalone bytes; database jobs 94691823456 and 94691823382 — 120 migrations, 242 tables, 631 policies, a 1356-cell matrix, schema hash f6b4f023."
       },
       {
         "supersededHeadSha": "38afa5c28e5b78d484a442cf6b8596fb2a5c34aa",
-        "runIds": [31750364479],
+        "runIds": [
+          31750364479
+        ],
         "whyItIsHereRatherThanAbove": "Superseded twice over. It was the pending citation while 3c75f49a was the candidate. Kept because it is still fetchable and still the only hosted reading of the tree as it stood before three finding-fix waves changed 37 files under apps/**.",
         "whatItSaid": "unit job 94614563908 — 2475 over 97 files; web job 94614564128 — 2669 over 98 files, reproduced by clean room job 94614564119; backend job 94614564122 — 2004 over 86 files; database job 94614564002 — 1647 over 139 files; browser job 94614564003 — 370 planned, 366 passed, 0 failed, 4 skipped, 141 phase-spec cases; hostedCi — 21 checks, 21 success, recorded as ONE run id, which was wrong for four of the twenty-one; CodeQL analyses 1616577501 and 1616569830, 0 results each; dependency-security job 94614564057; application-build job 94614563886; database jobs 94614563937 and 94614564119."
       }
