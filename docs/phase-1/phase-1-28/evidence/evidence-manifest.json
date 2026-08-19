@@ -42,12 +42,6 @@
       "failed": 0,
       "skipped": 4,
       "provenance": "HOSTED_PENDING_AT_CANDIDATE"
-    },
-    "reMeasuredBy": {
-      "passed": null,
-      "failed": null,
-      "skipped": null,
-      "provenance": null
     }
   },
   "fileCount": 18,
@@ -77,8 +71,8 @@
       "bytes": 43201
     },
     "docs/phase-1/phase-1-28/evidence/closure-candidate.json": {
-      "sha256": "ac042e1924cf7f16af78b6d9058a4b801f0825e46a42006ed4ee612a1442d2e9",
-      "bytes": 91044
+      "sha256": "004639c2747cc6b1ee095ca2edb2ca2276168d5efc3104872c6c3f3d4b9d19b2",
+      "bytes": 90709
     },
     "docs/phase-1/phase-1-28/evidence/closure-evidence.md": {
       "sha256": "dc41324d44a09861179e9ab04d5157fcfcb79a489e629901b8031c5e74421239",
