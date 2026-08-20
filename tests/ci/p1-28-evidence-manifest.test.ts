@@ -916,12 +916,29 @@ describe('P1-28-QA-005 — the seal is bound to the REPOSITORY, not to its own p
       /^[0-9a-f]{40}$/
     );
 
+    /*
+     * The BASE moves with the candidate, and it has to.
+     *
+     * The range is `git log <head> --not <candidate> <base>`, so once the
+     * remediation merged into `develop` every executable commit this case relies
+     * on became an ancestor of the base and the range collapsed to the
+     * documentation-only commit carrying this record — "no executable successor
+     * exists to hide", which is the anti-vacuity guard doing its job rather than
+     * the rule failing.
+     *
+     * `main` is the honest anchor for a synthetic world about a SUPERSEDED
+     * candidate: it is a real branch, it is far behind this work, and it
+     * contains none of the history the case needs to reopen. The rule under test
+     * is unchanged; only the world it is asked about is built so the question
+     * can still be put.
+     */
     const unnamed = repositoryBinding(
       {
         ...(candidateFile as object),
         candidate: {
           ...(candidateFile as unknown as { candidate: object }).candidate,
           FINAL_CODE_SHA: superseded,
+          baseBranch: 'main',
         },
         successors: [],
       } as never,
@@ -1372,7 +1389,19 @@ describe('P1-28-QA-005 — a re-freeze may not carry the old head’s numbers fo
     const head = (tier.hostedAttestation as { headSha: string }).headSha;
     expect(head, 'the database tier cites no head').toMatch(/^[0-9a-f]{40}$/);
 
-    tier.measuredAtCommit = String(git(['rev-parse', 'HEAD~1']) ?? '').trim();
+    /*
+     * A second head that is genuinely a SECOND head, walked back until it
+     * differs from the one the tier cites. This read `HEAD~1`, and once the
+     * bindings were resolved against protected develop that commit WAS the
+     * attestation head — so the mutation set the pin to the value it already
+     * had and changed nothing. Same shape as the other cases in this file: the
+     * mutation kept its form and lost its meaning when the repository moved.
+     */
+    let second = String(git(['rev-parse', 'HEAD']) ?? '').trim();
+    for (let hop = 0; hop < 20 && (second === head || !second); hop += 1) {
+      second = String(git(['rev-parse', `${second}^`]) ?? '').trim();
+    }
+    tier.measuredAtCommit = second;
     expect(tier.measuredAtCommit, 'the second head did not resolve').toMatch(/^[0-9a-f]{40}$/);
     expect(tier.measuredAtCommit, 'the two heads are the same').not.toBe(head);
 
