@@ -281,7 +281,7 @@
     "howToCheck": "Run `npx vitest run tests/ci/p1-28-evidence-manifest.test.ts --pool=threads --maxWorkers=1`. The committed bound package must pass 96/96, and the constructed pending/forward-binding/absorbed-history worlds inside that run must also pass."
   },
   "successorRule": {
-    "what": "ONE successor, the merge 3b1197fb, and it is named. A merge introduces no content of its own but carries executable paths across the candidate boundary, so the documentation-only exemption does not cover it. Everything it brings in is already an ANCESTOR of the resolved base and sits in `absorbedSuccessors`, preserving the measurement pins without being misrepresented as a current-branch successor. The commit that records THIS is documentation-only and may go unnamed, because a commit cannot write its own id into a file it contains.",
+    "what": "2 successor(s), each named: 7085039d, 81d89672. All touch scripts/ci or tests/ci only, so apps/** and supabase/** stay byte-identical to the candidate — computed, not asserted. Commits absorbed into the resolved base sit in absorbedSuccessors, preserving the measurement pins without being misrepresented as current-branch successors.",
     "whatWouldFailThis": "Any executable commit in `git log <head under test> --not <candidate> <historical base>` that is not named here, any named id outside that computed range, any product-path difference under apps/** or supabase/**, or any Git/topology question that returns UNKNOWN."
   },
   "absorbedSuccessors": [
@@ -320,13 +320,24 @@
       "kind": "measurement head — unit and web tiers",
       "why": "The commit both tiers were run at. Named because a measurement head must be a named successor: a figure taken at a head nobody declared cannot be presented as a figure about this candidate.",
       "absorbedBecause": "Absorbed into the resolved base when the seal-fixture repair merged as 1600609d. Retained rather than deleted: it is a measurement head or the machinery a figure in this package still names."
+    },
+    {
+      "commit": "3b1197fb182f8c8b1787e64464d700e409f53267",
+      "kind": "merge — protected develop into the closure record",
+      "why": "The merge that brings the seal-fixture repairs and the absorbed-successor correction onto this branch. It introduces no content of its own, but it carries executable paths across the candidate boundary, so it is named rather than left for the documentation-only exemption. apps/** and supabase/** remain byte-identical to the candidate, which the repository computes.",
+      "absorbedBecause": "Absorbed into the resolved base when the closure record merged as a5e87211. Retained rather than deleted: it is a measurement head or the machinery a figure in this package still names."
     }
   ],
   "successors": [
     {
-      "commit": "3b1197fb182f8c8b1787e64464d700e409f53267",
-      "kind": "merge — protected develop into the closure record",
-      "why": "The merge that brings the seal-fixture repairs and the absorbed-successor correction onto this branch. It introduces no content of its own, but it carries executable paths across the candidate boundary, so it is named rather than left for the documentation-only exemption. apps/** and supabase/** remain byte-identical to the candidate, which the repository computes."
+      "commit": "7085039dd6a7f8b2b7035e24d704c282c89b1ec5",
+      "kind": "evidence machinery — promotion readiness",
+      "why": "Reverts the web coverage tests, because apps/web/tests is a PRODUCT path under the QA-005 freeze and adding one broke the candidate the Owner accepted."
+    },
+    {
+      "commit": "81d896729f6d5eb638f71e45f6fe520d9c194aee",
+      "kind": "evidence machinery — promotion readiness",
+      "why": "Makes a promotion a DECLARED SKIP for the ownership gate — a pull request whose HEAD is a protected branch carries the union of every phase and no profile could describe it — while an unmapped branch stays REFUSED."
     }
   ],
   "howTierFiguresAreChecked": "Four obligations, because there are four kinds of claim. ARITHMETIC: `passed + failed + skipped` must equal the declared total. LOCAL: figures equal the P1-27 run ledger read out of Git at `localLedger.atCommit`. MEASUREMENT HEAD: both local tiers name successor ea045d88fd88843c82c8ecd7273b0772f65417f6, whose six declared non-product drift paths equal Git's path set, and are pinned to ledger commit 2e0f2191db4c118e766e9ca4b8ffff981b63d7c6. HOSTED: claims remain fetchable attestations at their recorded run heads; a non-candidate head must explicitly be a superseded ancestor or a product-identical descendant, and Git refusal is UNKNOWN rather than empty.",
