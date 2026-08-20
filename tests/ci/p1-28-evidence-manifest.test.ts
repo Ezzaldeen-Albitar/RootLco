@@ -1312,7 +1312,7 @@ describe('P1-28-QA-005 — a re-freeze may not carry the old head’s numbers fo
       expect(
         problems.join(' '),
         `a ${field} headline disagreeing with the artefact was accepted`
-      ).toMatch(/nothing says why|no declaration admits/);
+      ).toMatch(/nothing says why|no declaration seals one/);
     }
   });
 
@@ -1360,7 +1360,7 @@ describe('P1-28-QA-005 — a re-freeze may not carry the old head’s numbers fo
     expect(
       problemsOf(failed.doc),
       'a declaration was allowed to excuse a hosted FAILURE'
-    ).toContain('no declaration admits');
+    ).toContain('no declaration seals one');
   });
 
   it('admits a declared local-versus-hosted difference, and only a declared one', () => {

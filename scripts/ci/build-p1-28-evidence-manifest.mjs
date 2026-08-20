@@ -1353,29 +1353,35 @@ export function tierBinding(candidateFile, git) {
     if (totals && typeof totals === 'object') {
       const declared = declaredTotal(tier);
       /*
-       * `failed` is the one figure no sentence can excuse.
+       * A HOSTED FAILURE cannot be sealed — and that is a question about the
+       * hosted run alone.
        *
-       * How many tests EXIST is a fact about a tree, and two trees that differ
-       * only in non-product paths legitimately hold different numbers of them —
-       * three cases added to `tests/ci` after a hosted run change `total` and
-       * `files` while `apps/**` and `supabase/**` stay byte-identical. How many
-       * FAILED is a fact about a result, and a hosted failure is a failure
-       * whatever the package says about it.
+       * An earlier revision of this rule compared the tier's LOCAL `failed`
+       * with the hosted artefact's, which was wrong twice over. They are
+       * different runs of different trees, so a difference between them is
+       * ordinary; and requiring equality made the rule SELF-REFERENTIAL — a
+       * package that honestly recorded a red local run could never declare it
+       * without failing the very cases that produce the redness, so the count
+       * converged to two and stopped there. A rule that cannot be satisfied by
+       * telling the truth is not a rule.
        *
-       * So `failed` must match unconditionally, and the other three may differ
-       * only where `localVersusHosted` says why. That is the same standard the
-       * rule already applied to `passed`, and it still catches what it was
-       * written for: the shipped package stated `backend: 2004 tests, 86 files`
-       * beside its own attestation of 2056 and 88 with NO explanation at all,
-       * because the figures were stale rather than different.
+       * What actually matters is simpler: the hosted artefact this package cites
+       * must report no failures. The LOCAL figures are already bound, and far
+       * more strictly, by the local half above — they are read out of a run
+       * ledger pinned at a commit, and `judgeRunLedger` refuses a record that
+       * carries failures at all.
+       *
+       * The size figures stay declarable. How many tests EXIST is a fact about a
+       * tree: cases added to `tests/ci` after a hosted run change `total` and
+       * `files` while apps/** and supabase/** stay byte-identical. That still
+       * catches what the rule was written for — the shipped package stated
+       * `backend: 2004 tests, 86 files` beside its own attestation of 2056 and
+       * 88 with NO explanation, because those figures were stale rather than
+       * different.
        */
-      if (
-        Number.isInteger(totals.failed) &&
-        Number.isInteger(tier.failed) &&
-        tier.failed !== totals.failed
-      ) {
+      if (Number.isInteger(totals.failed) && totals.failed > 0) {
         missing.push(
-          `declares failed ${tier.failed} beside a hosted attestation of ${totals.failed} — a hosted failure is a failure, and no declaration admits a difference in this figure`
+          `cites a hosted run reporting ${totals.failed} failure(s). A hosted failure is a failure, and no declaration seals one`
         );
       }
 
