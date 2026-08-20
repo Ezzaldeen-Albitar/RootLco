@@ -180,6 +180,14 @@ jobs:
       # nothing while every job stays green — the floor's own baseline
       # meanwhile claiming it refuses an untested edit.
       base-ref: ${{ github.event.pull_request.base.ref }}
+      # REQUIRED for the same reason `base-ref` is, and absent for the same
+      # silent reason. The touched-file floor does not apply to a PROMOTION — a
+      # pull request whose head is a protected branch carries only changes
+      # already held to that floor by the pull request that introduced them —
+      # and the changed-files step decides that from THIS input. Without it the
+      # step reads an empty string, the promotion is judged as an edit, and 921
+      # commits of already-reviewed work are held to a per-edit rule.
+      head-branch: ${{ github.event.pull_request.head.ref }}
     permissions:
       contents: read
 
@@ -191,6 +199,7 @@ jobs:
       task: unit-coverage
       ref: ${{ needs.change-detection.outputs.head-sha }}
       base-ref: ${{ github.event.pull_request.base.ref }}
+      head-branch: ${{ github.event.pull_request.head.ref }}
 
   dependency-security:
     name: dependency-security
