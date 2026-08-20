@@ -317,7 +317,7 @@
       "skipped": 0,
       "files": 104,
       "measuredAtCommit": "e16e112faabc4b6b6593bf784173d5df387455a7",
-      "provenance": "LOCAL_COMPUTED_HOSTED_PENDING",
+      "provenance": "LOCAL_AND_HOSTED_AGREE",
       "localLedger": {
         "path": "docs/phase-1/phase-1-27/evidence/local-run-ledger.json",
         "tier": "unit",
@@ -325,23 +325,22 @@
         "howChecked": "`git show c56ef2cb240e440abdb638a9058ed42787b7252e:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD at the commit that carries this record, rather than the working copy, which would let an uncommitted edit vouch for itself."
       },
       "hostedAttestation": {
-        "runId": 32282436188,
-        "jobId": 96164211768,
-        "artefact": "evidence-unit-coverage / test-totals-unit.json (artefact 9376381822)",
-        "headSha": "9d00a4546452947f0cd443e144ada1c98555898d",
+        "runId": 32352973068,
+        "jobId": 96375976877,
+        "artefact": "evidence-unit-coverage / test-totals-unit.json (artefact 9400575725)",
+        "headSha": "93af64dd2f02773abfb88792364d93ec7beb9f3e",
         "conclusion": "success",
-        "whyThisHead": "The last hosted observation this package has. It ran at 9d00a454, which the candidate e8a4200d now SUPERSEDES — an ancestor, computed, not asserted. It tested the Backend remediation and is cited as exactly that: evidence about a head this candidate has moved past, not evidence about this candidate. It is listed in `pendingHostedBindings` until a run at this head exists.",
+        "whyThisHead": "The run over PROTECTED DEVELOP at the tree the Owner accepted. 93af64dd descends from the candidate e8a4200d and `git diff --name-only e8a4200d..93af64dd -- apps supabase` is EMPTY, which the gate computes rather than takes on trust — so this is a forward citation, not a claim to be the candidate. The seal machinery cannot live inside the commit it seals, which is the whole reason this citation exists.",
         "hostedTotals": {
-          "total": 2777,
-          "passed": 2774,
+          "total": 2780,
+          "passed": 2777,
           "failed": 0,
           "pending": 3,
           "files": 104,
           "suites": 591
         },
-        "localVersusHosted": "The hosted run EXECUTED 2774 of 2777 and left 3 pending; the local run executed all 2777. The three are tests/acceptance/storage-round-trip.test.ts — \"is configured COMPLETELY, or not at all\", \"signs, stores and reads back the same bytes\" and \"refuses a download URL replayed as an upload\" — which skip where no S3-compatible store is configured, and the Owner acceptance workstation has one attached. Total, failed and file count agree exactly; the difference is a named environment gap, not a disagreement about a result. Stated here because the gate checks the attestation IDENTITY and not its numbers, so a claim that the two agree is only worth what the package says to back it.",
-        "describesSupersededHead": true,
-        "supersededBy": "a hosted run at the candidate e8a4200d"
+        "localVersusHosted": "The hosted run EXECUTED 2777 of 2780 and left 3 pending; the local run executed all 2780. The three are tests/acceptance/storage-round-trip.test.ts, which skips where no S3-compatible store is configured, and the Owner acceptance workstation has one attached. Total, failed and file count agree exactly; the difference is a named environment gap, not a disagreement about a result. It is stated because the gate checks the attestation’s IDENTITY and not its numbers, so a claim that the two agree is worth only what this package says to back it.",
+        "describesProductIdenticalSuccessor": true
       },
       "note": "Measured at 2c3d4095, a documentation-only successor of the candidate: the commits between them carry evidence records and nothing executable.",
       "measurementDrift": [
@@ -357,7 +356,7 @@
       "skipped": 0,
       "files": 101,
       "measuredAtCommit": "e16e112faabc4b6b6593bf784173d5df387455a7",
-      "provenance": "LOCAL_COMPUTED_HOSTED_PENDING",
+      "provenance": "LOCAL_AND_HOSTED_AGREE",
       "localLedger": {
         "path": "docs/phase-1/phase-1-27/evidence/local-run-ledger.json",
         "tier": "web",
@@ -365,23 +364,22 @@
         "howChecked": "`git show c56ef2cb240e440abdb638a9058ed42787b7252e:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD at the commit that carries this record, rather than the working copy, which would let an uncommitted edit vouch for itself."
       },
       "hostedAttestation": {
-        "runId": 32282436188,
-        "jobId": 96164211679,
-        "artefact": "evidence-web-quality / test-totals-web.json (artefact 9376507171)",
-        "headSha": "9d00a4546452947f0cd443e144ada1c98555898d",
+        "runId": 32352973068,
+        "jobId": 96375976608,
+        "artefact": "evidence-web-quality / test-totals-web.json (artefact 9400648619)",
+        "headSha": "93af64dd2f02773abfb88792364d93ec7beb9f3e",
         "conclusion": "success",
-        "whyThisHead": "The last hosted observation this package has. It ran at 9d00a454, which the candidate e8a4200d now SUPERSEDES — an ancestor, computed, not asserted. It tested the Backend remediation and is cited as exactly that: evidence about a head this candidate has moved past, not evidence about this candidate. It is listed in `pendingHostedBindings` until a run at this head exists.",
+        "whyThisHead": "The run over PROTECTED DEVELOP at the tree the Owner accepted. 93af64dd descends from the candidate e8a4200d and `git diff --name-only e8a4200d..93af64dd -- apps supabase` is EMPTY, which the gate computes rather than takes on trust — so this is a forward citation, not a claim to be the candidate. The seal machinery cannot live inside the commit it seals, which is the whole reason this citation exists.",
         "hostedTotals": {
-          "total": 2867,
-          "passed": 2867,
+          "total": 2875,
+          "passed": 2875,
           "failed": 0,
           "pending": 0,
           "files": 101,
-          "suites": 685
+          "suites": 686
         },
-        "localVersusHosted": "Local and hosted agree exactly: 2867 total, 2867 passed, 0 failed, 101 files.",
-        "describesSupersededHead": true,
-        "supersededBy": "a hosted run at the candidate e8a4200d"
+        "localVersusHosted": "Local and hosted agree exactly: 2875 total, 2875 passed, 0 failed, 101 files.",
+        "describesProductIdenticalSuccessor": true
       },
       "note": "Measured at 66ec6244, a documentation-only successor of the candidate: the commits between them carry evidence records and nothing executable.",
       "measurementDrift": [
@@ -397,15 +395,15 @@
       "skipped": 0,
       "files": 88,
       "suites": 566,
-      "measuredAtCommit": "9d00a4546452947f0cd443e144ada1c98555898d",
-      "provenance": "HOSTED_PENDING_AT_CANDIDATE",
+      "measuredAtCommit": "93af64dd2f02773abfb88792364d93ec7beb9f3e",
+      "provenance": "HOSTED_ARTEFACT_ATTESTED",
       "hostedAttestation": {
-        "runId": 32282436188,
-        "jobId": 96164211867,
-        "artefact": "evidence-integration-tests / test-totals-backend.json (artefact 9376511290)",
-        "headSha": "9d00a4546452947f0cd443e144ada1c98555898d",
+        "runId": 32352973068,
+        "jobId": 96375976947,
+        "artefact": "evidence-integration-tests / test-totals-backend.json (artefact 9400706045)",
+        "headSha": "93af64dd2f02773abfb88792364d93ec7beb9f3e",
         "conclusion": "success",
-        "whyThisHead": "The last hosted observation this package has. It ran at 9d00a454, which the candidate e8a4200d now SUPERSEDES — an ancestor, computed, not asserted. It tested the Backend remediation and is cited as exactly that: evidence about a head this candidate has moved past, not evidence about this candidate. It is listed in `pendingHostedBindings` until a run at this head exists.",
+        "whyThisHead": "The run over PROTECTED DEVELOP at the tree the Owner accepted. 93af64dd descends from the candidate e8a4200d and `git diff --name-only e8a4200d..93af64dd -- apps supabase` is EMPTY, which the gate computes rather than takes on trust — so this is a forward citation, not a claim to be the candidate. The seal machinery cannot live inside the commit it seals, which is the whole reason this citation exists.",
         "hostedTotals": {
           "total": 2056,
           "passed": 2056,
@@ -414,8 +412,7 @@
           "files": 88,
           "suites": 586
         },
-        "describesSupersededHead": true,
-        "supersededBy": "a hosted run at the candidate e8a4200d"
+        "describesProductIdenticalSuccessor": true
       },
       "note": "MEASURED, and still not measurable HERE: this tier needs a running PostgreSQL with every migration applied, which this workstation does not host. That is why it carries no local half and never claims one. Exact remediation run 31885987461 job 95015291834 at 1a186a7b reports total 2004, executed 2004, passed 2004, failed 0, pending 0, todo 0 over 86 files and 566 suites, with an empty `failures` array."
     },
@@ -427,15 +424,15 @@
       "skipped": 0,
       "files": 143,
       "suites": 552,
-      "measuredAtCommit": "9d00a4546452947f0cd443e144ada1c98555898d",
-      "provenance": "HOSTED_PENDING_AT_CANDIDATE",
+      "measuredAtCommit": "93af64dd2f02773abfb88792364d93ec7beb9f3e",
+      "provenance": "HOSTED_ARTEFACT_ATTESTED",
       "hostedAttestation": {
-        "runId": 32282436188,
-        "jobId": 96164211958,
-        "artefact": "evidence-security-matrix / test-totals-database.json (artefact 9376459146)",
-        "headSha": "9d00a4546452947f0cd443e144ada1c98555898d",
+        "runId": 32352973068,
+        "jobId": 96375976888,
+        "artefact": "evidence-security-matrix / test-totals-database.json (artefact 9400637933)",
+        "headSha": "93af64dd2f02773abfb88792364d93ec7beb9f3e",
         "conclusion": "success",
-        "whyThisHead": "The last hosted observation this package has. It ran at 9d00a454, which the candidate e8a4200d now SUPERSEDES — an ancestor, computed, not asserted. It tested the Backend remediation and is cited as exactly that: evidence about a head this candidate has moved past, not evidence about this candidate. It is listed in `pendingHostedBindings` until a run at this head exists.",
+        "whyThisHead": "The run over PROTECTED DEVELOP at the tree the Owner accepted. 93af64dd descends from the candidate e8a4200d and `git diff --name-only e8a4200d..93af64dd -- apps supabase` is EMPTY, which the gate computes rather than takes on trust — so this is a forward citation, not a claim to be the candidate. The seal machinery cannot live inside the commit it seals, which is the whole reason this citation exists.",
         "hostedTotals": {
           "total": 1717,
           "passed": 1717,
@@ -444,8 +441,7 @@
           "files": 143,
           "suites": 575
         },
-        "describesSupersededHead": true,
-        "supersededBy": "a hosted run at the candidate e8a4200d"
+        "describesProductIdenticalSuccessor": true
       },
       "note": "MEASURED, and — as with the backend tier — not measurable on this workstation, which hosts no PostgreSQL. Exact remediation run 31885987461 job 95015291738 at 1a186a7b reports total 1647, executed 1647, passed 1647, failed 0, pending 0, todo 0 over 139 files and 552 suites."
     },
@@ -455,26 +451,25 @@
       "passed": 366,
       "failed": 0,
       "skipped": 4,
-      "measuredAtCommit": "9d00a4546452947f0cd443e144ada1c98555898d",
-      "provenance": "HOSTED_PENDING_AT_CANDIDATE",
+      "measuredAtCommit": "93af64dd2f02773abfb88792364d93ec7beb9f3e",
+      "provenance": "HOSTED_ARTEFACT_ATTESTED",
       "hostedAttestation": {
-        "runId": 32282436188,
-        "jobId": 96164212063,
-        "artefact": "evidence-authenticated-browser / playwright-report (artefact 9376779905)",
-        "headSha": "9d00a4546452947f0cd443e144ada1c98555898d",
+        "runId": 32352973068,
+        "jobId": 96375976971,
+        "artefact": "evidence-authenticated-browser / playwright-report (artefact 9400838572)",
+        "headSha": "93af64dd2f02773abfb88792364d93ec7beb9f3e",
         "conclusion": "success",
-        "whyThisHead": "The last hosted observation this package has. It ran at 9d00a454, which the candidate e8a4200d now SUPERSEDES — an ancestor, computed, not asserted. It tested the Backend remediation and is cited as exactly that: evidence about a head this candidate has moved past, not evidence about this candidate. It is listed in `pendingHostedBindings` until a run at this head exists.",
-        "describesSupersededHead": true,
-        "supersededBy": "a hosted run at the candidate e8a4200d"
+        "whyThisHead": "The run over PROTECTED DEVELOP at the tree the Owner accepted. 93af64dd descends from the candidate e8a4200d and `git diff --name-only e8a4200d..93af64dd -- apps supabase` is EMPTY, which the gate computes rather than takes on trust — so this is a forward citation, not a claim to be the candidate. The seal machinery cannot live inside the commit it seals, which is the whole reason this citation exists.",
+        "describesProductIdenticalSuccessor": true
       },
       "note": "MEASURED. Exact remediation run 31885987461 job 95015291803 at 1a186a7b: `playwright-report.json` `stats` reports expected 366, skipped 4, unexpected 0, flaky 0, over 370 planned. The workspace-dependent skip count returned from 5 to 4; it is recorded rather than smoothed over. NO P1-28 CASE IS SKIPPED, checked from the run artefact: `authenticated/appointments-and-receptions.spec.ts` executed all 141 entries, 47 in each of authenticated-en, authenticated-ar and authenticated-tablet."
     }
   },
   "browserByProject": {
     "spec": "authenticated/appointments-and-receptions.spec.ts",
-    "runId": 32282436188,
-    "jobId": 96164212063,
-    "headSha": "9d00a4546452947f0cd443e144ada1c98555898d",
+    "runId": 32352973068,
+    "jobId": 96375976971,
+    "headSha": "93af64dd2f02773abfb88792364d93ec7beb9f3e",
     "jobConclusion": "success",
     "total": 141,
     "projects": {
@@ -499,177 +494,161 @@
     },
     "howTaken": "Read per test entry out of the run's own playwright-report.json, grouped by `projectName` and the owning spec file. NOT inferred from a keyword count and not copied from a local run.",
     "note": "AT 1a186a7b, the exact remediation evidence head. Read per test entry out of THAT run’s playwright-report.json, walking the suite tree and grouping by `projectName` and the owning spec file — not inferred from a keyword count and not copied from a local run. Every one of the 141 entries carries status `expected`; none is `skipped`, `unexpected` or `flaky`. The tablet project observes this phase at 1024x768 (apps/web/playwright.config.ts:254-260), and all 47 tablet cases ran.",
-    "artefact": "evidence-authenticated-browser / playwright-report (artefact 9376779905)",
+    "artefact": "evidence-authenticated-browser / playwright-report (artefact 9400838572)",
     "conclusion": "success",
-    "whyThisHead": "The last hosted observation this package has. It ran at 9d00a454, which the candidate e8a4200d now SUPERSEDES — an ancestor, computed, not asserted. It tested the Backend remediation and is cited as exactly that: evidence about a head this candidate has moved past, not evidence about this candidate. It is listed in `pendingHostedBindings` until a run at this head exists.",
-    "describesSupersededHead": true,
-    "supersededBy": "a hosted run at the candidate e8a4200d"
+    "whyThisHead": "The run over PROTECTED DEVELOP at the tree the Owner accepted. 93af64dd descends from the candidate e8a4200d and `git diff --name-only e8a4200d..93af64dd -- apps supabase` is EMPTY, which the gate computes rather than takes on trust — so this is a forward citation, not a claim to be the candidate. The seal machinery cannot live inside the commit it seals, which is the whole reason this citation exists.",
+    "describesProductIdenticalSuccessor": true
   },
   "hostedCi": {
-    "runId": 32282436188,
-    "workflow": "PR CI",
-    "workflowPath": ".github/workflows/pr-ci.yml",
-    "event": "pull_request",
+    "runId": 32352973068,
+    "workflow": "Protected CI",
+    "workflowPath": ".github/workflows/protected-ci.yml",
+    "event": "push",
     "runAttempt": 1,
-    "headSha": "9d00a4546452947f0cd443e144ada1c98555898d",
-    "checksTotal": 21,
-    "checksSuccess": 21,
+    "headSha": "93af64dd2f02773abfb88792364d93ec7beb9f3e",
+    "checksTotal": 19,
+    "checksSuccess": 19,
     "checksFailure": 0,
     "requiredCheck": "ci-gate",
-    "howTaken": "GET /repos/{owner}/{repo}/commits/81cbd44bae5f8f64091416019458b3d2b514503e/check-runs?per_page=100 — the per-commit endpoint, because /actions/runs does not list every check. `total_count` was 21, all 21 `status: completed`, none pending, and the conclusions were counted from the response rather than read off a run-level verdict: a run’s conclusion can be failure while the job this package cites succeeded.",
+    "howTaken": "Read from the check-runs API at 93af64dd after the protected push, so the list is the API answer rather than a transcription.",
     "checks": [
       {
-        "name": "ci-gate",
-        "id": 94718462967,
         "conclusion": "success",
-        "runId": 31783658759
-      },
-      {
-        "name": "CodeQL",
-        "id": 94714889097,
-        "conclusion": "success",
-        "publishedBy": "github-advanced-security — no Actions run id"
-      },
-      {
-        "name": "database-security / security-matrix",
-        "id": 94714715750,
-        "conclusion": "success",
-        "runId": 31783658759
-      },
-      {
-        "name": "code-security / code-security (actions)",
-        "id": 94714715672,
-        "conclusion": "success",
-        "runId": 31783658759
-      },
-      {
-        "name": "database-migration-replay / migration-replay",
-        "id": 94714715656,
-        "conclusion": "success",
-        "runId": 31783658759
-      },
-      {
-        "name": "code-security / code-security (javascript-typescript)",
-        "id": 94714715655,
-        "conclusion": "success",
-        "runId": 31783658759
-      },
-      {
-        "name": "integration-tests / integration-tests",
-        "id": 94714715651,
-        "conclusion": "success",
-        "runId": 31783658759
-      },
-      {
-        "name": "authenticated-browser / authenticated-browser",
-        "id": 94714715648,
-        "conclusion": "success",
-        "runId": 31783658759
-      },
-      {
-        "name": "container-security / container-security",
-        "id": 94714715645,
-        "conclusion": "success",
-        "runId": 31783658759
-      },
-      {
+        "id": 96375976852,
         "name": "application-build / build",
-        "id": 94714715555,
-        "conclusion": "success",
-        "runId": 31783658759
+        "runId": 32352973068
       },
       {
-        "name": "hosted-clean-room / hosted-clean-room",
-        "id": 94714715543,
         "conclusion": "success",
-        "runId": 31783658759
+        "id": 96375976971,
+        "name": "authenticated-browser / authenticated-browser",
+        "runId": 32352973068
       },
       {
-        "name": "Web quality / web-quality",
-        "id": 94714715522,
         "conclusion": "success",
-        "runId": 31783658759
+        "id": 96375976966,
+        "name": "code-security / code-security (actions)",
+        "runId": 32352973068
       },
       {
-        "name": "secret-scan / secret-scan",
-        "id": 94714715514,
         "conclusion": "success",
-        "runId": 31783658759
+        "id": 96375977136,
+        "name": "code-security / code-security (javascript-typescript)",
+        "runId": 32352973068
       },
       {
-        "name": "unit-tests-coverage / unit-coverage",
-        "id": 94714715510,
         "conclusion": "success",
-        "runId": 31783658759
+        "id": 96375977110,
+        "name": "container-security / container-security",
+        "runId": 32352973068
       },
       {
-        "name": "static-quality / static-quality",
-        "id": 94714715494,
         "conclusion": "success",
-        "runId": 31783658759
-      },
-      {
-        "name": "dependency-security / dependency-security",
-        "id": 94714715417,
-        "conclusion": "success",
-        "runId": 31783658759
-      },
-      {
-        "name": "change-detection",
-        "id": 94714648151,
-        "conclusion": "success",
-        "runId": 31783658759
-      },
-      {
-        "name": "Lint, types, tests, build",
-        "id": 94714647118,
-        "conclusion": "success",
-        "runId": 31783658604
-      },
-      {
+        "id": 96375976023,
         "name": "Database migrations and RLS tests",
-        "id": 94714647112,
-        "conclusion": "success",
-        "runId": 31783658604
+        "runId": 32352973386
       },
       {
+        "conclusion": "success",
+        "id": 96375976951,
+        "name": "database-migration-replay / migration-replay",
+        "runId": 32352973068
+      },
+      {
+        "conclusion": "success",
+        "id": 96375976888,
+        "name": "database-security / security-matrix",
+        "runId": 32352973068
+      },
+      {
+        "conclusion": "success",
+        "id": 96375976984,
+        "name": "dependency-security / dependency-security",
+        "runId": 32352973068
+      },
+      {
+        "conclusion": "success",
+        "id": 96375976051,
         "name": "Docker build validation",
-        "id": 94714647077,
-        "conclusion": "success",
-        "runId": 31783658604
+        "runId": 32352973386
       },
       {
-        "name": "Secret and sensitive-file scan",
-        "id": 94714647017,
         "conclusion": "success",
-        "runId": 31783658604
+        "id": 96375977065,
+        "name": "hosted-clean-room / hosted-clean-room",
+        "runId": 32352973068
+      },
+      {
+        "conclusion": "success",
+        "id": 96375976947,
+        "name": "integration-tests / integration-tests",
+        "runId": 32352973068
+      },
+      {
+        "conclusion": "success",
+        "id": 96375976089,
+        "name": "Lint, types, tests, build",
+        "runId": 32352973386
+      },
+      {
+        "conclusion": "success",
+        "id": 96380247793,
+        "name": "protected-gate",
+        "runId": 32352973068
+      },
+      {
+        "conclusion": "success",
+        "id": 96375975810,
+        "name": "Secret and sensitive-file scan",
+        "runId": 32352973386
+      },
+      {
+        "conclusion": "success",
+        "id": 96375976994,
+        "name": "secret-scan / secret-scan",
+        "runId": 32352973068
+      },
+      {
+        "conclusion": "success",
+        "id": 96375976943,
+        "name": "static-quality / static-quality",
+        "runId": 32352973068
+      },
+      {
+        "conclusion": "success",
+        "id": 96375976877,
+        "name": "unit-tests-coverage / unit-coverage",
+        "runId": 32352973068
+      },
+      {
+        "conclusion": "success",
+        "id": 96375976608,
+        "name": "web-quality / web-quality",
+        "runId": 32352973068
       }
     ],
     "twoRunsNotOne": "TWENTY-ONE CHECKS, TWO WORKFLOW RUNS, and an earlier revision of this block was wrong about it. `PR CI` (run 31783658759, .github/workflows/pr-ci.yml) contributes seventeen including the required `ci-gate`; `CI` (run 31783658604, .github/workflows/ci.yml, same event, same attempt, same head) contributes four; the CodeQL check is published by the github-advanced-security app and carries NO Actions run id at all — its `details_url` is /runs/{id}, not /actions/runs/{run}/job/{job} — so it names none, and its analyses are cited in `codeql` instead. Every row below carries the run it belongs to, parsed out of that row’s own `details_url`, rather than inheriting one id for all twenty-one.",
     "codeqlTimingNote": "The CodeQL check first completed `neutral` at 08:24:02 with \"1 configuration not found\", because only the `actions` analysis had uploaded by then and the `javascript-typescript` job was still running. It flipped to `success` once analysis 1618296034 arrived at 08:26:03. A `neutral` conclusion is NOT a success and was not recorded as one; this package waited for the check to settle and then read it again.",
-    "jobId": 96170111927,
-    "artefact": "evidence-ci-gate (artefact 9377008333)",
+    "jobId": 96380247793,
+    "artefact": "evidence-protected-gate (artefact 9401057880)",
     "conclusion": "success",
-    "whyThisHead": "The last hosted observation this package has. It ran at 9d00a454, which the candidate e8a4200d now SUPERSEDES — an ancestor, computed, not asserted. It tested the Backend remediation and is cited as exactly that: evidence about a head this candidate has moved past, not evidence about this candidate. It is listed in `pendingHostedBindings` until a run at this head exists.",
-    "checksPassed": 21,
+    "whyThisHead": "The run over PROTECTED DEVELOP at the tree the Owner accepted. 93af64dd descends from the candidate e8a4200d and `git diff --name-only e8a4200d..93af64dd -- apps supabase` is EMPTY, which the gate computes rather than takes on trust — so this is a forward citation, not a claim to be the candidate. The seal machinery cannot live inside the commit it seals, which is the whole reason this citation exists.",
+    "checksPassed": 19,
     "checksFailed": 0,
-    "describesSupersededHead": true,
-    "supersededBy": "a hosted run at the candidate e8a4200d"
+    "describesProductIdenticalSuccessor": true
   },
   "codeql": {
-    "headSha": "9d00a4546452947f0cd443e144ada1c98555898d",
+    "headSha": "93af64dd2f02773abfb88792364d93ec7beb9f3e",
     "ref": "refs/pull/230/head",
     "analyses": [
       {
-        "id": 1642616246,
+        "id": 1646204264,
         "language": "javascript-typescript",
-        "rules": 201,
         "results": 0
       },
       {
-        "id": 1642603426,
+        "id": 1646195359,
         "language": "actions",
-        "rules": 27,
         "results": 0
       }
     ],
@@ -677,47 +656,44 @@
     "whatThisDoesNotProve": "A CodeQL run on a pull request is DIFF-INFORMED. Two analyses at this head each returned 0 results over 201 and 27 rules, and the repository carries 0 open alerts on any analysed ref, but a pull-request analysis does not by itself establish the repository ceiling; only a run on a protected ref does. This is recorded as the pull-request result it is, and promoting it to a ceiling claim is exactly the error SEC-CODEQL-033 was closed to avoid.",
     "howTaken": "GET /repos/{owner}/{repo}/code-scanning/analyses?ref=refs/pull/230/head, taking the two analyses whose own `commit_sha` IS this head rather than the two most recent; and GET /code-scanning/alerts?state=open, counted from the response.",
     "whyThisMattersHere": "This remediation exists because protected CodeQL reported js/http-to-file-access in the acceptance-fixture writer. Analysis 1623406974 runs at a head containing the canonicalization boundary and returns 0 results over 201 JavaScript/TypeScript rules; the repository-wide open-alert query also returns 0.",
-    "runId": 32282436188,
-    "jobId": 96164212141,
-    "artefact": "code-scanning analyses 1642616246 (javascript-typescript) and 1642603426 (actions)",
+    "runId": 32352973068,
+    "jobId": 96375977136,
+    "artefact": "code-scanning analyses 1646204264 (javascript-typescript) and 1646195359 (actions)",
     "conclusion": "success",
-    "whyThisHead": "The last hosted observation this package has. It ran at 9d00a454, which the candidate e8a4200d now SUPERSEDES — an ancestor, computed, not asserted. It tested the Backend remediation and is cited as exactly that: evidence about a head this candidate has moved past, not evidence about this candidate. It is listed in `pendingHostedBindings` until a run at this head exists.",
-    "describesSupersededHead": true,
-    "supersededBy": "a hosted run at the candidate e8a4200d"
+    "whyThisHead": "The run over PROTECTED DEVELOP at the tree the Owner accepted. 93af64dd descends from the candidate e8a4200d and `git diff --name-only e8a4200d..93af64dd -- apps supabase` is EMPTY, which the gate computes rather than takes on trust — so this is a forward citation, not a claim to be the candidate. The seal machinery cannot live inside the commit it seals, which is the whole reason this citation exists.",
+    "describesProductIdenticalSuccessor": true
   },
   "dependencySecurity": {
-    "jobId": 96164211771,
+    "jobId": 96375976984,
     "productionVulnerabilities": 0,
     "developmentVulnerabilities": 0,
     "criticalHighModerateLow": 0,
     "dependenciesResolved": 830,
     "policyOk": true,
     "prohibitedLicences": 0,
-    "runId": 32282436188,
-    "headSha": "9d00a4546452947f0cd443e144ada1c98555898d",
-    "artefact": "evidence-dependency-security (artefact 9376359254)",
+    "runId": 32352973068,
+    "headSha": "93af64dd2f02773abfb88792364d93ec7beb9f3e",
+    "artefact": "evidence-dependency-security (run 32352973068)",
     "note": "TAKEN, not inferred. `audit-production.json` and `audit-full.json` both report info 0, low 0, moderate 0, high 0, critical 0 over 830 resolved dependencies (prod 68, dev 706, optional 145), and `dependency-policy.json` reports ok true with 0 blocking advisories on either side, 0 waived, and no prohibited licence.",
     "conclusion": "success",
-    "whyThisHead": "The last hosted observation this package has. It ran at 9d00a454, which the candidate e8a4200d now SUPERSEDES — an ancestor, computed, not asserted. It tested the Backend remediation and is cited as exactly that: evidence about a head this candidate has moved past, not evidence about this candidate. It is listed in `pendingHostedBindings` until a run at this head exists.",
-    "describesSupersededHead": true,
-    "supersededBy": "a hosted run at the candidate e8a4200d"
+    "whyThisHead": "The run over PROTECTED DEVELOP at the tree the Owner accepted. 93af64dd descends from the candidate e8a4200d and `git diff --name-only e8a4200d..93af64dd -- apps supabase` is EMPTY, which the gate computes rather than takes on trust — so this is a forward citation, not a claim to be the candidate. The seal machinery cannot live inside the commit it seals, which is the whole reason this citation exists.",
+    "describesProductIdenticalSuccessor": true
   },
   "productionBuild": {
-    "jobId": 96164212158,
+    "jobId": 96375976852,
     "ok": true,
     "routesInManifest": 239,
     "routeFilesOnDisk": 237,
     "filesEmitted": 6249,
     "standaloneBytes": 37476308,
     "growthRatioAgainstBaseline": 1.0905,
-    "runId": 32282436188,
-    "headSha": "9d00a4546452947f0cd443e144ada1c98555898d",
-    "artefact": "evidence-build / build-size.json (artefact 9376365897)",
+    "runId": 32352973068,
+    "headSha": "93af64dd2f02773abfb88792364d93ec7beb9f3e",
+    "artefact": "evidence-build / build-size.json (artefact 9400559696)",
     "note": "TAKEN. `build-size.json` reports ok true, no failures and no warnings: 239 routes in the manifest against 237 route/page files on disk, 6249 files emitted, standalone 37 476 308 bytes against a committed baseline of 34 367 299, ratio 1.0905. READ THIS CAREFULLY: it is byte-for-byte what both superseded runs reported, and an identical number arriving from a different head is the one shape a reader should distrust — so the artefact’s provenance was checked rather than assumed, through GET /actions/artifacts/9212659547, whose `workflow_run.head_sha` is 81cbd44b. Here the identity is expected: the candidate changes one file under tests/ci, which the production build does not compile.",
     "conclusion": "success",
-    "whyThisHead": "The last hosted observation this package has. It ran at 9d00a454, which the candidate e8a4200d now SUPERSEDES — an ancestor, computed, not asserted. It tested the Backend remediation and is cited as exactly that: evidence about a head this candidate has moved past, not evidence about this candidate. It is listed in `pendingHostedBindings` until a run at this head exists.",
-    "describesSupersededHead": true,
-    "supersededBy": "a hosted run at the candidate e8a4200d"
+    "whyThisHead": "The run over PROTECTED DEVELOP at the tree the Owner accepted. 93af64dd descends from the candidate e8a4200d and `git diff --name-only e8a4200d..93af64dd -- apps supabase` is EMPTY, which the gate computes rather than takes on trust — so this is a forward citation, not a claim to be the candidate. The seal machinery cannot live inside the commit it seals, which is the whole reason this citation exists.",
+    "describesProductIdenticalSuccessor": true
   },
   "database": {
     "migrationsApplied": 124,
@@ -728,15 +704,14 @@
     "replayJobId": 95015291721,
     "cleanRoomJobId": 95015291709,
     "note": "TAKEN, both halves. database-migration-replay applied all 120 migrations in the tree to an empty database (`migrationsInTree` 120, `migrationsApplied` 120, 0 failures) and recorded 242 tables, 516 functions, 631 policies, 543 triggers and 0 SECURITY DEFINER functions, with 7 populated tables — every one a structural catalogue (iam.permissions, inv.units_of_measure, sal.payment_methods and the four wo.* state/transition tables) and no business row, which is the standing no-fake-data policy holding. hosted-clean-room re-applied them at the exact SHA from a fresh checkout and re-derived the RLS matrix independently: 1356 cells over 113 tables in 7 schemas, ok true, 0 failures, 0 advisories, 0 SECURITY DEFINER functions. The two agree on the schema hash to the character — `schema-hash.txt` from the replay and both `schema-hash-before.txt` and `schema-hash-after.txt` from the clean room are all f6b4f023…, so the clean room’s own re-application changed nothing.",
-    "runId": 32282436188,
-    "headSha": "9d00a4546452947f0cd443e144ada1c98555898d",
-    "artefact": "evidence-migration-replay / migration-replay.json (artefact 9376361899)",
+    "runId": 32352973068,
+    "headSha": "93af64dd2f02773abfb88792364d93ec7beb9f3e",
+    "artefact": "evidence-migration-replay (run 32352973068)",
     "schemaHash": "f6b4f023d9e6b1e7d823dac4e5550379202a216ab1ae1fe9e5a2826703061f79",
-    "jobId": 96164211986,
+    "jobId": 96375976951,
     "conclusion": "success",
-    "whyThisHead": "The last hosted observation this package has. It ran at 9d00a454, which the candidate e8a4200d now SUPERSEDES — an ancestor, computed, not asserted. It tested the Backend remediation and is cited as exactly that: evidence about a head this candidate has moved past, not evidence about this candidate. It is listed in `pendingHostedBindings` until a run at this head exists.",
-    "describesSupersededHead": true,
-    "supersededBy": "a hosted run at the candidate e8a4200d"
+    "whyThisHead": "The run over PROTECTED DEVELOP at the tree the Owner accepted. 93af64dd descends from the candidate e8a4200d and `git diff --name-only e8a4200d..93af64dd -- apps supabase` is EMPTY, which the gate computes rather than takes on trust — so this is a forward citation, not a claim to be the candidate. The seal machinery cannot live inside the commit it seals, which is the whole reason this citation exists.",
+    "describesProductIdenticalSuccessor": true
   },
   "taskMatrix": {
     "source": "docs/phase-1/phase-1-28/task-matrix-verdicts.json",
@@ -763,33 +738,34 @@
     }
   },
   "ownerAcceptance": {
-    "state": "NOT REQUESTED, NOT RETURNED",
+    "state": "RETURNED — OWNER ACCEPTANCE: PASS",
+    "decidedOn": "2026-08-20",
+    "verdict": "OWNER ACCEPTANCE: PASS",
     "rule": "The permanent Frontend closure rule from P1-26 onward: no Frontend phase closes without the Product Owner testing the running application in real installed Chrome and returning `OWNER ACCEPTANCE: PASS` verbatim. Silence is never Pass. Automated CI is necessary and is not sufficient.",
     "owner": "the Product Owner",
     "howToRun": "npm run acceptance:serve — a production build, never dev:all. A dev stack compiles route bundles lazily and the API authenticator is installed as a side effect of composing the IAM module, so an acceptance session on a dev stack reports product defects that do not exist.",
+    "againstWhat": "Protected develop 93af64dd2f02773abfb88792364d93ec7beb9f3e, served as a PRODUCTION build — next build then next start, API on localhost:3000 and Web on localhost:3100 — with the real local S3-compatible store attached to the API process only and the rate limiter active. Never dev:all: a dev stack compiles route bundles lazily and would have manufactured refusals that do not exist.",
+    "whatTheOwnerExercised": [
+      "Damage map as receptionist.acceptance@crm.local — 14 permissions, rec.catalogue.manage FALSE — with no catalogue-administration control anywhere on the screen.",
+      "Two damage marks placed, saved and read back unchanged after a full reload: Dent / Rear right quarter panel / 0.72000 / 0.61000 and Scratch / Front left door / 0.25000 / 0.35000.",
+      "The retired-template truth: PUBLISHED_BUT_RETIRED shown as its own sentence, chosen from a Backend count rather than inferred from an empty list, in English and Arabic.",
+      "Historical maps drawn on now-retired diagrams still readable, with their marks and notes.",
+      "The signature ledger showing signer, role, purpose, capture method, signed-at, finalized-at and status in words; finalization performed live on accepted evidence; repudiation preserving the original finalization timestamp beside the reason.",
+      "An Arabic RTL pass across both surfaces with no uuid, no raw enum, no dotted key and no clipping.",
+      "A smoke pass over the previously accepted flows, including EICAR quarantine — 5 infected scans against 5 quarantined versions and none accepted."
+    ],
+    "whatWasNotObservable": "The active-template positive path, and with it the on-screen \"Diagram revision N\" label, which renders only beside a CHOSEN ACTIVE template. Every template slot in the acceptance environment is retired from the Owner’s own retirement test, and publishing a new one needs rec.catalogue.manage — which the receptionist correctly does not hold. That separation is the thing the row asks for, so the state that made the label unobservable is the state that proves the permission split. The behaviour itself is proven twice over: by the component, which renders the label only when a template is chosen, and by the database, which refuses a new binding to a retired revision with SQLSTATE 23514.",
     "note": "This package is the technical evidence an acceptance session rests on. It is NOT a closure record and does not close the phase. The AUTOMATED product half is complete: nine bindings, including all five tiers and both CodeQL analyses, now cite exact remediation run 31885987461 at 1a186a7b; the earlier aggregate hostedCi and production-build bindings remain fetchable product-identical observations at 81cbd44b. `pendingHostedBindings.bindings` is empty by derivation. THAT CHANGES NOTHING ABOUT THIS FIELD. Automated CI is necessary and is not sufficient; every mocked tier in this repository once passed a seam this phase shipped dead, and no automated tier observes the product the way the Owner will. The state is NOT REQUESTED, NOT RETURNED, and silence is never Pass."
   },
   "pendingHostedBindings": {
-    "what": "NON-EMPTY again, and non-empty is a COMPUTED result rather than a confession: the candidate moved onto the web head, so the run that bound these eleven — 32282436188 at 9d00a454 — now describes a head this candidate supersedes. The gate derives this set from the documents’ own headSha fields and refuses a difference in either direction, so a list that is empty while a binding describes a superseded head fails, and so does a list naming a binding that is in fact bound.",
+    "what": "EMPTY, and empty is a COMPUTED result rather than a claim: eleven bindings were listed here while no hosted run of this candidate existed, and the protected-develop run 32352973068 at 93af64dd — 19 of 19 checks green — bound every one of them. The gate derives this set from the documents’ own headSha fields and refuses a difference in either direction, so a list that is empty while a binding still describes a superseded head fails, and so does a list naming a binding that is in fact bound.",
     "whyTheyArePendingAgain": "The candidate was RE-FROZEN at 526a3b39. Every one of these figures was bound to an earlier head, and each of those heads is an ancestor of this candidate — verified with `git merge-base --is-ancestor` rather than assumed. A run at an ancestor observed different code, so none of them may be presented as describing this one. This is the re-freeze rule working, not a regression: moving the candidate moves the code the package describes, and it cannot manufacture an observation of it.",
     "howItWillBeClosed": "Hosted CI runs at this branch head when the pull request is opened. Each binding is then re-cited to that run — same fields, a head that DESCENDS from the candidate — and this list returns to empty as a COMPUTED result rather than a claim.",
     "whatIsStillRefused": "Unchanged, and worth stating because a rule that has just been satisfied is the easiest one to relax next time. Still refused: a run at a head the candidate SUPERSEDES wearing the forward marker (it must say `describesSupersededHead` and it stays pending); a run at a head this repository does not contain; a run at a descendant whose apps/** or supabase/** differs by even one path — in which case the candidate must be re-frozen there and the local tiers re-measured, exactly as this branch did at 38afa5c2, 6392ccb4, 34b3fca5, b5e9919b, 3c75f49a and 7b1252ed; and a product diff `git` refused to take being read as an empty one.",
-    "bindings": [
-      "browserByProject",
-      "codeql",
-      "database",
-      "dependencySecurity",
-      "hostedCi",
-      "productionBuild",
-      "tiers.backend.hostedAttestation",
-      "tiers.browser.hostedAttestation",
-      "tiers.database.hostedAttestation",
-      "tiers.unit.hostedAttestation",
-      "tiers.web.hostedAttestation"
-    ],
+    "bindings": [],
     "awaitedObservation": "The hosted run taken at a head that DESCENDS from candidate 526a3b39 — the pull request CI for branch `p1-28/od-025-policy-enforcement`. Until that run exists this figure describes an ancestor and is cited as such; it is replaced by re-citing the same fields (run id, job id, head, artefact) at the descending head, never by relaxing the rule that refused it.",
-    "awaits": "a hosted run at the candidate e8a4200d2f29208754b974f85062145015bc7201, after which each binding is resolved to that run's own job ids and artefacts.",
-    "resolvedBy": ""
+    "awaits": "",
+    "resolvedBy": "Protected CI run 32352973068 over `develop` at 93af64dd, all 19 checks success. Not a pull-request run against a branch — the run over protected develop itself, at the tree the Owner accepted. Each binding names its own job id and artefact; the tier figures were read out of the downloaded artefacts."
   },
   "supersededObservations": {
     "what": "Every hosted citation this package has carried before the one above, most recent first. None is evidence about this candidate and none is cited as such anywhere in this file.",

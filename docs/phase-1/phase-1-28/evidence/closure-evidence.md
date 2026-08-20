@@ -1039,3 +1039,17 @@ asserted instead as the honest **blocked state** the screen actually shows. The
 configured half is proved separately, in the same browser run, against a
 fixture tenant provisioned at run time through the published management contracts
 an administrator would use.
+
+---
+
+## The Owner's verdict, and where it is recorded
+
+The Product Owner returned `OWNER ACCEPTANCE: PASS` on 2026-08-20, against a
+production build of protected `develop` `93af64dd`. The decision, what it was
+returned against, what the Owner exercised by hand, and the one row that was not
+observable — with the reason it was not, and where that behaviour is proved
+instead — are recorded in [`../closure-record.md`](../closure-record.md).
+
+That document is the phase's closure record. It is not a promotion record: a
+promotion of `develop` to `main` is a separate, separately authorized act with
+its own pull request and its own evidence.
