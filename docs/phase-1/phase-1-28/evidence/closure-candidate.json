@@ -315,6 +315,11 @@
       "commit": "59dd065c25d47f36e09903732638ddbb3de23ae3",
       "kind": "evidence machinery — two seal fixtures",
       "why": "Repairs two cases that kept their form and lost their meaning when the remediation merged into develop: one computed a successor range the base had absorbed, the other set a measurement pin to the value the field already held. Non-product: tests/ci only."
+    },
+    {
+      "commit": "00780669692a148f23d954e6c105d8bc7fc1a2cd",
+      "kind": "measurement head — unit and web tiers",
+      "why": "The commit both tiers were run at. Named because a measurement head must be a named successor: a figure taken at a head nobody declared cannot be presented as a figure about this candidate."
     }
   ],
   "howTierFiguresAreChecked": "Four obligations, because there are four kinds of claim. ARITHMETIC: `passed + failed + skipped` must equal the declared total. LOCAL: figures equal the P1-27 run ledger read out of Git at `localLedger.atCommit`. MEASUREMENT HEAD: both local tiers name successor ea045d88fd88843c82c8ecd7273b0772f65417f6, whose six declared non-product drift paths equal Git's path set, and are pinned to ledger commit 2e0f2191db4c118e766e9ca4b8ffff981b63d7c6. HOSTED: claims remain fetchable attestations at their recorded run heads; a non-candidate head must explicitly be a superseded ancestor or a product-identical descendant, and Git refusal is UNKNOWN rather than empty.",
@@ -326,12 +331,12 @@
       "failed": 0,
       "skipped": 0,
       "files": 104,
-      "measuredAtCommit": "e16e112faabc4b6b6593bf784173d5df387455a7",
+      "measuredAtCommit": "00780669692a148f23d954e6c105d8bc7fc1a2cd",
       "provenance": "LOCAL_COMPUTED_HOSTED_PENDING",
       "localLedger": {
         "path": "docs/phase-1/phase-1-27/evidence/local-run-ledger.json",
         "tier": "unit",
-        "atCommit": "05fc8dec1f74a96c2fe136f1874f1b68d401eba0",
+        "atCommit": "962ece17ddc2034b6c602c333bec28915af76d35",
         "howChecked": "`git show c56ef2cb240e440abdb638a9058ed42787b7252e:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD at the commit that carries this record, rather than the working copy, which would let an uncommitted edit vouch for itself."
       },
       "hostedAttestation": {
@@ -366,12 +371,12 @@
       "failed": 0,
       "skipped": 0,
       "files": 101,
-      "measuredAtCommit": "e16e112faabc4b6b6593bf784173d5df387455a7",
+      "measuredAtCommit": "00780669692a148f23d954e6c105d8bc7fc1a2cd",
       "provenance": "LOCAL_COMPUTED_HOSTED_PENDING",
       "localLedger": {
         "path": "docs/phase-1/phase-1-27/evidence/local-run-ledger.json",
         "tier": "web",
-        "atCommit": "05fc8dec1f74a96c2fe136f1874f1b68d401eba0",
+        "atCommit": "962ece17ddc2034b6c602c333bec28915af76d35",
         "howChecked": "`git show c56ef2cb240e440abdb638a9058ed42787b7252e:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD at the commit that carries this record, rather than the working copy, which would let an uncommitted edit vouch for itself."
       },
       "hostedAttestation": {
