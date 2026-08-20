@@ -1352,28 +1352,46 @@ export function tierBinding(candidateFile, git) {
     const totals = attestation.describesSupersededHead === true ? null : attestation.hostedTotals;
     if (totals && typeof totals === 'object') {
       const declared = declaredTotal(tier);
-      const agree = [
-        ['total', declared, totals.total],
-        ['failed', tier.failed, totals.failed],
-        ['files', tier.files, totals.files],
-      ];
-      for (const [what, mine, hosted] of agree) {
-        if (Number.isInteger(hosted) && Number.isInteger(mine) && mine !== hosted) {
-          missing.push(
-            `declares ${what} ${mine} beside a hosted attestation of ${hosted} — the headline and the artefact it cites are not the same measurement`
-          );
-        }
-      }
-      const explained = String(attestation.localVersusHosted ?? '').trim().length > 0;
+      /*
+       * `failed` is the one figure no sentence can excuse.
+       *
+       * How many tests EXIST is a fact about a tree, and two trees that differ
+       * only in non-product paths legitimately hold different numbers of them —
+       * three cases added to `tests/ci` after a hosted run change `total` and
+       * `files` while `apps/**` and `supabase/**` stay byte-identical. How many
+       * FAILED is a fact about a result, and a hosted failure is a failure
+       * whatever the package says about it.
+       *
+       * So `failed` must match unconditionally, and the other three may differ
+       * only where `localVersusHosted` says why. That is the same standard the
+       * rule already applied to `passed`, and it still catches what it was
+       * written for: the shipped package stated `backend: 2004 tests, 86 files`
+       * beside its own attestation of 2056 and 88 with NO explanation at all,
+       * because the figures were stale rather than different.
+       */
       if (
-        !explained &&
-        Number.isInteger(totals.passed) &&
-        Number.isInteger(tier.passed) &&
-        tier.passed !== totals.passed
+        Number.isInteger(totals.failed) &&
+        Number.isInteger(tier.failed) &&
+        tier.failed !== totals.failed
       ) {
         missing.push(
-          `declares ${tier.passed} passed beside a hosted attestation of ${totals.passed}, and nothing says why — a difference between what ran here and what ran there is admissible, but only when the package states it`
+          `declares failed ${tier.failed} beside a hosted attestation of ${totals.failed} — a hosted failure is a failure, and no declaration admits a difference in this figure`
         );
+      }
+
+      const explained = String(attestation.localVersusHosted ?? '').trim().length > 0;
+      if (!explained) {
+        for (const [what, mine, hosted] of [
+          ['total', declared, totals.total],
+          ['files', tier.files, totals.files],
+          ['passed', tier.passed, totals.passed],
+        ]) {
+          if (Number.isInteger(hosted) && Number.isInteger(mine) && mine !== hosted) {
+            missing.push(
+              `declares ${what} ${mine} beside a hosted attestation of ${hosted}, and nothing says why — a difference between what ran here and what ran there is admissible, but only when the package states it`
+            );
+          }
+        }
       }
     }
 

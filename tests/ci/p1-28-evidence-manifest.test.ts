@@ -1305,14 +1305,62 @@ describe('P1-28-QA-005 — a re-freeze may not carry the old head’s numbers fo
 
       // A DIFFERENT number, taken from the attestation itself so the mutation
       // cannot be satisfied by a coincidence.
+      delete totals.localVersusHosted;
       hosted![hostedField] = Number(hosted![hostedField]) + 7;
       const problems = (tierBinding(doc as never, git) as unknown as { hostedProblems: string[] })
         .hostedProblems;
       expect(
         problems.join(' '),
         `a ${field} headline disagreeing with the artefact was accepted`
-      ).toContain('not the same measurement');
+      ).toMatch(/nothing says why|no declaration admits/);
     }
+  });
+
+  it('lets a declaration admit a SIZE difference, and never a FAILURE', () => {
+    /*
+     * The nuance the promotion forced, and the line it draws.
+     *
+     * How many tests EXIST is a fact about a tree: three cases added to
+     * tests/ci after a hosted run change `total` and `files` while apps/** and
+     * supabase/** stay byte-identical, and the candidate freeze is untouched.
+     * How many FAILED is a fact about a result, and a hosted failure is a
+     * failure whatever the package says about it.
+     *
+     * So a declaration admits the first and must never admit the second.
+     */
+    const bound = () => {
+      const doc = JSON.parse(JSON.stringify(candidateFile)) as {
+        tiers: Record<string, Record<string, unknown>>;
+      };
+      const tier = doc.tiers.backend!;
+      const att = tier.hostedAttestation as Record<string, unknown>;
+      delete att.describesSupersededHead;
+      delete att.supersededBy;
+      delete att[SUCCESSOR_MARKER];
+      att.headSha = (
+        candidateFile as unknown as { candidate: { FINAL_CODE_SHA: string } }
+      ).candidate.FINAL_CODE_SHA;
+      tier.provenance = 'HOSTED_ARTEFACT_ATTESTED';
+      att.localVersusHosted = 'three cases live in tests/ci that the hosted run predates';
+      return { doc, tier, hosted: att.hostedTotals as Record<string, number> };
+    };
+    const problemsOf = (doc: unknown) =>
+      (tierBinding(doc as never, git) as unknown as { hostedProblems: string[] }).hostedProblems
+        .filter((p) => p.startsWith('backend:'))
+        .join(' ');
+
+    const sized = bound();
+    sized.hosted.total = Number(sized.hosted.total) + 3;
+    expect(problemsOf(sized.doc), 'a DECLARED size difference was refused').not.toMatch(
+      /nothing says why/
+    );
+
+    const failed = bound();
+    failed.hosted.failed = Number(failed.hosted.failed) + 1;
+    expect(
+      problemsOf(failed.doc),
+      'a declaration was allowed to excuse a hosted FAILURE'
+    ).toContain('no declaration admits');
   });
 
   it('admits a declared local-versus-hosted difference, and only a declared one', () => {

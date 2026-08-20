@@ -492,8 +492,30 @@ jobs:
         if: (inputs.task == 'unit-coverage' || inputs.task == 'web-quality') && !cancelled()
         env:
           BASE_REF: ${{ inputs.base-ref }}
+          HEAD_BRANCH: ${{ inputs.head-branch }}
         run: |
           set -euo pipefail
+          # A PROMOTION is not an edit, and the touched-file floor is a question
+          # about an edit.
+          #
+          # When the pull request's HEAD is itself a protected branch, the diff
+          # against the base is the union of every phase that has landed since
+          # the last promotion — 921 commits, the first time this was hit. Every
+          # file in it was already held to this floor by the pull request that
+          # introduced it. Asking again, of all of them at once, is the same
+          # category error the ownership gate refused for the same reason, and
+          # the answer is the same: this is not the question to ask here.
+          #
+          # It is REPORTED, never silent. The gate distinguishes "no file was
+          # touched" from "no list was supplied", and this is a third state that
+          # must not be collapsed into either — a promotion carries files, and
+          # this floor deliberately did not inspect them.
+          if [ "${HEAD_BRANCH}" = 'main' ] || [ "${HEAD_BRANCH}" = 'develop' ]; then
+            : > changed-files.txt
+            echo "::notice::the pull-request head '${HEAD_BRANCH}' is a protected branch, so this is a promotion. The touched-file coverage floor inspected NO files: every file in this range was held to it by the pull request that introduced it. The overall coverage baseline still applies and is unaffected."
+            wc -l < changed-files.txt
+            exit 0
+          fi
           if [ -n "${BASE_REF}" ] && git rev-parse --verify "origin/${BASE_REF}" >/dev/null 2>&1; then
             # Renames are EXCLUDED when the content is identical. The
             # touched-file coverage floor exists to stop new or modified code
