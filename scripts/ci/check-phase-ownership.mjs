@@ -451,6 +451,44 @@ export function decideOwnershipRun(context = {}) {
   const rules = context.rules ?? [];
 
   if (head !== '' && baseRef !== '') {
+    /*
+     * A PROMOTION — a pull request whose HEAD is itself a protected branch.
+     *
+     * This file already refuses to judge a protected branch on a push, and says
+     * exactly why: changed-file ownership is a property of ONE phase branch
+     * against its base, while a protected branch is the union of every phase
+     * that has landed. That reasoning does not change because the same branch
+     * arrives as the head of a pull request instead of as a push. `develop` ->
+     * `main` carries 921 commits from every phase since P1-24, and no phase
+     * profile could describe it.
+     *
+     * The gate REFUSED the first such promotion rather than guessing, which was
+     * the right failure: the alternative — borrowing some phase's declaration —
+     * is the exact fault this file exists to prevent, and its own message says
+     * so. What was missing is not a profile but this case.
+     *
+     * It is a DECLARED SKIP, not a pass. Every commit in a promotion passed this
+     * gate on the pull request that merged it to the protected branch, and the
+     * promotion itself is reviewed by the protected gates it must pass at its
+     * exact head. Nothing here was checked, and this run is not evidence that it
+     * was.
+     */
+    if (PROTECTED_BRANCHES.includes(head)) {
+      return {
+        action: 'declared-skip',
+        checked: false,
+        profile: null,
+        base: `origin/${baseRef}`,
+        reason:
+          `the pull-request head '${head}' is itself a protected branch, so this is a promotion ` +
+          `onto '${baseRef}' rather than a phase change. Changed-file ownership is a property of ` +
+          'ONE phase branch against its base; a protected branch is the union of every phase that ' +
+          'has landed, so no profile could describe it. Every commit in this range passed this ' +
+          'gate on the pull request that merged it, and the promotion is reviewed by the ' +
+          'protected gates it must pass at its exact head. DECLARED SKIP — nothing was checked, ' +
+          'and this run is not evidence that it was.',
+      };
+    }
     return fromBranch(head, `origin/${baseRef}`, rules, `pull-request head '${head}'`);
   }
 

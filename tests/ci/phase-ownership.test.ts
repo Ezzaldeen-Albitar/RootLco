@@ -532,6 +532,63 @@ describe('a push on an ORDINARY branch resolves the profile from the pushed ref'
   });
 });
 
+describe('a promotion is a DECLARED skip, and only a promotion', () => {
+  /*
+   * Found by opening the first develop -> main promotion since this gate began
+   * refusing unmapped branches. It refused, and the refusal was RIGHT — the
+   * alternative is borrowing some phase's declaration, which is the exact fault
+   * this file exists to prevent, and the message says so.
+   *
+   * What was missing is not a profile but this case. A pull request whose HEAD
+   * is a protected branch is a promotion: it carries the union of every phase
+   * that has landed — 921 commits, at the time this was written — and no phase
+   * profile could describe it. The gate already refuses to judge a protected
+   * branch on a push for exactly that reason; arriving as the head of a pull
+   * request does not change it.
+   */
+  it.each(PROTECTED_BRANCHES)('declares the skip when %s is the pull-request HEAD', (branch) => {
+    const onto = branch === 'main' ? 'develop' : 'main';
+    const verdict = decideOwnershipRun({
+      headBranch: branch,
+      baseRef: onto,
+      eventName: 'pull_request',
+      rules: RULES,
+    });
+    expect(verdict.action).toBe('declared-skip');
+    expect(verdict.checked, 'a promotion must not report that ownership was checked').toBe(false);
+    expect(verdict.profile).toBeNull();
+    expect(verdict.reason).toContain('DECLARED SKIP');
+    expect(verdict.reason).toContain('promotion');
+  });
+
+  it('does NOT extend the skip to an ordinary branch that simply has no rule', () => {
+    /*
+     * The half that keeps this from becoming an escape hatch. A branch nobody
+     * mapped is still REFUSED — the skip is granted for being a protected
+     * branch, never for being unrecognised, and those two must not blur.
+     */
+    const unmapped = decideOwnershipRun({
+      headBranch: 'wildcat/no-such-rule',
+      baseRef: 'develop',
+      eventName: 'pull_request',
+      rules: RULES,
+    });
+    expect(unmapped.action, 'an unmapped branch was waved through as a promotion').toBe('refuse');
+    expect(unmapped.checked).toBe(false);
+
+    // And an ordinary mapped branch is still CHECKED, against its own profile.
+    const mapped = decideOwnershipRun({
+      headBranch: 'p1-28/anything',
+      baseRef: 'develop',
+      eventName: 'pull_request',
+      rules: RULES,
+    });
+    expect(mapped.action).toBe('check');
+    expect(mapped.checked).toBe(true);
+    expect(mapped.profile).not.toBeNull();
+  });
+});
+
 describe('a protected push is a DECLARED skip, not a pass', () => {
   it.each(PROTECTED_BRANCHES)('declares the skip on %s and reports checked: false', (branch) => {
     const verdict = decideOwnershipRun({ eventName: 'push', refName: branch, rules: RULES });
