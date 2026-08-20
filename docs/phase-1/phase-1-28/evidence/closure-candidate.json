@@ -281,7 +281,7 @@
     "howToCheck": "Run `npx vitest run tests/ci/p1-28-evidence-manifest.test.ts --pool=threads --maxWorkers=1`. The committed bound package must pass 96/96, and the constructed pending/forward-binding/absorbed-history worlds inside that run must also pass."
   },
   "successorRule": {
-    "what": "ONE successor, the merge 3b1197fb, and it is named. A merge introduces no content of its own but carries executable paths across the candidate boundary, so the documentation-only exemption does not cover it. Everything it brings in is already an ANCESTOR of the resolved base and sits in `absorbedSuccessors`, preserving the measurement pins without being misrepresented as a current-branch successor. The commit that records THIS is documentation-only and may go unnamed, because a commit cannot write its own id into a file it contains.",
+    "what": "5 successor(s), each named: 09e3fa13, 9922b287, 47f8e53f, 7085039d, 81d89672. Every one touches scripts/ci, tests/ci, .github or docs only — apps/** and supabase/** stay byte-identical to the accepted candidate, computed rather than asserted.",
     "whatWouldFailThis": "Any executable commit in `git log <head under test> --not <candidate> <historical base>` that is not named here, any named id outside that computed range, any product-path difference under apps/** or supabase/**, or any Git/topology question that returns UNKNOWN."
   },
   "absorbedSuccessors": [
@@ -320,30 +320,61 @@
       "kind": "measurement head — unit and web tiers",
       "why": "The commit both tiers were run at. Named because a measurement head must be a named successor: a figure taken at a head nobody declared cannot be presented as a figure about this candidate.",
       "absorbedBecause": "Absorbed into the resolved base when the seal-fixture repair merged as 1600609d. Retained rather than deleted: it is a measurement head or the machinery a figure in this package still names."
+    },
+    {
+      "commit": "3b1197fb182f8c8b1787e64464d700e409f53267",
+      "kind": "merge — protected develop into the closure record",
+      "why": "The merge that brings the seal-fixture repairs and the absorbed-successor correction onto this branch. It introduces no content of its own, but it carries executable paths across the candidate boundary, so it is named rather than left for the documentation-only exemption. apps/** and supabase/** remain byte-identical to the candidate, which the repository computes.",
+      "absorbedBecause": "Absorbed into the resolved base when the closure record merged as a5e87211. Retained rather than deleted: it is a measurement head or the machinery a figure in this package still names."
     }
   ],
   "successors": [
     {
-      "commit": "3b1197fb182f8c8b1787e64464d700e409f53267",
-      "kind": "merge — protected develop into the closure record",
-      "why": "The merge that brings the seal-fixture repairs and the absorbed-successor correction onto this branch. It introduces no content of its own, but it carries executable paths across the candidate boundary, so it is named rather than left for the documentation-only exemption. apps/** and supabase/** remain byte-identical to the candidate, which the repository computes."
+      "commit": "09e3fa13b96e3b127a92cb2b0e028a20e216f66f",
+      "kind": "evidence machinery — promotion readiness",
+      "why": "Declares what this branch may change, after the ownership gate refused a branch nobody mapped."
+    },
+    {
+      "commit": "9922b28793fa7602baa82f177ce5ff6e64d61f29",
+      "kind": "evidence machinery — promotion readiness",
+      "why": "Narrows the hosted-failure rule to the hosted run alone."
+    },
+    {
+      "commit": "47f8e53fcaf42b26f7085c236745b8457f6289df",
+      "kind": "evidence machinery — promotion readiness",
+      "why": "Stops the touched-file coverage floor asking an edit question of a promotion."
+    },
+    {
+      "commit": "7085039dd6a7f8b2b7035e24d704c282c89b1ec5",
+      "kind": "evidence machinery — promotion readiness",
+      "why": "Reverts the web coverage tests: apps/web/tests is a PRODUCT path under the QA-005 freeze."
+    },
+    {
+      "commit": "81d896729f6d5eb638f71e45f6fe520d9c194aee",
+      "kind": "evidence machinery — promotion readiness",
+      "why": "Makes a promotion a DECLARED SKIP for the ownership gate, while an unmapped branch stays REFUSED."
+    },
+    {
+      "commit": "e37b10db08a5e20cff26d608acf2e1804fd4d761",
+      "kind": "measurement head — unit tier",
+      "why": "The commit the unit tier was run at. A measurement head must be a named successor."
     }
   ],
   "howTierFiguresAreChecked": "Four obligations, because there are four kinds of claim. ARITHMETIC: `passed + failed + skipped` must equal the declared total. LOCAL: figures equal the P1-27 run ledger read out of Git at `localLedger.atCommit`. MEASUREMENT HEAD: both local tiers name successor ea045d88fd88843c82c8ecd7273b0772f65417f6, whose six declared non-product drift paths equal Git's path set, and are pinned to ledger commit 2e0f2191db4c118e766e9ca4b8ffff981b63d7c6. HOSTED: claims remain fetchable attestations at their recorded run heads; a non-candidate head must explicitly be a superseded ancestor or a product-identical descendant, and Git refusal is UNKNOWN rather than empty.",
   "tiers": {
     "unit": {
       "label": "root unit and foundation",
-      "tests": 2780,
-      "passed": 2780,
+      "tests": 2784,
+      "passed": 2784,
       "failed": 0,
       "skipped": 0,
       "files": 104,
-      "measuredAtCommit": "00780669692a148f23d954e6c105d8bc7fc1a2cd",
+      "measuredAtCommit": "e37b10db08a5e20cff26d608acf2e1804fd4d761",
       "provenance": "LOCAL_AND_HOSTED_AGREE",
       "localLedger": {
         "path": "docs/phase-1/phase-1-27/evidence/local-run-ledger.json",
         "tier": "unit",
-        "atCommit": "962ece17ddc2034b6c602c333bec28915af76d35",
+        "atCommit": "6b8fd72073932bfd56f62715c97ffc4155c502f5",
         "howChecked": "`git show c56ef2cb240e440abdb638a9058ed42787b7252e:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD at the commit that carries this record, rather than the working copy, which would let an uncommitted edit vouch for itself."
       },
       "hostedAttestation": {
@@ -352,7 +383,7 @@
         "artefact": "evidence-unit-coverage / test-totals-unit.json (artefact 9400575725)",
         "headSha": "93af64dd2f02773abfb88792364d93ec7beb9f3e",
         "conclusion": "success",
-        "whyThisHead": "The run over PROTECTED DEVELOP at the tree the Owner accepted. 93af64dd descends from the candidate e8a4200d and `git diff --name-only e8a4200d..93af64dd -- apps supabase` is EMPTY, which the gate computes rather than takes on trust — so this is a forward citation, not a claim to be the candidate. The seal machinery cannot live inside the commit it seals, which is the whole reason this citation exists.",
+        "whyThisHead": "The run over PROTECTED DEVELOP at the tree the Owner accepted. 93af64dd descends from the candidate e8a4200d and `git diff --name-only e8a4200d..93af64dd -- apps supabase` is EMPTY, which the gate computes rather than takes on trust.",
         "hostedTotals": {
           "total": 2780,
           "passed": 2777,
@@ -361,13 +392,17 @@
           "files": 104,
           "suites": 591
         },
-        "localVersusHosted": "The hosted run EXECUTED 2777 of 2780 and left 3 pending; the local run executed all 2780. The three are tests/acceptance/storage-round-trip.test.ts, which skips where no S3-compatible store is configured, and the Owner acceptance workstation has one attached. Total, failed and file count agree exactly; the difference is a named environment gap, not a disagreement about a result. It is stated because the gate checks the attestation’s IDENTITY and not its numbers, so a claim that the two agree is worth only what this package says to back it.",
-        "describesProductIdenticalSuccessor": true
+        "describesProductIdenticalSuccessor": true,
+        "localVersusHosted": "The local tree holds THREE cases the hosted run did not: the promotion-ownership cases in tests/ci, written after that run. So local reports 2783 and hosted 2780, and the file count differs by the same reason. tests/ci is NOT a product path — apps/** and supabase/** are byte-identical to the candidate, computed — so the freeze is untouched and what changed is the size of the suite, not the software. failed is 0 on both, and no declaration would have excused it otherwise."
       },
       "note": "Measured at 2c3d4095, a documentation-only successor of the candidate: the commits between them carry evidence records and nothing executable.",
       "measurementDrift": [
+        ".github/ci-baselines/phase-ownership-profiles.json",
+        ".github/workflows/_reusable-node-quality.yml",
         "scripts/ci/build-p1-28-evidence-manifest.mjs",
-        "tests/ci/p1-28-evidence-manifest.test.ts"
+        "scripts/ci/check-phase-ownership.mjs",
+        "tests/ci/p1-28-evidence-manifest.test.ts",
+        "tests/ci/phase-ownership.test.ts"
       ]
     },
     "web": {
@@ -377,12 +412,12 @@
       "failed": 0,
       "skipped": 0,
       "files": 101,
-      "measuredAtCommit": "00780669692a148f23d954e6c105d8bc7fc1a2cd",
+      "measuredAtCommit": "09e3fa13b96e3b127a92cb2b0e028a20e216f66f",
       "provenance": "LOCAL_AND_HOSTED_AGREE",
       "localLedger": {
         "path": "docs/phase-1/phase-1-27/evidence/local-run-ledger.json",
         "tier": "web",
-        "atCommit": "962ece17ddc2034b6c602c333bec28915af76d35",
+        "atCommit": "6b8fd72073932bfd56f62715c97ffc4155c502f5",
         "howChecked": "`git show c56ef2cb240e440abdb638a9058ed42787b7252e:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD at the commit that carries this record, rather than the working copy, which would let an uncommitted edit vouch for itself."
       },
       "hostedAttestation": {
@@ -405,8 +440,12 @@
       },
       "note": "Measured at 66ec6244, a documentation-only successor of the candidate: the commits between them carry evidence records and nothing executable.",
       "measurementDrift": [
+        ".github/ci-baselines/phase-ownership-profiles.json",
+        ".github/workflows/_reusable-node-quality.yml",
         "scripts/ci/build-p1-28-evidence-manifest.mjs",
-        "tests/ci/p1-28-evidence-manifest.test.ts"
+        "scripts/ci/check-phase-ownership.mjs",
+        "tests/ci/p1-28-evidence-manifest.test.ts",
+        "tests/ci/phase-ownership.test.ts"
       ]
     },
     "backend": {
@@ -780,14 +819,14 @@
     "note": "This package is the technical evidence an acceptance session rests on. It is NOT a closure record and does not close the phase. The AUTOMATED product half is complete: nine bindings, including all five tiers and both CodeQL analyses, now cite exact remediation run 31885987461 at 1a186a7b; the earlier aggregate hostedCi and production-build bindings remain fetchable product-identical observations at 81cbd44b. `pendingHostedBindings.bindings` is empty by derivation. THAT CHANGES NOTHING ABOUT THIS FIELD. Automated CI is necessary and is not sufficient; every mocked tier in this repository once passed a seam this phase shipped dead, and no automated tier observes the product the way the Owner will. The state is NOT REQUESTED, NOT RETURNED, and silence is never Pass."
   },
   "pendingHostedBindings": {
-    "what": "EMPTY, and empty is a COMPUTED result rather than a claim: eleven bindings were listed here while no hosted run of this candidate existed, and the protected-develop run 32352973068 at 93af64dd — 19 of 19 checks green — bound every one of them. The gate derives this set from the documents’ own headSha fields and refuses a difference in either direction, so a list that is empty while a binding still describes a superseded head fails, and so does a list naming a binding that is in fact bound.",
+    "what": "EMPTY, and computed rather than claimed. Every binding cites the protected-develop run 32352973068 at 93af64dd, which descends from the candidate and is product-identical to it by a diff the gate takes itself.",
     "whyTheyArePendingAgain": "The candidate was RE-FROZEN at 526a3b39. Every one of these figures was bound to an earlier head, and each of those heads is an ancestor of this candidate — verified with `git merge-base --is-ancestor` rather than assumed. A run at an ancestor observed different code, so none of them may be presented as describing this one. This is the re-freeze rule working, not a regression: moving the candidate moves the code the package describes, and it cannot manufacture an observation of it.",
     "howItWillBeClosed": "Hosted CI runs at this branch head when the pull request is opened. Each binding is then re-cited to that run — same fields, a head that DESCENDS from the candidate — and this list returns to empty as a COMPUTED result rather than a claim.",
     "whatIsStillRefused": "Unchanged, and worth stating because a rule that has just been satisfied is the easiest one to relax next time. Still refused: a run at a head the candidate SUPERSEDES wearing the forward marker (it must say `describesSupersededHead` and it stays pending); a run at a head this repository does not contain; a run at a descendant whose apps/** or supabase/** differs by even one path — in which case the candidate must be re-frozen there and the local tiers re-measured, exactly as this branch did at 38afa5c2, 6392ccb4, 34b3fca5, b5e9919b, 3c75f49a and 7b1252ed; and a product diff `git` refused to take being read as an empty one.",
     "bindings": [],
     "awaitedObservation": "The hosted run taken at a head that DESCENDS from candidate 526a3b39 — the pull request CI for branch `p1-28/od-025-policy-enforcement`. Until that run exists this figure describes an ancestor and is cited as such; it is replaced by re-citing the same fields (run id, job id, head, artefact) at the descending head, never by relaxing the rule that refused it.",
     "awaits": "",
-    "resolvedBy": "Protected CI run 32352973068 over `develop` at 93af64dd, all 19 checks success. Not a pull-request run against a branch — the run over protected develop itself, at the tree the Owner accepted. Each binding names its own job id and artefact; the tier figures were read out of the downloaded artefacts."
+    "resolvedBy": "Protected CI run 32352973068 over develop at 93af64dd, all 19 checks success."
   },
   "supersededObservations": {
     "what": "Every hosted citation this package has carried before the one above, most recent first. None is evidence about this candidate and none is cited as such anywhere in this file.",

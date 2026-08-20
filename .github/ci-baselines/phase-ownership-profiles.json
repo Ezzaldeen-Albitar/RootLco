@@ -88,6 +88,11 @@
       "branchPrefix": "fix/p1-28-",
       "profile": "p1-27-frontend",
       "why": "P1-28 seal remediations cut from develop after PR #226 merged. They change the evidence machinery under scripts/ci and tests/ci and the phase records under docs, which is the same surface the P1-28 integration branch owns."
+    },
+    {
+      "branchPrefix": "chore/promotion-readiness",
+      "profile": "repository-tooling",
+      "why": "A repository-wide GATE change owned by no phase: the ownership gate learning that a promotion is not a phase change, and the coverage floor learning that a promotion is not an edit. Carries scripts/ci, tests/ci, .github/workflows and the phase records whose counts move with them — and, by that profile, no product source."
     }
   ]
 }

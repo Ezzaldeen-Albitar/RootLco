@@ -1352,28 +1352,52 @@ export function tierBinding(candidateFile, git) {
     const totals = attestation.describesSupersededHead === true ? null : attestation.hostedTotals;
     if (totals && typeof totals === 'object') {
       const declared = declaredTotal(tier);
-      const agree = [
-        ['total', declared, totals.total],
-        ['failed', tier.failed, totals.failed],
-        ['files', tier.files, totals.files],
-      ];
-      for (const [what, mine, hosted] of agree) {
-        if (Number.isInteger(hosted) && Number.isInteger(mine) && mine !== hosted) {
-          missing.push(
-            `declares ${what} ${mine} beside a hosted attestation of ${hosted} — the headline and the artefact it cites are not the same measurement`
-          );
-        }
-      }
-      const explained = String(attestation.localVersusHosted ?? '').trim().length > 0;
-      if (
-        !explained &&
-        Number.isInteger(totals.passed) &&
-        Number.isInteger(tier.passed) &&
-        tier.passed !== totals.passed
-      ) {
+      /*
+       * A HOSTED FAILURE cannot be sealed — and that is a question about the
+       * hosted run alone.
+       *
+       * An earlier revision of this rule compared the tier's LOCAL `failed`
+       * with the hosted artefact's, which was wrong twice over. They are
+       * different runs of different trees, so a difference between them is
+       * ordinary; and requiring equality made the rule SELF-REFERENTIAL — a
+       * package that honestly recorded a red local run could never declare it
+       * without failing the very cases that produce the redness, so the count
+       * converged to two and stopped there. A rule that cannot be satisfied by
+       * telling the truth is not a rule.
+       *
+       * What actually matters is simpler: the hosted artefact this package cites
+       * must report no failures. The LOCAL figures are already bound, and far
+       * more strictly, by the local half above — they are read out of a run
+       * ledger pinned at a commit, and `judgeRunLedger` refuses a record that
+       * carries failures at all.
+       *
+       * The size figures stay declarable. How many tests EXIST is a fact about a
+       * tree: cases added to `tests/ci` after a hosted run change `total` and
+       * `files` while apps/** and supabase/** stay byte-identical. That still
+       * catches what the rule was written for — the shipped package stated
+       * `backend: 2004 tests, 86 files` beside its own attestation of 2056 and
+       * 88 with NO explanation, because those figures were stale rather than
+       * different.
+       */
+      if (Number.isInteger(totals.failed) && totals.failed > 0) {
         missing.push(
-          `declares ${tier.passed} passed beside a hosted attestation of ${totals.passed}, and nothing says why — a difference between what ran here and what ran there is admissible, but only when the package states it`
+          `cites a hosted run reporting ${totals.failed} failure(s). A hosted failure is a failure, and no declaration seals one`
         );
+      }
+
+      const explained = String(attestation.localVersusHosted ?? '').trim().length > 0;
+      if (!explained) {
+        for (const [what, mine, hosted] of [
+          ['total', declared, totals.total],
+          ['files', tier.files, totals.files],
+          ['passed', tier.passed, totals.passed],
+        ]) {
+          if (Number.isInteger(hosted) && Number.isInteger(mine) && mine !== hosted) {
+            missing.push(
+              `declares ${what} ${mine} beside a hosted attestation of ${hosted}, and nothing says why — a difference between what ran here and what ran there is admissible, but only when the package states it`
+            );
+          }
+        }
       }
     }
 
