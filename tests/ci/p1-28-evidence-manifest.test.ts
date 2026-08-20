@@ -1110,6 +1110,16 @@ describe('P1-28-QA-005 — a re-freeze may not carry the old head’s numbers fo
       supersededBy: 'a run at the candidate',
     };
     /*
+     * The citation moved, so the pin beside it moves too. A tier with no local
+     * run may not name a measurement head other than the one it cites, and
+     * leaving the old head here would build a world this helper's own callers
+     * would refuse — failing for the fixture's incoherence rather than for the
+     * provenance rule each case is about.
+     */
+    if (typeof (row as Record<string, unknown>).measuredAtCommit === 'string') {
+      (row as Record<string, unknown>).measuredAtCommit = ancestor;
+    }
+    /*
      * The declared list is set to what the documents' own `headSha` fields then
      * compute, so this world carries no complaint about the LIST — a rule with
      * its own cases above — and the only thing under test below is the tier's

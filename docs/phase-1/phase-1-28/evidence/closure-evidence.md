@@ -35,8 +35,8 @@ the candidate, and refuses either half that fails to name an unclosed task.
 
 | Binding           | Value                                                                       |
 | ----------------- | --------------------------------------------------------------------------- |
-| `FINAL_CODE_SHA`  | `338a5ffc7da918f2a7e83ed353f175b62c20bc6d`                                  |
-| `FINAL_CODE_TREE` | `b088fb8a8e8ecd73723163ecae42e267eb1b1020`                                  |
+| `FINAL_CODE_SHA`  | `e8a4200d2f29208754b974f85062145015bc7201`                                  |
+| `FINAL_CODE_TREE` | `24dda02f91d171c4e1966e232076d409b433b458`                                  |
 | Branch            | `remediation/p1-28-owner-qa-backend`                                        |
 | Pull request      | **#238**, base `develop`, 1 commit ahead                                    |
 | Subject           | `fix(p1-28): DBCR-P1-28-001 — a damage map must name its template revision` |
