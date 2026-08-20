@@ -281,7 +281,7 @@
     "howToCheck": "Run `npx vitest run tests/ci/p1-28-evidence-manifest.test.ts --pool=threads --maxWorkers=1`. The committed bound package must pass 96/96, and the constructed pending/forward-binding/absorbed-history worlds inside that run must also pass."
   },
   "successorRule": {
-    "what": "2 successor(s), each named: 7085039d, 81d89672. All touch scripts/ci or tests/ci only, so apps/** and supabase/** stay byte-identical to the candidate — computed, not asserted. Commits absorbed into the resolved base sit in absorbedSuccessors, preserving the measurement pins without being misrepresented as current-branch successors.",
+    "what": "3 successor(s), each named: 47f8e53f, 7085039d, 81d89672. All touch scripts/ci, tests/ci or .github/workflows only, so apps/** and supabase/** stay byte-identical to the candidate — computed, not asserted. Commits absorbed into the resolved base sit in absorbedSuccessors, preserving the measurement pins without being misrepresented as current-branch successors.",
     "whatWouldFailThis": "Any executable commit in `git log <head under test> --not <candidate> <historical base>` that is not named here, any named id outside that computed range, any product-path difference under apps/** or supabase/**, or any Git/topology question that returns UNKNOWN."
   },
   "absorbedSuccessors": [
@@ -330,19 +330,19 @@
   ],
   "successors": [
     {
+      "commit": "47f8e53fcaf42b26f7085c236745b8457f6289df",
+      "kind": "evidence machinery — promotion readiness",
+      "why": "Lets a declaration admit a SIZE difference and never a FAILURE, and stops the touched-file coverage floor asking an edit question of a promotion."
+    },
+    {
       "commit": "7085039dd6a7f8b2b7035e24d704c282c89b1ec5",
       "kind": "evidence machinery — promotion readiness",
-      "why": "Reverts the web coverage tests, because apps/web/tests is a PRODUCT path under the QA-005 freeze and adding one broke the candidate the Owner accepted."
+      "why": "Reverts the web coverage tests: apps/web/tests is a PRODUCT path under the QA-005 freeze and adding one broke the accepted candidate."
     },
     {
       "commit": "81d896729f6d5eb638f71e45f6fe520d9c194aee",
       "kind": "evidence machinery — promotion readiness",
-      "why": "Makes a promotion a DECLARED SKIP for the ownership gate — a pull request whose HEAD is a protected branch carries the union of every phase and no profile could describe it — while an unmapped branch stays REFUSED."
-    },
-    {
-      "commit": "51aa528e0cce5aa9f45fd27b6fcdcf52036b7cb0",
-      "kind": "measurement head — unit and web tiers",
-      "why": "The commit both tiers were run at. A measurement head must be a named successor: a figure taken at a head nobody declared cannot be presented as a figure about this candidate."
+      "why": "Makes a promotion a DECLARED SKIP for the ownership gate, while an unmapped branch stays REFUSED."
     }
   ],
   "howTierFiguresAreChecked": "Four obligations, because there are four kinds of claim. ARITHMETIC: `passed + failed + skipped` must equal the declared total. LOCAL: figures equal the P1-27 run ledger read out of Git at `localLedger.atCommit`. MEASUREMENT HEAD: both local tiers name successor ea045d88fd88843c82c8ecd7273b0772f65417f6, whose six declared non-product drift paths equal Git's path set, and are pinned to ledger commit 2e0f2191db4c118e766e9ca4b8ffff981b63d7c6. HOSTED: claims remain fetchable attestations at their recorded run heads; a non-candidate head must explicitly be a superseded ancestor or a product-identical descendant, and Git refusal is UNKNOWN rather than empty.",
