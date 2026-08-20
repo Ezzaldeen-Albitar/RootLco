@@ -281,7 +281,7 @@
     "howToCheck": "Run `npx vitest run tests/ci/p1-28-evidence-manifest.test.ts --pool=threads --maxWorkers=1`. The committed bound package must pass 96/96, and the constructed pending/forward-binding/absorbed-history worlds inside that run must also pass."
   },
   "successorRule": {
-    "what": "4 successor(s), each named: 9922b287, 47f8e53f, 7085039d, 81d89672. All touch scripts/ci, tests/ci or .github/workflows only, so apps/** and supabase/** stay byte-identical to the accepted candidate — computed, not asserted.",
+    "what": "5 successor(s), each named: 09e3fa13, 9922b287, 47f8e53f, 7085039d, 81d89672. Every one touches scripts/ci, tests/ci, .github or docs only — apps/** and supabase/** stay byte-identical to the accepted candidate, computed rather than asserted.",
     "whatWouldFailThis": "Any executable commit in `git log <head under test> --not <candidate> <historical base>` that is not named here, any named id outside that computed range, any product-path difference under apps/** or supabase/**, or any Git/topology question that returns UNKNOWN."
   },
   "absorbedSuccessors": [
@@ -330,9 +330,14 @@
   ],
   "successors": [
     {
+      "commit": "09e3fa13b96e3b127a92cb2b0e028a20e216f66f",
+      "kind": "evidence machinery — promotion readiness",
+      "why": "Declares what this branch may change, after the ownership gate refused a branch nobody mapped."
+    },
+    {
       "commit": "9922b28793fa7602baa82f177ce5ff6e64d61f29",
       "kind": "evidence machinery — promotion readiness",
-      "why": "Narrows the hosted-failure rule to the hosted run alone, after the earlier form proved unsatisfiable by an honest package."
+      "why": "Narrows the hosted-failure rule to the hosted run alone."
     },
     {
       "commit": "47f8e53fcaf42b26f7085c236745b8457f6289df",
@@ -348,21 +353,6 @@
       "commit": "81d896729f6d5eb638f71e45f6fe520d9c194aee",
       "kind": "evidence machinery — promotion readiness",
       "why": "Makes a promotion a DECLARED SKIP for the ownership gate, while an unmapped branch stays REFUSED."
-    },
-    {
-      "commit": "46890c4da26ae3c9080c6ca9fe204fc6ee578cac",
-      "kind": "measurement head — unit and web tiers",
-      "why": "The commit both tiers were run at. A measurement head must be a named successor."
-    },
-    {
-      "commit": "0fceccc5035b6c4b8ec5ccecbba5a9d40d888a88",
-      "kind": "measurement head — unit and web tiers",
-      "why": "The commit the tiers were run at. A measurement head must be a named successor: a figure taken at a head nobody declared cannot be presented as a figure about this candidate."
-    },
-    {
-      "commit": "fd9d308493ca38c19c93cf0185a43e05027fbca1",
-      "kind": "measurement head — unit and web tiers",
-      "why": "The commit the tiers were run at. A measurement head must be a named successor."
     }
   ],
   "howTierFiguresAreChecked": "Four obligations, because there are four kinds of claim. ARITHMETIC: `passed + failed + skipped` must equal the declared total. LOCAL: figures equal the P1-27 run ledger read out of Git at `localLedger.atCommit`. MEASUREMENT HEAD: both local tiers name successor ea045d88fd88843c82c8ecd7273b0772f65417f6, whose six declared non-product drift paths equal Git's path set, and are pinned to ledger commit 2e0f2191db4c118e766e9ca4b8ffff981b63d7c6. HOSTED: claims remain fetchable attestations at their recorded run heads; a non-candidate head must explicitly be a superseded ancestor or a product-identical descendant, and Git refusal is UNKNOWN rather than empty.",
@@ -370,16 +360,16 @@
     "unit": {
       "label": "root unit and foundation",
       "tests": 2784,
-      "passed": 2784,
-      "failed": 0,
+      "passed": 2782,
+      "failed": 2,
       "skipped": 0,
       "files": 104,
-      "measuredAtCommit": "fd9d308493ca38c19c93cf0185a43e05027fbca1",
+      "measuredAtCommit": "09e3fa13b96e3b127a92cb2b0e028a20e216f66f",
       "provenance": "LOCAL_AND_HOSTED_AGREE",
       "localLedger": {
         "path": "docs/phase-1/phase-1-27/evidence/local-run-ledger.json",
         "tier": "unit",
-        "atCommit": "277c038f9896e89edcb0f7bc056dd98357ff63ea",
+        "atCommit": "feca4b4b4855a1a7c5cfce52a94f70861513ac2d",
         "howChecked": "`git show c56ef2cb240e440abdb638a9058ed42787b7252e:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD at the commit that carries this record, rather than the working copy, which would let an uncommitted edit vouch for itself."
       },
       "hostedAttestation": {
@@ -402,6 +392,7 @@
       },
       "note": "Measured at 2c3d4095, a documentation-only successor of the candidate: the commits between them carry evidence records and nothing executable.",
       "measurementDrift": [
+        ".github/ci-baselines/phase-ownership-profiles.json",
         ".github/workflows/_reusable-node-quality.yml",
         "scripts/ci/build-p1-28-evidence-manifest.mjs",
         "scripts/ci/check-phase-ownership.mjs",
@@ -416,12 +407,12 @@
       "failed": 0,
       "skipped": 0,
       "files": 101,
-      "measuredAtCommit": "0fceccc5035b6c4b8ec5ccecbba5a9d40d888a88",
+      "measuredAtCommit": "09e3fa13b96e3b127a92cb2b0e028a20e216f66f",
       "provenance": "LOCAL_AND_HOSTED_AGREE",
       "localLedger": {
         "path": "docs/phase-1/phase-1-27/evidence/local-run-ledger.json",
         "tier": "web",
-        "atCommit": "277c038f9896e89edcb0f7bc056dd98357ff63ea",
+        "atCommit": "feca4b4b4855a1a7c5cfce52a94f70861513ac2d",
         "howChecked": "`git show c56ef2cb240e440abdb638a9058ed42787b7252e:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD at the commit that carries this record, rather than the working copy, which would let an uncommitted edit vouch for itself."
       },
       "hostedAttestation": {
@@ -444,6 +435,7 @@
       },
       "note": "Measured at 66ec6244, a documentation-only successor of the candidate: the commits between them carry evidence records and nothing executable.",
       "measurementDrift": [
+        ".github/ci-baselines/phase-ownership-profiles.json",
         ".github/workflows/_reusable-node-quality.yml",
         "scripts/ci/build-p1-28-evidence-manifest.mjs",
         "scripts/ci/check-phase-ownership.mjs",
