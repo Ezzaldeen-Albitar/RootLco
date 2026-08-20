@@ -300,6 +300,11 @@
       "commit": "ca9ac3aa0fd93e9a8c6cf1597c662c9b2c2ea82c",
       "kind": "evidence machinery — the moved CURRENT values and a fixture repair",
       "why": "Moves the four CURRENT P1-27 closing values the re-measurement changed and repairs a fixture that left a measurement pin behind when it moved the citation. Non-product: tests/ci and the P1-27 evidence documents only."
+    },
+    {
+      "commit": "e16e112faabc4b6b6593bf784173d5df387455a7",
+      "kind": "evidence machinery — a type repair hosted CI found",
+      "why": "Types the attestation and its totals as separate references, after hosted CI reported three TypeScript errors that every local gate had missed because typecheck was run before those lines were written. No behaviour changes. Non-product: tests/ci only."
     }
   ],
   "howTierFiguresAreChecked": "Four obligations, because there are four kinds of claim. ARITHMETIC: `passed + failed + skipped` must equal the declared total. LOCAL: figures equal the P1-27 run ledger read out of Git at `localLedger.atCommit`. MEASUREMENT HEAD: both local tiers name successor ea045d88fd88843c82c8ecd7273b0772f65417f6, whose six declared non-product drift paths equal Git's path set, and are pinned to ledger commit 2e0f2191db4c118e766e9ca4b8ffff981b63d7c6. HOSTED: claims remain fetchable attestations at their recorded run heads; a non-candidate head must explicitly be a superseded ancestor or a product-identical descendant, and Git refusal is UNKNOWN rather than empty.",
