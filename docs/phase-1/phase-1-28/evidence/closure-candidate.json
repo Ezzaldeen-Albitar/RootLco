@@ -281,30 +281,40 @@
     "howToCheck": "Run `npx vitest run tests/ci/p1-28-evidence-manifest.test.ts --pool=threads --maxWorkers=1`. The committed bound package must pass 96/96, and the constructed pending/forward-binding/absorbed-history worlds inside that run must also pass."
   },
   "successorRule": {
-    "what": "NON-EMPTY and computed. `git log <head under test> --not 338a5ffc 62520945` holds 13 commit(s), of which 2 touch an executable path: adf063b8, f73091a5. Each is named. The tiers were measured at a head that is already among them, so nothing further is owed. Every other commit in the range is documentation-only and is PRINTED by the gate rather than required, because a commit cannot write its own id into a file it contains. `absorbedSuccessors` is EMPTY, and empty is the correct answer rather than an omission: the re-freeze moved the candidate forward onto a commit of this branch, so the successors of the older freezes — including 3187f18c, a2095925 and ea045d88, which this field once named as current — are now ANCESTORS of the candidate itself and of the resolved base. They are not successors that were absorbed; they are not successors at all, and listing them would be the misrepresentation the field exists to prevent.",
+    "what": "ONE executable successor, 59dd065c, and it is named. It touches tests/ci only, so apps/** and supabase/** stay byte-identical to the candidate — computed, not asserted. The four commits this field named while the web remediation was in flight are now ANCESTORS of the resolved base and have moved to `absorbedSuccessors`, where they preserve the measurement pins without being misrepresented as current-branch successors.",
     "whatWouldFailThis": "Any executable commit in `git log <head under test> --not <candidate> <historical base>` that is not named here, any named id outside that computed range, any product-path difference under apps/** or supabase/**, or any Git/topology question that returns UNKNOWN."
   },
-  "absorbedSuccessors": [],
-  "successors": [
+  "absorbedSuccessors": [
     {
       "commit": "5d8055041d0f2f70cad9c9fc53cff6cd658a9529",
       "kind": "evidence machinery — the tier-headline rule and two mutation repairs",
-      "why": "Makes a tier headline answerable to the artefact it cites, after the shipped package was found stating backend 2004/86 and database 1647/139 beside its own attestations of 2056/88 and 1717/143. Also repairs two mutation cases that had stopped producing the state they claimed to test — one deleted a marker the bindings no longer carried, the other substituted a head that a re-freeze had turned into the candidate itself. Non-product: scripts/ci, tests/ci and the evidence documents only, so apps/** and supabase/** are byte-identical to the candidate, which the repository computes rather than takes on trust."
+      "why": "Makes a tier headline answerable to the artefact it cites, after the shipped package was found stating backend 2004/86 and database 1647/139 beside its own attestations of 2056/88 and 1717/143. Also repairs two mutation cases that had stopped producing the state they claimed to test — one deleted a marker the bindings no longer carried, the other substituted a head that a re-freeze had turned into the candidate itself. Non-product: scripts/ci, tests/ci and the evidence documents only, so apps/** and supabase/** are byte-identical to the candidate, which the repository computes rather than takes on trust.",
+      "absorbedBecause": "The web remediation merged into protected develop as 93af64dd, so this commit is now an ANCESTOR of the resolved base and is outside `git log <head> --not <candidate> <base>` entirely. It is retained rather than deleted: it is the measurement head, or the machinery a figure in this package still names, and a package that forgot why its own numbers were taken where they were is the half-update this gate exists to catch. Absorbed entries never satisfy current-branch successor coverage — they only preserve the pins."
     },
     {
       "commit": "c062c05bcb75b66116f05a101dcc80a4a4eaf876",
       "kind": "evidence machinery — narrowing the headline rule",
-      "why": "Asks a tier headline to match its artefact only where the attestation claims to be about this candidate. A superseded citation describes a different tree by construction, so requiring equality there would demand that re-freezing software not change how many tests it has. Non-product: scripts/ci and tests/ci only."
+      "why": "Asks a tier headline to match its artefact only where the attestation claims to be about this candidate. A superseded citation describes a different tree by construction, so requiring equality there would demand that re-freezing software not change how many tests it has. Non-product: scripts/ci and tests/ci only.",
+      "absorbedBecause": "The web remediation merged into protected develop as 93af64dd, so this commit is now an ANCESTOR of the resolved base and is outside `git log <head> --not <candidate> <base>` entirely. It is retained rather than deleted: it is the measurement head, or the machinery a figure in this package still names, and a package that forgot why its own numbers were taken where they were is the half-update this gate exists to catch. Absorbed entries never satisfy current-branch successor coverage — they only preserve the pins."
     },
     {
       "commit": "ca9ac3aa0fd93e9a8c6cf1597c662c9b2c2ea82c",
       "kind": "evidence machinery — the moved CURRENT values and a fixture repair",
-      "why": "Moves the four CURRENT P1-27 closing values the re-measurement changed and repairs a fixture that left a measurement pin behind when it moved the citation. Non-product: tests/ci and the P1-27 evidence documents only."
+      "why": "Moves the four CURRENT P1-27 closing values the re-measurement changed and repairs a fixture that left a measurement pin behind when it moved the citation. Non-product: tests/ci and the P1-27 evidence documents only.",
+      "absorbedBecause": "The web remediation merged into protected develop as 93af64dd, so this commit is now an ANCESTOR of the resolved base and is outside `git log <head> --not <candidate> <base>` entirely. It is retained rather than deleted: it is the measurement head, or the machinery a figure in this package still names, and a package that forgot why its own numbers were taken where they were is the half-update this gate exists to catch. Absorbed entries never satisfy current-branch successor coverage — they only preserve the pins."
     },
     {
       "commit": "e16e112faabc4b6b6593bf784173d5df387455a7",
       "kind": "evidence machinery — a type repair hosted CI found",
-      "why": "Types the attestation and its totals as separate references, after hosted CI reported three TypeScript errors that every local gate had missed because typecheck was run before those lines were written. No behaviour changes. Non-product: tests/ci only."
+      "why": "Types the attestation and its totals as separate references, after hosted CI reported three TypeScript errors that every local gate had missed because typecheck was run before those lines were written. No behaviour changes. Non-product: tests/ci only.",
+      "absorbedBecause": "The web remediation merged into protected develop as 93af64dd, so this commit is now an ANCESTOR of the resolved base and is outside `git log <head> --not <candidate> <base>` entirely. It is retained rather than deleted: it is the measurement head, or the machinery a figure in this package still names, and a package that forgot why its own numbers were taken where they were is the half-update this gate exists to catch. Absorbed entries never satisfy current-branch successor coverage — they only preserve the pins."
+    }
+  ],
+  "successors": [
+    {
+      "commit": "59dd065c25d47f36e09903732638ddbb3de23ae3",
+      "kind": "evidence machinery — two seal fixtures",
+      "why": "Repairs two cases that kept their form and lost their meaning when the remediation merged into develop: one computed a successor range the base had absorbed, the other set a measurement pin to the value the field already held. Non-product: tests/ci only."
     }
   ],
   "howTierFiguresAreChecked": "Four obligations, because there are four kinds of claim. ARITHMETIC: `passed + failed + skipped` must equal the declared total. LOCAL: figures equal the P1-27 run ledger read out of Git at `localLedger.atCommit`. MEASUREMENT HEAD: both local tiers name successor ea045d88fd88843c82c8ecd7273b0772f65417f6, whose six declared non-product drift paths equal Git's path set, and are pinned to ledger commit 2e0f2191db4c118e766e9ca4b8ffff981b63d7c6. HOSTED: claims remain fetchable attestations at their recorded run heads; a non-candidate head must explicitly be a superseded ancestor or a product-identical descendant, and Git refusal is UNKNOWN rather than empty.",
