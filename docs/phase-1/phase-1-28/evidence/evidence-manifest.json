@@ -17,34 +17,34 @@
       "passed": 2780,
       "failed": 0,
       "skipped": 0,
-      "provenance": "LOCAL_COMPUTED_HOSTED_PENDING"
+      "provenance": "LOCAL_AND_HOSTED_AGREE"
     },
     "web": {
       "passed": 2875,
       "failed": 0,
       "skipped": 0,
-      "provenance": "LOCAL_COMPUTED_HOSTED_PENDING"
+      "provenance": "LOCAL_AND_HOSTED_AGREE"
     },
     "backend": {
       "passed": 2056,
       "failed": 0,
       "skipped": 0,
-      "provenance": "HOSTED_PENDING_AT_CANDIDATE"
+      "provenance": "HOSTED_ARTEFACT_ATTESTED"
     },
     "database": {
       "passed": 1717,
       "failed": 0,
       "skipped": 0,
-      "provenance": "HOSTED_PENDING_AT_CANDIDATE"
+      "provenance": "HOSTED_ARTEFACT_ATTESTED"
     },
     "browser": {
       "passed": 366,
       "failed": 0,
       "skipped": 4,
-      "provenance": "HOSTED_PENDING_AT_CANDIDATE"
+      "provenance": "HOSTED_ARTEFACT_ATTESTED"
     }
   },
-  "fileCount": 18,
+  "fileCount": 19,
   "files": {
     "docs/phase-1/phase-1-28/adapter-reachability.json": {
       "sha256": "9ed477646a0d1017da2a2710b66344da0acbfa9c3f7a079a0980540a25530003",
@@ -53,6 +53,10 @@
     "docs/phase-1/phase-1-28/canonical-plan.md": {
       "sha256": "d4e4b5048662e02da8b4b34999251dae5bd588fbb44509e20bb376de76acd885",
       "bytes": 38987
+    },
+    "docs/phase-1/phase-1-28/closure-record.md": {
+      "sha256": "035f7a9c58c52530746fff3d6a3556457cf9aa6421bf12cbdcf062e650b49fc2",
+      "bytes": 10472
     },
     "docs/phase-1/phase-1-28/composed-permissions.json": {
       "sha256": "5d0cf3a5567d9c9023fac7ae02a0906565759f249d45415db5c33cfdc00bb336",
@@ -71,12 +75,12 @@
       "bytes": 43201
     },
     "docs/phase-1/phase-1-28/evidence/closure-candidate.json": {
-      "sha256": "21e5f34d09dffdae8b62fab5ad99e8305d0bce0cc7ff5081f8d54e123019bd8b",
-      "bytes": 96096
+      "sha256": "ecff5219aa73af6781d61803e117dac2e4088813d4388c934bd87755b06c40f9",
+      "bytes": 98432
     },
     "docs/phase-1/phase-1-28/evidence/closure-evidence.md": {
-      "sha256": "9c175607cc1451ab5df66cbe317ef65452037dec25def4a09179d64a8f1358f8",
-      "bytes": 77885
+      "sha256": "866ca538384236a62fe7a0e7fe6bf63f8091d5207168f7b7c19c12f5de6e4e5f",
+      "bytes": 78531
     },
     "docs/phase-1/phase-1-28/evidence/final-refuter-ledger.json": {
       "sha256": "ab09b77ddfa1b75fa9b708e494603b0bab2e321ad6dfce80a7e98e433cc69b10",
