@@ -316,12 +316,12 @@
       "failed": 0,
       "skipped": 0,
       "files": 104,
-      "measuredAtCommit": "ca9ac3aa0fd93e9a8c6cf1597c662c9b2c2ea82c",
+      "measuredAtCommit": "e16e112faabc4b6b6593bf784173d5df387455a7",
       "provenance": "LOCAL_COMPUTED_HOSTED_PENDING",
       "localLedger": {
         "path": "docs/phase-1/phase-1-27/evidence/local-run-ledger.json",
         "tier": "unit",
-        "atCommit": "7c91cffb2aa65c3817029448f01cdbddd2c35c0e",
+        "atCommit": "05fc8dec1f74a96c2fe136f1874f1b68d401eba0",
         "howChecked": "`git show c56ef2cb240e440abdb638a9058ed42787b7252e:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD at the commit that carries this record, rather than the working copy, which would let an uncommitted edit vouch for itself."
       },
       "hostedAttestation": {
@@ -356,12 +356,12 @@
       "failed": 0,
       "skipped": 0,
       "files": 101,
-      "measuredAtCommit": "ca9ac3aa0fd93e9a8c6cf1597c662c9b2c2ea82c",
+      "measuredAtCommit": "e16e112faabc4b6b6593bf784173d5df387455a7",
       "provenance": "LOCAL_COMPUTED_HOSTED_PENDING",
       "localLedger": {
         "path": "docs/phase-1/phase-1-27/evidence/local-run-ledger.json",
         "tier": "web",
-        "atCommit": "7c91cffb2aa65c3817029448f01cdbddd2c35c0e",
+        "atCommit": "05fc8dec1f74a96c2fe136f1874f1b68d401eba0",
         "howChecked": "`git show c56ef2cb240e440abdb638a9058ed42787b7252e:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD at the commit that carries this record, rather than the working copy, which would let an uncommitted edit vouch for itself."
       },
       "hostedAttestation": {
