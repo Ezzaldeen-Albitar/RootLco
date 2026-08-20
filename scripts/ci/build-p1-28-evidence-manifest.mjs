@@ -1334,7 +1334,22 @@ export function tierBinding(candidateFile, git) {
      * already claimed in prose that "total, failed and file count agree
      * exactly", and this is that sentence made computable rather than trusted.
      */
-    const totals = attestation.hostedTotals;
+    /*
+     * ...but only where the attestation claims to be ABOUT this candidate.
+     *
+     * A binding that declares `describesSupersededHead` is citing a run at a
+     * head this candidate has moved past — by construction a different tree. Its
+     * `hostedTotals` are the figures for that tree, while the headline beside
+     * them is the LOCAL measurement of this one, and the package says which is
+     * which. Requiring those to be equal would demand that re-freezing software
+     * not change how many tests it has.
+     *
+     * This is a narrowing of the rule, not a hole in it: the headline of a
+     * pending tier is still bound, by the LOCAL half above, to a run ledger
+     * pinned at a commit — which is the stronger of the two checks, because it
+     * is computed here rather than cited.
+     */
+    const totals = attestation.describesSupersededHead === true ? null : attestation.hostedTotals;
     if (totals && typeof totals === 'object') {
       const declared = declaredTotal(tier);
       const agree = [

@@ -1253,11 +1253,28 @@ describe('P1-28-QA-005 — a re-freeze may not carry the old head’s numbers fo
         tiers: Record<string, Record<string, unknown>>;
       };
       const tier = doc.tiers.backend!;
-      const totals = tier.hostedAttestation as Record<string, Record<string, number>>;
+      const totals = tier.hostedAttestation as Record<string, unknown> &
+        Record<string, Record<string, number>>;
       expect(
         totals.hostedTotals,
         'the backend tier cites no hostedTotals, so this case would test nothing'
       ).toBeDefined();
+
+      /*
+       * The comparison is asked only of an attestation that claims to be ABOUT
+       * this candidate, so the world is bound here rather than borrowed from
+       * whatever state the package happens to be in. Re-freezing onto the web
+       * head put every attestation into the superseded state, which would have
+       * made this case silently vacuous — the third time in this file that a
+       * mutation stopped mutating because the repository moved underneath it.
+       */
+      delete totals.describesSupersededHead;
+      delete totals.supersededBy;
+      delete totals[SUCCESSOR_MARKER];
+      totals.headSha = (
+        candidateFile as unknown as { candidate: { FINAL_CODE_SHA: string } }
+      ).candidate.FINAL_CODE_SHA;
+      (tier as Record<string, unknown>).provenance = 'HOSTED_ARTEFACT_ATTESTED';
 
       // A DIFFERENT number, taken from the attestation itself so the mutation
       // cannot be satisfied by a coincidence.
@@ -1285,9 +1302,25 @@ describe('P1-28-QA-005 — a re-freeze may not carry the old head’s numbers fo
     const attestation = doc.tiers.unit!.hostedAttestation as Record<string, unknown>;
     const totals = attestation.hostedTotals as Record<string, number> | undefined;
     expect(totals, 'the unit tier cites no hostedTotals').toBeDefined();
+
+    /* Bound, for the same reason as the case above — a superseded attestation is
+     * not asked to match, so borrowing the package's current state would make
+     * this vacuous. The figures are then made to differ in exactly the way the
+     * storage-skip difference does, rather than relying on them differing. */
+    delete attestation.describesSupersededHead;
+    delete attestation.supersededBy;
+    delete attestation[SUCCESSOR_MARKER];
+    attestation.headSha = (
+      candidateFile as unknown as { candidate: { FINAL_CODE_SHA: string } }
+    ).candidate.FINAL_CODE_SHA;
+    doc.tiers.unit!.provenance = 'LOCAL_AND_HOSTED_AGREE';
+    totals!.total = doc.tiers.unit!.tests as number;
+    totals!.failed = doc.tiers.unit!.failed as number;
+    totals!.files = doc.tiers.unit!.files as number;
+    totals!.passed = (doc.tiers.unit!.passed as number) - 3;
     expect(
       totals!.passed,
-      'local and hosted passed counts already agree, so this case would test nothing'
+      'local and hosted passed counts agree, so this case would test nothing'
     ).not.toBe(doc.tiers.unit!.passed);
 
     /*
