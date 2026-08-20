@@ -281,7 +281,7 @@
     "howToCheck": "Run `npx vitest run tests/ci/p1-28-evidence-manifest.test.ts --pool=threads --maxWorkers=1`. The committed bound package must pass 96/96, and the constructed pending/forward-binding/absorbed-history worlds inside that run must also pass."
   },
   "successorRule": {
-    "what": "ONE executable successor, 59dd065c, and it is named. It touches tests/ci only, so apps/** and supabase/** stay byte-identical to the candidate — computed, not asserted. The four commits this field named while the web remediation was in flight are now ANCESTORS of the resolved base and have moved to `absorbedSuccessors`, where they preserve the measurement pins without being misrepresented as current-branch successors.",
+    "what": "ONE successor, the merge 3b1197fb, and it is named. A merge introduces no content of its own but carries executable paths across the candidate boundary, so the documentation-only exemption does not cover it. Everything it brings in is already an ANCESTOR of the resolved base and sits in `absorbedSuccessors`, preserving the measurement pins without being misrepresented as a current-branch successor. The commit that records THIS is documentation-only and may go unnamed, because a commit cannot write its own id into a file it contains.",
     "whatWouldFailThis": "Any executable commit in `git log <head under test> --not <candidate> <historical base>` that is not named here, any named id outside that computed range, any product-path difference under apps/** or supabase/**, or any Git/topology question that returns UNKNOWN."
   },
   "absorbedSuccessors": [
@@ -308,18 +308,25 @@
       "kind": "evidence machinery — a type repair hosted CI found",
       "why": "Types the attestation and its totals as separate references, after hosted CI reported three TypeScript errors that every local gate had missed because typecheck was run before those lines were written. No behaviour changes. Non-product: tests/ci only.",
       "absorbedBecause": "The web remediation merged into protected develop as 93af64dd, so this commit is now an ANCESTOR of the resolved base and is outside `git log <head> --not <candidate> <base>` entirely. It is retained rather than deleted: it is the measurement head, or the machinery a figure in this package still names, and a package that forgot why its own numbers were taken where they were is the half-update this gate exists to catch. Absorbed entries never satisfy current-branch successor coverage — they only preserve the pins."
-    }
-  ],
-  "successors": [
+    },
     {
       "commit": "59dd065c25d47f36e09903732638ddbb3de23ae3",
       "kind": "evidence machinery — two seal fixtures",
-      "why": "Repairs two cases that kept their form and lost their meaning when the remediation merged into develop: one computed a successor range the base had absorbed, the other set a measurement pin to the value the field already held. Non-product: tests/ci only."
+      "why": "Repairs two cases that kept their form and lost their meaning when the remediation merged into develop: one computed a successor range the base had absorbed, the other set a measurement pin to the value the field already held. Non-product: tests/ci only.",
+      "absorbedBecause": "Absorbed into the resolved base when the seal-fixture repair merged as 1600609d. Retained rather than deleted: it is a measurement head or the machinery a figure in this package still names."
     },
     {
       "commit": "00780669692a148f23d954e6c105d8bc7fc1a2cd",
       "kind": "measurement head — unit and web tiers",
-      "why": "The commit both tiers were run at. Named because a measurement head must be a named successor: a figure taken at a head nobody declared cannot be presented as a figure about this candidate."
+      "why": "The commit both tiers were run at. Named because a measurement head must be a named successor: a figure taken at a head nobody declared cannot be presented as a figure about this candidate.",
+      "absorbedBecause": "Absorbed into the resolved base when the seal-fixture repair merged as 1600609d. Retained rather than deleted: it is a measurement head or the machinery a figure in this package still names."
+    }
+  ],
+  "successors": [
+    {
+      "commit": "3b1197fb182f8c8b1787e64464d700e409f53267",
+      "kind": "merge — protected develop into the closure record",
+      "why": "The merge that brings the seal-fixture repairs and the absorbed-successor correction onto this branch. It introduces no content of its own, but it carries executable paths across the candidate boundary, so it is named rather than left for the documentation-only exemption. apps/** and supabase/** remain byte-identical to the candidate, which the repository computes."
     }
   ],
   "howTierFiguresAreChecked": "Four obligations, because there are four kinds of claim. ARITHMETIC: `passed + failed + skipped` must equal the declared total. LOCAL: figures equal the P1-27 run ledger read out of Git at `localLedger.atCommit`. MEASUREMENT HEAD: both local tiers name successor ea045d88fd88843c82c8ecd7273b0772f65417f6, whose six declared non-product drift paths equal Git's path set, and are pinned to ledger commit 2e0f2191db4c118e766e9ca4b8ffff981b63d7c6. HOSTED: claims remain fetchable attestations at their recorded run heads; a non-candidate head must explicitly be a superseded ancestor or a product-identical descendant, and Git refusal is UNKNOWN rather than empty.",
@@ -522,136 +529,124 @@
     "runAttempt": 1,
     "headSha": "93af64dd2f02773abfb88792364d93ec7beb9f3e",
     "checksTotal": 19,
-    "checksSuccess": 21,
+    "checksSuccess": 19,
     "checksFailure": 0,
     "requiredCheck": "ci-gate",
-    "howTaken": "GET /repos/{owner}/{repo}/commits/81cbd44bae5f8f64091416019458b3d2b514503e/check-runs?per_page=100 — the per-commit endpoint, because /actions/runs does not list every check. `total_count` was 21, all 21 `status: completed`, none pending, and the conclusions were counted from the response rather than read off a run-level verdict: a run’s conclusion can be failure while the job this package cites succeeded.",
+    "howTaken": "Read from the check-runs API at 93af64dd after the protected push, so the list is the API answer rather than a transcription.",
     "checks": [
       {
-        "name": "ci-gate",
-        "id": 94718462967,
         "conclusion": "success",
-        "runId": 31783658759
-      },
-      {
-        "name": "CodeQL",
-        "id": 94714889097,
-        "conclusion": "success",
-        "publishedBy": "github-advanced-security — no Actions run id"
-      },
-      {
-        "name": "database-security / security-matrix",
-        "id": 94714715750,
-        "conclusion": "success",
-        "runId": 31783658759
-      },
-      {
-        "name": "code-security / code-security (actions)",
-        "id": 94714715672,
-        "conclusion": "success",
-        "runId": 31783658759
-      },
-      {
-        "name": "database-migration-replay / migration-replay",
-        "id": 94714715656,
-        "conclusion": "success",
-        "runId": 31783658759
-      },
-      {
-        "name": "code-security / code-security (javascript-typescript)",
-        "id": 94714715655,
-        "conclusion": "success",
-        "runId": 31783658759
-      },
-      {
-        "name": "integration-tests / integration-tests",
-        "id": 94714715651,
-        "conclusion": "success",
-        "runId": 31783658759
-      },
-      {
-        "name": "authenticated-browser / authenticated-browser",
-        "id": 94714715648,
-        "conclusion": "success",
-        "runId": 31783658759
-      },
-      {
-        "name": "container-security / container-security",
-        "id": 94714715645,
-        "conclusion": "success",
-        "runId": 31783658759
-      },
-      {
+        "id": 96375976852,
         "name": "application-build / build",
-        "id": 94714715555,
-        "conclusion": "success",
-        "runId": 31783658759
+        "runId": 32352973068
       },
       {
-        "name": "hosted-clean-room / hosted-clean-room",
-        "id": 94714715543,
         "conclusion": "success",
-        "runId": 31783658759
+        "id": 96375976971,
+        "name": "authenticated-browser / authenticated-browser",
+        "runId": 32352973068
       },
       {
-        "name": "Web quality / web-quality",
-        "id": 94714715522,
         "conclusion": "success",
-        "runId": 31783658759
+        "id": 96375976966,
+        "name": "code-security / code-security (actions)",
+        "runId": 32352973068
       },
       {
-        "name": "secret-scan / secret-scan",
-        "id": 94714715514,
         "conclusion": "success",
-        "runId": 31783658759
+        "id": 96375977136,
+        "name": "code-security / code-security (javascript-typescript)",
+        "runId": 32352973068
       },
       {
-        "name": "unit-tests-coverage / unit-coverage",
-        "id": 94714715510,
         "conclusion": "success",
-        "runId": 31783658759
+        "id": 96375977110,
+        "name": "container-security / container-security",
+        "runId": 32352973068
       },
       {
-        "name": "static-quality / static-quality",
-        "id": 94714715494,
         "conclusion": "success",
-        "runId": 31783658759
-      },
-      {
-        "name": "dependency-security / dependency-security",
-        "id": 94714715417,
-        "conclusion": "success",
-        "runId": 31783658759
-      },
-      {
-        "name": "change-detection",
-        "id": 94714648151,
-        "conclusion": "success",
-        "runId": 31783658759
-      },
-      {
-        "name": "Lint, types, tests, build",
-        "id": 94714647118,
-        "conclusion": "success",
-        "runId": 31783658604
-      },
-      {
+        "id": 96375976023,
         "name": "Database migrations and RLS tests",
-        "id": 94714647112,
-        "conclusion": "success",
-        "runId": 31783658604
+        "runId": 32352973386
       },
       {
+        "conclusion": "success",
+        "id": 96375976951,
+        "name": "database-migration-replay / migration-replay",
+        "runId": 32352973068
+      },
+      {
+        "conclusion": "success",
+        "id": 96375976888,
+        "name": "database-security / security-matrix",
+        "runId": 32352973068
+      },
+      {
+        "conclusion": "success",
+        "id": 96375976984,
+        "name": "dependency-security / dependency-security",
+        "runId": 32352973068
+      },
+      {
+        "conclusion": "success",
+        "id": 96375976051,
         "name": "Docker build validation",
-        "id": 94714647077,
-        "conclusion": "success",
-        "runId": 31783658604
+        "runId": 32352973386
       },
       {
-        "name": "Secret and sensitive-file scan",
-        "id": 94714647017,
         "conclusion": "success",
-        "runId": 31783658604
+        "id": 96375977065,
+        "name": "hosted-clean-room / hosted-clean-room",
+        "runId": 32352973068
+      },
+      {
+        "conclusion": "success",
+        "id": 96375976947,
+        "name": "integration-tests / integration-tests",
+        "runId": 32352973068
+      },
+      {
+        "conclusion": "success",
+        "id": 96375976089,
+        "name": "Lint, types, tests, build",
+        "runId": 32352973386
+      },
+      {
+        "conclusion": "success",
+        "id": 96380247793,
+        "name": "protected-gate",
+        "runId": 32352973068
+      },
+      {
+        "conclusion": "success",
+        "id": 96375975810,
+        "name": "Secret and sensitive-file scan",
+        "runId": 32352973386
+      },
+      {
+        "conclusion": "success",
+        "id": 96375976994,
+        "name": "secret-scan / secret-scan",
+        "runId": 32352973068
+      },
+      {
+        "conclusion": "success",
+        "id": 96375976943,
+        "name": "static-quality / static-quality",
+        "runId": 32352973068
+      },
+      {
+        "conclusion": "success",
+        "id": 96375976877,
+        "name": "unit-tests-coverage / unit-coverage",
+        "runId": 32352973068
+      },
+      {
+        "conclusion": "success",
+        "id": 96375976608,
+        "name": "web-quality / web-quality",
+        "runId": 32352973068
       }
     ],
     "twoRunsNotOne": "TWENTY-ONE CHECKS, TWO WORKFLOW RUNS, and an earlier revision of this block was wrong about it. `PR CI` (run 31783658759, .github/workflows/pr-ci.yml) contributes seventeen including the required `ci-gate`; `CI` (run 31783658604, .github/workflows/ci.yml, same event, same attempt, same head) contributes four; the CodeQL check is published by the github-advanced-security app and carries NO Actions run id at all — its `details_url` is /runs/{id}, not /actions/runs/{run}/job/{job} — so it names none, and its analyses are cited in `codeql` instead. Every row below carries the run it belongs to, parsed out of that row’s own `details_url`, rather than inheriting one id for all twenty-one.",
