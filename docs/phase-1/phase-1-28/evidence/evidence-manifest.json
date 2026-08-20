@@ -6,42 +6,42 @@
   "whatThisDoesNotProve": "This is not a tamper-proof seal. Anyone able to edit a document is able to re-run the generator and commit both. It removes SILENT revision, not revision.",
   "selfExclusion": "This manifest is the only path excluded from its own digest set, because a file containing its own hash has no fixed point. tests/ci/p1-28-evidence-manifest.test.ts asserts the exclusion is exactly this one path.",
   "candidate": {
-    "FINAL_CODE_SHA": "338a5ffc7da918f2a7e83ed353f175b62c20bc6d",
-    "FINAL_CODE_TREE": "b088fb8a8e8ecd73723163ecae42e267eb1b1020",
+    "FINAL_CODE_SHA": "e8a4200d2f29208754b974f85062145015bc7201",
+    "FINAL_CODE_TREE": "24dda02f91d171c4e1966e232076d409b433b458",
     "pullRequest": null,
     "recordedIn": "docs/phase-1/phase-1-28/evidence/closure-candidate.json",
     "restatedIn": "docs/phase-1/phase-1-28/evidence/closure-evidence.md"
   },
   "tierTotals": {
     "unit": {
-      "passed": 2777,
+      "passed": 2780,
       "failed": 0,
       "skipped": 0,
-      "provenance": "LOCAL_AND_HOSTED_AGREE"
+      "provenance": "LOCAL_COMPUTED_HOSTED_PENDING"
     },
     "web": {
-      "passed": 2867,
+      "passed": 2875,
       "failed": 0,
       "skipped": 0,
-      "provenance": "LOCAL_AND_HOSTED_AGREE"
+      "provenance": "LOCAL_COMPUTED_HOSTED_PENDING"
     },
     "backend": {
-      "passed": 2004,
+      "passed": 2056,
       "failed": 0,
       "skipped": 0,
-      "provenance": "HOSTED_ARTEFACT_ATTESTED"
+      "provenance": "HOSTED_PENDING_AT_CANDIDATE"
     },
     "database": {
-      "passed": 1647,
+      "passed": 1717,
       "failed": 0,
       "skipped": 0,
-      "provenance": "HOSTED_ARTEFACT_ATTESTED"
+      "provenance": "HOSTED_PENDING_AT_CANDIDATE"
     },
     "browser": {
       "passed": 366,
       "failed": 0,
       "skipped": 4,
-      "provenance": "HOSTED_ARTEFACT_ATTESTED"
+      "provenance": "HOSTED_PENDING_AT_CANDIDATE"
     }
   },
   "fileCount": 18,
@@ -71,11 +71,11 @@
       "bytes": 43201
     },
     "docs/phase-1/phase-1-28/evidence/closure-candidate.json": {
-      "sha256": "b01aa7859d4c609320ebe7421bf069e4842801d332f545f1ec2f861a0755f75c",
-      "bytes": 90496
+      "sha256": "0da96eec641988014e519aba56f681ad793f32d27847336b8e9f262ec43a8032",
+      "bytes": 93675
     },
     "docs/phase-1/phase-1-28/evidence/closure-evidence.md": {
-      "sha256": "5ea9d97c9008f5bf7ba94108f6af8f0bfd11f9e85166cc0e3d35b27ae1426836",
+      "sha256": "9c175607cc1451ab5df66cbe317ef65452037dec25def4a09179d64a8f1358f8",
       "bytes": 77885
     },
     "docs/phase-1/phase-1-28/evidence/final-refuter-ledger.json": {

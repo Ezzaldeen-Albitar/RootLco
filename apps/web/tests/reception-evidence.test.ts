@@ -566,3 +566,59 @@ describe('contentsOptionalFields — omitted, never blanked', () => {
     });
   });
 });
+
+describe('what a step SENDS and what the adapter ACCEPTS are one shape', () => {
+  /*
+   * The gap this closes, found by hand during Owner acceptance.
+   *
+   * `DamageMapStep` gained `damageMapTemplateVersionId` — the field without
+   * which `rec.guard_damage_map_template_binding()` returns early and a retired
+   * diagram can be bound to a NEW visit. Every DOM test still passed, because
+   * they all mock `recordConditionEvidence`: they assert what the step BUILDS
+   * and never meet the schema that decides whether it may be sent.
+   *
+   * The adapter's `damage_map` member is `.strict()`, so the added key was
+   * refused in the browser — "The form could not be saved" — while 2871 unit
+   * tests were green. Mocking the boundary is right for a DOM test; what was
+   * missing is anything at all that holds the two sides against each other.
+   */
+  const ADAPTER = readFileSync(
+    join(process.cwd(), 'src', 'features', 'receptions', 'api.ts'),
+    'utf8'
+  );
+
+  /** The `damage_map` member of the discriminated union, comments stripped. */
+  function damageMapSchemaSource(): string {
+    const at = ADAPTER.indexOf("kind: z.literal('damage_map')");
+    expect(at, 'the adapter no longer declares a damage_map member').toBeGreaterThan(-1);
+    const end = ADAPTER.indexOf('.strict()', at);
+    expect(end, 'the damage_map member is no longer strict').toBeGreaterThan(-1);
+    return code(ADAPTER.slice(at, end));
+  }
+
+  it('accepts every key the damage step puts in a damage_map payload', () => {
+    const step = code(stepSource('condition-damage'));
+    const at = step.indexOf("kind: 'damage_map'");
+    expect(at, 'the damage step no longer builds a damage_map payload').toBeGreaterThan(-1);
+    const payload = step.slice(at, step.indexOf('},', at));
+    const sent = [...payload.matchAll(/^\s*([A-Za-z][A-Za-z0-9]*):/gm)].map((match) => match[1]);
+
+    // Guard: a payload that parsed to nothing would satisfy the check below by
+    // comparing an empty list against anything at all.
+    expect(sent).toContain('documentId');
+    expect(sent).toContain('damageMapTemplateVersionId');
+
+    const schema = damageMapSchemaSource();
+    const missing = sent.filter((key) => !new RegExp(`\\b${key}\\s*:`).test(schema));
+    expect(missing, 'the strict adapter schema would refuse these keys').toEqual([]);
+  });
+
+  it('requires the revision id rather than admitting a map without one', () => {
+    // Optional here would make the GUARD optional: it short-circuits on NULL,
+    // so a payload permitted to omit this is one permitted to skip the FE-012
+    // retirement rule altogether.
+    const schema = damageMapSchemaSource();
+    expect(schema).toMatch(/damageMapTemplateVersionId:\s*uuid\s*,/);
+    expect(schema).not.toMatch(/damageMapTemplateVersionId:\s*uuid\s*\.\s*optional/);
+  });
+});

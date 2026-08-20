@@ -1315,6 +1315,84 @@ export function tierBinding(candidateFile, git) {
     }
     if (!String(attestation.artefact ?? '').trim())
       missing.push('hostedAttestation names no artefact');
+
+    /*
+     * THE HEADLINE AND THE ARTEFACT IT CITES MUST BE THE SAME MEASUREMENT.
+     *
+     * `hostedTotals` was added to this package when the pending bindings were
+     * resolved, carrying what the downloaded artefacts actually said. The tier
+     * headline beside it was left at its previous values, and nothing compared
+     * the two — so the package shipped `backend: 2004 tests, 86 files` next to
+     * its own attestation of 2056 and 88, and `database: 1647, 139` next to
+     * 1717 and 143. Both were green. That is the HALF-UPDATE this package's own
+     * `supersededObservations.whyKept` warns about, one field lower down.
+     *
+     * `passed` is deliberately NOT forced. The hosted unit run leaves the
+     * storage round-trip cases pending where no S3 store is configured, so a
+     * local 2777-of-2777 beside a hosted 2774 is a real and declared
+     * difference. It is admitted only when the attestation SAYS so: the package
+     * already claimed in prose that "total, failed and file count agree
+     * exactly", and this is that sentence made computable rather than trusted.
+     */
+    /*
+     * ...but only where the attestation claims to be ABOUT this candidate.
+     *
+     * A binding that declares `describesSupersededHead` is citing a run at a
+     * head this candidate has moved past — by construction a different tree. Its
+     * `hostedTotals` are the figures for that tree, while the headline beside
+     * them is the LOCAL measurement of this one, and the package says which is
+     * which. Requiring those to be equal would demand that re-freezing software
+     * not change how many tests it has.
+     *
+     * This is a narrowing of the rule, not a hole in it: the headline of a
+     * pending tier is still bound, by the LOCAL half above, to a run ledger
+     * pinned at a commit — which is the stronger of the two checks, because it
+     * is computed here rather than cited.
+     */
+    const totals = attestation.describesSupersededHead === true ? null : attestation.hostedTotals;
+    if (totals && typeof totals === 'object') {
+      const declared = declaredTotal(tier);
+      const agree = [
+        ['total', declared, totals.total],
+        ['failed', tier.failed, totals.failed],
+        ['files', tier.files, totals.files],
+      ];
+      for (const [what, mine, hosted] of agree) {
+        if (Number.isInteger(hosted) && Number.isInteger(mine) && mine !== hosted) {
+          missing.push(
+            `declares ${what} ${mine} beside a hosted attestation of ${hosted} — the headline and the artefact it cites are not the same measurement`
+          );
+        }
+      }
+      const explained = String(attestation.localVersusHosted ?? '').trim().length > 0;
+      if (
+        !explained &&
+        Number.isInteger(totals.passed) &&
+        Number.isInteger(tier.passed) &&
+        tier.passed !== totals.passed
+      ) {
+        missing.push(
+          `declares ${tier.passed} passed beside a hosted attestation of ${totals.passed}, and nothing says why — a difference between what ran here and what ran there is admissible, but only when the package states it`
+        );
+      }
+    }
+
+    /*
+     * A tier with no local run must not name a measurement head other than the
+     * one it cites. `measuredAtCommit` on all three hosted-only tiers still
+     * read 1a186a7b after their attestations moved to 9d00a454 — a head the
+     * figures did not come from, sitting unchecked beside one they did.
+     */
+    if (
+      !LOCAL_PROVENANCES.includes(tier.provenance) &&
+      typeof tier.measuredAtCommit === 'string' &&
+      typeof attestation.headSha === 'string' &&
+      tier.measuredAtCommit !== attestation.headSha
+    ) {
+      missing.push(
+        `has no local run yet names measuredAtCommit ${tier.measuredAtCommit.slice(0, 8)} while its attestation cites ${attestation.headSha.slice(0, 8)} — the figures cannot have come from both`
+      );
+    }
     if (missing.length > 0) hostedProblems.push(...missing.map((m) => `${name}: ${m}`));
     else if (isPending) {
       pending.push(

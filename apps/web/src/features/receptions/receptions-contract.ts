@@ -995,6 +995,22 @@ export interface DamageMapEvidenceInput {
   readonly kind: 'damage_map';
   readonly documentId: string;
   readonly documentVersionId: string;
+  /**
+   * WHICH published revision this map was drawn on.
+   *
+   * Not optional, and the reason is that the whole FE-012 retirement rule hangs
+   * off it. `rec.guard_damage_map_template_binding()` opens with
+   * `IF NEW.damage_map_template_version_id IS NULL THEN RETURN NEW`, so a map
+   * that omits it is admitted without any check that the slot is still active
+   * or the revision still live — measured against the running API, which
+   * answered 201 to a NEW visit binding a RETIRED template's pair and 422 to
+   * the same request once this field named the revision.
+   *
+   * Sending the document and version alone is therefore not "the same binding,
+   * expressed differently": it is the binding with its guard switched off, and
+   * it leaves the map with no record of the revision it used.
+   */
+  readonly damageMapTemplateVersionId: string;
   /** Bounded string; membership belongs to the database CHECK. */
   readonly mapType: string;
   readonly perspective?: string | null;
@@ -1412,6 +1428,27 @@ export interface CaptureContract {
   readonly bindings: readonly CaptureBindingEntry[];
   readonly overrides: readonly CaptureOverrideEntry[];
   readonly bindableTemplates: readonly BindableTemplateEntry[];
+  /**
+   * How many diagrams this branch has published and can no longer bind.
+   *
+   * `bindableTemplates` is empty for two different reasons — this branch never
+   * published a diagram, or the one it published has been retired — and the
+   * screen stated the first in both cases: *"no diagram published yet… ask
+   * whoever administers the workshop catalogues to publish one"*, which is false
+   * in effect after a retirement and sends an administrator after the wrong
+   * problem. `receptions.damage.templateRetired` existed the whole time with no
+   * way to reach it, because the read filtered retired rows out before the
+   * client could know the state.
+   *
+   * A COUNT and not the rows. The desk needs to know only THAT such a diagram
+   * exists to choose the honest sentence; naming the retired slots would hand a
+   * catalogue-administration surface — `rec.catalogue.manage`, which no
+   * receptionist holds — to every reader of a visit.
+   *
+   * Zero with an empty `bindableTemplates` means NEVER PUBLISHED. Non-zero with
+   * an empty `bindableTemplates` means PUBLISHED AND RETIRED.
+   */
+  readonly retiredPublishedTemplateCount: number;
 }
 
 export interface EvidenceBindingInput {

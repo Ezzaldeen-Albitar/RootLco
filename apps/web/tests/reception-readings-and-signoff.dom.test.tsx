@@ -510,6 +510,100 @@ describe('the signature step (FE-018)', () => {
     expect(screen.queryByTestId('signature-none')).not.toBeInTheDocument();
   });
 
+  it('says WHO signed, by what means and WHEN — not only a role and a purpose', async () => {
+    /*
+     * Found by hand during Owner acceptance, against the running product, with
+     * every automated tier green.
+     *
+     * `rec.reception-signature-list` sends `signerPartnerId`, `captureMethod`,
+     * `signedAt` and `finalizedAt`, and `SignatureEntry` declares all four. The
+     * row rendered none of them: a finalized signature read back as
+     * "Service requester · Acceptance of custody · Final · Accepted" and
+     * nothing more. Two people signing one visit for the same purpose were
+     * therefore indistinguishable on the ledger, and the means of capture —
+     * part of what makes a signature evidence at all — never appeared.
+     *
+     * The name is resolved from the party read the step already performs, so
+     * the assertion is that the NAME is rendered and the partner uuid is not:
+     * the identifier is present in the props either way, and printing it would
+     * satisfy a weaker "the signer is shown" check while telling an operator
+     * nothing.
+     */
+    listPartyRoles.mockResolvedValue(
+      page([
+        {
+          id: 'role-1',
+          partnerId: 'partner-1',
+          partnerDisplayName: 'Acceptance Fixture Customer',
+          partnerDisplayNumber: 'C-001',
+          relationshipRole: 'service_requester',
+          validFrom: '2026-08-13T07:00:00.000Z',
+          validTo: null,
+          assignmentSource: null,
+          recordVersion: 1,
+        },
+      ])
+    );
+    readSignatures.mockResolvedValue(
+      ledgerOf([
+        signature({
+          id: 'sig-1',
+          signerPartnerId: 'partner-1',
+          captureMethod: 'uploaded',
+          status: 'finalized',
+          documentVersionStatus: 'accepted',
+          signedAt: '2026-08-13T08:15:00.000Z',
+          finalizedAt: '2026-08-13T09:00:00.000Z',
+        }),
+      ])
+    );
+    renderLtr(<SignatureStep {...stepProps()} />);
+
+    const row = await screen.findByTestId('signature-sig-1');
+    const attribution = within(row).getByTestId('signature-attribution-sig-1');
+
+    expect(attribution).toHaveTextContent('Acceptance Fixture Customer');
+    expect(attribution).toHaveTextContent(EN['receptions.signature.captureMethod.uploaded']!);
+    expect(attribution).toHaveTextContent(EN['receptions.signature.signedAtLabel']!);
+
+    // WHEN it became final, which the status word alone cannot carry.
+    expect(within(row).getByTestId('signature-finalized-at-sig-1')).toHaveTextContent(
+      EN['receptions.signature.finalizedAtLabel']!
+    );
+
+    const body = document.body.textContent ?? '';
+    expect(body).not.toContain('partner-1');
+    expect(body).not.toContain('uploaded');
+    expect(body).not.toContain('receptions.signature.captureMethod.');
+  });
+
+  it('names an unattributed signer and an off-visit one as the different facts they are', async () => {
+    /*
+     * `signerPartnerId` is nullable by contract — an employee signing in their
+     * own role is not a partner — and the party read is filtered to ACTIVE
+     * parties, so a signature given by somebody since removed resolves to
+     * nothing. Collapsing the two into one hedge would send a reader looking in
+     * the wrong place, and falling back to the uuid in either case would be the
+     * defect the row above exists to prevent.
+     */
+    listPartyRoles.mockResolvedValue(page([]));
+    readSignatures.mockResolvedValue(
+      ledgerOf([
+        signature({ id: 'sig-1', signerPartnerId: null }),
+        signature({ id: 'sig-2', signerPartnerId: 'partner-gone' }),
+      ])
+    );
+    renderLtr(<SignatureStep {...stepProps()} />);
+
+    expect(await screen.findByTestId('signature-attribution-sig-1')).toHaveTextContent(
+      EN['receptions.signature.signerUnattributed']!
+    );
+    expect(screen.getByTestId('signature-attribution-sig-2')).toHaveTextContent(
+      EN['receptions.signature.signerNotOnVisit']!
+    );
+    expect(document.body.textContent ?? '').not.toContain('partner-gone');
+  });
+
   it('keeps a superseded signature on the ledger, pointing at the one that replaced it', async () => {
     readSignatures.mockResolvedValue(
       ledgerOf([
