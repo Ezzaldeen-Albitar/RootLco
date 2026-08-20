@@ -1263,10 +1263,10 @@ describe('P1-28-QA-005 — a re-freeze may not carry the old head’s numbers fo
         tiers: Record<string, Record<string, unknown>>;
       };
       const tier = doc.tiers.backend!;
-      const totals = tier.hostedAttestation as Record<string, unknown> &
-        Record<string, Record<string, number>>;
+      const totals = tier.hostedAttestation as Record<string, unknown>;
+      const hosted = totals.hostedTotals as Record<string, number> | undefined;
       expect(
-        totals.hostedTotals,
+        hosted,
         'the backend tier cites no hostedTotals, so this case would test nothing'
       ).toBeDefined();
 
@@ -1288,7 +1288,7 @@ describe('P1-28-QA-005 — a re-freeze may not carry the old head’s numbers fo
 
       // A DIFFERENT number, taken from the attestation itself so the mutation
       // cannot be satisfied by a coincidence.
-      totals.hostedTotals[hostedField] = Number(totals.hostedTotals[hostedField]) + 7;
+      hosted![hostedField] = Number(hosted![hostedField]) + 7;
       const problems = (tierBinding(doc as never, git) as unknown as { hostedProblems: string[] })
         .hostedProblems;
       expect(
