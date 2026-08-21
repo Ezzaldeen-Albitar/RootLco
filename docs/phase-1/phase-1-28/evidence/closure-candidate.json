@@ -281,7 +281,7 @@
     "howToCheck": "Run `npx vitest run tests/ci/p1-28-evidence-manifest.test.ts --pool=threads --maxWorkers=1`. The committed bound package must pass 96/96, and the constructed pending/forward-binding/absorbed-history worlds inside that run must also pass."
   },
   "successorRule": {
-    "what": "2 successor(s), each named: 3ea7d987, 098b2530. All touch .github, scripts/ci or tests/ci only — apps/** and supabase/** stay byte-identical to the ACCEPTED P1-28 candidate, computed rather than asserted. The accepted product tree is untouched by repository tooling; only the successor record moves, which the seal explicitly requires of an executable commit.",
+    "what": "1 successor(s), each named: a593fcb2. All touch .github, scripts/ci or tests/ci only — apps/** and supabase/** stay byte-identical to the ACCEPTED P1-28 candidate, computed rather than asserted.",
     "whatWouldFailThis": "Any executable commit in `git log <head under test> --not <candidate> <historical base>` that is not named here, any named id outside that computed range, any product-path difference under apps/** or supabase/**, or any Git/topology question that returns UNKNOWN."
   },
   "absorbedSuccessors": [
@@ -356,23 +356,31 @@
       "kind": "measurement head — unit tier",
       "why": "The commit the unit tier was run at. A measurement head must be a named successor.",
       "absorbedBecause": "Absorbed into the resolved base when the promotion-readiness work merged as 15e5c125. Retained rather than deleted: it is a measurement head or the machinery a figure in this package still names."
-    }
-  ],
-  "successors": [
+    },
     {
       "commit": "3ea7d987029626b294fdd0eb20e7a7749e0cf87d",
       "kind": "evidence machinery — promotion caller wiring",
-      "why": "Proves the caller wiring by VALUE rather than by reading the YAML, which is how the omission was missed the first time."
+      "why": "Proves the caller wiring by VALUE rather than by reading the YAML, which is how the omission was missed the first time.",
+      "absorbedBecause": "Absorbed into the resolved base when the workflow fix merged as b62f93e8. Retained rather than deleted: it is a measurement head or the machinery a figure in this package still names."
     },
     {
       "commit": "098b25300dca972ad119b84f3d710c3683277972",
       "kind": "evidence machinery — promotion caller wiring",
-      "why": "Passes head-branch to the two coverage callers. Without it the promotion clause read an empty string and judged a promotion as an edit."
+      "why": "Passes head-branch to the two coverage callers. Without it the promotion clause read an empty string and judged a promotion as an edit.",
+      "absorbedBecause": "Absorbed into the resolved base when the workflow fix merged as b62f93e8. Retained rather than deleted: it is a measurement head or the machinery a figure in this package still names."
     },
     {
       "commit": "d7cf7d4bef0e733c524219f46387c9938a576a26",
       "kind": "measurement head — unit and web tiers",
-      "why": "The commit the tiers were run at. A measurement head must be a named successor."
+      "why": "The commit the tiers were run at. A measurement head must be a named successor.",
+      "absorbedBecause": "Absorbed into the resolved base when the workflow fix merged as b62f93e8. Retained rather than deleted: it is a measurement head or the machinery a figure in this package still names."
+    }
+  ],
+  "successors": [
+    {
+      "commit": "a593fcb25ac70c9ca00e7f3ce0835ef27b85e06e",
+      "kind": "evidence machinery — the resolvable phase base",
+      "why": "Fetches the phase base branch so the successor rule keeps its subtraction. Without it a promotion into main lost the --not <base> term and develop’s own history read back as unnamed successors."
     }
   ],
   "howTierFiguresAreChecked": "Four obligations, because there are four kinds of claim. ARITHMETIC: `passed + failed + skipped` must equal the declared total. LOCAL: figures equal the P1-27 run ledger read out of Git at `localLedger.atCommit`. MEASUREMENT HEAD: both local tiers name successor ea045d88fd88843c82c8ecd7273b0772f65417f6, whose six declared non-product drift paths equal Git's path set, and are pinned to ledger commit 2e0f2191db4c118e766e9ca4b8ffff981b63d7c6. HOSTED: claims remain fetchable attestations at their recorded run heads; a non-candidate head must explicitly be a superseded ancestor or a product-identical descendant, and Git refusal is UNKNOWN rather than empty.",
@@ -380,16 +388,16 @@
     "unit": {
       "label": "root unit and foundation",
       "tests": 2792,
-      "passed": 2792,
-      "failed": 0,
+      "passed": 2790,
+      "failed": 2,
       "skipped": 0,
       "files": 105,
-      "measuredAtCommit": "d7cf7d4bef0e733c524219f46387c9938a576a26",
+      "measuredAtCommit": "a593fcb25ac70c9ca00e7f3ce0835ef27b85e06e",
       "provenance": "LOCAL_AND_HOSTED_AGREE",
       "localLedger": {
         "path": "docs/phase-1/phase-1-27/evidence/local-run-ledger.json",
         "tier": "unit",
-        "atCommit": "95071bd21e6b99760386cb6d13b090e6722268c5",
+        "atCommit": "d21780fdc24cefec7eaff53569d7b6c837128259",
         "howChecked": "`git show c56ef2cb240e440abdb638a9058ed42787b7252e:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD at the commit that carries this record, rather than the working copy, which would let an uncommitted edit vouch for itself."
       },
       "hostedAttestation": {
@@ -414,6 +422,7 @@
       "measurementDrift": [
         ".github/ci-baselines/phase-ownership-profiles.json",
         ".github/workflows/_reusable-node-quality.yml",
+        ".github/workflows/ci.yml",
         ".github/workflows/pr-ci.yml",
         "scripts/ci/build-p1-28-evidence-manifest.mjs",
         "scripts/ci/check-phase-ownership.mjs",
@@ -429,12 +438,12 @@
       "failed": 0,
       "skipped": 0,
       "files": 101,
-      "measuredAtCommit": "3ea7d987029626b294fdd0eb20e7a7749e0cf87d",
+      "measuredAtCommit": "a593fcb25ac70c9ca00e7f3ce0835ef27b85e06e",
       "provenance": "LOCAL_AND_HOSTED_AGREE",
       "localLedger": {
         "path": "docs/phase-1/phase-1-27/evidence/local-run-ledger.json",
         "tier": "web",
-        "atCommit": "95071bd21e6b99760386cb6d13b090e6722268c5",
+        "atCommit": "d21780fdc24cefec7eaff53569d7b6c837128259",
         "howChecked": "`git show c56ef2cb240e440abdb638a9058ed42787b7252e:docs/phase-1/phase-1-27/evidence/local-run-ledger.json` — the ledger AS IT STOOD at the commit that carries this record, rather than the working copy, which would let an uncommitted edit vouch for itself."
       },
       "hostedAttestation": {
@@ -459,6 +468,7 @@
       "measurementDrift": [
         ".github/ci-baselines/phase-ownership-profiles.json",
         ".github/workflows/_reusable-node-quality.yml",
+        ".github/workflows/ci.yml",
         ".github/workflows/pr-ci.yml",
         "scripts/ci/build-p1-28-evidence-manifest.mjs",
         "scripts/ci/check-phase-ownership.mjs",
