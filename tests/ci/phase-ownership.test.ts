@@ -199,7 +199,10 @@ describe('p1-26-frontend profile', () => {
     const world =
       (table: Record<string, string | null>) =>
       (args: readonly string[]): string | null =>
-        args.join(' ') in table ? table[args.join(' ')] : null;
+        // `?? null` and not a bare index: an absent key and a key whose value is
+        // `null` are the same answer here — Git refused — and the index
+        // signature would otherwise widen this to `undefined`.
+        table[args.join(' ')] ?? null;
 
     it('reports agreement when the merge base and HEAD name one tree', () => {
       const answer = emptyDiffAgreesWithTrees(
