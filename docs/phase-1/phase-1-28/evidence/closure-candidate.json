@@ -352,12 +352,6 @@
       "absorbedBecause": "Absorbed into the resolved base when the promotion-readiness work merged as 15e5c125. Retained rather than deleted: it is a measurement head or the machinery a figure in this package still names."
     },
     {
-      "commit": "81d896729f6d5eb638f71e45f6fe520d9c194aee",
-      "kind": "evidence machinery — promotion readiness",
-      "why": "Makes a promotion a DECLARED SKIP for the ownership gate, while an unmapped branch stays REFUSED.",
-      "absorbedBecause": "Absorbed into the resolved base when the promotion-readiness work merged as 15e5c125. Retained rather than deleted: it is a measurement head or the machinery a figure in this package still names."
-    },
-    {
       "commit": "e37b10db08a5e20cff26d608acf2e1804fd4d761",
       "kind": "measurement head — unit tier",
       "why": "The commit the unit tier was run at. A measurement head must be a named successor.",
