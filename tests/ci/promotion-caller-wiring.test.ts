@@ -23,6 +23,9 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
+import { execFileSync } from 'node:child_process';
+
+import { repositoryBinding } from '../../scripts/ci/build-p1-28-evidence-manifest.mjs';
 import { decideOwnershipRun } from '../../scripts/ci/check-phase-ownership.mjs';
 
 const ROOT = join(__dirname, '..', '..');
@@ -152,4 +155,236 @@ describe('ownership classifies the same promotion the same way', () => {
     expect(feature.action, 'an ordinary feature PR stopped being checked').toBe('check');
     expect(feature.checked).toBe(true);
   });
+});
+
+describe('a merge that adds nothing is the parent it adds nothing to', () => {
+  /*
+   * Two merges in this repository carry one parent's tree byte for byte, and the
+   * seal read both of them wrong. Neither was found by reading code.
+   *
+   * The PROMOTION was found in hosted CI, and the first fix for it was wrong. It
+   * assumed the promotion checkout was `develop`'s tip measured against
+   * `develop` and exempted "head IS base". That shape never occurs —
+   * `actions/checkout` takes the merge ref, whose parents are the protected
+   * branch and `develop`. Measured against the real ref the exemption changed
+   * nothing: 4 fabricated and 24 unnamed, exactly as before. It was SIMULATED
+   * instead of reproduced, and a simulation of the wrong shape passes as
+   * convincingly as a fix does.
+   *
+   * The SYNC was found by asking what would happen next. `main` is protected
+   * with strict required status checks, so `develop` cannot be promoted until it
+   * contains `main` — and with the base branch moved to that merge, the
+   * protected reproof reported 61 in range and 18 unnamed executable successors
+   * on a package that had changed by nothing.
+   *
+   * So these cases build the objects Git builds, run the real seal over them,
+   * and assert the invariant both fixes rest on: A MERGE THAT ADDS NO CONTENT
+   * DOES NOT CHANGE WHAT THE SEAL SAYS. Not "it passes" — it AGREES, on the head
+   * under test, on the subtrahend and on the range.
+   *
+   * The protected side is a SYNTHETIC divergent line rather than `origin/main`,
+   * built once from the merge base. Anchoring to the real branch would couple
+   * these cases to where that branch happens to stand: the moment a promotion
+   * lands, `main` carries the candidate and every precondition here would read
+   * as a failure of the seal rather than as history moving on.
+   */
+
+  /*
+   * Memoised, because these cases take several full bindings over a range of
+   * real commits and every one of those is a Git subprocess. Uncached the file
+   * runs for tens of seconds, and longer under a parallel suite — which is how a
+   * correct test becomes a timeout with no assertion behind it.
+   *
+   * Safe to cache because every query reads immutable objects: a commit's
+   * parents, a revision's tree, an ancestry relation. The one command that
+   * WRITES, `commit-tree`, is content-addressed over the tree and parents asked
+   * for, so returning the first answer returns the same merge.
+   */
+  const ANSWERS = new Map<string, string | null>();
+  const GIT = (args: readonly string[]): string | null => {
+    const key = args.join(' ');
+    if (ANSWERS.has(key)) return ANSWERS.get(key) ?? null;
+    let answer: string | null;
+    try {
+      answer = execFileSync('git', args as string[], {
+        cwd: ROOT,
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          GIT_AUTHOR_NAME: 'seal',
+          GIT_AUTHOR_EMAIL: 'seal@localhost',
+          GIT_COMMITTER_NAME: 'seal',
+          GIT_COMMITTER_EMAIL: 'seal@localhost',
+        },
+      });
+    } catch {
+      answer = null;
+    }
+    ANSWERS.set(key, answer);
+    return answer;
+  };
+  const rev = (spec: string): string => String(GIT(['rev-parse', '--verify', spec]) ?? '').trim();
+  const treeOf = (spec: string): string =>
+    String(GIT(['rev-parse', `${spec}^{tree}`]) ?? '').trim();
+  const commit = (tree: string, parents: string[], why: string): string =>
+    String(
+      GIT(['commit-tree', tree, ...parents.flatMap((p) => ['-p', p]), '-m', why]) ?? ''
+    ).trim();
+  const carries = (commitish: string, sha: string): boolean =>
+    GIT(['merge-base', '--is-ancestor', sha, commitish]) !== null;
+
+  const CANDIDATE = JSON.parse(
+    readFileSync(
+      join(ROOT, 'docs', 'phase-1', 'phase-1-28', 'evidence', 'closure-candidate.json'),
+      'utf8'
+    )
+  ) as { candidate: { FINAL_CODE_SHA: string } };
+  const CANDIDATE_SHA = CANDIDATE.candidate.FINAL_CODE_SHA;
+
+  /**
+   * A `git` that answers `HEAD` as `head` and the base branch as `base`, and
+   * every other question for real. Both must move together: a merge that lands
+   * on the base branch IS the base branch afterwards, and a case that moves only
+   * `HEAD` measures a state no checkout is ever in. Getting that wrong is what
+   * hid the sync merge for a full cycle.
+   */
+  const world =
+    (head: string, base: string) =>
+    (args: readonly string[]): string | null => {
+      if (args[0] === 'rev-list' && args.includes('--parents') && args.at(-1) === 'HEAD') {
+        return GIT(['rev-list', '--parents', '-n', '1', head]);
+      }
+      if (
+        args[0] === 'rev-parse' &&
+        args.includes('--verify') &&
+        String(args.at(-1)).includes('origin/develop')
+      ) {
+        return `${base}\n`;
+      }
+      return GIT(args);
+    };
+
+  type Binding = {
+    head: string | null;
+    mergeRefBaseSide?: string | null;
+    mergeAddsNothingTo?: string | null;
+    commits: unknown[];
+    fabricatedSuccessors: string[];
+    unrecordedExecutable: string[];
+    declinedUnwrap: string | null;
+    topologyUnknown: string | null;
+  };
+  const bindingIn = (head: string, base: string): Binding =>
+    repositoryBinding(CANDIDATE as never, world(head, base)) as unknown as Binding;
+
+  /** Every shape in a promotion cycle must give the base branch's own answer. */
+  const agreesWith = (label: string, actual: Binding, expected: Binding): void => {
+    expect(actual.topologyUnknown, `${label}: the Git world became unknown`).toBeNull();
+    expect(actual.declinedUnwrap, `${label}: the unwrap was declined`).toBeNull();
+    expect(actual.head, `${label}: the head under test moved`).toBe(expected.head);
+    expect(actual.mergeRefBaseSide, `${label}: the subtrahend moved`).toBe(
+      expected.mergeRefBaseSide
+    );
+    expect(actual.commits.length, `${label}: the successor count changed`).toBe(
+      expected.commits.length
+    );
+    /*
+     * Compared with the base branch's own answer rather than with an empty
+     * list, because these two are properties of WHERE THE BRANCH STANDS, not of
+     * the merge. A branch ahead of its base names successors the base does not
+     * carry yet, and asserting zero here would make these cases fail on every
+     * branch that has work in flight — while proving nothing extra, since the
+     * question asked is whether a content-free merge CHANGES the answer.
+     */
+    expect(actual.fabricatedSuccessors, `${label}: the fabricated set changed`).toEqual(
+      expected.fabricatedSuccessors
+    );
+    expect(actual.unrecordedExecutable, `${label}: the unnamed set changed`).toEqual(
+      expected.unrecordedExecutable
+    );
+  };
+
+  /** A protected line that diverges from the base branch and never carries the candidate. */
+  const protectedLine = (): string => {
+    const base = String(GIT(['merge-base', 'origin/main', 'origin/develop']) ?? '').trim();
+    expect(base, 'no merge base between main and develop, so nothing here is measurable').toMatch(
+      /^[0-9a-f]{40}$/
+    );
+    const line = commit(treeOf('origin/main'), [base], 'a divergent protected line');
+    expect(line).toMatch(/^[0-9a-f]{40}$/);
+    expect(carries(line, CANDIDATE_SHA), 'the synthetic protected line carries the candidate').toBe(
+      false
+    );
+    expect(
+      carries('origin/develop', line),
+      'the synthetic protected line is contained in the base branch, so it does not diverge'
+    ).toBe(false);
+    return line;
+  };
+
+  it('agrees with the base branch on the promotion, the sync, and the promotion of the sync', () => {
+    const develop = rev('origin/develop');
+    expect(develop, 'origin/develop does not resolve, so this measures nothing').toMatch(
+      /^[0-9a-f]{40}$/
+    );
+    expect(carries(develop, CANDIDATE_SHA), 'the base branch does not carry the candidate').toBe(
+      true
+    );
+    const other = protectedLine();
+
+    const onDevelop = bindingIn(develop, develop);
+    expect(
+      onDevelop.commits.length,
+      'the base branch has no successors, so these cases would pass on any package'
+    ).toBeGreaterThan(0);
+
+    // What GitHub writes for refs/pull/N/merge: the head branch's tree, base
+    // parent first, head branch second.
+    const promotion = commit(treeOf(develop), [other, develop], 'promotion preview');
+    agreesWith('the promotion preview', bindingIn(promotion, develop), onDevelop);
+
+    // What `git merge <protected>` writes on the base branch, and what the base
+    // branch IS from then on. Required before a promotion, because the protected
+    // branch demands its head be up to date.
+    const sync = commit(treeOf(develop), [develop, other], 'sync the protected branch in');
+    agreesWith('the base branch after the sync', bindingIn(sync, sync), onDevelop);
+
+    // The sync's own pull request, and then the promotion of the synced branch —
+    // two content-free merges deep in each direction.
+    const syncPreview = commit(treeOf(develop), [develop, sync], 'the sync pull request');
+    agreesWith('the sync pull request', bindingIn(syncPreview, develop), onDevelop);
+
+    const promotionOfSync = commit(treeOf(sync), [other, sync], 'promotion preview');
+    agreesWith('the promotion of the synced branch', bindingIn(promotionOfSync, sync), onDevelop);
+  }, 180_000);
+
+  it('names the parent it read, so a reader can see the merge was unwrapped', () => {
+    const develop = rev('origin/develop');
+    const promotion = commit(treeOf(develop), [protectedLine(), develop], 'promotion preview');
+    expect(
+      bindingIn(promotion, develop).mergeAddsNothingTo,
+      'the merge was unwrapped without saying so'
+    ).toBe(develop);
+  }, 120_000);
+
+  it('refuses the same shape when the merge does NOT carry a parent tree', () => {
+    /*
+     * Tree identity is what makes reading the parent safe: a checkout identical
+     * in content can smuggle nothing in through its other parent. Take the
+     * identity away and the rule must not fire — this is the case that keeps it
+     * a measurement rather than an exemption.
+     */
+    const develop = rev('origin/develop');
+    const other = protectedLine();
+    expect(
+      treeOf(other),
+      "the protected line's tree equals the base branch's, so this cannot break the identity"
+    ).not.toBe(treeOf(develop));
+
+    const impostor = commit(treeOf(other), [other, develop], 'not content-free');
+    expect(
+      bindingIn(impostor, develop).mergeAddsNothingTo,
+      'a merge that changes content was read as its parent'
+    ).toBeNull();
+  }, 120_000);
 });

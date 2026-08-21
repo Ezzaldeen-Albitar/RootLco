@@ -6,14 +6,14 @@
   "tiers": {
     "unit": {
       "command": "npx vitest run --reporter=json",
-      "tests": 2792,
-      "passed": 2792,
+      "tests": 2796,
+      "passed": 2796,
       "failed": 0,
       "skipped": 0,
       "files": 105,
-      "measuredAtCommit": "26a37bf4c92a3e2db5e846a344381ea08203bb0e",
+      "measuredAtCommit": "216730fa1f89a152dc784fb282df62fa842c532c",
       "dirtyExecutablePaths": [],
-      "measuredAt": "2026-08-21T02:56:38.957Z"
+      "measuredAt": "2026-08-21T06:59:46.628Z"
     },
     "web": {
       "command": "npm run test --workspace @rootlco/web -- --reporter=json",
@@ -22,9 +22,9 @@
       "failed": 0,
       "skipped": 0,
       "files": 101,
-      "measuredAtCommit": "87d15f639bcc8a2d712619427793ab53cec70eaf",
+      "measuredAtCommit": "216730fa1f89a152dc784fb282df62fa842c532c",
       "dirtyExecutablePaths": [],
-      "measuredAt": "2026-08-21T02:47:57.217Z"
+      "measuredAt": "2026-08-21T07:01:08.777Z"
     }
   }
 }

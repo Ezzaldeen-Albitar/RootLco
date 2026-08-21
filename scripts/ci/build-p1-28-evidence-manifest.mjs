@@ -516,7 +516,26 @@ export function resolveBaseRef(git, baseBranch) {
  * that was NOT unwrapped, and the reason, are facts a reader wants.
  */
 export function phaseHead(git, candidateSha, baseSha) {
-  const row = lines(git(['rev-list', '--parents', '-n', '1', 'HEAD']))[0] ?? '';
+  return headAt(git, 'HEAD', candidateSha, baseSha, CONTENT_FREE_MERGE_HOPS);
+}
+
+/**
+ * How many content-free merges may stand between the checkout and the head.
+ *
+ * Two is the most this repository can produce today — a promotion of a branch
+ * whose own tip is a sync merge — and a budget rather than a boolean because a
+ * chain is what a promotion cycle builds. Exceeding it is UNKNOWN, not a reason
+ * to stop unwrapping and measure the wrong commit.
+ */
+const CONTENT_FREE_MERGE_HOPS = 10;
+
+/**
+ * `phaseHead` for an explicit revision.
+ *
+ * `hopsLeft` bounds how far a chain of content-free merges may be followed.
+ */
+function headAt(git, rev, candidateSha, baseSha, hopsLeft) {
+  const row = lines(git(['rev-list', '--parents', '-n', '1', rev]))[0] ?? '';
   const ids = row.split(/\s+/).filter(Boolean);
   const checkout = ids[0] ?? null;
   const parents = ids.slice(1);
@@ -528,6 +547,7 @@ export function phaseHead(git, candidateSha, baseSha) {
     evilMergePaths: [],
     declined: null,
     topologyUnknown: null,
+    addsNothingTo: null,
   };
   if (checkout === null || parents.length !== 2 || !candidateSha) return plain;
 
@@ -590,6 +610,85 @@ export function phaseHead(git, candidateSha, baseSha) {
   if (baseSide === null) return plain;
 
   /*
+   * A MERGE THAT ADDS NOTHING IS THE PARENT IT ADDS NOTHING TO.
+   *
+   * Two merges in this repository carry one parent's tree byte for byte, and
+   * the code below reads both of them wrong.
+   *
+   * The first is a PROMOTION. `actions/checkout` takes the pull request's merge
+   * ref, whose parents are `main` and `develop`. Its non-candidate parent is the
+   * protected branch, which — in a repository that promotes by merge commit —
+   * has accumulated merge topology the base branch has never seen. Neither
+   * parent contains the other, so the check below declines the unwrap, and the
+   * merge ref itself becomes the head under test. Subtracting the base then
+   * leaves the PROTECTED branch's history: the phase's own recorded successors
+   * read as fabricated and the promotion target's commits read as this phase's
+   * unnamed successors. Measured: 28 in range, 4 fabricated, 24 unnamed, against
+   * 10 / 0 / 0 for the same package on `develop`.
+   *
+   * The second is the SYNC that must precede it. `main` is protected with
+   * `strict=true`, so `develop` cannot be promoted until it contains `main`, and
+   * the merge that puts it there sits on `develop` from then on. That one is not
+   * declined — once `main` is an ancestor of `develop` the check below is
+   * satisfied — it is simply read as though `main` were "the base as it stood",
+   * which subtracts the protected branch instead of the last feature branch's
+   * base. Measured with `origin/develop` at the sync merge: 61 in range and 18
+   * unnamed executable successors, on a package that had changed by nothing.
+   *
+   * Both are the same fact. A merge whose tree is IDENTICAL to one parent's
+   * added nothing to that parent, so the head under test is that parent, read
+   * exactly as that parent is read — its own base side, not this merge's.
+   *
+   * The condition is one fact, and the trees must match BYTE FOR BYTE. That is
+   * what makes reading the parent safe rather than a concession: a checkout
+   * identical in content to a parent can smuggle nothing in through the other
+   * one. A merge that DID change content is left to the check below, exactly as
+   * before — including an evil merge, whose tree matches neither parent.
+   *
+   * Unwrapping must not cost the SUBTRAHEND, which is why the base side falls
+   * back to this merge's own. An ordinary feature merge into a base that has not
+   * moved also carries its branch parent's tree, so this fires there too; the
+   * parent it unwraps to is a plain commit with no base side of its own, and
+   * without the fallback the range would be taken against the merge that
+   * contains it and collapse to empty. With it, the answer is the one this
+   * function already gave — which is the point. This is a generalisation, not a
+   * change of behaviour: every unwrap it adds is one where the merge added no
+   * content, and it was checked commit by commit against the previous revision
+   * over the whole of the base branch since the candidate.
+   *
+   * Git declining to name either tree is UNKNOWN, not permission to proceed.
+   */
+  const checkoutTree = treeOf(git, checkout);
+  const branchTree = treeOf(git, branchSide);
+  if (checkoutTree === null || branchTree === null) {
+    return {
+      ...plain,
+      topologyUnknown: `Git could not compare the tree of merge ${checkout.slice(0, 8)} with the tree of its candidate-carrying parent ${branchSide.slice(0, 8)}`,
+    };
+  }
+  if (checkoutTree === branchTree) {
+    if (hopsLeft <= 0) {
+      return {
+        ...plain,
+        topologyUnknown: `more than ${CONTENT_FREE_MERGE_HOPS} content-free merges stand between the checkout and the head, so the head under test cannot be established`,
+      };
+    }
+    const inner = headAt(git, branchSide, candidateSha, baseSha, hopsLeft - 1);
+    return {
+      ...inner,
+      /*
+       * Still a merge ref, and still said so. Unwrapping must not cost the
+       * reader the fact that a merge was unwrapped, or the report reads as an
+       * ordinary checkout of a commit nobody pushed.
+       */
+      mergeRef: checkout,
+      baseSide: inner.baseSide ?? baseSide,
+      checkout,
+      addsNothingTo: branchSide,
+    };
+  }
+
+  /*
    * The base-side parent may equal the observed base or precede it. The reverse
    * is not proof: when the observation is stale, both the real base and an
    * unrelated sibling can descend from it. That world is UNKNOWN, not a reason
@@ -636,7 +735,13 @@ export function phaseHead(git, candidateSha, baseSha) {
     evilMergePaths: [],
     declined: null,
     topologyUnknown: null,
+    addsNothingTo: null,
   };
+}
+
+/** The tree a revision names, or `null` when Git declined to say. */
+function treeOf(git, rev) {
+  return lines(git(['rev-parse', `${rev}^{tree}`]))[0] ?? null;
 }
 
 /**
@@ -869,6 +974,7 @@ export function repositoryBinding(candidateFile, git) {
     baseResolved,
     phaseHead: head.head,
     checkoutHead: head.checkout,
+    mergeAddsNothingTo: head.addsNothingTo,
     unwrappedMergeRef: head.mergeRef,
     mergeRefBaseSide: head.baseSide,
     evilMergePaths: head.evilMergePaths,
@@ -2525,6 +2631,17 @@ const W = Object.freeze({
   mergedBase: '5'.repeat(40),
   /** A later commit on the base's first-parent line. */
   baseAdvanced: '0'.repeat(40),
+  /*
+   * Trees, because a merge is judged CONTENT-FREE by comparing its own tree with
+   * its candidate-carrying parent's. Distinct by default, so every world below
+   * keeps meaning what it meant: an ordinary merge-ref preview carries content
+   * of its own and is read as a merge. The content-free worlds say so by keying
+   * the merge's tree to the branch head's.
+   */
+  branchTree: 'ba'.repeat(20),
+  mergeTree: 'bc'.repeat(20),
+  baseTree: 'bd'.repeat(20),
+  mergedBaseTree: 'be'.repeat(20),
 });
 
 const ledgerAt = (head) =>
@@ -2540,9 +2657,26 @@ const SYNTHETIC_DRIFT_LEDGER = ledgerAt(W.executableSuccessor);
 const SYNTHETIC_GIT_TABLE = Object.freeze({
   [`cat-file -e ${W.candidate}^{commit}`]: '',
   [`rev-parse ${W.candidate}^{tree}`]: `${W.tree}\n`,
+  /* Distinct trees: no merge in this world is content-free unless it says so. */
+  [`rev-parse ${W.branchHead}^{tree}`]: `${W.branchTree}\n`,
+  [`rev-parse ${W.baseTip}^{tree}`]: `${W.baseTree}\n`,
+  [`rev-parse ${W.mergedBase}^{tree}`]: `${W.mergedBaseTree}\n`,
+  /*
+   * The merge's own tree, unequal to either parent's: a merge in this world
+   * carries content of its own unless the world says otherwise, which is what
+   * keeps every case below meaning what it meant before the content-free rule
+   * existed.
+   */
+  [`rev-parse ${W.mergeRef}^{tree}`]: `${W.mergeTree}\n`,
   /* The base branch, and an ordinary single-parent checkout of this branch. */
   [`rev-parse --verify --quiet refs/remotes/origin/develop^{commit}`]: `${W.baseTip}\n`,
   [`rev-list --parents -n 1 HEAD`]: `${W.branchHead} ${W.documentationSuccessor}\n`,
+  /*
+   * The same question asked of that head BY NAME, which is what unwrapping a
+   * content-free merge does: the rule re-reads the parent it unwrapped to,
+   * exactly as a checkout of that parent would be read.
+   */
+  [`rev-list --parents -n 1 ${W.branchHead}`]: `${W.branchHead} ${W.documentationSuccessor}\n`,
   [`merge-base --is-ancestor ${W.candidate} ${W.branchHead}`]: '',
   [`diff --name-only ${W.candidate}..${W.branchHead} -- apps supabase`]: '',
   [`log --format=%H %s ${W.branchHead} --not ${W.candidate} ${W.baseTip}`]: `${W.documentationSuccessor} docs: re-record the ledger\n${W.executableSuccessor} feat: the packaging machinery\n`,
@@ -2587,6 +2721,17 @@ const MERGE_REF_GIT = Object.freeze({
   /* The cross-check, applied only because a base ref also resolves here. */
   [`merge-base --is-ancestor ${W.baseTip} ${W.baseTip}`]: '',
   [`diff-tree --cc --name-only --no-commit-id ${W.mergeRef}`]: '',
+});
+
+/**
+ * The same merge ref, carrying its branch parent's tree BYTE FOR BYTE.
+ *
+ * What a promotion looks like, and what the sync that must precede it looks
+ * like: a merge that adds nothing to the parent it is read as.
+ */
+const CONTENT_FREE_MERGE_GIT = Object.freeze({
+  ...MERGE_REF_GIT,
+  [`rev-parse ${W.mergeRef}^{tree}`]: `${W.branchTree}\n`,
 });
 
 const syntheticGit = (over = {}) => {
@@ -3440,6 +3585,41 @@ export const WORLD_CHECK_CASES = [
     }),
     expects: { repositoryOk: true },
     explains: false,
+  },
+  {
+    name: 'a merge ref carrying its branch parent’s tree — read as that parent',
+    inputs: worldInputs({ git: syntheticGit(CONTENT_FREE_MERGE_GIT) }),
+    expects: { repositoryOk: true },
+    explains: false,
+  },
+  {
+    name: 'a content-free merge whose base side is a stranger — STILL read as its parent',
+    /*
+     * The promotion, in one world. Its non-candidate parent is the protected
+     * branch, which the base branch does not contain and which does not contain
+     * it — the very shape the decline below exists for. A merge that adds no
+     * content is read as the parent it adds nothing to regardless, because
+     * nothing can enter through a parent whose content is not in the result.
+     */
+    inputs: worldInputs({
+      git: syntheticGit({
+        ...CONTENT_FREE_MERGE_GIT,
+        [`rev-parse --verify --quiet refs/remotes/origin/develop^{commit}`]: `${W.stranger}\n`,
+      }),
+    }),
+    expects: { repositoryOk: true },
+    explains: false,
+  },
+  {
+    name: 'a merge whose tree Git will not name — unknown, not content-free',
+    inputs: worldInputs({
+      git: syntheticGit({
+        ...MERGE_REF_GIT,
+        [`rev-parse ${W.mergeRef}^{tree}`]: GIT_COMMAND_FAILURE,
+      }),
+    }),
+    expects: { repositoryOk: false, sound: false },
+    explains: true,
   },
   {
     name: 'a merge ref whose base side is not in the base branch — not unwrapped',
