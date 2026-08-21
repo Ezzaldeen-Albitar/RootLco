@@ -1186,6 +1186,9 @@ function defaultClosureRecord() {
  * Both subtractions fail CLOSED. A base branch this checkout cannot resolve
  * makes the successor set UNKNOWN, and unknown is not none: a shallow clone that
  * cannot see the base is reported and refused, never waved through.
+ * @param {(() => string | null) | undefined} [readClosureRecord] the canonical
+ *   closure record, injected so a fixture can decide condition E rather than
+ *   reading whatever the working tree happens to hold.
  */
 export function repositoryBinding(candidateFile, git, readClosureRecord = undefined) {
   const candidate = candidateFile.candidate ?? {};
