@@ -265,7 +265,13 @@ describe('a merge that adds nothing is the parent it adds nothing to', () => {
     };
 
   type Binding = {
-    head: string | null;
+    /*
+     * `phaseHead`, and the name matters: an earlier revision of this type called
+     * it `head`, which no binding carries, so every assertion on it compared
+     * undefined with undefined and could not fail. Caught by a case that expected
+     * a specific commit rather than agreement.
+     */
+    phaseHead: string | null;
     mergeRefBaseSide?: string | null;
     mergeAddsNothingTo?: string | null;
     commits: unknown[];
@@ -281,7 +287,7 @@ describe('a merge that adds nothing is the parent it adds nothing to', () => {
   const agreesWith = (label: string, actual: Binding, expected: Binding): void => {
     expect(actual.topologyUnknown, `${label}: the Git world became unknown`).toBeNull();
     expect(actual.declinedUnwrap, `${label}: the unwrap was declined`).toBeNull();
-    expect(actual.head, `${label}: the head under test moved`).toBe(expected.head);
+    expect(actual.phaseHead, `${label}: the head under test moved`).toBe(expected.phaseHead);
     expect(actual.mergeRefBaseSide, `${label}: the subtrahend moved`).toBe(
       expected.mergeRefBaseSide
     );
@@ -356,6 +362,51 @@ describe('a merge that adds nothing is the parent it adds nothing to', () => {
 
     const promotionOfSync = commit(treeOf(sync), [other, sync], 'promotion preview');
     agreesWith('the promotion of the synced branch', bindingIn(promotionOfSync, sync), onDevelop);
+  }, 180_000);
+
+  it('keeps the base as it STOOD when a sync merge sits between the head and it', () => {
+    /*
+     * The case that made the surviving base side a CHOICE rather than a default.
+     *
+     * A branch whose last commit is a sync merge, landed on the base branch,
+     * gives three nested merges: the landing merge names the base as it stood,
+     * the sync merge in between names the protected branch, and the commit
+     * beneath names nothing. Taking the innermost side subtracts the PROTECTED
+     * branch and every commit since the candidate reads as an unnamed successor;
+     * taking the outermost blindly is wrong in the promotion, where the
+     * innermost is the right one.
+     *
+     * Neither depth rule works, and the fact that does is which side lies on the
+     * base branch's own first-parent line — because that is what merging into a
+     * protected branch does to it, while a protected branch merged INTO the base
+     * only ever arrives as a second parent.
+     */
+    const develop = rev('origin/develop');
+    const other = protectedLine();
+
+    // A branch that ends in a sync merge, exactly like the one this test file
+    // is being committed on.
+    const work = commit(treeOf(develop), [develop], 'work on top of the base');
+    const syncLast = commit(treeOf(work), [work, other], 'sync the protected branch in, last');
+    // ...and that branch landing on the base branch.
+    const landed = commit(treeOf(syncLast), [develop, syncLast], 'Merge pull request');
+
+    const onBranch = bindingIn(syncLast, develop);
+    const onBase = bindingIn(landed, landed);
+
+    expect(onBranch.topologyUnknown, 'the branch made the Git world unknown').toBeNull();
+    expect(onBase.topologyUnknown, 'the landing made the Git world unknown').toBeNull();
+    expect(onBranch.phaseHead, 'the head under test is not the work beneath the sync').toBe(work);
+    expect(onBase.phaseHead, 'landing on the base moved the head under test').toBe(work);
+    expect(
+      onBase.mergeRefBaseSide,
+      'the protected branch was taken as the base as it stood'
+    ).not.toBe(other);
+    expect(onBase.commits.length, 'the range is empty, so this would pass on any package').toBe(1);
+    expect(
+      onBase.commits.length,
+      'landing the branch changed how much it is held to have added'
+    ).toBe(onBranch.commits.length);
   }, 180_000);
 
   it('names the parent it read, so a reader can see the merge was unwrapped', () => {

@@ -674,6 +674,54 @@ function headAt(git, rev, candidateSha, baseSha, hopsLeft) {
       };
     }
     const inner = headAt(git, branchSide, candidateSha, baseSha, hopsLeft - 1);
+    /*
+     * WHICH base side survives the unwrap, which is the load-bearing choice.
+     *
+     * There are two candidates — the one this merge names, and the one the
+     * commit beneath it names — and neither is right in every world:
+     *
+     *  - A FEATURE merge names the base as it stood, and the plain commit
+     *    beneath it names nothing. Keep this merge's.
+     *  - A PROMOTION merge names the protected branch, and the base-branch tip
+     *    beneath it names the base as it stood. Keep the inner one.
+     *  - After a SYNC has landed, the outer merge names the base as it stood and
+     *    the sync merge in between names the protected branch. Keep the outer
+     *    one and step over the sync.
+     *
+     * What separates them is not depth but a fact: the base as it stood is on
+     * the base branch's OWN first-parent line, because that is what merging into
+     * a protected branch does to it, while a protected branch merged INTO the
+     * base only ever arrives as a second parent. So the line decides, and depth
+     * breaks the tie only when both sides are on it.
+     *
+     * When neither is, the answer is `null` — and `null` is not a loss. The
+     * caller then subtracts the resolved base ref, which is the correct
+     * subtrahend for a branch that merged a divergent line into itself: its own
+     * commits are exactly those the base branch does not have.
+     *
+     * Git declining to say is UNKNOWN, as everywhere else here.
+     */
+    let survivor = inner.baseSide;
+    if (baseSha !== null) {
+      const onLine = (side) =>
+        side === null ? false : firstParentLineContains(git, side, baseSha);
+      const innerOnLine = onLine(inner.baseSide);
+      const outerOnLine = onLine(baseSide);
+      if (innerOnLine === null || outerOnLine === null) {
+        return {
+          ...plain,
+          topologyUnknown: `Git could not decide which side of merge ${checkout.slice(0, 8)} is the base as it stood`,
+        };
+      }
+      if (innerOnLine) survivor = inner.baseSide;
+      else if (outerOnLine) survivor = baseSide;
+      else survivor = null;
+    } else {
+      // No resolved base to test against, so the merge's own side is the whole
+      // recovery mechanism and is kept — the shallow-clone case this function
+      // was built for.
+      survivor = inner.baseSide ?? baseSide;
+    }
     return {
       ...inner,
       /*
@@ -682,7 +730,7 @@ function headAt(git, rev, candidateSha, baseSha, hopsLeft) {
        * ordinary checkout of a commit nobody pushed.
        */
       mergeRef: checkout,
-      baseSide: inner.baseSide ?? baseSide,
+      baseSide: survivor,
       checkout,
       addsNothingTo: branchSide,
     };
@@ -3605,6 +3653,15 @@ export const WORLD_CHECK_CASES = [
       git: syntheticGit({
         ...CONTENT_FREE_MERGE_GIT,
         [`rev-parse --verify --quiet refs/remotes/origin/develop^{commit}`]: `${W.stranger}\n`,
+        /*
+         * The stranger's own first-parent line, which does NOT run through this
+         * merge's base side — that is what makes it a stranger rather than the
+         * base as it stood, and it is the question the unwrap asks to decide
+         * which side survives. The base side is dropped here, so the subtrahend
+         * is the resolved ref, and the range is keyed against it below.
+         */
+        [`rev-list --first-parent ${W.stranger}`]: `${W.stranger}\n`,
+        [`log --format=%H %s ${W.branchHead} --not ${W.candidate} ${W.stranger}`]: `${W.documentationSuccessor} docs: re-record the ledger\n${W.executableSuccessor} feat: the packaging machinery\n`,
       }),
     }),
     expects: { repositoryOk: true },
