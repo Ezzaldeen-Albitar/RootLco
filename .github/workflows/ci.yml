@@ -59,6 +59,34 @@ jobs:
           # anti-vacuity guard then correctly reports as measuring nothing.
           fetch-depth: 0
 
+      # The PHASE base branch, which is not always the pull request's base.
+      #
+      # `fetch-depth: 0` gives the full history of the ref being checked out; it
+      # does not create `refs/remotes/origin/<branch>` for a branch this pull
+      # request does not touch. The evidence seal computes a phase's successors
+      # as `git log <head> --not <candidate> <base>` and reads that base from the
+      # PACKAGE — `develop` — not from the pull request. On a promotion into
+      # `main` the two differ, nothing here had ever created that ref, and the
+      # subtraction silently dropped: measured against develop the range is
+      # EMPTY, and without it develop's own history reads back as unnamed
+      # executable successors of a candidate it long precedes.
+      #
+      # Fetched rather than inferred, and `|| true` so a fork or mirror that
+      # genuinely lacks the branch gets the seal's own honest "the base could not
+      # be resolved" instead of a git error from this step.
+      - name: Make the phase base branches resolvable
+        run: |
+          set -euo pipefail
+          for branch in develop main; do
+            git fetch --no-tags --quiet origin \
+              "+refs/heads/${branch}:refs/remotes/origin/${branch}" || true
+          done
+          if git rev-parse --verify --quiet refs/remotes/origin/develop >/dev/null; then
+            echo "origin/develop resolves"
+          else
+            echo "::warning::origin/develop does not resolve; the seal will report its base as unknown"
+          fi
+
       - name: Set up Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
