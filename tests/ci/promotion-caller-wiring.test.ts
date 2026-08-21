@@ -542,6 +542,53 @@ describe('a merge that adds nothing is the parent it adds nothing to', () => {
     expect(binding.mergeAddsNothingTo, 'the sync was not read as the branch it sits on').toBe(work);
   }, 180_000);
 
+  it('reads a sync LANDED on the base branch, where the base ref names neither of its parents', () => {
+    /*
+     * The shape the second synchronisation actually produces, and the one that
+     * took the protected reproof to UNKNOWN.
+     *
+     * Once the sync has landed, the base branch's tip is the merge that landed
+     * it, and the sync sits one level in. Reading the tip unwraps to the sync —
+     * and at that point the resolved base ref names neither of the SYNC's
+     * parents, because it points at the merge above it. Read as though it were a
+     * checkout, that is the ambiguity the gate refuses:
+     *
+     *   both merge parents contain the candidate and the resolved base does not
+     *   uniquely identify either parent
+     *
+     * Which is correct for something somebody checked out, and wrong here. The
+     * level above has already established what this commit is; the ref simply
+     * describes a different commit. So inside an unwrap the tree is allowed to
+     * answer where the ref cannot — and the guard for a real checkout keeps
+     * refusing, which the two cases in the seal's own suite still prove.
+     */
+    const develop = rev('origin/develop');
+    const other = protectedLine();
+
+    // A protected branch that has been promoted once — it carries the candidate,
+    // and its tree is a revision behind, which is what lets the tree decide.
+    const promotedTarget = commit(
+      treeOf(`${CANDIDATE_SHA}^`),
+      [other, develop],
+      'promote develop to main'
+    );
+    expect(carries(promotedTarget, CANDIDATE_SHA), 'the target does not carry the candidate').toBe(
+      true
+    );
+    expect(
+      treeOf(promotedTarget),
+      "the target carries the base branch's tree, so no tree separates the sync's parents"
+    ).not.toBe(treeOf(develop));
+
+    const syncBranch = commit(treeOf(develop), [develop, promotedTarget], 'sync it in');
+    const landed = commit(treeOf(develop), [develop, syncBranch], 'Merge pull request');
+
+    // Agreement, not a fixed stop: the base branch's own tip may itself be a
+    // content-free merge, and the walk is right to keep going. What must hold is
+    // that landing a sync does not change what the seal says.
+    agreesWith('the landed sync', bindingIn(landed, landed), bindingIn(develop, develop));
+  }, 180_000);
+
   it('names the parent it read, so a reader can see the merge was unwrapped', () => {
     const develop = rev('origin/develop');
     const promotion = commit(treeOf(develop), [protectedLine(), develop], 'promotion preview');

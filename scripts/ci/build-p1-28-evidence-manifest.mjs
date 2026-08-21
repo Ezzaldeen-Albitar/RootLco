@@ -533,8 +533,14 @@ const CONTENT_FREE_MERGE_HOPS = 10;
  * `phaseHead` for an explicit revision.
  *
  * `hopsLeft` bounds how far a chain of content-free merges may be followed.
+ *
+ * `unwrapped` says this revision was reached by stepping through a content-free
+ * merge rather than by being checked out. It changes exactly one thing, and the
+ * reason is stated where it is used: the resolved base ref describes the
+ * CHECKOUT, and once the walk has stepped inside, it no longer describes what is
+ * being read.
  */
-function headAt(git, rev, candidateSha, baseSha, hopsLeft) {
+function headAt(git, rev, candidateSha, baseSha, hopsLeft, unwrapped = false) {
   const row = lines(git(['rev-list', '--parents', '-n', '1', rev]))[0] ?? '';
   const ids = row.split(/\s+/).filter(Boolean);
   const checkout = ids[0] ?? null;
@@ -660,6 +666,31 @@ function headAt(git, rev, candidateSha, baseSha, hopsLeft) {
         } else {
           [baseSide, branchSide] = parents;
         }
+      } else if (unwrapped && treeCarrier !== null) {
+        /*
+         * INSIDE AN UNWRAP the resolved base ref no longer describes what is
+         * being read, and its silence is not evidence of anything.
+         *
+         * The refusal below is for a CHECKOUT: a two-parent merge somebody
+         * actually checked out, whose parents both carry the candidate and whose
+         * base ref names neither. Nothing there says which parent is this
+         * branch, and guessing is the fail-open this function exists to prevent.
+         *
+         * A revision reached by stepping THROUGH a content-free merge is not
+         * that. The level above already established what this commit is — it is
+         * the parent its merge added nothing to — and the base ref it was given
+         * belongs to the checkout, one or more levels out. A synchronisation
+         * landed on the base branch is exactly this: read it as a checkout and
+         * the ref identifies neither of its parents, because the ref points at
+         * the merge that landed it.
+         *
+         * So here, and only here, the tree is allowed to answer where the ref
+         * could not. It is the same fact used twice above, and the guard for a
+         * real checkout is untouched: both of its cases are top-level, both
+         * still refuse, and neither reaches this line.
+         */
+        branchSide = treeCarrier;
+        baseSide = parents.find((p) => p !== branchSide) ?? null;
       } else {
         return {
           ...plain,
@@ -746,7 +777,7 @@ function headAt(git, rev, candidateSha, baseSha, hopsLeft) {
         topologyUnknown: `more than ${CONTENT_FREE_MERGE_HOPS} content-free merges stand between the checkout and the head, so the head under test cannot be established`,
       };
     }
-    const inner = headAt(git, branchSide, candidateSha, baseSha, hopsLeft - 1);
+    const inner = headAt(git, branchSide, candidateSha, baseSha, hopsLeft - 1, true);
     /*
      * WHICH base side survives the unwrap, which is the load-bearing choice.
      *
