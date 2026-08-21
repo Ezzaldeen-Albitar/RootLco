@@ -288,8 +288,20 @@ describe('a merge that adds nothing is the parent it adds nothing to', () => {
     expect(actual.commits.length, `${label}: the successor count changed`).toBe(
       expected.commits.length
     );
-    expect(actual.fabricatedSuccessors, `${label}: successors became fabricated`).toEqual([]);
-    expect(actual.unrecordedExecutable, `${label}: successors became unnamed`).toEqual([]);
+    /*
+     * Compared with the base branch's own answer rather than with an empty
+     * list, because these two are properties of WHERE THE BRANCH STANDS, not of
+     * the merge. A branch ahead of its base names successors the base does not
+     * carry yet, and asserting zero here would make these cases fail on every
+     * branch that has work in flight — while proving nothing extra, since the
+     * question asked is whether a content-free merge CHANGES the answer.
+     */
+    expect(actual.fabricatedSuccessors, `${label}: the fabricated set changed`).toEqual(
+      expected.fabricatedSuccessors
+    );
+    expect(actual.unrecordedExecutable, `${label}: the unnamed set changed`).toEqual(
+      expected.unrecordedExecutable
+    );
   };
 
   /** A protected line that diverges from the base branch and never carries the candidate. */

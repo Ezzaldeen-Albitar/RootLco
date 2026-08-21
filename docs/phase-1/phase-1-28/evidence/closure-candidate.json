@@ -374,28 +374,52 @@
       "kind": "measurement head — unit and web tiers",
       "why": "The commit the tiers were run at. A measurement head must be a named successor.",
       "absorbedBecause": "Absorbed into the resolved base when the workflow fix merged as b62f93e8. Retained rather than deleted: it is a measurement head or the machinery a figure in this package still names."
-    }
-  ],
-  "successors": [
+    },
     {
       "commit": "87d15f639bcc8a2d712619427793ab53cec70eaf",
       "kind": "evidence machinery — the resolvable phase base",
-      "why": "Branches on the fetch outcome instead of discarding it, after WFS-008 refused the || true."
+      "why": "Branches on the fetch outcome instead of discarding it, after WFS-008 refused the || true.",
+      "absorbedBecause": "PR #245 merged the branch carrying this commit into protected develop as 0e195872, so it is now an ANCESTOR of the resolved base and falls outside `git log <head> --not <candidate> <base>` entirely. It is retained rather than deleted: it is the machinery a figure in this package still names, and a package that forgot why its own numbers were taken where they were is the half-update this gate exists to catch. Absorbed entries never satisfy current-branch successor coverage — they only preserve the pins."
     },
     {
       "commit": "632d67bfb3b31faa181602c132924cc08e5c5c5a",
       "kind": "evidence machinery — the resolvable phase base",
-      "why": "Declares what this branch may change, after the ownership gate refused a branch nobody mapped."
+      "why": "Declares what this branch may change, after the ownership gate refused a branch nobody mapped.",
+      "absorbedBecause": "PR #245 merged the branch carrying this commit into protected develop as 0e195872, so it is now an ANCESTOR of the resolved base and falls outside `git log <head> --not <candidate> <base>` entirely. It is retained rather than deleted: it is the machinery a figure in this package still names, and a package that forgot why its own numbers were taken where they were is the half-update this gate exists to catch. Absorbed entries never satisfy current-branch successor coverage — they only preserve the pins."
     },
     {
       "commit": "a593fcb25ac70c9ca00e7f3ce0835ef27b85e06e",
       "kind": "evidence machinery — the resolvable phase base",
-      "why": "Fetches the phase base branch so the successor rule keeps its --not <base> term."
+      "why": "Fetches the phase base branch so the successor rule keeps its --not <base> term.",
+      "absorbedBecause": "PR #245 merged the branch carrying this commit into protected develop as 0e195872, so it is now an ANCESTOR of the resolved base and falls outside `git log <head> --not <candidate> <base>` entirely. It is retained rather than deleted: it is the machinery a figure in this package still names, and a package that forgot why its own numbers were taken where they were is the half-update this gate exists to catch. Absorbed entries never satisfy current-branch successor coverage — they only preserve the pins."
     },
     {
       "commit": "26a37bf4c92a3e2db5e846a344381ea08203bb0e",
       "kind": "measurement head — unit and web tiers",
-      "why": "The commit the tiers were run at. A measurement head must be a named successor."
+      "why": "The commit the tiers were run at. A measurement head must be a named successor.",
+      "absorbedBecause": "PR #245 merged the branch carrying this commit into protected develop as 0e195872, so it is now an ANCESTOR of the resolved base and falls outside `git log <head> --not <candidate> <base>` entirely. It is retained rather than deleted: it is the machinery a figure in this package still names, and a package that forgot why its own numbers were taken where they were is the half-update this gate exists to catch. Absorbed entries never satisfy current-branch successor coverage — they only preserve the pins."
+    }
+  ],
+  "successors": [
+    {
+      "commit": "84f9b6657fccc361b68221121fec1e939ec0ff5b",
+      "kind": "evidence machinery — a promotion exemption that fixed nothing, since reverted",
+      "why": "Exempted the case \"the head under test IS the resolved base\" from fabricatedSuccessors, on the assumption that a promotion checkout is the base branch tip measured against itself. That shape never occurs: actions/checkout takes the pull request merge ref, whose parents are the protected branch and the base branch. Measured against the real ref the exemption changed nothing — still 4 fabricated and 24 unnamed — and it is reverted in 8df31959 rather than left in place as a dead clause. Named because it touches an executable path, and kept in history because a package that hides its own wrong turn is not evidence. Non-product: scripts/ci, tests/ci and .github only, so apps/** and supabase/** stay byte-identical to the candidate — which the repository computes rather than takes on trust."
+    },
+    {
+      "commit": "8df3195900af62fdab1721d3a4250ffe26533cf1",
+      "kind": "evidence machinery — the promotion read as the branch it promotes",
+      "why": "Reverts the exemption above and fixes the real cause. phaseHead declined the promotion merge ref because its non-candidate parent is on neither side of the phase base — correct for a pull request whose head is a feature branch, wrong for a promotion, whose head IS the base branch and whose other parent is the protected branch, divergent by construction. Declined, the merge ref became the head under test, so subtracting the base left the protected branch history: this phase own recorded successors read as fabricated and 24 promotion commits read as this phase unnamed successors. Non-product: scripts/ci, tests/ci and .github only, so apps/** and supabase/** stay byte-identical to the candidate — which the repository computes rather than takes on trust."
+    },
+    {
+      "commit": "7d01fdbc9b6a2a913db27dc973c3eaae38c8bc40",
+      "kind": "evidence machinery — a merge that adds nothing is the parent it adds nothing to",
+      "why": "Generalises the rule above to the fact it was a special case of, and covers the shape it did not: the sync merge that must land on the base branch before a promotion can merge at all, because the protected branch requires its head to be up to date. That merge is not declined — once the protected branch is an ancestor of the base the earlier check is satisfied — it is simply read as though the protected branch were the base as it stood, which subtracts the wrong side. Measured with the base ref moved onto it: 61 in range and 18 unnamed executable successors, on a package changed by nothing. A merge whose tree is identical to a parent added nothing to that parent, so the head under test is that parent, read as that parent is read, with the base side falling back to this merge own so unwrapping cannot cost the subtrahend. A generalisation and not a change of behaviour: across all 61 commits on the base branch since the candidate the old and new revisions give the same head, subtrahend and verdict 61 times out of 61. Non-product: scripts/ci, tests/ci and .github only, so apps/** and supabase/** stay byte-identical to the candidate — which the repository computes rather than takes on trust."
+    },
+    {
+      "commit": "e615e40a89fffe26e6a71dcf461f76eb9e36d546",
+      "kind": "evidence machinery — the seal fixture worlds answer for their trees",
+      "why": "The content-free rule reads two trees and the synthetic worlds answered for neither, so every merge-ref fixture reported the Git world as UNKNOWN and eight went red — the fail-closed path doing its job on worlds that had never been asked the question. Each world now names its trees, DISTINCT by default, so a merge in these fixtures carries content of its own unless the world says otherwise and every existing case keeps meaning what it meant. Three worlds ask the new question, one existing case is split in two because it expressed a foreign base side with a content-free merge, and the unwrap now keeps naming the merge it unwrapped so a promotion does not read as an ordinary checkout of a commit nobody pushed. Non-product: scripts/ci and tests/ci only, so apps/** and supabase/** stay byte-identical to the candidate — which the repository computes rather than takes on trust."
     }
   ],
   "howTierFiguresAreChecked": "Four obligations, because there are four kinds of claim. ARITHMETIC: `passed + failed + skipped` must equal the declared total. LOCAL: figures equal the P1-27 run ledger read out of Git at `localLedger.atCommit`. MEASUREMENT HEAD: both local tiers name successor ea045d88fd88843c82c8ecd7273b0772f65417f6, whose six declared non-product drift paths equal Git's path set, and are pinned to ledger commit 2e0f2191db4c118e766e9ca4b8ffff981b63d7c6. HOSTED: claims remain fetchable attestations at their recorded run heads; a non-candidate head must explicitly be a superseded ancestor or a product-identical descendant, and Git refusal is UNKNOWN rather than empty.",
