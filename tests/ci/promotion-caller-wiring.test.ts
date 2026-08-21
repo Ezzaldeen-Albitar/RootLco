@@ -182,11 +182,13 @@ describe('a merge that adds nothing is the parent it adds nothing to', () => {
    * DOES NOT CHANGE WHAT THE SEAL SAYS. Not "it passes" — it AGREES, on the head
    * under test, on the subtrahend and on the range.
    *
-   * The protected side is a SYNTHETIC divergent line rather than `origin/main`,
-   * built once from the merge base. Anchoring to the real branch would couple
-   * these cases to where that branch happens to stand: the moment a promotion
-   * lands, `main` carries the candidate and every precondition here would read
-   * as a failure of the seal rather than as history moving on.
+   * The protected side is a SYNTHETIC divergent line, rooted at the candidate's
+   * own parent. Anchoring to a real branch — or to a merge base between two of
+   * them — couples these cases to where those branches stand: the moment a
+   * promotion lands, `main` carries the candidate, the merge base becomes
+   * `develop`, and every precondition here reads as a failure of the seal rather
+   * than as history moving on. See `protectedLine` below, which learned that the
+   * hard way on the promotion these cases exist to protect.
    */
 
   /*
@@ -310,13 +312,31 @@ describe('a merge that adds nothing is the parent it adds nothing to', () => {
     );
   };
 
-  /** A protected line that diverges from the base branch and never carries the candidate. */
+  /**
+   * A protected line that diverges from the base branch and never carries the
+   * candidate.
+   *
+   * Rooted at the CANDIDATE'S OWN PARENT, and that is the whole design. A commit
+   * cannot contain its own descendant, so this root cannot carry the candidate —
+   * ever, on any branch, at any point in a promotion cycle.
+   *
+   * The first revision rooted it at `merge-base(origin/main, origin/develop)`
+   * specifically to avoid naming `origin/main`, and the docblock above says why.
+   * It was still coupled: once a promotion lands, `develop` is contained in
+   * `main` and that merge base IS `develop` — which carries the candidate. The
+   * protected-main reproof went red on the promotion these cases exist to
+   * protect, with "the synthetic protected line carries the candidate".
+   *
+   * Avoiding a branch NAME was never the point. Not depending on where any
+   * branch stands is.
+   */
   const protectedLine = (): string => {
-    const base = String(GIT(['merge-base', 'origin/main', 'origin/develop']) ?? '').trim();
-    expect(base, 'no merge base between main and develop, so nothing here is measurable').toMatch(
-      /^[0-9a-f]{40}$/
-    );
-    const line = commit(treeOf('origin/main'), [base], 'a divergent protected line');
+    const base = String(GIT(['rev-parse', `${CANDIDATE_SHA}^`]) ?? '').trim();
+    expect(
+      base,
+      'the candidate has no parent to root a divergent line at, so nothing here is measurable'
+    ).toMatch(/^[0-9a-f]{40}$/);
+    const line = commit(treeOf(base), [base], 'a divergent protected line');
     expect(line).toMatch(/^[0-9a-f]{40}$/);
     expect(carries(line, CANDIDATE_SHA), 'the synthetic protected line carries the candidate').toBe(
       false
