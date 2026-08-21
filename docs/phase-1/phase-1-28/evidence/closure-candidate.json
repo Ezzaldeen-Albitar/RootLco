@@ -450,6 +450,11 @@
       "commit": "f778135319654537e7dc211c7d49174e8dfc0617",
       "kind": "evidence machinery — a dropped base side is reported as one",
       "why": "The unwrap line read \"is a merge of this branch with its base null\" whenever the merge own base side was dropped for not lying on the base branch first-parent line — naming a commit nobody can look up, in the one line a reader consults to find out which subtrahend produced the counts below it. It now says the side was not on the base branch and names the resolved ref that was subtracted instead. Non-product: scripts/ci only, so apps/** and supabase/** stay byte-identical to the candidate — which the repository computes rather than takes on trust."
+    },
+    {
+      "commit": "892c32b04105e2ed304f61e7d2f9973c0983158c",
+      "kind": "evidence machinery — the surviving base side is declared without a default",
+      "why": "CodeQL js/useless-assignment-to-local: the initial value of survivor is unused because every path below overwrites it. Correct, and worth more than the line it saves — seeding it with the inner side states a preference the rule does not have, the whole point being that neither side wins by position. Non-product: scripts/ci only, so apps/** and supabase/** stay byte-identical to the candidate — which the repository computes rather than takes on trust."
     }
   ],
   "howTierFiguresAreChecked": "Four obligations, because there are four kinds of claim. ARITHMETIC: `passed + failed + skipped` must equal the declared total. LOCAL: figures equal the P1-27 run ledger read out of Git at `localLedger.atCommit`. MEASUREMENT HEAD: both local tiers name successor ea045d88fd88843c82c8ecd7273b0772f65417f6, whose six declared non-product drift paths equal Git's path set, and are pinned to ledger commit 2e0f2191db4c118e766e9ca4b8ffff981b63d7c6. HOSTED: claims remain fetchable attestations at their recorded run heads; a non-candidate head must explicitly be a superseded ancestor or a product-identical descendant, and Git refusal is UNKNOWN rather than empty.",
