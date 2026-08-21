@@ -516,17 +516,25 @@ export function resolveBaseRef(git, baseBranch) {
  * that was NOT unwrapped, and the reason, are facts a reader wants.
  */
 export function phaseHead(git, candidateSha, baseSha) {
-  return headAt(git, 'HEAD', candidateSha, baseSha, true);
+  return headAt(git, 'HEAD', candidateSha, baseSha, CONTENT_FREE_MERGE_HOPS);
 }
+
+/**
+ * How many content-free merges may stand between the checkout and the head.
+ *
+ * Two is the most this repository can produce today — a promotion of a branch
+ * whose own tip is a sync merge — and a budget rather than a boolean because a
+ * chain is what a promotion cycle builds. Exceeding it is UNKNOWN, not a reason
+ * to stop unwrapping and measure the wrong commit.
+ */
+const CONTENT_FREE_MERGE_HOPS = 10;
 
 /**
  * `phaseHead` for an explicit revision.
  *
- * `mayUnwrapPromotion` is spent on the first hop so a promotion is unwrapped
- * once and no further: the base branch tip is then read exactly as the base
- * branch itself is read, and a second hop could not mean anything.
+ * `hopsLeft` bounds how far a chain of content-free merges may be followed.
  */
-function headAt(git, rev, candidateSha, baseSha, mayUnwrapPromotion) {
+function headAt(git, rev, candidateSha, baseSha, hopsLeft) {
   const row = lines(git(['rev-list', '--parents', '-n', '1', rev]))[0] ?? '';
   const ids = row.split(/\s+/).filter(Boolean);
   const checkout = ids[0] ?? null;
@@ -539,7 +547,7 @@ function headAt(git, rev, candidateSha, baseSha, mayUnwrapPromotion) {
     evilMergePaths: [],
     declined: null,
     topologyUnknown: null,
-    promotionOf: null,
+    addsNothingTo: null,
   };
   if (checkout === null || parents.length !== 2 || !candidateSha) return plain;
 
@@ -602,50 +610,75 @@ function headAt(git, rev, candidateSha, baseSha, mayUnwrapPromotion) {
   if (baseSide === null) return plain;
 
   /*
-   * A PROMOTION PREVIEW — the one merge the check below would wrongly decline.
+   * A MERGE THAT ADDS NOTHING IS THE PARENT IT ADDS NOTHING TO.
    *
-   * That check exists for a pull request whose head is a FEATURE branch: there,
-   * a non-candidate parent unrelated to the base means the checkout is not a
-   * preview of this pull request. A promotion inverts the roles. Its head IS the
-   * base branch, and the other parent is the protected branch it is being
-   * promoted onto — which, in a repository that promotes by merge commit, has
-   * accumulated merge topology the base branch has never seen and never will.
-   * Neither parent contains the other, and that is not a symptom; it is what a
-   * promotion looks like.
+   * Two merges in this repository carry one parent's tree byte for byte, and
+   * the code below reads both of them wrong.
    *
-   * Declining it is not merely unhelpful, it inverts the measurement. The
-   * merge ref then becomes the head under test and subtracting the base branch
-   * leaves the PROTECTED branch's history — so the phase's own recorded
-   * successors read as fabricated and the promotion target's commits read as
-   * unnamed successors of this phase. That is how the same sealed package could
-   * pass on `develop` and fail on the promotion of `develop`: a contradiction
-   * no package state could satisfy.
+   * The first is a PROMOTION. `actions/checkout` takes the pull request's merge
+   * ref, whose parents are `main` and `develop`. Its non-candidate parent is the
+   * protected branch, which — in a repository that promotes by merge commit —
+   * has accumulated merge topology the base branch has never seen. Neither
+   * parent contains the other, so the check below declines the unwrap, and the
+   * merge ref itself becomes the head under test. Subtracting the base then
+   * leaves the PROTECTED branch's history: the phase's own recorded successors
+   * read as fabricated and the promotion target's commits read as this phase's
+   * unnamed successors. Measured: 28 in range, 4 fabricated, 24 unnamed, against
+   * 10 / 0 / 0 for the same package on `develop`.
    *
-   * Recognised on facts only, and on the strongest one available: the parent
-   * carrying the candidate must be EXACTLY the resolved base branch tip, and the
-   * merge must carry that parent's tree byte for byte. Tree identity is what
-   * makes the conclusion safe — a checkout identical in content to the base
-   * branch tip can smuggle nothing in through its other parent, so reading the
-   * base tip is not a concession, it is the same bytes under a different name.
-   * A promotion that DID change content fails this and is declined as before.
+   * The second is the SYNC that must precede it. `main` is protected with
+   * `strict=true`, so `develop` cannot be promoted until it contains `main`, and
+   * the merge that puts it there sits on `develop` from then on. That one is not
+   * declined — once `main` is an ancestor of `develop` the check below is
+   * satisfied — it is simply read as though `main` were "the base as it stood",
+   * which subtracts the protected branch instead of the last feature branch's
+   * base. Measured with `origin/develop` at the sync merge: 61 in range and 18
+   * unnamed executable successors, on a package that had changed by nothing.
    *
-   * The head under test is then that tip, unwrapped exactly as it is unwrapped
-   * when CI checks out the base branch directly. This is the invariant the
-   * whole fix rests on: promoting a branch must not change what the seal says
-   * about it.
+   * Both are the same fact. A merge whose tree is IDENTICAL to one parent's
+   * added nothing to that parent, so the head under test is that parent, read
+   * exactly as that parent is read — its own base side, not this merge's.
+   *
+   * The condition is one fact, and the trees must match BYTE FOR BYTE. That is
+   * what makes reading the parent safe rather than a concession: a checkout
+   * identical in content to a parent can smuggle nothing in through the other
+   * one. A merge that DID change content is left to the check below, exactly as
+   * before — including an evil merge, whose tree matches neither parent.
+   *
+   * Unwrapping must not cost the SUBTRAHEND, which is why the base side falls
+   * back to this merge's own. An ordinary feature merge into a base that has not
+   * moved also carries its branch parent's tree, so this fires there too; the
+   * parent it unwraps to is a plain commit with no base side of its own, and
+   * without the fallback the range would be taken against the merge that
+   * contains it and collapse to empty. With it, the answer is the one this
+   * function already gave — which is the point. This is a generalisation, not a
+   * change of behaviour: every unwrap it adds is one where the merge added no
+   * content, and it was checked commit by commit against the previous revision
+   * over the whole of the base branch since the candidate.
+   *
+   * Git declining to name either tree is UNKNOWN, not permission to proceed.
    */
-  if (
-    mayUnwrapPromotion &&
-    baseSha !== null &&
-    branchSide === baseSha &&
-    baseSide !== baseSha &&
-    treeOf(git, checkout) !== null &&
-    treeOf(git, checkout) === treeOf(git, branchSide)
-  ) {
+  const checkoutTree = treeOf(git, checkout);
+  const branchTree = treeOf(git, branchSide);
+  if (checkoutTree === null || branchTree === null) {
     return {
-      ...headAt(git, branchSide, candidateSha, baseSha, false),
+      ...plain,
+      topologyUnknown: `Git could not compare the tree of merge ${checkout.slice(0, 8)} with the tree of its candidate-carrying parent ${branchSide.slice(0, 8)}`,
+    };
+  }
+  if (checkoutTree === branchTree) {
+    if (hopsLeft <= 0) {
+      return {
+        ...plain,
+        topologyUnknown: `more than ${CONTENT_FREE_MERGE_HOPS} content-free merges stand between the checkout and the head, so the head under test cannot be established`,
+      };
+    }
+    const inner = headAt(git, branchSide, candidateSha, baseSha, hopsLeft - 1);
+    return {
+      ...inner,
+      baseSide: inner.baseSide ?? baseSide,
       checkout,
-      promotionOf: branchSide,
+      addsNothingTo: branchSide,
     };
   }
 
@@ -696,7 +729,7 @@ function headAt(git, rev, candidateSha, baseSha, mayUnwrapPromotion) {
     evilMergePaths: [],
     declined: null,
     topologyUnknown: null,
-    promotionOf: null,
+    addsNothingTo: null,
   };
 }
 
@@ -935,7 +968,7 @@ export function repositoryBinding(candidateFile, git) {
     baseResolved,
     phaseHead: head.head,
     checkoutHead: head.checkout,
-    promotionOfBaseTip: head.promotionOf,
+    mergeAddsNothingTo: head.addsNothingTo,
     unwrappedMergeRef: head.mergeRef,
     mergeRefBaseSide: head.baseSide,
     evilMergePaths: head.evilMergePaths,
