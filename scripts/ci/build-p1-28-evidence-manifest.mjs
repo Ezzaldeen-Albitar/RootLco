@@ -701,7 +701,15 @@ function headAt(git, rev, candidateSha, baseSha, hopsLeft) {
      *
      * Git declining to say is UNKNOWN, as everywhere else here.
      */
-    let survivor = inner.baseSide;
+    /*
+     * Declared without a value, because there is no default here. Every path
+     * below chooses one, and seeding this with the inner side would state a
+     * preference the rule does not have — the whole point being that neither
+     * side wins by position.
+     *
+     * @type {string | null}
+     */
+    let survivor;
     if (baseSha !== null) {
       const onLine = (side) =>
         side === null ? false : firstParentLineContains(git, side, baseSha);
