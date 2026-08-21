@@ -157,74 +157,173 @@ describe('ownership classifies the same promotion the same way', () => {
   });
 });
 
-describe('the seal knows a promotion adds nothing, so it can fabricate nothing', () => {
+describe('the seal reads a promotion as the branch it promotes', () => {
   /*
-   * The fourth gate with the same blind spot, and the last one this promotion
-   * found.
+   * The fourth gate with the same blind spot — and the one that taught the
+   * sharpest lesson, because the first fix for it was wrong.
    *
-   * `fabricatedSuccessors` asks which recorded ids fall outside
-   * `git log <head> --not <candidate> <base>`. That is a real question while a
-   * phase branch is ahead of its base. When the head under test IS the resolved
-   * base — which is what a promotion of `develop` looks like — the range is
-   * EMPTY by construction and every recorded id falls outside it. Reported as
-   * fabrication it reads as "this package invented its own history", when the
-   * opposite happened: the branch merged and its successors became the base.
+   * That fix assumed the promotion checkout was `develop`'s tip with `develop`
+   * as its base, so it exempted the case "head IS base". That shape never
+   * occurs. `actions/checkout` takes the pull request's MERGE REF, whose parents
+   * are `main` and `develop` — and the exemption, measured against the real ref,
+   * changed nothing at all. The shape was simulated instead of reproduced, and a
+   * simulation of the wrong shape passes just as convincingly as a fix does.
+   *
+   * So these cases build the object GitHub builds — `develop`'s tree, parented
+   * on `main` and `develop` — and run the real seal over it. What they assert is
+   * the invariant the fix rests on: PROMOTING A BRANCH DOES NOT CHANGE WHAT THE
+   * SEAL SAYS ABOUT IT. Before the fix the same sealed package reported 10
+   * successors, 0 fabricated and 0 unnamed on `develop`, and 28 / 4 / 24 on the
+   * promotion of `develop` — a contradiction no package state could satisfy.
    */
-  const git = (args: readonly string[]): string | null => {
+  /*
+   * Memoised, because these cases take two full bindings over a range of real
+   * commits and every one of those is a Git subprocess. Uncached the pair runs
+   * for about thirteen seconds on its own and longer under a full parallel
+   * suite, which is how a correct test becomes a timeout nobody can read: the
+   * run reports a failure with no assertion behind it.
+   *
+   * Safe to cache because every query here reads immutable objects — a commit's
+   * parents, a revision's tree, an ancestry relation. The one command that
+   * WRITES, `commit-tree`, is content-addressed over the tree and parents that
+   * were asked for, so returning the first answer returns the same merge.
+   */
+  const ANSWERS = new Map<string, string | null>();
+  const ROOT_GIT = (args: readonly string[]): string | null => {
+    const key = args.join(' ');
+    if (ANSWERS.has(key)) return ANSWERS.get(key) ?? null;
+    let answer: string | null;
     try {
-      return execFileSync('git', args as string[], { cwd: ROOT, encoding: 'utf8' });
+      answer = execFileSync('git', args as string[], {
+        cwd: ROOT,
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          GIT_AUTHOR_NAME: 'seal',
+          GIT_AUTHOR_EMAIL: 'seal@localhost',
+          GIT_COMMITTER_NAME: 'seal',
+          GIT_COMMITTER_EMAIL: 'seal@localhost',
+        },
+      });
     } catch {
-      return null;
+      answer = null;
     }
+    ANSWERS.set(key, answer);
+    return answer;
   };
-  const candidateFile = JSON.parse(
+  const rev = (spec: string): string | null => {
+    const id = String(ROOT_GIT(['rev-parse', '--verify', '--quiet', spec]) ?? '').trim();
+    return /^[0-9a-f]{40}$/.test(id) ? id : null;
+  };
+  const treeOf = (spec: string): string =>
+    String(ROOT_GIT(['rev-parse', `${spec}^{tree}`]) ?? '').trim();
+  const CANDIDATE = JSON.parse(
     readFileSync(
       join(ROOT, 'docs', 'phase-1', 'phase-1-28', 'evidence', 'closure-candidate.json'),
       'utf8'
     )
   ) as Record<string, unknown>;
 
-  it('reports no fabrication when the head IS the base, and still does when it is not', () => {
-    const tip = String(git(['rev-parse', 'origin/develop']) ?? '').trim();
-    expect(tip, 'origin/develop does not resolve, so this case measures nothing').toMatch(
-      /^[0-9a-f]{40}$/
-    );
+  /** A `git` that answers `HEAD` as `at`, and every other question for real. */
+  const checkedOutAt =
+    (at: string) =>
+    (args: readonly string[]): string | null =>
+      args[0] === 'rev-list' && args.includes('--parents') && args.at(-1) === 'HEAD'
+        ? ROOT_GIT(['rev-list', '--parents', '-n', '1', at])
+        : ROOT_GIT(args);
 
-    // PROMOTION: a checkout whose head has no parents to unwrap, so the head
-    // under test resolves to the base itself.
-    const asPromotion = (args: readonly string[]): string | null =>
-      args[0] === 'rev-list' && args[1] === '--parents' ? `${tip}\n` : git(args);
-    const promotion = repositoryBinding(candidateFile as never, asPromotion) as unknown as {
-      promotionEmptyRange: boolean;
-      fabricatedSuccessors: string[];
-      commits: unknown[];
-    };
-    expect(promotion.promotionEmptyRange, 'the promotion context was not recognised').toBe(true);
-    expect(promotion.commits, 'a promotion should add nothing').toHaveLength(0);
+  type Binding = {
+    head: string | null;
+    mergeRefBaseSide?: string | null;
+    promotionOfBaseTip?: string | null;
+    commits: unknown[];
+    fabricatedSuccessors: string[];
+    unrecordedExecutable: string[];
+    declinedUnwrap: string | null;
+  };
+  const bindingAt = (at: string): Binding =>
+    repositoryBinding(CANDIDATE as never, checkedOutAt(at)) as unknown as Binding;
+
+  it('answers a develop to main promotion exactly as it answers develop', () => {
+    const develop = rev('origin/develop');
+    const main = rev('origin/main');
     expect(
-      promotion.fabricatedSuccessors,
-      'a promotion reported its own merged history as fabricated'
-    ).toEqual([]);
-
-    // ORDINARY: the real checkout, where the head is ahead of its base. The rule
-    // must still bite — a recorded id outside the range is a fabrication.
-    const ordinary = repositoryBinding(candidateFile as never, git) as unknown as {
-      promotionEmptyRange: boolean;
-    };
-    expect(ordinary.promotionEmptyRange, 'an ordinary branch claimed the promotion exemption').toBe(
-      false
-    );
-
-    const invented = JSON.parse(JSON.stringify(candidateFile)) as {
-      successors: { commit: string }[];
-    };
-    invented.successors = [{ commit: 'f'.repeat(40) }];
-    const caught = repositoryBinding(invented as never, git) as unknown as {
-      fabricatedSuccessors: string[];
-    };
+      develop,
+      'origin/develop does not resolve, so this case measures nothing'
+    ).not.toBeNull();
+    expect(main, 'origin/main does not resolve, so this case measures nothing').not.toBeNull();
     expect(
-      caught.fabricatedSuccessors,
-      'an invented successor was accepted on an ordinary branch'
-    ).toContain('f'.repeat(40));
-  });
+      ROOT_GIT(['merge-base', '--is-ancestor', String(main), String(develop)]),
+      'main is now an ancestor of develop, so this no longer builds a promotion'
+    ).toBeNull();
+
+    // The object GitHub writes for refs/pull/N/merge: the head branch's tree,
+    // parented on the base branch first and the head branch second.
+    const mergeRef = String(
+      ROOT_GIT([
+        'commit-tree',
+        treeOf(String(develop)),
+        '-p',
+        String(main),
+        '-p',
+        String(develop),
+        '-m',
+        'promotion preview',
+      ]) ?? ''
+    ).trim();
+    expect(mergeRef, 'the promotion merge object could not be built').toMatch(/^[0-9a-f]{40}$/);
+
+    const onDevelop = bindingAt(String(develop));
+    const onPromotion = bindingAt(mergeRef);
+
+    expect(
+      onPromotion.declinedUnwrap,
+      'the promotion was declined as an unrelated merge'
+    ).toBeNull();
+    expect(onPromotion.promotionOfBaseTip, 'the promotion was not recognised as one').toBe(develop);
+
+    // The invariant. Not "the promotion passes" — the promotion AGREES.
+    expect(onPromotion.head, 'a promotion moved the head under test').toBe(onDevelop.head);
+    expect(onPromotion.mergeRefBaseSide, 'a promotion moved the subtrahend').toBe(
+      onDevelop.mergeRefBaseSide
+    );
+    expect(onPromotion.commits.length, 'a promotion changed the successor count').toBe(
+      onDevelop.commits.length
+    );
+    expect(
+      onPromotion.commits.length,
+      'the range is empty, so this case would pass on any package'
+    ).toBeGreaterThan(0);
+    expect(onPromotion.fabricatedSuccessors, 'a promotion invented fabricated successors').toEqual(
+      []
+    );
+    expect(onPromotion.unrecordedExecutable, 'a promotion invented unnamed successors').toEqual([]);
+  }, 120_000);
+
+  it('refuses the same shape when the merge does NOT carry the branch tree', () => {
+    /*
+     * Tree identity is what makes reading the base tip safe: a checkout
+     * identical in content to that tip can smuggle nothing in through its other
+     * parent. Take the identity away and the recognition must not fire — this is
+     * the case that keeps the rule a measurement rather than an exemption.
+     */
+    const develop = String(rev('origin/develop'));
+    const main = String(rev('origin/main'));
+    const foreignTree = treeOf(main);
+    expect(
+      foreignTree,
+      "main's tree equals develop's, so this case cannot break the identity"
+    ).not.toBe(treeOf(develop));
+
+    const impostor = String(
+      ROOT_GIT(['commit-tree', foreignTree, '-p', main, '-p', develop, '-m', 'not a promotion']) ??
+        ''
+    ).trim();
+    expect(impostor).toMatch(/^[0-9a-f]{40}$/);
+
+    expect(
+      bindingAt(impostor).promotionOfBaseTip,
+      'a merge that changes content was accepted as a promotion'
+    ).toBeNull();
+  }, 120_000);
 });

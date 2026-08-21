@@ -98,6 +98,11 @@
       "branchPrefix": "chore/ci-base-ref-resolvable",
       "profile": "repository-tooling",
       "why": "A repository-wide CI change owned by no phase: the legacy workflow fetching the phase base branch so the evidence seal keeps the --not <base> term in its successor range."
+    },
+    {
+      "branchPrefix": "chore/absorb-merged-successors",
+      "profile": "repository-tooling",
+      "why": "A repository-wide CI change owned by no phase: the evidence seal reading a develop-to-main promotion as the branch it promotes, rather than declining its merge ref and reporting the protected branch history as this phase unnamed successors."
     }
   ]
 }

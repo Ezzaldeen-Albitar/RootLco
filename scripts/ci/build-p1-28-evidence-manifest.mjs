@@ -516,7 +516,18 @@ export function resolveBaseRef(git, baseBranch) {
  * that was NOT unwrapped, and the reason, are facts a reader wants.
  */
 export function phaseHead(git, candidateSha, baseSha) {
-  const row = lines(git(['rev-list', '--parents', '-n', '1', 'HEAD']))[0] ?? '';
+  return headAt(git, 'HEAD', candidateSha, baseSha, true);
+}
+
+/**
+ * `phaseHead` for an explicit revision.
+ *
+ * `mayUnwrapPromotion` is spent on the first hop so a promotion is unwrapped
+ * once and no further: the base branch tip is then read exactly as the base
+ * branch itself is read, and a second hop could not mean anything.
+ */
+function headAt(git, rev, candidateSha, baseSha, mayUnwrapPromotion) {
+  const row = lines(git(['rev-list', '--parents', '-n', '1', rev]))[0] ?? '';
   const ids = row.split(/\s+/).filter(Boolean);
   const checkout = ids[0] ?? null;
   const parents = ids.slice(1);
@@ -528,6 +539,7 @@ export function phaseHead(git, candidateSha, baseSha) {
     evilMergePaths: [],
     declined: null,
     topologyUnknown: null,
+    promotionOf: null,
   };
   if (checkout === null || parents.length !== 2 || !candidateSha) return plain;
 
@@ -590,6 +602,54 @@ export function phaseHead(git, candidateSha, baseSha) {
   if (baseSide === null) return plain;
 
   /*
+   * A PROMOTION PREVIEW — the one merge the check below would wrongly decline.
+   *
+   * That check exists for a pull request whose head is a FEATURE branch: there,
+   * a non-candidate parent unrelated to the base means the checkout is not a
+   * preview of this pull request. A promotion inverts the roles. Its head IS the
+   * base branch, and the other parent is the protected branch it is being
+   * promoted onto — which, in a repository that promotes by merge commit, has
+   * accumulated merge topology the base branch has never seen and never will.
+   * Neither parent contains the other, and that is not a symptom; it is what a
+   * promotion looks like.
+   *
+   * Declining it is not merely unhelpful, it inverts the measurement. The
+   * merge ref then becomes the head under test and subtracting the base branch
+   * leaves the PROTECTED branch's history — so the phase's own recorded
+   * successors read as fabricated and the promotion target's commits read as
+   * unnamed successors of this phase. That is how the same sealed package could
+   * pass on `develop` and fail on the promotion of `develop`: a contradiction
+   * no package state could satisfy.
+   *
+   * Recognised on facts only, and on the strongest one available: the parent
+   * carrying the candidate must be EXACTLY the resolved base branch tip, and the
+   * merge must carry that parent's tree byte for byte. Tree identity is what
+   * makes the conclusion safe — a checkout identical in content to the base
+   * branch tip can smuggle nothing in through its other parent, so reading the
+   * base tip is not a concession, it is the same bytes under a different name.
+   * A promotion that DID change content fails this and is declined as before.
+   *
+   * The head under test is then that tip, unwrapped exactly as it is unwrapped
+   * when CI checks out the base branch directly. This is the invariant the
+   * whole fix rests on: promoting a branch must not change what the seal says
+   * about it.
+   */
+  if (
+    mayUnwrapPromotion &&
+    baseSha !== null &&
+    branchSide === baseSha &&
+    baseSide !== baseSha &&
+    treeOf(git, checkout) !== null &&
+    treeOf(git, checkout) === treeOf(git, branchSide)
+  ) {
+    return {
+      ...headAt(git, branchSide, candidateSha, baseSha, false),
+      checkout,
+      promotionOf: branchSide,
+    };
+  }
+
+  /*
    * The base-side parent may equal the observed base or precede it. The reverse
    * is not proof: when the observation is stale, both the real base and an
    * unrelated sibling can descend from it. That world is UNKNOWN, not a reason
@@ -636,7 +696,13 @@ export function phaseHead(git, candidateSha, baseSha) {
     evilMergePaths: [],
     declined: null,
     topologyUnknown: null,
+    promotionOf: null,
   };
+}
+
+/** The tree a revision names, or `null` when Git declined to say. */
+function treeOf(git, rev) {
+  return lines(git(['rev-parse', `${rev}^{tree}`]))[0] ?? null;
 }
 
 /**
@@ -869,6 +935,7 @@ export function repositoryBinding(candidateFile, git) {
     baseResolved,
     phaseHead: head.head,
     checkoutHead: head.checkout,
+    promotionOfBaseTip: head.promotionOf,
     unwrappedMergeRef: head.mergeRef,
     mergeRefBaseSide: head.baseSide,
     evilMergePaths: head.evilMergePaths,
@@ -883,34 +950,7 @@ export function repositoryBinding(candidateFile, git) {
     absorbed,
     absorbedProblems,
     malformedSuccessors: recorded.filter((id) => !/^[0-9a-f]{40}$/.test(id)),
-    /*
-     * A PROMOTION adds nothing, so it can fabricate nothing.
-     *
-     * `fabricatedSuccessors` asks which recorded ids are outside `git log <head>
-     * --not <candidate> <base>` — a real question while a phase branch is ahead
-     * of its base. When the head under test IS the resolved base, that range is
-     * EMPTY by construction, and every id the package records falls outside it.
-     * Reported as fabrication, that reads as "this package invented its own
-     * history", which is the opposite of what happened: the branch was merged
-     * and its successors became the base.
-     *
-     * This is the same blind spot three other gates had on the first develop to
-     * main promotion — ownership judging a protected branch by a phase profile,
-     * the coverage floor treating 921 merged commits as one edit, and this
-     * file's own base resolution. Each asked a well-formed question in a context
-     * that could not supply its inputs, and each is answered by naming the
-     * context rather than by relaxing the rule.
-     *
-     * Nothing is weakened. `malformedSuccessors` still refuses a non-commit,
-     * `absorbedProblems` still refuses an absorbed entry that is not
-     * product-identical, and when the head is genuinely ahead of the base — any
-     * ordinary phase branch — every recorded id is checked exactly as before.
-     */
-    promotionEmptyRange: baseResolved && head.head !== null && head.head === baseSha,
-    fabricatedSuccessors:
-      baseResolved && head.head !== null && head.head === baseSha
-        ? []
-        : recorded.filter((id) => /^[0-9a-f]{40}$/.test(id) && !inRange.has(id)),
+    fabricatedSuccessors: recorded.filter((id) => /^[0-9a-f]{40}$/.test(id) && !inRange.has(id)),
     unrecordedExecutable: commits
       .filter(
         (c) =>
