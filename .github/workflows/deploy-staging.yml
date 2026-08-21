@@ -145,6 +145,15 @@ jobs:
             printf -- '- **Forward-migration check.** The preflight above builds the schema from nothing. Proving a forward migration from the schema staging currently holds needs a real staging database.\n'
             printf -- '- **Rollback criteria.** Drafted in docs/engineering/ci-automation/deployment-foundations.md; not executable without a provider.\n'
           } | tee staging-preflight.md >> "${GITHUB_STEP_SUMMARY}"
+          # The preflight's OWN verdict, rendered rather than only uploaded.
+          # The table above states "passed against a clean PostgreSQL 17" as
+          # prose; the document that decided it was written to a file no reader
+          # opened. That is `WTF-10` in a second workflow, found by the gate test
+          # added for the first — see tests/ci/job-summary-rendering.test.ts.
+          if [ -f staging-migration-preflight.md ]; then
+            cat staging-migration-preflight.md >> "${GITHUB_STEP_SUMMARY}"
+            printf '\n\n' >> "${GITHUB_STEP_SUMMARY}"
+          fi
 
       # -----------------------------------------------------------------------
       # The shape the executable steps will take. Deliberately not runnable.

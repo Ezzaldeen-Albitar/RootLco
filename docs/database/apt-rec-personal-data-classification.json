@@ -2,7 +2,7 @@
   "$schema": "./classification.schema.json",
   "description": "P1-08-SEC-003 — Appointment (apt) + Vehicle Reception (rec) personal-data / sensitivity classification registry. Every live apt/rec column is classified. Restricted columns (complaint narrative, vehicle-content description + declared value) are row-gated by iam.sensitive.view and must never be searchable. Reconciled against the live schema by scripts/check-aptrec-classification.mjs (run identically locally and in CI).",
   "allowedClassifications": ["public", "internal", "restricted", "secret"],
-  "columnCount": 454,
+  "columnCount": 530,
   "columns": {
     "apt.appointment_services.appointment_id": {
       "classification": "internal",
@@ -549,6 +549,121 @@
       "searchable": false,
       "dataType": "uuid"
     },
+    "rec.capture_policy_rules.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.capture_policy_rules.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.capture_policy_rules.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rec.capture_policy_rules.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.capture_policy_rules.device_captured_at_required": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "boolean"
+    },
+    "rec.capture_policy_rules.effective_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rec.capture_policy_rules.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.capture_policy_rules.min_count": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "rec.capture_policy_rules.refusal_type": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "rec.capture_policy_rules.requirement_code": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "rec.capture_policy_rules.retired_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rec.capture_policy_rules.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.capture_policy_rules.witness_required": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "boolean"
+    },
+    "rec.capture_requirement_overrides.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.capture_requirement_overrides.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.capture_requirement_overrides.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rec.capture_requirement_overrides.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.capture_requirement_overrides.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.capture_requirement_overrides.occurred_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rec.capture_requirement_overrides.reason": {
+      "classification": "restricted",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "rec.capture_requirement_overrides.reception_visit_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.capture_requirement_overrides.requirement_code": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "rec.capture_requirement_overrides.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
     "rec.complaint_details.branch_id": {
       "classification": "internal",
       "searchable": false,
@@ -874,6 +989,121 @@
       "searchable": false,
       "dataType": "text"
     },
+    "rec.damage_map_template_versions.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rec.damage_map_template_versions.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.damage_map_template_versions.document_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.damage_map_template_versions.document_version_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.damage_map_template_versions.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.damage_map_template_versions.retired_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rec.damage_map_template_versions.retired_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.damage_map_template_versions.status": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "rec.damage_map_template_versions.template_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.damage_map_template_versions.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.damage_map_template_versions.version_number": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "rec.damage_map_templates.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.damage_map_templates.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.damage_map_templates.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rec.damage_map_templates.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.damage_map_templates.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.damage_map_templates.map_type": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "rec.damage_map_templates.perspective": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "rec.damage_map_templates.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "rec.damage_map_templates.status": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "rec.damage_map_templates.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.damage_map_templates.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rec.damage_map_templates.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
     "rec.damage_maps.branch_id": {
       "classification": "internal",
       "searchable": false,
@@ -890,6 +1120,11 @@
       "dataType": "timestamp with time zone"
     },
     "rec.damage_maps.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.damage_maps.damage_map_template_version_id": {
       "classification": "internal",
       "searchable": false,
       "dataType": "uuid"
@@ -1194,6 +1429,76 @@
       "searchable": false,
       "dataType": "text"
     },
+    "rec.reception_evidence_bindings.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.reception_evidence_bindings.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.reception_evidence_bindings.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rec.reception_evidence_bindings.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.reception_evidence_bindings.device_captured_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rec.reception_evidence_bindings.document_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.reception_evidence_bindings.document_version_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.reception_evidence_bindings.finalized_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rec.reception_evidence_bindings.finalized_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.reception_evidence_bindings.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.reception_evidence_bindings.quality_status": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "rec.reception_evidence_bindings.reception_visit_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.reception_evidence_bindings.requirement_code": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "rec.reception_evidence_bindings.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
     "rec.reception_party_roles.assignment_source": {
       "classification": "internal",
       "searchable": false,
@@ -1369,6 +1674,11 @@
       "searchable": false,
       "dataType": "timestamp with time zone"
     },
+    "rec.reception_visits.custody_released_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
     "rec.reception_visits.deleted_at": {
       "classification": "internal",
       "searchable": false,
@@ -1403,6 +1713,11 @@
       "classification": "internal",
       "searchable": false,
       "dataType": "uuid"
+    },
+    "rec.reception_visits.receiving_employee_display_name": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
     },
     "rec.reception_visits.receiving_employee_id": {
       "classification": "internal",
@@ -1539,6 +1854,11 @@
       "searchable": false,
       "dataType": "uuid"
     },
+    "rec.refusals.evidence_document_version_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
     "rec.refusals.id": {
       "classification": "internal",
       "searchable": false,
@@ -1575,6 +1895,61 @@
       "dataType": "uuid"
     },
     "rec.refusals.witness_employee_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.signature_events.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.signature_events.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.signature_events.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rec.signature_events.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.signature_events.event_type": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "rec.signature_events.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.signature_events.occurred_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rec.signature_events.reason": {
+      "classification": "restricted",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "rec.signature_events.reception_visit_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.signature_events.signature_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.signature_events.tenant_id": {
       "classification": "internal",
       "searchable": false,
       "dataType": "uuid"
@@ -1620,6 +1995,11 @@
       "dataType": "text"
     },
     "rec.signatures.reception_visit_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rec.signatures.replaces_signature_id": {
       "classification": "internal",
       "searchable": false,
       "dataType": "uuid"

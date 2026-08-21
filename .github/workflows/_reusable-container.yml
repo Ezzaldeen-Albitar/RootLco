@@ -296,7 +296,7 @@ jobs:
           set -euo pipefail
           # THE POINT: not what package.json classifies as a devDependency, but
           # what is on the filesystem of the image that would be deployed. The
-          # `runner` stage copies only `.next/standalone`, `.next/static` and
+          # `runner` stage copies only the API workspace's `.next/standalone`, `.next/static` and
           # `public` — never `node_modules` — but that is a claim about the
           # Dockerfile, and this is the check that the claim held.
           docker run --rm --entrypoint sh --user 0 rootlco/web:ci-runner -c \
@@ -352,7 +352,7 @@ jobs:
           done
 
           # --- no package manager may ship ----------------------------------
-          # The container runs `node server.js`. A package manager on a deployed
+          # The container runs `node apps/api/server.js`. A package manager on a deployed
           # host is surface with no purpose, and its dependency tree is what put
           # an affected brace-expansion in this image in the first place.
           #
@@ -392,8 +392,8 @@ jobs:
 
           # --- the standalone server MUST be there ---------------------------
           # A check that only looks for absences would pass over an empty image.
-          if ! grep -q '/app/server.js' image-files.txt; then
-            echo "::error::/app/server.js is absent — this is not a runnable production image, so every absence above proves nothing."
+          if ! grep -q '/app/apps/api/server.js' image-files.txt; then
+            echo "::error::/app/apps/api/server.js is absent — this is not a runnable production image, so every absence above proves nothing."
             bad=1
           fi
 
@@ -624,10 +624,17 @@ jobs:
         if: always()
         run: |
           set -euo pipefail
-          if [ -f container.md ]; then
-            cat container.md >> "${GITHUB_STEP_SUMMARY}"
-            printf '\n\n' >> "${GITHUB_STEP_SUMMARY}"
-          fi
+          # Every markdown this job writes. `reachability-brace-expansion.md` was
+          # produced by the reachability step and rendered nowhere — the same
+          # defect as `WTF-10` in the node-quality job: a verdict written to a
+          # file no reviewer opens. `tests/ci/job-summary-rendering.test.ts`
+          # holds this list against the `--markdown` arguments above.
+          for file in container.md reachability-brace-expansion.md; do
+            if [ -f "${file}" ]; then
+              cat "${file}" >> "${GITHUB_STEP_SUMMARY}"
+              printf '\n\n' >> "${GITHUB_STEP_SUMMARY}"
+            fi
+          done
           if [ -f image-metadata.json ]; then
             printf '```json\n' >> "${GITHUB_STEP_SUMMARY}"
             cat image-metadata.json >> "${GITHUB_STEP_SUMMARY}"

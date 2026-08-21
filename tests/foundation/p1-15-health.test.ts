@@ -67,6 +67,7 @@ import {
 } from '@/modules/shared-services/application/health-service';
 import type { ReadinessReport } from '@/server/health/readiness';
 import { APP_NAME, APP_VERSION, COMMIT_SHA } from '@/shared/constants/app';
+import { API_SRC_ROOT } from '../../scripts/lib/repository-paths.mjs';
 
 /**
  * Compile-time equality. `Exact<A, B>` is `true` only when the two types are
@@ -278,10 +279,7 @@ describe('/api/health (Phase 1-1) is unchanged by P1-15', () => {
     // assertion past the default timeout. The flake was ours, so it is removed at
     // the source rather than papered over with a longer timeout — and reading the
     // file proves the same two facts: the export exists, and P1-15 did not touch it.
-    const source = readFileSync(
-      join(process.cwd(), 'src', 'app', 'api', 'health', 'route.ts'),
-      'utf8'
-    );
+    const source = readFileSync(join(API_SRC_ROOT, 'app', 'api', 'health', 'route.ts'), 'utf8');
 
     // Synchronous by design — the Phase 1-1 probe performs no I/O.
     expect(source).toMatch(/export\s+function\s+GET\s*\(/);

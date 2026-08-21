@@ -1,0 +1,42 @@
+{
+  "baseSha": "9e70c61cfc59b0618639c654e4e5bbe10ef72c0a",
+  "trackedCount": 456,
+  "byClassification": {
+    "workspace configuration": 6,
+    "public runtime asset": 1,
+    "API Route Handler": 196,
+    "Frontend scaffold (React)": 2,
+    "Frontend scaffold (CSS Module)": 1,
+    "Backend configuration": 1,
+    "Backend shared utility": 4,
+    "Backend module": 181,
+    "Backend runtime source": 47,
+    "Frontend scaffold (stylesheet tier)": 17
+  },
+  "routeHandlerCount": 196,
+  "nonRouteFilesInAppTree": [
+    "apps/api/src/app/layout.tsx",
+    "apps/api/src/app/page.module.scss",
+    "apps/api/src/app/page.tsx"
+  ],
+  "stylesheets": [
+    "apps/api/src/app/page.module.scss",
+    "apps/api/src/styles/abstracts/_breakpoints.scss",
+    "apps/api/src/styles/abstracts/_direction.scss",
+    "apps/api/src/styles/abstracts/_functions.scss",
+    "apps/api/src/styles/abstracts/_index.scss",
+    "apps/api/src/styles/abstracts/_mixins.scss",
+    "apps/api/src/styles/abstracts/_tokens.scss",
+    "apps/api/src/styles/abstracts/_variables.scss",
+    "apps/api/src/styles/base/_accessibility.scss",
+    "apps/api/src/styles/base/_index.scss",
+    "apps/api/src/styles/base/_reset.scss",
+    "apps/api/src/styles/base/_typography.scss",
+    "apps/api/src/styles/globals.scss",
+    "apps/api/src/styles/themes/_default.scss",
+    "apps/api/src/styles/themes/_index.scss",
+    "apps/api/src/styles/utilities/_index.scss",
+    "apps/api/src/styles/utilities/_layout.scss",
+    "apps/api/src/styles/utilities/_visibility.scss"
+  ]
+}

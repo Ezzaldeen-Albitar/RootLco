@@ -19,11 +19,12 @@
  * Exit codes: 0 pass · 1 undocumented variable · 2 IO error.
  */
 import { readdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { API_SRC_ROOT, fromRoot, toRepositoryPath } from '../lib/repository-paths.mjs';
 
-export const SOURCE_ROOT = 'src';
-export const CONTRACT = '.env.example';
+export const SOURCE_ROOT = API_SRC_ROOT;
+export const CONTRACT = fromRoot('.env.example');
 
 /** Names that Next.js or Node provide, so they need no entry in the contract. */
 export const PROVIDED_BY_RUNTIME = new Set([
@@ -62,7 +63,7 @@ export function scanSource(root = SOURCE_ROOT) {
       if (!/\.(ts|tsx|mts|js|mjs)$/.test(entry.name)) continue;
       for (const name of readEnvNames(readFileSync(full, 'utf8'))) {
         if (!usage.has(name)) usage.set(name, []);
-        usage.get(name).push(relative(process.cwd(), full).replace(/\\/g, '/'));
+        usage.get(name).push(toRepositoryPath(full));
       }
     }
   };

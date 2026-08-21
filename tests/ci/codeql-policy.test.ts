@@ -169,7 +169,7 @@ describe('blocking severities', () => {
   it('fails on an unresolved application High', () => {
     const verdict = evaluate({
       documents: docs(
-        sarif([result('js/remote-property-injection', 'src/server/http/validation.ts')])
+        sarif([result('js/remote-property-injection', 'apps/api/src/server/http/validation.ts')])
       ),
       baseline: BASE,
     });
@@ -228,8 +228,8 @@ describe('dismissal governance', () => {
 
   it('refuses a dismissal that covers APPLICATION source', () => {
     const verdict = evaluate({
-      documents: docs(sarif([result('js/file-system-race', 'src/server/x.ts')])),
-      baseline: { ...BASE, dismissals: [{ ...good, path: 'src/server/x.ts' }] },
+      documents: docs(sarif([result('js/file-system-race', 'apps/api/src/server/x.ts')])),
+      baseline: { ...BASE, dismissals: [{ ...good, path: 'apps/api/src/server/x.ts' }] },
     });
     expect(verdict.ok).toBe(false);
     expect(verdict.failures.join('\n')).toMatch(/covers APPLICATION source/);
@@ -505,7 +505,12 @@ describe('the alert-count ratchet', () => {
 
 describe('path classification', () => {
   it('separates application source from tooling', () => {
-    expect(isApplicationPath('src/server/http/validation.ts')).toBe(true);
+    expect(isApplicationPath('apps/api/src/server/http/validation.ts')).toBe(true);
+    expect(isApplicationPath('apps/web/src/components/brand/BrandMark.tsx')).toBe(true);
+    // The pre-workspace spelling is no longer application source. It must not
+    // keep the privilege by accident: a finding at a path that no longer
+    // exists would otherwise be treated as unconditionally blocking.
+    expect(isApplicationPath('src/server/http/validation.ts')).toBe(false);
     expect(isApplicationPath('scripts/ci/x.mjs')).toBe(false);
     expect(isApplicationPath('tests/foundation/x.test.ts')).toBe(false);
   });
@@ -518,12 +523,12 @@ describe('path classification', () => {
 
   it('extracts rule, severity, path and line together', () => {
     const [finding] = extractFindings(
-      docs(sarif([result('js/remote-property-injection', 'src/a.ts')]))
+      docs(sarif([result('js/remote-property-injection', 'apps/api/src/a.ts')]))
     );
     expect(finding).toMatchObject({
       ruleId: 'js/remote-property-injection',
       severity: 'high',
-      path: 'src/a.ts',
+      path: 'apps/api/src/a.ts',
       startLine: 10,
       scope: 'application',
       precision: 'high',
@@ -607,7 +612,7 @@ describe('a PARTIAL analysis may only say what it saw', () => {
     // partial run OBSERVED is fully trustworthy; only its silence is not.
     const verdict = evaluate({
       documents: docs(
-        partial([result('js/remote-property-injection', 'src/server/http/validation.ts')])
+        partial([result('js/remote-property-injection', 'apps/api/src/server/http/validation.ts')])
       ),
       baseline: BASE,
     });

@@ -264,8 +264,38 @@ describe('rec — append-only + signatures + isolation', () => {
          VALUES ('${TENANT_A}','${COMPANY_A1}','${BRANCH_A1}','${visit}','service_requester','${SR}',
            '${doc}','${ver}','drawn','custody_acceptance','${USER_A}')`;
       expect((await c.query(sig(DOC, VER) + ' RETURNING id')).rows).toHaveLength(1);
-      await expectSqlState(c.query(sig(DOC, VER_OTHER)), '23514'); // version belongs to DOC2
+      /*
+       * VER_OTHER belongs to DOC2, and the pair is refused — but since P1-18 the
+       * refusal can arrive from either of two guards, so both codes are accepted.
+       *
+       * `rec.guard_signature_version` (Phase 1-8) raises 23514: the version does
+       * not belong to the named document. `rec.guard_signature_evidence` (P1-18,
+       * additive) runs BEFORE INSERT on the same table and rejects the pair as
+       * not visible first, which surfaces as 23503. Same invariant, two owners,
+       * and which one speaks first is an ordering detail this test should not
+       * pin — what it must pin is that a mismatched pair never lands.
+       *
+       * The Phase 1-8 guard is NOT superseded, and the assertion below proves it
+       * still has an owner rather than assuming it: it is a stated Owner
+       * constraint that P1-18 leaves it untouched, and a guard that stopped being
+       * attached would otherwise be invisible from here now that this fixture no
+       * longer reaches it.
+       */
+      await expectSqlState(c.query(sig(DOC, VER_OTHER)), '23514', '23503');
     });
+
+    const stillWired = await admin.query<{ tgname: string }>(
+      `SELECT t.tgname FROM pg_trigger t
+         JOIN pg_class c ON c.oid = t.tgrelid
+         JOIN pg_namespace n ON n.oid = c.relnamespace
+         JOIN pg_proc p ON p.oid = t.tgfoid
+        WHERE NOT t.tgisinternal AND n.nspname = 'rec' AND c.relname = 'signatures'
+          AND p.proname = 'guard_signature_version'`
+    );
+    expect(
+      stillWired.rows,
+      'rec.guard_signature_version must remain attached to rec.signatures'
+    ).toHaveLength(1);
   });
 
   it('rejects an archived refusal reason and isolates tenants; denies readonly writes', async () => {

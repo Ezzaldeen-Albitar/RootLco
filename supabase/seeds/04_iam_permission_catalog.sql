@@ -79,6 +79,7 @@ INSERT INTO iam.permissions (permission_code, domain, description, risk_level, c
   -- the existing org.settings.manage: a message template is tenant configuration,
   -- and minting a second code for it would split one authority across two names.
   ('shared.document.manage',   'shared', 'Create document metadata, pre-acceptance versions and links', 'medium', '00000000-0000-4000-8000-000000000001'),
+  ('shared.document.read',     'shared', 'Read document metadata and accepted evidence', 'low', '00000000-0000-4000-8000-000000000001'),
   ('shared.notification.send', 'shared', 'Enqueue outbound notifications',           'medium', '00000000-0000-4000-8000-000000000001'),
   -- Phase 1-16 — CRM Backend (crm). DBCR-P1-16-001 enables runtime authorship of
   -- customer notes on shared.notes (SELECT-only before this change). One code,
@@ -132,14 +133,20 @@ INSERT INTO iam.permissions (permission_code, domain, description, risk_level, c
   ('veh.vehicle.status.manage','veh','Change vehicle lifecycle and workshop status','medium','00000000-0000-4000-8000-000000000001'),
   -- Phase 1-18 (apt) - Appointment Backend. Booking an appointment and moving its
   -- confirmed window are one authority: both answer "when is this vehicle expected".
-  -- No read code is registered because P1-18 exposes no appointment read operation;
-  -- an unused permission is configuration that cannot be tested.
   ('apt.appointment.manage',   'apt', 'Create and reschedule appointments in the caller scope','medium','00000000-0000-4000-8000-000000000001'),
   -- Terminal lifecycle outcomes are separated from booking, mirroring the
   -- veh.vehicle.status.manage split: scheduling a visit must not carry the power to
   -- close one against the customer. Cancellation and no-show are distinct business
   -- facts but one authority, because both end the appointment.
   ('apt.appointment.lifecycle.manage','apt','Cancel an appointment or record a no-show','medium','00000000-0000-4000-8000-000000000001'),
+  -- Reading the calendar and an appointment's detail is separated from every
+  -- appointment write, mirroring the wo.work_order.read split: the desk, the board
+  -- and the service advisor all need to see when a vehicle is expected — and the
+  -- record version the three guarded lifecycle commands demand as If-Match — with
+  -- no authority to book, move or end anything. Seeded by the P1-27 read-surface
+  -- remediation (P1-27-INT-019); the catalogue pickers the booking and cancel
+  -- forms populate from are gated by this same code.
+  ('apt.appointment.read',     'apt', 'Read appointments, the branch calendar and the appointment catalogues','low','00000000-0000-4000-8000-000000000001'),
   -- Phase 1-18 (rec) - Vehicle Reception Backend. Opening a reception accepts
   -- physical custody of a customer's vehicle, so it is its own capability and never
   -- implied by a catalog or read permission.
@@ -159,6 +166,7 @@ INSERT INTO iam.permissions (permission_code, domain, description, risk_level, c
   -- record what a party personally acknowledged or personally declined, and a
   -- fabricated one is a materially different harm from a wrong damage mark.
   ('rec.reception.signature.manage','rec','Capture reception signatures and refusals','high','00000000-0000-4000-8000-000000000001'),
+  ('rec.reception.evidence.override','rec','Override a required reception capture with an attributable reason','high','00000000-0000-4000-8000-000000000001'),
   -- Approving a reception releases it for work. High risk and deliberately not
   -- implied by evidence capture, so the person who records the condition is not
   -- automatically the person who approves it.
@@ -166,6 +174,24 @@ INSERT INTO iam.permissions (permission_code, domain, description, risk_level, c
   -- Conversion creates the work order that all downstream cost attaches to. Its own
   -- high-risk code, never implied by approval.
   ('rec.reception.convert',    'rec', 'Convert an approved reception into a work order','high',  '00000000-0000-4000-8000-000000000001'),
+  -- Reading a reception is separated from every reception write, mirroring the
+  -- wo.work_order.read split below: the board, the service advisor and the
+  -- cashier all need to see a visit, who is present on it, what was authorized,
+  -- what condition it arrived in and where custody has been, with no authority to
+  -- accept custody, capture evidence, approve or convert. The two RESTRICTED
+  -- narrative tables (rec.complaint_details, rec.vehicle_content_details) stay
+  -- gated at the row by the existing iam.sensitive.view and are not published by
+  -- this code. Seeded by the P1-27 read-surface remediation (P1-27-INT-010/-011/
+  -- -015/-016/-017/-018/-021).
+  ('rec.reception.read',       'rec', 'Read reception visits, parties, authorizations, condition evidence and custody history', 'low', '00000000-0000-4000-8000-000000000001'),
+  -- Ending a visit without work — closed_without_work or refused — is a terminal
+  -- decision about a customer's vehicle and its custody, so it is its own code,
+  -- mirroring the apt.appointment.lifecycle.manage split from booking: opening a
+  -- visit must not carry the power to close one against the customer. The two
+  -- outcomes are distinct business facts but one authority, because both end the
+  -- visit and both release the one-open-visit-per-vehicle index
+  -- (P1-27-INT-014, the INT-013 sibling).
+  ('rec.reception.close',      'rec', 'Close a reception visit without work or refuse it', 'high', '00000000-0000-4000-8000-000000000001'),
   -- Phase 1-19 (wo) - Work Order Backend. Reading a work order is separated from
   -- changing one because the board, the customer-facing status and the reception
   -- desk all need to see an order without any authority to move it.
@@ -257,7 +283,52 @@ INSERT INTO iam.permissions (permission_code, domain, description, risk_level, c
   ('shared.notification.read', 'shared', 'Read own notification inbox',                     'low',    '00000000-0000-4000-8000-000000000001'),
   ('shared.notification.delivery.read', 'shared', 'Inspect notification delivery attempts', 'medium', '00000000-0000-4000-8000-000000000001'),
   ('shared.document.archive',  'shared', 'Archive documents and evaluate disposal eligibility', 'high', '00000000-0000-4000-8000-000000000001'),
-  ('rpt.report.read',          'rpt', 'Read published report definitions',                'low',    '00000000-0000-4000-8000-000000000001')
+  ('rpt.report.read',          'rpt', 'Read published report definitions',                'low',    '00000000-0000-4000-8000-000000000001'),
+  -- Intake configuration-catalogue MANAGEMENT (P1-27-INT-018, executed by
+  -- P1-18). Seven dual-scope catalogues — appointment types, source channels,
+  -- cancellation reasons, visit reasons, fuel levels, warning-light codes and
+  -- refusal reasons — ship zero rows by the no-fake-data policy, and until this
+  -- remediation no operation anywhere could add one. The database had permitted
+  -- it since the tables were created; only the API published nothing, so a
+  -- required appointmentTypeId could never be satisfied and no appointment could
+  -- be booked.
+  --
+  -- Deliberately NOT apt.appointment.manage / rec.reception.manage. Booking an
+  -- appointment and defining what the appointment types ARE are different
+  -- authorities: a receptionist who may book must not thereby be able to
+  -- withdraw a type from every branch's booking form. This is the same split the
+  -- catalog already makes at apt.appointment.lifecycle.manage and
+  -- veh.vehicle.status.manage, applied to configuration.
+  --
+  -- Deliberately NOT the read codes either. apt.appointment.read and
+  -- rec.reception.read gate the pickers (P1-27-INT-019/-018); reading a
+  -- catalogue is 'low' risk and every intake user needs it, while changing one
+  -- reshapes what every future booking and check-in may record — hence 'high',
+  -- matching org.settings.manage, which is the nearest existing thing to it.
+  --
+  -- One code per schema, not per catalogue: the seven are one administrative
+  -- surface configured by one role in one screen, and seven codes would be a
+  -- distinction no operator makes.
+  ('apt.catalogue.manage',     'apt', 'Manage the tenant appointment configuration catalogues', 'high', '00000000-0000-4000-8000-000000000001'),
+  ('rec.catalogue.manage',     'rec', 'Manage the tenant reception configuration catalogues',   'high', '00000000-0000-4000-8000-000000000001'),
+  -- FE-007 (Owner decision, P1-28). The receiving employee is now a real IAM
+  -- reference, and normal selection is limited to accounts eligible for the
+  -- visit's own branch. Naming somebody from ANOTHER branch is the exception the
+  -- Owner allowed, and the Owner required it to be explicitly authorized — so it
+  -- is a code of its own rather than an extra power folded into
+  -- rec.reception.manage, which every receptionist holds.
+  --
+  -- It is deliberately NOT declared by any operation. There is no "cross-branch
+  -- check-in" endpoint to gate: the decision is taken inside the database, by
+  -- rec.stamp_receiving_employee_identity(), against the ACTOR's authority in
+  -- the visit's own scope. Publishing it as a route permission would move the
+  -- decision to a layer a direct writer bypasses.
+  --
+  -- Mapped to NO role here. This file seeds the platform CATALOGUE; role
+  -- mappings are tenant provisioning, so on a freshly replayed database this
+  -- code exists and is held by nobody, and cross-branch selection is refused for
+  -- every actor until a tenant deliberately grants it.
+  ('rec.reception.receiving_employee.assign_any', 'rec', 'Name a receiving employee who is not eligible for the visit branch', 'high', '00000000-0000-4000-8000-000000000001')
 ON CONFLICT (permission_code) DO NOTHING;
 
 DO $$

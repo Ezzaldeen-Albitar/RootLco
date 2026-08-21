@@ -99,7 +99,29 @@ describe('the documented inventory matches the repository', () => {
     const jobs = declaredJobs('nightly-assurance.yml');
     const gate = jobs.filter((j) => j.endsWith('-gate'));
     expect(gate.length, 'nightly must have exactly one gate job').toBe(1);
-    expect(record).toContain(`${jobs.length - 1} jobs + ${gate[0]}`);
+
+    /*
+     * `QA005-05`. This read `toContain(`${jobs.length - 1} jobs + ${gate[0]}`)`,
+     * which is a SUBSTRING match on a number: bounded on the right by the words
+     * that follow it and on the left by nothing at all. A record reading
+     * "111 jobs + nightly-gate" CONTAINS "11 jobs + nightly-gate", so only an
+     * understatement was ever detectable and the direction that inflates a
+     * pipeline's apparent size passed silently.
+     *
+     * The figure is read out and compared as a NUMBER. That is bounded on both
+     * sides by construction: `\d+` is greedy and the match begins at the FIRST
+     * digit of the run, so "111 jobs" is captured as 111 and 111 !== 11 fails.
+     *
+     * The gate id is interpolated rather than escaped because a job key is
+     * `[a-z][a-z0-9-]*` — `-` is the only non-alphanumeric it can hold, and
+     * outside a character class that is a literal.
+     */
+    const stated = new RegExp(String.raw`(\d+) jobs \+ ${gate[0]}\b`).exec(record);
+    expect(stated, `the record does not describe ${gate[0]}'s job count`).not.toBeNull();
+    expect(
+      Number((stated as RegExpExecArray)[1]),
+      `the record must state \`${jobs.length - 1} jobs + ${gate[0]}\``
+    ).toBe(jobs.length - 1);
   });
 
   it('states the workflow-security rule count that the linter actually registers', async () => {

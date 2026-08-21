@@ -70,6 +70,7 @@ import { allOperations } from '@/server/auth/operation-registry';
 import { WarrantyRuleError, assertPolicyActive } from '@/modules/warranty';
 import { POST as GENERATE_WARRANTY } from '@/app/api/v1/deliveries/[deliveryId]/warranties/route';
 import { GET as READ_WARRANTY } from '@/app/api/v1/warranties/[warrantyId]/route';
+import { API_ROOT } from '../../scripts/lib/repository-paths.mjs';
 
 let admin: Pool;
 
@@ -639,7 +640,7 @@ describe('wty.warranty-detail and wty.warranty-generate expose no claim surface'
 
   it('mentions "claim" in comments only, and never in code', () => {
     for (const relative of FILES) {
-      const source = readFileSync(resolve(process.cwd(), relative), 'utf8');
+      const source = readFileSync(resolve(API_ROOT, relative), 'utf8');
 
       // 1. Every raw line that mentions a claim is a comment line. Checked first
       //    because it is transparent and needs no lexer.

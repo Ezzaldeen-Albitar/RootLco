@@ -18,9 +18,10 @@
  * Exit codes: 0 valid · 1 invalid · 2 IO error.
  */
 import { readFileSync, existsSync } from 'node:fs';
+import { REPOSITORY_ROOT } from './lib/repository-paths.mjs';
 import { join } from 'node:path';
 
-const ROOT = process.cwd();
+const ROOT = REPOSITORY_ROOT;
 const DOCUMENT_PATH = join(ROOT, 'docs', 'api', 'openapi.v1.json');
 const API_PREFIX = '/api/v1';
 

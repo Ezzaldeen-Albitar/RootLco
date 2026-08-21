@@ -1,0 +1,5 @@
+// Both theme layers are forwarded. `provisional` is retained deliberately:
+// it is the seam the approved layer was added beside, and keeping it proves
+// a further brand can be added the same way without touching a component.
+@use 'provisional';
+@use 'approved';

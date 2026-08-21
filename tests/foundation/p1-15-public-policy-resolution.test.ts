@@ -29,9 +29,9 @@
 import { describe, it, expect } from 'vitest';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { policyFor } from '@/server/http/route-handler';
-import { RATE_LIMIT_POLICIES } from '@/server/http/rate-limit';
+import { RATE_LIMIT_POLICIES, type RateLimitPolicyName } from '@/server/http/rate-limit';
+import { API_ROUTES_ROOT } from '../../scripts/lib/repository-paths.mjs';
 
 type Op = Parameters<typeof policyFor>[0];
 
@@ -70,7 +70,14 @@ describe('P1-15 / public rate-limit policy resolution', () => {
   });
 
   it('never resolves a public operation to no policy', () => {
-    for (const declared of [undefined, 'expensive-read', 'standard-command', 'public-probe']) {
+    // `as const` so these are the catalogue's key union rather than `string` —
+    // which also means this list is now itself checked against the catalogue.
+    for (const declared of [
+      undefined,
+      'expensive-read',
+      'standard-command',
+      'public-probe',
+    ] as const) {
       const resolved = policyFor(
         op({ public: true, ...(declared ? { rateLimitPolicy: declared } : {}) })
       );
@@ -85,14 +92,34 @@ describe('P1-15 / public rate-limit policy resolution', () => {
   });
 
   it('refuses an unknown policy name rather than silently dropping the throttle', () => {
-    expect(() => policyFor(op({ rateLimitPolicy: 'does-not-exist' }))).toThrow(
-      /unknown rate-limit/
-    );
-    expect(() => policyFor(op({ public: true, rateLimitPolicy: 'does-not-exist' }))).toThrow(
+    // The casts are the point, not a workaround. `rateLimitPolicy` is now the
+    // catalogue's key union (`P1-27-INT-113`), so an unknown name can no longer
+    // be written by ordinary code — but the runtime guard is deliberately kept,
+    // because the catalogue is also read by key at runtime and a type can be
+    // widened back. Forcing the value here is the only way to exercise the guard
+    // that the type is now expected to make unreachable.
+    const unknown = 'does-not-exist' as unknown as RateLimitPolicyName;
+    expect(() => policyFor(op({ rateLimitPolicy: unknown }))).toThrow(/unknown rate-limit/);
+    expect(() => policyFor(op({ public: true, rateLimitPolicy: unknown }))).toThrow(
       /unknown rate-limit/
     );
   });
 });
+
+/**
+ * Narrows a policy name read out of source TEXT to the catalogue's key union.
+ *
+ * The scan below yields `string | undefined`, because that is genuinely what a
+ * regular expression over a file produces. `rateLimitPolicy` is now the key
+ * union (`P1-27-INT-113`), so the two have to meet somewhere — and the honest
+ * place is one checked boundary that FAILS on an unregistered name, rather than
+ * a cast at each call site that would assert the very thing under test.
+ */
+function asPolicyName(name: string | undefined, id: string): RateLimitPolicyName {
+  expect(name, `${id} declares no rateLimitPolicy`).toBeDefined();
+  expect(Object.keys(RATE_LIMIT_POLICIES), `${id} names unknown policy ${name}`).toContain(name);
+  return name as RateLimitPolicyName;
+}
 
 /**
  * Reads the registrations from committed source rather than from an imported
@@ -101,7 +128,7 @@ describe('P1-15 / public rate-limit policy resolution', () => {
  * and the count assertion below is what stops it silently matching nothing.
  */
 function publicRegistrations(): Array<{ file: string; id: string; policy: string | undefined }> {
-  const root = fileURLToPath(new URL('../../src/app/api', import.meta.url));
+  const root = API_ROUTES_ROOT;
   const files: string[] = [];
   const walk = (dir: string) => {
     for (const entry of readdirSync(dir)) {
@@ -142,10 +169,7 @@ describe('P1-15 / the registrations, as committed', () => {
 
   it('every public registration resolves to a policy that a sessionless request can be keyed by', () => {
     for (const { id, policy } of publicOps) {
-      expect(policy, `${id} declares no rateLimitPolicy`).toBeDefined();
-      expect(RATE_LIMIT_POLICIES[policy!], `${id} names unknown policy ${policy}`).toBeDefined();
-
-      const resolved = policyFor(op({ public: true, rateLimitPolicy: policy! }));
+      const resolved = policyFor(op({ public: true, rateLimitPolicy: asPolicyName(policy, id) }));
       expect(resolved, id).toBeDefined();
       expect(resolved!.keyBy, id).not.toContain('tenant');
       expect(resolved!.keyBy, id).not.toContain('user');
@@ -157,11 +181,9 @@ describe('P1-15 / the registrations, as committed', () => {
     // which a probe never has. Substitution is correct here — and it is correct
     // *because* the declaration is session-keyed, not because the route is public.
     for (const { id, policy } of publicOps.filter((o) => o.id.startsWith('shared.health-'))) {
-      const declared = RATE_LIMIT_POLICIES[policy!]!;
-      expect(declared.keyBy, id).toContain('tenant');
-      expect(policyFor(op({ public: true, rateLimitPolicy: policy! }))?.name, id).toBe(
-        'public-probe'
-      );
+      const name = asPolicyName(policy, id);
+      expect(RATE_LIMIT_POLICIES[name].keyBy, id).toContain('tenant');
+      expect(policyFor(op({ public: true, rateLimitPolicy: name }))?.name, id).toBe('public-probe');
     }
   });
 
@@ -170,9 +192,10 @@ describe('P1-15 / the registrations, as committed', () => {
       expect(policy, id).toBe('auth-adjacent');
       // And resolution keeps it — this is the assertion that fails against the
       // unconditional substitution.
-      expect(policyFor(op({ public: true, rateLimitPolicy: policy! }))?.name, id).toBe(
-        'auth-adjacent'
-      );
+      expect(
+        policyFor(op({ public: true, rateLimitPolicy: asPolicyName(policy, id) }))?.name,
+        id
+      ).toBe('auth-adjacent');
     }
   });
 

@@ -1,0 +1,218 @@
+{
+  "phase": "P1-27",
+  "title": "CRM and Vehicle Frontend",
+  "assessedAt": "2026-08-05",
+  "supersedes": "the 2026-08-04 assessment recorded in this file, which returned NOT READY 14/16",
+  "assessedAgainst": {
+    "protectedDevelop": "91354d82b0560d08fda667f42e9042714615feaf",
+    "protectedMain": "f085d82001a43de51725707426d5c10eb134c004"
+  },
+  "verdict": "READY",
+  "score": "16/16",
+  "branchCreated": false,
+  "reason": "Conditions 14 and 15 previously returned a BLOCKING result: the Backend read contracts P1-27 is scoped to consume did not exist. Four protected remediations closed that — PRs #192, #193, #194 and #195 — taking the registry from 226 to 238 operations and fixing a silent row-loss defect in the keyset cursor that the new reads would otherwise have shipped with. Condition 16 required the open decisions to be DISPOSITIONED, not resolved, and correction I of the execution prompt states how: an unresolved decision blocks only the affected task or is implemented as a decision-neutral foundation. Both are now dispositioned in docs/phase-1/phase-1-27/canonical-plan.md section 7.",
+  "conditions": [
+    {
+      "id": 1,
+      "condition": "P1-16 passed",
+      "state": "PASS",
+      "evidence": "P1-16 closed GO. Its read-contract gap was remediated under P1-27-INT-001 (PR #192) and P1-27-INT-005 (PR #194), both merged to protected develop as merge commits."
+    },
+    {
+      "id": 2,
+      "condition": "P1-17 passed",
+      "state": "PASS",
+      "evidence": "P1-17 closed GO. Its detail-read gap was remediated under P1-27-INT-002 (PR #193) and its duplicate-queue gap under P1-27-INT-005 (PR #194)."
+    },
+    {
+      "id": 3,
+      "condition": "P1-24 passed",
+      "state": "PASS",
+      "evidence": "P1-24 closed and promoted."
+    },
+    {
+      "id": 4,
+      "condition": "P1-25 passed",
+      "state": "PASS",
+      "evidence": "P1-25 gate record; design system binding."
+    },
+    {
+      "id": 5,
+      "condition": "P1-26 passed with Owner acceptance",
+      "state": "PASS",
+      "evidence": "docs/phase-1/phase-1-26/closure-record.md — OWNER ACCEPTANCE: PASS, 2026-08-04, unconditional."
+    },
+    {
+      "id": 6,
+      "condition": "OIR-06 resolved",
+      "state": "PASS",
+      "evidence": "P1-25/P1-26 design foundations binding; ADR-020, ADR-021. Recorded as correction C in the canonical plan."
+    },
+    {
+      "id": 7,
+      "condition": "Product name CRM synchronized",
+      "state": "PASS",
+      "evidence": "0 placeholder forms in docs/**; validate:product-name green. Recorded as correction A."
+    },
+    {
+      "id": 8,
+      "condition": "API Backend-only gate green",
+      "state": "PASS",
+      "evidence": "validate:api-backend-only green on the post-remediation tree."
+    },
+    {
+      "id": 9,
+      "condition": "Web Frontend-only gate green",
+      "state": "PASS",
+      "evidence": "validate:web-boundary, validate:web-topology green."
+    },
+    {
+      "id": 10,
+      "condition": "P1-27 ownership profile green",
+      "state": "PASS",
+      "evidence": "check-phase-ownership.mjs P1-27 profile forbids apiSource, supabase and migrations."
+    },
+    {
+      "id": 11,
+      "condition": "Expired-session work reconciled",
+      "state": "PASS",
+      "evidence": "PR #190 merged; P1-26-F-077 and P1-26-F-078 recorded."
+    },
+    {
+      "id": 12,
+      "condition": "Dirty worktrees zero",
+      "state": "PASS",
+      "evidence": "git status --porcelain empty on the visible Owner checkout; one worktree."
+    },
+    {
+      "id": 13,
+      "condition": "Ambiguous work zero",
+      "state": "PASS",
+      "evidence": "No untracked Owner work; no P1-27 or P1-28 branch or directory."
+    },
+    {
+      "id": 14,
+      "condition": "CRM contract archaeology complete",
+      "state": "PASS",
+      "evidence": "Complete, and its blocking result is now CLOSED. Nine reads added by PR #192 — crm.customer-read plus contact/address/preference/consent/note/alert/tag/restriction list — and crm.duplicate-list by PR #194. Verified from source and from the operation register: every operation id the canonical plan cites for a CRM task exists in the 238-operation register."
+    },
+    {
+      "id": 15,
+      "condition": "Vehicle contract archaeology complete",
+      "state": "PASS",
+      "evidence": "Complete, and its blocking result is now CLOSED. veh.vehicle-read added by PR #193 and veh.vehicle-duplicate-list by PR #194. The three remaining gaps are NOT contract defects and are dispositioned in the canonical plan section 7: FE-020 delivers VIN validation as edge format validation plus the server's uniqueness verdict rather than a verification workflow that does not exist; FE-027 ships the decision-neutral media foundation per section 14; FE-029 ships a sectioned activity view because veh has no equivalent of crm.timeline_events."
+    },
+    {
+      "id": 16,
+      "condition": "Applicable open decisions dispositioned",
+      "state": "PASS",
+      "evidence": "DISPOSITIONED, which is what this condition asks for — not resolved, which is the Owner's to do. P1-OD-017 blocks the merge ACTION only; the review screens (FE-016, FE-028) have contracts and ship without a merge affordance, absent rather than disabled. P1-OD-025 is implemented as a decision-neutral foundation per section 14 of the execution prompt: safe UI, upload acceptance blocked, no invented limits. Neither blocks an unrelated task, which is what correction I requires."
+    }
+  ],
+  "backendRemediationsMerged": [
+    {
+      "finding": "P1-27-INT-001",
+      "pr": 192,
+      "operationsAdded": 9,
+      "owningPhase": "P1-16"
+    },
+    {
+      "finding": "P1-27-INT-002",
+      "pr": 193,
+      "operationsAdded": 1,
+      "owningPhase": "P1-17"
+    },
+    {
+      "finding": "P1-27-INT-005",
+      "pr": 194,
+      "operationsAdded": 2,
+      "owningPhase": "P1-16 / P1-17"
+    },
+    {
+      "finding": "P1-27-INT-006",
+      "pr": 195,
+      "operationsAdded": 0,
+      "owningPhase": "P1-16 / P1-17",
+      "note": "A keyset cursor minted from a JS Date loses a timestamptz column's microseconds, so the descending predicate skips every row sharing the boundary's millisecond — silently, and guaranteed rather than raced wherever one transaction writes a batch. Measured: 10 rows at one instant, limit=4, page 2 returned 0 of the remaining 6. Fixed at 9 sites; 16 pre-existing sites are listed with file and line in docs/phase-1/phase-1-27/findings/p1-27-int-006-cursor-precision.md. Found by an adversarial review workflow — 13 candidates, 9 refuted, 4 survived — and then verified independently against the live database before any code changed."
+    }
+  ],
+  "taskReadiness": {
+    "ready": [
+      "FE-001",
+      "FE-002",
+      "FE-003",
+      "FE-004",
+      "FE-005",
+      "FE-006",
+      "FE-007",
+      "FE-008",
+      "FE-009",
+      "FE-010",
+      "FE-011",
+      "FE-012",
+      "FE-013",
+      "FE-014",
+      "FE-015",
+      "FE-017",
+      "FE-018",
+      "FE-019",
+      "FE-021",
+      "FE-022",
+      "FE-023",
+      "FE-024",
+      "FE-025",
+      "FE-026"
+    ],
+    "readyWithStatedScope": ["FE-016", "FE-020", "FE-027", "FE-028", "FE-029"],
+    "blocked": [],
+    "counts": { "ready": 24, "readyWithStatedScope": 5, "blocked": 0, "total": 29 }
+  },
+  "scopeStatements": {
+    "FE-016": "Review screen ships. Merge affordance ABSENT (not disabled) while P1-OD-017 is open.",
+    "FE-020": "VIN validation is edge format validation plus the server's uniqueness verdict. No verification workflow — veh.vin_verifications is a table no code reads or writes, and building one is Backend feature work.",
+    "FE-027": "Decision-neutral media foundation. Upload acceptance blocked, no invented file types or size limits, no object store assumed, object key never treated as authorization.",
+    "FE-028": "Review screen ships. Merge affordance ABSENT while P1-OD-017 is open.",
+    "FE-029": "Sectioned activity view over the existing independently-paginated reads. Not a fabricated unified stream — veh has no equivalent of crm.timeline_events."
+  },
+  "openFindings": [
+    {
+      "id": "P1-27-INT-003",
+      "subject": "The web API client defaults Idempotency-Key on POST only, so every NON-POST operation marked idempotent answers 400 ERR-INT-002 before permissions are even evaluated",
+      "owner": "P1-27 Frontend",
+      "disposition": "P1-27 work — apps/web, so it belongs in the feature branch",
+      "correctedScope": "Recorded originally as affecting PUT. Counted against the register it is NINE operations, not six: PUT crm.preference-set, crm.customer-status-set, dia.diagnostic-item-result, qms.qc-check-result, qms.rework-cost-record, wo.additional-work-detail-record — AND PATCH veh.vehicle-update, veh.vehicle-status-change, svc.service-update. apps/web/src/lib/api/client.ts states in its own docblock that 'PATCH and DELETE are not marked idempotent anywhere in the published contract', which is false and is the sentence that would stop the next reader checking. veh.vehicle-update is PATCH /vehicles/{vehicleId} — the edit path behind FE-019."
+    },
+    {
+      "id": "P1-27-INT-004",
+      "subject": "openapi.v1.json publishes 200 for routes that return 201 and never publishes 400 or 404",
+      "owner": "foundation (the generator in apps/api/src/server/openapi/document.ts)",
+      "disposition": "Not a CRM or Vehicle defect. Out of P1-27 scope; recorded for a foundation phase."
+    },
+    {
+      "id": "P1-16-A-01",
+      "subject": "crm.addresses.line3 and crm.communication_preferences.quiet_hours_note are columns no write operation can set",
+      "owner": "P1-16",
+      "disposition": "Write-contract gap, not a read one. Open."
+    },
+    {
+      "id": "P1-16-A-02",
+      "subject": "parseOrFail on the path runs before handleOperation in all 141 route modules, so a malformed uuid throws outside the block that renders an RFC 9457 problem document",
+      "owner": "foundation",
+      "disposition": "Platform-wide since P1-13. Open, deliberately unchanged."
+    },
+    {
+      "id": "P1-17-A-01",
+      "subject": "The iam.sensitive.view-gated alternate-identifier read that domain/vehicle-search.ts promises does not exist",
+      "owner": "P1-17",
+      "disposition": "Open. Does not block a P1-27 task."
+    },
+    {
+      "id": "P1-17-A-02",
+      "subject": "veh.vehicle_alerts has no route at all",
+      "owner": "P1-17",
+      "disposition": "Open. Does not block a P1-27 task."
+    }
+  ],
+  "ownerDecisionRequired": false,
+  "closureRule": "No P1-27 formal closure without real installed-Chrome Owner manual acceptance. Automated CI is necessary but not sufficient. Silence is not Pass."
+}

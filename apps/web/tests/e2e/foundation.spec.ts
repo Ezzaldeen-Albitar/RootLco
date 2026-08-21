@@ -1,0 +1,356 @@
+import { expect, test, type ConsoleMessage, type Page } from '@playwright/test';
+
+/**
+ * Foundation smoke.
+ *
+ * Runs against a real production build in a real browser. Everything here is a
+ * property of the FRAME — direction, landmarks, keyboard reachability, the
+ * table's controls, the overlay focus contract, print emulation — because the
+ * frame is what P1-25 delivers.
+ */
+
+/**
+ * Collects console errors and page errors for the life of a page.
+ *
+ * A hydration mismatch appears as a console error and nothing else: the page
+ * looks correct, React has silently thrown away the server tree and re-rendered.
+ * Asserting on an empty console is the only way a test sees it.
+ */
+function watchConsole(page: Page): { readonly errors: string[] } {
+  const errors: string[] = [];
+  page.on('console', (message: ConsoleMessage) => {
+    if (message.type() === 'error') errors.push(message.text());
+  });
+  page.on('pageerror', (error) => errors.push(String(error)));
+  return { errors };
+}
+
+test.describe('locale routes', () => {
+  test('English is LTR and Arabic is RTL, decided by the server', async ({ page }) => {
+    const console = watchConsole(page);
+
+    await page.goto('/en');
+    await expect(page.locator('html')).toHaveAttribute('lang', 'en');
+    await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
+
+    await page.goto('/ar');
+    await expect(page.locator('html')).toHaveAttribute('lang', 'ar');
+    await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+
+    expect(console.errors, 'the console must be clean').toEqual([]);
+  });
+
+  test('the root redirects to a locale', async ({ page }) => {
+    await page.goto('/');
+    // P1-26 made the overview an authenticated screen, so an anonymous visitor
+    // lands on that locale's sign-in page rather than on the overview itself.
+    await expect(page).toHaveURL(/\/(ar|en)\/login(\?.*)?$/);
+  });
+});
+
+/**
+ * Authentication, from the outside.
+ *
+ * These run with NO session, which is the state that matters: an unauthenticated
+ * visitor must never receive protected markup, and must be told where to go
+ * instead of being left on a blank screen.
+ */
+test.describe('authentication', () => {
+  test('a protected route redirects to sign-in and never renders the shell', async ({ page }) => {
+    const console = watchConsole(page);
+    await page.goto('/en/administration/users');
+    await expect(page).toHaveURL(/\/en\/login\?reason=signed-out$/);
+
+    // The shell's navigation landmark belongs to the authenticated group. If it
+    // is present here, protected markup reached the browser before the redirect.
+    await expect(page.getByRole('navigation', { name: 'Modules' })).toHaveCount(0);
+    await expect(page.getByRole('heading', { level: 1, name: 'Sign in' })).toBeVisible();
+    expect(console.errors, 'the console must be clean').toEqual([]);
+  });
+
+  test('the sign-in form labels every control and needs no mouse', async ({ page }) => {
+    await page.goto('/en/login');
+    // Two fields, and deliberately no third. The Workspace UUID was removed once
+    // the tenant became resolvable server-side (`P1-26-F-068`); asserting its
+    // ABSENCE here is what makes this suite fail if it ever returns.
+    await expect(page.getByLabel('Workspace identifier')).toHaveCount(0);
+    await expect(page.getByLabel('Email address')).toBeVisible();
+    /*
+     * By ROLE, not by `getByLabel('Password')`.
+     *
+     * `getByLabel` matches an accessible name as a SUBSTRING, and since the
+     * Owner-acceptance remediation the reveal control lives inside the field
+     * with the accessible name "Show password" — which contains "Password". The
+     * loose locator resolved to two elements and Playwright's strict mode
+     * correctly refused to guess.
+     *
+     * The two names are not ambiguous to anyone actually using them: a screen
+     * reader announces "Password, edit text" and "Show password, button", and
+     * role is what separates them. This asserts the same thing the user hears.
+     */
+    await expect(page.getByRole('textbox', { name: 'Password', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Sign in' })).toBeEnabled();
+    await expect(page.getByRole('link', { name: 'Forgotten your password?' })).toBeVisible();
+  });
+
+  test('the password can be revealed and is hidden until it is', async ({ page }) => {
+    await page.goto('/en/login');
+    const password = page.getByRole('textbox', { name: 'Password', exact: true });
+    await expect(password).toHaveAttribute('type', 'password');
+
+    // The control is INSIDE the field, at the inline end. It used to be a text
+    // button underneath, which the Product Owner rejected at acceptance.
+    const field = page.getByTestId('password-reveal-toggle');
+    await expect(field).toHaveAttribute('aria-controls', (await password.getAttribute('id')) ?? '');
+
+    const toggle = page.getByRole('button', { name: 'Show password' });
+    await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+    await toggle.click();
+
+    await expect(password).toHaveAttribute('type', 'text');
+    // The control renames itself to the action it now offers, and `aria-pressed`
+    // carries the state — so the state is announced, not merely implied.
+    const pressed = page.getByRole('button', { name: 'Hide password' });
+    await expect(pressed).toHaveAttribute('aria-pressed', 'true');
+
+    await pressed.click();
+    await expect(password).toHaveAttribute('type', 'password');
+  });
+
+  test('the skip link is the first thing a keyboard reaches, and it works', async ({ page }) => {
+    await page.goto('/en/login');
+    await page.keyboard.press('Tab');
+    const skip = page.getByRole('link', { name: 'Skip to content' });
+    await expect(skip).toBeFocused();
+    await page.keyboard.press('Enter');
+    // Focus must MOVE to main. Without tabIndex={-1} the browser scrolls there
+    // and leaves focus behind, so the next Tab returns to the navigation.
+    await expect(page.locator('#main')).toBeFocused();
+  });
+
+  test('renders Arabic sign-in right to left with a clean console', async ({ page }) => {
+    const console = watchConsole(page);
+    await page.goto('/ar/login');
+    await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+    await expect(page.getByRole('heading', { level: 1, name: 'تسجيل الدخول' })).toBeVisible();
+    expect(console.errors).toEqual([]);
+  });
+
+  test('the reset link page refuses a request with no token', async ({ page }) => {
+    await page.goto('/en/reset-password');
+    await expect(page.getByText('This link is not complete')).toBeVisible();
+    // No form to submit: a password box that cannot possibly succeed is worse
+    // than none, because it takes the operator's time and then blames them.
+    await expect(page.getByLabel('New password')).toHaveCount(0);
+  });
+
+  test('does not scroll horizontally at any reviewed width', async ({ page }) => {
+    await page.goto('/en/login');
+    const overflow = await page.evaluate(
+      () => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1
+    );
+    expect(overflow, 'the page body must never scroll horizontally').toBe(false);
+  });
+});
+
+test.describe('the shell', () => {
+  // Asserted on the gallery, which is the surface that carries the shell without
+  // requiring a session (see the `(design)` route group).
+  test('has the landmarks a screen reader navigates by', async ({ page }) => {
+    await page.goto('/en/gallery');
+    await expect(page.getByRole('main')).toBeVisible();
+    await expect(page.getByRole('banner')).toBeVisible();
+    await expect(page.getByRole('navigation', { name: 'Modules' })).toBeVisible();
+  });
+
+  test('does not scroll horizontally at any reviewed width', async ({ page }) => {
+    await page.goto('/en/gallery');
+    const overflow = await page.evaluate(
+      () => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1
+    );
+    expect(overflow, 'the page body must never scroll horizontally').toBe(false);
+  });
+
+  test('renders no planned module as a link', async ({ page }) => {
+    await page.goto('/en/gallery');
+    const nav = page.getByRole('navigation', { name: 'Modules' });
+    await expect(nav.getByRole('link', { name: 'Overview' })).toBeVisible();
+    // Billing is still a P1-27-and-later module, so it must not be clickable.
+    await expect(nav.getByRole('link', { name: 'Billing' })).toHaveCount(0);
+    // Administration IS built now, but it is permission-gated and this page
+    // renders with no capabilities — so it must be absent too. An entry visible
+    // to an actor holding nothing would mean the filter had stopped working.
+    await expect(nav.getByRole('link', { name: 'Users' })).toHaveCount(0);
+  });
+});
+
+test.describe('the gallery', () => {
+  test('renders every section in English with a clean console', async ({ page }) => {
+    const console = watchConsole(page);
+    await page.goto('/en/gallery');
+    await expect(page.getByRole('heading', { level: 1, name: 'Component gallery' })).toBeVisible();
+    for (const section of [
+      'Foundations',
+      'Controls',
+      'Data table',
+      'Application states',
+      'Print',
+    ]) {
+      // level 2 scopes this to the SECTION headings; the print document renders
+      // its own h1 with the word "Print" in it.
+      await expect(page.getByRole('heading', { level: 2, name: section })).toBeVisible();
+    }
+    expect(console.errors).toEqual([]);
+  });
+
+  test('renders in Arabic RTL with a clean console', async ({ page }) => {
+    const console = watchConsole(page);
+    await page.goto('/ar/gallery');
+    await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+    await expect(page.getByRole('heading', { level: 1, name: 'معرض المكوّنات' })).toBeVisible();
+    expect(console.errors).toEqual([]);
+  });
+
+  test('the table sorts, pages and reports its range', async ({ page }) => {
+    await page.goto('/en/gallery');
+    const table = page.getByRole('table', { name: 'Data table' });
+    await expect(table).toBeVisible();
+
+    // Scoped to the data table: the print sample further down the page renders a
+    // second table with the same column name.
+    const header = table.getByRole('columnheader', { name: /Reference/ });
+    await expect(header).toHaveAttribute('aria-sort', 'none');
+    await header.getByRole('button').click();
+    await expect(table.getByRole('columnheader', { name: /Reference/ })).toHaveAttribute(
+      'aria-sort',
+      'ascending'
+    );
+
+    await expect(page.getByText(/Showing/)).toContainText('5');
+    await expect(page.getByRole('button', { name: 'Previous page' })).toBeDisabled();
+  });
+
+  test('a dialog traps focus and restores it on Escape', async ({ page }) => {
+    await page.goto('/en/gallery');
+    const trigger = page.getByRole('button', { name: 'Open dialog' });
+    await trigger.click();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toBeVisible();
+
+    for (let index = 0; index < 6; index += 1) {
+      await page.keyboard.press('Tab');
+      const inside = await dialog.evaluate((node) => node.contains(document.activeElement));
+      expect(inside, `focus escaped after ${index + 1} tabs`).toBe(true);
+    }
+
+    await page.keyboard.press('Escape');
+    await expect(dialog).toBeHidden();
+    await expect(trigger).toBeFocused();
+  });
+
+  test('a destructive confirmation focuses Cancel, not the destructive action', async ({
+    page,
+  }) => {
+    await page.goto('/en/gallery');
+    await page.getByRole('button', { name: 'Delete something' }).click();
+    const alert = page.getByRole('alertdialog');
+    await expect(alert).toBeVisible();
+    await expect(alert.getByRole('button', { name: 'Cancel' })).toBeFocused();
+  });
+
+  test('the reason confirmation refuses an empty reason', async ({ page }) => {
+    await page.goto('/en/gallery');
+    await page.getByRole('button', { name: 'Refuse with a reason' }).click();
+    const alert = page.getByRole('alertdialog');
+    await expect(alert.getByRole('button', { name: 'Refuse with a reason' })).toBeDisabled();
+    await alert.getByRole('textbox').fill('   ');
+    await expect(alert.getByRole('button', { name: 'Refuse with a reason' })).toBeDisabled();
+    await alert.getByRole('textbox').fill('parts unavailable');
+    await expect(alert.getByRole('button', { name: 'Refuse with a reason' })).toBeEnabled();
+  });
+
+  test('a toast is announced from a live region, at the right politeness', async ({ page }) => {
+    await page.goto('/en/gallery');
+    await page.getByRole('button', { name: 'Show a notification' }).click();
+    const region = page.getByRole('region', { name: 'Notifications' });
+    // The politeness lives on the two lists INSIDE the region, not on the region
+    // itself: an error must interrupt and a confirmation must not, and one
+    // `aria-live` on the container cannot express both.
+    await expect(region.locator('[aria-live="polite"]')).toHaveCount(1);
+    await expect(region.locator('[aria-live="assertive"]')).toHaveCount(1);
+    await expect(region).toContainText('Saved');
+    // A success is polite. Announcing it assertively would interrupt whatever a
+    // screen-reader user was in the middle of reading.
+    await expect(region.locator('[aria-live="polite"]')).toContainText('Saved');
+  });
+
+  test('the notification region is one authority, mounted outside the shell', async ({ page }) => {
+    await page.goto('/en/gallery');
+    await expect(page.getByTestId('notification-region')).toHaveCount(1);
+    const placement = await page.getByTestId('notification-region').evaluate((el) => ({
+      position: getComputedStyle(el).position,
+      // Mounted as a direct child of <body>, so the shell's `overflow:hidden`
+      // cannot clip it and no ancestor transform can trap its `fixed`.
+      parentIsBody: el.parentElement?.tagName === 'BODY',
+    }));
+    expect(placement.position).toBe('fixed');
+    expect(placement.parentIsBody).toBe(true);
+  });
+
+  test('the money field keeps a decimal string exactly', async ({ page }) => {
+    await page.goto('/en/gallery');
+    const amount = page.getByLabel(/Amount/).first();
+    await amount.fill('12.5');
+    await amount.blur();
+    // Canonicalised by padding characters, not by arithmetic.
+    await expect(amount).toHaveValue('12.5000');
+  });
+});
+
+test.describe('print emulation', () => {
+  for (const locale of ['en', 'ar'] as const) {
+    test(`hides interactive chrome on paper in ${locale}`, async ({ page }) => {
+      await page.goto(`/${locale}/gallery`);
+      await page.emulateMedia({ media: 'print' });
+
+      // A CSS locator, not a role locator: under print media the navigation is
+      // display:none, so it is absent from the accessibility tree and a role
+      // query waits for it forever. Asking the DOM directly is what actually
+      // answers "is this hidden on paper".
+      const navHidden = await page
+        .locator('nav')
+        .first()
+        .evaluate((node) => globalThis.getComputedStyle(node).display === 'none');
+      expect(navHidden, 'navigation must not print').toBe(true);
+
+      const document = page.locator('[data-print="document"]');
+      await expect(document).toBeVisible();
+      const clipped = await document.evaluate((node) => node.scrollWidth > node.clientWidth + 1);
+      expect(clipped, 'the printed document must not clip horizontally').toBe(false);
+
+      await page.emulateMedia({ media: 'screen' });
+    });
+  }
+});
+
+test.describe('reduced motion', () => {
+  test('collapses every transition duration to zero', async ({ page }) => {
+    test.skip(test.info().project.name !== 'reduced-motion', 'runs in the reduced-motion project');
+    await page.goto('/en/gallery');
+    // The token layer does this once, so a component written later inherits it
+    // without knowing the preference exists.
+    const durations = await page.evaluate(() => {
+      const style = globalThis.getComputedStyle(document.documentElement);
+      return ['instant', 'fast', 'base', 'slow', 'overlay'].map((name) =>
+        style.getPropertyValue(`--duration-${name}`).trim()
+      );
+    });
+    // Zero, not the literal string '0ms': the CSS minifier normalises '0ms' to
+    // '0s', so asserting the exact text would fail on a correctly collapsed
+    // token and pass only by accident of build settings.
+    expect(durations).toHaveLength(5);
+    for (const value of durations) {
+      expect(value, 'a duration token did not collapse').toMatch(/^0(ms|s)$/);
+    }
+  });
+});

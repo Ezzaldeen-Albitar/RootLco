@@ -1,0 +1,14 @@
+@use 'sass:map';
+@use '../tokens/breakpoints';
+
+/// Min-width media query from the breakpoint scale.
+/// Fails loudly on an unknown name rather than emitting a query that never matches.
+@mixin above($name) {
+  @if not map.has-key(breakpoints.$scale, $name) {
+    @error 'Unknown breakpoint "#{$name}". Known: #{map.keys(breakpoints.$scale)}.';
+  }
+
+  @media (min-width: map.get(breakpoints.$scale, $name)) {
+    @content;
+  }
+}

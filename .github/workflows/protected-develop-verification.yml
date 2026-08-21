@@ -19,7 +19,50 @@ name: Protected branch verification
 on:
   push:
     branches: [develop, main]
+  # THE PRE-MERGE PATH, and it is not an afterthought.
+  #
+  # `push` alone would mean the `authenticated-browser` job below could only
+  # produce evidence AFTER a merge — so a phase would have to merge work in
+  # order to learn whether the work was good, which is the ordering backwards.
+  # A manual dispatch closes that: it runs the same jobs, from the same file, on
+  # any branch of THIS repository, before anything is merged.
+  #
+  # `candidate-sha` is what makes such a run quotable. A dispatch names a REF,
+  # and a ref is a moving target: between reading a pull request's head and the
+  # run starting, a push can change what the name points at, and the evidence
+  # would then describe a commit nobody reviewed. Naming the commit as well lets
+  # the run refuse to be evidence for the wrong one — the comparison is made in
+  # `_reusable-authenticated-browser.yml`, in the step named "The run is pinned
+  # to the commit it was asked for", against the commit the checkout resolved.
+  #
+  # READ THE PER-JOB CHECK, NOT THE RUN CONCLUSION, ON A DISPATCH.
+  #
+  # A dispatch starts every job in this file, and two of them cannot mean the
+  # same thing under `workflow_dispatch` as they do under `push`:
+  #
+  #   - `database-migration-replay` fails by design, because a dispatch has no
+  #     base reference to diff against and migration immutability therefore
+  #     cannot be checked. It refuses to report success for a check it could
+  #     not run, which is correct — but it makes the RUN red for a reason that
+  #     says nothing about the commit.
+  #   - `database-security` and the Supabase-backed jobs pull images, so a
+  #     Docker Hub rate limit surfaces here as a failure of the candidate when
+  #     it is a failure of the registry.
+  #
+  # So evidence from a pre-merge dispatch is the check-run named after the JOB
+  # on the commit — `authenticated-browser` — never the run-level conclusion.
+  # Both were observed together on run 31337158296 and would mislead anybody
+  # who quoted the latter.
   workflow_dispatch:
+    inputs:
+      candidate-sha:
+        description: >-
+          The full 40-character commit this run must test. REQUIRED when
+          dispatching a branch other than develop or main, because that is the
+          pre-merge case whose result gets quoted. The run fails unless the
+          commit it checked out is exactly this one.
+        required: false
+        type: string
 
 concurrency:
   group: protected-${{ github.workflow }}-${{ github.ref }}
@@ -37,6 +80,13 @@ jobs:
     uses: ./.github/workflows/_reusable-node-quality.yml
     with:
       task: static-quality
+      artifact-retention-days: 30
+
+  web-quality:
+    name: web-quality
+    uses: ./.github/workflows/_reusable-node-quality.yml
+    with:
+      task: web-quality
       artifact-retention-days: 30
 
   unit-tests-coverage:
@@ -114,13 +164,56 @@ jobs:
       expected-sha: ${{ github.sha }}
       artifact-retention-days: 90
 
+  # ===========================================================================
+  # The AUTHENTICATED browser tier — `P1-27-DO-001`, and it is now GOVERNED.
+  #
+  # `apps/web/tests/e2e/authenticated/**` holds the repository's ONLY end-to-end
+  # tenant-isolation proof and its ONLY route-level accessibility proof. It was
+  # executed by no hosted job for the whole of P1-27; then it was executed by a
+  # forty-line job in THIS file that `protected-gate` did not wait for, so the
+  # gate could report **Go** while this check was red. That was recorded as a
+  # debt rather than defended, and this is its repayment: the job body moved to
+  # `_reusable-authenticated-browser.yml`, both gates call it, and both gates
+  # depend on the result.
+  #
+  # The body lives in the reusable workflow because `DECLARED_JOBS` in
+  # `scripts/ci/evaluate-ci-gate.mjs` is shared with `pr-ci.yml` and the
+  # evaluator fails a gate for a declared job absent from `needs` — so a governed
+  # job must exist in BOTH workflows, and GitHub has no cross-workflow `needs`.
+  # See that file's header for the argument, including why the earlier decision
+  # against extraction no longer holds.
+  #
+  # `push` is the post-merge protected reproof — the run a gate record quotes.
+  # `workflow_dispatch` is the pre-merge path: it runs the same job from the same
+  # file on any branch of this repository, and `candidate-sha` pins the commit so
+  # the result cannot be attributed to a ref that moved underneath it.
+  # ===========================================================================
+  authenticated-browser:
+    name: authenticated-browser
+    uses: ./.github/workflows/_reusable-authenticated-browser.yml
+    with:
+      expected-sha: ${{ inputs.candidate-sha }}
+      # A dispatch of any ref OTHER than develop or main is the pre-merge case,
+      # so naming the commit is mandatory there: without it the run would say
+      # only "the tip of that branch, whenever it started", which is not a commit
+      # anybody can check. On a protected push the pushed commit IS the answer,
+      # so nothing has to be named.
+      require-pin: ${{ github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/develop' && github.ref != 'refs/heads/main' }}
+      artifact-retention-days: 30
+
   protected-gate:
     name: protected-gate
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # `authenticated-browser` is in this list, and its ABSENCE was the finding:
+    # the gate could report Go while the repository's only end-to-end
+    # tenant-isolation proof was red. `tests/ci/ci-gate.test.ts` reconciles this
+    # list against the jobs this file declares and against `DECLARED_JOBS`, so it
+    # cannot fall out again quietly.
     needs:
       - static-quality
+      - web-quality
       - unit-tests-coverage
       - application-build
       - database-migration-replay
@@ -131,6 +224,7 @@ jobs:
       - container-security
       - secret-scan
       - hosted-clean-room
+      - authenticated-browser
 
     steps:
       # A local `uses: ./…` action is resolved from the workspace, which is
@@ -168,9 +262,15 @@ jobs:
           # a skip here is always a failure.
           node scripts/ci/protected-classification.mjs \
             --needs needs.json --out-classification classification.json --out-needs needs.json
+          # `--trusted-context true` is a statement of fact about this event, not
+          # a convenience: a `push` to develop or main, and a dispatch of a ref
+          # inside this repository, both require write access here. There is no
+          # untrusted-fork path into this workflow at all, so the security-gated
+          # job is unconditionally eligible and a skip of it is a failure.
           node scripts/ci/evaluate-ci-gate.mjs \
             --needs needs.json --classification classification.json --evidence evidence \
             --expected-sha "${COMMIT}" --actual-sha "$(git rev-parse HEAD)" \
+            --trusted-context true \
             --markdown protected-gate.md --json protected-gate.json
 
       - name: Publish the summary

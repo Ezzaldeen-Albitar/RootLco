@@ -70,6 +70,7 @@
 import { readdirSync, readFileSync, existsSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join, relative, sep, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { REPOSITORY_ROOT, API_SRC_PATH, API_ROUTES_PATH } from './lib/repository-paths.mjs';
 
 const toPosix = (p) => p.split(sep).join('/');
 
@@ -238,6 +239,8 @@ export const isDerivedId = (id) =>
  *   idempotency      a replay produces one row, not two
  *   stale-version    a wrong If-Match is refused with a conflict
  *   provider         a provider fake is driven and its behaviour asserted
+ *   retired-visible  an entry retired through the API is present in this
+ *                    administrative read and absent from the picker read
  */
 /**
  * The replay-evidence kind. Named once because `derivedRequirements` applies it
@@ -260,6 +263,7 @@ export const EVIDENCE_KINDS = Object.freeze([
   'idempotency',
   'stale-version',
   'provider',
+  'retired-visible',
 ]);
 
 // ---------------------------------------------------------------------------
@@ -280,6 +284,11 @@ export const MANIFEST = {
     required: ['denial', 'cross-tenant'],
     note: 'bounded allow-listed read; VIN matches the generated normalized column exactly and a plate matches the active plate via a tenant-scoped subquery; a tenant-B vehicle is unreachable (cross-tenant); an invalid cursor, an oversized query and an unknown parameter are refused (denial); safe master projection only, no restricted identifier',
   },
+  'veh.vehicle-read': {
+    files: ['tests/backend/p1-17-vehicle-read.test.ts'],
+    required: ['success', 'denial', 'cross-tenant'],
+    note: 'the only operation that returns one vehicle; the route module exported PATCH and nothing else, so a profile screen could reach a vehicle’s plates and never learn its make (P1-27-INT-002). The projection is asserted as a KEY SET in both directions, because NFR-PRV-001 forbids projecting a restricted identifier and a field-by-field assertion cannot catch an addition. A merged vehicle is RETURNED with mergedIntoId, deliberately unlike the CRM customer read: the PATCH treats it as existing-but-frozen (409), so a 404 here would report a vehicle live work orders reference as missing. Publishes record_version and an ETag, which the PATCH has always demanded via If-Match and nothing ever supplied',
+  },
   'veh.vehicle-create': {
     files: ['tests/backend/p1-17-vehicle-create-update.test.ts'],
     required: ['success', 'denial', 'cross-tenant', 'audit', 'outbox', 'rollback'],
@@ -294,6 +303,36 @@ export const MANIFEST = {
     files: ['tests/backend/p1-17-vehicle-merge.test.ts'],
     required: ['success', 'denial', 'cross-tenant', 'audit', 'outbox'],
     note: 'one INSERT into veh.vehicle_merges redirects+freezes the source via the frozen apply trigger — merge record + audit + vehicle.merged event (aggregate=survivor) are one atomic statement; self-merge 422, already-merged source and merged survivor 409, a cross-tenant or unknown survivor the same 404 (denial/cross-tenant); the event carries source/survivor/merge ids only',
+  },
+  'veh.catalogue-make-list': {
+    files: ['tests/backend/p1-27-vehicle-catalogue-and-cursors.test.ts'],
+    required: ['success', 'denial'],
+    note: 'P1-27-INT-007. veh.makes had no read of any kind, so a creation form could not offer a make and a vehicle could only be created with make_id null. Tenant scoping is RLS’s alone (scope = platform OR tenant_id = current) — the repository adds no tenant predicate, because one would hide every platform row from every tenant',
+  },
+  'veh.catalogue-model-list': {
+    files: ['tests/backend/p1-27-vehicle-catalogue-and-cursors.test.ts'],
+    required: ['success', 'denial'],
+    note: 'nested under the make because uq_models_platform_code is unique on (make_id, code), so a model code only means something relative to a make. An unknown or invisible make answers an EMPTY PAGE rather than 404, which is what stops it being an existence oracle for another tenant’s catalogue additions. Sorted by name, and the suite proves it by inserting five models out of alphabetical order at one shared instant',
+  },
+  'veh.catalogue-trim-list': {
+    files: ['tests/backend/p1-27-vehicle-catalogue-and-cursors.test.ts'],
+    required: ['success', 'denial'],
+    note: 'same shape and same reasoning as the model list, one level down',
+  },
+  'veh.catalogue-body-type-list': {
+    files: ['tests/backend/p1-27-vehicle-catalogue-and-cursors.test.ts'],
+    required: ['success', 'denial'],
+    note: 'the flat sibling of the make list; asserted to publish {items, nextCursor, hasMore} and no total',
+  },
+  'veh.catalogue-powertrain-type-list': {
+    files: ['tests/backend/p1-27-vehicle-catalogue-and-cursors.test.ts'],
+    required: ['success', 'denial'],
+    note: 'NOT powertrain_category, which is a five-value enum on the vehicle itself and needs no lookup. powertrain_type_id references a tenant-extensible catalogue relation, and a form offering the enum where the uuid belongs sends a value the FK rejects',
+  },
+  'veh.vehicle-duplicate-list': {
+    files: ['tests/backend/p1-16-17-duplicate-candidate-reads.test.ts'],
+    required: ['success', 'denial', 'cross-tenant'],
+    note: 'the vehicle mirror of crm.duplicate-list, missing for the same reason (P1-27-INT-005). The pair is labelled by display_number, never by VIN, and match_basis publishes WHICH signal fired (vin_collision) and never the value — guaranteed by veh.valid_match_basis, which the suite proves still bites by attempting a raw-value insert and asserting the write is refused rather than only asserting the projection is clean',
   },
   'veh.vehicle-duplicate-scan': {
     files: ['tests/backend/p1-17-vehicle-duplicates.test.ts'],
@@ -452,6 +491,11 @@ export const MANIFEST = {
     ],
     note: 'both origin modes: a walk-in creates its own origin record (no fabricated appointment) and an appointment origin also moves the appointment to checked_in, all in one transaction; visit + service-requester role + accepted custody + status history are written atomically by rec.accept_check_in and an injected failure leaves none of them (rollback); one origin is consumed at most once and two concurrent check-ins of the same origin leave exactly one visit (concurrency)',
   },
+  'rec.receiving-employee-list': {
+    files: ['tests/backend/p1-18-reception-create.test.ts'],
+    required: ['success', 'denial', 'isolation'],
+    note: 'FE-007. The picker the check-in form selects a custodian from. It exists to answer exactly the question the authoritative insert guard asks, so the evidence is the two halves together: what the list offers, and what a create does with an id the list did not offer. Declared in the create suite for that reason — a list proven in isolation from the write it feeds proves only that a query runs.',
+  },
   'rec.reception-party-role': {
     files: [
       'tests/backend/p1-18-reception-parties.test.ts',
@@ -491,6 +535,74 @@ export const MANIFEST = {
     ],
     required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
     note: 'bound to an exact immutable document version (a version belonging to another document is refused); append-only — no application role holds UPDATE or DELETE on rec.signatures, proved by attempting both; records an acknowledgement, never a certified identity proof',
+  },
+  // ---------------------------------------------------------------------------
+  // Reception evidence contracts — Owner decisions FE-012, FE-018, FE-019.
+  // ---------------------------------------------------------------------------
+  'rec.reception-evidence-binding': {
+    files: ['tests/backend/p1-18-reception-evidence-contracts.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
+    note: 'FE-018 applied to capture. Binds one exact immutable document version to one capture requirement, unfinalized. A rejected or quarantined version is refused outright, a version of the wrong category is refused, and a document with no live link to this visit is refused - all three by rec.guard_reception_evidence_binding, not by a predicate in the module.',
+  },
+  'rec.reception-evidence-binding-list': {
+    files: ['tests/backend/p1-18-reception-evidence-contracts.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation'],
+    note: 'The capture contract of one visit: what it owes, what it has, and which damage-map templates it may still bind. satisfied counts FINALIZED bindings only, so a screen cannot report a visit complete on versions that are still pending.',
+  },
+  'rec.reception-evidence-binding-finalize': {
+    files: ['tests/backend/p1-18-reception-evidence-contracts.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
+    note: 'The only act that makes captured media count. Refused while the bound version is pending; a second finalization is a 409 rather than a silent success.',
+  },
+  'rec.reception-capture-override': {
+    files: ['tests/backend/p1-18-reception-evidence-contracts.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
+    note: 'Waiving a required capture costs rec.reception.evidence.override, which capture authority does not imply - the denial case runs on a caller holding rec.reception.evidence.manage and nothing else. Recorded once per requirement per visit, never editable.',
+  },
+  'rec.reception-signature-list': {
+    files: ['tests/backend/p1-18-reception-evidence-contracts.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation'],
+    note: 'FE-018 read-back. Every signature including superseded and repudiated ones, with the exact version bound, its state, and the SERVER-owned version checksum rather than the caller-supplied hash.',
+  },
+  'rec.reception-signature-event': {
+    files: ['tests/backend/p1-18-reception-evidence-contracts.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
+    note: 'FE-018 lifecycle. Finalizing is refused while the bound version is pending; repudiation is a second row and rewrites nothing, proved by reading both rows back after it.',
+  },
+  'rec.catalogue-damage-map-template-list': {
+    files: ['tests/backend/p1-18-reception-evidence-contracts.test.ts'],
+    required: ['success', 'denial'],
+    note: 'FE-012 administration read. Gated on rec.catalogue.manage, not on the reception read code: the receptionist picker is the visit capture contract, a different path.',
+  },
+  'rec.catalogue-damage-map-template-create': {
+    files: ['tests/backend/p1-18-reception-evidence-contracts.test.ts'],
+    required: ['success', 'denial', 'audit', 'idempotency'],
+    note: 'FE-012. A slot has no bindable geometry until a revision is published against it. Zero rows ship.',
+  },
+  'rec.catalogue-damage-map-template-read': {
+    files: ['tests/backend/p1-18-reception-evidence-contracts.test.ts'],
+    required: ['success', 'denial', 'cross-tenant'],
+    note: 'FE-012 historical read: a retired slot and every retired revision stay readable, and this read supplies the recordVersion the status command needs as If-Match.',
+  },
+  'rec.catalogue-damage-map-template-version-create': {
+    files: ['tests/backend/p1-18-reception-evidence-contracts.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'idempotency'],
+    note: 'FE-012. Retires the previous revision and publishes the next in one transaction; a visit already bound keeps its revision, proved by reading the damage map back after the revision.',
+  },
+  'rec.catalogue-damage-map-template-status-set': {
+    files: ['tests/backend/p1-18-reception-evidence-contracts.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'stale-version', 'audit', 'idempotency'],
+    note: 'FE-012. Retiring withdraws the slot from NEW visits only, proved by the bindable list of a later visit; bidirectional, because a slot owns its revision history and a one-way retirement would fork a diagram into two identities.',
+  },
+  'rec.catalogue-capture-policy-list': {
+    files: ['tests/backend/p1-18-reception-evidence-contracts.test.ts'],
+    required: ['success', 'denial'],
+    note: 'FE-019. The live rules of the tenant. Zero rows is the DEFAULT and not an error: the absence of a rule is what makes refusal supporting media optional.',
+  },
+  'rec.catalogue-capture-policy-set': {
+    files: ['tests/backend/p1-18-reception-evidence-contracts.test.ts'],
+    required: ['success', 'denial', 'audit', 'idempotency'],
+    note: 'FE-019. Retire-then-insert in one transaction, so the rule that applied at the time of a visit stays readable. The suite proves the default (a refusal with no media is accepted), the raised floor (the same refusal type is then refused), that a type the rule does not name is unaffected, and that lowering it restores the default.',
   },
   'rec.reception-refusal': {
     files: [
@@ -534,6 +646,267 @@ export const MANIFEST = {
       'concurrency',
     ],
     note: 'exactly-once is guarded twice — the application locks the reception and answers a replay with the existing work order, and uq_work_orders_ordinary_origin (a PARTIAL UNIQUE INDEX, which is why an audit that enumerated pg_constraint alone did not see it) is the database backstop — so the proof is behavioural: two forced-concurrent conversions of one reception produce exactly ONE work-order row (concurrency), a replay returns that same row rather than a second (idempotency), and an unapproved reception is refused (denial); an injected failure leaves no work order, no linkage and no audit (rollback); emits no event, because the approved catalog defines none for this fact',
+  },
+  // P1-27 read-surface remediation, executed by P1-18. Reads fold into this
+  // block for the same reason the P1-27 vehicle reads folded into the veh/P1-17
+  // rows: a prefix with no operations behind it would report a vacuous 0/0
+  // block, and these ARE apt./rec. operations.
+  'rec.reception-detail': {
+    files: ['tests/backend/p1-27-reception-reads.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation'],
+    note: 'P1-27-INT-010. The reception had no read of any kind: rec.reception-approve and rec.reception-convert-to-work-order both demand If-Match and the only source of recordVersion was the response of a write the caller had just performed, so a visit was reachable in one unbroken session and in no other circumstance. This publishes recordVersion as an ETag, proven by round-tripping the published header into a guarded write.',
+  },
+  'rec.reception-list': {
+    files: ['tests/backend/p1-27-reception-reads.test.ts'],
+    required: ['success', 'denial', 'isolation'],
+    note: 'P1-27-INT-011. No branch board and no per-vehicle visit list existed. Company and branch are required and travel as the authorization target so the scope-blind pre-handler evaluation never decides alone (P1-18-A-01); recordVersion travels per row because the guarded writes are addressed from the list.',
+  },
+  'rec.reception-party-role-list': {
+    files: ['tests/backend/p1-27-reception-reads.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation'],
+    note: 'P1-27-INT-015. No read of a visit party roles existed, so a resumed visit could not tell whose instruction the workshop may act on. valid_to IS NULL marks the active interval; cursor precision proven against same-microsecond fixtures (P1-27-INT-006).',
+  },
+  'rec.reception-authorization-list': {
+    files: ['tests/backend/p1-27-reception-reads.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation'],
+    note: 'P1-27-INT-016. Standing authorization state was discoverable only by attempting approve and reading the 409. The two-table UNION with rec.refusals (refusal_type = authorization) is mandatory and isStanding is computed over the whole union, so a withdrawn approval is visible as withdrawn — refusal is never read as consent.',
+  },
+  'rec.reception-condition-evidence-list': {
+    files: ['tests/backend/p1-27-reception-reads.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation'],
+    note: 'P1-27-INT-017. All eight evidence kinds were write-only. One paginated union with an optional kind filter; the restricted narrative tables (rec.complaint_details, rec.vehicle_content_details) are never selected, proven by a forbidden-substring scan of the raw response text.',
+  },
+  'rec.reception-history': {
+    files: ['tests/backend/p1-27-reception-reads.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation'],
+    note: 'P1-27-INT-021. First read path rec.custody_history has ever had, and custody is load-bearing for the INT-013 fix. seq travels as a string (bigint); the cursor tie-break is the uuid id per P1-15-SR-013.',
+  },
+  'apt.appointment-list': {
+    files: ['tests/backend/p1-18-appointment-reads.test.ts'],
+    required: ['success', 'denial', 'isolation'],
+    note: 'P1-27-INT-019. All four apt. operations were writes; no calendar existed. The date filter and ordering run over the CONFIRMED window falling back to requested (COALESCE), per the P1-8 boundary record; recordVersion travels per row for the three guarded lifecycle commands.',
+  },
+  'apt.appointment-detail': {
+    files: ['tests/backend/p1-18-appointment-reads.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation'],
+    note: 'P1-27-INT-019. An operator arriving by URL could load nothing; the If-Match the guarded lifecycle commands demand existed only in a prior write response. Publishes recordVersion as an ETag, proven by round-tripping the published header into apt.appointment-reschedule.',
+  },
+  'apt.catalogue-appointment-type-list': {
+    files: ['tests/backend/p1-18-intake-catalogues.test.ts'],
+    required: ['success', 'denial'],
+    note: 'P1-27-INT-018. apt.appointment-create requires appointmentTypeId and nothing published the types, so a booking form could not populate its own mandatory picker. Active rows only; RLS owns the platform-or-tenant union; empty is the no-fake-data policy working.',
+  },
+  'apt.catalogue-source-channel-list': {
+    files: ['tests/backend/p1-18-intake-catalogues.test.ts'],
+    required: ['success', 'denial'],
+    note: 'P1-27-INT-018. The optional sourceChannelId on booking had no published options. Same catalogue contract as the appointment types.',
+  },
+  'apt.catalogue-cancellation-reason-list': {
+    files: ['tests/backend/p1-18-intake-catalogues.test.ts'],
+    required: ['success', 'denial'],
+    note: 'P1-27-INT-018. apt.appointment-cancel demands a mandatory catalogued cancellationReasonId and no read existed, which made the cancel dialog unbuildable absolutely. Same catalogue contract.',
+  },
+  'rec.catalogue-visit-reason-list': {
+    files: ['tests/backend/p1-18-intake-catalogues.test.ts'],
+    required: ['success', 'denial'],
+    note: 'P1-27-INT-018. rec.visit_reasons existed with zero operations. Same catalogue contract.',
+  },
+  'rec.catalogue-fuel-level-list': {
+    files: ['tests/backend/p1-18-intake-catalogues.test.ts'],
+    required: ['success', 'denial'],
+    note: 'P1-27-INT-018. Check-in accepts fuelLevelId and the picker had nothing to show. Same catalogue contract.',
+  },
+  'rec.catalogue-warning-light-code-list': {
+    files: ['tests/backend/p1-18-intake-catalogues.test.ts'],
+    required: ['success', 'denial'],
+    note: 'P1-27-INT-018 / RMC-11. The warning_light evidence kind demands a code id and the catalogue had no read, no rows and no management operation; this ships the read — population remains a separately recorded provisioning decision.',
+  },
+  'rec.catalogue-refusal-reason-list': {
+    files: ['tests/backend/p1-18-intake-catalogues.test.ts'],
+    required: ['success', 'denial'],
+    note: 'P1-27-INT-018. The refusal record could not offer its optional catalogued reason. Same catalogue contract.',
+  },
+  // P1-27-INT-018, ADMINISTRATIVE reads. The seven picker lists above answer
+  // "what may I offer"; these seven answer "what does my catalogue contain",
+  // which is a different question with a different permission. The picker
+  // projection made the catalogue unadministrable: a retired entry appeared in
+  // no read, so nothing could restore it, and no read published the
+  // recordVersion the rename and lifecycle commands demand as If-Match. Each
+  // entry owes `retired-visible` on top of the usual pair — the evidence that
+  // the retired row this suite retires through the API is then present here and
+  // absent from the picker, which is the whole reason the operation exists.
+  'apt.catalogue-appointment-type-management-list': {
+    files: ['tests/backend/p1-18-intake-catalogue-management.test.ts'],
+    required: ['success', 'denial', 'retired-visible'],
+    note: 'P1-27-INT-018. Retired entries included and recordVersion projected, gated on apt.catalogue.manage rather than apt.appointment.read — a booking caller keeps seeing only what it may offer. The projected version is proven by round-tripping it as the If-Match of a rename and of a retirement.',
+  },
+  'apt.catalogue-source-channel-management-list': {
+    files: ['tests/backend/p1-18-intake-catalogue-management.test.ts'],
+    required: ['success', 'denial', 'retired-visible'],
+    note: 'P1-27-INT-018. Same administrative contract; two relations reference a channel, so a withdrawn one is retired and stays visible only here.',
+  },
+  'apt.catalogue-cancellation-reason-management-list': {
+    files: ['tests/backend/p1-18-intake-catalogue-management.test.ts'],
+    required: ['success', 'denial', 'retired-visible'],
+    note: 'P1-27-INT-018. Same administrative contract; the cancellation vocabulary is a policy an operator revises, which means seeing what they have already withdrawn.',
+  },
+  'rec.catalogue-visit-reason-management-list': {
+    files: ['tests/backend/p1-18-intake-catalogue-management.test.ts'],
+    required: ['success', 'denial', 'retired-visible'],
+    note: 'P1-27-INT-018. Same administrative contract; rec.visit_reason_links describes every past visit in this vocabulary, so entries leave it by status only.',
+  },
+  'rec.catalogue-fuel-level-management-list': {
+    files: ['tests/backend/p1-18-intake-catalogue-management.test.ts'],
+    required: ['success', 'denial', 'retired-visible'],
+    note: 'P1-27-INT-018. Same administrative contract; a live visit keeps resolving a level after the operator stops offering it, which is the case the picker structurally cannot show.',
+  },
+  'rec.catalogue-warning-light-code-management-list': {
+    files: ['tests/backend/p1-18-intake-catalogue-management.test.ts'],
+    required: ['success', 'denial', 'retired-visible'],
+    note: 'P1-27-INT-018 / RMC-11. Same administrative contract; the code set grows model by model, so this catalogue is edited most after first population.',
+  },
+  'rec.catalogue-refusal-reason-management-list': {
+    files: ['tests/backend/p1-18-intake-catalogue-management.test.ts'],
+    required: ['success', 'denial', 'retired-visible'],
+    note: 'P1-27-INT-018. Same administrative contract; a recorded refusal keeps naming its reason, so the list only ever changes by status.',
+  },
+  // P1-27-INT-018, management half. The reads above made the catalogues
+  // READABLE; these make them POPULATABLE, which is what the screens actually
+  // needed — every one of the seven tables ships zero rows by the no-fake-data
+  // policy and no operation could add one, so a required appointmentTypeId
+  // could never be satisfied. One suite covers all twenty-one because the seven
+  // relations are structurally identical; it is table-driven over the REAL
+  // handlers, so each catalogue is exercised in full rather than by analogy.
+  'apt.catalogue-appointment-type-create': {
+    files: ['tests/backend/p1-18-intake-catalogue-management.test.ts'],
+    required: ['success', 'denial', 'idempotency', 'audit'],
+    note: 'P1-27-INT-018. apt.appointment-create REQUIRES appointmentTypeId and nothing could add a type, so no appointment could be booked at all. scope and tenant_id come from the principal (proven by reading the stored row back), never the request; a duplicate code is 409 and a RETIRED entry still holds its code, because uq_appointment_types_tenant_code names deleted_at and not status.',
+  },
+  'apt.catalogue-appointment-type-update': {
+    files: ['tests/backend/p1-18-intake-catalogue-management.test.ts'],
+    required: ['success', 'denial', 'stale-version', 'audit'],
+    note: 'P1-27-INT-018. Renames only: code is frozen by tg_appointment_types_immutable and offering it is a 422 under the strict schema, because every appointment already booked means the code. A platform default answers an explained 403 rather than the zero-row UPDATE the RLS policy would otherwise produce.',
+  },
+  'apt.catalogue-appointment-type-status-set': {
+    files: ['tests/backend/p1-18-intake-catalogue-management.test.ts'],
+    required: ['success', 'denial', 'idempotency', 'stale-version', 'audit'],
+    note: 'P1-27-INT-018. The only removal affordance there is: app_runtime holds no DELETE grant and fk_appointments_type is ON DELETE RESTRICT. Bidirectional on purpose — a retired row keeps its code, so retire-only would burn it for the tenant permanently.',
+  },
+  'apt.catalogue-source-channel-create': {
+    files: ['tests/backend/p1-18-intake-catalogue-management.test.ts'],
+    required: ['success', 'denial', 'idempotency', 'audit'],
+    note: 'P1-27-INT-018. The optional sourceChannelId on booking had no options to offer. Same management contract as the appointment types.',
+  },
+  'apt.catalogue-source-channel-update': {
+    files: ['tests/backend/p1-18-intake-catalogue-management.test.ts'],
+    required: ['success', 'denial', 'stale-version', 'audit'],
+    note: 'P1-27-INT-018. Same rename contract; the code is frozen because appointments and walk-in references both record the channel they arrived through.',
+  },
+  'apt.catalogue-source-channel-status-set': {
+    files: ['tests/backend/p1-18-intake-catalogue-management.test.ts'],
+    required: ['success', 'denial', 'idempotency', 'stale-version', 'audit'],
+    note: 'P1-27-INT-018. Same lifecycle contract; two referencing FKs (apt.appointments, rec.walk_in_references), both ON DELETE RESTRICT.',
+  },
+  'apt.catalogue-cancellation-reason-create': {
+    files: ['tests/backend/p1-18-intake-catalogue-management.test.ts'],
+    required: ['success', 'denial', 'idempotency', 'audit'],
+    note: 'P1-27-INT-018. apt.appointment-cancel demands a mandatory catalogued cancellationReasonId with no free-text escape and nothing could add one, so no appointment could be cancelled at all. Same management contract.',
+  },
+  'apt.catalogue-cancellation-reason-update': {
+    files: ['tests/backend/p1-18-intake-catalogue-management.test.ts'],
+    required: ['success', 'denial', 'stale-version', 'audit'],
+    note: 'P1-27-INT-018. Same rename contract; the code is frozen because every cancelled appointment names the reason it was cancelled under.',
+  },
+  'apt.catalogue-cancellation-reason-status-set': {
+    files: ['tests/backend/p1-18-intake-catalogue-management.test.ts'],
+    required: ['success', 'denial', 'idempotency', 'stale-version', 'audit'],
+    note: 'P1-27-INT-018. Same lifecycle contract; cancelled appointments reference the row permanently, so withdrawal can only ever be a status.',
+  },
+  'rec.catalogue-visit-reason-create': {
+    files: ['tests/backend/p1-18-intake-catalogue-management.test.ts'],
+    required: ['success', 'denial', 'idempotency', 'audit'],
+    note: 'P1-27-INT-018. rec.visit_reasons existed with zero rows and zero operations of any kind. Same management contract.',
+  },
+  'rec.catalogue-visit-reason-update': {
+    files: ['tests/backend/p1-18-intake-catalogue-management.test.ts'],
+    required: ['success', 'denial', 'stale-version', 'audit'],
+    note: 'P1-27-INT-018. Same rename contract; rec.visit_reason_links records why the vehicle came in and means the code.',
+  },
+  'rec.catalogue-visit-reason-status-set': {
+    files: ['tests/backend/p1-18-intake-catalogue-management.test.ts'],
+    required: ['success', 'denial', 'idempotency', 'stale-version', 'audit'],
+    note: 'P1-27-INT-018. Same lifecycle contract; fk_visit_reason_links_reason is ON DELETE RESTRICT.',
+  },
+  'rec.catalogue-fuel-level-create': {
+    files: ['tests/backend/p1-18-intake-catalogue-management.test.ts'],
+    required: ['success', 'denial', 'idempotency', 'audit'],
+    note: 'P1-27-INT-018. Check-in accepts fuelLevelId and the picker had nothing to show. This is also the catalogue the end-to-end proof runs on: a level created through the API is then referenced by a REAL reception visit opened through rec.reception-create.',
+  },
+  'rec.catalogue-fuel-level-update': {
+    files: ['tests/backend/p1-18-intake-catalogue-management.test.ts'],
+    required: ['success', 'denial', 'stale-version', 'audit'],
+    note: 'P1-27-INT-018. Same rename contract; the level recorded at intake is part of the condition the vehicle arrived in and means the code.',
+  },
+  'rec.catalogue-fuel-level-status-set': {
+    files: ['tests/backend/p1-18-intake-catalogue-management.test.ts'],
+    required: ['success', 'denial', 'idempotency', 'stale-version', 'audit'],
+    note: 'P1-27-INT-018. Where the no-hard-delete claim is proven behaviourally rather than asserted: a DELETE from the runtime role is 42501, a DELETE of a row a live visit references is 23503 even as admin, and retiring leaves the visit still resolving it.',
+  },
+  'rec.catalogue-warning-light-code-create': {
+    files: ['tests/backend/p1-18-intake-catalogue-management.test.ts'],
+    required: ['success', 'denial', 'idempotency', 'audit'],
+    note: 'P1-27-INT-018 / RMC-11. The warning_light evidence kind requires a code id; PR #220 shipped the read and recorded that population remained a separately provisioned decision — this is the operation that makes it one an operator can actually take.',
+  },
+  'rec.catalogue-warning-light-code-update': {
+    files: ['tests/backend/p1-18-intake-catalogue-management.test.ts'],
+    required: ['success', 'denial', 'stale-version', 'audit'],
+    note: 'P1-27-INT-018. Same rename contract; pre-service condition evidence is permanent and names the code it observed.',
+  },
+  'rec.catalogue-warning-light-code-status-set': {
+    files: ['tests/backend/p1-18-intake-catalogue-management.test.ts'],
+    required: ['success', 'denial', 'idempotency', 'stale-version', 'audit'],
+    note: 'P1-27-INT-018. Same lifecycle contract; fk_warning_light_observations_code is ON DELETE RESTRICT, so recorded evidence keeps resolving its code forever.',
+  },
+  'rec.catalogue-refusal-reason-create': {
+    files: ['tests/backend/p1-18-intake-catalogue-management.test.ts'],
+    required: ['success', 'denial', 'idempotency', 'audit'],
+    note: 'P1-27-INT-018. The refusal record could not offer its optional catalogued reason. rec.reception-close-without-work states the same gap from the other side — it takes bounded free text precisely BECAUSE this catalogue had no management operation.',
+  },
+  'rec.catalogue-refusal-reason-update': {
+    files: ['tests/backend/p1-18-intake-catalogue-management.test.ts'],
+    required: ['success', 'denial', 'stale-version', 'audit'],
+    note: 'P1-27-INT-018. Same rename contract; every recorded refusal means the code it was recorded under.',
+  },
+  'rec.catalogue-refusal-reason-status-set': {
+    files: ['tests/backend/p1-18-intake-catalogue-management.test.ts'],
+    required: ['success', 'denial', 'idempotency', 'stale-version', 'audit'],
+    note: 'P1-27-INT-018. Same lifecycle contract; a refusal is preserved as its own fact and keeps naming its reason.',
+  },
+  'rec.reception-close-without-work': {
+    files: ['tests/backend/p1-18-reception-closure.test.ts'],
+    required: [
+      'success',
+      'denial',
+      'cross-tenant',
+      'isolation',
+      'audit',
+      'stale-version',
+      'idempotency',
+    ],
+    note: 'P1-27-INT-014, the INT-013 sibling. closed_without_work was unreachable (only approve and convert called setStatus), so an abandoned visit occupied its vehicle forever through uq_reception_visits_open_vehicle. The suite proves the release: after closing, a second check-in of the SAME vehicle succeeds, because the partial index predicate names only opened/inspecting/authorized/converted. The mandatory reason lands in the append-only status ledger via the app.status_reason GUC.',
+  },
+  'rec.reception-refuse': {
+    files: ['tests/backend/p1-18-reception-closure.test.ts'],
+    required: [
+      'success',
+      'denial',
+      'cross-tenant',
+      'isolation',
+      'audit',
+      'stale-version',
+      'idempotency',
+    ],
+    note: 'P1-27-INT-014. The refused terminal state had no route. Distinct from rec.reception-refusal, which appends a refusal evidence record and never changes receptionStatus; this ends the visit and releases the one-open-visit index, proven by re-receiving the same vehicle. Legal from any non-terminal state, exactly as the frozen graph says; terminal states are refused with the state named.',
   },
   // ========================================================================
   // Phase 1-19 (wo. / tech. / dia. / qms.) — Work Order, Diagnostics and
@@ -1004,6 +1377,64 @@ export const MANIFEST = {
     required: ['success', 'denial', 'cross-tenant', 'audit', 'outbox'],
     note: 'organization counterpart; proves the party-type discriminator comes from the path, so a company profile can never attach to an individual partner',
   },
+  // --- Reads: the nine operations the P1-16 remediation added. -------------
+  // Every customer sub-resource was write-only over HTTP and there was no route
+  // module for a customer at all, so nothing in the platform could return a
+  // customer or anything attached to one (`P1-27-INT-001`). The obligations
+  // below are what a read can get wrong invisibly: a tombstone resurrected, a
+  // stopped alert still shouting, a `date` shifted by a timezone, and a
+  // policy-shortened list presented as complete.
+  'crm.customer-read': {
+    files: ['tests/backend/p1-16-customer-read.test.ts'],
+    required: ['success', 'denial', 'cross-tenant'],
+    note: 'the only operation that returns a customer; publishes record_version and an ETag, which is the half of optimistic concurrency the write routes always demanded and nothing ever supplied; a merged customer answers the same 404 as an unknown id, which a plain tenant+id lookup would not (the row is redirected, not deleted)',
+  },
+  'crm.contact-list': {
+    files: ['tests/backend/p1-16-customer-read.test.ts'],
+    required: ['success', 'denial', 'cross-tenant'],
+    note: 'excludes soft-deleted contact points — a resurrected phone number is a call to the wrong person; keyset page walked across a boundary with no gap and no repeat, and a cursor from another list is refused ERR-PAG-001',
+  },
+  'crm.address-list': {
+    files: ['tests/backend/p1-16-customer-read.test.ts'],
+    required: ['success', 'denial', 'cross-tenant'],
+    note: 'excludes soft-deleted addresses; publishes line3, which the column carries and the POST cannot set (P1-16-A-01)',
+  },
+  'crm.preference-list': {
+    files: ['tests/backend/p1-16-customer-read.test.ts'],
+    required: ['success', 'denial', 'cross-tenant'],
+    note: 'publishes record_version per row, which is what a client puts in If-Match on the preferences PUT; before this read no operation published it, so every preference write was an undetectable last-writer-wins race',
+  },
+  'crm.consent-list': {
+    files: ['tests/backend/p1-16-customer-read.test.ts'],
+    required: ['success', 'denial', 'cross-tenant'],
+    note: 'the whole append-only history, not a collapsed current answer; seq stays a string because it is bigint and is the only field that orders two decisions sharing effective_at to the microsecond',
+  },
+  'crm.note-list': {
+    files: ['tests/backend/p1-16-customer-read.test.ts'],
+    required: ['success', 'denial', 'cross-tenant'],
+    note: 'reads shared.notes under the same (entity_type, entity_id) discriminator the write policy pins, so a note filed against another entity type never surfaces; sel_notes_tenant hides restricted notes SILENTLY, so the response carries includesRestricted — proven both ways, with and without iam.sensitive.view',
+  },
+  'crm.alert-list': {
+    files: ['tests/backend/p1-16-customer-read.test.ts'],
+    required: ['success', 'denial', 'cross-tenant'],
+    note: 'both stop conditions, because active and effective_to are independent and reading one shows a caution already turned off; effective_from is read as ::text and asserted under TZ=Asia/Riyadh, so a Date-based implementation fails instead of passing on a UTC agent',
+  },
+  'crm.tag-list': {
+    files: ['tests/backend/p1-16-customer-read.test.ts'],
+    required: ['success', 'denial', 'cross-tenant'],
+    note: 'joined to the segment for its label; excludes assignments to a soft-deleted segment and assignments whose validity has ended',
+  },
+  'crm.restriction-list': {
+    files: ['tests/backend/p1-16-customer-read.test.ts'],
+    required: ['success', 'denial', 'cross-tenant'],
+    note: 'requires only crm.customer.read, not the manage permission the POST carries: imposing a refusal to serve and knowing about one are different authorities, and a restriction nobody at the counter can see does not restrict anything',
+  },
+  // P1-27 read-surface remediation executed by P1-16, the tenth CRM read.
+  'crm.customer-vehicle-list': {
+    files: ['tests/backend/p1-16-customer-vehicle-list.test.ts'],
+    required: ['success', 'denial', 'cross-tenant'],
+    note: 'P1-27-INT-012. The Customer→Vehicle direction was write-only: crm.vehicle-link inserted into veh.vehicle_relationships and no read listed a customer’s vehicles (the vehicle-centric veh.vehicle-relationship-list has existed since P1-17). Partner-centric keyset page over the same single source of truth, joined to veh.vehicles under v.deleted_at IS NULL so a tombstoned vehicle yields the bare vehicleId and never a resurrected identity; its ordering key differs from the vehicle-centric list’s so the two lists refuse each other’s cursors (ERR-PAG-001) instead of producing a plausible wrong page; reads reuse crm.customer.read like the nine sibling reads, and the write-only principal proves reads are not implied by writes',
+  },
   // --- Profile components: the re-parenting and IDOR surface. --------------
   'crm.contact-add': {
     files: ['tests/backend/p1-16-customer-profile.test.ts'],
@@ -1052,6 +1483,11 @@ export const MANIFEST = {
     note: 'no_service blocks the customer in the same transaction with a status transition and block-history entry; a short reason is refused before anything is written',
   },
   // --- Identity: duplicates, merge, history, timeline, vehicle linkage. ----
+  'crm.duplicate-list': {
+    files: ['tests/backend/p1-16-17-duplicate-candidate-reads.test.ts'],
+    required: ['success', 'denial', 'cross-tenant'],
+    note: 'the review queue had no read at all (P1-27-INT-005) — a screen could only see its candidates by POSTing a scan, a privileged write that emits an audit record, so opening the queue wrote to the audit trail. Tenant-wide rather than nested under one of the pair’s two members; both partners joined for display names; no status filter returns dismissed candidates too, because a reviewer auditing past decisions needs them. That listing writes NO audit record is asserted as a DELTA across the call',
+  },
   'crm.duplicate-scan': {
     files: ['tests/backend/p1-16-customer-identity.test.ts'],
     required: ['success', 'denial', 'cross-tenant', 'audit'],
@@ -1431,6 +1867,22 @@ export const MANIFEST = {
     ],
     required: ['denial', 'outbox'],
     note: 'soft withdrawal; the row survives because the attachment fact is evidence',
+  },
+  // ---- P1-OD-025 evidence foundation ---------------------------------------
+  //
+  // Two READ operations minted with `shared.document.read`, the permission that
+  // did not exist before this decision: every document read demanded
+  // `shared.document.manage`, so looking at evidence required the authority to
+  // create it.
+  'shared.document-category-list': {
+    files: ['tests/backend/p1-15-evidence-foundation.test.ts'],
+    required: ['denial'],
+    note: 'the governed policy envelope a client must obey, including device_capture_timestamp_required — projected so a client can obey it, and enforced server-side so it cannot choose not to; another tenant’s category is proven invisible, and a caller without the read permission is refused',
+  },
+  'shared.document-version-read': {
+    files: ['tests/backend/p1-15-evidence-foundation.test.ts'],
+    required: ['denial', 'cross-tenant'],
+    note: 'the immutable version and its scan lifecycle; the projection is asserted as a KEY SET in both directions because the addition that matters is storage_key — a locator that travels outside RLS — and a field-by-field assertion cannot catch an addition. A tenant-B version and a version that never existed answer identically',
   },
   // ---- P1-23 reporting catalogue -------------------------------------------
   //
@@ -1936,13 +2388,19 @@ function literalAt(source, braceStart) {
 }
 
 /**
- * Scans every `defineOperation({...})` in `src`, returning a Map of
- * id -> facts. `surface` is derived from WHERE the registration lives: an
- * operation registered inside an App Router `route.ts` is reachable over HTTP
- * and is therefore public API surface; anything else is internal.
+ * Scans every `defineOperation({...})` in the API application's source tree,
+ * returning a Map of id -> facts. `surface` is derived from WHERE the
+ * registration lives: an operation registered inside an App Router `route.ts`
+ * is reachable over HTTP and is therefore public API surface; anything else is
+ * internal.
+ *
+ * `root` is the REPOSITORY root, not the application root — the returned
+ * `source` paths are repository-relative so the generated evidence means the
+ * same thing wherever it is read. The application sub-path comes from the path
+ * authority, never from a literal here.
  */
-export function scanRegisteredOperations(root) {
-  const src = join(root, 'src');
+export function scanRegisteredOperations(root = REPOSITORY_ROOT) {
+  const src = join(root, API_SRC_PATH);
   const operations = new Map();
   const walk = (dir) => {
     if (!existsSync(dir)) return;
@@ -1976,7 +2434,10 @@ export function scanRegisteredOperations(root) {
               public: literalTrue(literal, 'public'),
               idempotent: literalTrue(literal, 'idempotent'),
               versionGuarded: literalTrue(literal, 'versionGuarded'),
-              surface: /^src\/app\/api\/.*\/route\.tsx?$/.test(rel) ? 'public-api' : 'internal',
+              surface:
+                rel.startsWith(`${API_ROUTES_PATH}/`) && /\/route\.tsx?$/.test(rel)
+                  ? 'public-api'
+                  : 'internal',
               source: rel,
             });
           }
@@ -2390,7 +2851,7 @@ export function evaluateCoverage({ registered, manifest, readFile }) {
     // acceptance evidence quietly.
     if (isDerived && operation.surface === 'internal' && !entry.internalReason) {
       failures.push(
-        `${id}: registered outside src/app/api/**/route.ts but carries no manifest internalReason`
+        `${id}: registered outside ${API_ROUTES_PATH}/**/route.ts but carries no manifest internalReason`
       );
     }
 
@@ -2510,7 +2971,7 @@ async function writeMatrix(path, payload) {
 }
 
 async function runCli() {
-  const ROOT = process.cwd();
+  const ROOT = REPOSITORY_ROOT;
   const jsonOutput = process.argv.includes('--json');
   const readFile = (rel) => {
     // Read first, interpret the failure: absent is legitimate here, unreadable

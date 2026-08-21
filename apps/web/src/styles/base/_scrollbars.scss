@@ -1,0 +1,160 @@
+// =============================================================================
+// Subtle scrollbars
+// =============================================================================
+//
+// The Product Owner rejected the sidebar at Owner acceptance for exposing "a
+// permanently intrusive scrollbar". That is not a styling preference — it is
+// what Windows 11 does. The Owner's platform draws CLASSIC scrollbars: a ~15px
+// opaque channel with arrow buttons, always present while the content overflows.
+// The sidebar navigation always overflows on a laptop viewport, so the shell's
+// most prominent surface carried a permanent grey stripe down its inline end.
+//
+// ## What this does, and what it deliberately does not do
+//
+// The region stays a REAL scroll container. `overflow-y: auto` is untouched,
+// the wheel works, `Page Down` works, touch works, and the browser's own
+// scroll-into-view still reaches an item the keyboard focuses. Nothing here
+// simulates scrolling in JavaScript, because a simulated scroller is a scroller
+// that assistive technology and the browser's find-in-page both stop
+// understanding.
+//
+// All that changes is how the bar is PAINTED:
+//
+//   - narrow (`scrollbar-width: thin`, 6px on WebKit) instead of the OS default;
+//   - no track, no arrow buttons, so it reads as an overlay rather than a channel;
+//   - the thumb is transparent at rest and appears on interaction.
+//
+// ## When it appears, and why those three states
+//
+//   - **hover** over the region: covers wheel scrolling, because a wheel gesture
+//     on Windows requires the pointer to be over the region it scrolls. Stated
+//     plainly: there is no CSS `:scrolling` state, and inventing one in
+//     JavaScript would mean a scroll listener on a hot path for a cosmetic hint.
+//   - **`:focus-within`**: a keyboard user moving through the navigation gets the
+//     position indicator without touching a pointer.
+//   - **`hover: none`** (touch): permanently visible, faintly. A touch device has
+//     no hover state at all, so "appears on hover" would mean "never appears",
+//     and a touch user would lose the only cue about how far down the list they
+//     are.
+//
+// `forced-colors: active` (Windows High Contrast) opts out entirely and lets the
+// operating system paint its own scrollbar. A high-contrast user asked for the
+// system's rendering; quietly overriding it with a 6px hairline is the opposite
+// of what they configured.
+//
+// ## Colours
+//
+// Two variants, because the sidebar is navy and everything else is light. A
+// single neutral thumb would be invisible on one of them.
+
+/// The shared geometry. Applied by both variants.
+///
+/// ## Which of these two blocks actually runs, measured
+///
+/// Both are declared, and in the Owner's browser only the FIRST one applies.
+/// Chrome from 121 onward implements the standard `scrollbar-width` and
+/// `scrollbar-color`, and when either is set on an element it IGNORES that
+/// element's `::-webkit-scrollbar-*` rules entirely. So the 6px below is dead
+/// code in current Chrome; what it actually paints is `thin`.
+///
+/// Measured in installed Chrome on Windows 11, same page, same moment:
+///
+///   an unstyled scroll container   15px gutter
+///   this navigation                10px gutter, thumb `rgba(0,0,0,0)` at rest
+///   the same on hover              thumb `rgb(137,166,200)`
+///
+/// That is the Owner's defect gone — the bar is a third narrower and paints
+/// nothing until the region is used — but it is NOT 6px, and saying 6px would
+/// be quoting a rule the browser discarded. The `::-webkit-` block stays for
+/// Safari and for Chromium before 121, where it is the only form understood.
+@mixin subtle-scrollbar-geometry {
+  scrollbar-width: thin;
+
+  &::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background-color: transparent;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    border-radius: var(--radius-full);
+    transition: background-color var(--duration-base) var(--ease-standard);
+  }
+
+  // The OS arrow buttons are the loudest part of a classic scrollbar and they
+  // are pure decoration on a 6px bar.
+  &::-webkit-scrollbar-button {
+    display: none;
+  }
+
+  @media (forced-colors: active) {
+    // The user configured the system to paint controls its way. Honour it.
+    scrollbar-width: auto;
+
+    &::-webkit-scrollbar-thumb {
+      background-color: currentcolor;
+    }
+  }
+}
+
+/// The navy sidebar variant.
+.subtle-scrollbar-on-dark {
+  @include subtle-scrollbar-geometry;
+
+  scrollbar-color: transparent transparent;
+  transition: scrollbar-color var(--duration-base) var(--ease-standard);
+
+  &::-webkit-scrollbar-thumb {
+    background-color: transparent;
+  }
+
+  &:hover,
+  &:focus-within {
+    scrollbar-color: var(--color-sidebar-text-muted) transparent;
+
+    &::-webkit-scrollbar-thumb {
+      background-color: var(--color-sidebar-text-muted);
+    }
+  }
+
+  // No hover to wait for. Show it, quietly, all the time.
+  @media (hover: none) {
+    scrollbar-color: var(--color-sidebar-border) transparent;
+
+    &::-webkit-scrollbar-thumb {
+      background-color: var(--color-sidebar-border);
+    }
+  }
+}
+
+/// The light-surface variant, for any other bounded region that wants it.
+.subtle-scrollbar {
+  @include subtle-scrollbar-geometry;
+
+  scrollbar-color: transparent transparent;
+  transition: scrollbar-color var(--duration-base) var(--ease-standard);
+
+  &::-webkit-scrollbar-thumb {
+    background-color: transparent;
+  }
+
+  &:hover,
+  &:focus-within {
+    scrollbar-color: var(--color-border-strong) transparent;
+
+    &::-webkit-scrollbar-thumb {
+      background-color: var(--color-border-strong);
+    }
+  }
+
+  @media (hover: none) {
+    scrollbar-color: var(--color-border) transparent;
+
+    &::-webkit-scrollbar-thumb {
+      background-color: var(--color-border);
+    }
+  }
+}

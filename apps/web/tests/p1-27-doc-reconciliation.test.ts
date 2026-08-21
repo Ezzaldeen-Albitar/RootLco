@@ -1,0 +1,1569 @@
+import { readFileSync, readdirSync, existsSync } from 'node:fs';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { describe, expect, it } from 'vitest';
+
+/*
+ * The gate's own roots, imported rather than restated, so this file cannot go on
+ * describing a tree list the gate has moved past.
+ *
+ * Loaded the same way `p1-27-security.test.ts` loads it — a dynamic import of
+ * the `.mjs` by URL with an explicit shape — because the gate ships no type
+ * declaration and a static import resolves to `any`, which `typecheck:web`
+ * refuses under `noImplicitAny`.
+ */
+const GATE = (await import(
+  pathToFileURL(join(process.cwd(), '..', '..', 'scripts', 'ci', 'check-p1-27-frontend.mjs')).href
+)) as { readonly SCAN_ROOTS: readonly string[] };
+const SCAN_ROOTS = GATE.SCAN_ROOTS;
+
+/**
+ * The phase records are reconciled against the repository (`P1-27-DOC-001`,
+ * `P1-27-DOC-002`, `P1-27-QA-005`).
+ *
+ * ## The defect this exists for
+ *
+ * Every number in the P1-27 documents was DERIVED from the repository and then
+ * MAINTAINED BY HAND. The one figure a test rebuilt — the `scripts/ci` count in
+ * `documented-counts.test.ts` — is the one that self-corrected the moment it
+ * drifted. Everything hand-copied went stale silently: a pinned SHA sixty
+ * commits behind, test counts short by nearly two hundred, and a §9 table
+ * asserting eleven unreachable operations while the gate beside it proved four.
+ *
+ * A record that no test recomputes is a claim, not evidence. This file makes
+ * staleness a build failure.
+ *
+ * ## What it deliberately does NOT do
+ *
+ * It does not pin a commit SHA. A SHA recorded by hand is stale on the next
+ * commit, including the one that records it, so the documents state a BRANCH and
+ * the facts that outlive any single head. Where a document must name a head —
+ * the clean-room record — this file asserts the record EXISTS and names the
+ * branch, and the head is re-recorded at closure by the process that reads it.
+ */
+
+const REPO = join(process.cwd(), '..', '..');
+const PHASE = join(REPO, 'docs', 'phase-1', 'phase-1-27');
+
+function read(...parts: string[]): string {
+  return readFileSync(join(PHASE, ...parts), 'utf8');
+}
+
+/**
+ * The one canonical, greppable statement of where the phase stands.
+ *
+ * Every guarded document must carry this exact line. A document that merely
+ * MENTIONS a verdict somewhere in a narrative does not state a status —
+ * `evidence/task-traceability.md` once mentioned `OWNER ACCEPTANCE: FAIL` only
+ * in a past-tense sentence about a superseded event, which would have kept the
+ * guard green while the surrounding prose announced a Pass.
+ *
+ * LIFTED on the Owner's verdict, by this deliberate edit, on 2026-08-12: the
+ * Product Owner tested the running application after the final technical
+ * handoff and returned `OWNER ACCEPTANCE: PASS`, verbatim. The line therefore
+ * carries the verdict AND its date — a status line that could be flipped
+ * without a date would let a later claim inherit this acceptance, and refusing
+ * that is the guard's job now (see the transformed ban below).
+ */
+const RECORDED_VERDICT_DATE = '2026-08-12';
+const CURRENT_STATUS_LINE = `CURRENT PHASE STATUS: OWNER ACCEPTANCE: PASS (${RECORDED_VERDICT_DATE})`;
+
+/**
+ * One paragraph, whitespace-normalised.
+ *
+ * `B-02`. A banned sentence was on the page and the ban did not see it:
+ * `evidence/task-traceability.md` reads "are simply not\nbuilt" because Prettier
+ * wraps prose at 80 columns, and `.not.toContain('are simply not built')`
+ * compares against a string with a space where the file has a newline. The
+ * check was green and the sentence it forbade was published.
+ *
+ * The acceptance guard in this same file already learned this lesson — it judges
+ * PARAGRAPHS rather than lines, for exactly this reason — and the lesson had not
+ * reached the case forty lines above it.
+ */
+function normalised(text: string): string {
+  return text.replace(/\s+/g, ' ');
+}
+
+/**
+ * A symlink is refused rather than walked past (`QA005-12`).
+ *
+ * `Dirent.isDirectory()` is FALSE for a symlink pointing at a directory, so the
+ * two walkers below would have skipped the tree beyond one and every count they
+ * derive would have silently shrunk — in a file whose whole purpose is to stop
+ * counts drifting. The same policy is applied by
+ * `scripts/ci/check-p1-27-frontend.mjs` and
+ * `scripts/ci/build-p1-27-evidence-manifest.mjs`.
+ */
+function assertNotSymlink(entry: { isSymbolicLink?: () => boolean }, path: string): void {
+  if (typeof entry.isSymbolicLink === 'function' && entry.isSymbolicLink()) {
+    throw new Error(
+      `${path} is a symbolic link. These walkers refuse symlinks: a link is invisible to ` +
+        '`isDirectory()`, so every file beyond it would be missing from a derived count with ' +
+        'nothing to say so.'
+    );
+  }
+}
+
+describe('DOC-001 — §9 agrees with the gate that owns the question', () => {
+  const manifest = JSON.parse(
+    readFileSync(join(PHASE, 'canonical-write-reachability.json'), 'utf8')
+  ) as { operations: Record<string, { classification: string; decisionRef?: string }> };
+
+  const deliberatelyAbsent = Object.entries(manifest.operations)
+    .filter(([, v]) => v.classification !== 'REACHABLE')
+    .map(([k]) => k)
+    .sort();
+
+  it('names exactly the operations the manifest classifies as absent', () => {
+    // The document used to list ELEVEN operations as having no call site while
+    // the gate proved four. Two answers to one question, and the document is
+    // the one a human reads.
+    const traceability = read('evidence', 'task-traceability.md');
+    for (const id of deliberatelyAbsent) {
+      expect(traceability, `§9 does not name ${id}`).toContain(id);
+    }
+    expect(deliberatelyAbsent).toEqual([
+      'crm.customer-merge',
+      'crm.duplicate-scan',
+      'veh.vehicle-duplicate-scan',
+      'veh.vehicle-merge',
+    ]);
+  });
+
+  it('states the count the gate reports, not a different one', () => {
+    const traceability = read('evidence', 'task-traceability.md');
+    const reachable = Object.values(manifest.operations).filter(
+      (v) => v.classification === 'REACHABLE'
+    ).length;
+    expect(traceability).toContain(`REACHABLE = ${reachable}`);
+    expect(traceability).toContain(`DELIBERATELY_ABSENT = ${deliberatelyAbsent.length}`);
+  });
+
+  it('no longer ASSERTS that seven operations are unbuilt (B-02)', () => {
+    /*
+     * The exact sentence that was true when written and false when read — and
+     * the ban that could not see it.
+     *
+     * `.not.toContain('are simply not built')` was green while
+     * `evidence/task-traceability.md:321` carried "are simply not\nbuilt": one
+     * Prettier line wrap between "not" and "built" defeated a substring check.
+     * The banned sentence was on the page for the whole of the remediation that
+     * added the ban.
+     *
+     * Whitespace-normalised now, which is what the acceptance guard further down
+     * this file already does — the technique existed in the same file and had
+     * not reached here.
+     *
+     * The document is REQUIRED to keep discussing the retracted claim (§16
+     * preserves superseded statements), so the ASSERTION is what is banned, not
+     * the words: the sentence survives under a heading that quotes and corrects
+     * it. Only text outside a quotation is judged.
+     */
+    const traceability = read('evidence', 'task-traceability.md');
+    const asserted = traceability
+      .split('\n')
+      .filter((line) => !line.trimStart().startsWith('>'))
+      .join('\n');
+
+    // Paragraph scope: a claim wrapped across three lines is still one claim.
+    const claims = normalised(asserted)
+      .split(/(?<=\.)\s/)
+      .filter(
+        (sentence) =>
+          /are simply not built/i.test(sentence) &&
+          // The correction itself names the sentence in order to retract it.
+          !/(said|read|was|previously|earlier|version|retract|no longer|false)/i.test(sentence)
+      );
+    expect(
+      claims,
+      'the document asserts that operations are unbuilt; the gate says otherwise'
+    ).toEqual([]);
+  });
+
+  it('B-02: the ban can see a wrapped sentence, which is the whole defect', () => {
+    /*
+     * Without this, the case above is a check that has never been shown to fire.
+     * The first form of it could not fail on the very text it was written for.
+     */
+    const wrapped = 'The other seven are simply not\nbuilt, and that is that.';
+    expect(wrapped.includes('are simply not built'), 'the original check').toBe(false);
+    expect(normalised(wrapped).includes('are simply not built'), 'the fixed check').toBe(true);
+  });
+
+  it('resolves every call site the closed-by-D1 sub-table cites', () => {
+    /*
+     * The sub-table names, for each operation that had no call site at the audit,
+     * the `file:line` that has one now. Nothing checked those cells, and three of
+     * seven were wrong: the ownership and plate rows were TRANSPOSED (`:155` is
+     * the `/plates` line inside `assignPlateAction`, `:212` is the `/ownerships`
+     * line inside `transferOwnershipAction`) and `crm.vehicle-link` pointed at a
+     * sentence inside a docblock rather than at the `client.send`.
+     *
+     * A false citation in an evidence table is worse than none: it looks like
+     * proof. Each cell is resolved here — the file must exist, the line must
+     * exist, and the line must carry the operation's own path segment.
+     */
+    const traceability = read('evidence', 'task-traceability.md');
+    const SRC = join(REPO, 'apps', 'web', 'src', 'features');
+
+    const CITED: readonly { op: string; file: string; needle: string }[] = [
+      { op: 'crm.contact-add', file: 'crm/customers/profile-actions.ts', needle: '/contacts' },
+      { op: 'crm.address-add', file: 'crm/customers/profile-actions.ts', needle: '/addresses' },
+      {
+        op: 'crm.customer-status-set',
+        file: 'crm/customers/governance-actions.ts',
+        needle: '/status',
+      },
+      { op: 'crm.vehicle-link', file: 'vehicles/relations-api.ts', needle: '/vehicles' },
+      {
+        op: 'veh.vehicle-ownership-transfer',
+        file: 'vehicles/history-api.ts',
+        needle: '/ownerships',
+      },
+      { op: 'veh.vehicle-plate-assign', file: 'vehicles/history-api.ts', needle: '/plates' },
+      {
+        op: 'veh.vehicle-odometer-record',
+        file: 'vehicles/history-api.ts',
+        needle: '/odometer-readings',
+      },
+    ];
+
+    for (const { op, file, needle } of CITED) {
+      const row = traceability
+        .split('\n')
+        .find((line) => line.includes(`\`${op}\``) && line.includes('.ts:'));
+      expect(row, `§9 has no call-site row for ${op}`).toBeTruthy();
+
+      const cite = /`([\w./-]+\.ts):(\d+)`/.exec(row ?? '');
+      expect(cite, `${op}'s row carries no file:line citation`).toBeTruthy();
+
+      const basename = cite?.[1] ?? '';
+      const lineNo = Number(cite?.[2] ?? 0);
+      expect(file.endsWith(basename), `${op} cites ${basename}, expected ${file}`).toBe(true);
+
+      const lines = readFileSync(join(SRC, file), 'utf8').split('\n');
+      expect(lineNo, `${op} cites line ${lineNo}, past the end of ${basename}`).toBeLessThanOrEqual(
+        lines.length
+      );
+      expect(
+        lines[lineNo - 1],
+        `${basename}:${lineNo} does not carry ${needle} — the citation for ${op} is wrong`
+      ).toContain(needle);
+    }
+  });
+
+  it('gives every absent operation a decision reference', () => {
+    // The gate refuses a blank one; this refuses a missing one in the record.
+    for (const id of deliberatelyAbsent) {
+      const entry = manifest.operations[id];
+      expect(entry?.decisionRef, `${id} has no decision reference`).toBeTruthy();
+    }
+  });
+});
+
+describe('DOC-002 — the change log the task names actually exists', () => {
+  it('ships an evidence/change-log.md that is about THIS phase (B-04)', () => {
+    /*
+     * `DOC-002` is "Operator / developer guidance AND change-log update".
+     * `phase-1-19`, `-20` and `-21` each ship `evidence/change-log.md`, and two
+     * inventory scripts bind the identically-titled task to that path.
+     *
+     * P1-27 shipped no such artefact and no document recorded a decision to drop
+     * it — half a named canonical deliverable, covered by a register cell that
+     * cited an automated proof which did not exist.
+     *
+     * `existsSync` alone was that proof, and it is satisfied by an empty file.
+     * `B-04`: this case asserted a path, not a document. It now asserts that the
+     * file is a change log FOR P1-27 — it names the phase, it has content, and
+     * it records changes rather than merely existing.
+     */
+    const path = join(PHASE, 'evidence', 'change-log.md');
+    expect(existsSync(path), 'DOC-002 names an artefact this phase does not ship').toBe(true);
+    const log = read('evidence', 'change-log.md');
+    expect(log.length, 'the change log is a stub').toBeGreaterThan(1000);
+    expect(log, 'the change log does not say which phase it belongs to').toMatch(/P1-27|1-27/);
+    // A change log records commits. A document with no commit reference is a
+    // narrative, and the register cell would still read as satisfied.
+    const commits = [...log.matchAll(/`[0-9a-f]{7,40}`/g)].length;
+    expect(commits, 'the change log references no commit at all').toBeGreaterThan(3);
+  });
+
+  it('follows the convention its sibling phases established, in substance (B-04)', () => {
+    /*
+     * `B-04`. This case asserted something about phases 1-19, 1-20 and 1-21 and
+     * nothing whatsoever about P1-27 — it would have passed with no P1-27 change
+     * log at all, and its title claims otherwise.
+     *
+     * The convention argument is worth keeping: if the siblings ever stop
+     * shipping one, the "every sibling does this" reasoning has to be reopened
+     * rather than silently inherited. So both halves are asserted, and the P1-27
+     * half is the one the title is about.
+     */
+    const siblings = ['phase-1-19', 'phase-1-20', 'phase-1-21'].filter((p) =>
+      existsSync(join(REPO, 'docs', 'phase-1', p, 'evidence', 'change-log.md'))
+    );
+    expect(siblings.length, 'no sibling phase ships a change log any more').toBeGreaterThan(0);
+    // The half that was missing: P1-27 is held to the convention it cites.
+    expect(
+      existsSync(join(PHASE, 'evidence', 'change-log.md')),
+      `${siblings.length} sibling phase(s) ship a change log and P1-27 does not`
+    ).toBe(true);
+  });
+
+  it('names every task the adjudication records as FIXED on this branch', () => {
+    /*
+     * DERIVED from `final-task-adjudication.md`, not from a hand-written list.
+     *
+     * This case used to assert four hard-coded strings — `SEC-001`, `FE-019`,
+     * `FE-020` and `OWNER ACCEPTANCE: FAIL` — none of which is a wave heading,
+     * while the change log claimed the test "fails if this file stops naming the
+     * waves below". Every wave section could have been deleted and it would have
+     * stayed green, and `FE-003` — a live gate hole, adjudicated FIXED on this
+     * branch — was missing from the log entirely.
+     *
+     * A change log is the phase's answer to "what did you change". Deriving the
+     * row set from the adjudication makes an omission a build failure, which is
+     * the only thing that would have caught the one that happened.
+     */
+    const adjudication = read('final-task-adjudication.md');
+    const fixed = [...adjudication.matchAll(/\|\s*`([A-Z]+-\d+)`\s*\|[^|]*\|\s*FIXED\b/g)].map(
+      (m) => m[1] as string
+    );
+
+    expect(fixed.length, 'no FIXED rows were read from the adjudication').toBeGreaterThan(20);
+
+    const log = read('evidence', 'change-log.md');
+    const missing = [...new Set(fixed)].filter((task) => !log.includes(task));
+    expect(
+      missing,
+      `the change log does not name these FIXED tasks:\n  ${missing.join('\n  ')}`
+    ).toEqual([]);
+  });
+
+  it('states the phase status in the log itself, as a status and not a mention (B-04)', () => {
+    /*
+     * `B-04`. `toContain('OWNER ACCEPTANCE: FAIL')` is satisfied by a past-tense
+     * narrative sentence — which is the precise hole the acceptance guard below
+     * was rewritten to close, in `evidence/task-traceability.md`, where the only
+     * occurrence of the string was a sentence about a superseded event. The same
+     * weak form survived here.
+     *
+     * The canonical line is required instead: one exact, greppable statement of
+     * where the phase stands now.
+     */
+    const log = read('evidence', 'change-log.md');
+    expect(log, 'the change log states no CURRENT status line').toContain(CURRENT_STATUS_LINE);
+  });
+});
+
+/**
+ * The Owner-acceptance guard — TRANSFORMED at the acceptance, not deleted.
+ *
+ * Separated from the task-count guard on purpose, because conflating them is
+ * what broke it. "Are the tasks resolved?" is derived from a table and changes
+ * as work lands. "Has the Owner accepted the phase?" is a human act, is not
+ * derivable from anything in this repository, and does not become true because
+ * a count reached its maximum.
+ *
+ * For the whole remediation this describe banned every spelling of an Owner
+ * acceptance, UNCONDITIONALLY, and its docblock said lifting it requires the
+ * Owner's verdict and a deliberate edit here. Both happened: on 2026-08-12,
+ * after the final technical handoff left the application running against
+ * protected `develop` content, the Product Owner returned `OWNER ACCEPTANCE:
+ * PASS`, verbatim. This edit is the deliberate lift the docblock promised — a
+ * reviewable diff, made against the recorded verdict in `closure-record.md`
+ * and `evidence/lifecycle-ledger.json`, not a silent arithmetic side effect.
+ *
+ * The guard's job TRANSFORMS rather than ends, because each half of the old ban
+ * resolves differently:
+ *
+ *   - a claim of acceptance is now TRUE — so the guard requires any such claim
+ *     to match the RECORDED verdict and date. An acceptance claim carrying a
+ *     different date, or none, is a claim to some OTHER acceptance nobody gave,
+ *     and is refused exactly as the old ban refused the first spelling;
+ *   - a claim of promotion to `main`, of P1-28 having begun, or of a `P1-G27`
+ *     gate-record Go remains FALSE — so those stay banned outright. The
+ *     closure did not promote anything and started nothing.
+ */
+describe('no phase document may claim more than the acceptance the Owner gave', () => {
+  const GUARDED = [
+    'final-task-adjudication.md',
+    'evidence/task-traceability.md',
+    'evidence/change-log.md',
+    'adversarial-round-five.md',
+    'clean-room-evidence.md',
+    'ci-evidence.md',
+  ];
+
+  /**
+   * The claims that are STILL false after the acceptance, in the forms this
+   * repository actually writes. Whitespace-insensitive and case-insensitive:
+   * `PASS = 42` evades a substring ban on `PASS=42`, and the document's own
+   * fenced blocks are spaced.
+   *
+   * The banner spellings of closure stay banned even though the phase is now
+   * closed: the recorded form is the canonical status line plus
+   * `closure-record.md`, and a second spelling of the same fact is how two
+   * statements of one status drift apart — the defect half this file exists
+   * for.
+   */
+  const OVERSTATEMENTS: readonly { pattern: RegExp; what: string }[] = [
+    { pattern: /\bpromoted\s+to\s+`?main`?\b/i, what: 'a promotion to main' },
+    { pattern: /\bP1-27\s+(?:is|was|has\s+been)\s+promoted\b/i, what: 'a promotion' },
+    {
+      pattern: /\bP1-28\s+(?:has\s+)?(?:begun|began|started|starts|is\s+under\s*way)\b/i,
+      what: 'a P1-28 start',
+    },
+    { pattern: /PHASE\s+1-27\s+OFFICIALLY\s+CLOSED/i, what: 'official closure' },
+    { pattern: /P1-27\s+CANONICAL\s+SCOPE\s+VERIFIED/i, what: 'canonical scope verified' },
+    { pattern: /P1-27\s+CLOSED(\s+GO)?\b/i, what: "this repository's own closure banner" },
+    { pattern: /PHASE\s+1-27\s+CLOSED/i, what: 'phase closure' },
+    { pattern: /\bP1-G27\b.*\bGO\b/i, what: 'a gate-record Go' },
+    { pattern: /\b100\s*\/\s*100\s+VERIFIED/i, what: 'a verification banner' },
+  ];
+
+  /**
+   * An acceptance claim, and the ONE definition of when it is refused.
+   *
+   * Shared by the sweep over the live documents and by the driver beneath —
+   * the `B-01` arrangement — so the sweep cannot be weakened while the driver
+   * goes on passing against a private copy. A paragraph claiming
+   * `OWNER ACCEPTANCE: PASS` without the recorded date is claiming an
+   * acceptance nobody gave; the one the Owner gave has a date, and the record
+   * states it.
+   */
+  const ACCEPTANCE_CLAIM = /OWNER\s+ACCEPTANCE:\s*PASS/i;
+  const claimsUnrecordedAcceptance = (paragraph: string) =>
+    ACCEPTANCE_CLAIM.test(paragraph) && !paragraph.includes(RECORDED_VERDICT_DATE);
+
+  /**
+   * A line states the RULE or the HISTORY rather than making the claim.
+   *
+   * Both are legitimate and both must stay: the rule sentence ("closes only when
+   * the Owner returns `OWNER ACCEPTANCE: PASS`") is what keeps the phase open,
+   * and the history is required to be preserved rather than deleted. A guard
+   * that cannot tell a claim from its own denial would force the record to erase
+   * itself to stay green — which happened twice already.
+   */
+  const RULE_OR_HISTORY =
+    /^\s*>|\bonly when\b|\bonly after\b|\buntil\b|\bawait|\bpending\b|\brequires\b|\breturns?\b|\bwould\b|\bmust not\b|\bmay not\b|\bcannot\b|\bnot\b.{0,40}\bclaim|\bpreviously\b|\bused to\b|\bwas written\b|\bsuperseded\b|\bretract|\bwithdraw|\bhistorical\b|\bbanned\b|\bforbidden\b|\bnever\b/i;
+
+  it('states the CURRENT status in an unambiguous, greppable line', () => {
+    /*
+     * Presence of the string is not enough, and that was a real hole: in
+     * `evidence/task-traceability.md` the only occurrence of
+     * `OWNER ACCEPTANCE: FAIL` was a past-tense narrative about a superseded
+     * event — "the Product Owner then tested the merged application by hand and
+     * returned `OWNER ACCEPTANCE: FAIL`". A reader could have changed the
+     * surrounding text to announce a Pass and the guard would have stayed green
+     * on that historical sentence.
+     *
+     * One exact canonical line, in every guarded document, is the fix.
+     */
+    for (const doc of GUARDED) {
+      const text = read(...doc.split('/'));
+      expect(
+        text,
+        `${doc} carries no canonical current-status line; a narrative mention of the string is not a status`
+      ).toContain(CURRENT_STATUS_LINE);
+    }
+  });
+
+  it('makes no overstated claim anywhere, and no acceptance claim off the record', () => {
+    /*
+     * PARAGRAPH scope, not line scope.
+     *
+     * A line-scoped version failed on the rule sentence itself, because Prettier
+     * wraps prose: "P1-27 closes only when the Product Owner … explicitly returns
+     * `OWNER ACCEPTANCE: PASS`" puts the qualifier two lines above the phrase.
+     * Judging a wrapped sentence by one of its lines reads half a clause.
+     *
+     * The residual risk is stated rather than hidden: a paragraph containing both
+     * a rule and a fresh claim is exempted by the rule. Paragraphs here are short,
+     * and the alternative — sentence splitting over Markdown with inline code,
+     * tables and abbreviations — has more ways to be wrong than this has.
+     */
+    const violations: string[] = [];
+    for (const doc of GUARDED) {
+      const text = read(...doc.split('/'));
+      let line = 1;
+      for (const paragraph of text.split(/\n\s*\n/)) {
+        const start = line;
+        line += paragraph.split('\n').length + 1;
+        if (RULE_OR_HISTORY.test(paragraph)) continue;
+        for (const claim of OVERSTATEMENTS) {
+          const hit = claim.pattern.exec(paragraph);
+          if (hit) violations.push(`${doc}:~${start} asserts ${claim.what} — "${hit[0]}"`);
+        }
+        if (claimsUnrecordedAcceptance(paragraph)) {
+          violations.push(
+            `${doc}:~${start} claims an Owner acceptance without the recorded date ` +
+              `${RECORDED_VERDICT_DATE} — the only acceptance on record carries it`
+          );
+        }
+      }
+    }
+    expect(violations, 'a phase document claims more than the acceptance the Owner gave').toEqual(
+      []
+    );
+  });
+
+  it('is not vacuous — it can see the strings it bans', () => {
+    /*
+     * Without this the case above passes over documents it failed to read, and
+     * over a `RULE_OR_HISTORY` pattern so wide that every line is exempt. Both
+     * were live risks: the exemption matches common words on purpose.
+     */
+    for (const doc of GUARDED) {
+      expect(read(...doc.split('/')).length, `${doc} is empty`).toBeGreaterThan(200);
+    }
+    const sample = 'The gate record reads P1-27 CLOSED GO and the phase is done.';
+    expect(RULE_OR_HISTORY.test(sample), 'the exemption swallows a plain claim').toBe(false);
+    expect(OVERSTATEMENTS.some((c) => c.pattern.test(sample))).toBe(true);
+
+    const promoted = 'P1-27 was promoted to `main` this morning.';
+    expect(RULE_OR_HISTORY.test(promoted), 'the exemption swallows a promotion claim').toBe(false);
+    expect(
+      OVERSTATEMENTS.some((c) => c.pattern.test(promoted)),
+      'a promotion claim must still be refused after the acceptance'
+    ).toBe(true);
+
+    const p28 = 'P1-28 has begun and the first tasks are assigned.';
+    expect(
+      OVERSTATEMENTS.some((c) => c.pattern.test(p28)),
+      'a P1-28 start claim'
+    ).toBe(true);
+    const p28Denied = 'P1-28 has not begun.';
+    expect(
+      OVERSTATEMENTS.some((c) => c.pattern.test(p28Denied)),
+      'the denial the records actually write must stay permitted'
+    ).toBe(false);
+
+    const ruled = 'The phase closes only when the Owner returns OWNER ACCEPTANCE: PASS.';
+    expect(RULE_OR_HISTORY.test(ruled), 'the rule sentence must stay permitted').toBe(true);
+  });
+
+  it('refuses an acceptance claim that does not match the recorded verdict/date', () => {
+    /*
+     * Drives `claimsUnrecordedAcceptance` ITSELF — the same predicate the sweep
+     * filters on, not a copy — so weakening the sweep fails here (`B-01`).
+     */
+    expect(
+      claimsUnrecordedAcceptance('OWNER ACCEPTANCE: PASS was returned on 2026-08-06.'),
+      'a PASS claim carrying the WRONG date is a claim to an acceptance nobody gave'
+    ).toBe(true);
+    expect(
+      claimsUnrecordedAcceptance('The Owner returned OWNER ACCEPTANCE: PASS.'),
+      'a PASS claim carrying NO date inherits nothing'
+    ).toBe(true);
+    expect(
+      claimsUnrecordedAcceptance('owner  acceptance:pass, spaced and cased'),
+      'the spaced and cased spellings are still read as the claim'
+    ).toBe(true);
+    expect(
+      claimsUnrecordedAcceptance(CURRENT_STATUS_LINE),
+      'the recorded form itself must pass'
+    ).toBe(false);
+    expect(
+      claimsUnrecordedAcceptance('The register totals moved to 42 of 42.'),
+      'a sentence with no acceptance claim is not read as one'
+    ).toBe(false);
+  });
+});
+
+describe('QA-005 — the evidence records point at this branch', () => {
+  it('records a clean-room result that says something about this branch (A-05)', () => {
+    /*
+     * `A-05`, NOT `B-04`, which is what this block used to say.
+     *
+     * `A-05` is the finding against THIS describe — "the evidence records point
+     * at this branch" was a title whose only case was an existence check — and
+     * this case is its remedy. `B-04` is the separate finding that four cases in
+     * this file are existence-only; its four are the three in `DOC-002` above
+     * and this one, so the two findings overlap here and the label was taken
+     * from the wrong one. A remedy filed under a finding it does not close is
+     * how a register comes to show an open row with no work against it and a
+     * closed row with work it never received.
+     *
+     * `existsSync` is satisfied by an empty file, and the task this describe
+     * stands for — `QA-005` — is about whether the recorded evidence describes
+     * the tree under review. A path is not a record.
+     *
+     * The strong form of this property lives in
+     * `tests/ci/p1-27-evidence-manifest.test.ts`, which drives the two honest
+     * states of the document (superseded, or naming a full candidate head). What
+     * belongs HERE is the part that case cannot see: that the file a reader of
+     * the phase directory opens is a clean-room record for P1-27, not a stub.
+     */
+    const path = join(PHASE, 'clean-room-evidence.md');
+    expect(existsSync(path), 'QA-005 names a record this phase does not ship').toBe(true);
+    const record = read('clean-room-evidence.md');
+    expect(record.length, 'the clean-room record is a stub').toBeGreaterThan(1000);
+    expect(record, 'the record names no candidate-head field').toContain('CODE_CANDIDATE_SHA');
+    expect(record, 'the record does not state the current phase status').toContain(
+      CURRENT_STATUS_LINE
+    );
+  });
+
+  it('asserts no closure while the adjudication still lists open tasks', () => {
+    /*
+     * The rule the phase brief states plainly: documentation must not claim
+     * completion until the live derived audit reaches it.
+     *
+     * Checked against CLOSURE PHRASES, not against the bare string "42/42".
+     * The first version of this case matched the number and failed on
+     * `final-task-adjudication.md`'s own sentence "P1-27 is not at 42/42 and this
+     * document does not claim it is" — a denial, and on the change log's
+     * progression table, which records the original claim because §16 requires
+     * the mistakes to be preserved. A rule that cannot tell an assertion from a
+     * denial would force the record to delete its own history to stay green.
+     *
+     * Driven from the adjudication table, so the claim and the count cannot
+     * disagree — which is how "42/42" came to be written the first time.
+     */
+    const adjudication = read('final-task-adjudication.md');
+    const open = (adjudication.match(/\|\s*OPEN\b/g) ?? []).length;
+    const blocked = (adjudication.match(/\|\s*BLOCKED\b/g) ?? []).length;
+
+    /*
+     * Only phrases that can ONLY be an assertion.
+     *
+     * `OWNER ACCEPTANCE: PASS` was in this list and had to come out: it appears
+     * legitimately in the RULE — "P1-27 closes only when the Product Owner
+     * manually tests the real application and explicitly returns
+     * `OWNER ACCEPTANCE: PASS`" — which is the sentence that keeps the phase
+     * open. Two versions of this case in a row could not tell a claim from its
+     * own denial; the discriminator has to be a string with no honest use until
+     * closure.
+     */
+    const CLOSURE_BANNERS = [
+      'P1-27 CANONICAL SCOPE VERIFIED',
+      'PHASE 1-27 OFFICIALLY CLOSED',
+      'PASS=42',
+      'FAIL=0',
+    ];
+
+    const DOCS = [
+      'final-task-adjudication.md',
+      'evidence/task-traceability.md',
+      'evidence/change-log.md',
+    ];
+
+    for (const doc of DOCS) {
+      const text = read(...doc.split('/'));
+
+      /*
+       * The task-count banners are forbidden only while rows contradict them.
+       * `PASS=42` is a lie with an OPEN row on the page and a fact without one,
+       * so the rule has to read the rows rather than ban the string outright.
+       */
+      if (open + blocked > 0) {
+        for (const phrase of CLOSURE_BANNERS) {
+          expect(
+            text,
+            `${doc} asserts "${phrase}" while ${open} open and ${blocked} blocked task(s) remain`
+          ).not.toContain(phrase);
+        }
+      }
+
+      /*
+       * The Owner status is required UNCONDITIONALLY, and that is the point of
+       * this edit.
+       *
+       * It used to sit inside the `open + blocked > 0` branch, which made the
+       * whole guard evaporate at exactly the moment it mattered: the commit that
+       * closes the last task takes the count to zero, and from then on these
+       * records could have stopped saying the phase was unaccepted without a
+       * single test noticing. A guard that switches itself off on success is the
+       * defect class this phase has spent four rounds removing — this one was in
+       * a file written to catch it.
+       *
+       * Forty-two tasks passing is a statement about tasks. Acceptance is the
+       * Owner's, is not derivable from any count, and cannot be inferred from
+       * silence. The Owner GAVE it, verbatim, on 2026-08-12 — so the status
+       * these records must state unconditionally is now the recorded PASS line
+       * with its date, and nothing weaker.
+       */
+      expect(text, `${doc} does not state the current Owner status`).toContain(CURRENT_STATUS_LINE);
+
+      // Phase-closure banner spellings stay refused even now that the Owner
+      // Pass is on record: the recorded form is the canonical status line plus
+      // `closure-record.md`, and a second spelling of one status is how two
+      // statements of one fact drift apart.
+      for (const phrase of ['PHASE 1-27 OFFICIALLY CLOSED', 'P1-27 CANONICAL SCOPE VERIFIED']) {
+        expect(
+          text,
+          `${doc} restates the closure in a banner the record does not use`
+        ).not.toContain(phrase);
+      }
+    }
+
+    /*
+     * Vacuity check. This counts TASK ROWS, not unresolved ones — the earlier
+     * version asserted `open + blocked > 0`, which conflated "the table is
+     * readable" with "something is still open" and would have gone red on the
+     * commit that closed the final task.
+     */
+    const rows = (adjudication.match(/^\|\s*`[A-Z]+-\d{3}`\s*\|/gm) ?? []).length;
+    expect(rows, 'no task rows were found in the adjudication').toBeGreaterThanOrEqual(30);
+  });
+
+  it('preserves the audit progression rather than erasing it', () => {
+    // The evidence chain has to remain understandable: an initial 42/42 claim, an
+    // adversarial audit that corrected it, and the remediation that followed.
+    // Deleting the mistakes would leave a record nobody can check.
+    const adjudication = read('final-task-adjudication.md');
+    expect(adjudication).toContain('CANONICAL_TASK_PASS = 20');
+    expect(adjudication).toContain('PASS_REFUTED');
+    expect(adjudication).toMatch(/TRUE_PASS\s*=\s*9/);
+  });
+});
+
+describe('the adjudication summary is DERIVED from its own rows', () => {
+  /*
+   * The defect this exists to stop, found by an adversarial recheck: the
+   * document's closing prose read "Twenty-one remain open" while its own Summary
+   * table listed exactly two non-closed rows. The table was maintained as work
+   * landed; the sentence beneath it was not, and nothing in the repository could
+   * tell them apart.
+   *
+   * So the prose may not state a total that the rows do not support. Note the
+   * direction: this does not pin a NUMBER — pinning one would need editing every
+   * time a task closes, which is the same hand-maintenance defect wearing a test
+   * as a disguise. It pins the RELATIONSHIP.
+   */
+  const STATUS = /^\|\s*`[A-Z]+-\d{3}`\s*\|[^|]*\|\s*([A-Z][A-Za-z ()`0-9]*?)\s*\|/;
+
+  /**
+   * Written-out numbers, because that is how the offending sentence was written
+   * — "Twenty-one remain open", not "21". A digit-only check would have missed
+   * the very defect that prompted this.
+   *
+   * `none` and `zero` are here deliberately: the moment the last task closes is
+   * exactly when a premature claim of completion becomes both likely and wrong,
+   * and a table of number words that stops at one is a check with a blind spot
+   * at the only value that matters (`B-03`).
+   */
+  const WORDS: Record<string, number> = {
+    none: 0,
+    zero: 0,
+    one: 1,
+    two: 2,
+    three: 3,
+    four: 4,
+    five: 5,
+    six: 6,
+    seven: 7,
+    eight: 8,
+    nine: 9,
+    ten: 10,
+    eleven: 11,
+    twelve: 12,
+    thirteen: 13,
+    fourteen: 14,
+    fifteen: 15,
+    sixteen: 16,
+    seventeen: 17,
+    eighteen: 18,
+    nineteen: 19,
+    twenty: 20,
+    'twenty-one': 21,
+    'twenty-two': 22,
+    'twenty-three': 23,
+    'thirty-three': 33,
+  };
+
+  /**
+   * Every claim the prose makes about how many tasks are unresolved (`B-03`).
+   *
+   * The original matched `<word-or-number> remain open` and nothing else — one
+   * five-word shape. With the document's blockquoted history excluded it
+   * returned NOTHING, so the comparison beneath it ran over an empty list and
+   * agreed with the table by construction.
+   *
+   * These are the forms this record actually uses. Returned as raw tokens so the
+   * extractor can be exercised on its own, which is what makes the emptiness
+   * above detectable rather than indistinguishable from agreement.
+   */
+  const COUNTED = String.raw`(?:tasks?|items?|findings?|entries|ids?)`;
+
+  /**
+   * Two shapes, both requiring the sentence to be ABOUT a countable set.
+   *
+   * A first attempt allowed the verb to be optional, and immediately matched
+   * "20 of 20 required checks with 0 failed … and **0 open** CodeQL alerts" —
+   * a true statement about security alerts read as a false claim about tasks.
+   * A widened rule that invents findings is not an improvement on a narrow rule
+   * that finds none, so the widening is bounded: either an explicit verb
+   * (`remain`, `are`, `is`) or an explicit noun (`tasks`, `items`, `findings`).
+   */
+  const OPEN_TOTAL_VERB = new RegExp(
+    String.raw`\b([A-Za-z-]+|\d+)\s+(?:${COUNTED}\s+)?(?:remains?|are|is)\s+(?:still\s+)?(?:open|unresolved)\b`,
+    'gi'
+  );
+  const OPEN_TOTAL_NOUN = new RegExp(
+    String.raw`\b([A-Za-z-]+|\d+)\s+(?:still\s+)?(?:open|unresolved)\s+${COUNTED}\b`,
+    'gi'
+  );
+
+  function openTotalClaims(text: string): string[] {
+    return (
+      [...text.matchAll(OPEN_TOTAL_VERB), ...text.matchAll(OPEN_TOTAL_NOUN)]
+        .map((m) => (m[1] ?? '').toLowerCase())
+        // `the register is open` is not a count. Only number-shaped tokens are
+        // claims about a total; everything else is ordinary prose.
+        .filter((token) => /^\d+$/.test(token) || token in WORDS)
+    );
+  }
+
+  function summaryRows() {
+    return read('final-task-adjudication.md')
+      .split('\n')
+      .map((line) => STATUS.exec(line))
+      .filter((m): m is RegExpExecArray => m !== null)
+      .map((m) => (m[1] ?? '').trim());
+  }
+
+  /**
+   * `B-01`. A status cell contradicts itself when it carries a fix marker AND an
+   * unresolved marker — `FIXED 600f70e / OPEN`, the shape a half-applied edit
+   * leaves behind. The markers are looked for ANYWHERE in the cell, which is the
+   * only way the conjunction can ever be true.
+   *
+   * ONE definition, shared by the sweep over the live document and by the driver
+   * that proves the sweep can fire. This is the whole point of hoisting it.
+   *
+   * The first fix for `B-01` left the driver holding its own copy of the
+   * predicate, so reverting the production line back to the anchored tautology
+   * `/^FIXED/ && /^(OPEN|BLOCKED)/` broke nothing: the sweep went back to
+   * examining nothing and the driver went on passing against a private duplicate.
+   * An anti-regression case that does not read the thing it guards is decoration.
+   * `B-06` never had this problem because it shares one `isClosed`; this is the
+   * same arrangement.
+   */
+  const contradicts = (status: string) =>
+    /\bFIXED\b/i.test(status) && /\b(OPEN|BLOCKED)\b/i.test(status);
+
+  it('finds the task rows at all, so every case below can fail', () => {
+    const rows = summaryRows();
+    expect(rows.length, 'no `TASK-000 | verdict | status` rows matched').toBeGreaterThanOrEqual(30);
+  });
+
+  it('states no open-task total that contradicts the rows', () => {
+    const rows = summaryRows();
+    const unresolved = rows.filter((s) => /^(OPEN|BLOCKED)/.test(s)).length;
+
+    /*
+     * Blockquoted lines are EXCLUDED, and that exclusion is the whole
+     * difficulty. This document is required to preserve superseded claims
+     * rather than delete them, so the stale sentence "Twenty-one remain open"
+     * still appears — quoted, under a heading explaining that it was wrong.
+     *
+     * The first version of this case had no such exclusion and duly failed on
+     * the document's own correction, which would have forced the record to
+     * erase its history to stay green. That is exactly the trap the
+     * `CLOSURE_BANNERS` case above documents hitting twice; this is the third
+     * time, so it is written down rather than merely fixed.
+     *
+     * A quoted claim is history. An unquoted one is an assertion. Only
+     * assertions are checked.
+     */
+    const live = read('final-task-adjudication.md')
+      .split('\n')
+      .filter((line) => !line.trimStart().startsWith('>'))
+      .join('\n');
+
+    const claims = openTotalClaims(live).map((token) =>
+      /^\d+$/.test(token) ? Number(token) : WORDS[token]
+    );
+
+    for (const claimed of claims) {
+      if (claimed === undefined) continue; // not a number word — nothing to check
+      expect(
+        claimed,
+        `the prose claims ${claimed} remain open; the Summary table has ${unresolved} OPEN/BLOCKED row(s)`
+      ).toBe(unresolved);
+    }
+  });
+
+  it('B-03: the open-total check reads every phrasing the record uses, and can fire', () => {
+    /*
+     * The check above matched ONE five-word shape — `<number> remain open` — and
+     * the document had already been corrected past it. With the blockquoted
+     * history excluded, it extracted nothing at all: a rule with an empty input
+     * set, asserting that every element of the empty set agrees with the table.
+     *
+     * Two things were wrong and both are fixed here. The phrasings are widened
+     * to the forms this record actually writes, and the EXTRACTOR is exercised
+     * directly — so "no disagreement found" now means the extractor looked,
+     * rather than that it had nothing to look at.
+     */
+    const cases: readonly [string, string | undefined][] = [
+      ['Twenty-one remain open …', 'twenty-one'],
+      ['21 remain open', '21'],
+      ['Two remains open at the time of writing', 'two'],
+      ['Seventeen are open', 'seventeen'],
+      ['Two are still open', 'two'],
+      ['there are 3 open tasks', '3'],
+      ['nine tasks remain unresolved', 'nine'],
+      ['the register is complete', undefined],
+      // The bound on the widening. This sentence is on the page, is true, and
+      // is not a claim about tasks — a rule that read it as one would invent a
+      // finding, which is worse than the narrow rule it replaced.
+      ['`ci-gate` Go, 0 open CodeQL alerts repository-wide', undefined],
+      ['the merge left an open question', undefined],
+      ['`QA-005` was held open by design', undefined],
+    ];
+    for (const [sentence, expected] of cases) {
+      const found = openTotalClaims(sentence);
+      expect(found[0], `"${sentence}"`).toBe(expected);
+    }
+  });
+
+  it('B-03: is not dormant when the count reaches zero', () => {
+    /*
+     * The other half. The loop above iterates the claims it found, so a document
+     * that stops claiming anything satisfies it — and the moment the last task
+     * closes is exactly when a premature "zero remain open" becomes both likely
+     * and wrong. The extractor must see a zero claim so the comparison happens.
+     */
+    expect(openTotalClaims('Zero remain open')[0]).toBe('zero');
+    expect(openTotalClaims('0 remain open')[0]).toBe('0');
+    expect(openTotalClaims('none are open')[0]).toBe('none');
+  });
+
+  it('does not record a task as both fixed and unresolved (B-01)', () => {
+    /*
+     * A CASE THAT COULD NOT FAIL.
+     *
+     * It read `/^FIXED/.test(status) && /^(OPEN|BLOCKED)/.test(status)` — two
+     * anchored patterns on ONE string. No input satisfies both, because a string
+     * cannot start with two different words, so the assertion was `false && …`
+     * for every row that has ever existed and for every row that ever could.
+     * It has never examined anything.
+     *
+     * The property is real and worth keeping: a half-applied edit leaves a cell
+     * reading `FIXED 600f70e / OPEN`, which is how a status table drifts. The
+     * predicate is `contradicts` above — shared with the driver beneath, so the
+     * two cannot be fixed apart.
+     */
+    const contradictory = summaryRows().filter(contradicts);
+    expect(contradictory, 'a status cell records a task as both fixed and unresolved').toEqual([]);
+  });
+
+  it('B-01: the contradiction check can actually fire', () => {
+    /*
+     * The case above passed for its whole life over a condition no string
+     * satisfies. This drives THE PRODUCTION PREDICATE — the same `contradicts`
+     * const the sweep filters on, not a copy of it — with inputs that must trip
+     * it, so "no contradictory rows" means "none found" rather than "none
+     * findable", and reverting the sweep to the anchored form fails HERE.
+     */
+    expect(contradicts('FIXED 600f70e / OPEN'), 'a half-applied edit').toBe(true);
+    expect(contradicts('BLOCKED — FIXED on a branch that cannot be merged')).toBe(true);
+    expect(contradicts('FIXED `600f70e`'), 'an ordinary fixed row').toBe(false);
+    expect(contradicts('OPEN'), 'an ordinary open row').toBe(false);
+    // And the anchored form it replaced is shown to be the tautology it was.
+    const oldForm = (s: string) => /^FIXED/.test(s) && /^(OPEN|BLOCKED)/.test(s);
+    expect(oldForm('FIXED 600f70e / OPEN'), 'the original conjunction, on a real defect').toBe(
+      false
+    );
+  });
+});
+
+describe('the round-four register reconciles against its own rows', () => {
+  /*
+   * The register became closure evidence, so it is held to the rule it exists to
+   * enforce: a summary must derive from the rows beneath it.
+   *
+   * It did not. The disposition table carried `MAN-01`…`MAN-04` as a RANGE, so
+   * `MAN-02` and `MAN-03` appeared in the findings table and could be resolved in
+   * the disposition only by a reader who already knew the range was inclusive —
+   * while a hand-typed `CLOSED = 27` sat underneath asserting they were closed.
+   * They were, in fact, closed. Nothing in the document could show it.
+   *
+   * That is the rule `task-register.md` states about itself: "a range is not
+   * searchable: a reader looking for `FE-004` in a register that says
+   * `FE-003`–`FE-005` finds nothing and concludes the task was never delivered."
+   * The same fault, in the record written to track the round that found it.
+   */
+  const REGISTER = 'adversarial-round-four.md';
+
+  function rows() {
+    const doc = read(REGISTER);
+    const lines = doc.split('\n');
+
+    // `| \`ID\` | severity | \`CLASS\` | \`target\` |`
+    const findings = lines
+      .map((line) => /^\|\s*`([^`]+)`\s*\|\s*(?:blocking|material|cosmetic)\s*\|/.exec(line))
+      .filter((m): m is RegExpExecArray => m !== null)
+      .map((m) => m[1] ?? '');
+
+    // The disposition table, read from its heading to the derived-counts block.
+    const start = lines.findIndex((line) => /^## Disposition/.test(line));
+    const end = lines.findIndex((line, i) => i > start && /^```/.test(line));
+    const disposition: { id: string; status: string }[] = [];
+    for (const line of lines.slice(start, end === -1 ? undefined : end)) {
+      if (!line.startsWith('|')) continue;
+      const cells = line.split('|');
+      const status = (cells[2] ?? '').trim();
+      for (const m of (cells[1] ?? '').matchAll(/`([^`]+)`/g)) {
+        disposition.push({ id: m[1] ?? '', status });
+      }
+    }
+    return { doc, findings, disposition };
+  }
+
+  it('dispositions every finding, individually and exactly once', () => {
+    const { findings, disposition } = rows();
+    expect(findings.length, 'the findings table must be findable').toBeGreaterThanOrEqual(20);
+
+    const duplicated = findings.filter((id, i) => findings.indexOf(id) !== i);
+    expect(duplicated, 'a finding id appears twice').toEqual([]);
+
+    const dispositioned = disposition.map((r) => r.id);
+    const missing = findings.filter((id) => !dispositioned.includes(id));
+    expect(
+      missing,
+      'a finding has no disposition row of its own — a range is not searchable'
+    ).toEqual([]);
+
+    const stray = dispositioned.filter((id) => !findings.includes(id));
+    expect(stray, 'the disposition names something that is not a finding').toEqual([]);
+  });
+
+  /**
+   * `B-06`. A disposition is CLOSED only when the cell asserts a fix.
+   *
+   * The test read `/FIXED/` unanchored, so `NOT FIXED`, `not yet FIXED` and
+   * `cannot be FIXED` all counted as closed — and the derived `CLOSED = n` the
+   * document has to match would have counted them too. A register that reads its
+   * own negations as closures is worse than one with no derivation at all,
+   * because the number then looks computed.
+   *
+   * The cells in this document are `**FIXED** <sha> — …`, so the marker is
+   * required at the START of the cell (bold markers allowed) and any negation
+   * before it disqualifies the row.
+   */
+  const isClosed = (status: string) =>
+    /^\**\s*FIXED\b/i.test(status.trim()) && !/\b(not|never|cannot|un)\s*fixed\b/i.test(status);
+
+  it('B-06: reads a negated status as open, not as closed', () => {
+    expect(isClosed('**FIXED** `04885f5` — the checkbox key'), 'an ordinary closure').toBe(true);
+    expect(isClosed('NOT FIXED — deferred to P1-28'), 'a negation').toBe(false);
+    expect(isClosed('not yet FIXED'), 'a negation in the middle').toBe(false);
+    expect(isClosed('OPEN — cannot be FIXED without an Owner decision')).toBe(false);
+    // And the unanchored form it replaced is shown to be wrong on the same rows.
+    expect(/FIXED/.test('NOT FIXED — deferred to P1-28'), 'the original predicate').toBe(true);
+  });
+
+  it('states counts its rows support', () => {
+    const { doc, findings, disposition } = rows();
+    const closed = disposition.filter((r) => isClosed(r.status)).length;
+    const open = findings.length - closed;
+
+    expect(doc, `there are ${findings.length} findings`).toContain(
+      `FINDINGS   = ${findings.length}`
+    );
+    expect(doc, `${closed} are closed`).toContain(`CLOSED     = ${closed}`);
+    expect(doc, `${open} remain open`).toContain(`OPEN       = ${String(open).padStart(2)}`);
+  });
+});
+
+describe('the manifest states counts the repository can confirm', () => {
+  /*
+   * `MAN-01`…`MAN-04`. Four figures in `deliverable-manifest.md` were wrong at
+   * once, and every one of them is countable in a second:
+   *
+   *   - the ownership gate's file count (said 40, reports 43) — quoted as gate
+   *     OUTPUT, in the document the `DOC-001` fix edited to close that very
+   *     desync and closed everywhere except inside itself;
+   *   - `scripts/ci` (said 40, holds 41), while `final-task-adjudication.md`
+   *     said 41 and treated it as settled — two canonical records disagreeing
+   *     about a directory listing;
+   *   - the CRM and vehicle source trees (said 18 and 22, hold 20 and 23),
+   *     omitting `profile-actions.ts`, which carries two canonical write call
+   *     sites;
+   *   - the web tier (said 39 files / 803 cases, runs 64 / 1208).
+   *
+   * A number a reader can check in a second, wrong in a document whose purpose
+   * is to be checked, is worse than no number. These are derived now.
+   */
+  const REPO_ROOT = join(process.cwd(), '..', '..');
+
+  function countFiles(dir: string, match: RegExp): number {
+    const walk = (d: string): string[] =>
+      readdirSync(d, { withFileTypes: true }).flatMap((entry) => {
+        const path = join(d, entry.name);
+        if (entry.isDirectory()) return walk(path);
+        // `QA005-12`: a directory symlink reports `isDirectory() === false`, so
+        // an unguarded walk skips everything beyond it and every count derived
+        // here would silently shrink — in the file whose purpose is to stop
+        // counts drifting.
+        assertNotSymlink(entry, path);
+        return match.test(entry.name) ? [path] : [];
+      });
+    return walk(dir).length;
+  }
+
+  it('counts scripts/ci and both feature trees as they are', () => {
+    const manifest = read('deliverable-manifest.md');
+
+    const ciScripts = countFiles(join(REPO_ROOT, 'scripts', 'ci'), /\.mjs$/);
+    expect(manifest, `scripts/ci holds ${ciScripts} .mjs files`).toContain(
+      `**${ciScripts}** in the directory`
+    );
+
+    const crm = countFiles(join(process.cwd(), 'src', 'features', 'crm'), /\.tsx?$/);
+    const vehicles = countFiles(join(process.cwd(), 'src', 'features', 'vehicles'), /\.tsx?$/);
+    expect(manifest, `the CRM tree holds ${crm} files`).toContain(`crm/\` (${crm} files)`);
+    expect(manifest, `the vehicle tree holds ${vehicles} files`).toContain(
+      `vehicles/\` (${vehicles} files)`
+    );
+
+    /*
+     * The gate's own number, from the gate's own source of truth.
+     *
+     * This used to add up `crm + vehicles` and hard-code "across 2 trees",
+     * under a comment claiming it read the gate's source of truth. It did not:
+     * it read two directory names that happened to match, so the day the gate
+     * grew a third tree the check went on asserting the old total — the exact
+     * fault it exists to catch, in the check that catches it.
+     *
+     * `SCAN_ROOTS` is exported. Walking it means the tree count and the file
+     * count both follow the gate wherever it goes, and a fourth tree needs no
+     * edit here.
+     */
+    const gateFiles = SCAN_ROOTS.reduce(
+      (n: number, root: string) => n + countFiles(join(REPO_ROOT, root), /\.tsx?$/),
+      0
+    );
+    expect(
+      manifest,
+      `the ownership gate reports ${gateFiles} files across ${SCAN_ROOTS.length} trees`
+    ).toContain(`**${gateFiles} files across ${SCAN_ROOTS.length} trees, 0 failures**`);
+  });
+
+  it('states a web tier total that matches the tier, in BOTH places it appears', () => {
+    /*
+     * Not the per-file table, which is explicitly a superseded snapshot — the
+     * live claims. The count appears TWICE: as the §6.1 heading and as a §3
+     * summary row, and the first correction updated only the heading. Two
+     * statements of one fact drift independently unless both are read.
+     */
+    const files = countFiles(join(process.cwd(), 'tests'), /\.test\.tsx?$/);
+    const manifest = read('deliverable-manifest.md');
+    expect(manifest, `§6.1 must say the web tier has ${files} files`).toContain(
+      `\`apps/web/tests\` (${files} files,`
+    );
+    expect(manifest, `§3 must say the web tier has ${files} files`).toMatch(
+      new RegExp(`Web unit and component test files\\s*\\|\\s*\\*\\*${files}\\*\\*`)
+    );
+  });
+});
+
+describe('every test case the traceability document quotes actually exists', () => {
+  /*
+   * `TRC-01`. §2 of that document defines the Proof column as "a test file and
+   * the **case within it**, quoted from the test's own title". Six titles have
+   * been found not to exist across two rounds — two were fixed by the `DOC-001`
+   * remediation and four survived it, in the document whose entire purpose is to
+   * let a reader follow a task to the thing that proves it.
+   *
+   * A quoted title that matches nothing is worse than no citation: a reader
+   * greps for it, finds nothing, and cannot tell whether the test was deleted or
+   * never written. Checked mechanically now, because it has recurred every time
+   * it was fixed by hand.
+   */
+  const TEST_DIR = join(process.cwd(), 'tests');
+
+  function allTestSource(): string {
+    const walk = (dir: string): string[] =>
+      readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+        const path = join(dir, entry.name);
+        if (entry.isDirectory()) return walk(path);
+        // `QA005-12`. Worse here than in a count: a skipped subtree makes titles
+        // that DO exist look missing, so the sweep would invent findings.
+        assertNotSymlink(entry, path);
+        return /\.test\.tsx?$/.test(entry.name) ? [path] : [];
+      });
+    return walk(TEST_DIR)
+      .map((path) => readFileSync(path, 'utf8'))
+      .join('\n');
+  }
+
+  /**
+   * `B-05`. The ONE definition of how a Proof cell opens a citation, shared by
+   * the sweep over the live document and by the fixture case that proves the
+   * widening reads the shape it was added for.
+   *
+   * The Proof column writes a file, OPTIONALLY its case count, then the em dash:
+   *
+   *     `crm-customer-search.test.ts` (40) — "sends only the six parameters…"
+   *
+   * The original pattern required `\s*—` immediately after the closing backtick,
+   * so every cell carrying a count was skipped and the sweep reported full
+   * coverage of a subset — silence that reads as a clean result.
+   *
+   * Nothing else is permitted between the file and the dash: allowing arbitrary
+   * prose there would start matching quotations that are not citations at all.
+   *
+   * Hoisted because the first fix left the fixture case holding private copies
+   * called `OLD`/`NEW`, so deleting `(?:\([^)]*\)\s*)?` from the production
+   * pattern below broke nothing — see the fixture case for the measurement that
+   * makes that the only proof there is.
+   */
+  const CITATION_OPENING = String.raw`\`[\w.-]+\.test\.tsx?\`\s*(?:\([^)]*\)\s*)?—\s*`;
+  /** The narrow form the widening replaced, kept only to prove the superset. */
+  const NARROW_OPENING = String.raw`\`[\w.-]+\.test\.tsx?\`\s*—\s*`;
+  /** One or more comma-separated double-quoted titles, inner escapes allowed. */
+  const QUOTED_RUN = String.raw`((?:"(?:[^"\\]|\\.)*"(?:,\s*)?)+)`;
+
+  const citationRuns = (text: string, opening: string = CITATION_OPENING) => [
+    ...text.matchAll(new RegExp(opening + QUOTED_RUN, 'g')),
+  ];
+  const citationOpenings = (text: string, opening: string = CITATION_OPENING) => [
+    ...text.matchAll(new RegExp(opening + '"', 'g')),
+  ];
+
+  it('resolves every quoted case title to a real test', () => {
+    const source = allTestSource();
+    expect(source.length, 'no test source was read').toBeGreaterThan(10_000);
+
+    /*
+     * Titles are quoted in the document as "…" inside a Proof cell that also
+     * names a `*.test.ts` file. Only those are checked — prose in double quotes
+     * elsewhere is not a citation, and treating it as one is how a sweep starts
+     * reporting sentences.
+     */
+    const doc = read(join('evidence', 'task-traceability.md'));
+
+    /*
+     * Only cells that name a test FILE are read for titles, and a title may
+     * itself contain an escaped quote — `"treats a MISSING flag as \"…\""` — so
+     * the span allows escapes. The first version did not, truncated two titles
+     * at their inner quote, and reported both as missing: a sweep inventing its
+     * own findings, which is the failure mode a sweep must not have.
+     */
+    /*
+     * `B-05`. The pattern is `CITATION_OPENING` + `QUOTED_RUN` above — the same
+     * definition the fixture case at the bottom of this describe drives. It is
+     * NOT restated here, which is the difference between an anti-regression case
+     * and a decoration: narrowing the shared constant fails both.
+     */
+    const runs = citationRuns(doc);
+    const cited = runs
+      .flatMap((run) => [...(run[1] ?? '').matchAll(/"((?:[^"\\]|\\.)*)"/g)])
+      .map((m) => (m[1] ?? '').replace(/\\"/g, '"'))
+      .filter((title) => title.length >= 12);
+    expect(cited.length, 'no quoted case titles were found to check').toBeGreaterThan(3);
+
+    /*
+     * The coverage of the sweep is itself asserted, because "0 missing" over a
+     * subset is what this case reported for its whole life. Every cell that
+     * names a test file AND quotes a title must have been read.
+     */
+    const openings = citationOpenings(doc).length;
+    expect(
+      runs.length,
+      `${openings} citations open with a file, a dash and a quote; the pattern parsed only ` +
+        `${runs.length} of them, so the rest were never checked`
+    ).toBe(openings);
+
+    // The widened pattern must read every citation the narrow one did.
+    const previouslyRead = citationRuns(doc, NARROW_OPENING).length;
+    /*
+     * SUPERSET, not strictly greater — and at this head the two are EQUAL.
+     *
+     * This asserted `toBeGreaterThan`, which held only while the document still
+     * carried citations in the widened shape — a filename, a case count, then
+     * the dash. Those counts were stale figures, and removing them was the right
+     * fix for `G-07`. A strictly-greater assertion turns that into a failure, so
+     * the check would have been quietly telling the next author to keep stale
+     * numbers in the document in order to stay green. A test that punishes the
+     * correct change is worse than no test.
+     *
+     * MEASURED at `2467db5` on `evidence/task-traceability.md`: 68 widened
+     * openings, 68 narrow openings, 68 parsed runs either way, and ZERO cells
+     * carrying a parenthesised count between the file and the dash — repository
+     * wide, not merely in this document. So this comparison is `68 >= 68` and
+     * cannot distinguish the widened pattern from the narrow one. It is kept as
+     * the invariant it states, and NOT as evidence of the widening.
+     *
+     * The widening is therefore proved only by the fixture case below, which is
+     * where a proof of widening belongs anyway, because it must not depend on
+     * the document's contents.
+     */
+    expect(
+      runs.length,
+      `the widened pattern reads ${runs.length} citations and must not read fewer than the ` +
+        `original's ${previouslyRead}`
+    ).toBeGreaterThanOrEqual(previouslyRead);
+
+    const missing = cited.filter((title) => !source.includes(title));
+    expect(missing, 'the document quotes a test case title that exists in no test file').toEqual(
+      []
+    );
+  });
+
+  it('B-05: reads a cell whose case count sits between the file and the dash', () => {
+    /*
+     * THE ONLY THING THAT HOLDS THE WIDENING UP, and it says so.
+     *
+     * The live document no longer contains the shape this widening was added
+     * for. Measured at `2467db5`: the count-between-file-and-dash cell occurs
+     * ZERO times in `evidence/task-traceability.md`, zero times anywhere else
+     * under `docs/phase-1/phase-1-27/`, and zero times in `docs/` at all —
+     * `G-07` removed the stale case counts that produced it. So the sweep above
+     * reads 68 citations with the widened pattern and 68 with the narrow one,
+     * and no assertion driven by the document can tell them apart.
+     *
+     * The finding's original figures — 34 of 82 file-naming cells skipped, 136
+     * of 239 quoted titles ever checked — were true of the document as it stood
+     * when `B-05` was raised. They are NOT true of this head, and leaving them
+     * stated as present tense is exactly the "a number that was once measured,
+     * carried as a measurement" defect this phase keeps finding. They are dated
+     * here instead of repeated.
+     *
+     * The widening is kept rather than reverted because the shape is the natural
+     * spelling of a Proof cell and returns the moment anyone writes a case count
+     * back into one — but a guard for a shape the corpus does not currently
+     * contain is dead unless something drives it. This case is that something,
+     * and it drives `CITATION_OPENING` ITSELF, not a copy: delete
+     * `(?:\([^)]*\)\s*)?` from the shared constant and this case fails, which is
+     * the whole property. Its previous form held private `OLD`/`NEW` regexes and
+     * passed regardless of what the production pattern said.
+     */
+    const counted = '`crm-customer-search.test.ts` (40) — "sends only the six parameters"';
+    expect(
+      citationOpenings(counted, NARROW_OPENING).length,
+      'the original pattern skipped it'
+    ).toBe(0);
+    expect(citationOpenings(counted).length, 'the production pattern must read it').toBe(1);
+    expect(
+      citationRuns(counted)[0]?.[1],
+      'the widened pattern must capture the quoted run, not just the opening'
+    ).toBe('"sends only the six parameters"');
+
+    // And the plain form still matches, so the widening did not trade one blind
+    // spot for another.
+    const plain = '`crm-customer-search.test.ts` — "publishes no total"';
+    expect(citationOpenings(plain).length, 'the uncounted form must still read').toBe(1);
+
+    // The bound: arbitrary prose between the file and the dash is still NOT a
+    // citation, so the widening did not turn the sweep loose on ordinary text.
+    const prose = '`crm-customer-search.test.ts` is discussed at length — "not a citation"';
+    expect(citationOpenings(prose).length, 'prose between the file and the dash').toBe(0);
+  });
+
+  it('B-05: records that the live corpus no longer contains the widened shape', () => {
+    /*
+     * The measurement above, asserted rather than written down, so it stops
+     * being true loudly rather than silently. If a case count comes back into a
+     * Proof cell this fails and the fixture case stops being the only proof —
+     * at which point the `previouslyRead` comparison in the sweep becomes strict
+     * again on its own and this case should be deleted, not weakened.
+     */
+    const doc = read(join('evidence', 'task-traceability.md'));
+    const counted = [...doc.matchAll(/`[\w.-]+\.test\.tsx?`\s*\([^)]*\)\s*—/g)].length;
+    expect(
+      counted,
+      'a Proof cell carries a case count again; the widening is now load-bearing on the ' +
+        'document and this case has served its purpose'
+    ).toBe(0);
+    expect(
+      citationRuns(doc).length,
+      'with no counted cells present the widened and narrow patterns must agree exactly'
+    ).toBe(citationRuns(doc, NARROW_OPENING).length);
+  });
+});
+
+describe('`P1-27-OD-007` — what `DOC-001` is judged on', () => {
+  /*
+   * `DOC-001` moved to PASS on a READING of the canonical wording: §6's
+   * eighteen-path matrix is an obligation on the twenty-nine Frontend TEST ids,
+   * not on the documentation task, whose canonical name is "Contract, catalogue
+   * and traceability SYNCHRONIZATION".
+   *
+   * A reading recorded only in prose is one edit away from being a decision
+   * nobody made, and the specific hazard here is the opposite of the usual one:
+   * not that the decision disappears, but that it is read as having discharged
+   * the path matrix. It did not. These cases hold both halves — the decision is
+   * on file WITH the argument against it, and the path record is unchanged.
+   */
+  const decisions = read('open-decisions.md');
+
+  /*
+   * Scoped to the ENTRY, not to the file.
+   *
+   * `observability.test.ts` records why: a file-scoped assertion of `**Owner:**`
+   * and `Review by:` stayed green when OD-006's own owner line was deleted,
+   * because OD-005 supplied both substrings. The slice runs from this entry's own
+   * level-two heading to the next one — anchored on the HEADING and not on the
+   * first mention, since the first mention is the row in §0.2's index table and
+   * slicing back from there swallows every other entry.
+   */
+  function entry(): string {
+    const heading = decisions.indexOf('## `P1-27-OD-007`');
+    expect(heading, 'open-decisions.md carries no `P1-27-OD-007` heading').toBeGreaterThan(-1);
+    const next = decisions.indexOf('\n## ', heading + 1);
+    const slice = decisions.slice(heading, next === -1 ? undefined : next);
+
+    // Anti-vacuity, in both directions: a slice that captured nothing would
+    // satisfy every `not.toContain` below, and one that captured the document
+    // would make the scoping pointless.
+    expect(slice.length, 'the OD-007 slice is empty').toBeGreaterThan(200);
+    expect(slice.length, 'the OD-007 slice swallowed the whole document').toBeLessThan(
+      decisions.length
+    );
+    expect(slice, 'the OD-007 slice does not contain OD-007').toContain('`P1-27-OD-007`');
+    expect(slice, 'the OD-007 slice leaked into OD-006').not.toContain(
+      '## `P1-27-OD-006` — alert routing'
+    );
+    return slice;
+  }
+
+  it('is on file with an owner and a review date, scoped to its own entry', () => {
+    const od = entry();
+    expect(od, 'OD-007 names no owner').toMatch(/\*\*Owner:\*\*\s*\S/);
+    expect(od, 'OD-007 carries no review date').toMatch(/Review by:\*\*\s*20\d\d-\d\d-\d\d/);
+    expect(od, 'OD-007 is not listed in the §0.2 index').not.toBe(decisions);
+    expect(decisions, 'the §0.2 index carries no OD-007 row').toMatch(/\|\s*`P1-27-OD-007`\s*\|/);
+  });
+
+  it('states BOTH readings and keeps the check that failed', () => {
+    /*
+     * The decay this guards against is an entry that keeps its conclusion and
+     * loses the argument against it. One of the four supporting checks FAILED —
+     * "§6 is not written as an acceptance criterion at all" is refuted by OD-005
+     * above, which reads the same sentence as asking for a per-task test path
+     * matrix — and the entry narrows the reading rather than rescuing it.
+     */
+    const od = entry();
+    expect(od, 'OD-007 does not state the per-id reading').toMatch(/per-id|per id/i);
+    expect(od, 'OD-007 does not state the synchronization reading').toMatch(/synchroniz/i);
+    expect(od, 'OD-007 drops the 522 figure the per-id reading implies').toContain('522');
+    expect(od, 'OD-007 no longer records that one of its own checks failed').toMatch(/\*\*FAILED/);
+    expect(od, 'OD-007 no longer cites the OD-005 counter-reading').toContain('`P1-27-OD-005`');
+  });
+
+  it('does not discharge the path matrix, and says so', () => {
+    const od = entry();
+    expect(od, 'OD-007 does not restate that the matrix stays undischarged').toContain(
+      'matrixDischarged'
+    );
+    expect(od, 'OD-007 does not carry the measured figures').toMatch(
+      /13\s*`?PROVEN|\*\*13\s*`PROVEN`/
+    );
+
+    /*
+     * The claim the entry must never make — asserted on the MACHINE value, not
+     * on an English sentence.
+     *
+     * The first spelling of this was `not.toMatch(/matrix is discharged/i)`, and
+     * it failed on the very prose it was written to protect: this entry and the
+     * DOC-001 row both DENY the claim ("It does not mean the matrix is
+     * discharged"), and a regex over a negated sentence reads the denial as the
+     * assertion. A guard that cannot tell "X" from "this does not mean X" would
+     * have forced the record to stop saying the true thing in order to stay
+     * green. So the prohibition is on the value, and the obligation is stated
+     * positively: the entry must say the flag stays false.
+     */
+    expect(od, 'OD-007 asserts matrixDischarged true').not.toMatch(/matrixDischarged\W{0,12}true/i);
+    expect(od, 'OD-007 does not state that the flag stays false').toMatch(
+      /matrixDischarged`? is \*\*`?false|matrixDischarged`? stays `?false/i
+    );
+  });
+
+  it('the path record it points at is still exactly as measured', () => {
+    /*
+     * The decision must not have MOVED anything. This reads the catalogue record
+     * itself rather than the entry's description of it, so prose and record
+     * cannot drift apart.
+     */
+    const catalogue = JSON.parse(read('evidence', 'test-catalogue-traceability.json')) as {
+      readonly matrixDischarged: boolean;
+      readonly pathMatrix: readonly { readonly path: string; readonly status: string }[];
+    };
+
+    expect(catalogue.matrixDischarged, 'matrixDischarged was flipped').toBe(false);
+    expect(catalogue.pathMatrix.length, 'the path matrix is no longer eighteen rows').toBe(18);
+
+    const by = (s: string) => catalogue.pathMatrix.filter((r) => r.status === s).map((r) => r.path);
+    expect(by('PROVEN').length, 'the PROVEN count moved').toBe(13);
+    expect(by('PARTIAL').sort(), 'the PARTIAL rows moved').toEqual(
+      ['cancellation', 'idempotent replay', 'scope denial'].sort()
+    );
+    expect(by('ABSENT').sort(), 'the ABSENT rows moved').toEqual(
+      ['concurrent update', 'stale version'].sort()
+    );
+  });
+
+  it("`DOC-001`'s matrix row cites the decision and carries the true figures", () => {
+    /*
+     * A PASS that did not name its reason would read, to any later auditor, as a
+     * discharged matrix. The row must carry both the citation and the numbers
+     * that contradict that reading.
+     */
+    const matrix = JSON.parse(read('task-matrix.json')) as {
+      readonly tasks: readonly {
+        readonly TASK_ID: string;
+        readonly FINAL_VERDICT: string;
+        readonly VERDICT_RATIONALE: string;
+      }[];
+    };
+    const row = matrix.tasks.find((t) => t.TASK_ID === 'DOC-001');
+    expect(row, 'the matrix carries no DOC-001 row').toBeDefined();
+    const cell = row!.VERDICT_RATIONALE;
+
+    expect(row!.FINAL_VERDICT, 'DOC-001 is not PASS — OD-007 must be revisited').toBe('PASS');
+    expect(cell, 'the DOC-001 row does not cite P1-27-OD-007').toContain('`P1-27-OD-007`');
+    expect(cell, 'the DOC-001 row does not carry the measured path figures').toMatch(
+      /13\s*`?PROVEN/
+    );
+    expect(cell, 'the DOC-001 row does not restate matrixDischarged').toContain('matrixDischarged');
+    // Same reason as above: the prohibition is on the machine value, because
+    // this cell's plainest sentence is a DENIAL that the matrix is discharged.
+    expect(cell, 'the DOC-001 row asserts matrixDischarged true').not.toMatch(
+      /matrixDischarged\W{0,12}true/i
+    );
+    expect(cell, 'the DOC-001 row does not state that the flag stays false').toMatch(
+      /matrixDischarged`? stays `?false/i
+    );
+  });
+
+  it('the premise holds: §5.3 assigns `DOC-001` no test id', () => {
+    /*
+     * The load-bearing check. §6's obligation attaches to TEST ids — "each id
+     * above is one per task" — and §5.3, which is where `DOC-001` is declared,
+     * has no test-id column at all. If that ever changes, the reading must be
+     * re-argued rather than inherited.
+     */
+    const plan = read('canonical-plan.md');
+    const start = plan.indexOf('### 5.3');
+    expect(start, 'canonical-plan.md has no §5.3').toBeGreaterThan(-1);
+    const end = plan.indexOf('\n## 6.', start);
+    expect(end, 'canonical-plan.md has no §6 after §5.3').toBeGreaterThan(start);
+    const section = plan.slice(start, end);
+
+    expect(section, '§5.3 no longer declares DOC-001').toContain('`P1-27-DOC-001`');
+    expect(section, '§5.3 now carries test ids — OD-007 must be re-argued').not.toMatch(
+      /TC-P1-27-/
+    );
+
+    // And the Frontend sections DO carry them, so the absence above is a real
+    // difference between the tables rather than a pattern that matches nothing.
+    const fe = plan.slice(plan.indexOf('### 5.1'), start);
+    expect(fe, '§5.1 carries no test ids, so the contrast proves nothing').toMatch(/TC-P1-27-/);
+  });
+});
+
+describe('this file is not vacuous', () => {
+  it('reads real documents from the real phase directory', () => {
+    const files = readdirSync(PHASE);
+    expect(files).toContain('final-task-adjudication.md');
+    expect(files).toContain('canonical-write-reachability.json');
+    expect(read('final-task-adjudication.md').length).toBeGreaterThan(2000);
+  });
+});

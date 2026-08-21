@@ -9,7 +9,7 @@
  *
  * It reconciles two sources that must agree:
  *
- *   1. every `route.ts` under `src/app/api/v1/**` (the routes that actually exist)
+ *   1. every `route.ts` under `apps/api/src/app/api/v1/**` (the routes that actually exist)
  *   2. every `defineOperation({...})` literal in the source tree (the declarations)
  *
  * A route with no declaration, a declaration with no route, a declaration with
@@ -25,10 +25,17 @@
  */
 import { readdirSync, readFileSync, statSync, existsSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
+import {
+  REPOSITORY_ROOT,
+  API_SRC_ROOT,
+  API_SRC_PATH,
+  API_ROUTES_V1_ROOT,
+  API_ROUTES_V1_PATH,
+} from './lib/repository-paths.mjs';
 
-const ROOT = process.cwd();
-const SRC = join(ROOT, 'src');
-const API_ROOT = join(SRC, 'app', 'api', 'v1');
+const ROOT = REPOSITORY_ROOT;
+const SRC = API_SRC_ROOT;
+const API_ROOT = API_ROUTES_V1_ROOT;
 const jsonOutput = process.argv.includes('--json');
 
 const toPosix = (path) => path.split(sep).join('/');
@@ -199,7 +206,7 @@ const declarations = [];
 for (const file of sourceFiles) {
   const relativePath = toPosix(relative(ROOT, file));
   // The registry module defines the function; it never calls it.
-  if (relativePath === 'src/server/auth/operation-registry.ts') continue;
+  if (relativePath === `${API_SRC_PATH}/server/auth/operation-registry.ts`) continue;
   declarations.push(
     ...extractDeclarations(stripComments(readFileSync(file, 'utf8')), relativePath)
   );
@@ -245,7 +252,7 @@ for (const declaration of declarations) {
 
 if (!auditActionCatalog) {
   failures.push(
-    'src/server/auth/audit-actions.ts: the audit-action catalog could not be read, so audit ' +
+    `${API_SRC_PATH}/server/auth/audit-actions.ts: the audit-action catalog could not be read, so audit ` +
       'actions cannot be validated. A missing catalog is a failure, not a skipped check.'
   );
 }
@@ -260,7 +267,7 @@ for (const routeFile of routeFiles) {
 
 /**
  * Translates an OpenAPI-style path parameter into the App Router's directory
- * spelling: `/iam/users/{userId}` → `src/app/api/v1/iam/users/[userId]`.
+ * spelling: `/iam/users/{userId}` → `apps/api/src/app/api/v1/iam/users/[userId]`.
  *
  * The declaration uses `{param}` because that is what OpenAPI publishes and what
  * the registry's path pattern accepts; Next.js spells the same thing `[param]`
@@ -268,13 +275,13 @@ for (const routeFile of routeFiles) {
  * to be reconciled and a parameterised route would have been reported as missing.
  */
 function toRouteDirectory(declaredPath) {
-  return `src/app/api/v1${declaredPath.replace(/\{([a-zA-Z0-9_]+)\}/g, '[$1]')}`;
+  return `${API_ROUTES_V1_PATH}${declaredPath.replace(/\{([a-zA-Z0-9_]+)\}/g, '[$1]')}`;
 }
 
 // Every declaration that names an HTTP route must have a route file to serve it.
 const routeDirs = new Set(routeFiles.map((file) => file.replace(/\/route\.ts$/, '')));
 for (const declaration of declarations) {
-  if (!declaration.path || !declaration.file.startsWith('src/app/')) continue;
+  if (!declaration.path || !declaration.file.startsWith(`${API_SRC_PATH}/app/`)) continue;
   const expected = toRouteDirectory(declaration.path);
   if (!routeDirs.has(expected)) {
     failures.push(

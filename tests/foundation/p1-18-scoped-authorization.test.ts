@@ -5,7 +5,9 @@
  * WHAT THIS FILE PROVES, AND WHAT IT DELIBERATELY DOES NOT
  * ===========================================================================
  * `tests/backend/p1-18-scope-containment.test.ts` proves the RUNTIME behaviour
- * of all ten id-addressed P1-18 commands against a real PostgreSQL: a caller
+ * of the original ten id-addressed P1-18 commands against a real PostgreSQL
+ * (the P1-27 read-surface remediation added two closure commands and six reads,
+ * proven behaviourally by their own suites): a caller
  * holding the permission in branch B1 plus any grant in B2 is refused on a B2
  * resource, and nothing it would have written survives. That file is the
  * behavioural proof and this one does not restate it.
@@ -33,8 +35,10 @@
  *   * that the decision is issued on the caller's own transaction handle and
  *     no other;
  *   * that the scope semantics are the database's and are not re-derived here;
- *   * that the ten operations, and only the ten, are wired to the locked-row
- *     path, discovered from source rather than from a list someone maintains.
+ *   * that the twelve id-addressed commands, and only the twelve, are wired to
+ *     the locked-row path — and the six id-addressed reads to the deferred
+ *     authorizer — discovered from source rather than from a list someone
+ *     maintains.
  *
  * The division matters. A unit test that asserted "a company-scoped grant is
  * allowed" would be asserting something it cannot know — that lives in
@@ -59,6 +63,7 @@ import {
 import { AppFailure } from '@/server/errors/app-failure';
 import type { DbHandle } from '@/server/db/transaction';
 import type { RequestContext } from '@/server/context/request-context';
+import { API_ROOT, API_ROUTES_V1_ROOT } from '../../scripts/lib/repository-paths.mjs';
 
 // ---------------------------------------------------------------------------
 // Fakes. The handle records every statement and the object it was issued on, so
@@ -604,8 +609,9 @@ describe('F8 · refusal aborts the transaction', () => {
 // sentence about a call can never stand in for the call.
 // ---------------------------------------------------------------------------
 
-const ROOT = process.cwd();
-const read = (relative: string): string => readFileSync(join(ROOT, relative), 'utf8');
+// The tables below name files inside the API application, so they resolve
+// against the API application root rather than the repository root.
+const read = (relative: string): string => readFileSync(join(API_ROOT, relative), 'utf8');
 
 /**
  * Removes every `//` and block comment, leaving executable code.
@@ -695,17 +701,25 @@ describe('F9 · creation commands keep their pre-handler resolved target', () =>
 });
 
 // ---------------------------------------------------------------------------
-// F10 — exactly the ten id-addressed P1-18 commands hold the locked-row path
+// F10 — exactly the sixteen id-addressed P1-18 branch commands hold the
+// locked-row path, exactly the eight id-addressed branch reads hold the
+// deferred-authorizer one, and the sixteen id-addressed configuration commands
+// and one configuration read are the tenant-scoped class that owns neither
 // ---------------------------------------------------------------------------
 
 /**
- * The ten, discovered rather than declared.
+ * The sixteen locked-row commands, discovered rather than declared.
  *
- * A hand-maintained list would pass forever after someone added an eleventh
+ * A hand-maintained list would pass forever after someone added a thirteenth
  * unprotected operation, so the set is derived from source — every `apt.`/`rec.`
  * operation that declares `scope: 'branch'` and is addressed by a path
  * parameter — and only then compared with what is expected. A new operation of
  * that shape fails this file until it is either wired or consciously excluded.
+ *
+ * The P1-27 read-surface remediation split the discovery by METHOD: the six
+ * co-located/new GETs are id-addressed too and hold the same deferred
+ * authorizer, but they lock no row, so they carry their own expected list below
+ * rather than being crowbarred into this one.
  */
 const EXPECTED_LOCKED_ROW_OPERATIONS = [
   'apt.appointment-cancel',
@@ -713,12 +727,97 @@ const EXPECTED_LOCKED_ROW_OPERATIONS = [
   'apt.appointment-reschedule',
   'rec.reception-approve',
   'rec.reception-authorization',
+  'rec.reception-capture-override',
+  'rec.reception-close-without-work',
   'rec.reception-condition-evidence',
   'rec.reception-convert-to-work-order',
+  'rec.reception-evidence-binding',
+  'rec.reception-evidence-binding-finalize',
   'rec.reception-party-role',
   'rec.reception-refusal',
+  'rec.reception-refuse',
   'rec.reception-signature',
+  'rec.reception-signature-event',
 ] as const;
+
+/**
+ * The sixteen id-addressed CONFIGURATION commands: seven renames and seven
+ * lifecycle changes over the intake catalogues (P1-27-INT-018, executed by
+ * P1-18), plus the damage-map template revision and lifecycle commands the
+ * reception evidence-contract remediation added (Owner decision FE-012).
+ *
+ * These are id-addressed and therefore discovered, but they are deliberately NOT
+ * locked-row operations, and the distinction is real rather than bookkeeping. An
+ * appointment or a reception visit belongs to one branch of one company, so its
+ * commands must re-authorize against the row they just locked. A catalogue entry
+ * belongs to the TENANT — `apt.appointment_types` and its six siblings carry
+ * `scope`/`tenant_id` and no company or branch column at all — so there is no
+ * row-owned company or branch to name, and an `authorizeScope` call here would
+ * have nothing true to pass it. Isolation is the `upd_<t>_tenant` RLS policy
+ * plus a `tenant_id` predicate taken from the principal.
+ *
+ * They are listed rather than filtered out for the reason the discovery comment
+ * above gives: the completeness assertion compares the discovered set against
+ * BOTH lists together, so a new id-addressed `apt.`/`rec.` command still fails
+ * this file until somebody consciously decides which class it is in. Excluding
+ * them by predicate — `scope !== 'tenant'`, say — would let the next
+ * branch-scoped command that forgot its scope line vanish from the guard, which
+ * is the exact blindness this block was rewritten to remove.
+ */
+const EXPECTED_TENANT_CONFIGURATION_COMMANDS = [
+  'apt.catalogue-appointment-type-status-set',
+  'apt.catalogue-appointment-type-update',
+  'apt.catalogue-cancellation-reason-status-set',
+  'apt.catalogue-cancellation-reason-update',
+  'apt.catalogue-source-channel-status-set',
+  'apt.catalogue-source-channel-update',
+  'rec.catalogue-damage-map-template-status-set',
+  'rec.catalogue-damage-map-template-version-create',
+  'rec.catalogue-fuel-level-status-set',
+  'rec.catalogue-fuel-level-update',
+  'rec.catalogue-refusal-reason-status-set',
+  'rec.catalogue-refusal-reason-update',
+  'rec.catalogue-visit-reason-status-set',
+  'rec.catalogue-visit-reason-update',
+  'rec.catalogue-warning-light-code-status-set',
+  'rec.catalogue-warning-light-code-update',
+] as const;
+
+/**
+ * The eight id-addressed BRANCH reads (P1-27 read-surface remediation, plus the
+ * capture contract and the signature ledger). Same doctrine,
+ * different mechanics: a read is addressed by id, so the pre-handler check has
+ * no scope to name and the deferred `authorizeScope` against the row's own
+ * company and branch is what makes `scope: 'branch'` true (P1-18-A-01).
+ */
+const EXPECTED_ID_ADDRESSED_READS = [
+  'apt.appointment-detail',
+  'rec.reception-authorization-list',
+  'rec.reception-condition-evidence-list',
+  'rec.reception-detail',
+  'rec.reception-evidence-binding-list',
+  'rec.reception-history',
+  'rec.reception-party-role-list',
+  'rec.reception-signature-list',
+] as const;
+
+/**
+ * The id-addressed CONFIGURATION reads.
+ *
+ * A third class for the reason the second one exists. A damage-map template
+ * belongs to the TENANT — `rec.damage_map_templates` carries a nullable
+ * company/branch pair and a template may apply to the whole tenant — so a read
+ * addressed by its id has no row-owned branch to authorize against, and an
+ * `authorizeScope` call would have nothing true to pass it. Isolation is the
+ * `sel_damage_map_templates` policy plus the tenant predicate the repository
+ * takes from the principal.
+ *
+ * Listed rather than filtered out, exactly as the configuration COMMANDS are:
+ * the completeness assertion compares the discovered reads against both lists
+ * together, so a new id-addressed `apt.`/`rec.` GET still fails this file
+ * until somebody consciously decides which class it belongs to.
+ */
+const EXPECTED_TENANT_CONFIGURATION_READS = ['rec.catalogue-damage-map-template-read'] as const;
 
 /** `authorizeScope({ companyId: <row>.companyId, branchId: <row>.branchId })`. */
 const LOCKED_ROW_CALL =
@@ -735,6 +834,7 @@ interface RouteOperation {
   readonly id: string;
   readonly path: string;
   readonly scope: string;
+  readonly method: string;
   /** The exported constant the declaration was assigned to. */
   readonly constant: string;
   readonly file: string;
@@ -744,7 +844,7 @@ interface RouteOperation {
 const DECLARATION = /export const (\w+)\s*=\s*defineOperation\(\{/g;
 
 function routeOperations(): readonly RouteOperation[] {
-  const base = join(ROOT, 'src', 'app', 'api', 'v1');
+  const base = API_ROUTES_V1_ROOT;
   const found: RouteOperation[] = [];
 
   for (const entry of readdirSync(base, { recursive: true, withFileTypes: true })) {
@@ -759,11 +859,13 @@ function routeOperations(): readonly RouteOperation[] {
       const id = /id:\s*'([^']+)'/.exec(block);
       const path = /path:\s*'([^']+)'/.exec(block);
       const scope = /scope:\s*'([^']+)'/.exec(block);
+      const method = /method:\s*'([^']+)'/.exec(block);
       if (id?.[1] && path?.[1] && declaration[1]) {
         found.push({
           id: id[1],
           path: path[1],
           scope: scope?.[1] ?? 'tenant',
+          method: method?.[1] ?? '',
           constant: declaration[1],
           file,
           source,
@@ -791,19 +893,75 @@ describe('F10 · structural completeness of the locked-row path', () => {
       (candidate.id.startsWith('apt.') || candidate.id.startsWith('rec.')) &&
       candidate.path.includes('{')
   );
+  // Split by METHOD, not narrowed: the discovery stays method-blind so a new
+  // id-addressed operation of either shape lands in exactly one expected list
+  // and fails this file until it is wired. Next.js permits one `route.ts` per
+  // directory, so the read-surface GETs are co-located with the POSTs they
+  // complement — which is why "one declaration per FILE" below became "one
+  // declaration per method per file".
+  const affectedCommands = affected.filter((candidate) => candidate.method !== 'GET');
+  const affectedReads = affected.filter((candidate) => candidate.method === 'GET');
 
   it('finds the route operations at all, so the scan is not silently empty', () => {
     expect(operations.length).toBeGreaterThan(50);
   });
 
-  it('discovers exactly the ten id-addressed P1-18 commands', () => {
-    expect(affected.map((entry) => entry.id).sort()).toEqual([...EXPECTED_LOCKED_ROW_OPERATIONS]);
+  it('discovers exactly the thirty-two id-addressed P1-18 commands, in two classes', () => {
+    // Compared against BOTH lists at once. That is what keeps the guard total:
+    // an id-addressed command that is in neither list fails here, so a new one
+    // cannot be protected by an assumption about which class it belongs to.
+    expect(affectedCommands.map((entry) => entry.id).sort()).toEqual(
+      [...EXPECTED_LOCKED_ROW_OPERATIONS, ...EXPECTED_TENANT_CONFIGURATION_COMMANDS].sort()
+    );
+  });
+
+  it('keeps the two command classes disjoint', () => {
+    // A command in both lists would satisfy the completeness assertion above
+    // while being asserted to declare `branch` and `tenant` scope at once —
+    // contradictory expectations that would surface as a confusing per-id
+    // failure rather than as the classification mistake it is.
+    const overlap = EXPECTED_LOCKED_ROW_OPERATIONS.filter((id) =>
+      (EXPECTED_TENANT_CONFIGURATION_COMMANDS as readonly string[]).includes(id)
+    );
+    expect(overlap).toEqual([]);
+  });
+
+  it('discovers exactly the id-addressed P1-18 reads, in two classes', () => {
+    // Both lists at once, for the reason the command assertion gives: a read
+    // addressed by id that is in neither class fails here rather than being
+    // protected by an assumption about which one it belongs to.
+    expect(affectedReads.map((entry) => entry.id).sort()).toEqual(
+      [...EXPECTED_ID_ADDRESSED_READS, ...EXPECTED_TENANT_CONFIGURATION_READS].sort()
+    );
+  });
+
+  it('keeps the two read classes disjoint', () => {
+    const overlap = EXPECTED_ID_ADDRESSED_READS.filter((id) =>
+      (EXPECTED_TENANT_CONFIGURATION_READS as readonly string[]).includes(id)
+    );
+    expect(overlap).toEqual([]);
+  });
+
+  it.each(EXPECTED_TENANT_CONFIGURATION_READS)('%s declares tenant scope explicitly', (id) => {
+    // Asserted, never defaulted: `defineOperation` defaults a missing scope to
+    // `'tenant'`, so a branch-scoped read that lost its scope line would land
+    // in this class looking correct.
+    const entry = affectedReads.find((candidate) => candidate.id === id);
+    expect(entry).toBeDefined();
+    expect(entry?.scope).toBe('tenant');
+    expect(entry?.source).toContain("scope: 'tenant'");
+  });
+
+  it.each(EXPECTED_TENANT_CONFIGURATION_READS)('%s runs under its OWN declaration', (id) => {
+    const entry = affectedReads.find((candidate) => candidate.id === id);
+    expect(entry).toBeDefined();
+    expect(entry?.source).toContain(`handleOperation(\n    ${entry?.constant},`);
   });
 
   it.each(EXPECTED_LOCKED_ROW_OPERATIONS)('%s declares branch scope explicitly', (id) => {
     // Asserted rather than filtered on, so an omission fails here instead of
     // quietly removing the operation from every other assertion in this block.
-    const entry = affected.find((candidate) => candidate.id === id);
+    const entry = affectedCommands.find((candidate) => candidate.id === id);
     expect(entry?.scope).toBe('branch');
   });
 
@@ -816,7 +974,7 @@ describe('F10 · structural completeness of the locked-row path', () => {
     // here. Calling this "passes the deferred authorizer down", as an earlier
     // revision did, claimed a structural guarantee this assertion does not
     // provide.
-    const entry = affected.find((candidate) => candidate.id === id);
+    const entry = affectedCommands.find((candidate) => candidate.id === id);
     expect(entry).toBeDefined();
     expect(entry?.source).toContain('authorizeScope');
   });
@@ -828,15 +986,77 @@ describe('F10 · structural completeness of the locked-row path', () => {
     // a command it has no capability for. The two are indistinguishable at
     // runtime whenever a principal happens to hold both, which is why this is
     // asserted structurally rather than left to a behavioural fixture.
-    const entry = affected.find((candidate) => candidate.id === id);
+    const entry = affectedCommands.find((candidate) => candidate.id === id);
     expect(entry).toBeDefined();
     expect(entry?.source).toContain(`handleOperation(\n    ${entry?.constant},`);
   });
 
   it.each(EXPECTED_LOCKED_ROW_OPERATIONS)('%s declares exactly one operation', (id) => {
-    // Two declarations in one file would make the assertion above ambiguous.
-    const entry = affected.find((candidate) => candidate.id === id);
-    const siblings = operations.filter((candidate) => candidate.file === entry?.file);
+    // Two declarations of one METHOD in one file would make the assertion above
+    // ambiguous. Per method rather than per file, because the co-located GET the
+    // framework forces is a different declaration with its own constant — the
+    // `handleOperation(\n    CONST,` match stays unambiguous per constant.
+    const entry = affectedCommands.find((candidate) => candidate.id === id);
+    const siblings = operations.filter(
+      (candidate) => candidate.file === entry?.file && candidate.method === entry?.method
+    );
+    expect(siblings).toHaveLength(1);
+  });
+
+  it.each(EXPECTED_TENANT_CONFIGURATION_COMMANDS)('%s declares tenant scope explicitly', (id) => {
+    // Asserted, not assumed. `defineOperation` defaults a missing `scope` to
+    // `'tenant'`, so a branch-scoped command that lost its scope line would land
+    // in this class looking correct. Requiring the declaration to be present and
+    // to say `tenant` means the default can never be what makes this pass.
+    const entry = affectedCommands.find((candidate) => candidate.id === id);
+    expect(entry).toBeDefined();
+    expect(entry?.scope).toBe('tenant');
+    expect(entry?.source).toContain("scope: 'tenant'");
+  });
+
+  it.each(EXPECTED_TENANT_CONFIGURATION_COMMANDS)('%s runs under its OWN declaration', (id) => {
+    // Same reason as the locked-row class: binding a route to a sibling's
+    // declaration would evaluate the sibling's permissions. Seven catalogues
+    // share one handler shape here, so a copied constant is the likely mistake.
+    const entry = affectedCommands.find((candidate) => candidate.id === id);
+    expect(entry).toBeDefined();
+    expect(entry?.source).toContain(`handleOperation(\n    ${entry?.constant},`);
+  });
+
+  it.each(EXPECTED_TENANT_CONFIGURATION_COMMANDS)('%s declares exactly one operation', (id) => {
+    const entry = affectedCommands.find((candidate) => candidate.id === id);
+    const siblings = operations.filter(
+      (candidate) => candidate.file === entry?.file && candidate.method === entry?.method
+    );
+    expect(siblings).toHaveLength(1);
+  });
+
+  it.each(EXPECTED_ID_ADDRESSED_READS)('%s declares branch scope explicitly', (id) => {
+    const entry = affectedReads.find((candidate) => candidate.id === id);
+    expect(entry?.scope).toBe('branch');
+  });
+
+  it.each(EXPECTED_ID_ADDRESSED_READS)('%s names the deferred authorizer', (id) => {
+    // Same honest wording as the commands: the read resolves the row, then
+    // authorizes against its own company and branch — RLS visibility is not
+    // authority (P1-18-A-01), and a read that skipped this would disclose
+    // another branch's visit to any caller holding the permission elsewhere.
+    const entry = affectedReads.find((candidate) => candidate.id === id);
+    expect(entry).toBeDefined();
+    expect(entry?.source).toContain('authorizeScope');
+  });
+
+  it.each(EXPECTED_ID_ADDRESSED_READS)('%s runs under its OWN declaration', (id) => {
+    const entry = affectedReads.find((candidate) => candidate.id === id);
+    expect(entry).toBeDefined();
+    expect(entry?.source).toContain(`handleOperation(\n    ${entry?.constant},`);
+  });
+
+  it.each(EXPECTED_ID_ADDRESSED_READS)('%s declares exactly one operation', (id) => {
+    const entry = affectedReads.find((candidate) => candidate.id === id);
+    const siblings = operations.filter(
+      (candidate) => candidate.file === entry?.file && candidate.method === entry?.method
+    );
     expect(siblings).toHaveLength(1);
   });
 

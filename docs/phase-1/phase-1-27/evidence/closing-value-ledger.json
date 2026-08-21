@@ -1,0 +1,907 @@
+{
+  "task": "P1-27-QA-005 — the authority behind every closing value",
+  "what": "Every numeric or string closing value on clean-room-evidence.md and ci-evidence.md, classified as exactly one of six classes, with the authority that decides it. scripts/ci/check-p1-27-closing-values.mjs reads this file, resolves each authority against the tree, and refuses a value that disagrees, a value nothing claims, and a value whose class does not match the region it sits in.",
+  "why": "An adversarial pass falsified six hosted-CI figures on these two pages with every gate green, and measured that fewer than half the values they state were read by anything. A number on a closing page that no check consults is a decoration standing where evidence is supposed to be, and the checked numbers beside it lend it credibility it has not earned. Correcting six figures produces six figures that will be wrong again; the durable fix is the rule that no value may appear without naming its authority.",
+  "howToCheck": "npm run validate:p1-27-closing-values",
+  "whatThisIsNot": "This file does not make a hosted observation true. For HOSTED_ARTIFACT_ATTESTED the gate proves INTERNAL CONSISTENCY only — that the record names a run, a job or artefact and the exact head it describes, that nothing hosted claims local provenance, and that nothing describing another head is presented as current. The observation itself is collected externally, from the GitHub API during exact-head CI, by a reader of the run. A local validator that claimed to reproduce it would be lying about what it did.",
+  "classes": {
+    "DERIVABLE_LOCAL": "A command in this repository answers it. The gate runs the derivation and refuses a disagreement. Executed test totals resolve against evidence/local-run-ledger.json, which is written only by `--record` from a vitest JSON report and expires when an executable path changes; committed FLOORS resolve against the baseline that defines them, which is a definition rather than a circle.",
+    "DERIVABLE_GIT": "The git object database answers it — a ref, a tree listing, a diff, an ancestry. Separated from DERIVABLE_LOCAL because git answers questions about commits that are not checked out, which no filesystem walk can.",
+    "HOSTED_ARTIFACT_ATTESTED": "A fact about a GitHub-hosted runner. Every record names SOURCE=HOSTED_ARTIFACT, a run id, a job or artefact, the 40-character head it describes, the field and the value. A record with standing PENDING_CANDIDATE_OBSERVATION carries no value and names where the observation will come from.",
+    "PROTECTED_POST_MERGE_ONLY": "Produced only by a push to a protected branch. It cannot exist before the merge, so the value is null and the page states the pending status. A figure here while the merge has not been taken is refused.",
+    "HISTORICAL_SUPERSEDED": "True of a head this record no longer describes. Kept rather than deleted, banner-marked in the rendered page, and excluded from the current seal. Each one names the check that binds it or says why none can.",
+    "NON_NORMATIVE_EXAMPLE": "An illustration rather than a measurement. Excluded on the same terms."
+  },
+  "candidate": {
+    "CODE_CANDIDATE_SHA": "501f5f0d48d7b8cafc12dad51f6c501534b66a18",
+    "note": "FROZEN at 501f5f0d48d7b8cafc12dad51f6c501534b66a18 — the lifecycle ledger beside this file is the authority for that fact and this gate reads it rather than restating it. The hosted observations at this seal were taken at the documentation-only successor f0804b2c7ad31e08f033f76096d49c5394d69c81 (run 31587707846); each CURRENT hosted entry names the candidate as the head its observation describes, records the run head beside it in runTakenAtHead, and the equivalence is not asserted by either field: it is the derived executable-diff value on the pages, recomputed on every gate run."
+  },
+  "values": [
+    {
+      "id": "CR-A-WEB-FILES-PROSE",
+      "class": "DERIVABLE_LOCAL",
+      "standing": "CURRENT",
+      "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
+      "locator": "The live web suite holds **101 web test files**",
+      "value": "101",
+      "binding": {
+        "kind": "derived",
+        "table": "counts",
+        "name": "apps/web/tests"
+      },
+      "why": "The sentence the audit found pinned at 38 while the tree held 43. A walk of the tree decides it."
+    },
+    {
+      "id": "CR-A-WEB-TESTS-PROSE",
+      "class": "DERIVABLE_LOCAL",
+      "standing": "CURRENT",
+      "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
+      "locator": "the current tree executes **2875** tests",
+      "value": "2875",
+      "binding": {
+        "kind": "run",
+        "tier": "web",
+        "field": "tests"
+      },
+      "why": "The headline figure. Bound to the recorded run rather than to the baseline, because comparing this page to the baseline is what let a total 281 tests below the tree stand for a wave."
+    },
+    {
+      "id": "CR-A-WEB-TESTS-RESTATED",
+      "class": "DERIVABLE_LOCAL",
+      "standing": "CURRENT",
+      "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
+      "locator": "**The 2875 is local, and it is the binding measurement.**",
+      "value": "2875",
+      "binding": {
+        "kind": "run",
+        "tier": "web",
+        "field": "tests"
+      },
+      "why": "The same figure restated four lines down. One of the two used to be read by a test and the other was a decoration beside it, which is exactly how a page comes to disagree with itself."
+    },
+    {
+      "id": "CR-A-WEB-FILES-ROW",
+      "class": "DERIVABLE_LOCAL",
+      "standing": "CURRENT",
+      "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
+      "locator": "| Web test files under `apps/web/tests`       | 101    | a walk of the tree                                                 |",
+      "value": "101",
+      "binding": {
+        "kind": "derived",
+        "table": "counts",
+        "name": "apps/web/tests"
+      }
+    },
+    {
+      "id": "CR-A-WEB-TESTS-ROW",
+      "class": "DERIVABLE_LOCAL",
+      "standing": "CURRENT",
+      "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
+      "locator": "| Web tier — tests executed                   | 2875  | `--record web`, from the `vitest` JSON report                      |",
+      "value": "2875",
+      "binding": {
+        "kind": "run",
+        "tier": "web",
+        "field": "tests"
+      }
+    },
+    {
+      "id": "CR-A-WEB-RUN-FILES-ROW",
+      "class": "DERIVABLE_LOCAL",
+      "standing": "CURRENT",
+      "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
+      "locator": "| Web tier — files the run reported           | 101    | the same report, cross-checked against the walk above              |",
+      "value": "101",
+      "binding": {
+        "kind": "run",
+        "tier": "web",
+        "field": "files"
+      },
+      "why": "The run's own file count, kept separate from the walk above so the two can be compared. A recorded total taken when the suite held fewer files is the shape of the defect this page exists to report, and a file-count disagreement is what detects it."
+    },
+    {
+      "id": "CR-A-UNIT-TESTS-ROW",
+      "class": "DERIVABLE_LOCAL",
+      "standing": "CURRENT",
+      "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
+      "locator": "| Root unit tier — tests executed             | 2806  | `--record unit`, from the `vitest` JSON report                     |",
+      "value": "2806",
+      "binding": {
+        "kind": "run",
+        "tier": "unit",
+        "field": "tests"
+      },
+      "why": "The CURRENT root total. Until this row existed the only root figure on the page was the superseded 1762, and a check was reading it as though it described this tree."
+    },
+    {
+      "id": "CR-A-UNIT-FILES-ROW",
+      "class": "DERIVABLE_LOCAL",
+      "standing": "CURRENT",
+      "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
+      "locator": "| Root unit tier — files the run reported     | 105   | the same report, cross-checked against the tier's include rule      |",
+      "value": "105",
+      "binding": {
+        "kind": "run",
+        "tier": "unit",
+        "field": "files"
+      }
+    },
+    {
+      "id": "CR-A-WEB-FLOOR-ROW",
+      "class": "DERIVABLE_LOCAL",
+      "standing": "CURRENT",
+      "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
+      "locator": "| Committed web floor (`minTests`)            | 2500  | `.github/ci-baselines/test-count-baseline.json`                    |",
+      "value": "2500",
+      "binding": {
+        "kind": "baseline",
+        "tier": "web",
+        "field": "minTests"
+      }
+    },
+    {
+      "id": "CR-A-UNIT-FLOOR-ROW",
+      "class": "DERIVABLE_LOCAL",
+      "standing": "CURRENT",
+      "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
+      "locator": "| Committed unit floor (`minTests`)           | 1050  | the same baseline                                                  |",
+      "value": "1050",
+      "binding": {
+        "kind": "baseline",
+        "tier": "unit",
+        "field": "minTests"
+      }
+    },
+    {
+      "id": "CR-A-MIGRATIONS-DISK-ROW",
+      "class": "DERIVABLE_LOCAL",
+      "standing": "CURRENT",
+      "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
+      "locator": "| Migrations on disk                          | 124   | a walk of `supabase/migrations`                                    |",
+      "value": "124",
+      "binding": {
+        "kind": "derived",
+        "table": "counts",
+        "name": "supabase/migrations"
+      }
+    },
+    {
+      "id": "CR-A-WEB-FLOOR-PROSE",
+      "class": "DERIVABLE_LOCAL",
+      "standing": "CURRENT",
+      "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
+      "locator": "binding \"the floor is 2500\"",
+      "value": "2500",
+      "binding": {
+        "kind": "baseline",
+        "tier": "web",
+        "field": "minTests"
+      },
+      "why": "The sentence that draws the line between a floor and a measurement. It states the floor, so it is bound to the floor."
+    },
+    {
+      "id": "CR-B-TRACKED-PHASE-FILES",
+      "class": "DERIVABLE_GIT",
+      "standing": "CURRENT",
+      "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
+      "locator": "| Tracked files under `docs/phase-1/phase-1-27`        | 41                                          |",
+      "value": "41",
+      "binding": {
+        "kind": "git",
+        "op": "trackedFiles",
+        "dir": "docs/phase-1/phase-1-27"
+      },
+      "why": "TRACKED is the claim, so git decides it. A filesystem walk would count an untracked scratch file as a phase deliverable."
+    },
+    {
+      "id": "CR-B-TRACKED-PHASE-MD",
+      "class": "DERIVABLE_GIT",
+      "standing": "CURRENT",
+      "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
+      "locator": "| Tracked `.md` files under the same directory         | 31                                          |",
+      "value": "31",
+      "binding": {
+        "kind": "git",
+        "op": "trackedFiles",
+        "dir": "docs/phase-1/phase-1-27",
+        "match": "\\.md$"
+      }
+    },
+    {
+      "id": "CR-B-MIGRATIONS-GIT",
+      "class": "DERIVABLE_GIT",
+      "standing": "CURRENT",
+      "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
+      "locator": "| Migrations tracked by git at `HEAD`                  | 124                                         |",
+      "value": "124",
+      "binding": {
+        "kind": "git",
+        "op": "lsTree",
+        "sha": "HEAD",
+        "pathspec": "supabase/migrations",
+        "match": "\\.sql$"
+      },
+      "why": "Deliberately the same number as CR-A-MIGRATIONS-DISK-ROW by a different route. A disagreement between the two is an untracked migration, which neither answer detects alone."
+    },
+    {
+      "id": "CR-B-CODE-CANDIDATE",
+      "class": "DERIVABLE_GIT",
+      "standing": "CURRENT",
+      "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
+      "locator": "| `CODE_CANDIDATE_SHA`                                 | `501f5f0d48d7b8cafc12dad51f6c501534b66a18`  |",
+      "value": "501f5f0d48d7b8cafc12dad51f6c501534b66a18",
+      "binding": {
+        "kind": "git",
+        "op": "revParse",
+        "ref": "501f5f0d48d7b8cafc12dad51f6c501534b66a18^{commit}"
+      },
+      "why": "A forty-character string of the right shape is not a commit. `deadbeef` repeated five times satisfies every shape check ever written on this page; this one resolves the object or fails. The row was repointed from the descent ancestor to the FROZEN candidate at the seal, in the same commit that recorded the candidate observations."
+    },
+    {
+      "id": "CR-D-PROTECTED-GATE",
+      "class": "PROTECTED_POST_MERGE_ONLY",
+      "standing": "CURRENT",
+      "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
+      "value": "Go",
+      "why": "protected-gate runs only on a push to a protected branch. The lifecycle ledger records the merge as not taken, and while that is so this entry may not carry a figure.",
+      "locator": "| `PROTECTED_GATE_GO` | **Go** | taken on the protected merge push itself — the run, both job ids and the merge head are recorded and validated in `evidence/lifecycle-ledger.json`, whose gate refuses a GREEN without them |",
+      "provenance": {
+        "source": "HOSTED_ARTIFACT",
+        "runId": "31590615278",
+        "job": "94097982319",
+        "headSha": "46d4e482dd6dc8dc4c613df17824b93a5236a928",
+        "artifact": "protected-gate job summary",
+        "field": "decision"
+      },
+      "pendingPhrase": "were PENDING PROTECTED MERGE until the merge existed"
+    },
+    {
+      "id": "CR-D-CODEQL-CEILING",
+      "class": "PROTECTED_POST_MERGE_ONLY",
+      "standing": "CURRENT",
+      "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
+      "value": "0",
+      "why": "Both pages used to state the CodeQL figure as `repository-wide`. It came from a pull-request analysis, which is diff-informed and cannot establish a repository ceiling — the phase's own CodeQL remediation record says so in those words. The figure is kept as what the analysed refs carried; the ceiling is pending.",
+      "locator": "| `CODEQL_REPOSITORY_CEILING` | **0** | open alerts repository-wide, read from the code-scanning API after the merge — the only reader that can state a repository ceiling; a pull-request analysis is diff-informed and never could |",
+      "provenance": {
+        "source": "HOSTED_ARTIFACT",
+        "runId": "31590615278",
+        "job": "code-scanning API, post-merge",
+        "headSha": "46d4e482dd6dc8dc4c613df17824b93a5236a928",
+        "artifact": "GET /code-scanning/alerts?state=open",
+        "field": "length"
+      },
+      "pendingPhrase": "were PENDING PROTECTED MERGE until the merge existed"
+    },
+    {
+      "id": "CI-D-PROTECTED-GATE",
+      "class": "PROTECTED_POST_MERGE_ONLY",
+      "standing": "CURRENT",
+      "document": "docs/phase-1/phase-1-27/ci-evidence.md",
+      "value": "Go",
+      "locator": "| `PROTECTED_GATE_GO`         | **Go**  | taken on the protected merge push itself — the run, both job ids and the merge head are recorded and validated in `evidence/lifecycle-ledger.json`, whose gate refuses a GREEN without them  |",
+      "provenance": {
+        "source": "HOSTED_ARTIFACT",
+        "runId": "31590615278",
+        "job": "94097982319",
+        "headSha": "46d4e482dd6dc8dc4c613df17824b93a5236a928",
+        "artifact": "protected-gate job summary",
+        "field": "decision"
+      },
+      "pendingPhrase": "were PENDING PROTECTED MERGE until the merge existed"
+    },
+    {
+      "id": "CI-D-CODEQL-CEILING",
+      "class": "PROTECTED_POST_MERGE_ONLY",
+      "standing": "CURRENT",
+      "document": "docs/phase-1/phase-1-27/ci-evidence.md",
+      "value": "0",
+      "locator": "| `CODEQL_REPOSITORY_CEILING` | **0**   | open alerts repository-wide, read from the code-scanning API after the merge — the only reader that can state a repository ceiling; a pull-request analysis is diff-informed and never could |",
+      "provenance": {
+        "source": "HOSTED_ARTIFACT",
+        "runId": "31590615278",
+        "job": "code-scanning API, post-merge",
+        "headSha": "46d4e482dd6dc8dc4c613df17824b93a5236a928",
+        "artifact": "GET /code-scanning/alerts?state=open",
+        "field": "length"
+      },
+      "pendingPhrase": "were PENDING PROTECTED MERGE until the merge existed"
+    },
+    {
+      "id": "CR-C-HIST-RUN-ID",
+      "class": "HOSTED_ARTIFACT_ATTESTED",
+      "standing": "HISTORICAL",
+      "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
+      "locator": "| Workflow run               | `31312531302` — PR #214                                    |",
+      "value": "31312531302",
+      "provenance": {
+        "source": "HOSTED_ARTIFACT",
+        "runId": "31312531302",
+        "job": "ci-gate",
+        "headSha": "356f1a1e937e819b9db94f40a2d6f04f98f9ae39",
+        "artifact": "workflow run record",
+        "field": "run id",
+        "collectedBy": "Read from the GitHub API during that pull request. Not reproducible from this tree."
+      }
+    },
+    {
+      "id": "CR-C-HIST-REQUIRED-CHECKS",
+      "class": "HOSTED_ARTIFACT_ATTESTED",
+      "standing": "HISTORICAL",
+      "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
+      "locator": "| Required checks            | **20 completed, 0 failed, 0 pending**                      |",
+      "value": "20",
+      "provenance": {
+        "source": "HOSTED_ARTIFACT",
+        "runId": "31312531302",
+        "job": "ci-gate",
+        "headSha": "356f1a1e937e819b9db94f40a2d6f04f98f9ae39",
+        "artifact": "/commits/{sha}/check-runs",
+        "field": "completed required checks",
+        "collectedBy": "Read from the GitHub API during that pull request."
+      }
+    },
+    {
+      "id": "CR-C-HIST-GATE-DECISION",
+      "class": "HOSTED_ARTIFACT_ATTESTED",
+      "standing": "HISTORICAL",
+      "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
+      "locator": "| `ci-gate` decision         | **Go**                                                     |",
+      "value": "Go",
+      "provenance": {
+        "source": "HOSTED_ARTIFACT",
+        "runId": "31312531302",
+        "job": "ci-gate",
+        "headSha": "356f1a1e937e819b9db94f40a2d6f04f98f9ae39",
+        "artifact": "ci-gate job summary",
+        "field": "decision",
+        "collectedBy": "Read from the job summary during that pull request."
+      },
+      "why": "A verdict with no digits in it is still a closing value, and this one is the load-bearing word on the page."
+    },
+    {
+      "id": "CR-C-HIST-COVERAGE-LINES",
+      "class": "HOSTED_ARTIFACT_ATTESTED",
+      "standing": "HISTORICAL",
+      "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
+      "locator": "| Coverage — lines / branches | 95.53% / 93.89%                                           |",
+      "value": "95.53%",
+      "provenance": {
+        "source": "HOSTED_ARTIFACT",
+        "runId": "31312531302",
+        "job": "Web quality",
+        "headSha": "356f1a1e937e819b9db94f40a2d6f04f98f9ae39",
+        "artifact": "coverage summary",
+        "field": "lines",
+        "collectedBy": "Read from the coverage artefact of that run. A coverage percentage is a property of an execution and no static reading of this tree produces it."
+      }
+    },
+    {
+      "id": "CR-C-HIST-CODEQL-OPEN",
+      "class": "HOSTED_ARTIFACT_ATTESTED",
+      "standing": "HISTORICAL",
+      "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
+      "locator": "| CodeQL open alerts         | **0** on the three refs that analysis covered              |",
+      "value": "0",
+      "provenance": {
+        "source": "HOSTED_ARTIFACT",
+        "runId": "31312531302",
+        "job": "CodeQL",
+        "headSha": "356f1a1e937e819b9db94f40a2d6f04f98f9ae39",
+        "artifact": "code-scanning alerts for the branch, PR head and PR merge refs",
+        "field": "open alerts",
+        "collectedBy": "Queried per ref during that pull request."
+      },
+      "why": "This row used to read `repository-wide`. It was a pull-request analysis and a pull-request analysis is diff-informed, so the sentence claimed more than the observation supports. The ceiling is now a PROTECTED_POST_MERGE_ONLY entry with no figure."
+    },
+    {
+      "id": "CR-C-HIST-WEB-1867-AT-424",
+      "class": "HOSTED_ARTIFACT_ATTESTED",
+      "standing": "HISTORICAL",
+      "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
+      "locator": "job `93836261711` (`Web quality / web-quality`), which reported",
+      "value": "93836261711",
+      "provenance": {
+        "source": "HOSTED_ARTIFACT",
+        "runId": "31508526699",
+        "job": "93836261711",
+        "headSha": "424e5d884ed7c8f608c446408743cbf88ac80515",
+        "artifact": "Web quality job summary",
+        "field": "Tests executed",
+        "collectedBy": "Read from the job summary. It agrees with the local measurement of the same tier, and it describes a different head, so it corroborates rather than decides."
+      }
+    },
+    {
+      "id": "CI-C-HIST-CONTAINER-DIGEST",
+      "class": "HOSTED_ARTIFACT_ATTESTED",
+      "standing": "HISTORICAL",
+      "document": "docs/phase-1/phase-1-27/ci-evidence.md",
+      "locator": "| Container image    | `sha256:a8d1c7af634328f14b03cbfe3b1eea2debfc8001a0974f9276545c47d88e50d4`, 197.2 MiB |",
+      "value": "a8d1c7af634328f14b03cbfe3b1eea2debfc8001a0974f9276545c47d88e50d4",
+      "provenance": {
+        "source": "HOSTED_ARTIFACT",
+        "runId": "31312531302",
+        "job": "Docker build validation",
+        "headSha": "356f1a1e937e819b9db94f40a2d6f04f98f9ae39",
+        "artifact": "built image",
+        "field": "image digest",
+        "collectedBy": "Read from the build job's output. A digest of an image nobody built locally cannot be derived here."
+      }
+    },
+    {
+      "id": "CI-C-HIST-CONTAINER-SIZE",
+      "class": "HOSTED_ARTIFACT_ATTESTED",
+      "standing": "HISTORICAL",
+      "document": "docs/phase-1/phase-1-27/ci-evidence.md",
+      "locator": "197.2 MiB",
+      "value": "197.2",
+      "provenance": {
+        "source": "HOSTED_ARTIFACT",
+        "runId": "31312531302",
+        "job": "Docker build validation",
+        "headSha": "356f1a1e937e819b9db94f40a2d6f04f98f9ae39",
+        "artifact": "built image",
+        "field": "image size",
+        "collectedBy": "Read from the build job's output."
+      }
+    },
+    {
+      "id": "CI-C-HIST-AUTH-BROWSER-RUN",
+      "class": "HOSTED_ARTIFACT_ATTESTED",
+      "standing": "HISTORICAL",
+      "document": "docs/phase-1/phase-1-27/ci-evidence.md",
+      "locator": "run `31347643485`, 225 tests, 0 failed, against candidate `78c4587`",
+      "value": "31347643485",
+      "provenance": {
+        "source": "HOSTED_ARTIFACT",
+        "runId": "31347643485",
+        "job": "authenticated-browser",
+        "headSha": "78c458723671ac1c7d7c8721a09d4fd156283054",
+        "artifact": "authenticated-browser job",
+        "field": "run id",
+        "collectedBy": "Read from the GitHub run records, which are not in this tree — which is why the dispute about this tier survived a full wave here. The head is taken from .github/ci-baselines/unrun-test-tiers.json, which records the three executions run by run. It was WRONG here for one revision: the abbreviated sha on the page was expanded by hand into forty characters that named no commit, and every shape check passed it. HOSTED_VALUE_HEAD_NOT_A_COMMIT exists because of that."
+      },
+      "why": "Bound further by tests/ci/p1-27-doc-counts.test.ts, which compares this citation against the run recorded in .github/ci-baselines/unrun-test-tiers.json."
+    },
+    {
+      "id": "CR-E-SUPERSEDED-WEB-TIER",
+      "class": "HISTORICAL_SUPERSEDED",
+      "standing": "HISTORICAL",
+      "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
+      "locator": "| Web tier                          | **1216** tests, 0 failed, across 65 web test files  |",
+      "value": "65",
+      "boundBy": {
+        "file": "tests/ci/p1-27-doc-counts.test.ts",
+        "contains": "the superseded web tier row"
+      },
+      "why": "The FILE half of a superseded row is not a runner's opinion — it is a property of a tree still in the object database, and it is derived from that head."
+    },
+    {
+      "id": "CR-E-SUPERSEDED-UNIT-TIER",
+      "class": "HISTORICAL_SUPERSEDED",
+      "standing": "HISTORICAL",
+      "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
+      "locator": "| Root unit tier                    | **1762** tests, 0 failed, across 82 files           |",
+      "value": "82",
+      "boundBy": {
+        "file": "tests/ci/p1-27-doc-counts.test.ts",
+        "contains": "the superseded root unit tier row"
+      }
+    },
+    {
+      "id": "CR-E-SUPERSEDED-WEB-TOTAL",
+      "class": "HISTORICAL_SUPERSEDED",
+      "standing": "HISTORICAL",
+      "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
+      "locator": "| Web tests                  | 1216 passed, 0 failed                                      |",
+      "value": "1216",
+      "unbindable": "An executed total at a head nobody is going to re-run. tests/ci/p1-27-doc-counts.test.ts requires it to equal the `Web tier` row on the same page, so the two cannot drift apart, but no command in this tree can produce the number itself."
+    },
+    {
+      "id": "CR-E-MIGRATIONS-APPLIED",
+      "class": "HISTORICAL_SUPERSEDED",
+      "standing": "HISTORICAL",
+      "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
+      "locator": "| Migrations applied         | 120                                                        |",
+      "value": "120",
+      "boundBy": {
+        "file": "tests/ci/p1-27-doc-counts.test.ts",
+        "contains": "the migrations applied row"
+      }
+    },
+    {
+      "id": "CR-E-SCHEMA-HASH",
+      "class": "HISTORICAL_SUPERSEDED",
+      "standing": "HISTORICAL",
+      "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
+      "locator": "| Schema hash                | `f6b4f023d9e6b1e7d823dac4e5550379202a216ab1ae1fe9e5a2826703061f79` |",
+      "value": "f6b4f023d9e6b1e7d823dac4e5550379202a216ab1ae1fe9e5a2826703061f79",
+      "boundBy": {
+        "file": "tests/ci/p1-27-doc-counts.test.ts",
+        "contains": "the historical hash is not the current baseline"
+      },
+      "why": "A superseded measurement. It looked like the least checkable figure on the page, and the temptation is to refresh it when the baseline moves — which would turn a record of a past head into a claim about today. It is bound to a case that asserts it is NOT the current baseline hash."
+    },
+    {
+      "id": "CR-E-STALE-TOTAL",
+      "class": "HISTORICAL_SUPERSEDED",
+      "standing": "HISTORICAL",
+      "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
+      "locator": "This is where the figure **1586** stood, in the present tense, 281 tests below",
+      "value": "1586",
+      "unbindable": "The defect itself, kept as the record of what happened. There is nothing to bind it to: it was never true of any tree. Deleting it would erase the only evidence that the drift happened and leave the next reader no reason to distrust the next stale number."
+    },
+    {
+      "id": "CR-E-DRIFT-COMMITS",
+      "class": "HISTORICAL_SUPERSEDED",
+      "standing": "HISTORICAL",
+      "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
+      "locator": "the tree moved 47 commits and 5 test files past it",
+      "value": "47",
+      "boundBy": {
+        "file": "tests/ci/p1-27-doc-counts.test.ts",
+        "contains": "states the drift that made QA-005 necessary"
+      },
+      "why": "Both numbers are differences between two heads this page names, so both are derivable, and the heads are read out of the table by what their rows SAY rather than by position."
+    },
+    {
+      "id": "CI-E-GOVERNED-JOBS",
+      "class": "HISTORICAL_SUPERSEDED",
+      "standing": "HISTORICAL",
+      "document": "docs/phase-1/phase-1-27/ci-evidence.md",
+      "locator": "**Go** — 13 governed jobs",
+      "value": "13",
+      "boundBy": {
+        "file": "tests/ci/p1-27-doc-counts.test.ts",
+        "contains": "states the number of jobs the gate governed at that head"
+      },
+      "why": "A claim about DECLARED_JOBS as it stood at the head under test, read from that head rather than from the working tree, so it stays true when the declaration grows."
+    },
+    {
+      "id": "CI-E-ESTABLISHED-FLOOR",
+      "class": "HISTORICAL_SUPERSEDED",
+      "standing": "HISTORICAL",
+      "document": "docs/phase-1/phase-1-27/ci-evidence.md",
+      "locator": "The floor was set to 1180 against a measured 1216",
+      "value": "1180",
+      "boundBy": {
+        "file": "tests/ci/p1-27-doc-counts.test.ts",
+        "contains": "the CI record states no established floor"
+      },
+      "why": "It read `the floor is now 1180` in the present tense while the repository's floor was 1793. The figure is true of the head that established it and of no other, so it is stated in the past tense inside a banner-marked region, and the floor the repository carries today is a DERIVABLE_LOCAL value on the other page."
+    },
+    {
+      "id": "CI-E-HEADROOM",
+      "class": "HISTORICAL_SUPERSEDED",
+      "standing": "HISTORICAL",
+      "document": "docs/phase-1/phase-1-27/ci-evidence.md",
+      "locator": "36 rather than 0 or 66",
+      "value": "36",
+      "boundBy": {
+        "file": "tests/ci/p1-27-doc-counts.test.ts",
+        "contains": "the headroom"
+      }
+    },
+    {
+      "id": "CI-F-PR-REF",
+      "class": "NON_NORMATIVE_EXAMPLE",
+      "standing": "EXAMPLE",
+      "document": "docs/phase-1/phase-1-27/ci-evidence.md",
+      "locator": "query against `refs/pull/198/head` returned the finding",
+      "value": "198",
+      "unbindable": "A ref spelled out to show which query surfaced the alert. It is an illustration of an API behaviour, not a measurement of anything.",
+      "why": "Kept because the lesson is the point: querying the branch ref returned zero and the pull-request ref returned the finding."
+    },
+    {
+      "id": "CR-B-EXEC-DIFF",
+      "class": "DERIVABLE_GIT",
+      "standing": "CURRENT",
+      "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
+      "locator": "| Executable paths changed, candidate to accepted `develop` | 0                                      |",
+      "value": "0",
+      "binding": {
+        "kind": "git",
+        "op": "executableDiffCount",
+        "since": "501f5f0d48d7b8cafc12dad51f6c501534b66a18",
+        "until": "aa78a6627bff0400621ec13d10777e44ff2cf9a3"
+      },
+      "why": "The documentation-only claim as a NUMBER a command produces — the rule this page states in its own superseded section after asserting the sentence once and being wrong. Zero is the only value at which DOCUMENTATION_ONLY_RECORDING may be claimed, and the binding recomputes it on every gate run. Both ends are pinned since the closure: a one-sided candidate..HEAD span answers a different question on every post-closure commit — the first being the acceptance wave, whose guard lifts are executable by design — while candidate..accepted-develop is the equivalence the Owner acceptance actually relied on, and its answer cannot move."
+    },
+    {
+      "id": "CI-B-CODE-CANDIDATE",
+      "class": "DERIVABLE_GIT",
+      "standing": "CURRENT",
+      "document": "docs/phase-1/phase-1-27/ci-evidence.md",
+      "locator": "| `CODE_CANDIDATE_SHA`                                      | `501f5f0d48d7b8cafc12dad51f6c501534b66a18`                                                                                  |",
+      "value": "501f5f0d48d7b8cafc12dad51f6c501534b66a18",
+      "binding": {
+        "kind": "git",
+        "op": "revParse",
+        "ref": "501f5f0d48d7b8cafc12dad51f6c501534b66a18^{commit}"
+      },
+      "why": "Both evidence documents must name the same candidate head, and each must name one that resolves. This is the ci-evidence half of that pair."
+    },
+    {
+      "id": "CI-B-RUN-HEAD",
+      "class": "DERIVABLE_GIT",
+      "standing": "CURRENT",
+      "document": "docs/phase-1/phase-1-27/ci-evidence.md",
+      "locator": "| Run head — a documentation-only successor                 | `f0804b2c7ad31e08f033f76096d49c5394d69c81`                                                                                  |",
+      "value": "f0804b2c7ad31e08f033f76096d49c5394d69c81",
+      "binding": {
+        "kind": "git",
+        "op": "revParse",
+        "ref": "f0804b2c7ad31e08f033f76096d49c5394d69c81^{commit}"
+      },
+      "why": "The head the hosted run actually executed at, proved to exist as a commit in this repository. That it is a DOCUMENTATION-ONLY successor of the candidate is not this entry’s claim — it is the derived executable-diff value in the row beneath, recomputed on every gate run."
+    },
+    {
+      "id": "CI-B-EXEC-DIFF",
+      "class": "DERIVABLE_GIT",
+      "standing": "CURRENT",
+      "document": "docs/phase-1/phase-1-27/ci-evidence.md",
+      "locator": "| Executable paths changed, candidate to accepted `develop` | **0** — derived on every gate run; both ends pinned, so the span covers the run head and cannot move with post-closure work |",
+      "value": "0",
+      "binding": {
+        "kind": "git",
+        "op": "executableDiffCount",
+        "since": "501f5f0d48d7b8cafc12dad51f6c501534b66a18",
+        "until": "aa78a6627bff0400621ec13d10777e44ff2cf9a3"
+      },
+      "why": "The equivalence between the candidate and the run head, as a derivation. The run head is an ancestor of the accepted develop state, so a zero over candidate..accepted-develop covers it; a non-zero answer here would mean the hosted values stopped describing the candidate BEFORE the acceptance, which is exactly the failure this page must make loud. Pinned on both ends since the closure, so post-closure work cannot move a recorded equivalence."
+    },
+    {
+      "id": "CI-C-RUN-ID",
+      "class": "HOSTED_ARTIFACT_ATTESTED",
+      "standing": "CURRENT",
+      "document": "docs/phase-1/phase-1-27/ci-evidence.md",
+      "locator": "| Workflow run                                              | `31587707846`                                                                                                               |",
+      "value": "31587707846",
+      "provenance": {
+        "source": "HOSTED_ARTIFACT",
+        "runId": "31587707846",
+        "job": "94088792169",
+        "headSha": "501f5f0d48d7b8cafc12dad51f6c501534b66a18",
+        "artifact": "workflow run",
+        "field": "run id",
+        "runTakenAtHead": "f0804b2c7ad31e08f033f76096d49c5394d69c81",
+        "collectedBy": "Read from the GitHub run records during exact-head CI by a reader of the run. headSha names the code candidate this observation describes; the run itself executed at the documentation-only successor named in runTakenAtHead, and the equivalence is the derived executable-diff value on the page, recomputed on every gate run — not a claim either sha field could carry alone."
+      }
+    },
+    {
+      "id": "CI-C-REQUIRED-CHECKS",
+      "class": "HOSTED_ARTIFACT_ATTESTED",
+      "standing": "CURRENT",
+      "document": "docs/phase-1/phase-1-27/ci-evidence.md",
+      "locator": "| Required checks                                           | **21 completed · 0 failed · 0 pending**                                                                                     |",
+      "value": "21",
+      "provenance": {
+        "source": "HOSTED_ARTIFACT",
+        "runId": "31587707846",
+        "job": "94088792169",
+        "headSha": "501f5f0d48d7b8cafc12dad51f6c501534b66a18",
+        "artifact": "/commits/{sha}/check-runs for the run head",
+        "field": "completed check count",
+        "runTakenAtHead": "f0804b2c7ad31e08f033f76096d49c5394d69c81",
+        "collectedBy": "Read from the GitHub run records during exact-head CI by a reader of the run. headSha names the code candidate this observation describes; the run itself executed at the documentation-only successor named in runTakenAtHead, and the equivalence is the derived executable-diff value on the page, recomputed on every gate run — not a claim either sha field could carry alone."
+      }
+    },
+    {
+      "id": "CI-C-REQUIRED-CHECKS-ZEROES",
+      "class": "HOSTED_ARTIFACT_ATTESTED",
+      "standing": "CURRENT",
+      "document": "docs/phase-1/phase-1-27/ci-evidence.md",
+      "locator": "| Required checks                                           | **21 completed · 0 failed · 0 pending**                                                                                     |",
+      "value": "0",
+      "occurrences": 2,
+      "provenance": {
+        "source": "HOSTED_ARTIFACT",
+        "runId": "31587707846",
+        "job": "94088792169",
+        "headSha": "501f5f0d48d7b8cafc12dad51f6c501534b66a18",
+        "artifact": "/commits/{sha}/check-runs for the run head",
+        "field": "failed and pending counts",
+        "runTakenAtHead": "f0804b2c7ad31e08f033f76096d49c5394d69c81",
+        "collectedBy": "Read from the GitHub run records during exact-head CI by a reader of the run. headSha names the code candidate this observation describes; the run itself executed at the documentation-only successor named in runTakenAtHead, and the equivalence is the derived executable-diff value on the page, recomputed on every gate run — not a claim either sha field could carry alone."
+      }
+    },
+    {
+      "id": "CI-C-GATE-DECISION",
+      "class": "HOSTED_ARTIFACT_ATTESTED",
+      "standing": "CURRENT",
+      "document": "docs/phase-1/phase-1-27/ci-evidence.md",
+      "locator": "| `ci-gate` decision                                        | **Go**                                                                                                                      |",
+      "value": "Go",
+      "provenance": {
+        "source": "HOSTED_ARTIFACT",
+        "runId": "31587707846",
+        "job": "94088792169",
+        "headSha": "501f5f0d48d7b8cafc12dad51f6c501534b66a18",
+        "artifact": "ci-gate job summary",
+        "field": "decision",
+        "runTakenAtHead": "f0804b2c7ad31e08f033f76096d49c5394d69c81",
+        "collectedBy": "Read from the GitHub run records during exact-head CI by a reader of the run. headSha names the code candidate this observation describes; the run itself executed at the documentation-only successor named in runTakenAtHead, and the equivalence is the derived executable-diff value on the page, recomputed on every gate run — not a claim either sha field could carry alone."
+      }
+    },
+    {
+      "id": "CI-C-GATE-JOB",
+      "class": "HOSTED_ARTIFACT_ATTESTED",
+      "standing": "CURRENT",
+      "document": "docs/phase-1/phase-1-27/ci-evidence.md",
+      "locator": "| `ci-gate` job                                             | `94088792169`                                                                                                               |",
+      "value": "94088792169",
+      "provenance": {
+        "source": "HOSTED_ARTIFACT",
+        "runId": "31587707846",
+        "job": "94088792169",
+        "headSha": "501f5f0d48d7b8cafc12dad51f6c501534b66a18",
+        "artifact": "ci-gate job",
+        "field": "job id",
+        "runTakenAtHead": "f0804b2c7ad31e08f033f76096d49c5394d69c81",
+        "collectedBy": "Read from the GitHub run records during exact-head CI by a reader of the run. headSha names the code candidate this observation describes; the run itself executed at the documentation-only successor named in runTakenAtHead, and the equivalence is the derived executable-diff value on the page, recomputed on every gate run — not a claim either sha field could carry alone."
+      }
+    },
+    {
+      "id": "CI-C-CLEANROOM-JOB",
+      "class": "HOSTED_ARTIFACT_ATTESTED",
+      "standing": "CURRENT",
+      "document": "docs/phase-1/phase-1-27/ci-evidence.md",
+      "locator": "| `hosted-clean-room` job                                   | `94085356719` — success, on its own per-job conclusion                                                                      |",
+      "value": "94085356719",
+      "provenance": {
+        "source": "HOSTED_ARTIFACT",
+        "runId": "31587707846",
+        "job": "94085356719",
+        "headSha": "501f5f0d48d7b8cafc12dad51f6c501534b66a18",
+        "artifact": "hosted-clean-room job",
+        "field": "job id and conclusion",
+        "runTakenAtHead": "f0804b2c7ad31e08f033f76096d49c5394d69c81",
+        "collectedBy": "Read from the GitHub run records during exact-head CI by a reader of the run. headSha names the code candidate this observation describes; the run itself executed at the documentation-only successor named in runTakenAtHead, and the equivalence is the derived executable-diff value on the page, recomputed on every gate run — not a claim either sha field could carry alone."
+      }
+    },
+    {
+      "id": "CI-C-WEBQUALITY-JOB",
+      "class": "HOSTED_ARTIFACT_ATTESTED",
+      "standing": "CURRENT",
+      "document": "docs/phase-1/phase-1-27/ci-evidence.md",
+      "locator": "| `Web quality` job                                         | `94085356574` — success                                                                                                     |",
+      "value": "94085356574",
+      "provenance": {
+        "source": "HOSTED_ARTIFACT",
+        "runId": "31587707846",
+        "job": "94085356574",
+        "headSha": "501f5f0d48d7b8cafc12dad51f6c501534b66a18",
+        "artifact": "Web quality job",
+        "field": "job id and conclusion",
+        "runTakenAtHead": "f0804b2c7ad31e08f033f76096d49c5394d69c81",
+        "collectedBy": "Read from the GitHub run records during exact-head CI by a reader of the run. headSha names the code candidate this observation describes; the run itself executed at the documentation-only successor named in runTakenAtHead, and the equivalence is the derived executable-diff value on the page, recomputed on every gate run — not a claim either sha field could carry alone."
+      }
+    },
+    {
+      "id": "CI-C-AUTH-JOB",
+      "class": "HOSTED_ARTIFACT_ATTESTED",
+      "standing": "CURRENT",
+      "document": "docs/phase-1/phase-1-27/ci-evidence.md",
+      "locator": "| `authenticated-browser` job                               | `94085356606` — success                                                                                                     |",
+      "value": "94085356606",
+      "provenance": {
+        "source": "HOSTED_ARTIFACT",
+        "runId": "31587707846",
+        "job": "94085356606",
+        "headSha": "501f5f0d48d7b8cafc12dad51f6c501534b66a18",
+        "artifact": "authenticated-browser job",
+        "field": "job id and conclusion",
+        "runTakenAtHead": "f0804b2c7ad31e08f033f76096d49c5394d69c81",
+        "collectedBy": "Read from the GitHub run records during exact-head CI by a reader of the run. headSha names the code candidate this observation describes; the run itself executed at the documentation-only successor named in runTakenAtHead, and the equivalence is the derived executable-diff value on the page, recomputed on every gate run — not a claim either sha field could carry alone."
+      }
+    },
+    {
+      "id": "CI-C-AUTH-PLANNED",
+      "class": "HOSTED_ARTIFACT_ATTESTED",
+      "standing": "CURRENT",
+      "document": "docs/phase-1/phase-1-27/ci-evidence.md",
+      "locator": "| Authenticated tier                                        | 229 planned · 225 passed · 0 failed · 4 skipped · 224 executed · 6 spec files                                               |",
+      "value": "229",
+      "provenance": {
+        "source": "HOSTED_ARTIFACT",
+        "runId": "31587707846",
+        "job": "94085356606",
+        "headSha": "501f5f0d48d7b8cafc12dad51f6c501534b66a18",
+        "artifact": "authenticated-browser job output",
+        "field": "tests planned",
+        "runTakenAtHead": "f0804b2c7ad31e08f033f76096d49c5394d69c81",
+        "collectedBy": "Read from the GitHub run records during exact-head CI by a reader of the run. headSha names the code candidate this observation describes; the run itself executed at the documentation-only successor named in runTakenAtHead, and the equivalence is the derived executable-diff value on the page, recomputed on every gate run — not a claim either sha field could carry alone."
+      }
+    },
+    {
+      "id": "CI-C-AUTH-PASSED",
+      "class": "HOSTED_ARTIFACT_ATTESTED",
+      "standing": "CURRENT",
+      "document": "docs/phase-1/phase-1-27/ci-evidence.md",
+      "locator": "| Authenticated tier                                        | 229 planned · 225 passed · 0 failed · 4 skipped · 224 executed · 6 spec files                                               |",
+      "value": "225",
+      "provenance": {
+        "source": "HOSTED_ARTIFACT",
+        "runId": "31587707846",
+        "job": "94085356606",
+        "headSha": "501f5f0d48d7b8cafc12dad51f6c501534b66a18",
+        "artifact": "authenticated-browser job output",
+        "field": "tests passed",
+        "runTakenAtHead": "f0804b2c7ad31e08f033f76096d49c5394d69c81",
+        "collectedBy": "Read from the GitHub run records during exact-head CI by a reader of the run. headSha names the code candidate this observation describes; the run itself executed at the documentation-only successor named in runTakenAtHead, and the equivalence is the derived executable-diff value on the page, recomputed on every gate run — not a claim either sha field could carry alone."
+      }
+    },
+    {
+      "id": "CI-C-AUTH-FAILED",
+      "class": "HOSTED_ARTIFACT_ATTESTED",
+      "standing": "CURRENT",
+      "document": "docs/phase-1/phase-1-27/ci-evidence.md",
+      "locator": "| Authenticated tier                                        | 229 planned · 225 passed · 0 failed · 4 skipped · 224 executed · 6 spec files                                               |",
+      "value": "0",
+      "provenance": {
+        "source": "HOSTED_ARTIFACT",
+        "runId": "31587707846",
+        "job": "94085356606",
+        "headSha": "501f5f0d48d7b8cafc12dad51f6c501534b66a18",
+        "artifact": "authenticated-browser job output",
+        "field": "tests failed",
+        "runTakenAtHead": "f0804b2c7ad31e08f033f76096d49c5394d69c81",
+        "collectedBy": "Read from the GitHub run records during exact-head CI by a reader of the run. headSha names the code candidate this observation describes; the run itself executed at the documentation-only successor named in runTakenAtHead, and the equivalence is the derived executable-diff value on the page, recomputed on every gate run — not a claim either sha field could carry alone."
+      }
+    },
+    {
+      "id": "CI-C-AUTH-SKIPPED",
+      "class": "HOSTED_ARTIFACT_ATTESTED",
+      "standing": "CURRENT",
+      "document": "docs/phase-1/phase-1-27/ci-evidence.md",
+      "locator": "| Authenticated tier                                        | 229 planned · 225 passed · 0 failed · 4 skipped · 224 executed · 6 spec files                                               |",
+      "value": "4",
+      "provenance": {
+        "source": "HOSTED_ARTIFACT",
+        "runId": "31587707846",
+        "job": "94085356606",
+        "headSha": "501f5f0d48d7b8cafc12dad51f6c501534b66a18",
+        "artifact": "authenticated-browser job output",
+        "field": "tests skipped (runtime-guarded no-data cases)",
+        "runTakenAtHead": "f0804b2c7ad31e08f033f76096d49c5394d69c81",
+        "collectedBy": "Read from the GitHub run records during exact-head CI by a reader of the run. headSha names the code candidate this observation describes; the run itself executed at the documentation-only successor named in runTakenAtHead, and the equivalence is the derived executable-diff value on the page, recomputed on every gate run — not a claim either sha field could carry alone."
+      }
+    },
+    {
+      "id": "CI-C-AUTH-EXECUTED",
+      "class": "HOSTED_ARTIFACT_ATTESTED",
+      "standing": "CURRENT",
+      "document": "docs/phase-1/phase-1-27/ci-evidence.md",
+      "locator": "| Authenticated tier                                        | 229 planned · 225 passed · 0 failed · 4 skipped · 224 executed · 6 spec files                                               |",
+      "value": "224",
+      "provenance": {
+        "source": "HOSTED_ARTIFACT",
+        "runId": "31587707846",
+        "job": "94085356606",
+        "headSha": "501f5f0d48d7b8cafc12dad51f6c501534b66a18",
+        "artifact": "authenticated-browser job output",
+        "field": "tests executed",
+        "runTakenAtHead": "f0804b2c7ad31e08f033f76096d49c5394d69c81",
+        "collectedBy": "Read from the GitHub run records during exact-head CI by a reader of the run. headSha names the code candidate this observation describes; the run itself executed at the documentation-only successor named in runTakenAtHead, and the equivalence is the derived executable-diff value on the page, recomputed on every gate run — not a claim either sha field could carry alone."
+      }
+    },
+    {
+      "id": "CI-C-AUTH-SPECS",
+      "class": "HOSTED_ARTIFACT_ATTESTED",
+      "standing": "CURRENT",
+      "document": "docs/phase-1/phase-1-27/ci-evidence.md",
+      "locator": "| Authenticated tier                                        | 229 planned · 225 passed · 0 failed · 4 skipped · 224 executed · 6 spec files                                               |",
+      "value": "6",
+      "provenance": {
+        "source": "HOSTED_ARTIFACT",
+        "runId": "31587707846",
+        "job": "94085356606",
+        "headSha": "501f5f0d48d7b8cafc12dad51f6c501534b66a18",
+        "artifact": "authenticated-browser job output",
+        "field": "spec files contributing executed tests",
+        "runTakenAtHead": "f0804b2c7ad31e08f033f76096d49c5394d69c81",
+        "collectedBy": "Read from the GitHub run records during exact-head CI by a reader of the run. headSha names the code candidate this observation describes; the run itself executed at the documentation-only successor named in runTakenAtHead, and the equivalence is the derived executable-diff value on the page, recomputed on every gate run — not a claim either sha field could carry alone."
+      }
+    }
+  ]
+}

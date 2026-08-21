@@ -1,0 +1,88 @@
+// Print foundation.
+//
+// P1-25 establishes the mechanism only. The invoice, receipt, reception and
+// delivery documents are later phases and are NOT designed here.
+
+@media print {
+  :root {
+    // Printing a dark surface wastes ink and reads badly, so the paper-facing
+    // surfaces collapse to the paper token. This is a REMAP of existing tokens,
+    // not a new value — print holds no raw colour, same rule as everywhere else.
+    --color-app-background: var(--color-paper);
+    --color-surface: var(--color-paper);
+    --color-surface-subtle: var(--color-paper);
+  }
+
+  body {
+    background: none;
+  }
+
+  // Undo the viewport scroll contract, or printing emits one screenful.
+  //
+  // On screen the application is exactly the viewport and every long region
+  // scrolls inside a bounded box. Paper has no viewport and cannot scroll: with
+  // `html, body { height: 100% }`, `body.app-viewport { overflow: hidden }`, a
+  // shell at `h-dvh overflow-hidden` and a table capped at `70dvh`, a printed
+  // operational screen would carry the first screenful and silently drop the
+  // rest — the failure only ever discovered on paper.
+  //
+  // `height: auto` is what lets each region grow to its content; `overflow:
+  // visible` is what lets that content reach the page. `max-height: none`
+  // releases the table cap specifically.
+  html,
+  body {
+    height: auto;
+    overflow: visible;
+  }
+
+  main,
+  [data-scroll-region] {
+    max-height: none;
+    height: auto;
+    overflow: visible;
+  }
+
+  // The notification region is a `div`, so the `nav`/`button` rule above does
+  // not reach it: a toast that happened to be open would print onto the
+  // document, with its dismiss control stripped and no way to tell it apart
+  // from real content.
+  [data-testid='notification-region'] {
+    /* stylelint-disable-next-line declaration-no-important -- same print-correctness rule as the chrome above. */
+    display: none !important;
+  }
+
+  // Interactive chrome has no meaning on paper.
+  //
+  // `!important` is the documented exception here, not an accident. A printed
+  // invoice or reception document that leaks a "Delete" button onto the page is
+  // a correctness failure, and the elements being hidden carry utility classes
+  // and component styles whose `display` is set from higher-specificity
+  // selectors this stylesheet does not know about. Losing that race silently
+  // would only be discovered on paper, by a customer.
+  [data-print='hide'],
+  nav,
+  button:not([data-print='keep']) {
+    /* stylelint-disable-next-line declaration-no-important -- print correctness must win over any component display rule; see comment above. */
+    display: none !important;
+  }
+
+  [data-print='document'] {
+    box-shadow: none;
+    border: 0;
+  }
+
+  // Avoid orphaned table headers across page breaks.
+  thead {
+    display: table-header-group;
+  }
+
+  tr,
+  img {
+    break-inside: avoid;
+  }
+}
+
+@page {
+  size: a4;
+  margin: 16mm;
+}

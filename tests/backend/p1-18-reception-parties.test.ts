@@ -38,6 +38,7 @@ import {
   TENANT_A,
   TENANT_B,
   USER_A,
+  USER_TENANT_B,
   adminPool,
   cleanBackendFixtures,
   ensureBackendFixtures,
@@ -75,6 +76,15 @@ const USER_PARTY_ONLY = 'c1180000-0000-4000-8000-0000000000b5';
 const SUBJ_PARTY_ONLY = 'fx_p1_18_parties_party_only';
 const ROLE_AUTHZ_ONLY = 'c1180000-0000-4000-8000-0000000000b6';
 const USER_AUTHZ_ONLY = 'c1180000-0000-4000-8000-0000000000b7';
+/*
+ * A role for the SHARED tenant-B account, which exists as an IAM user but holds
+ * no grant of its own. DBCR-P1-18-002 requires the receiving employee to be an
+ * active user in the visit's tenant AND to hold a live role grant covering the
+ * visit's branch — two separate checks, and this suite only ever satisfied the
+ * first. The grant below is what makes the tenant-B reception this suite builds
+ * to prove isolation an actual reception rather than a row that cannot exist.
+ */
+const ROLE_TENANT_B = 'c1180000-0000-4000-8000-0000000000b8';
 const SUBJ_AUTHZ_ONLY = 'fx_p1_18_parties_authz_only';
 
 /** A second branch in the same company, and a whole org for tenant B. */
@@ -255,7 +265,17 @@ async function seedVisit(
     const visit = await client.query<{ id: string }>(
       `SELECT rec.accept_check_in($1::uuid, $2::uuid, $3::uuid, NULL::uuid, $4::uuid,
                                   $5::uuid, $6::uuid) AS id`,
-      [companyId, branchId, vehicleId, walkIn.rows[0]?.id, USER_A, requester]
+      // The receiving employee follows the TENANT — DBCR-P1-18-002 gave the column
+      // a same-tenant FK and an insert-time eligibility guard, so the tenant-A
+      // USER_A this fixture passed unconditionally is refused on a tenant-B visit.
+      [
+        companyId,
+        branchId,
+        vehicleId,
+        walkIn.rows[0]?.id,
+        tenantId === TENANT_B ? USER_TENANT_B : USER_A,
+        requester,
+      ]
     );
     await client.query('COMMIT');
     return visit.rows[0]?.id ?? '';
@@ -370,6 +390,16 @@ beforeAll(async () => {
       USER_AUTHZ_ONLY,
       ROLE_AUTHZ_ONLY,
     ]
+  );
+
+  // The tenant-B side of the isolation proof needs an ELIGIBLE receiving employee
+  // in tenant B — see ROLE_TENANT_B above. Unrestricted, so it covers BRANCH_B1.
+  await seedRolePermissions(TENANT_B, ROLE_TENANT_B, 'fx_p1_18_parties_tenant_b');
+  await admin.query(
+    `INSERT INTO iam.role_grants (tenant_id, user_id, role_id, scope_mode, granted_by, created_by)
+     VALUES ($1, $2, $3, 'unrestricted', $4, $4)
+     ON CONFLICT DO NOTHING`,
+    [TENANT_B, USER_TENANT_B, ROLE_TENANT_B, USER_A]
   );
 
   // The scoped grant and its scopes must land together: the "a scoped grant needs

@@ -1,0 +1,108 @@
+{
+  "description": "Which changed-file ownership profile a branch is judged under. `scripts/ci/check-phase-ownership.mjs` defines the profiles; this maps branches onto them, because the profile is a property of the BRANCH and a workflow input cannot be one.",
+  "whyThisFileExists": "P1-27-DO-003. `validate:phase-ownership` was invoked by no CI job: a grep of `.github/` for `phase-ownership` returned nothing and never had. The gate's own register entry recorded that fact in a PROSE comment — a command documented as unreachable, which is this phase's defect class stated in its own tooling. It found seven API source files riding inside the P1-27 Frontend branch only because somebody ran it by hand.",
+  "howItIsUsed": ".github/workflows/_reusable-node-quality.yml, task `static-quality`, resolves the head branch against `rules` in order and exports PHASE_OWNERSHIP_PROFILE. The FIRST matching prefix wins, so a longer prefix must be listed before a shorter one.",
+  "unmappedPolicy": "FAIL. A branch that matches no rule is refused, and the message says to add a rule. The alternative — a permissive default — is how `check-phase-ownership.mjs` came to judge every branch against `p1-26-frontend`, including Backend branches the profile cannot pass. Declaring what a branch is allowed to change is a one-line diff and is the whole point of the gate.",
+  "rules": [
+    {
+      "branchPrefix": "p1-27/",
+      "profile": "p1-27-frontend",
+      "why": "the P1-27 Frontend working branches — apps/web, docs, tooling, tests and root config only"
+    },
+    {
+      "branchPrefix": "feature/p1-27-",
+      "profile": "p1-27-frontend",
+      "why": "the P1-27 Frontend integration branch"
+    },
+    {
+      "branchPrefix": "remediation/p1-27-partner-identity",
+      "profile": "p1-27-backend-partner-identity",
+      "why": "the P1-27-INT-025 Backend remediation, split out of the Frontend branch precisely so a Backend gate would see it. Listed BEFORE the general `remediation/p1-27-` rule below, because the first matching prefix wins and this one is longer"
+    },
+    {
+      "branchPrefix": "remediation/p1-27-",
+      "profile": "p1-27-frontend",
+      "why": "P1-27 remediation branches are Frontend unless they declare otherwise above"
+    },
+    {
+      "branchPrefix": "docs/p1-27-",
+      "profile": "p1-27-frontend",
+      "why": "a P1-27 documentation branch changes docs, which the Frontend profile permits, and must not change API source or the database any more than the phase itself may"
+    },
+    {
+      "branchPrefix": "tooling/no-fake-data-",
+      "profile": "repository-tooling",
+      "why": "the no-fake-data guard belongs to no phase — it runs on every branch in four workflows — so it is declared under `repository-tooling`, which permits the gate, its suite and the phase records its counts appear in, and forbids the product source a gate change must not smuggle. Borrowing a phase profile would have declared nothing"
+    },
+    {
+      "branchPrefix": "feature/p1-26-",
+      "profile": "p1-26-frontend",
+      "why": "the P1-26 Frontend branch"
+    },
+    {
+      "branchPrefix": "remediation/p1-15-",
+      "profile": "p1-15-evidence-foundation",
+      "why": "the P1-OD-025 shared private/versioned evidence remediation is Backend and Database work — API source, the storage adapter, the scanner handoff functions, a migration and the permission seed. It gets its own profile rather than borrowing a phase's, because borrowing declares nothing and no existing profile permits exactly this surface"
+    },
+    {
+      "branchPrefix": "remediation/p1-18-",
+      "profile": "p1-18-read-surface",
+      "why": "P1-18 Backend read-surface remediation branches — the P1-28 unblocking reads and close commands"
+    },
+    {
+      "branchPrefix": "remediation/p1-16-",
+      "profile": "p1-18-read-surface",
+      "why": "P1-16 Backend read-surface remediation branches — the customer-vehicle read (P1-27-INT-012, the [MISSING R4] dependency of P1-28-FE-008), judged under the same Backend read-surface profile as its P1-18 siblings"
+    },
+    {
+      "branchPrefix": "feature/p1-28-",
+      "profile": "p1-27-frontend",
+      "why": "the P1-28 Frontend integration branch — the same Frontend surface rules as P1-27: apps/web, docs, tooling, tests and root config only"
+    },
+    {
+      "branchPrefix": "p1-28/",
+      "profile": "p1-27-frontend",
+      "why": "the P1-28 Frontend working branches, same declaration as the integration branch"
+    },
+    {
+      "branchPrefix": "closure/p1-27-",
+      "profile": "p1-27-frontend",
+      "why": "the P1-27 closure branch records the Owner acceptance — docs plus the guard files the closure was designed to lift, all inside the Frontend profile, exactly as closure/p1-26- declared for its phase"
+    },
+    {
+      "branchPrefix": "closure/p1-26-",
+      "profile": "p1-26-frontend",
+      "why": "the P1-26 closure branch carries the same Frontend declaration"
+    },
+    {
+      "branchPrefix": "remediation/p1-28-owner-qa-backend",
+      "profile": "p1-28-backend-owner-qa",
+      "why": "the DBCR-P1-28-001 Backend remediation Owner QA forced — the damage-map revision made mandatory in the database instead of trusted from a compliant Frontend, and the read field that lets Reception tell `never published` from `published and retired`. Listed BEFORE the general `remediation/p1-28-` rule below, because the first matching prefix wins and this one is longer. Its own profile rather than `p1-18-read-surface`, which would also have permitted the diff: that profile describes new GET routes and close commands, and this branch publishes no operation, so borrowing it would have declared nothing"
+    },
+    {
+      "branchPrefix": "remediation/p1-28-",
+      "profile": "p1-27-frontend",
+      "why": "P1-28 remediation branches are Frontend unless they declare otherwise above — the same rule `remediation/p1-27-` states for its phase, and the same Frontend surface the P1-28 integration branch owns: apps/web, docs, tooling, tests and root config only"
+    },
+    {
+      "branchPrefix": "fix/p1-28-",
+      "profile": "p1-27-frontend",
+      "why": "P1-28 seal remediations cut from develop after PR #226 merged. They change the evidence machinery under scripts/ci and tests/ci and the phase records under docs, which is the same surface the P1-28 integration branch owns."
+    },
+    {
+      "branchPrefix": "chore/promotion-readiness",
+      "profile": "repository-tooling",
+      "why": "A repository-wide GATE change owned by no phase: the ownership gate learning that a promotion is not a phase change, and the coverage floor learning that a promotion is not an edit. Carries scripts/ci, tests/ci, .github/workflows and the phase records whose counts move with them — and, by that profile, no product source."
+    },
+    {
+      "branchPrefix": "chore/ci-base-ref-resolvable",
+      "profile": "repository-tooling",
+      "why": "A repository-wide CI change owned by no phase: the legacy workflow fetching the phase base branch so the evidence seal keeps the --not <base> term in its successor range."
+    },
+    {
+      "branchPrefix": "chore/absorb-merged-successors",
+      "profile": "repository-tooling",
+      "why": "A repository-wide CI change owned by no phase: the evidence seal reading a develop-to-main promotion as the branch it promotes, rather than declining its merge ref and reporting the protected branch history as this phase unnamed successors."
+    }
+  ]
+}

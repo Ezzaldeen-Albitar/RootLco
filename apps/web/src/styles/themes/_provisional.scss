@@ -1,0 +1,17 @@
+// The PROVISIONAL theme layer.
+//
+// OIR-06 is open: this is not RootLco branding and must not be described as
+// such. It exists so the token pipeline has a real theme to resolve, and so the
+// approved identity can later be added as a sibling file without touching a
+// single component.
+//
+// A theme layer may only REMAP semantic tokens. It may not introduce new raw
+// colours — those belong in tokens/_colors.scss, which the token check enforces.
+
+[data-theme='provisional'] {
+  // The provisional theme is currently identical to the default emit, so this
+  // block is intentionally empty of overrides. It exists to prove the seam:
+  // an approved theme is added as [data-theme='approved'] with the same shape,
+  // and `brand.primaryTheme` selects it. Nothing else changes.
+  color-scheme: light;
+}

@@ -48,6 +48,18 @@ const SUBJ_A = 'fx_p1_17_veh_rel_a';
 const ROLE_B = 'c1750000-0000-4000-8000-0000000000b1';
 const USER_RB = 'c1750000-0000-4000-8000-0000000000b2';
 const SUBJ_B = 'fx_p1_17_veh_rel_b';
+/*
+ * A THIRD principal, holding `veh.vehicle.read` AND `crm.customer.read`
+ * (`P1-27-INT-025`).
+ *
+ * The two above deliberately do not hold the CRM read, which is what makes the
+ * withholding case below real rather than staged: `SUBJ_A` is exactly the
+ * caller the visibility matrix grants an opaque partner uuid and denies the CRM
+ * columns beside it.
+ */
+const ROLE_C = 'c1750000-0000-4000-8000-0000000000c1';
+const USER_RC = 'c1750000-0000-4000-8000-0000000000c2';
+const SUBJ_C = 'fx_p1_17_veh_rel_c';
 const PARTNER_A1 = 'c1750000-0000-4000-8000-0000000000d1';
 const PARTNER_A2 = 'c1750000-0000-4000-8000-0000000000d2';
 const PARTNER_B1 = 'c1750000-0000-4000-8000-0000000000d3';
@@ -63,6 +75,13 @@ interface Body {
     readonly id: string;
     readonly relationshipRole?: string;
     readonly allowedActions?: readonly string[] | null;
+    // `P1-27-INT-025`. Required-and-nullable on the wire: the caller always
+    // learns whether the party was resolvable and never has to distinguish an
+    // absent key from "not visible to you".
+    readonly partnerId?: string;
+    readonly partnerName?: string | null;
+    readonly partnerNumber?: string | null;
+    readonly partnerType?: string | null;
   }[];
   readonly code?: string;
 }
@@ -149,6 +168,32 @@ async function seedWriter(
     `INSERT INTO iam.role_grants (tenant_id, user_id, role_id, scope_mode, granted_by, created_by)
      VALUES ($1,$2,$3,'unrestricted',$4,$4)`,
     [tenantId, userId, roleId, USER_A]
+  );
+}
+
+/** A reader entitled to BOTH the vehicle read and the CRM customer read. */
+async function seedNamingReader(): Promise<void> {
+  await admin.query(
+    `INSERT INTO iam.user_accounts (id, tenant_id, identity_provider, provider_subject, email, display_name, status, created_by)
+     VALUES ($1,$2,$3,$4,$4||'@example.test','Naming Reader','active',$5) ON CONFLICT (id) DO NOTHING`,
+    [USER_RC, TENANT_A, IDENTITY_PROVIDER, SUBJ_C, USER_A]
+  );
+  await admin.query(
+    `INSERT INTO iam.roles (id, tenant_id, role_code, name, created_by)
+     VALUES ($1,$2,$3,'P1-17 naming reader',$4) ON CONFLICT (id) DO NOTHING`,
+    [ROLE_C, TENANT_A, SUBJ_C, USER_A]
+  );
+  await admin.query(
+    `INSERT INTO iam.role_permissions (tenant_id, role_id, permission_id, effect, created_by)
+     SELECT $1::uuid,$2::uuid,p.id,'allow',$3::uuid FROM iam.permissions p
+      WHERE p.permission_code IN ('veh.vehicle.read','crm.customer.read')
+     ON CONFLICT (tenant_id, role_id, permission_id) DO NOTHING`,
+    [TENANT_A, ROLE_C, USER_A]
+  );
+  await admin.query(
+    `INSERT INTO iam.role_grants (tenant_id, user_id, role_id, scope_mode, granted_by, created_by)
+     VALUES ($1,$2,$3,'unrestricted',$4,$4)`,
+    [TENANT_A, USER_RC, ROLE_C, USER_A]
   );
 }
 
@@ -249,12 +294,14 @@ beforeAll(async () => {
     `INSERT INTO iam.permissions (permission_code, domain, description, risk_level, created_by)
      VALUES ('veh.vehicle.manage','veh','Create and edit vehicles','medium',$1),
             ('veh.vehicle.read','veh','Read vehicles','low',$1),
-            ('veh.vehicle.relationship.manage','veh','Transfer ownership and manage authorized parties','medium',$1)
+            ('veh.vehicle.relationship.manage','veh','Transfer ownership and manage authorized parties','medium',$1),
+            ('crm.customer.read','crm','Read customers','low',$1)
      ON CONFLICT (permission_code) DO NOTHING`,
     [USER_A]
   );
   await seedWriter(TENANT_A, ROLE_A, USER_RA, SUBJ_A);
   await seedWriter(TENANT_B, ROLE_B, USER_RB, SUBJ_B);
+  await seedNamingReader();
   await seedPartners();
   runtime = runtimeAppPool();
   __setPrimaryPoolForTests(runtime);
@@ -449,6 +496,60 @@ describe('vehicle-centric relationship read (single source of truth)', () => {
     const authorized = byRole.get('authorized_person');
     expect(authorized?.id).toBe(party.relationshipId);
     expect(authorized?.allowedActions).toContain('communicate_about_service');
+  });
+
+  /*
+   * `P1-27-INT-025` — the WIRING, which is the whole of that change and was
+   * asserted by nothing in any tier.
+   *
+   * `namePartners` has exactly two call sites, this read and the ownership
+   * history, and before these two cases the only test that mentioned
+   * `partnerName` was `tests/foundation/vehicle-partner-identity.test.ts` —
+   * which mocks `@/modules/crm` at the module boundary and therefore proves the
+   * fold, never the resolution. Deleting the `namePartners(...)` wrapper at
+   * `vehicle-relations-service.ts:169` left every tier green.
+   *
+   * The pair below is what makes that impossible: one caller who may read
+   * customers and one who may not, against the same row.
+   */
+  it('names the partner for a caller entitled to read customers', async () => {
+    authAs(SUBJ_A);
+    const vehicle = await newVehicle();
+    // `A2`, not `A1` — a DISTINCT display name, so the assertion identifies the
+    // partner on the row rather than merely proving that some name came back.
+    await crmLink(vehicle, PARTNER_A2);
+
+    authAs(SUBJ_C);
+    const response = await listRel(vehicle);
+    expect(response.status).toBe(200);
+    const row = (((await response.json()) as Body).items ?? [])[0];
+    expect(row?.partnerId).toBe(PARTNER_A2);
+    expect(row?.partnerName).toBe('A2');
+    expect(row?.partnerType).toBe('organization');
+  });
+
+  it('withholds the name from a caller who may read vehicles but not customers', async () => {
+    /*
+     * The narrowing, and the reason the operation may publish a name at all.
+     * `veh-ownership-visibility-matrix.md:49` grants a `veh.vehicle.read` caller
+     * the partner uuid and denies the CRM columns beside it; `:36-37` reserves
+     * widening to the Owner. So this caller must get the ROW and not the name.
+     *
+     * `SUBJ_A` holds `veh.vehicle.manage`, `veh.vehicle.read` and
+     * `veh.vehicle.relationship.manage` and no CRM permission at all.
+     */
+    authAs(SUBJ_A);
+    const vehicle = await newVehicle();
+    await crmLink(vehicle, PARTNER_A2);
+
+    const response = await listRel(vehicle);
+    expect(response.status).toBe(200);
+    const row = (((await response.json()) as Body).items ?? [])[0];
+    // The row is still there — withholding a name must not hide a relationship.
+    expect(row?.partnerId).toBe(PARTNER_A2);
+    expect(row?.partnerName).toBeNull();
+    expect(row?.partnerNumber).toBeNull();
+    expect(row?.partnerType).toBeNull();
   });
 
   it('never exposes another tenant’s relationships and refuses a bad cursor', async () => {

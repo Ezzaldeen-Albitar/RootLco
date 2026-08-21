@@ -924,25 +924,27 @@ credential authority. Contact fields are classified `restricted`.
 
 **Scope:** platform + tenant · **Retention class:** operational · Dual-scope document policy envelope. A platform row (`tenant_id` NULL) is a shared default readable by every tenant; a tenant row is a tenant override. Category constraints are data, not upload implementation. Runtime SELECT-only.
 
-| Column                    | Type                     | Null | Default           | Classification |
-| ------------------------- | ------------------------ | ---- | ----------------- | -------------- |
-| `id`                      | uuid                     | NO   | gen_random_uuid() | internal       |
-| `scope`                   | text                     | NO   | —                 | internal       |
-| `tenant_id`               | uuid                     | YES  | —                 | internal       |
-| `category_code`           | text                     | NO   | —                 | internal       |
-| `name`                    | text                     | NO   | —                 | internal       |
-| `description`             | text                     | YES  | —                 | internal       |
-| `allowed_content_types`   | text[]                   | NO   | —                 | internal       |
-| `max_size_bytes`          | bigint                   | NO   | —                 | internal       |
-| `default_classification`  | text                     | NO   | —                 | internal       |
-| `default_retention_class` | text                     | NO   | —                 | internal       |
-| `status`                  | text                     | NO   | 'active'          | internal       |
-| `deleted_at`              | timestamp with time zone | YES  | —                 | internal       |
-| `record_version`          | integer                  | NO   | 1                 | internal       |
-| `created_at`              | timestamp with time zone | NO   | now()             | internal       |
-| `created_by`              | uuid                     | NO   | —                 | internal       |
-| `updated_at`              | timestamp with time zone | YES  | —                 | internal       |
-| `updated_by`              | uuid                     | YES  | —                 | internal       |
+| Column                              | Type                     | Null | Default           | Classification |
+| ----------------------------------- | ------------------------ | ---- | ----------------- | -------------- |
+| `id`                                | uuid                     | NO   | gen_random_uuid() | internal       |
+| `scope`                             | text                     | NO   | —                 | internal       |
+| `tenant_id`                         | uuid                     | YES  | —                 | internal       |
+| `category_code`                     | text                     | NO   | —                 | internal       |
+| `name`                              | text                     | NO   | —                 | internal       |
+| `description`                       | text                     | YES  | —                 | internal       |
+| `allowed_content_types`             | text[]                   | NO   | —                 | internal       |
+| `max_size_bytes`                    | bigint                   | NO   | —                 | internal       |
+| `default_classification`            | text                     | NO   | —                 | internal       |
+| `default_retention_class`           | text                     | NO   | —                 | internal       |
+| `business_link_purpose`             | text                     | NO   | 'evidence'        | internal       |
+| `device_capture_timestamp_required` | boolean                  | NO   | false             | internal       |
+| `status`                            | text                     | NO   | 'active'          | internal       |
+| `deleted_at`                        | timestamp with time zone | YES  | —                 | internal       |
+| `record_version`                    | integer                  | NO   | 1                 | internal       |
+| `created_at`                        | timestamp with time zone | NO   | now()             | internal       |
+| `created_by`                        | uuid                     | NO   | —                 | internal       |
+| `updated_at`                        | timestamp with time zone | YES  | —                 | internal       |
+| `updated_by`                        | uuid                     | YES  | —                 | internal       |
 
 ### `shared.documents`
 
@@ -970,7 +972,7 @@ credential authority. Contact fields are classified `restricted`.
 
 ### `shared.document_versions`
 
-**Scope:** tenant · **Retention class:** evidence-audit · Append-only per-version file metadata (no bytes). `version_number` unique per document; one-way lifecycle (pending → accepted/quarantined/rejected) via `shared.guard_document_version_transition`; terminal rows immutable. Runtime SELECT-only.
+**Scope:** tenant · **Retention class:** evidence-audit · Append-only per-version file metadata (no bytes). `version_number` unique per document; one-way lifecycle `pending → scanning → accepted | quarantined | rejected` via `shared.guard_document_version_transition`; acceptance requires an exclusively clean scan and a scanner failure quarantines rather than accepts; terminal rows immutable. Runtime holds SELECT plus a single column grant, `UPDATE(status)`, under `upd_document_versions_lifecycle` — no other column of a version is writable by the request role.
 
 | Column           | Type                     | Null | Default           | Classification |
 | ---------------- | ------------------------ | ---- | ----------------- | -------------- |
@@ -985,6 +987,8 @@ credential authority. Contact fields are classified `restricted`.
 | `uploaded_by`    | uuid                     | NO   | —                 | internal       |
 | `uploaded_at`    | timestamp with time zone | NO   | now()             | internal       |
 | `status`         | text                     | NO   | 'pending'         | internal       |
+| `scanning_at`    | timestamp with time zone | YES  | —                 | internal       |
+| `captured_at`    | timestamp with time zone | YES  | —                 | internal       |
 | `accepted_at`    | timestamp with time zone | YES  | —                 | internal       |
 | `quarantined_at` | timestamp with time zone | YES  | —                 | internal       |
 | `rejected_at`    | timestamp with time zone | YES  | —                 | internal       |
@@ -2617,6 +2621,119 @@ rejected. `reason`/`correlation_id` are optional GUC-captured annotations.
 
 ## Phase 1-8 — Vehicle Reception schema (generated from the live catalog)
 
+### `rec.capture_policy_rules`
+
+The reception capture policy, per requirement (P1-18). One live rule per tenant scope and requirement code; superseded rules are retired rather than edited, so a visit can always be read against the policy that was in force when it happened.
+
+| Column                        | Type                     | Null | Default             | Class    |
+| ----------------------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`                          | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`                   | uuid                     | NO   | —                   | internal |
+| `company_id`                  | uuid                     | YES  | —                   | internal |
+| `branch_id`                   | uuid                     | YES  | —                   | internal |
+| `requirement_code`            | text                     | NO   | —                   | internal |
+| `refusal_type`                | text                     | YES  | —                   | internal |
+| `min_count`                   | integer                  | NO   | —                   | internal |
+| `device_captured_at_required` | boolean                  | NO   | `true`              | internal |
+| `witness_required`            | boolean                  | NO   | `false`             | internal |
+| `effective_at`                | timestamp with time zone | NO   | `now()`             | internal |
+| `retired_at`                  | timestamp with time zone | YES  | —                   | internal |
+| `created_at`                  | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`                  | uuid                     | NO   | —                   | internal |
+
+### `rec.capture_requirement_overrides`
+
+An attributable waiver of a required capture (P1-18). Records WHICH requirement was waived, by WHOM, WHEN and WHY — waiving a capture is a different authority from performing one, gated by `rec.reception.evidence.override`.
+
+| Column               | Type                     | Null | Default             | Class      |
+| -------------------- | ------------------------ | ---- | ------------------- | ---------- |
+| `id`                 | uuid                     | NO   | `gen_random_uuid()` | internal   |
+| `tenant_id`          | uuid                     | NO   | —                   | internal   |
+| `company_id`         | uuid                     | NO   | —                   | internal   |
+| `branch_id`          | uuid                     | NO   | —                   | internal   |
+| `reception_visit_id` | uuid                     | NO   | —                   | internal   |
+| `requirement_code`   | text                     | NO   | —                   | internal   |
+| `reason`             | text                     | NO   | —                   | restricted |
+| `occurred_at`        | timestamp with time zone | NO   | `now()`             | internal   |
+| `created_at`         | timestamp with time zone | NO   | `now()`             | internal   |
+| `created_by`         | uuid                     | NO   | —                   | internal   |
+
+### `rec.damage_map_templates`
+
+A damage-map template (P1-18, FE-012). The template is the identity; its drawable content lives in immutable versions below, so a reception can be bound to the exact revision it was inspected against.
+
+| Column           | Type                     | Null | Default             | Class    |
+| ---------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`             | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`      | uuid                     | NO   | —                   | internal |
+| `company_id`     | uuid                     | YES  | —                   | internal |
+| `branch_id`      | uuid                     | YES  | —                   | internal |
+| `map_type`       | text                     | NO   | —                   | internal |
+| `perspective`    | text                     | YES  | —                   | internal |
+| `status`         | text                     | NO   | `'active'::text`    | internal |
+| `record_version` | integer                  | NO   | `1`                 | internal |
+| `created_at`     | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`     | uuid                     | NO   | —                   | internal |
+| `updated_at`     | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`     | uuid                     | YES  | —                   | internal |
+
+### `rec.damage_map_template_versions`
+
+An immutable revision of a damage-map template (P1-18, FE-012). Points at a shared document + exact version. Retiring a revision withdraws it from NEW selection and changes nothing already bound to it.
+
+| Column                | Type                     | Null | Default             | Class    |
+| --------------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`                  | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`           | uuid                     | NO   | —                   | internal |
+| `template_id`         | uuid                     | NO   | —                   | internal |
+| `version_number`      | integer                  | NO   | —                   | internal |
+| `document_id`         | uuid                     | NO   | —                   | internal |
+| `document_version_id` | uuid                     | NO   | —                   | internal |
+| `status`              | text                     | NO   | `'active'::text`    | internal |
+| `created_at`          | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`          | uuid                     | NO   | —                   | internal |
+| `retired_at`          | timestamp with time zone | YES  | —                   | internal |
+| `retired_by`          | uuid                     | YES  | —                   | internal |
+
+### `rec.reception_evidence_bindings`
+
+Binds one reception requirement to an exact accepted document version (P1-18). The binding — not the document — is what satisfies a capture requirement, so evidence cannot be re-pointed after the fact.
+
+| Column                | Type                     | Null | Default             | Class    |
+| --------------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`                  | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`           | uuid                     | NO   | —                   | internal |
+| `company_id`          | uuid                     | NO   | —                   | internal |
+| `branch_id`           | uuid                     | NO   | —                   | internal |
+| `reception_visit_id`  | uuid                     | NO   | —                   | internal |
+| `requirement_code`    | text                     | NO   | —                   | internal |
+| `document_id`         | uuid                     | NO   | —                   | internal |
+| `document_version_id` | uuid                     | NO   | —                   | internal |
+| `device_captured_at`  | timestamp with time zone | YES  | —                   | internal |
+| `quality_status`      | text                     | NO   | `'readable'::text`  | internal |
+| `finalized_at`        | timestamp with time zone | YES  | —                   | internal |
+| `finalized_by`        | uuid                     | YES  | —                   | internal |
+| `created_at`          | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`          | uuid                     | NO   | —                   | internal |
+
+### `rec.signature_events`
+
+The signature lifecycle as events (P1-18, FE-018). Finalisation, repudiation and replacement are appended here; the original signature row is never overwritten, so a withdrawn signature remains readable as history.
+
+| Column               | Type                     | Null | Default             | Class      |
+| -------------------- | ------------------------ | ---- | ------------------- | ---------- |
+| `id`                 | uuid                     | NO   | `gen_random_uuid()` | internal   |
+| `tenant_id`          | uuid                     | NO   | —                   | internal   |
+| `company_id`         | uuid                     | NO   | —                   | internal   |
+| `branch_id`          | uuid                     | NO   | —                   | internal   |
+| `reception_visit_id` | uuid                     | NO   | —                   | internal   |
+| `signature_id`       | uuid                     | NO   | —                   | internal   |
+| `event_type`         | text                     | NO   | —                   | internal   |
+| `reason`             | text                     | YES  | —                   | restricted |
+| `occurred_at`        | timestamp with time zone | NO   | `now()`             | internal   |
+| `created_at`         | timestamp with time zone | NO   | `now()`             | internal   |
+| `created_by`         | uuid                     | NO   | —                   | internal   |
+
 ### `rec.visit_reasons`
 
 Dual-scope reception visit-reason catalog. Zero rows shipped (no-fake-data).
@@ -2725,29 +2842,37 @@ Walk-in origin reference (P1-08-DB-004): an unscheduled arrival a reception visi
 
 Reception visit master / custody boundary (P1-08-DB-005). Exactly one origin (appointment XOR walk-in); one open visit per Vehicle; captures odometer/fuel/SOC. No work order.
 
-| Column                  | Type                     | Null | Default             | Class    |
-| ----------------------- | ------------------------ | ---- | ------------------- | -------- |
-| `id`                    | uuid                     | NO   | `gen_random_uuid()` | internal |
-| `tenant_id`             | uuid                     | NO   | —                   | internal |
-| `company_id`            | uuid                     | NO   | —                   | internal |
-| `branch_id`             | uuid                     | NO   | —                   | internal |
-| `appointment_id`        | uuid                     | YES  | —                   | internal |
-| `walk_in_id`            | uuid                     | YES  | —                   | internal |
-| `vehicle_id`            | uuid                     | NO   | —                   | internal |
-| `odometer_reading_id`   | uuid                     | YES  | —                   | internal |
-| `fuel_level_id`         | uuid                     | YES  | —                   | internal |
-| `ev_soc_percent`        | numeric                  | YES  | —                   | internal |
-| `receiving_employee_id` | uuid                     | NO   | —                   | internal |
-| `custody_accepted_at`   | timestamp with time zone | NO   | `now()`             | internal |
-| `reception_status`      | text                     | NO   | `'opened'`          | internal |
-| `display_number`        | text                     | YES  | —                   | internal |
-| `record_version`        | integer                  | NO   | `1`                 | internal |
-| `created_at`            | timestamp with time zone | NO   | `now()`             | internal |
-| `created_by`            | uuid                     | NO   | —                   | internal |
-| `updated_at`            | timestamp with time zone | YES  | —                   | internal |
-| `updated_by`            | uuid                     | YES  | —                   | internal |
-| `deleted_at`            | timestamp with time zone | YES  | —                   | internal |
-| `deleted_by`            | uuid                     | YES  | —                   | internal |
+| Column                            | Type                     | Null | Default             | Class    |
+| --------------------------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`                              | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`                       | uuid                     | NO   | —                   | internal |
+| `company_id`                      | uuid                     | NO   | —                   | internal |
+| `branch_id`                       | uuid                     | NO   | —                   | internal |
+| `appointment_id`                  | uuid                     | YES  | —                   | internal |
+| `walk_in_id`                      | uuid                     | YES  | —                   | internal |
+| `vehicle_id`                      | uuid                     | NO   | —                   | internal |
+| `odometer_reading_id`             | uuid                     | YES  | —                   | internal |
+| `fuel_level_id`                   | uuid                     | YES  | —                   | internal |
+| `ev_soc_percent`                  | numeric                  | YES  | —                   | internal |
+| `receiving_employee_id`           | uuid                     | NO   | —                   | internal |
+| `custody_accepted_at`             | timestamp with time zone | NO   | `now()`             | internal |
+| `reception_status`                | text                     | NO   | `'opened'`          | internal |
+| `display_number`                  | text                     | YES  | —                   | internal |
+| `record_version`                  | integer                  | NO   | `1`                 | internal |
+| `created_at`                      | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`                      | uuid                     | NO   | —                   | internal |
+| `updated_at`                      | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`                      | uuid                     | YES  | —                   | internal |
+| `deleted_at`                      | timestamp with time zone | YES  | —                   | internal |
+| `deleted_by`                      | uuid                     | YES  | —                   | internal |
+| `custody_released_at`             | timestamp with time zone | YES  | —                   | internal |
+| `receiving_employee_display_name` | text                     | NO   | —                   | internal |
+
+`receiving_employee_id` is a same-tenant foreign key into `iam.user_accounts`
+(FE-007, DBCR-P1-18-002); `receiving_employee_display_name` is the immutable
+display-name snapshot stamped by `rec.stamp_receiving_employee_identity()` at
+insert, so a later rename, lock, archive or soft delete of the account cannot
+rewrite what the customer was shown when custody changed hands.
 
 ### `rec.reception_party_roles`
 
@@ -2894,24 +3019,25 @@ Condition findings (P1-08-DB-011). New findings only while open; corrections lin
 
 Damage-map reference (P1-08-DB-012). Bound to an exact immutable document version.
 
-| Column                | Type                     | Null | Default             | Class    |
-| --------------------- | ------------------------ | ---- | ------------------- | -------- |
-| `id`                  | uuid                     | NO   | `gen_random_uuid()` | internal |
-| `tenant_id`           | uuid                     | NO   | —                   | internal |
-| `company_id`          | uuid                     | NO   | —                   | internal |
-| `branch_id`           | uuid                     | NO   | —                   | internal |
-| `reception_visit_id`  | uuid                     | NO   | —                   | internal |
-| `document_id`         | uuid                     | NO   | —                   | internal |
-| `document_version_id` | uuid                     | NO   | —                   | internal |
-| `map_type`            | text                     | NO   | —                   | internal |
-| `perspective`         | text                     | YES  | —                   | internal |
-| `record_version`      | integer                  | NO   | `1`                 | internal |
-| `created_at`          | timestamp with time zone | NO   | `now()`             | internal |
-| `created_by`          | uuid                     | NO   | —                   | internal |
-| `updated_at`          | timestamp with time zone | YES  | —                   | internal |
-| `updated_by`          | uuid                     | YES  | —                   | internal |
-| `deleted_at`          | timestamp with time zone | YES  | —                   | internal |
-| `deleted_by`          | uuid                     | YES  | —                   | internal |
+| Column                           | Type                     | Null | Default             | Class    |
+| -------------------------------- | ------------------------ | ---- | ------------------- | -------- |
+| `id`                             | uuid                     | NO   | `gen_random_uuid()` | internal |
+| `tenant_id`                      | uuid                     | NO   | —                   | internal |
+| `company_id`                     | uuid                     | NO   | —                   | internal |
+| `branch_id`                      | uuid                     | NO   | —                   | internal |
+| `reception_visit_id`             | uuid                     | NO   | —                   | internal |
+| `document_id`                    | uuid                     | NO   | —                   | internal |
+| `document_version_id`            | uuid                     | NO   | —                   | internal |
+| `damage_map_template_version_id` | uuid                     | YES  | —                   | internal |
+| `map_type`                       | text                     | NO   | —                   | internal |
+| `perspective`                    | text                     | YES  | —                   | internal |
+| `record_version`                 | integer                  | NO   | `1`                 | internal |
+| `created_at`                     | timestamp with time zone | NO   | `now()`             | internal |
+| `created_by`                     | uuid                     | NO   | —                   | internal |
+| `updated_at`                     | timestamp with time zone | YES  | —                   | internal |
+| `updated_by`                     | uuid                     | YES  | —                   | internal |
+| `deleted_at`                     | timestamp with time zone | YES  | —                   | internal |
+| `deleted_by`                     | uuid                     | YES  | —                   | internal |
 
 ### `rec.damage_marks`
 
@@ -3049,6 +3175,7 @@ Append-only reception signatures (P1-08-DB-017). Binds document + exact version;
 | `signer_role`                   | text                     | NO   | —                   | internal |
 | `signer_partner_id`             | uuid                     | YES  | —                   | internal |
 | `signature_document_id`         | uuid                     | NO   | —                   | internal |
+| `replaces_signature_id`         | uuid                     | YES  | —                   | internal |
 | `signature_document_version_id` | uuid                     | NO   | —                   | internal |
 | `capture_method`                | text                     | NO   | —                   | internal |
 | `purpose`                       | text                     | NO   | —                   | internal |

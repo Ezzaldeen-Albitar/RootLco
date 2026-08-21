@@ -8,12 +8,24 @@
  * noticing is a gate with an off switch nobody can see.
  */
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { evaluate as evaluateCoverage } from '../../scripts/ci/coverage-gate.mjs';
 
 const read = (name: string) =>
   JSON.parse(readFileSync(join(__dirname, '../../.github/ci-baselines', name), 'utf8'));
+
+/**
+ * A figure inside a prose field, matched as a figure rather than as a substring.
+ *
+ * `QA005-05`: `toContain('214')` is satisfied by `2140` and by `1214`, so a note
+ * that had drifted to a longer number went on passing. Refusing a digit or a
+ * decimal point on either side is what makes the comparison two-sided.
+ */
+const exactly = (value: string | number): RegExp =>
+  new RegExp(
+    String.raw`(?<![\d.])${String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\d.])`
+  );
 
 describe('committed baselines', () => {
   it('the unit coverage baseline records real numbers and a sane tolerance', () => {
@@ -141,9 +153,19 @@ describe('committed baselines', () => {
     // The two function counts disagree for a known reason. If someone
     // "reconciles" them by editing this file, the explanation must go with it.
     expect(baseline.functionCountDiscrepancyNote).toBeTruthy();
-    expect(baseline.functionCountDiscrepancyNote).toContain('212');
-    expect(baseline.functionCountDiscrepancyNote).toContain(
-      String(baseline.structuralTotals.functions)
+    // The RootLco-schema figure, which `npm run validate:schema-inventory`
+    // reports and which a developer can reproduce locally. It moves in lockstep
+    // with structuralTotals.functions — the gap between them is extension-owned
+    // code and is constant — so pinning both is what makes the larger figure
+    // derivable instead of guessed. 214 through DBCR-P1-18-001; 216 once the
+    // P1-OD-025 evidence foundation added shared.begin_document_scan and
+    // shared.complete_document_scan; 217 since DBCR-P1-18-002 added
+    // rec.stamp_receiving_employee_identity. All three live in one of the
+    // seventeen RootLco schemas and are therefore counted by BOTH scripts, which
+    // is why the pair steps together and neither figure is ever chosen.
+    expect(baseline.functionCountDiscrepancyNote).toMatch(exactly(217));
+    expect(baseline.functionCountDiscrepancyNote).toMatch(
+      exactly(baseline.structuralTotals.functions)
     );
   });
 
@@ -156,6 +178,120 @@ describe('committed baselines', () => {
     for (const [tier, entry] of tiers) {
       expect(entry.minTests, tier).toBeGreaterThan(0);
       expect(entry.minTests, tier).toBeLessThanOrEqual(entry.measured);
+    }
+  });
+
+  it('every tier that CI summarises carries a floor, including web', () => {
+    /*
+     * `summarise-vitest.mjs` reads `tiers[label].minTests`. A label with no entry
+     * does not fail — it prints a warning and runs the tier with the anti-shrink
+     * guard switched off, which is indistinguishable from a green run to anyone
+     * reading the check list.
+     *
+     * `web` was that tier for the whole of P1-27. It grew from 39 test files to
+     * 65 while carrying no floor at all, and every hosted run said so in an
+     * annotation nobody was required to read: "no minimum test count is recorded
+     * for tier `web`, so a shrinking suite would not be detected."
+     *
+     * The labels are derived from the workflow that passes them, so a new tier
+     * cannot be summarised without also being floored.
+     */
+    /*
+     * EVERY workflow, not one. This case read `_reusable-node-quality.yml` alone
+     * under the title "every tier that CI summarises carries a floor", while the
+     * database tier is summarised from `_reusable-database-assurance.yml` and the
+     * backend tier from `_reusable-integration-tests.yml`. It reported full
+     * coverage of a subset — a new tier could be summarised from either of those
+     * two files with no floor and nothing would notice.
+     */
+    const workflowDir = join(process.cwd(), '.github', 'workflows');
+    const summarised: string[] = [];
+    const scanned: string[] = [];
+    for (const name of readdirSync(workflowDir).filter((n) => n.endsWith('.yml'))) {
+      const source = readFileSync(join(workflowDir, name), 'utf8');
+      if (!source.includes('summarise-vitest.mjs')) continue;
+      scanned.push(name);
+      for (const m of source.matchAll(/--label\s+(\w+)/g)) summarised.push(m[1] ?? '');
+    }
+    expect(summarised, 'no summarise-vitest invocation was found').not.toEqual([]);
+    expect(summarised, 'the web tier must be summarised').toContain('web');
+    // The three tiers below are summarised from files this case used to ignore;
+    // finding them is what proves the widened scan is really wider.
+    for (const label of ['unit', 'database', 'backend']) {
+      expect(summarised, `${label} is summarised by no scanned workflow`).toContain(label);
+    }
+    expect(scanned.length, 'only one workflow invokes the summariser').toBeGreaterThanOrEqual(3);
+
+    const tiers = read('test-count-baseline.json').tiers as Record<string, unknown>;
+    const unfloored = summarised.filter((label) => tiers[label] === undefined);
+    expect(
+      unfloored,
+      'a tier is summarised with no floor, so summarise-vitest only warns and a shrinking suite passes'
+    ).toEqual([]);
+  });
+
+  it('gives each floor headroom that is meaningful in both directions', () => {
+    /*
+     * CORRECTED. The bounds used to be `headroom > 0` and `headroom < 10%`, under
+     * a message claiming they stopped a floor "wide enough to swallow a deleted
+     * test file". Neither implemented that:
+     *
+     *   - `> 0` admits `minTests = measured - 1`, which is the "transcript rather
+     *     than a guard" the caveat forbids in the same breath.
+     *   - `< 10%` of 1216 is 121 tests — three times the largest web test file —
+     *     so the message described a property the bound did not enforce.
+     *
+     * The bounds are now stated as what they are. A floor is a guard when it can
+     * absorb ordinary churn without moving and still detect a real loss, so
+     * headroom is required to be a real slice of the tier rather than merely
+     * non-zero, and to stay well under it. What the headroom then GUARANTEES is
+     * "any net loss of more than `headroom` executed tests", which the web tier
+     * now records verbatim rather than as a slogan about deleted files.
+     */
+    const tiers = Object.entries(
+      read('test-count-baseline.json').tiers as Record<
+        string,
+        { minTests: number; measured: number }
+      >
+    );
+    for (const [tier, entry] of tiers) {
+      const headroom = entry.measured - entry.minTests;
+      const ratio = headroom / entry.measured;
+      expect(headroom, `${tier}: a floor equal to its measurement is a transcript`).toBeGreaterThan(
+        0
+      );
+      expect(
+        ratio,
+        `${tier}: headroom of ${headroom} is a rounding error, not a guard — the next commit moves the floor`
+      ).toBeGreaterThan(0.01);
+      expect(
+        ratio,
+        `${tier}: headroom of ${headroom} is a large fraction of the tier; state what it guarantees before widening it`
+      ).toBeLessThan(0.08);
+    }
+  });
+
+  it('states what a headroom guarantees wherever it is not self-evident', () => {
+    /*
+     * The web entry claimed 36 tests of headroom meant "a whole deleted test file
+     * still trips the floor". Two web files carry 36 cases, so it did not. The
+     * claim was a slogan; the bound is `> headroom`. Any tier that describes its
+     * headroom must describe it as a bound, and must not resurrect the slogan.
+     */
+    const tiers = read('test-count-baseline.json').tiers as Record<
+      string,
+      { note?: string; whatTheHeadroomGuarantees?: string }
+    >;
+    const web = tiers.web;
+    expect(web?.whatTheHeadroomGuarantees, 'the web tier states no guarantee').toBeTruthy();
+    expect(web?.whatTheHeadroomGuarantees).toMatch(/NET LOSS OF MORE THAN \d+ EXECUTED TESTS/);
+    for (const [label, entry] of Object.entries(tiers)) {
+      const text = `${entry.note ?? ''} ${entry.whatTheHeadroomGuarantees ?? ''}`;
+      const asserted = text.replace(/previously claimed[\s\S]*?That is FALSE/i, '');
+      expect(
+        asserted.includes('a whole deleted test file still trips the floor'),
+        `${label} restates the refuted slogan as if it were true`
+      ).toBe(false);
     }
   });
 

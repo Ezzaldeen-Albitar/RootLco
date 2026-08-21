@@ -1,0 +1,41 @@
+{
+  "baseSha": "9e70c61cfc59b0618639c654e4e5bbe10ef72c0a",
+  "beforeTrackedCount": 456,
+  "afterTrackedCount": 436,
+  "removedCount": 20,
+  "removed": [
+    "apps/api/src/app/layout.tsx",
+    "apps/api/src/app/page.module.scss",
+    "apps/api/src/app/page.tsx",
+    "apps/api/src/styles/abstracts/_breakpoints.scss",
+    "apps/api/src/styles/abstracts/_direction.scss",
+    "apps/api/src/styles/abstracts/_functions.scss",
+    "apps/api/src/styles/abstracts/_index.scss",
+    "apps/api/src/styles/abstracts/_mixins.scss",
+    "apps/api/src/styles/abstracts/_tokens.scss",
+    "apps/api/src/styles/abstracts/_variables.scss",
+    "apps/api/src/styles/base/_accessibility.scss",
+    "apps/api/src/styles/base/_index.scss",
+    "apps/api/src/styles/base/_reset.scss",
+    "apps/api/src/styles/base/_typography.scss",
+    "apps/api/src/styles/globals.scss",
+    "apps/api/src/styles/themes/_default.scss",
+    "apps/api/src/styles/themes/_index.scss",
+    "apps/api/src/styles/utilities/_index.scss",
+    "apps/api/src/styles/utilities/_layout.scss",
+    "apps/api/src/styles/utilities/_visibility.scss"
+  ],
+  "afterByClassification": {
+    "workspace configuration": 6,
+    "public runtime asset": 1,
+    "API Route Handler": 196,
+    "Backend configuration": 1,
+    "Backend shared utility": 4,
+    "Backend module": 181,
+    "Backend runtime source": 47
+  },
+  "routeHandlerCount": 196,
+  "nonRouteFilesInAppTree": [],
+  "stylesheetsRemaining": [],
+  "frontendDirsRemaining": []
+}

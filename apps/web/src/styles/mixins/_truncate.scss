@@ -1,0 +1,9 @@
+/// Single-line truncation.
+///
+/// Uses logical inline-size so it behaves in both directions; a max-width here
+/// would be direction-correct by accident rather than by construction.
+@mixin truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

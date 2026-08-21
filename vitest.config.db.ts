@@ -1,5 +1,5 @@
 import { defineConfig } from 'vitest/config';
-import path from 'node:path';
+import { API_SRC_ROOT } from './scripts/lib/repository-paths.mjs';
 
 // Database test harness configuration (P1-02-QA-001..005).
 // Requires a running PostgreSQL with migrations applied:
@@ -19,6 +19,6 @@ export default defineConfig({
     hookTimeout: 60_000,
   },
   resolve: {
-    alias: { '@': path.resolve(__dirname, './src') },
+    alias: { '@api': API_SRC_ROOT, '@': API_SRC_ROOT },
   },
 });

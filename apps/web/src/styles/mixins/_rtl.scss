@@ -1,0 +1,20 @@
+/// Direction helpers.
+///
+/// Logical properties are the default everywhere; these exist only for the
+/// narrow cases where a value must genuinely flip and no logical property
+/// expresses it (a rotated chevron, a directional gradient).
+///
+/// Anything using these must say WHY in a comment at the call site. Stylelint
+/// rejects bare left/right properties in component styles, so reaching for one
+/// of these is a deliberate, reviewable act.
+@mixin ltr-only {
+  [dir='ltr'] & {
+    @content;
+  }
+}
+
+@mixin rtl-only {
+  [dir='rtl'] & {
+    @content;
+  }
+}

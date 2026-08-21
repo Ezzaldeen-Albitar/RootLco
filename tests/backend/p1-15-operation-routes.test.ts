@@ -448,6 +448,11 @@ async function acceptVersion(versionId: string, tenantId: string = TENANT_A): Pr
      VALUES ($1, $2, $3, 'clean', 'fx_p15_route_fixture_scanner', $4)`,
     [randomUUID(), tenantId, versionId, tenantId === TENANT_A ? U_RT_A : U_RT_B]
   );
+  // Two statements, not one, since P1-OD-025: `pending -> accepted` is refused
+  // outright, because finalized evidence must have passed through scanning.
+  await admin.query(`UPDATE shared.document_versions SET status = 'scanning' WHERE id = $1`, [
+    versionId,
+  ]);
   await admin.query(`UPDATE shared.document_versions SET status = 'accepted' WHERE id = $1`, [
     versionId,
   ]);

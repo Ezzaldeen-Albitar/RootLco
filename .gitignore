@@ -32,6 +32,10 @@ yarn-error.log*
 
 # Next.js -------------------------------------------------------------------
 .next/
+# The development build directory. `next dev` and `next start` keep incompatible
+# manifests, and sharing one directory let a production build corrupt the dev
+# server — P1-26-F-055. The launcher isolates development here.
+.next-dev/
 out/
 build/
 dist/
@@ -52,6 +56,8 @@ playwright-report/
 # Editors -------------------------------------------------------------------
 .vscode/*
 !.vscode/extensions.json
+# Shared tasks: the owner launches the local stack from Terminal -> Run Task.
+!.vscode/tasks.json
 .idea/
 *.swp
 *.swo
@@ -67,3 +73,16 @@ desktop.ini
 # Local evidence scratch (evidence is committed deliberately, not swept in) --
 tmp/
 .tmp/
+
+/apps/web/vitest-web.json
+
+# Playwright and vitest run artefacts. Diagnostics for one run; they embed
+# absolute developer paths and timings, and a committed one makes the clean
+# room fail on the shape of its own output.
+/apps/web/test-results/
+/apps/web/playwright-report/
+/apps/web/playwright-report.json
+/apps/web/vitest-web.json
+
+# Local dev launcher state (PIDs of launcher-owned processes).
+/.local/

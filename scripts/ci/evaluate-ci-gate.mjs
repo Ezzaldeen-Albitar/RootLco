@@ -15,6 +15,25 @@
  *   failure              → FAIL
  *   cancelled            → FAIL
  *
+ * A SIXTH state exists for exactly one class of job: one that must run whenever
+ * this run is allowed to run it, and that a fork pull request is deliberately
+ * refused. Its three outcomes are named, and the gate says which it is:
+ *
+ *   REQUIRED_AND_PASSED               → pass
+ *   REQUIRED_AND_FAILED               → FAIL, including "required but skipped"
+ *   NOT_ELIGIBLE_FOR_SECURITY_REASON  → pass, and ONLY when the caller states,
+ *                                       explicitly, that this run was not
+ *                                       eligible. Silence is not a statement:
+ *                                       an unexplained skip is a failure.
+ *
+ * The alternative — treating `skipped` as acceptable and letting the fork case
+ * ride on that — is how a required check becomes optional without anybody
+ * editing the word "required". See `acceptableResults` below, which replaced a
+ * module-level `ACCEPTABLE_RESULTS` set that contained `'skipped'`, was exported,
+ * and was READ BY NOTHING: the real skip reasoning was always the branch further
+ * down. A constant that states a policy the code does not consult is worse than
+ * no constant, because a reader checks it and believes it.
+ *
  * Two further failures have nothing to do with job results:
  *
  *   - a job in the DECLARED list is absent from `needs`  → the gate is stale
@@ -28,7 +47,7 @@
  *   node scripts/ci/evaluate-ci-gate.mjs \
  *     --needs needs.json --classification classification.json \
  *     [--evidence evidence-dir] [--expected-sha SHA] [--actual-sha SHA] \
- *     [--markdown out.md] [--json out.json]
+ *     [--trusted-context true|false] [--markdown out.md] [--json out.json]
  *
  * Exit codes: 0 Go · 1 No-Go · 2 IO/shape error.
  */
@@ -48,6 +67,12 @@ export const DECLARED_JOBS = [
   { id: 'change-detection', alwaysRequired: true },
   { id: 'static-quality', alwaysRequired: true },
   { id: 'unit-tests-coverage', alwaysRequired: true },
+  // ALWAYS required, not conditional on a frontend change. The web gates are
+  // cheap, and the failure this closes was not "someone edited the web app and
+  // we missed it" — it was that hosted CI invoked zero web commands at all, so
+  // the application's lint had never run once in its life. A job that is
+  // skippable on a technicality is a job that can rot the same way.
+  { id: 'web-quality', alwaysRequired: true },
   { id: 'application-build', alwaysRequired: false },
   { id: 'database-migration-replay', alwaysRequired: false },
   { id: 'database-security', alwaysRequired: false },
@@ -57,19 +82,69 @@ export const DECLARED_JOBS = [
   { id: 'container-security', alwaysRequired: false },
   { id: 'secret-scan', alwaysRequired: true },
   { id: 'hosted-clean-room', alwaysRequired: true },
+  // The AUTHENTICATED browser tier: the repository's only end-to-end
+  // tenant-isolation proof and its only route-level accessibility proof.
+  //
+  // `alwaysRequired` for the same reason `web-quality` is — the failure it
+  // closes was not "somebody edited the browser tests and we missed it", it was
+  // that no gate waited for the result at all, so both gates could report Go
+  // while this check was red.
+  //
+  // `securityEligibility` is the ONE recognised excuse, and it is not a
+  // classification decision: a fork pull request is refused privileged browser
+  // execution, so on that event alone the job legitimately does not run. The
+  // caller must SAY SO (`--trusted-context false`). Nothing is inferred.
+  {
+    id: 'authenticated-browser',
+    alwaysRequired: true,
+    securityEligibility: 'same-repository head',
+  },
 ];
 
-export const ACCEPTABLE_RESULTS = new Set(['success', 'skipped']);
+/**
+ * The results that may be accepted for a job, derived from the job.
+ *
+ * This is consulted — see the cross-check at the end of the per-job loop. Its
+ * predecessor was a module-level `Set(['success', 'skipped'])` that nothing
+ * imported and nothing read, so it documented a policy ("a skip is acceptable")
+ * that was never the policy for an unconditionally required job.
+ *
+ * `skipped` is acceptable ONLY where change detection is allowed to stand a job
+ * down. For an `alwaysRequired` job, and for a security-gated one, `success` is
+ * the only acceptable RESULT — the security-gated job's one escape is an
+ * explicit ineligibility, which is a state rather than a result and is handled
+ * where it can be reasoned about.
+ *
+ * @param {{alwaysRequired?: boolean, securityEligibility?: string}} job
+ */
+export function acceptableResults(job) {
+  if (job.alwaysRequired || job.securityEligibility) return new Set(['success']);
+  return new Set(['success', 'skipped']);
+}
+
+/** The three states a governed job's outcome is reported as. */
+export const STATE = Object.freeze({
+  PASSED: 'REQUIRED_AND_PASSED',
+  FAILED: 'REQUIRED_AND_FAILED',
+  NOT_ELIGIBLE: 'NOT_ELIGIBLE_FOR_SECURITY_REASON',
+  /** A conditional job that change detection legitimately stood down. */
+  EXPECTED_SKIP: 'EXPECTED_SKIP',
+});
 
 /**
  * @param {Record<string, {result?: string, outputs?: object}>} needs the `needs` context
  * @param {object|null} classification output of classify-changes.mjs
  * @param {{expectedSha?: string, actualSha?: string}} shas
+ * @param {{trustedContext?: boolean}} context
+ *   `trustedContext` is the caller's explicit statement about whether this run
+ *   was allowed to give a job privileged execution. `undefined` means nobody
+ *   said, and that is NOT the same as `true` or `false`: it fails a skip closed.
  */
-export function evaluate(needs, classification, shas = {}) {
+export function evaluate(needs, classification, shas = {}, context = {}) {
   const failures = [];
   const notes = [];
   const jobs = [];
+  const trusted = context.trustedContext;
 
   const declaredIds = new Set(DECLARED_JOBS.map((j) => j.id));
   const presentIds = new Set(Object.keys(needs ?? {}));
@@ -111,6 +186,7 @@ export function evaluate(needs, classification, shas = {}) {
         id: declared.id,
         result: 'absent',
         accepted: false,
+        state: STATE.FAILED,
         reason: 'no usable entry in needs',
       });
       continue;
@@ -118,10 +194,46 @@ export function evaluate(needs, classification, shas = {}) {
     const result = need.result ?? 'unknown';
     let accepted = false;
     let reason = '';
+    let state = STATE.FAILED;
 
     if (result === 'success') {
       accepted = true;
+      state = STATE.PASSED;
       reason = 'succeeded';
+    } else if (result === 'skipped' && declared.securityEligibility) {
+      // ---- the security-gated case, decided BEFORE the generic skip rules ---
+      //
+      // The only place a skip of an unconditionally required job may be
+      // accepted, and it is accepted on the CALLER'S STATEMENT, never on
+      // inference. `true` and `undefined` both fail: a run nobody vouched for is
+      // exactly the run whose skip must not be excused.
+      if (trusted === false) {
+        accepted = true;
+        state = STATE.NOT_ELIGIBLE;
+        reason =
+          `not eligible — this run may not give a job privileged execution ` +
+          `(requires ${declared.securityEligibility}), so the job did not run`;
+        notes.push(
+          `\`${declared.id}\` — ${STATE.NOT_ELIGIBLE}: this run is not a trusted context ` +
+            `(${declared.securityEligibility}), so the job was deliberately not given privileged ` +
+            'execution. This is a refusal, not a pass: the assurance is UNPROVEN for this run.'
+        );
+      } else if (trusted === true) {
+        state = STATE.FAILED;
+        reason = 'skipped in a trusted context, where it is unconditionally required';
+        failures.push(
+          `required job \`${declared.id}\` was skipped although this run IS a trusted context — ` +
+            'a required job that did not run cannot be reported as a pass'
+        );
+      } else {
+        state = STATE.FAILED;
+        reason = 'skipped, and no eligibility statement was supplied — failing closed';
+        failures.push(
+          `required job \`${declared.id}\` was skipped and the gate was given no ` +
+            '`--trusted-context` statement, so the skip cannot be attributed to a security ' +
+            'refusal. An unexplained skip of a required job fails closed.'
+        );
+      }
     } else if (result === 'skipped') {
       if (declared.alwaysRequired) {
         reason = 'skipped, but this job may never be skipped';
@@ -149,6 +261,7 @@ export function evaluate(needs, classification, shas = {}) {
           );
         } else {
           accepted = true;
+          state = STATE.EXPECTED_SKIP;
           reason = `expected skip — ${decision.reason}`;
           notes.push(`\`${declared.id}\` skipped: ${decision.reason}`);
         }
@@ -164,7 +277,22 @@ export function evaluate(needs, classification, shas = {}) {
       failures.push(`job \`${declared.id}\` reported an ambiguous result \`${result}\``);
     }
 
-    jobs.push({ id: declared.id, result, accepted, reason });
+    // The cross-check that makes `acceptableResults` load-bearing rather than
+    // decorative. An accepted result must either BE acceptable for this job, or
+    // be the one state that is allowed to override the result — an explicit
+    // security ineligibility. Any future branch that sets `accepted = true` on a
+    // skip of a required job is caught here rather than shipping a green gate.
+    if (accepted && !acceptableResults(declared).has(result) && state !== STATE.NOT_ELIGIBLE) {
+      accepted = false;
+      state = STATE.FAILED;
+      failures.push(
+        `job \`${declared.id}\` was accepted with result \`${result}\`, which is not an ` +
+          `acceptable result for it (${[...acceptableResults(declared)].join(', ')}) and was not ` +
+          `recorded as ${STATE.NOT_ELIGIBLE}.`
+      );
+    }
+
+    jobs.push({ id: declared.id, result, accepted, state, reason });
   }
 
   // ---- exact-SHA agreement ----------------------------------------------
@@ -197,6 +325,15 @@ export function evaluate(needs, classification, shas = {}) {
     notes,
     jobs,
     shas,
+    // The eligibility statement is published, not merely consumed. A gate record
+    // that says Go has to be readable as "and here is what was, and was not,
+    // eligible to be proved on this run".
+    trustedContext: trusted === undefined ? 'unstated' : trusted,
+    securityGated: DECLARED_JOBS.filter((j) => j.securityEligibility).map((j) => ({
+      id: j.id,
+      requires: j.securityEligibility,
+      state: jobs.find((row) => row.id === j.id)?.state ?? STATE.FAILED,
+    })),
   };
 }
 
@@ -262,14 +399,33 @@ export function toMarkdown(result, classification, evidence = {}) {
 
   lines.push('### Jobs');
   lines.push('');
-  lines.push('| Job | Result | Accepted | Reason |');
-  lines.push('| --- | --- | --- | --- |');
+  lines.push('| Job | Result | State | Accepted | Reason |');
+  lines.push('| --- | --- | --- | --- | --- |');
   for (const job of result.jobs) {
     lines.push(
-      `| \`${job.id}\` | ${ICON[job.result] ?? '•'} ${job.result} | ${job.accepted ? 'yes' : 'no'} | ${job.reason} |`
+      `| \`${job.id}\` | ${ICON[job.result] ?? '•'} ${job.result} | \`${job.state ?? '—'}\` | ` +
+        `${job.accepted ? 'yes' : 'no'} | ${job.reason} |`
     );
   }
   lines.push('');
+
+  // ---- security-gated assurance, stated rather than implied ---------------
+  //
+  // A reader of a Go must be able to tell "this was proved" from "this run was
+  // not allowed to prove it". Those are different facts and the gate is the only
+  // place that knows which one applies.
+  if (result.securityGated?.length) {
+    lines.push('### Security-gated assurance');
+    lines.push('');
+    lines.push(`Trusted context: \`${result.trustedContext}\``);
+    lines.push('');
+    lines.push('| Job | Requires | State |');
+    lines.push('| --- | --- | --- |');
+    for (const row of result.securityGated) {
+      lines.push(`| \`${row.id}\` | ${row.requires} | \`${row.state}\` |`);
+    }
+    lines.push('');
+  }
 
   // ---- evidence, only where a job actually produced it -------------------
   const rows = [];
@@ -371,11 +527,35 @@ function main(argv) {
   const classification = readJson(arg('--classification'), 'classification', true);
   const evidence = collectEvidence(arg('--evidence'));
 
-  const result = evaluate(needs, classification, {
-    expectedSha: arg('--expected-sha'),
-    actualSha: arg('--actual-sha'),
-    baseSha: arg('--base-sha'),
-  });
+  /*
+   * THREE values, not two. `--trusted-context` absent, or carrying anything but
+   * `true`/`false`, means the caller did not state an eligibility — which is a
+   * different fact from stating `false`, and only `false` excuses a skip.
+   *
+   * Parsed strictly on purpose. A shell expression that evaluates to an empty
+   * string (an `if:` that did not resolve, an unset env var) must NOT read as
+   * "not eligible", because that is precisely the accident that would turn a
+   * required-but-skipped job into a green gate.
+   */
+  const raw = arg('--trusted-context');
+  const trustedContext = raw === 'true' ? true : raw === 'false' ? false : undefined;
+  if (raw !== undefined && trustedContext === undefined) {
+    console.error(
+      `--trusted-context was given \`${raw}\`, which is neither \`true\` nor \`false\`. ` +
+        'Treating the eligibility as UNSTATED, which fails a skip closed.'
+    );
+  }
+
+  const result = evaluate(
+    needs,
+    classification,
+    {
+      expectedSha: arg('--expected-sha'),
+      actualSha: arg('--actual-sha'),
+      baseSha: arg('--base-sha'),
+    },
+    { trustedContext }
+  );
   result.shas.baseSha = arg('--base-sha');
 
   const md = toMarkdown(result, classification, evidence);

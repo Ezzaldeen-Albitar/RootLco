@@ -17,6 +17,8 @@ import {
   DEFAULT_PAGE_SIZE,
   MAX_PAGE_SIZE,
   buildPage,
+  buildPageWithCursors,
+  cursorTimestamp,
   decodeCursor,
   encodeCursor,
   keysetFragment,
@@ -202,5 +204,103 @@ describe('buildPage', () => {
   it('handles an empty result set without inventing a cursor', () => {
     const page = buildPage([], { limit: 10, cursor: null }, DESC, read);
     expect(page).toEqual({ items: [], nextCursor: null, hasMore: false });
+  });
+});
+
+/**
+ * `P1-27-INT-006` — the cursor key is NOT the published timestamp.
+ *
+ * `pg` decodes `timestamptz` into a JS `Date`, which holds milliseconds while
+ * PostgreSQL stores microseconds, and the decoder TRUNCATES. A cursor minted
+ * from that `Date` is strictly earlier than the row it points at, so the
+ * descending predicate `(sort, id) < ($v, $i)` is false for every row sharing
+ * the boundary's millisecond — the id tie-break is never reached and those rows
+ * are silently skipped.
+ *
+ * Measured against the real database in
+ * `tests/backend/p1-27-cursor-precision.test.ts`: ten rows at one instant, read
+ * at `limit=4`, returned 4 then **0** of the remaining 6.
+ *
+ * These tests pin the mechanism that fixes it: the caller states the cursor key
+ * separately from the item, so the two cannot be conflated by accident.
+ */
+describe('cursorTimestamp', () => {
+  it('renders microseconds, in UTC, in a form that casts back to timestamptz', () => {
+    // The format string is the contract. `US` is microseconds; `MS` would be the
+    // very truncation this exists to avoid, and is the plausible wrong edit.
+    expect(cursorTimestamp('c.detected_at')).toBe(
+      `to_char(c.detected_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`
+    );
+  });
+
+  it('interpolates the column verbatim, so a qualified name survives', () => {
+    // Qualification matters: an unqualified ORDER BY can bind to an output
+    // column rather than the table column it was aliased from.
+    expect(cursorTimestamp('a.assigned_at')).toContain('a.assigned_at AT TIME ZONE');
+  });
+});
+
+describe('buildPageWithCursors', () => {
+  const idOf = (index: number): string =>
+    `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`;
+
+  /**
+   * Every row shares one millisecond and differs only in microseconds — the
+   * exact shape a batch written in one transaction produces, and the shape a
+   * `Date`-derived cursor cannot distinguish.
+   */
+  const rowsOf = (count: number) =>
+    Array.from({ length: count }, (_unused, index) => ({
+      item: { id: idOf(index), createdAt: '2026-08-04T10:00:00.123Z' },
+      sortValue: `2026-08-04T10:00:00.123${String(index).padStart(3, '0')}Z`,
+      id: idOf(index),
+    }));
+
+  it('mints the cursor from the stated key, not from the published item', () => {
+    const page = buildPageWithCursors(rowsOf(4), { limit: 3, cursor: null }, DESC);
+
+    expect(page.hasMore).toBe(true);
+    expect(page.items).toHaveLength(3);
+    // The published field is the millisecond string on every row...
+    expect(page.items.map((row) => row.createdAt)).toEqual([
+      '2026-08-04T10:00:00.123Z',
+      '2026-08-04T10:00:00.123Z',
+      '2026-08-04T10:00:00.123Z',
+    ]);
+    // ...and the cursor carries the microsecond one. Had it taken the published
+    // value, all four rows would collide and the next page would return none.
+    const decoded = decodeCursor(page.nextCursor!, DESC);
+    expect(decoded.v).toBe('2026-08-04T10:00:00.123002Z');
+    expect(decoded.i).toBe(idOf(2));
+  });
+
+  it('publishes only the item, never the cursor key', () => {
+    const page = buildPageWithCursors(rowsOf(2), { limit: 5, cursor: null }, DESC);
+    // A leaked `sortValue` would put a second, differently-precise timestamp on
+    // the wire beside the published one.
+    expect(page.items).toEqual([
+      { id: idOf(0), createdAt: '2026-08-04T10:00:00.123Z' },
+      { id: idOf(1), createdAt: '2026-08-04T10:00:00.123Z' },
+    ]);
+    expect(Object.keys(page.items[0]!)).toEqual(['id', 'createdAt']);
+  });
+
+  it('mints no cursor when the page is the last one', () => {
+    const page = buildPageWithCursors(rowsOf(3), { limit: 3, cursor: null }, DESC);
+    expect(page.hasMore).toBe(false);
+    expect(page.nextCursor).toBeNull();
+  });
+
+  it('handles an empty result set without inventing a cursor', () => {
+    const page = buildPageWithCursors([], { limit: 10, cursor: null }, DESC);
+    expect(page).toEqual({ items: [], nextCursor: null, hasMore: false });
+  });
+
+  it('binds the cursor to the contract it was issued for', () => {
+    const page = buildPageWithCursors(rowsOf(4), { limit: 3, cursor: null }, DESC);
+    // Same guarantee `buildPage` has: replaying a cursor against another
+    // ordering is `ERR-PAG-001`, not a plausible wrong page.
+    const failure = captureFailure(() => decodeCursor(page.nextCursor!, ASC));
+    expect(failure.code).toBe('ERR-PAG-001');
   });
 });

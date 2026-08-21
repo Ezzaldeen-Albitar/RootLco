@@ -32,11 +32,12 @@
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { relative, resolve } from 'node:path';
+import { REPOSITORY_ROOT } from '../lib/repository-paths.mjs';
 
 export const METRICS = ['lines', 'statements', 'functions', 'branches'];
 
 /** Normalises an absolute or relative v8 key to a repository-relative POSIX path. */
-export function normaliseKey(key, root = process.cwd()) {
+export function normaliseKey(key, root = REPOSITORY_ROOT) {
   if (key === 'total') return 'total';
   const rel = key.includes(':') || key.startsWith('/') ? relative(root, key) : key;
   return rel.replace(/\\/g, '/');
@@ -56,7 +57,7 @@ export function pct(entry) {
  * @param {object} baseline committed baseline document
  * @param {string[]} changedFiles repository-relative paths changed by the PR
  */
-export function evaluate(summary, baseline, changedFiles = [], root = process.cwd()) {
+export function evaluate(summary, baseline, changedFiles = [], root = REPOSITORY_ROOT) {
   const failures = [];
   const warnings = [];
 
@@ -138,8 +139,8 @@ export function evaluate(summary, baseline, changedFiles = [], root = process.cw
       criticalModules.push({ ...rule, matchedFiles: 0, measured: null, ok: false });
       continue;
     }
-    // A trailing separator, so `src/server/errors` cannot match
-    // `src/server/errors-legacy/`.
+    // A trailing separator, so `.../server/errors` cannot match
+    // `.../server/errors-legacy/`.
     const prefix = rule.pathPrefix.endsWith('/') ? rule.pathPrefix : `${rule.pathPrefix}/`;
     const matched = fileEntries.filter(
       ([key]) => key === rule.pathPrefix || key.startsWith(prefix)
@@ -195,9 +196,32 @@ export function evaluate(summary, baseline, changedFiles = [], root = process.cw
   }
 
   // ---- 3. touched-file floor --------------------------------------------
+  /*
+   * A configured floor with an empty file list is REPORTED, never silent.
+   *
+   * The rule below is skipped when nothing was changed, which is correct on a
+   * protected push where there is no pull request to diff against. It was also
+   * what happened on every PULL REQUEST run of the web tier, because the caller
+   * passed no `base-ref`: the changed-files step took its else branch, wrote an
+   * empty list, and this rule governed nothing while the job stayed green and
+   * the baseline went on describing a floor that "refuses an untested edit".
+   *
+   * The caller is fixed. This exists so the next one cannot fail the same way
+   * quietly: a floor that inspected no files says so, in the output and in the
+   * markdown, and the two states — "no file was touched" and "no list was
+   * supplied" — are told apart rather than collapsed into a pass.
+   */
   const touchedMinimum = Number(baseline.touchedFileMinimum ?? 0);
   const touchedFiles = [];
-  if (touchedMinimum > 0 && changedFiles.length > 0) {
+  const touchedFileRuleRan = touchedMinimum > 0 && changedFiles.length > 0;
+  if (touchedMinimum > 0 && changedFiles.length === 0) {
+    warnings.push(
+      `the touched-file floor of ${touchedMinimum}% inspected NO files: the changed-file list is ` +
+        'empty. On a protected push that is expected. On a pull request it means the caller passed ' +
+        'no `base-ref`, and the floor governed nothing.'
+    );
+  }
+  if (touchedFileRuleRan) {
     const changedSet = new Set(changedFiles.map((f) => f.replace(/\\/g, '/')));
     for (const [key, value] of fileEntries) {
       if (!changedSet.has(key)) continue;
@@ -214,7 +238,18 @@ export function evaluate(summary, baseline, changedFiles = [], root = process.cw
     }
   }
 
-  return { ok: failures.length === 0, failures, warnings, totals, criticalModules, touchedFiles };
+  return {
+    ok: failures.length === 0,
+    failures,
+    warnings,
+    totals,
+    criticalModules,
+    touchedFiles,
+    // Published so a caller — and a test — can tell "the floor inspected nothing
+    // and passed" from "the floor inspected files and passed". Without it the two
+    // are the same green.
+    touchedFileRuleRan,
+  };
 }
 
 export function toMarkdown(result, baseline) {

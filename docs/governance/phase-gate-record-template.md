@@ -6,7 +6,9 @@
 
 **Status:** Template — adopted with the
 [Standing Technical Authorization Policy](./standing-technical-authorization-policy.md)
-(2026-07-17). Copy into `docs/phase-1/phase-1-<n>/phase-1-<n>-gate.md` and fill.
+(2026-07-17). Copy into `docs/phase-1/phase-1-<n>/gate-record.md` and fill — see
+[phase-gate-record-convention.md](./phase-gate-record-convention.md). This line
+previously prescribed `phase-1-<n>-gate.md`, a third filename no phase has ever used.
 
 ---
 

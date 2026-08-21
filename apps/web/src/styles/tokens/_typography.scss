@@ -1,0 +1,57 @@
+// Typography tokens.
+//
+// Arabic and Latin share one scale deliberately: two scales drift, and the
+// product renders both scripts in the same tables and forms. The font stack
+// lists a system Arabic face before the generic fallback so Arabic does not
+// render in a Latin-first fallback with mismatched metrics.
+
+$family-sans: (
+  system-ui,
+  -apple-system,
+  'Segoe UI',
+  'Noto Sans Arabic',
+  'Segoe UI Arabic',
+  'Roboto',
+  'Helvetica Neue',
+  'Arial',
+  sans-serif
+);
+
+$family-mono: (ui-monospace, 'SFMono-Regular', 'SF Mono', 'Consolas', 'Liberation Mono', monospace);
+
+// Semantic sizes. Named for role, not for magnitude, so a later type revision
+// changes values here and nothing else.
+$sizes: (
+  'display': 32px,
+  'page-title': 24px,
+  'section-title': 18px,
+  'body': 14px,
+  'body-large': 16px,
+  'supporting': 13px,
+  'label': 13px,
+  'caption': 12px,
+  'table-header': 12px,
+  'table-cell': 14px,
+  'button': 14px,
+);
+
+$line-heights: (
+  'display': 40px,
+  'page-title': 32px,
+  'section-title': 26px,
+  'body': 22px,
+  'body-large': 24px,
+  'supporting': 20px,
+  'label': 18px,
+  'caption': 16px,
+  'table-header': 16px,
+  'table-cell': 20px,
+  'button': 20px,
+);
+
+$weights: (
+  'regular': 400,
+  'medium': 500,
+  'semibold': 600,
+  'bold': 700,
+);

@@ -1,0 +1,171 @@
+{
+  "task": "P1-27-QA-005",
+  "what": "SHA-256 digests of every evidence document in the P1-27 phase directory.",
+  "howToRegenerate": "npm run evidence:p1-27",
+  "whatThisProves": "An evidence document cannot be edited without this file changing in the same diff. Digests are over file BYTES, so an encoding change counts as a change.",
+  "whatThisDoesNotProve": "This is not a tamper-proof seal. Anyone able to edit a document is able to re-run the generator and commit both. It removes SILENT revision, not revision.",
+  "selfExclusion": "This manifest is the only path excluded from its own digest set, because a file containing its own hash has no fixed point. tests/ci/p1-27-evidence-manifest.test.ts asserts the exclusion is exactly this one path.",
+  "fileCount": 40,
+  "files": {
+    "docs/phase-1/phase-1-27/adversarial-round-five.md": {
+      "sha256": "41255ce58b5fc691fe51bb8fc85e72764c2e4a4a2ae6f2bceba8464c662e577b",
+      "bytes": 549224
+    },
+    "docs/phase-1/phase-1-27/adversarial-round-four.md": {
+      "sha256": "94ec35bfa05c2b112a2dbd780bf157338d20a2c73dc8bfff598f27ddbb0e94a7",
+      "bytes": 12457
+    },
+    "docs/phase-1/phase-1-27/blocker-remediation-plan.md": {
+      "sha256": "e4c2aa2027f9da08ebdd59ab57bb78c2f6b835e6b87a772567bc7d141f31d797",
+      "bytes": 81585
+    },
+    "docs/phase-1/phase-1-27/canonical-plan.md": {
+      "sha256": "fc06c4c125ea951b50169181398ddaf0353f255abe739534560cd580ee32786f",
+      "bytes": 23104
+    },
+    "docs/phase-1/phase-1-27/canonical-write-reachability.json": {
+      "sha256": "0729cfbc827593ee0b9ac2eff40c8b5268a8d3bb2975cf401de967b7780c28a6",
+      "bytes": 3902
+    },
+    "docs/phase-1/phase-1-27/ci-evidence.md": {
+      "sha256": "40cfb5c7d7ecf25def728eed6f7bc43b55252fdf9a27531d95ccc14e24c23bba",
+      "bytes": 17702
+    },
+    "docs/phase-1/phase-1-27/clean-room-evidence.md": {
+      "sha256": "e4e1a9d9a735b0939e866aa3b891ec06c32a24e8a1117ec9149dcfdf47823cb5",
+      "bytes": 23734
+    },
+    "docs/phase-1/phase-1-27/closure-record.md": {
+      "sha256": "dd306ca3252302b9f035f04dd2c23cd7c6994c666e7989e27190572dbd8cae68",
+      "bytes": 8630
+    },
+    "docs/phase-1/phase-1-27/continuation-checkpoint.md": {
+      "sha256": "685294f49ff6d32dcca40b42349c90c5854a70844f1f8470fe5c78761da6ae86",
+      "bytes": 15923
+    },
+    "docs/phase-1/phase-1-27/contract-archaeology.md": {
+      "sha256": "5832747388575cc788af0304cc972882b4c33e135b6c92f60740695b99143661",
+      "bytes": 24145
+    },
+    "docs/phase-1/phase-1-27/deliverable-manifest.md": {
+      "sha256": "6aecf70319075be1bafeef727799df97d323541f8e492eaa62f08838b6d8282d",
+      "bytes": 148837
+    },
+    "docs/phase-1/phase-1-27/developer-guide.md": {
+      "sha256": "bc98ee5da71a3c4db635f4222c4e55b875610a6db9d81f6fcf643aee0c4858e1",
+      "bytes": 13668
+    },
+    "docs/phase-1/phase-1-27/evidence/change-log.md": {
+      "sha256": "3f1b69d53ad91e9c117cc88747c424b9494ae49278e6989e6ab454b9d4a887aa",
+      "bytes": 81669
+    },
+    "docs/phase-1/phase-1-27/evidence/closing-value-ledger.json": {
+      "sha256": "5072b45ab2e0b47b8649c1a0a76f5cc42252eb9a7d1088e1dba86dc598ea1ce8",
+      "bytes": 50344
+    },
+    "docs/phase-1/phase-1-27/evidence/lifecycle-ledger.json": {
+      "sha256": "c2bc3e5bd353ee54ccaefd8286573a5be5c09f91bbb01ea9af7fa5fe72aebf1e",
+      "bytes": 9208
+    },
+    "docs/phase-1/phase-1-27/evidence/local-run-ledger.json": {
+      "sha256": "166340f6d192c64a5d2ab80b0dff208fc34b6ec013f59ef2bf2d1d82f27f10a2",
+      "bytes": 1202
+    },
+    "docs/phase-1/phase-1-27/evidence/task-traceability.md": {
+      "sha256": "e64fe996a88bca178409d690620cbdbd0e7f241d179b01fc8855dc106846afa1",
+      "bytes": 114007
+    },
+    "docs/phase-1/phase-1-27/evidence/test-catalogue-traceability.json": {
+      "sha256": "89eed0e4a7c64ff836c6300a98fec158a8873db91d7c52d7bb21cf1b40dcec5e",
+      "bytes": 34332
+    },
+    "docs/phase-1/phase-1-27/evidence/test-catalogue-traceability.md": {
+      "sha256": "9622f5ea1ea08be618651b5688074c37619c34caaeb6ed19ad27ffbe0a04c954",
+      "bytes": 30096
+    },
+    "docs/phase-1/phase-1-27/execution-checkpoint.md": {
+      "sha256": "4780d9706c01432b4d07434076a1295749aa8248137747f5c25c53d94d29b4e0",
+      "bytes": 18109
+    },
+    "docs/phase-1/phase-1-27/final-canonical-remediation.md": {
+      "sha256": "98c9233f542d009ed6d6fe4f1006ce9dd49655d024362bf2b50502bcef1fbb56",
+      "bytes": 27693
+    },
+    "docs/phase-1/phase-1-27/final-task-adjudication.md": {
+      "sha256": "0f34dc71fdb2d726f9735bce7bd12805af57c7960fcadde941dc3c1b189bbb50",
+      "bytes": 76545
+    },
+    "docs/phase-1/phase-1-27/finding-phase-disposition.md": {
+      "sha256": "4a9de8c56071059f04bbb17680b2a3cc5ae141fbe3fcf5d7f51b60d2b179a758",
+      "bytes": 160578
+    },
+    "docs/phase-1/phase-1-27/finding-task-map.json": {
+      "sha256": "bc3336d8650e4e9142bd8f845c0b1970317225e05e275b7d52303d2c9ab5e14a",
+      "bytes": 34651
+    },
+    "docs/phase-1/phase-1-27/findings.md": {
+      "sha256": "5fe93a557ac190918de930c126938dfb57d7f5c597092204df3a5b604a8f30c7",
+      "bytes": 56513
+    },
+    "docs/phase-1/phase-1-27/findings/p1-27-int-006-cursor-precision.md": {
+      "sha256": "0c4077dabea0bb3ea233cc3db8068d1be767c20433781fc7ac1b58f0ebb653af",
+      "bytes": 7737
+    },
+    "docs/phase-1/phase-1-27/independent-task-audit.md": {
+      "sha256": "5b897b86b0fef50bdc34fe77eacfe9c850cf22fa24f59711ca7a45bf76e70f6e",
+      "bytes": 26588
+    },
+    "docs/phase-1/phase-1-27/installed-chrome-review.md": {
+      "sha256": "6732c2397af280b3eb1ab55f2252ce147d80102b50c15b643089f4d365843e8d",
+      "bytes": 14530
+    },
+    "docs/phase-1/phase-1-27/open-decisions.md": {
+      "sha256": "dc3b7fd99ebc857e2333482637cef048e50944f2621ab9a902c7be1f208b7955",
+      "bytes": 124614
+    },
+    "docs/phase-1/phase-1-27/operator-guide.md": {
+      "sha256": "39ce0e5e0978f1e482f8eb855b02a7a324ca9f5079e74a7d556b4fc8d7882e50",
+      "bytes": 9641
+    },
+    "docs/phase-1/phase-1-27/owner-acceptance-checklist.md": {
+      "sha256": "480cbdda83b013071b9b65dc5454001b2645a6bc162b8e96b77f35bc5962ce94",
+      "bytes": 5776
+    },
+    "docs/phase-1/phase-1-27/owner-acceptance-fail-remediation.md": {
+      "sha256": "a76da3c97d703343cacfef50f20c031f6e4f81519ac095761d1715eff3865db0",
+      "bytes": 13549
+    },
+    "docs/phase-1/phase-1-27/p1-27-int-113-unregistered-rate-limit-policy.md": {
+      "sha256": "9d12e472c2cfaea17fa55cb61193221947e400af9ac02c53466d0178c2570526",
+      "bytes": 7842
+    },
+    "docs/phase-1/phase-1-27/preflight/final-readiness.json": {
+      "sha256": "8a977dead10ced71bfd153b2ffbc083a09351ea96e74de626fc47b071888df26",
+      "bytes": 10680
+    },
+    "docs/phase-1/phase-1-27/preflight/final-readiness.md": {
+      "sha256": "136bfe6fee0b49e290c0a63ec10bae70df786ff58ee1eae3165053fdb92aceba",
+      "bytes": 14797
+    },
+    "docs/phase-1/phase-1-27/reception-read-surface-plan.md": {
+      "sha256": "c2741e0b0110d27a60d8cc6f87046ced1b596c170f5ebfd1f4d9877d77510a0e",
+      "bytes": 62211
+    },
+    "docs/phase-1/phase-1-27/risk-register.md": {
+      "sha256": "2f61fdc2ea633ba5d60d6ebf9a694ce72b4eb724015a9fbbc9552a233e9ffdb6",
+      "bytes": 187800
+    },
+    "docs/phase-1/phase-1-27/task-matrix-verdicts.json": {
+      "sha256": "dfe54cdde9e5dd3495d16f061cfdd8289957c2138c12f9f0113576e74e7e499b",
+      "bytes": 264217
+    },
+    "docs/phase-1/phase-1-27/task-matrix.json": {
+      "sha256": "a8bcca7b38d502f78870a06a7f7a725450cd60e31cce5cc156c6778283883413",
+      "bytes": 283618
+    },
+    "docs/phase-1/phase-1-27/task-register.md": {
+      "sha256": "9a395590ce32260cef2878e06077138a7a5d30663ffe5dd86e9ddb723e00fd04",
+      "bytes": 46033
+    }
+  }
+}

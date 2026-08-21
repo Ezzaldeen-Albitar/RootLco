@@ -50,15 +50,16 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
+import { API_SRC_PATH } from './lib/repository-paths.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 
-const NOTIF_SERVICE = 'src/modules/shared-services/application/notification-read-service.ts';
-const NOTIF_REPO = 'src/modules/shared-services/data/notification-read-repository.ts';
-const DOC_SERVICE = 'src/modules/shared-services/application/document-read-service.ts';
-const DOC_REPO = 'src/modules/shared-services/data/document-read-repository.ts';
-const RPT_SERVICE = 'src/modules/reporting/application/report-catalogue-service.ts';
-const RPT_REPO = 'src/modules/reporting/data/report-catalogue-repository.ts';
+const NOTIF_SERVICE = `${API_SRC_PATH}/modules/shared-services/application/notification-read-service.ts`;
+const NOTIF_REPO = `${API_SRC_PATH}/modules/shared-services/data/notification-read-repository.ts`;
+const DOC_SERVICE = `${API_SRC_PATH}/modules/shared-services/application/document-read-service.ts`;
+const DOC_REPO = `${API_SRC_PATH}/modules/shared-services/data/document-read-repository.ts`;
+const RPT_SERVICE = `${API_SRC_PATH}/modules/reporting/application/report-catalogue-service.ts`;
+const RPT_REPO = `${API_SRC_PATH}/modules/reporting/data/report-catalogue-repository.ts`;
 
 const NOTIF_TESTS = 'tests/backend/p1-23-notification-reads.test.ts';
 const DOC_TESTS = 'tests/backend/p1-23-document-retention.test.ts';

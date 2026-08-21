@@ -1,0 +1,238 @@
+/**
+ * Customer timeline (`FE-015`) and duplicate/merge review (`FE-016`).
+ *
+ * Read out of `apps/api/src/modules/crm/data/customer-identity-repository.ts`,
+ * `apps/api/src/modules/crm/domain/customer-identity.ts` and the three route
+ * modules that publish these operations.
+ *
+ * ## The three operations behind "merge review" are not one screen's worth
+ *
+ * | operation              | method | path                                    | permission                     |
+ * | ---------------------- | ------ | --------------------------------------- | ------------------------------ |
+ * | `crm.duplicate-list`   | GET    | `/customer-duplicates`                  | `crm.customer.duplicate.review` |
+ * | `crm.duplicate-review` | POST   | `/customer-duplicates/{id}/review`      | `crm.customer.duplicate.review` |
+ * | `crm.customer-merge`   | POST   | `/customers/{customerId}/merge`         | **`crm.customer.merge`**       |
+ *
+ * **Reviewing and merging are different capabilities**, and the interface must
+ * not present them as two buttons on one control. A reviewer who may dismiss a
+ * false pair very often may not be trusted to destroy one of two customer
+ * records.
+ */
+
+import { formatPercent, type ConfidenceBands } from '@/lib/duplicates/score';
+
+/** `crm.duplicate_candidates.status`. */
+export const DUPLICATE_STATUSES = ['open', 'dismissed', 'merged'] as const;
+export type DuplicateStatus = (typeof DUPLICATE_STATUSES)[number];
+
+/**
+ * What a reviewer may actually decide: **dismiss, and nothing else.**
+ *
+ * `merged` is a status a candidate reaches, not a decision this endpoint
+ * accepts — the merge is `crm.customer-merge`, a different operation behind a
+ * different permission. A review screen offering "Merge" as a second decision
+ * on this endpoint would send a value the `.strict()` enum rejects, and would
+ * imply the reviewer's capability covers something it does not.
+ */
+export const DUPLICATE_DECISIONS = ['dismissed'] as const;
+export type DuplicateDecision = (typeof DUPLICATE_DECISIONS)[number];
+
+/** `crm.timeline_events.event_type` — `text` with a CHECK, not an enum. */
+export const TIMELINE_EVENT_TYPES = [
+  'lifecycle_changed',
+  'commercial_changed',
+  'consent_changed',
+  'blocked',
+  'unblocked',
+  'alert_raised',
+  'merged',
+  'communication_logged',
+] as const;
+export type TimelineEventType = (typeof TIMELINE_EVENT_TYPES)[number];
+
+/** `HistoryEntry.kind` — a closed union in the repository's own TypeScript. */
+export const HISTORY_KINDS = ['status', 'consent', 'block', 'merge'] as const;
+export type HistoryKind = (typeof HISTORY_KINDS)[number];
+
+export const MIN_MERGE_REASON = 10;
+export const MAX_MERGE_REASON = 500;
+export const MAX_APPROVAL_REF = 120;
+
+export interface TimelineEntry {
+  readonly id: string;
+  readonly eventType: string;
+  /** `char_length(title) <= 200`, never blank. */
+  readonly title: string;
+  readonly occurredAt: string;
+  readonly actorId: string | null;
+  /**
+   * The actor's display name, when an identity surface publishes one.
+   *
+   * OPTIONAL on the wire, and that is the difference that matters: `undefined`
+   * means the API predates the identity surface, `null` means this caller may
+   * not be told who it was. Neither is a licence to print `actorId`, which is a
+   * uuid and is never shown (`P1-27-INT-026`).
+   *
+   * The vehicle attribute ledger has the same shape and the same rule
+   * (`vehicles.history.actorUnavailable`). This field exists so the customer
+   * timeline reads a name the moment one is published, without a second change
+   * here.
+   *
+   * **The CUSTOMER timeline still publishes no name.** `crm.customer-timeline`
+   * returns `actor_id` alone, so this branch of the cell is unreachable and
+   * "Recorded by" reads the safe sentence for every human row. A uuid was never
+   * an option; the field is kept rather than deleted so the wiring, when it
+   * comes, is a Backend change alone.
+   *
+   * Two supporting claims here were true when written and are now corrected
+   * rather than removed, because the conclusion above survives them both and
+   * the difference is worth being able to check:
+   *
+   *   - "`actorName` occurs nowhere in `apps/api`" is FALSE since PR #212
+   *     (`76e37f0`) merged. It is published by `veh.vehicle-history`. The true
+   *     statement is narrower and is the one that matters here: it occurs
+   *     nowhere under `apps/api/src/modules/crm/`.
+   *   - "its five files" pinned a count to another branch's diff, which rots by
+   *     construction — that branch ended at nine files. The load-bearing fact is
+   *     not how many files it touched but WHERE: `iam/` and `vehicle/`, none
+   *     under `crm/`.
+   *
+   * So `FE-029` (the vehicle half) is closed, and the customer timeline is
+   * still waiting on a CRM-side producer. Those are two different things and
+   * this docblock previously ran them together.
+   */
+  readonly actorName?: string | null;
+}
+
+/**
+ * One entry from the customer HISTORY read.
+ *
+ * Retained although the adapter is gone: the operation still exists and this is
+ * the shape it publishes. A future task that wires the read starts from here.
+ */
+export interface HistoryEntry {
+  readonly kind: HistoryKind;
+  readonly id: string;
+  readonly occurredAt: string;
+  readonly summary: string;
+}
+
+/**
+ * One duplicate candidate pair.
+ *
+ * `matchScore` is **`numeric`, and it stays a string.** node-postgres decodes
+ * `numeric` to a string precisely because it does not fit a JavaScript float,
+ * and the repository's own docblock says it is "never narrowed to a float".
+ * Calling `parseFloat` here to render a percentage would reintroduce exactly
+ * the precision loss the string representation exists to prevent — and this
+ * number decides whether two real customer records get combined.
+ *
+ * `matchBasis` is `jsonb` and is safe to display **by schema, not by review**:
+ * `ck_duplicate_candidates_basis` calls `crm.jsonb_no_raw_value_keys`, which
+ * rejects a `value`/`raw`/`national_id`/`tax`/`registration`/`date_of_birth`
+ * key at any depth. So it can only carry which signals fired and how heavily,
+ * never the personal data that produced them.
+ */
+export interface DuplicateCandidate {
+  readonly id: string;
+  readonly partnerIdA: string;
+  readonly displayNameA: string | null;
+  readonly partnerIdB: string;
+  readonly displayNameB: string | null;
+  readonly matchScore: string;
+  readonly matchBasis: unknown;
+  readonly status: string;
+  readonly detectedAt: string;
+  readonly reviewedBy: string | null;
+  readonly reviewedAt: string | null;
+}
+
+/**
+ * Formats a `numeric` match score for display **without parsing it**.
+ *
+ * The score is a decimal string such as `"0.875"`. Rendering it as a percentage
+ * is presentation, so it is done on the string: take the digits after the
+ * point, pad or cut to two, and read the result. No `parseFloat`, no `Number`,
+ * no arithmetic — the value that reaches the screen is derived from the exact
+ * characters the database sent.
+ *
+ * Returns `null` for anything that is not a plain decimal, so an unexpected
+ * representation is shown raw rather than rendered as a confident wrong number.
+ */
+export function formatMatchScore(score: string): string | null {
+  return formatPercent(score);
+}
+
+/**
+ * Where "strong", "possible" and "needs review" fall for a CUSTOMER pair.
+ *
+ * Read off the scorer in `apps/api/src/modules/crm/domain/customer-identity.ts`,
+ * not chosen for roundness:
+ *
+ *   - name 0.50 · contact 0.35 · address 0.15, summing to 1.00
+ *   - `CANDIDATE_THRESHOLD` is 0.50, so nothing below 50% is ever recorded
+ *
+ * **85%** is the lowest score that requires the name comparison plus one other
+ * — 0.50 + 0.35 = 0.85. A pair that agrees on the normalised name AND shares a
+ * telephone number or email address is as strong as this detector gets without
+ * agreeing on everything, so that is where "strong match" starts.
+ *
+ * **65%** is 0.50 + 0.15: the name plus an address. Below that, a candidate
+ * exists on the name alone (0.50) or on contact plus address (0.50) — worth a
+ * look, not worth confidence. Hence "needs review" rather than "possible".
+ */
+export const CUSTOMER_CONFIDENCE_BANDS: ConfidenceBands = Object.freeze({
+  strong: 85,
+  possible: 65,
+});
+
+/**
+ * Whether a candidate can still be acted on.
+ *
+ * Only `open` candidates are actionable. A dismissed or merged pair is a
+ * historical record, and offering a decision control on one would let a
+ * reviewer re-decide something already settled — the backend refuses, but the
+ * control should never have been there.
+ */
+export function isActionable(candidate: DuplicateCandidate): boolean {
+  return candidate.status === 'open';
+}
+
+/**
+ * The two customers in a candidate pair, as a stable ordered pair.
+ *
+ * A/B is the order the detector recorded and carries no meaning — neither is
+ * "the duplicate". Presenting one as the original and the other as the copy
+ * would invent a fact and nudge a reviewer toward destroying the wrong record.
+ */
+export function pairMembers(
+  candidate: DuplicateCandidate
+): readonly [{ id: string; name: string | null }, { id: string; name: string | null }] {
+  return [
+    { id: candidate.partnerIdA, name: candidate.displayNameA },
+    { id: candidate.partnerIdB, name: candidate.displayNameB },
+  ];
+}
+
+/**
+ * There is deliberately no `MergeInput` and no `validateMerge` here.
+ *
+ * `P1-OD-017` is an open Owner decision and the canonical plan requires the
+ * merge affordance to be **absent**. A validator with no call site is one edit
+ * away from a form, so it is removed rather than left in place — the contract
+ * facts about `crm.customer-merge` stay documented at the top of this file,
+ * which is where a future wave should start when the decision is resolved.
+ */
+
+/*
+ * `validateReviewReason` is gone from this file (`P1-27-FE-016` / `FE-028`).
+ *
+ * It mirrored the zod `.min(..., 'field.tooShort')` in this domain's own review
+ * adapter and had no production caller — the same defect `P1-27-FE-013` removed
+ * from the governance contracts, in the two files that sweep did not reach. Its
+ * only consumers were tests, so the coverage credited to the one decision these
+ * tasks may ship while `P1-OD-017` is open was proving an unreachable copy.
+ *
+ * The real validation runs in the adapter's schema and is driven end to end by
+ * `apps/web/tests/duplicate-review-writes.test.ts`.
+ */

@@ -1,0 +1,526 @@
+# =============================================================================
+# RootLco — reusable AUTHENTICATED browser assurance.
+#
+# `apps/web/tests/e2e/authenticated/**` holds the repository's ONLY end-to-end
+# tenant-isolation proof and its ONLY route-level accessibility proof. For the
+# whole of P1-27 it was executed by no hosted job at all; then it was executed
+# by one job that NO GATE GOVERNED, so `protected-gate` could report **Go**
+# while this check was red. That second state was recorded as a debt in
+# `.github/ci-baselines/unrun-test-tiers.json` and is what this file repays.
+#
+# WHY A REUSABLE WORKFLOW, WHEN THE PREVIOUS DECISION REJECTED ONE
+#
+# `DECLARED_JOBS` in `scripts/ci/evaluate-ci-gate.mjs` is shared by `pr-ci.yml`
+# and `protected-develop-verification.yml`, and the evaluator FAILS a gate for a
+# declared job that is absent from `needs`. So a governed job must exist in both
+# workflows. GitHub has no cross-workflow `needs`, and copying forty lines of
+# Docker orchestration into two files is how two copies drift apart. A
+# `workflow_call` file called from both places is the repository's own answer to
+# that — nine other jobs are already composed this way.
+#
+# The earlier decision against extraction (recorded in the job comment this file
+# replaces) rested on ONE argument: a new workflow file changes the counts in
+# `docs/engineering/ci-automation/pull-request-body.md`, "a document outside this
+# branch's ownership". That premise no longer holds — the counts are in scope and
+# are updated in this same commit, derived from the workflows rather than typed.
+# Nothing else in that argument survives contact with the requirement that a gate
+# may not be green while this check is red.
+#
+# WHAT IT COSTS, STATED RATHER THAN DISCOVERED
+#
+# This stack is roughly forty minutes of runner time and it now runs on every
+# same-repository pull request as well as on every protected push. That is the
+# deliberate price of the assurance being GOVERNED: a check a gate does not wait
+# for is a check a merge does not wait for.
+#
+# FORKS GET NO PRIVILEGED EXECUTION
+#
+# The caller decides. `pr-ci.yml` runs this job only when the pull request head
+# is a branch of THIS repository; a fork pull request skips it, and the gate is
+# told so explicitly (`--trusted-context false`) so that the skip is recorded as
+# `NOT_ELIGIBLE_FOR_SECURITY_REASON` rather than silently accepted. A skip with
+# no such statement fails the gate closed. Nothing here reads a repository
+# secret, and nothing here may begin to: the whole stack is local to the runner
+# and is destroyed with it.
+#
+# A GREEN RUN THAT RAN NOTHING is the failure mode this phase exists to catch, so
+# the last step derives what executed from the Playwright report and fails unless
+# every authenticated spec file contributed at least one executed test.
+# =============================================================================
+
+name: Reusable — authenticated browser tier
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: >-
+          Commit to check out. Empty means the composite action's own default —
+          the exact pull-request head, falling back to the pushed SHA.
+        required: false
+        type: string
+        default: ''
+      expected-sha:
+        description: >-
+          The full 40-character commit this run must be attributable to. When
+          set, the job fails unless the commit it checked out is exactly this
+          one, so a ref that moved between the request and the run cannot be
+          quoted for the commit somebody asked about.
+        required: false
+        type: string
+        default: ''
+      require-pin:
+        description: >-
+          When true, `expected-sha` is mandatory. Callers set this for the
+          pre-merge cases, where "the tip of that branch, whenever it started" is
+          not a commit anybody can check.
+        required: false
+        type: boolean
+        default: false
+      artifact-retention-days:
+        required: false
+        type: number
+        default: 30
+
+permissions:
+  contents: read
+
+jobs:
+  authenticated-browser:
+    name: authenticated-browser
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    env:
+      NEXT_TELEMETRY_DISABLED: '1'
+      # The three guards in `scripts/dev/owner-acceptance/context.mjs`, met on
+      # purpose. `DB_PORT` is not a choice: `assertLocalTarget` refuses anything
+      # but 54322, the Supabase local database port.
+      ROOTLCO_ENV: local-acceptance
+      DB_HOST: 127.0.0.1
+      DB_PORT: '54322'
+      DB_NAME: postgres
+      DB_USER: postgres
+      DB_PASSWORD: postgres # pragma: allowlist secret -- the Supabase local default, on a runner destroyed with the job
+      # `local` is what keeps the session cookie unmarked `Secure`, which a
+      # plain-HTTP origin would otherwise discard silently — the exact failure
+      # `auth.setup.ts` warns about. It is a BUILD-time value for the web.
+      NEXT_PUBLIC_APP_ENV: local
+      NEXT_PUBLIC_API_BASE_URL: http://localhost:3000
+
+    steps:
+      # ---------------------------------------------------------------------
+      # THE RUN NAMES THE COMMIT IT IS PROVING, OR IT DOES NOT RUN.
+      #
+      # FIRST, before the stack costs forty minutes and before anything is
+      # checked out — a result attributed to the wrong commit is worse than no
+      # result, because it will be quoted.
+      #
+      # This half is the CHEAP half: it only asks whether a commit was named at
+      # all. The comparison itself cannot happen here, and the previous version
+      # of this job got that wrong: it compared the input against `github.sha`,
+      # which on a `pull_request` event is the MERGE ref — a commit that exists
+      # in no branch — so the comparison was sound for a dispatch and would have
+      # been false for every pull request. It is made below, against the commit
+      # the checkout actually resolved, which is the only value that is the same
+      # fact under both events.
+      - name: The run names the commit it is proving
+        env:
+          REQUESTED_SHA: ${{ inputs.expected-sha }}
+          REQUIRE_PIN: ${{ inputs.require-pin }}
+        run: |
+          set -euo pipefail
+          if [ "${REQUIRE_PIN}" = "true" ] && [ -z "${REQUESTED_SHA}" ]; then
+            echo "::error::This caller requires the candidate commit to be named, and it was not. Re-dispatch naming the exact commit the result should be attributed to; a branch name alone is not a commit."
+            exit 1
+          fi
+          if [ -z "${REQUESTED_SHA}" ]; then
+            printf 'No commit was named; this run is attributable only to the ref it resolved.\n'
+          else
+            printf 'This run must prove exactly %s\n' "${REQUESTED_SHA}"
+          fi
+
+      # A local `uses: ./…` action is resolved from the workspace, which is
+      # empty when a job starts — so the composite action below cannot be
+      # found without this. Sparse and shallow on purpose: it exists only to
+      # make the action file present. The composite then performs the real
+      # exact-head checkout and replaces the workspace.
+      - name: Make the repository's own actions resolvable
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: .github/actions
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Set up the project
+        id: setup
+        uses: ./.github/actions/setup-project
+        with:
+          ref: ${{ inputs.ref }}
+
+      # Still before the expensive part. `steps.setup.outputs.sha` is the commit
+      # `git rev-parse HEAD` reported after the checkout, so this compares two
+      # SHAs and is fooled neither by a ref that moved in the gap nor by the
+      # synthetic merge commit a `pull_request` event resolves to.
+      - name: The run is pinned to the commit it was asked for
+        if: inputs.expected-sha != ''
+        env:
+          REQUESTED_SHA: ${{ inputs.expected-sha }}
+          RESOLVED_SHA: ${{ steps.setup.outputs.sha }}
+        run: |
+          set -euo pipefail
+          printf 'asked about: %s\nchecked out: %s\n' "${REQUESTED_SHA}" "${RESOLVED_SHA}"
+          if [ "${REQUESTED_SHA}" != "${RESOLVED_SHA}" ]; then
+            echo "::error::Asked to test ${REQUESTED_SHA} but this run checked out ${RESOLVED_SHA}. The ref moved between the request and the run, so this result belongs to a different commit and must not be quoted for the requested one."
+            exit 1
+          fi
+          printf 'Pinned: this run tests exactly %s\n' "${RESOLVED_SHA}"
+
+      - name: Start the local Supabase stack
+        run: |
+          set -euo pipefail
+          docker --version
+          npx --no-install supabase start
+
+      - name: Apply every migration and every seed, deterministically
+        run: |
+          set -euo pipefail
+          # `supabase start` seeds a fresh volume, but "fresh" is an assumption
+          # about the runner rather than a statement about this step. A reset
+          # makes the database state a consequence of the committed migrations
+          # and seeds and of nothing else — and `create-owner` refuses to run
+          # against an empty `iam.permissions`, which is what seed 04 fills.
+          npm run supabase:reset
+
+      - name: Publish the identity-provider settings the API needs
+        run: |
+          set -euo pipefail
+          # Read from the CLI, never from a committed default: the CLI is the
+          # only thing that knows what the running stack actually issued. The two
+          # secrets are masked BEFORE they are written anywhere.
+          npx --no-install supabase status -o json > "${RUNNER_TEMP}/supabase-status.json"
+          node -e '
+            const fs = require("node:fs");
+            const raw = fs.readFileSync(process.env.RUNNER_TEMP + "/supabase-status.json", "utf8");
+            const status = JSON.parse(raw.slice(raw.indexOf("{"), raw.lastIndexOf("}") + 1));
+            const missing = ["API_URL", "ANON_KEY", "SERVICE_ROLE_KEY", "JWT_SECRET"].filter((name) => !status[name]);
+            if (missing.length > 0) {
+              console.log("::error::supabase status did not report: " + missing.join(", "));
+              process.exit(1);
+            }
+            for (const secret of [status.SERVICE_ROLE_KEY, status.JWT_SECRET]) console.log("::add-mask::" + secret);
+            const api = String(status.API_URL).replace(/\/$/, "");
+            fs.appendFileSync(process.env.GITHUB_ENV, [
+              "NEXT_PUBLIC_SUPABASE_URL=" + api,
+              "NEXT_PUBLIC_SUPABASE_ANON_KEY=" + status.ANON_KEY,
+              "SUPABASE_SERVICE_ROLE_KEY=" + status.SERVICE_ROLE_KEY,
+              "AUTH_JWT_SECRET=" + status.JWT_SECRET,
+              "AUTH_JWT_ISSUER=" + api + "/auth/v1",
+              ""
+            ].join("\n"));
+            console.log("identity provider: " + api);
+          '
+
+      - name: The identity provider answers before anything depends on it
+        run: |
+          set -euo pipefail
+          # Proving the precondition separately is the point. Without it, a stack
+          # that came up half-formed would surface as twenty failing browser
+          # tests rather than as one named missing service.
+          curl -fsS "${NEXT_PUBLIC_SUPABASE_URL}/auth/v1/health"
+          printf '\n'
+
+      - name: Install the browser the tier needs
+        # Its own step: a download is not a verification, and folding it into
+        # the run would make a network failure look like a test failure.
+        run: npm run test:e2e:install --workspace @rootlco/web
+
+      # -----------------------------------------------------------------------
+      # REALIGN THE PROVIDER SIGNING FIRST, THEN WAIT FOR IT TO COME BACK.
+      #
+      # This step exists because of a defect it does NOT own, found by the first
+      # hosted execution of this tier (run 31337158296, commit 155a5f5):
+      #
+      #   `alignLocalJwtSigning` recreates the GoTrue container to strip
+      #   GOTRUE_JWT_KEYS — `scripts/dev/owner-acceptance/align-local-jwt.mjs`
+      #   lines 119-126, `docker rm -f` then `docker run -d`. `docker run -d`
+      #   returns when the container is CREATED, not when GoTrue is listening.
+      #   `create-owner-account.mjs:607` then calls `assertHs256`, which POSTs
+      #   to the token endpoint exactly once with no retry
+      #   (align-local-jwt.mjs:140). Kong answers 502 until the new container
+      #   is up, so the bootstrap fails.
+      #
+      #   In that run the recreate returned at 21:38:21.029 and the token probe
+      #   failed at 21:38:21.039 — ten milliseconds later. Nothing boots in ten
+      #   milliseconds; this is a readiness race, NOT the algorithm refusal the
+      #   error text blames it on.
+      #
+      # The durable repair is a wait inside that module, which lives outside
+      # this branch ownership. What IS in scope here is ordering: do the
+      # realignment as its own step, wait for the provider, and only then run
+      # the bootstrap. `alignLocalJwtSigning` is idempotent — a second call
+      # finds no GOTRUE_JWT_KEYS and returns "already signing with the shared
+      # secret" (align-local-jwt.mjs:84) — so the call inside the bootstrap
+      # becomes a no-op and its single-shot probe meets a provider that is up.
+      - name: Align the provider signing, and wait for it to answer again
+        run: |
+          set -euo pipefail
+          node --input-type=module -e '
+            import { alignLocalJwtSigning } from "./scripts/dev/owner-acceptance/align-local-jwt.mjs";
+            const result = alignLocalJwtSigning({ project: "RootLco", log: (m) => console.log(m) });
+            console.log("alignment: changed=" + result.changed + " — " + result.reason);
+          '
+          # The same probe the earlier step uses, for the same reason: a
+          # provider that is not listening must surface as one named missing
+          # service rather than as a bootstrap that blames its own credentials.
+          for attempt in $(seq 1 60); do
+            if curl -fsS "${NEXT_PUBLIC_SUPABASE_URL}/auth/v1/health" > /dev/null; then
+              printf 'identity provider answering again after %s attempt(s)\n' "${attempt}"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::The identity provider never came back after the signing realignment. The bootstrap would have failed on a 502 from the token endpoint."
+          exit 1
+
+      - name: Bootstrap the operator, the workspace and the isolation counterpart
+        run: |
+          set -euo pipefail
+          # Creates Tenant A, Tenant B — which the Owner holds no membership in —
+          # the roles, the grants and the permission catalogue mapping, plus the
+          # database login the API runs as: a member of `app_runtime` with
+          # neither SUPERUSER nor BYPASSRLS. That last property is what makes the
+          # isolation result mean anything; an API connected as `postgres` would
+          # bypass every row-level policy and pass this suite regardless.
+          npm run acceptance:create-owner
+
+      - name: Build the API and the web application
+        run: |
+          set -euo pipefail
+          npm run build:api
+          npm run build:web
+
+      - name: Start the API and wait for it to report itself ready
+        env:
+          # THE BROWSER TIER IS ONE OPERATOR AT MACHINE SPEED, AND THE READ
+          # BUDGET IS SIZED FOR A HUMAN.
+          #
+          # `apps/api/src/server/http/rate-limit.ts` rations two operations this
+          # tier leans on. `expensive-read` allows THIRTY `iam.user-list` reads
+          # per sixty seconds per OPERATOR; `auth-adjacent` allows TEN sign-ins
+          # per sixty seconds per CLIENT ADDRESS. Both numbers are right for the
+          # caller they describe. This job is not that caller: it drives three
+          # projects of page loads as ONE operator from ONE address, and
+          # `/administration/users` — which `shared-ux.spec.ts`,
+          # `drawer-and-restore.spec.ts`, `isolation.spec.ts` and
+          # `administration.spec.ts` all use as their screen — costs one
+          # `iam.user-list` on every render.
+          #
+          # MEASURED, not assumed. With a counting proxy in front of the API, one
+          # full local run of this tier makes 96 `iam.user-list` reads and peaks
+          # at 28 of them inside a single 60-second window — 93% of the budget,
+          # with the peak straddling the `authenticated-en`/`authenticated-ar`
+          # boundary, where one project's table-heavy tail meets the next one's
+          # table-heavy head. That local run takes 13.5 minutes against this
+          # job's 7.6, so the same work lands far denser here. At candidate
+          # `daca04f6` it landed over the line: `GET /api/v1/iam/users` answered
+          # 429, the users table did the right thing and rendered its documented
+          # "temporarily unavailable" state, and `administration.spec.ts:84`
+          # failed on a screen that had stopped being a table — in a spec P1-28
+          # never touched. The five sign-in refusals in the same run were the
+          # tier overspending `auth-adjacent`, and THAT was repaired where it
+          # belonged, in the specs, by signing each principal in once per project
+          # instead of once per case: the same measurement now shows 19 sign-ins
+          # in a whole run and a busiest minute of 4 against a limit of 10.
+          #
+          # This half cannot be repaired that way. The reads are not repetition;
+          # they are 96 distinct renders of screens the cases genuinely need.
+          # Trimming a few would buy headroom until the next spec is added or the
+          # runner gets faster — a deterministic failure converted into a latent
+          # one, which is the shape this repository keeps getting caught by.
+          #
+          # So the tier is given a budget that matches what it is, using the
+          # product's own documented switch, in the tier's own environment.
+          # `docs/standards/rate-limiting-standard.md` §1 states it plainly —
+          # "Enforcement is switchable via `RATE_LIMIT_ENABLED` (default
+          # `true`)" — and this is the same escape hatch, used the same way, as
+          # `ROOTLCO_ENABLE_GALLERY` in `apps/web/playwright.config.ts`: the
+          # production default is met, the documented opt-out is taken for the
+          # one environment that cannot live inside it, and the reason is written
+          # down where the next reader will find it.
+          #
+          # WHAT THIS DOES NOT COST. No spec under `apps/web/tests/e2e/**` asserts
+          # a 429 or names `ERR-RTE-001`, so nothing here is asserted less. The
+          # limiter itself stays proved by `tests/foundation/rate-limit.test.ts`
+          # and by `tests/backend/p1-24-read-path-shape.test.ts:460`, which spends
+          # a whole window against the running API and requires `ERR-RTE-001` —
+          # both of which run in jobs this gate already waits for.
+          #
+          # WHERE IT IS DELIBERATELY NOT SET: the local acceptance stack. `npm run
+          # acceptance:serve` sets nothing of the kind, so the Owner meets the
+          # product as configured. A person clicking through screens never
+          # approaches thirty reads a minute; only a browser suite does.
+          RATE_LIMIT_ENABLED: 'false'
+        run: |
+          set -euo pipefail
+          # `next start` against the production build, not `next dev`: a dev
+          # server compiles each route on first request, and a cold compile on a
+          # shared runner does not fit the 30-second per-test budget.
+          #
+          # `--hostname localhost`, because that is the origin the suite and the
+          # API base URL both name, and a hostname binds ONE address family.
+          nohup npm run start --workspace @rootlco/api -- --hostname localhost --port 3000 > api.log 2>&1 &
+          for attempt in $(seq 1 60); do
+            if curl -fsS http://localhost:3000/api/v1/health/ready > api-ready.json; then
+              printf 'API ready after %s attempt(s)\n' "${attempt}"
+              cat api-ready.json
+              printf '\n'
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::The API never reported ready. Its output follows."
+          cat api.log
+          exit 1
+
+      - name: Provision the configured workspace
+        run: |
+          set -euo pipefail
+          # The CONFIGURED half of the P1-28 evidence. Tenant A deliberately
+          # stays empty, because production ships with no catalogue rows and the
+          # truthful "not configured" sentences are themselves a deliverable the
+          # suite asserts. This provisions a THIRD tenant whose seven intake
+          # catalogues hold one deterministic synthetic row each — created at run
+          # time by authenticated POSTs to the published management contracts,
+          # never seeded into `supabase/` or `apps/`, which the permanent
+          # no-fake-data policy forbids.
+          #
+          # It runs AFTER the API reports ready because every row is created
+          # through that API, not against the database.
+          #
+          # Without this step the configured-workspace cases fail here while
+          # passing locally, which is exactly how this step came to exist.
+          #
+          # `--release-open-visits` is the browser tier's own flag: one vehicle
+          # may hold one open visit, so a re-run would silently exercise the
+          # RESUME path instead of the create path it means to prove — a green
+          # result for a journey nobody tested.
+          npm run acceptance:provision-fixtures -- --release-open-visits
+
+      - name: The authenticated browser tier
+        env:
+          # The variable whose absence was the finding. Nothing else in the
+          # repository sets it; `apps/web/playwright.config.ts` gates the three
+          # authenticated projects on it, and the five anonymous projects carry
+          # `testIgnore` for the same directory.
+          ROOTLCO_E2E_AUTH: '1'
+        run: |
+          set -euo pipefail
+          # Credentials are NOT passed through the environment. `auth.setup.ts`
+          # and `isolation.spec.ts` both read the git-ignored handoff file the
+          # bootstrap wrote, so the password never becomes a workflow value.
+          npm run test:web-e2e-authenticated
+
+      - name: A run that collected nothing is a failure, not a pass
+        if: always()
+        run: |
+          set -euo pipefail
+          # Derived from the report and from the spec directory — never from a
+          # written-down number, which is the shape that lets a floor and a
+          # measurement be lowered together.
+          node -e '
+            const fs = require("node:fs");
+            const path = require("node:path");
+            const report = path.join("apps", "web", "playwright-report.json");
+            if (!fs.existsSync(report)) {
+              console.log("::error::" + report + " does not exist, so nothing can be said about what ran.");
+              process.exit(1);
+            }
+            const doc = JSON.parse(fs.readFileSync(report, "utf8"));
+            const perFile = new Map();
+            const visit = (node, file) => {
+              if (node === null || typeof node !== "object") return;
+              if (Array.isArray(node)) {
+                for (const item of node) visit(item, file);
+                return;
+              }
+              const current = typeof node.file === "string" ? node.file : file;
+              if (Array.isArray(node.results) && current) {
+                const ran = node.results.filter((r) => r && r.status && r.status !== "skipped").length;
+                perFile.set(current, (perFile.get(current) ?? 0) + ran);
+              }
+              for (const value of Object.values(node)) visit(value, current);
+            };
+            visit(doc, null);
+            const dir = path.join("apps", "web", "tests", "e2e", "authenticated");
+            const specs = fs.readdirSync(dir).filter((name) => name.endsWith(".spec.ts")).sort();
+            const normalise = (value) => String(value).split("\\").join("/");
+            const rows = ["### Authenticated browser tier", "", "| Spec | Tests executed |", "| --- | --- |"];
+            const silent = [];
+            let total = 0;
+            for (const name of specs) {
+              const suffix = "authenticated/" + name;
+              let count = 0;
+              for (const [file, ran] of perFile) {
+                if (normalise(file).endsWith(suffix)) count += ran;
+              }
+              total += count;
+              if (count === 0) silent.push(name);
+              rows.push("| `" + suffix + "` | " + count + " |");
+            }
+            rows.push("", "**" + total + "** test(s) executed across " + specs.length + " spec file(s).", "");
+            fs.writeFileSync("authenticated-browser.md", rows.join("\n") + "\n");
+            console.log(rows.join("\n"));
+            if (total === 0) {
+              console.log("::error::The authenticated tier executed ZERO tests. A green job that ran nothing is worse than the declared gap it replaced.");
+              process.exit(1);
+            }
+            if (silent.length > 0) {
+              console.log("::error::These authenticated specs contributed no executed test: " + silent.join(", "));
+              process.exit(1);
+            }
+          '
+
+      - name: Job summary
+        if: always()
+        env:
+          RESOLVED_SHA: ${{ steps.setup.outputs.sha }}
+          EVENT_NAME: ${{ github.event_name }}
+          CALLING_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          # The commit is part of the evidence, not context around it. A table of
+          # executed tests that does not say what it ran against cannot be quoted
+          # for anything — and this job now runs before a merge (pull request or
+          # dispatch) and after one (protected push), so which of them produced a
+          # result is no longer inferable from the fact that a result exists.
+          printf 'Commit `%s` — %s on `%s`\n\n' "${RESOLVED_SHA}" "${EVENT_NAME}" "${CALLING_REF}" >> "${GITHUB_STEP_SUMMARY}"
+          if [ -f authenticated-browser.md ]; then
+            cat authenticated-browser.md >> "${GITHUB_STEP_SUMMARY}"
+          fi
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: evidence-authenticated-browser
+          retention-days: ${{ inputs.artifact-retention-days }}
+          if-no-files-found: ignore
+          path: |
+            apps/web/playwright-report.json
+            authenticated-browser.md
+            api.log
+            api-ready.json
+
+      - name: Stop the stack
+        if: always()
+        run: |
+          set -euo pipefail
+          # A stop that fails must not turn a green run red: the runner and every
+          # container on it are destroyed either way, so this is tidiness rather
+          # than a verdict. It is still reported.
+          if npx --no-install supabase stop --no-backup; then
+            echo 'stack stopped'
+          else
+            echo '::warning::supabase stop did not succeed; the runner is discarded regardless'
+          fi

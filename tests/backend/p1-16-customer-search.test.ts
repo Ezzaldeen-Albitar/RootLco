@@ -239,3 +239,96 @@ describe('validation refusals', () => {
     expect(body.code).toBe('ERR-VAL-001');
   });
 });
+
+/**
+ * Cursor precision — `P1-27-INT-006`, missed here and found by the final P1-27
+ * audit.
+ *
+ * `node-postgres` parses `timestamptz` into a JS `Date`, which holds
+ * milliseconds. The search repository built its cursor from
+ * `created_at.toISOString()`, silently dropping the three microsecond digits
+ * PostgreSQL stores. The next page's keyset predicate then compares against the
+ * TRUNCATED value, so every row sharing that millisecond with the last row of
+ * the page is skipped — permanently, and with no error.
+ *
+ * The reason no existing test caught it is that a millisecond cursor paginates
+ * perfectly whenever no two rows share a millisecond, which is true of every
+ * fixture not deliberately built to collide. So this one is.
+ *
+ * The first assertion is the collision itself. Without it, a fixture that failed
+ * to produce sub-millisecond spacing would make the walk below pass while
+ * measuring nothing.
+ */
+describe('P1-27-INT-006 — a page boundary inside one millisecond loses no row', () => {
+  const COLLIDING = Array.from(
+    { length: 10 },
+    (_unused, index) => `c1600000-0000-4000-8000-0000000000c${index.toString(16)}`
+  );
+
+  beforeAll(async () => {
+    // Ten partners inside ONE millisecond, one microsecond apart. Written by the
+    // admin pool because the runtime role cannot set `created_at`.
+    for (const [index, id] of COLLIDING.entries()) {
+      await admin.query(
+        `INSERT INTO crm.business_partners
+           (id, tenant_id, party_type, display_name, lifecycle_status, created_at, created_by)
+         VALUES ($1, $2, 'individual', $3, 'active',
+                 timestamptz '2026-03-01 12:00:00.123000+00' + ($4::int * interval '1 microsecond'),
+                 $5)
+         ON CONFLICT (id) DO NOTHING`,
+        [id, TENANT_A, `Cursor Collision ${index}`, index + 1, USER_A]
+      );
+    }
+  });
+
+  afterAll(async () => {
+    await admin.query(`DELETE FROM crm.business_partners WHERE id = ANY($1::uuid[])`, [COLLIDING]);
+  });
+
+  it('places all ten rows in the same millisecond, so the walk below is not vacuous', async () => {
+    const { rows } = await admin.query<{ ms: string; n: string }>(
+      `SELECT to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS') AS ms,
+              count(*)::text AS n
+         FROM crm.business_partners
+        WHERE id = ANY($1::uuid[])
+        GROUP BY 1`,
+      [COLLIDING]
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.n).toBe('10');
+
+    // And they are genuinely distinct at microsecond precision — otherwise they
+    // would be indistinguishable to any cursor and the test would prove nothing.
+    const distinct = await admin.query<{ n: string }>(
+      `SELECT count(DISTINCT to_char(created_at AT TIME ZONE 'UTC',
+                                     'YYYY-MM-DD"T"HH24:MI:SS.US'))::text AS n
+         FROM crm.business_partners WHERE id = ANY($1::uuid[])`,
+      [COLLIDING]
+    );
+    expect(distinct.rows[0]?.n).toBe('10');
+  });
+
+  it('walks every colliding row across pages of four, with no duplicate and none lost', async () => {
+    authenticateAs(CRM_READER_SUBJECT);
+
+    const seen: string[] = [];
+    let cursor: string | null = null;
+    // Bounded so a broken cursor cannot spin: three pages carry 4 + 4 + 2.
+    for (let request = 0; request < 8; request += 1) {
+      const query: string =
+        `?name=Cursor%20Collision&limit=4` +
+        (cursor === null ? '' : `&cursor=${encodeURIComponent(cursor)}`);
+      const response = await search(query);
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as SearchBody;
+      seen.push(...(body.items ?? []).map((hit) => hit.id));
+      if (body.hasMore !== true || body.nextCursor == null) break;
+      cursor = body.nextCursor;
+    }
+
+    // On the truncated cursor the second request skipped every remaining row in
+    // the millisecond, so this came back as 4.
+    expect(new Set(seen).size, 'no row may be returned twice').toBe(seen.length);
+    expect([...seen].sort()).toEqual([...COLLIDING].sort());
+  });
+});

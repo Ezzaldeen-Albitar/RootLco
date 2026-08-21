@@ -38,9 +38,10 @@ import { join, relative, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import prettier from 'prettier';
 import { escapeRegExp } from './ci/check-workflow-security.mjs';
+import { API_SRC_ROOT, API_SRC_PATH } from './lib/repository-paths.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-const API_ROOT = join(ROOT, 'src', 'app', 'api', 'v1');
+const API_ROOT = join(API_SRC_ROOT, 'app', 'api', 'v1');
 const EVIDENCE = join(ROOT, 'docs', 'phase-1', 'phase-1-20', 'evidence');
 const OUTPUT = join(EVIDENCE, 'endpoint-inventory.md');
 const TRACEABILITY = join(EVIDENCE, 'task-traceability.md');
@@ -109,10 +110,10 @@ const TASKS = Object.freeze([
       ['audit', 'svc.service.updated'],
       ['audit', 'svc.service_version.published'],
       ['event', 'service.published'],
-      ['symbol', 'src/modules/service-catalog/index.ts', 'serviceCatalogModule'],
+      ['symbol', `${API_SRC_PATH}/modules/service-catalog/index.ts`, 'serviceCatalogModule'],
       [
         'symbol',
-        'src/modules/service-catalog/application/service-catalog-write-service.ts',
+        `${API_SRC_PATH}/modules/service-catalog/application/service-catalog-write-service.ts`,
         'ServiceCatalogWriteService',
       ],
       // `publishServiceVersion` is the CALL into the protected function. Naming the
@@ -120,7 +121,7 @@ const TASKS = Object.freeze([
       // satisfying this task.
       [
         'symbol',
-        'src/modules/service-catalog/data/service-catalog-repository.ts',
+        `${API_SRC_PATH}/modules/service-catalog/data/service-catalog-repository.ts`,
         'publishServiceVersion',
       ],
       ['test', 'tests/backend/p1-20-service-catalog.test.ts', 'svc.service-list'],
@@ -145,17 +146,17 @@ const TASKS = Object.freeze([
       ['audit', 'svc.branch_availability.changed'],
       [
         'symbol',
-        'src/modules/service-catalog/data/service-catalog-repository.ts',
+        `${API_SRC_PATH}/modules/service-catalog/data/service-catalog-repository.ts`,
         'findAvailability',
       ],
       [
         'symbol',
-        'src/modules/service-catalog/data/service-catalog-repository.ts',
+        `${API_SRC_PATH}/modules/service-catalog/data/service-catalog-repository.ts`,
         'branchBelongsToCompany',
       ],
       [
         'symbol',
-        'src/modules/service-catalog/application/service-catalog-service.ts',
+        `${API_SRC_PATH}/modules/service-catalog/application/service-catalog-service.ts`,
         'isSellableAt',
       ],
       ['test', 'tests/backend/p1-20-service-catalog.test.ts', 'branch filter'],
@@ -175,10 +176,10 @@ const TASKS = Object.freeze([
     [
       [
         'symbol',
-        'src/modules/service-catalog/data/service-catalog-repository.ts',
+        `${API_SRC_PATH}/modules/service-catalog/data/service-catalog-repository.ts`,
         'listLaborTimes',
       ],
-      ['symbol', 'src/modules/pricing/domain/decimal.ts', 'MINUTES'],
+      ['symbol', `${API_SRC_PATH}/modules/pricing/domain/decimal.ts`, 'MINUTES'],
     ],
   ],
   [
@@ -188,7 +189,11 @@ const TASKS = Object.freeze([
       ['operation', 'svc.price-resolve'],
       ['operation', 'svc.price-list-version-publish'],
       ['permission', 'svc.price.publish'],
-      ['symbol', 'src/modules/pricing/application/price-resolution-service.ts', 'resolve'],
+      [
+        'symbol',
+        `${API_SRC_PATH}/modules/pricing/application/price-resolution-service.ts`,
+        'resolve',
+      ],
       ['test', 'tests/backend/p1-20-pricing.test.ts', 'resolves a published price'],
     ],
   ],
@@ -196,7 +201,7 @@ const TASKS = Object.freeze([
     'P1-20-BE-005',
     'Tax calculation',
     [
-      ['symbol', 'src/modules/pricing/data/pricing-repository.ts', 'findTaxRate'],
+      ['symbol', `${API_SRC_PATH}/modules/pricing/data/pricing-repository.ts`, 'findTaxRate'],
       ['test', 'tests/backend/p1-20-pricing.test.ts', 'NO effective rate'],
     ],
   ],
@@ -204,7 +209,11 @@ const TASKS = Object.freeze([
     'P1-20-BE-006',
     'Discount authorization',
     [
-      ['symbol', 'src/modules/pricing/application/discount-authorization-service.ts', 'authorize'],
+      [
+        'symbol',
+        `${API_SRC_PATH}/modules/pricing/application/discount-authorization-service.ts`,
+        'authorize',
+      ],
       ['audit', 'svc.discount.authorized'],
       ['test', 'tests/backend/p1-20-quotation.test.ts', 'splitting defeats neither'],
       ['test', 'tests/unit/p1-20-discount-authorization.test.ts', 'maker'],
@@ -245,8 +254,12 @@ const TASKS = Object.freeze([
     'P1-20-BE-010',
     'Expiration',
     [
-      ['symbol', 'src/modules/quotation/application/quotation-service.ts', 'expireLapsed'],
-      ['symbol', 'src/modules/quotation/data/quotation-repository.ts', 'serverNow'],
+      [
+        'symbol',
+        `${API_SRC_PATH}/modules/quotation/application/quotation-service.ts`,
+        'expireLapsed',
+      ],
+      ['symbol', `${API_SRC_PATH}/modules/quotation/data/quotation-repository.ts`, 'serverNow'],
       ['audit', 'quo.quotation.expired'],
       ['test', 'tests/backend/p1-20-quotation.test.ts', 'NEVER expires a quotation'],
     ],
@@ -275,10 +288,14 @@ const TASKS = Object.freeze([
       // `insertEvidence` had no execution anywhere in the phase.
       [
         'symbol',
-        'src/modules/shared-services/application/attachment-service.ts',
+        `${API_SRC_PATH}/modules/shared-services/application/attachment-service.ts`,
         'verifyEvidenceVersion',
       ],
-      ['symbol', 'src/modules/quotation/data/quotation-repository.ts', 'insertEvidence'],
+      [
+        'symbol',
+        `${API_SRC_PATH}/modules/quotation/data/quotation-repository.ts`,
+        'insertEvidence',
+      ],
       // The fixture that makes the refusal falsifiable: two REAL versions differing
       // only in the entity their live link names.
       ['symbol', 'tests/backend/p1-20-helpers.ts', 'seedLinkedDocumentVersion'],
@@ -288,10 +305,14 @@ const TASKS = Object.freeze([
     'P1-20-BE-013',
     'Additional-work quotation',
     [
-      ['symbol', 'src/server/contracts/commercial-approval.ts', 'CommercialApprovalReader'],
       [
         'symbol',
-        'src/modules/work-order/application/additional-work-service.ts',
+        `${API_SRC_PATH}/server/contracts/commercial-approval.ts`,
+        'CommercialApprovalReader',
+      ],
+      [
+        'symbol',
+        `${API_SRC_PATH}/modules/work-order/application/additional-work-service.ts`,
         'assertLinkableQuotationRevision',
       ],
       ['audit', 'quo.additional_work.quotation_linked'],
@@ -302,8 +323,8 @@ const TASKS = Object.freeze([
     'P1-20-BE-014',
     'NUMERIC/DECIMAL financial source of truth',
     [
-      ['symbol', 'src/modules/pricing/domain/decimal.ts', 'Decimal'],
-      ['symbol', 'src/modules/pricing/domain/money.ts', 'Money'],
+      ['symbol', `${API_SRC_PATH}/modules/pricing/domain/decimal.ts`, 'Decimal'],
+      ['symbol', `${API_SRC_PATH}/modules/pricing/domain/money.ts`, 'Money'],
       ['test', 'tests/unit/p1-20-decimal.test.ts', 'no binary floating-point drift'],
       ['test', 'tests/unit/p1-20-decimal.test.ts', 'numeric type parser is not overridden'],
     ],
@@ -312,7 +333,7 @@ const TASKS = Object.freeze([
     'P1-20-SEC-001',
     'Permission and resolved-scope enforcement',
     [
-      ['symbol', 'src/server/auth/authorization.ts', 'callerHoldsPermissionTenantWide'],
+      ['symbol', `${API_SRC_PATH}/server/auth/authorization.ts`, 'callerHoldsPermissionTenantWide'],
       ['test', 'tests/backend/p1-20-pricing.test.ts', 'need an unrestricted grant'],
       ['test', 'tests/backend/p1-20-quotation.test.ts', 'tenant, scope and idempotency floors'],
     ],
@@ -421,7 +442,11 @@ const TASKS = Object.freeze([
     'P1-20-DO-002',
     'Structured logging, monitoring, and alert routing',
     [
-      ['symbol', 'src/modules/quotation/application/quotation-service.ts', 'expireLapsed'],
+      [
+        'symbol',
+        `${API_SRC_PATH}/modules/quotation/application/quotation-service.ts`,
+        'expireLapsed',
+      ],
       ['doc', 'docs/phase-1/phase-1-20/evidence/devops-observability.md'],
     ],
   ],
@@ -596,7 +621,7 @@ function main() {
   // emitted from a module this phase does not own (BE-013 writes from `work-order`).
   const allModuleSources = [];
   {
-    const stack = [join(ROOT, 'src', 'modules')];
+    const stack = [join(API_SRC_ROOT, 'modules')];
     while (stack.length > 0) {
       const current = stack.pop();
       // `withFileTypes` answers "directory?" from the directory read itself,
@@ -612,7 +637,7 @@ function main() {
 
   const moduleSources = [];
   for (const name of PHASE_MODULES) {
-    const dir = join(ROOT, 'src', 'modules', name);
+    const dir = join(API_SRC_ROOT, 'modules', name);
     if (!existsSync(dir)) continue;
     const stack = [dir];
     while (stack.length > 0) {
@@ -630,7 +655,7 @@ function main() {
     'utf8'
   );
   const auditCatalog = readFileSync(
-    join(ROOT, 'src', 'server', 'auth', 'audit-actions.ts'),
+    join(API_SRC_ROOT, 'server', 'auth', 'audit-actions.ts'),
     'utf8'
   );
   /**
@@ -649,7 +674,7 @@ function main() {
    * give their sources; only this one read was raw.
    */
   const eventCatalog = stripComments(
-    readFileSync(join(ROOT, 'src', 'server', 'events', 'envelope.ts'), 'utf8')
+    readFileSync(join(API_SRC_ROOT, 'server', 'events', 'envelope.ts'), 'utf8')
   );
 
   // ---- 1. Permissions exist in the seed -----------------------------------

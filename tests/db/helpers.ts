@@ -49,6 +49,8 @@ export const TENANT_A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 export const TENANT_B = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 export const USER_A = 'a0000000-0000-4000-8000-000000000001';
 export const USER_B = 'b0000000-0000-4000-8000-000000000001';
+const ROLE_FIXTURE_EMPLOYEE_A = 'a0000000-0000-4000-8000-0000000000e1';
+const ROLE_FIXTURE_EMPLOYEE_B = 'b0000000-0000-4000-8000-0000000000e1';
 export const COMPANY_A1 = 'a1000000-0000-4000-8000-000000000001';
 export const BRANCH_A1 = 'a1100000-0000-4000-8000-000000000001';
 
@@ -230,6 +232,78 @@ export async function ensureOrgFixtures(admin: Pool): Promise<void> {
      ON CONFLICT (id) DO NOTHING`,
     [BRANCH_A1, TENANT_A, COMPANY_A1, USER_A]
   );
+  // Real active IAM identities with live tenant-wide grants. Reception database
+  // suites use USER_A (and tenant B's USER_B) as their deterministic receiving
+  // employee; FE-007 no longer permits an arbitrary uuid to stand in for one,
+  // because rec.reception_visits.receiving_employee_id is now a same-tenant
+  // foreign key into iam.user_accounts guarded by an eligibility trigger.
+  //
+  // `ON CONFLICT (id)` is the NARROW target on purpose, although both tables
+  // carry further unique indexes that it does not cover —
+  // `uq_user_accounts_tenant_email_active` (tenant_id, email),
+  // `uq_user_accounts_provider_identity_active` (identity_provider,
+  // provider_subject — GLOBAL, not per tenant) and `uq_roles_tenant_code_active`
+  // (tenant_id, role_code). Reaching one of those means some OTHER row already
+  // holds a natural key that belongs to this fixture, and the four values below
+  // appear nowhere else in the repository. A bare `ON CONFLICT DO NOTHING` would
+  // swallow exactly that case and leave USER_A absent, which surfaces later as
+  // "receiving employee is not an active IAM user" — a mystery instead of a
+  // unique violation naming the index. Fail loudly there; be idempotent only on
+  // the id, which is what re-running a suite actually repeats.
+  await admin.query(
+    `INSERT INTO iam.user_accounts
+       (id, tenant_id, identity_provider, provider_subject, email, display_name, status, created_by)
+     VALUES
+       ($1,$3,'test_harness','fx_db_user_a','db-user-a@example.test','Fixture User A','active',$5),
+       ($2,$4,'test_harness','fx_db_user_b','db-user-b@example.test','Fixture User B','active',$5)
+     ON CONFLICT (id) DO NOTHING`,
+    [USER_A, USER_B, TENANT_A, TENANT_B, SYS]
+  );
+  await admin.query(
+    `INSERT INTO iam.roles (id, tenant_id, role_code, name, created_by)
+     VALUES ($1,$3,'fx_db_employee','DB fixture employee',$5),
+            ($2,$4,'fx_db_employee','DB fixture employee',$5)
+     ON CONFLICT (id) DO NOTHING`,
+    [ROLE_FIXTURE_EMPLOYEE_A, ROLE_FIXTURE_EMPLOYEE_B, TENANT_A, TENANT_B, SYS]
+  );
+  // ONE grant per statement, and every parameter explicitly cast.
+  //
+  // These two grants were originally one statement joined by `UNION ALL`, and it
+  // took the ENTIRE database tier down: 117 of 140 files failed in
+  // `ensureOrgFixtures`, and because the throw happened in a hook the runner
+  // SKIPPED 1420 tests rather than failing them, so the summary read
+  // "237 passed" instead of red.
+  //
+  // The cause is a type-resolution ordering that only a UNION exposes. In a
+  // plain `INSERT INTO t (cols) SELECT $1, …` PostgreSQL takes the parameter
+  // types from the target columns. Under `UNION ALL` it must first resolve the
+  // select-list types ACROSS the branches, which it does before consulting the
+  // insert target — so `$1` in the select list settled as `text` while
+  // `tenant_id = $1` in the WHERE NOT EXISTS forced `uuid`, and the parse failed
+  // with `inconsistent types deduced for parameter $1 … uuid versus text`.
+  //
+  // Both properties of the fix were verified against PostgreSQL directly, with
+  // `PREPARE` and no declared parameter list so the server infers exactly as the
+  // `pg` driver makes it: the UNION form raises, the single-row form parses.
+  // The casts are belt and braces — the split alone is sufficient — and they are
+  // kept because they make the statement independent of where its types come
+  // from, which is the property that was silently missing.
+  for (const [tenantId, userId, roleId] of [
+    [TENANT_A, USER_A, ROLE_FIXTURE_EMPLOYEE_A],
+    [TENANT_B, USER_B, ROLE_FIXTURE_EMPLOYEE_B],
+  ] as const) {
+    await admin.query(
+      `INSERT INTO iam.role_grants
+         (tenant_id, user_id, role_id, scope_mode, granted_by, created_by)
+       SELECT $1::uuid, $2::uuid, $3::uuid, 'unrestricted', $4::uuid, $4::uuid
+        WHERE NOT EXISTS (
+          SELECT 1 FROM iam.role_grants
+           WHERE tenant_id = $1::uuid AND user_id = $2::uuid
+             AND role_id = $3::uuid AND status = 'active'
+        )`,
+      [tenantId, userId, roleId, SYS]
+    );
+  }
 }
 
 /**
@@ -386,6 +460,8 @@ export async function deleteTenantCascade(admin: Pool, tenantIds: string[]): Pro
   await deleteFrom('rec.custody_history');
   await deleteFrom('rec.authorizations');
   await deleteFrom('rec.refusals');
+  // P1-18 signature events reference rec.signatures, so they unwind first.
+  await deleteFrom('rec.signature_events');
   await deleteFrom('rec.signatures');
   await deleteFrom('rec.vehicle_content_details');
   await deleteFrom('rec.vehicle_contents');
@@ -395,6 +471,25 @@ export async function deleteTenantCascade(admin: Pool, tenantIds: string[]): Pro
   await deleteFrom('rec.visual_inspections');
   await deleteFrom('rec.damage_marks');
   await deleteFrom('rec.damage_maps');
+  /*
+   * P1-18 reception evidence contracts. Order is the FK graph, not the alphabet:
+   *
+   *  - damage_map_template_versions is referenced BY rec.damage_maps, so it goes
+   *    after it and before its own parent, damage_map_templates;
+   *  - reception_evidence_bindings and capture_requirement_overrides reference
+   *    rec.reception_visits, deleted below;
+   *  - capture_policy_rules is referenced by nothing and only needs to precede
+   *    the tenant itself.
+   *
+   * All six were absent from this cascade when the contracts landed. A tenant-
+   * scoped table missing here does not fail loudly: it survives cleanup, and the
+   * next suite inherits its rows.
+   */
+  await deleteFrom('rec.damage_map_template_versions');
+  await deleteFrom('rec.damage_map_templates');
+  await deleteFrom('rec.reception_evidence_bindings');
+  await deleteFrom('rec.capture_requirement_overrides');
+  await deleteFrom('rec.capture_policy_rules');
   await deleteFrom('rec.warning_light_observations');
   await deleteFrom('rec.leak_observations');
   await deleteFrom('rec.reception_party_roles');

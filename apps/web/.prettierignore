@@ -1,0 +1,26 @@
+.next
+# `next dev` builds here instead of `.next`, so that a development build and a
+# production build cannot overwrite each other (see ROOTLCO_DIST_DIR). It is a
+# build directory like any other and must be ignored like one — CI never has it
+# because CI never runs `next dev`, so only a developer ever sees the failure
+# (P1-26-F-060).
+.next-dev
+node_modules
+coverage
+
+# Playwright run artefacts. Written by the browser smoke, gitignored, and not
+# ours to format.
+test-results
+playwright-report
+playwright-report.json
+
+# The web component tier's JSON reporter output (`--outputFile=vitest-web.json`),
+# gitignored at .gitignore:85 and equally not ours to format.
+#
+# Same shape as `.next-dev` above, and CI structurally cannot catch it: the
+# web-quality job runs `format:check:web` at _reusable-node-quality.yml:479 and
+# only writes this file at :518, so the check always runs BEFORE the artefact
+# exists. A developer who runs `npm run test:web-ci` then `format:check:all`
+# sees a red gate that hosted CI reports green — which is the worst way round,
+# because the local signal is the one being distrusted.
+vitest-web.json

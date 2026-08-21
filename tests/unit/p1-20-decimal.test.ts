@@ -27,6 +27,7 @@ import {
   parsePositive,
 } from '@/modules/pricing/domain/decimal';
 import { CurrencyMismatchError, Money, moneyView } from '@/modules/pricing/domain/money';
+import { API_SRC_ROOT } from '../../scripts/lib/repository-paths.mjs';
 
 describe('Decimal — parsing against the protected column specs', () => {
   it('accepts zero, and renders it at the column scale', () => {
@@ -244,7 +245,7 @@ describe('Money — currency is part of the value', () => {
  * which fails the moment the default changes — because the casts are a convention a
  * future author can forget, and the default is what protects them until they remember.
  */
-const SRC = join(process.cwd(), 'src');
+const SRC = API_SRC_ROOT;
 
 /** Every .ts file's text under a directory, for a structural source assertion. */
 function collectSql(dir: string): string[] {

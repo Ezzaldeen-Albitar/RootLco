@@ -72,6 +72,59 @@ jobs:
               || { echo "::error::npm audit produced unparseable output in ${file}."; exit 1; }
           done
 
+      # ---------------------------------------------------------------------
+      # The frontend is an INDEPENDENT package with its own lockfile
+      # (web/package-lock.json). The audit above reads the ROOT tree only, so
+      # without this the entire frontend dependency surface would be unaudited
+      # while the gate still reported clean — the exact shape of blind spot this
+      # repository keeps finding.
+      #
+      # The tree is installed ONCE, at the root: `apps/web` is an npm workspace
+      # and there is no second lockfile to install from. `--workspace` scopes
+      # the audit to the frontend's own dependency graph within that install.
+      # The earlier `--prefix web` form pointed at a directory that no longer
+      # exists and would have failed loudly rather than silently, which is the
+      # only good thing about it.
+      #
+      # Same policy as the root tree: zero advisories, no waivers. The frontend
+      # does not get a lower bar for being newer.
+      # ---------------------------------------------------------------------
+      - name: Audit the frontend dependency tree
+        run: |
+          set -euo pipefail
+          npm audit --workspace @rootlco/web --omit=dev --json > audit-web-production.json || printf ''
+          npm audit --workspace @rootlco/web --json > audit-web-full.json || printf ''
+          for file in audit-web-production.json audit-web-full.json; do
+            node -e 'JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8"))' "${file}" \
+              || { echo "::error::npm audit produced unparseable output in ${file}."; exit 1; }
+          done
+          # A report that parses but describes nothing is not evidence of a clean
+          # tree; assert the shape before trusting the count.
+          node -e '
+            const fs = require("node:fs");
+            let failed = 0;
+            for (const file of ["audit-web-production.json", "audit-web-full.json"]) {
+              const report = JSON.parse(fs.readFileSync(file, "utf8"));
+              if (report.error) {
+                console.error(`::error::npm audit reported an error for ${file}: ${report.error.summary ?? "unknown"}`);
+                process.exit(1);
+              }
+              const meta = report.metadata?.vulnerabilities;
+              if (!meta) {
+                console.error(`::error::${file} carries no vulnerability metadata; the audit cannot be read as clean.`);
+                process.exit(1);
+              }
+              const total = Object.values(meta).reduce((sum, n) => sum + n, 0);
+              console.log(`${file}: ${total} advisory/advisories ${JSON.stringify(meta)}`);
+              failed += total;
+            }
+            if (failed > 0) {
+              console.error("::error::the frontend dependency tree carries advisories. The web package has the same zero-waiver policy as the root package.");
+              process.exit(1);
+            }
+            console.log("Frontend dependency policy: pass");
+          '
+
       - name: Licence inventory
         run: node scripts/ci/licence-inventory.mjs --json licences.json
 

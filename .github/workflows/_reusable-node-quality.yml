@@ -6,7 +6,17 @@
 #   static-quality  formatting, types, lint, every repository gate, generated-file
 #                   drift, workflow security, test honesty. No database, no build.
 #   unit-coverage   the unit tier plus its coverage ratchet.
-#   build           the production build, its integrity, and the size ratchet.
+#   build           the API production build, its integrity, and the size ratchet.
+#   web-quality     every gate the web application owns: types, lint, Sass,
+#                   formatting, component tests, the design-token and brand
+#                   gates, and its production build.
+#
+# `web-quality` is a separate task and not a few extra steps inside
+# `static-quality` for the reason the whole split exists: the web application
+# failing its own lint and the repository failing its formatting are different
+# conversations, and `ci-gate` has to be able to tell them apart. It is also the
+# job that closes P1-25-F-015 — before it, hosted CI invoked ZERO web commands,
+# so every web gate was green in the only sense that nothing had ever run it.
 #
 # They are separate CALLS rather than one job because they are independent and
 # should run in parallel, and because `ci-gate` has to reason about them
@@ -35,6 +45,19 @@ on:
         required: false
         type: string
         default: ''
+      head-branch:
+        description: >-
+          Pull-request head branch name. `static-quality` resolves it against
+          `.github/ci-baselines/phase-ownership-profiles.json` to pick the
+          changed-file ownership profile. Leave it empty ONLY on a `push` or
+          `workflow_dispatch`: there `check-phase-ownership.mjs
+          --resolve-context` resolves the profile from the pushed ref instead,
+          or declares a skip if that ref is protected. A caller running on
+          `pull_request` that omits this is REFUSED — an empty value used to
+          disable the gate in silence.
+        required: false
+        type: string
+        default: ''
       artifact-retention-days:
         required: false
         type: number
@@ -53,8 +76,11 @@ on:
         description: Operations in the committed OpenAPI document.
         value: ${{ jobs.node-quality.outputs.openapi-operations }}
       standalone-bytes:
-        description: Size of `.next/standalone` in bytes.
+        description: Size of `apps/api/.next/standalone` in bytes.
         value: ${{ jobs.node-quality.outputs.standalone-bytes }}
+      web-tests:
+        description: Number of web component tests executed.
+        value: ${{ jobs.node-quality.outputs.web-tests }}
 
 permissions:
   contents: read
@@ -76,6 +102,7 @@ jobs:
       openapi-paths: ${{ steps.contract.outputs.paths }}
       openapi-operations: ${{ steps.contract.outputs.operations }}
       standalone-bytes: ${{ steps.size.outputs.bytes }}
+      web-tests: ${{ steps.web-tests.outputs.total }}
 
     steps:
       # A local `uses: ./…` action is resolved from the workspace, which is
@@ -100,9 +127,9 @@ jobs:
         run: |
           set -euo pipefail
           case "${TASK}" in
-            static-quality | unit-coverage | build) printf 'task: %s\n' "${TASK}" ;;
+            static-quality | unit-coverage | build | web-quality) printf 'task: %s\n' "${TASK}" ;;
             *)
-              echo "::error::unknown task '${TASK}'. Expected one of: static-quality, unit-coverage, build. A job that recognises no task would skip every step and report success."
+              echo "::error::unknown task '${TASK}'. Expected one of: static-quality, unit-coverage, build, web-quality. A job that recognises no task would skip every step and report success."
               exit 1
               ;;
           esac
@@ -126,7 +153,11 @@ jobs:
           npm run format:check
           npm run lint
           npm run typecheck
-          npm run style:check
+          # No stylesheet gate here. apps/api holds no stylesheets after the
+          # pre-P1-26 boundary remediation, and apps/web's stylesheets are gated
+          # by the web-quality task (which also proves the Stylelint rules fire).
+          # Running it in both places would lint the same files twice and imply
+          # a coverage this job does not have.
 
       - name: YAML and JSON are parseable
         if: inputs.task == 'static-quality'
@@ -208,6 +239,124 @@ jobs:
           npm run validate:p1-23-inventory
           npm run validate:p1-24-register
           npm run validate:exact-money
+          npm run validate:run-block-syntax
+          # The six classification validators are NOT here. They open a
+          # PostgreSQL connection, and this job has no database — see
+          # P1-25-F-023. They run in the database-bearing job in ci.yml, which
+          # applies every migration first.
+          npm run security:all
+          # Every quality command is registered, classified, and reachable from
+          # both the local aggregate and this workflow. Without it, a check can
+          # exist, be correct, and never once run — which is exactly how three
+          # gates rotted unnoticed before P1-25.
+          npm run validate:command-coverage
+          # apps/api is the Backend. These two keep Frontend material and
+          # generated output out of it, and out of the repository at large.
+          npm run validate:api-backend-only
+          npm run validate:generated-artifacts
+          # OIR-01 is open, so both tiers hold a placeholder. This fails the
+          # moment one of them holds a real name and the other does not.
+          npm run validate:product-name
+          # The product speaks to receptionists and technicians. No JSON, no
+          # UUIDs, no permission codes, no snake_case identifiers, no raw
+          # translation keys — in either language.
+          npm run validate:plain-language
+          # The 35-task P1-28 register, derived from its canonical plan rather
+          # than maintained beside it. P1-27 counted 33 adjudicated items as 42
+          # canonical tasks and nine tasks appeared in no status table for four
+          # adversarial rounds, so this authority exists from day one — and it
+          # is named by a hosted job from day one too, rather than riding only
+          # the aggregate the way its P1-27 sibling still does.
+          npm run validate:p1-28-matrix
+          # The record against the tree (P1-28-DOC-001). The archaeology was
+          # corrected on one day and went stale again four days later, because
+          # PR #227 published a catalogue-management surface three of its rows
+          # had just finished saying could not exist — and nothing failed,
+          # because every figure in it was hand-written. Every P1-28 number is
+          # a derived claim now, and this substitutes the tree's answer for it.
+          # Named here beside its sibling rather than riding the clean-room
+          # aggregate alone, for the reason `tests/ci/p1-28-devops-gate.test.ts`
+          # gives: a gate a developer meets forty minutes late is a gate they
+          # meet after the next commit.
+          npm run validate:p1-28-traceability
+          # P1-28-QA-005. The closing seal: every file in the phase directory
+          # digested over its BYTES, the candidate bound in both halves of the
+          # closing package, and the unclosed-task set DERIVED from the verdicts
+          # file rather than listed — so a task that quietly stops being named in
+          # the package fails here instead of reading like a task that closed.
+          # Named directly, beside its two siblings. `validate:p1-27-evidence`
+          # reaches hosted CI only through `verify:policies` -> `verify:workspaces`
+          # in the clean room, which is the slowest job in the pull request; a
+          # gate a developer meets forty minutes late is a gate they meet after
+          # the next commit. It still rides that path too — this is an additional
+          # naming, not a replacement.
+          npm run validate:p1-28-evidence
+          # The READ reachability authority, and the PENDING_FRONTEND_ADAPTER
+          # lifecycle. It reads documents, the operation register, the matrix,
+          # the verdicts and the two contract mirrors — no browser, no database
+          # — so it belongs in the FAST static job by the same reading as the
+          # three above it. The placement is the point: this gate is the only
+          # thing standing between a published-but-unwired read and a phase
+          # calling itself complete, and a gate met forty minutes late is met
+          # after the claim has already been written down.
+          npm run validate:p1-28-adapter-reachability
+
+      # =======================================================================
+      # Changed-file ownership — P1-27-DO-003.
+      #
+      # `validate:phase-ownership` existed, was correct, and was invoked by NO CI
+      # job: a grep of `.github/` for `phase-ownership` returned nothing and
+      # never had. The register in `check-command-coverage.mjs` recorded that in
+      # a PROSE comment — a command documented as unreachable, which is the
+      # defect class this phase is made of. It found seven API source files
+      # riding inside the P1-27 Frontend branch only because a human ran it.
+      #
+      # The profile is a property of the BRANCH, so it is resolved from a
+      # committed map rather than defaulted. Defaulting is what made every
+      # branch — including Backend ones the profile cannot pass — get judged
+      # against `p1-26-frontend` for the whole of two phases.
+      #
+      # A pull request is the richest context, but it is NOT the only one this
+      # step can answer in, and the first version of it treated every other
+      # context as a reason to exit 0. `protected-develop-verification.yml`
+      # passes neither input, so on every push to `develop` and `main` the step
+      # printed a sentence and judged nothing; `pr-ci.yml` fires on
+      # `workflow_dispatch` too, where the pull-request fields are empty and the
+      # same silent 0 followed. A step that exits 0 BECAUSE IT COULD NOT RUN is
+      # this phase's defect class, reintroduced by the fix for it.
+      #
+      # `decideOwnershipRun()` in `scripts/ci/check-phase-ownership.mjs` now
+      # makes that decision, in a module `tests/ci/phase-ownership.test.ts` can
+      # call: a pull request
+      # resolves the profile from the head branch, a push or dispatch on an
+      # ORDINARY branch resolves it from the pushed ref, a push on a protected
+      # branch is a DECLARED skip written to the step summary and to
+      # `phase-ownership-context.json` in the evidence artefact, and anything
+      # else — including a `pull_request` run whose caller forgot the inputs —
+      # is refused with exit 1.
+      # =======================================================================
+      - name: Changed-file ownership
+        if: inputs.task == 'static-quality'
+        env:
+          HEAD_BRANCH: ${{ inputs.head-branch }}
+          BASE_REF: ${{ inputs.base-ref }}
+          OWNERSHIP_EVENT_NAME: ${{ github.event_name }}
+          OWNERSHIP_REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          # Exits 1 when the context is unusable, so `set -e` refuses the run
+          # rather than falling through to a skip.
+          node scripts/ci/check-phase-ownership.mjs --resolve-context \
+            --env-out ownership-context.env \
+            --json phase-ownership-context.json
+          # Every value here is validated against `^[A-Za-z0-9._/-]+$` and
+          # single-quoted by the writer; no branch name is ever emitted.
+          . ./ownership-context.env
+          if [ "${OWNERSHIP_ACTION}" = "check" ]; then
+            PHASE_OWNERSHIP_PROFILE="${OWNERSHIP_PROFILE}" \
+            PHASE_OWNERSHIP_BASE="${OWNERSHIP_BASE}" \
+              npm run validate:phase-ownership
+          fi
 
       - name: Route ↔ OpenAPI registry parity
         if: inputs.task == 'static-quality'
@@ -334,14 +483,48 @@ jobs:
             fs.appendFileSync(process.env.GITHUB_OUTPUT, `total=${s.total}\n`);
           '
 
+      # Two tasks now carry a touched-file coverage floor — the unit tier and the
+      # web tier — so the list they both read has to be produced for both. A
+      # `--changed` pointing at a file that was never written makes the gate skip
+      # the touched-file rule silently, which is the shape of every hole this
+      # phase has been closing.
       - name: Changed files, for the touched-file coverage floor
-        if: inputs.task == 'unit-coverage' && !cancelled()
+        if: (inputs.task == 'unit-coverage' || inputs.task == 'web-quality') && !cancelled()
         env:
           BASE_REF: ${{ inputs.base-ref }}
+          HEAD_BRANCH: ${{ inputs.head-branch }}
         run: |
           set -euo pipefail
+          # A PROMOTION is not an edit, and the touched-file floor is a question
+          # about an edit.
+          #
+          # When the pull request's HEAD is itself a protected branch, the diff
+          # against the base is the union of every phase that has landed since
+          # the last promotion — 921 commits, the first time this was hit. Every
+          # file in it was already held to this floor by the pull request that
+          # introduced it. Asking again, of all of them at once, is the same
+          # category error the ownership gate refused for the same reason, and
+          # the answer is the same: this is not the question to ask here.
+          #
+          # It is REPORTED, never silent. The gate distinguishes "no file was
+          # touched" from "no list was supplied", and this is a third state that
+          # must not be collapsed into either — a promotion carries files, and
+          # this floor deliberately did not inspect them.
+          if [ "${HEAD_BRANCH}" = 'main' ] || [ "${HEAD_BRANCH}" = 'develop' ]; then
+            : > changed-files.txt
+            echo "::notice::the pull-request head '${HEAD_BRANCH}' is a protected branch, so this is a promotion. The touched-file coverage floor inspected NO files: every file in this range was held to it by the pull request that introduced it. The overall coverage baseline still applies and is unaffected."
+            wc -l < changed-files.txt
+            exit 0
+          fi
           if [ -n "${BASE_REF}" ] && git rev-parse --verify "origin/${BASE_REF}" >/dev/null 2>&1; then
-            git diff --name-only --diff-filter=ACMR "origin/${BASE_REF}...HEAD" > changed-files.txt
+            # Renames are EXCLUDED when the content is identical. The
+            # touched-file coverage floor exists to stop new or modified code
+            # shipping untested; a file that only moved introduces no new code,
+            # and failing it would make any large refactor unmergeable for a
+            # reason unrelated to coverage. A rename that also CHANGED content
+            # scores below R100 and is still counted.
+            git diff --name-status -M --diff-filter=ACMR "origin/${BASE_REF}...HEAD" \
+              | awk '/^R100/ { next } { print $NF }' > changed-files.txt
           else
             : > changed-files.txt
           fi
@@ -404,7 +587,7 @@ jobs:
           # existed as a tracked file so no tracked-file scanner could see it.
           # The secret-scan job cannot do this — it does not build.
           node scripts/ci/scan-history.mjs --mode worktree \
-            --roots .next,public --min-files 20 \
+            --roots apps/api/.next,apps/api/public --min-files 20 \
             --json build-output-scan.json --markdown build-output-scan.md
 
       - name: Build output integrity and size ratchet
@@ -413,7 +596,7 @@ jobs:
         run: |
           set -euo pipefail
           node scripts/ci/build-size-report.mjs \
-            --dir .next \
+            --dir apps/api/.next \
             --baseline .github/ci-baselines/build-size-baseline.json \
             --json build-size.json --markdown build.md
           node -e '
@@ -421,6 +604,217 @@ jobs:
             const b = JSON.parse(fs.readFileSync("build-size.json", "utf8"));
             fs.appendFileSync(process.env.GITHUB_OUTPUT, `bytes=${b.sizes.standaloneBytes}\n`);
           '
+
+      # =======================================================================
+      # web-quality
+      # =======================================================================
+      - name: Web formatting, types and lint
+        if: inputs.task == 'web-quality'
+        run: |
+          set -euo pipefail
+          npm run format:check:web
+          npm run typecheck:web
+          npm run lint:web
+
+      - name: Web Sass policy
+        if: inputs.task == 'web-quality'
+        run: |
+          set -euo pipefail
+          # ADR-013 direction safety lives here. The rule that enforces it was
+          # declared with an invalid option shape until P1-25 and was therefore
+          # SKIPPED by Stylelint while the command still exited zero, so
+          # `style:check:web` alone is not sufficient evidence that it ran —
+          # `tests/stylelint-policy.test.ts` in the web tier proves the rules fire.
+          npm run style:check:web
+
+      - name: Web design-token, brand and boundary gates
+        if: inputs.task == 'web-quality'
+        run: |
+          set -euo pipefail
+          npm run validate:web-tokens
+          # Every colour utility the source uses must resolve to a theme entry.
+          # Tailwind emits nothing for a name it does not know and says nothing
+          # about it, so `bg-brand-primary` sat in fourteen components with no
+          # rule behind it until Owner acceptance.
+          npm run validate:web-theme
+          npm run validate:web-brand
+          npm run validate:notification-authority
+          # No fetch outside the API layer, no import of API server or Supabase
+          # source, no dangerouslySetInnerHTML. Each of those failures is
+          # invisible in review and compiles perfectly.
+          npm run validate:web-boundary
+          # No merge caller while P1-OD-017 is open, no duplicate scan from a
+          # review surface, no client-asserted scope, no invented total.
+          npm run validate:p1-27-frontend
+          # A registered operation is not a delivered feature. Every canonical
+          # P1-27 mutation must be reachable from a real production call site,
+          # or carry an approved decision saying why it is not.
+          npm run validate:p1-27-reachability
+          # The apt/rec twin (P1-28-SEC-004). The line above derives its
+          # canonical list from the crm/veh operations alone, so the fourteen
+          # appointment and reception writes P1-28 consumes had no reachability
+          # authority named by any hosted job — INT-113's exact precondition,
+          # one domain over. It rode the clean-room aggregate and nothing else,
+          # and the clean room is the slowest job in the pull request; a gate a
+          # developer meets forty minutes late is a gate they meet after the
+          # next commit. Named here so it fails beside its sibling.
+          npm run validate:p1-28-write-reachability
+          # The other two P1-28 gates, for the same reason and found the same
+          # way. `tests/ci/p1-28-devops-gate.test.ts` used to hold a HAND LIST of
+          # two gates and assert that each was named by a hosted job; the command
+          # register meanwhile carried FOUR `validate:p1-28-*` entries at tier
+          # `required`, and the two the list omitted rode `verify:workspaces` in
+          # the clean room and nothing else. A hand list cannot fail because
+          # something was never added to it, which is the failure that happened.
+          # That test now derives its set from the register by phase prefix, so
+          # these two are named here rather than being invisible to it.
+          #
+          # Least privilege, resolved scope and scope hygiene over the same
+          # trees (P1-28-SEC-001/003).
+          npm run validate:p1-28-access
+          # Every version-guarded command sources its If-Match from a read or a
+          # command response, never from arithmetic or a cached guess
+          # (P1-28-QA-004).
+          npm run validate:p1-28-version-sourcing
+
+      - name: Web component tier
+        if: inputs.task == 'web-quality'
+        run: |
+          set -euo pipefail
+          # An explicit script, not flags forwarded through two npm layers —
+          # that is where they were being dropped, leaving vitest on its default
+          # reporter and the summariser with no report to read.
+          #
+          # The same lesson governs coverage. `npm run test:web -- --coverage`
+          # LOSES the `--` at the second npm layer and runs a plain `vitest run`,
+          # producing exit 0, no report and a job that measured nothing while
+          # calling itself a coverage run. So the flags live inside the workspace
+          # script and the suite is executed once for both purposes.
+          npm run test:web-ci
+
+      - name: Web coverage ratchet
+        id: web-coverage
+        if: inputs.task == 'web-quality' && !cancelled()
+        run: |
+          set -euo pipefail
+          node scripts/ci/coverage-gate.mjs \
+            --summary apps/web/coverage/web/coverage-summary.json \
+            --baseline .github/ci-baselines/coverage-baseline.web.json \
+            --changed changed-files.txt \
+            --json coverage-gate-web.json --markdown coverage-web.md
+
+      - name: Summarise the web tier
+        id: web-tests
+        if: inputs.task == 'web-quality' && !cancelled()
+        run: |
+          set -euo pipefail
+          node scripts/ci/summarise-vitest.mjs \
+            --input apps/web/vitest-web.json --label web \
+            --json test-totals-web.json --markdown tests-web.md
+          node -e '
+            const fs = require("node:fs");
+            const s = JSON.parse(fs.readFileSync("test-totals-web.json", "utf8"));
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, `total=${s.total}\n`);
+          '
+
+      - name: Web production build
+        if: inputs.task == 'web-quality'
+        run: |
+          set -euo pipefail
+          # `set -o pipefail` above is what makes `tee` safe: without it the
+          # pipeline reports tee's status and a failing build looks green.
+          npm run build:web 2>&1 | tee web-build.log
+
+      - name: Install the browser the smoke needs
+        if: inputs.task == 'web-quality'
+        run: npm run test:e2e:install --workspace @rootlco/web
+
+      - name: Browser smoke across viewports and both directions
+        if: inputs.task == 'web-quality'
+        run: |
+          set -euo pipefail
+          # Against a real production build. Five projects: two desktop widths,
+          # a laptop width, a tablet width, and a reduced-motion context — an
+          # RTL layout defect is invisible in an LTR run and vice versa.
+          #
+          # ANONYMOUS ONLY. `apps/web/playwright.config.ts` gates
+          # tests/e2e/authenticated/** behind ROOTLCO_E2E_AUTH=1, which nothing
+          # here sets — see the next step, which says so out loud.
+          npm run test:web-e2e
+
+      - name: Say which browser specs did NOT run, and what that leaves unproven
+        if: inputs.task == 'web-quality' && !cancelled()
+        run: |
+          set -euo pipefail
+          # The step this exists for. `test:web-e2e` above reports green over the
+          # ANONYMOUS tier only, and for the whole of P1-27 nothing anywhere said
+          # that the repository's only tenant-isolation proof and its only
+          # route-level accessibility proof were not among the tests that ran.
+          #
+          # A green check that silently covers less than a reader assumes is the
+          # defect class this phase exists to remove, so the omission is now
+          # rendered as a warning annotation AND in the job summary, from a
+          # committed declaration that tests/ci/e2e-tier-coverage.test.ts holds
+          # against the actual spec files.
+          #
+          # The tier is no longer unrun anywhere: the `authenticated-browser` job
+          # is now a real dependency of BOTH gates, so `unrun` is empty and this
+          # step renders the repayment instead of the debt.
+          #
+          # An empty declaration used to THROW here, on the reasoning that the
+          # list is derived from real spec files and cannot be empty. That was
+          # true only while the tier was ungoverned: it made "the debt was paid"
+          # indistinguishable from "somebody deleted the file", and it would have
+          # failed every web job on the commit that closed the gap. The two states
+          # are now distinguished and both are printed.
+          #
+          # The last line used to interpolate the declaration's OLD observation
+          # field name. That field was renamed to `hostedObservation` and this
+          # line was not, so the summary rendered the literal word `undefined`
+          # where the observation status belongs — a stale reference no gate
+          # could see, because a job summary is prose.
+          node -e '
+            const fs = require("node:fs");
+            const doc = JSON.parse(fs.readFileSync(".github/ci-baselines/unrun-test-tiers.json", "utf8"));
+            const rows = doc.unrun ?? [];
+            const governed = doc.governed ?? null;
+            if (rows.length === 0 && !governed) {
+              throw new Error("the unrun-tier declaration is empty and records no governing job either; one of the two must be true");
+            }
+            const out = [];
+            if (rows.length > 0) {
+              out.push("### Browser specs NOT executed by this job", "",
+                "`npm run test:web-e2e` runs the ANONYMOUS tier. These specs did not run here, and a green pull request does not cover them:", "",
+                "| Spec | What a pull request leaves unproven | Executed instead by | Compensating control |", "| --- | --- | --- | --- |");
+              for (const row of rows) {
+                console.log(`::warning file=${row.path}::${row.id} did not run in this job. ${row.whatIsUnprovenWithoutIt} Executed by: ${row.executedBy}`);
+                out.push(`| \`${row.path}\` | ${row.whatIsUnprovenWithoutIt} | ${row.executedBy} | ${row.compensatingControl} |`);
+              }
+              out.push("", `_Declared in \`.github/ci-baselines/unrun-test-tiers.json\`. ${rows.length} spec(s)._`);
+            } else {
+              out.push("### Browser specs not executed by THIS job — and the gate that does execute them", "",
+                "`npm run test:web-e2e` runs the ANONYMOUS tier only. The authenticated tier is not run here, and it is no longer a hole: a gate-governed job runs it and both gates wait for the result.", "",
+                "| Spec | Executed and governed by |", "| --- | --- |");
+              for (const spec of governed.specs ?? []) {
+                out.push(`| \`${spec}\` | ${governed.executedBy} |`);
+              }
+              out.push("", `_Governed by: ${governed.governedBy}_`, "", `_Fork policy: ${governed.forkPolicy}_`);
+            }
+            out.push("", `_${doc.hostedObservation}_`, "");
+            fs.writeFileSync("unrun-tiers.md", out.join("\n") + "\n");
+          '
+          cat unrun-tiers.md
+
+      - name: The web build output carries no credential
+        if: inputs.task == 'web-quality'
+        run: |
+          set -euo pipefail
+          # A value inlined into a client bundle reaches every browser that loads
+          # the page and never existed as a tracked file, so no tracked-file
+          # scanner could ever have seen it.
+          node scripts/ci/scan-history.mjs --mode worktree \
+            --roots apps/web/.next --min-files 20 \
+            --json web-build-scan.json --markdown web-build-scan.md
 
       # =======================================================================
       # evidence — uploaded even when a step above failed
@@ -433,7 +827,18 @@ jobs:
           CACHE_HIT: ${{ steps.setup.outputs.cache-hit }}
         run: |
           set -euo pipefail
-          for file in workflow-security.md route-parity.md test-honesty.md env-contract.md tests-unit.md coverage.md build.md; do
+          # EVERY markdown this job can produce, and the list is gate-checked.
+          #
+          # `tests-web.md` was written at the "Summarise the web tier" step and
+          # rendered nowhere: the web tier's honesty verdict — executed count,
+          # skipped cases, floor result — existed as an artifact file and was
+          # invisible in the one place a reviewer looks (`WTF-10`). The two build
+          # scan summaries were missing for the same reason.
+          #
+          # `tests/ci/job-summary-rendering.test.ts` derives the required list
+          # from this file's own `--markdown` arguments, so a new summariser
+          # cannot be added without appearing here.
+          for file in workflow-security.md route-parity.md test-honesty.md env-contract.md tests-unit.md coverage.md build-output-scan.md build.md tests-web.md coverage-web.md unrun-tiers.md web-build-scan.md; do
             if [ -f "${file}" ]; then
               cat "${file}" >> "${GITHUB_STEP_SUMMARY}"
               printf '\n\n' >> "${GITHUB_STEP_SUMMARY}"
@@ -451,6 +856,7 @@ jobs:
           if-no-files-found: ignore
           path: |
             workflow-security.json
+            phase-ownership-context.json
             route-parity.json
             test-honesty.json
             openapi-totals.json
@@ -464,6 +870,12 @@ jobs:
             build.log
             build-warnings.txt
             changed-files.txt
+            apps/web/vitest-web.json
+            apps/web/playwright-report.json
+            test-totals-web.json
+            unrun-tiers.md
+            web-build-scan.json
+            web-build.log
             *.md
 
       - name: Upload the HTML coverage report

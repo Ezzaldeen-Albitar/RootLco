@@ -8,6 +8,19 @@ Sass adoption is decided and implemented. This ADR also records the owner's divi
 
 All colour values in the styling system are neutral defaults pending brand approval. No visual identity has been approved (OIR-06, UI prototypes, remains open).
 
+> **Amendment (2026-08-02, pre-P1-26 API file-boundary remediation).** The Sass
+> architecture this document describes now lives in **`apps/web/src/styles/`**
+> only. `apps/api` held a copy from the Phase 1-1 scaffold; it styled one
+> verification page, nothing imported it after P1-25 built the real Frontend, and
+> a Backend workspace that renders no HTML has nothing to style. It was removed,
+> so the repository now has exactly one stylesheet authority instead of two.
+>
+> The command names are unchanged and still gating: `npm run style:check`,
+> `style:lint` and `style:fix` now resolve to the web workspace. What changed is
+> which workspace holds stylesheets, not the rules or how they are enforced.
+> `scripts/ci/check-api-backend-only.mjs` fails the build if a stylesheet
+> reappears under `apps/api`.
+
 ## Context
 
 RootLco (Root Link Company) is building [PRODUCT NAME — Pending Final Approval], a multi-tenant platform that must serve both right-to-left (Arabic) and left-to-right interfaces from a single stylesheet base. Benzene Vehicle Services (بنزين لخدمات المركبات), the first configured pilot tenant, operates in Arabic; nothing tenant-specific may be hard-coded, including styling.

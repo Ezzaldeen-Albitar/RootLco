@@ -27,13 +27,13 @@ Operations: **17**. Published events: **8**.
 
 ## Published events
 
-| Event                       | Producer                                        | Source                                                                     |
-| --------------------------- | ----------------------------------------------- | -------------------------------------------------------------------------- |
-| `service.published`         | `service-catalog.service-catalog-write-service` | `src/modules/service-catalog/application/service-catalog-write-service.ts` |
-| `price-list.published`      | `pricing.price-list-service`                    | `src/modules/pricing/application/price-list-service.ts`                    |
-| `quotation.item-decided`    | `quotation.quotation-decision-service`          | `src/modules/quotation/application/quotation-decision-service.ts`          |
-| `quotation.accepted`        | `quotation.quotation-decision-service`          | `src/modules/quotation/application/quotation-decision-service.ts`          |
-| `quotation.rejected`        | `quotation.quotation-decision-service`          | `src/modules/quotation/application/quotation-decision-service.ts`          |
-| `quotation.created`         | `quotation.quotation-service`                   | `src/modules/quotation/application/quotation-service.ts`                   |
-| `quotation.revision-issued` | `quotation.quotation-service`                   | `src/modules/quotation/application/quotation-service.ts`                   |
-| `quotation.expired`         | `quotation.quotation-service`                   | `src/modules/quotation/application/quotation-service.ts`                   |
+| Event                       | Producer                                        | Source                                                                              |
+| --------------------------- | ----------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `service.published`         | `service-catalog.service-catalog-write-service` | `apps/api/src/modules/service-catalog/application/service-catalog-write-service.ts` |
+| `price-list.published`      | `pricing.price-list-service`                    | `apps/api/src/modules/pricing/application/price-list-service.ts`                    |
+| `quotation.item-decided`    | `quotation.quotation-decision-service`          | `apps/api/src/modules/quotation/application/quotation-decision-service.ts`          |
+| `quotation.accepted`        | `quotation.quotation-decision-service`          | `apps/api/src/modules/quotation/application/quotation-decision-service.ts`          |
+| `quotation.rejected`        | `quotation.quotation-decision-service`          | `apps/api/src/modules/quotation/application/quotation-decision-service.ts`          |
+| `quotation.created`         | `quotation.quotation-service`                   | `apps/api/src/modules/quotation/application/quotation-service.ts`                   |
+| `quotation.revision-issued` | `quotation.quotation-service`                   | `apps/api/src/modules/quotation/application/quotation-service.ts`                   |
+| `quotation.expired`         | `quotation.quotation-service`                   | `apps/api/src/modules/quotation/application/quotation-service.ts`                   |

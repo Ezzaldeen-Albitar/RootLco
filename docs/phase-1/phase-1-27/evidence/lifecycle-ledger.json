@@ -1,0 +1,72 @@
+{
+  "task": "P1-27 closure lifecycle",
+  "what": "The observations the P1-27 lifecycle turns on, and the state this repository declares as a result. scripts/ci/check-p1-27-lifecycle.mjs derives the same state from the tree and fails if the two disagree.",
+  "why": "The phase carried a closure rule that could not be satisfied in any order: the branch may not merge until every task row is PASS, a row may not be PASS while its reproof is OUTSTANDING, and the reproof is a job only the merge starts. The cycle came from writing two different facts into one word. They are separated now — FINAL_VERDICT is the TASK verdict, PROTECTED_REPROOF_STATUS is a lifecycle property — and this file is where the lifecycle facts live.",
+  "authority": "docs/phase-1/phase-1-27/canonical-plan.md states P1-27-QA-005 in full as \"Regression and immutable evidence packaging\" and binds no canonical task to protected develop. The plan mentions protected change control exactly twice and both mentions route a BACKEND defect through protected remediation. So QA-005 is CANDIDATE ASSURANCE and may PASS before the merge once the exact-head evidence is complete, and a protected re-run is a property of the gate lifecycle rather than a requirement of any task.",
+  "whatThisIsNot": "This is a RECORD of observations, not the observations. A cell claiming GREEN or RED must name a run id, a job id and a 40-hex head; the gate refuses a claim carrying none of those, and refuses a head that is not the code candidate. It cannot make a false but well-formed record true, and nothing here should be read as though it could.",
+  "howToCheck": "npm run validate:p1-27-lifecycle",
+  "observations": {
+    "CODE_CANDIDATE_SHA": "501f5f0d48d7b8cafc12dad51f6c501534b66a18",
+    "CODE_CANDIDATE_NOTE": "FROZEN. 501f5f0d is the newest commit at which any non-documentation path changed — its own message says it is the final executable change before the freeze — and executableChangesSince(501f5f0d) returns the empty list at this head, with classify-changes.mjs, the repository's own authority for what documentation is, judging every path. That derivation is why the documentation-only successors recording this seal do NOT supersede the candidate: superseding requires an executable path to move, git is asked rather than believed, and the gate recomputes the answer on every invocation. The candidate is the CODE candidate rather than the head commit on purpose: recording the result of a run changes the tree, so a literal exact-head rule is stale the moment it is satisfied. The previous code candidate, 03e84f1f244252903569619de72481f30238e76a, was superseded by exactly this rule: six committed executable files changed after it, so its hosted CI, CodeQL, web artefact and authenticated-browser runs are HISTORICAL ONLY and are cited nowhere as evidence about the current tree.",
+    "CANDIDATE_HOSTED_CI": {
+      "observed": "GREEN",
+      "runId": "31587707846",
+      "jobId": "94088792169",
+      "headSha": "f0804b2c7ad31e08f033f76096d49c5394d69c81",
+      "note": "GREEN at the candidate. Run 31587707846 completed 21 required checks with 0 failed and 0 pending; the ci-gate job 94088792169 concluded success with the gate at Go; hosted-clean-room job 94085356719, Web quality job 94085356574, both CodeQL legs (0 open alerts) and dependency-security all succeeded. The head, f0804b2c7ad31e08f033f76096d49c5394d69c81, is a DOCUMENTATION-ONLY successor of the code candidate: executableChangesSince(CODE_CANDIDATE_SHA) is empty, so the run measured exactly the candidate's executable tree, and that equivalence is derived by this gate on every invocation rather than recorded once here. The previous exact-head hosted run, 31312531302 at 356f1a1e937e819b9db94f40a2d6f04f98f9ae39, stays recorded in ci-evidence.md as SUPERSEDED and is not evidence about this tree."
+    },
+    "CANDIDATE_AUTHENTICATED_BROWSER": {
+      "observed": "GREEN",
+      "runId": "31587707846",
+      "jobId": "94085356606",
+      "headSha": "f0804b2c7ad31e08f033f76096d49c5394d69c81",
+      "note": "GREEN at the candidate. Job 94085356606 of run 31587707846 concluded success on the commit — the per-job conclusion, which is the only one this record ever reads: 229 planned, 225 passed, 0 failed, 4 skipped (each skip a runtime-guarded no-data case), 224 executed across all 6 authenticated spec files, with the zero-test refusal live. The head is the same documentation-only successor of the code candidate as above, and executableChangesSince proves the equivalence. This is the observation 23 task rows carried as PENDING_CANDIDATE_OBSERVATION; it was discharged by this PULL-REQUEST run, not by any merge, which is why it lives here and not under a protected-only heading. The three earlier executions — runs 31337158296, 31343632011 and 31347643485, recorded run by run in .github/ci-baselines/unrun-test-tiers.json — remain history about other heads."
+    },
+    "PROTECTED_MERGE": {
+      "taken": true,
+      "mergeSha": "46d4e482dd6dc8dc4c613df17824b93a5236a928",
+      "secondParent": "a6b1e0300c84d3b2d2bbaa8a01ee9d5e65df982f",
+      "note": "PR #214 merged to protected develop as a TRUE MERGE COMMIT — exactly two parents. Verified by the SECOND parent, which is the reviewed candidate a6b1e030; the first parent is develop itself (61d8deda) and proves nothing. The merge tree 98bd0264 is byte-identical to the reviewed tree, and origin/main is untouched at f085d820.",
+      "secondParentVerified": true,
+      "verification": "git cat-file -p 46d4e482 shows exactly two parent lines; rev-parse 46d4e482^2 = a6b1e0300c84d3b2d2bbaa8a01ee9d5e65df982f (the reviewed candidate); the merge tree 98bd0264fcaa7a824e07eaa3546b08dedf782039 equals the reviewed tree byte-for-byte. Verified before being recorded, not asserted."
+    },
+    "PROTECTED_CI": {
+      "observed": "GREEN",
+      "runId": "31590615278",
+      "jobId": "94097982319",
+      "headSha": "46d4e482dd6dc8dc4c613df17824b93a5236a928",
+      "note": "protected-develop-verification on the merge push: 19/19 jobs success, protected-gate GO (job 94097982319). This is the reproof only a protected push can start, taken at the merge SHA itself."
+    },
+    "PROTECTED_AUTHENTICATED_BROWSER": {
+      "observed": "GREEN",
+      "runId": "31590615278",
+      "jobId": "94094472258",
+      "headSha": "46d4e482dd6dc8dc4c613df17824b93a5236a928",
+      "note": "229 planned, 224 passed, 0 failed, 5 runtime-guarded skips, 223 executed across all 6 spec files on the protected runner at the merge SHA. The per-JOB conclusion on the commit is what this cell reads. One more spec-level skip than the PR run (5 vs 4): a runtime-guarded no-data case, stated by the suite itself, not a lost test — 0 failed is the load-bearing figure."
+    },
+    "PROTECTED_ONLY_OBLIGATIONS": [
+      {
+        "id": "CODEQL_REPOSITORY_CEILING",
+        "status": "PENDING_PROTECTED_MERGE",
+        "why": "A CodeQL pull-request run is diff-informed and says so in its own output, so it cannot establish the repository-wide ceiling. Only an analysis of a protected ref can. This is a phase-level lifecycle obligation and it is deliberately NOT attached to any task row: no canonical task's requirement is proved or disproved by it."
+      },
+      {
+        "id": "PROTECTED_GATE_GO",
+        "status": "PENDING_PROTECTED_MERGE",
+        "why": "protected-gate runs only on a push to a protected branch. Nothing before the merge can produce its verdict."
+      }
+    ],
+    "OWNER_ACCEPTANCE": {
+      "result": "PASS",
+      "note": "The Product Owner returned OWNER ACCEPTANCE: PASS, verbatim, on 2026-08-12, after the final technical handoff — the application running (API localhost:3000, Web localhost:3100), the Owner administrator, read-only and Tenant B accounts provisioned and verified live (sign-in 200, session 200, 30 permissions resolved, wrong password 401), against protected develop content (aa78a6627bff0400621ec13d10777e44ff2cf9a3). The verdict is the Owner's act, not a derivation: no count in this repository produced it, and silence was never treated as Pass. The earlier OWNER ACCEPTANCE: FAIL of 2026-08-06 is history, recorded in owner-acceptance-fail-remediation.md; the closure is recorded in closure-record.md."
+    }
+  },
+  "declared": {
+    "STATE": "OWNER_ACCEPTANCE",
+    "MERGE_PERMITTED": true,
+    "OWNER_HANDOFF_PERMITTED": true,
+    "CLOSURE_PERMITTED": true,
+    "BLOCKERS": [],
+    "note": "OWNER_ACCEPTANCE — the terminal state, derived by the gate from the tree and declared here in the same commit that records the verdict. The merge was taken as a true merge commit and verified by its SECOND parent; protected CI and the protected authenticated browser are both GREEN at the merge SHA (run 31590615278, protected-gate GO); and the Product Owner returned OWNER ACCEPTANCE: PASS, verbatim, on 2026-08-12 after the final handoff. The blocker OWNER_ACCEPTANCE_NOT_TAKEN is removed in the same commit that discharges it, which is the gate's own rule. CLOSURE_PERMITTED is a lifecycle flag, not a promotion: main is untouched and P1-28 has not begun. The gate still fails when this declaration and the tree disagree in EITHER direction."
+  }
+}

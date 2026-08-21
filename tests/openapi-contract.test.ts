@@ -60,8 +60,10 @@ import '@/app/api/v1/org/tenant/route';
 import '@/app/api/v1/org/companies/[companyId]/settings/route';
 import '@/app/api/v1/org/branches/[branchId]/settings/route';
 // --- Phase 1-15 shared services ------------------------------------------
+import '@/app/api/v1/attachments/categories/route';
 import '@/app/api/v1/attachments/upload-authorizations/route';
 import '@/app/api/v1/attachments/versions/route';
+import '@/app/api/v1/attachments/versions/[versionId]/route';
 import '@/app/api/v1/attachments/versions/[versionId]/rejection/route';
 import '@/app/api/v1/attachments/documents/[documentId]/route';
 import '@/app/api/v1/attachments/documents/[documentId]/retention-evaluations/route';
@@ -90,6 +92,7 @@ import '@/app/api/v1/health/ready/route';
 import '@/app/api/v1/customers/route';
 import '@/app/api/v1/customers/individuals/route';
 import '@/app/api/v1/customers/companies/route';
+import '@/app/api/v1/customers/[customerId]/route';
 import '@/app/api/v1/customers/[customerId]/contacts/route';
 import '@/app/api/v1/customers/[customerId]/addresses/route';
 import '@/app/api/v1/customers/[customerId]/preferences/route';
@@ -99,6 +102,7 @@ import '@/app/api/v1/customers/[customerId]/alerts/route';
 import '@/app/api/v1/customers/[customerId]/tags/route';
 import '@/app/api/v1/customers/[customerId]/status/route';
 import '@/app/api/v1/customers/[customerId]/restrictions/route';
+import '@/app/api/v1/customer-duplicates/route';
 import '@/app/api/v1/customers/[customerId]/duplicate-scans/route';
 import '@/app/api/v1/customer-duplicates/[candidateId]/review/route';
 import '@/app/api/v1/customers/[customerId]/merge/route';
@@ -106,10 +110,20 @@ import '@/app/api/v1/customers/[customerId]/history/route';
 import '@/app/api/v1/customers/[customerId]/timeline/route';
 import '@/app/api/v1/customers/[customerId]/vehicles/route';
 // --- Phase 1-17 vehicle backend ------------------------------------------
+// Reference catalogues, added by the P1-17 remediation for `P1-27-INT-007`.
+// These five MUST be listed here: the committed document is generated from
+// whatever this list loaded, so an unimported route is silently absent from the
+// published contract while every gate stays green.
+import '@/app/api/v1/vehicle-catalogue/makes/route';
+import '@/app/api/v1/vehicle-catalogue/makes/[makeId]/models/route';
+import '@/app/api/v1/vehicle-catalogue/models/[modelId]/trims/route';
+import '@/app/api/v1/vehicle-catalogue/body-types/route';
+import '@/app/api/v1/vehicle-catalogue/powertrain-types/route';
 import '@/app/api/v1/vehicles/route';
 import '@/app/api/v1/vehicles/[vehicleId]/route';
 import '@/app/api/v1/vehicles/[vehicleId]/merge/route';
 import '@/app/api/v1/vehicles/[vehicleId]/duplicate-scans/route';
+import '@/app/api/v1/vehicle-duplicates/route';
 import '@/app/api/v1/vehicle-duplicates/[candidateId]/review/route';
 import '@/app/api/v1/vehicles/[vehicleId]/plates/route';
 import '@/app/api/v1/vehicles/[vehicleId]/ownerships/route';
@@ -123,17 +137,75 @@ import '@/app/api/v1/vehicles/[vehicleId]/history/route';
 import '@/app/api/v1/vehicles/[vehicleId]/documents/route';
 // --- Phase 1-18 appointment and reception backend -------------------------
 import '@/app/api/v1/appointments/route';
+import '@/app/api/v1/appointments/[appointmentId]/route';
 import '@/app/api/v1/appointments/[appointmentId]/reschedule/route';
 import '@/app/api/v1/appointments/[appointmentId]/cancel/route';
 import '@/app/api/v1/appointments/[appointmentId]/no-show/route';
+// P1-27 read-surface remediation: the intake catalogue reads (INT-018) and the
+// read/closure route modules below MUST be listed here — the committed document
+// is generated from whatever this list loaded, so an unimported route is
+// silently absent from the published contract while every gate stays green.
+import '@/app/api/v1/appointment-catalogue/appointment-types/route';
+import '@/app/api/v1/appointment-catalogue/source-channels/route';
+import '@/app/api/v1/appointment-catalogue/cancellation-reasons/route';
+import '@/app/api/v1/reception-catalogue/visit-reasons/route';
+import '@/app/api/v1/reception-catalogue/fuel-levels/route';
+import '@/app/api/v1/reception-catalogue/warning-light-codes/route';
+import '@/app/api/v1/reception-catalogue/refusal-reasons/route';
+import '@/app/api/v1/reception-catalogue/receiving-employees/route';
+// P1-27-INT-018 management half. The seven creates are POSTs inside the seven
+// collection modules already imported above, so they arrive for free — these
+// fourteen do NOT, and each is the only place its operation is declared. An
+// omission here is invisible in this file by construction (both sides of the
+// comparison would load the same short registry); `check-openapi.mjs` counting
+// 282 published against `check-authorization-coverage.mjs` counting 282
+// registered is what actually catches it.
+import '@/app/api/v1/appointment-catalogue/appointment-types/[appointmentTypeId]/route';
+import '@/app/api/v1/appointment-catalogue/appointment-types/[appointmentTypeId]/status/route';
+import '@/app/api/v1/appointment-catalogue/source-channels/[sourceChannelId]/route';
+import '@/app/api/v1/appointment-catalogue/source-channels/[sourceChannelId]/status/route';
+import '@/app/api/v1/appointment-catalogue/cancellation-reasons/[cancellationReasonId]/route';
+import '@/app/api/v1/appointment-catalogue/cancellation-reasons/[cancellationReasonId]/status/route';
+import '@/app/api/v1/reception-catalogue/visit-reasons/[visitReasonId]/route';
+import '@/app/api/v1/reception-catalogue/visit-reasons/[visitReasonId]/status/route';
+import '@/app/api/v1/reception-catalogue/fuel-levels/[fuelLevelId]/route';
+import '@/app/api/v1/reception-catalogue/fuel-levels/[fuelLevelId]/status/route';
+import '@/app/api/v1/reception-catalogue/warning-light-codes/[warningLightCodeId]/route';
+import '@/app/api/v1/reception-catalogue/warning-light-codes/[warningLightCodeId]/status/route';
+import '@/app/api/v1/reception-catalogue/refusal-reasons/[refusalReasonId]/route';
+import '@/app/api/v1/reception-catalogue/refusal-reasons/[refusalReasonId]/status/route';
+// P1-27-INT-018 administrative reads. The picker lists above cannot serve a
+// catalogue-administration screen — they filter to `status = 'active'` and
+// project no `recordVersion` — so these seven are the read the management
+// commands need, gated on `apt.catalogue.manage` / `rec.catalogue.manage`.
+import '@/app/api/v1/appointment-catalogue/management/appointment-types/route';
+import '@/app/api/v1/appointment-catalogue/management/source-channels/route';
+import '@/app/api/v1/appointment-catalogue/management/cancellation-reasons/route';
+import '@/app/api/v1/reception-catalogue/management/visit-reasons/route';
+import '@/app/api/v1/reception-catalogue/management/fuel-levels/route';
+import '@/app/api/v1/reception-catalogue/management/warning-light-codes/route';
+import '@/app/api/v1/reception-catalogue/management/refusal-reasons/route';
 import '@/app/api/v1/receptions/route';
+import '@/app/api/v1/receptions/[receptionId]/route';
+import '@/app/api/v1/receptions/[receptionId]/history/route';
 import '@/app/api/v1/receptions/[receptionId]/party-roles/route';
 import '@/app/api/v1/receptions/[receptionId]/authorizations/route';
 import '@/app/api/v1/receptions/[receptionId]/condition-evidence/route';
 import '@/app/api/v1/receptions/[receptionId]/signatures/route';
+import '@/app/api/v1/receptions/[receptionId]/signatures/[signatureId]/events/route';
+import '@/app/api/v1/receptions/[receptionId]/evidence-bindings/route';
+import '@/app/api/v1/receptions/[receptionId]/evidence-bindings/[bindingId]/finalization/route';
+import '@/app/api/v1/receptions/[receptionId]/capture-overrides/route';
+import '@/app/api/v1/reception-catalogue/damage-map-templates/route';
+import '@/app/api/v1/reception-catalogue/damage-map-templates/[templateId]/route';
+import '@/app/api/v1/reception-catalogue/damage-map-templates/[templateId]/versions/route';
+import '@/app/api/v1/reception-catalogue/damage-map-templates/[templateId]/status/route';
+import '@/app/api/v1/reception-catalogue/capture-policies/route';
 import '@/app/api/v1/receptions/[receptionId]/refusals/route';
 import '@/app/api/v1/receptions/[receptionId]/approve/route';
 import '@/app/api/v1/receptions/[receptionId]/convert-to-work-order/route';
+import '@/app/api/v1/receptions/[receptionId]/close-without-work/route';
+import '@/app/api/v1/receptions/[receptionId]/refuse/route';
 // --- Phase 1-19 work order, diagnostics and technician backend -------------
 // There is deliberately no `POST /work-orders`: reception's conversion above is
 // the only creation path (see the header of `work-orders/route.ts`).

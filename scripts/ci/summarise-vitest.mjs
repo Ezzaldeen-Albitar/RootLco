@@ -34,7 +34,19 @@ export function summarise(report, label) {
   const failed = report.numFailedTests ?? 0;
   const pending = report.numPendingTests ?? 0;
   const todo = report.numTodoTests ?? 0;
-  const files = report.numTotalTestSuites ?? report.testResults?.length ?? 0;
+  /*
+   * `files` must be FILES. It preferred `numTotalTestSuites`, which vitest sets
+   * to `getSuites(files).length` — every `describe` block, recursively. The web
+   * tier duly reported `files: 379` for a run over 65 test files, and the figure
+   * was copied into the baseline as `measuredFiles`. Four tiers recorded a suite
+   * count under a name that says files.
+   *
+   * `testResults` is one entry per test FILE in the vitest JSON reporter, so it
+   * is the honest source. Both are published: a reader comparing this artifact
+   * against an older one needs to see which number changed meaning.
+   */
+  const files = report.testResults?.length ?? 0;
+  const suites = report.numTotalTestSuites ?? 0;
 
   const tests = [];
   for (const suite of report.testResults ?? []) {
@@ -56,7 +68,9 @@ export function summarise(report, label) {
   return {
     label,
     files,
+    suites,
     total,
+    executed: total - pending - todo,
     passed,
     failed,
     pending,
@@ -69,8 +83,25 @@ export function summarise(report, label) {
   };
 }
 
+/**
+ * Tests that actually RAN — the only number the floor may be compared against.
+ *
+ * `numTotalTests` counts skipped and todo cases: vitest derives all three from
+ * one array and then filters. So `it.skip` applied to an entire tier leaves
+ * `total` unchanged, `failed` at 0 and `success` true, and a floor placed
+ * against `total` is satisfied by a suite in which nothing executed. That is the
+ * precise failure this baseline exists to detect, passing the detector.
+ *
+ * Found by an adversarial review of the commit that introduced the web floor,
+ * which demonstrated it in memory: 1216 tests, all skipped, `problems: []`.
+ */
+export function executed(summary) {
+  return summary.total - summary.pending - summary.todo;
+}
+
 export function verdict(summary, minTests) {
   const problems = [];
+  const ran = executed(summary);
   if (summary.total === 0) {
     problems.push(
       `\`${summary.label}\` reported zero tests. An empty suite passes and proves nothing — ` +
@@ -83,10 +114,18 @@ export function verdict(summary, minTests) {
   if (summary.success !== true && summary.total > 0) {
     problems.push(`\`${summary.label}\` reporter recorded \`success: false\`.`);
   }
-  if (typeof minTests === 'number' && minTests > 0 && summary.total < minTests) {
+  if (summary.total > 0 && ran === 0) {
     problems.push(
-      `\`${summary.label}\` ran ${summary.total} tests but at least ${minTests} were expected. ` +
-        'A suite that shrinks without explanation is a silently disabled suite.'
+      `\`${summary.label}\` reported ${summary.total} tests and executed none of them — ` +
+        'every case is skipped or todo. A suite that runs nothing passes everything.'
+    );
+  }
+  if (typeof minTests === 'number' && minTests > 0 && ran < minTests) {
+    const skipped = summary.pending + summary.todo;
+    problems.push(
+      `\`${summary.label}\` EXECUTED ${ran} tests but at least ${minTests} were expected` +
+        (skipped > 0 ? ` (${summary.total} collected, ${skipped} skipped or todo)` : '') +
+        '. A suite that shrinks without explanation is a silently disabled suite.'
     );
   }
   return problems;
@@ -96,8 +135,17 @@ export function toMarkdown(summary, problems) {
   const lines = [`### Tests — ${summary.label}`, ''];
   lines.push('| Measure | Value |');
   lines.push('| --- | --- |');
-  lines.push(`| Files | ${summary.files} |`);
-  lines.push(`| Tests | ${summary.total} |`);
+  /*
+   * "Test files" and "Suites" are separate rows because they are separate
+   * things, and conflating them is how the web tier came to report 379 for a
+   * run over 65 files. "Executed" sits beside "Collected" for the same reason:
+   * a tier can collect 1216 and execute none of them, and only one of those two
+   * numbers is evidence.
+   */
+  lines.push(`| Test files | ${summary.files} |`);
+  lines.push(`| Suites (\`describe\` blocks) | ${summary.suites} |`);
+  lines.push(`| Tests collected | ${summary.total} |`);
+  lines.push(`| Tests executed | ${executed(summary)} |`);
   lines.push(`| Passed | ${summary.passed} |`);
   lines.push(`| Failed | ${summary.failed} |`);
   lines.push(`| Skipped / todo | ${summary.pending + summary.todo} |`);
@@ -135,6 +183,72 @@ export function toMarkdown(summary, problems) {
   return lines.join('\n');
 }
 
+/** Labels this repository summarises. Every one must carry a committed floor. */
+export const FLOORED_TIERS = ['unit', 'web', 'database', 'backend'];
+
+/**
+ * Resolve the floor for a tier — the step between the baseline and `verdict()`.
+ *
+ * Exported because it was the ONLY unreachable code on the enforcement path.
+ * `verdict()` was well covered while this lived inside `main()`, which nothing
+ * imports, so an adversarial review could rename `baseline.tiers` to
+ * `baseline.tier`, watch the floor go dormant with a warning, and see all
+ * twenty-one tests still pass. A guard whose lookup is untested is a guard whose
+ * lookup nobody has ever checked.
+ *
+ * Returns `{ minTests, source, problem }`. `problem` is fatal — the caller exits
+ * 2 — because every failure here is FAIL-OPEN if merely warned about: a wrong
+ * cwd, a moved baseline, a renamed label and a typo in the lookup all end in
+ * "no floor recorded", which reads as an annotation nobody must act on.
+ */
+export function resolveFloor(label, { minTestsArg, baselinePath, exists, read } = {}) {
+  const fileExists = exists ?? existsSync;
+  const readFile = read ?? ((p) => readFileSync(p, 'utf8'));
+
+  if (minTestsArg !== undefined && minTestsArg !== null && `${minTestsArg}` !== '') {
+    const explicit = Number(minTestsArg);
+    if (!Number.isFinite(explicit)) {
+      return { problem: `--min-tests ${minTestsArg} is not a number` };
+    }
+    return { minTests: explicit, source: '--min-tests' };
+  }
+
+  const path = baselinePath ?? join('.github', 'ci-baselines', 'test-count-baseline.json');
+  if (!fileExists(path)) {
+    return {
+      problem:
+        `the test-count baseline was not found at ${path}. It is resolved relative to the ` +
+        'working directory, so this usually means the step ran from the wrong one — which ' +
+        'silently disarms the anti-shrink floor for every tier.',
+    };
+  }
+
+  let baseline;
+  try {
+    baseline = JSON.parse(readFile(path));
+  } catch (error) {
+    return { problem: `test-count baseline at ${path} does not parse: ${error.message}` };
+  }
+
+  const tier = baseline.tiers?.[label];
+  if (!tier || typeof tier.minTests !== 'number') {
+    const known = Object.keys(baseline.tiers ?? {}).join(', ') || '(none)';
+    if (FLOORED_TIERS.includes(label)) {
+      return {
+        problem:
+          `tier \`${label}\` has no \`minTests\` in ${path}, but it is one of the tiers this ` +
+          `repository floors. Known tiers: ${known}. Refusing to run the tier unguarded.`,
+      };
+    }
+    // An ad-hoc label a developer invented locally. Say so, and keep going —
+    // this is the one case where no floor is the honest answer rather than a
+    // broken lookup, because `baseline-integrity.test.ts` derives the tiers CI
+    // actually summarises and requires each of them to be floored.
+    return { source: `no floor recorded for ad-hoc tier \`${label}\`` };
+  }
+  return { minTests: tier.minTests, source: path };
+}
+
 function main(argv) {
   const arg = (name) => {
     const i = argv.indexOf(name);
@@ -162,28 +276,18 @@ function main(argv) {
   // `--min-tests` implemented but never passed made the anti-shrink guard
   // dormant: a broken include glob would drop the tier to a handful of tests
   // and every other check would still pass.
-  let minTests = arg('--min-tests') ? Number(arg('--min-tests')) : undefined;
-  if (minTests === undefined) {
-    const baselinePath =
-      arg('--counts') ?? join('.github', 'ci-baselines', 'test-count-baseline.json');
-    if (existsSync(baselinePath)) {
-      try {
-        const baseline = JSON.parse(readFileSync(baselinePath, 'utf8'));
-        const tier = baseline.tiers?.[label];
-        if (tier && typeof tier.minTests === 'number') minTests = tier.minTests;
-      } catch (error) {
-        console.error(
-          `::error::test-count baseline at ${baselinePath} does not parse: ${error.message}`
-        );
-        process.exit(2);
-      }
-    }
+  const floor = resolveFloor(label, {
+    minTestsArg: arg('--min-tests'),
+    baselinePath: arg('--counts'),
+  });
+  if (floor.problem) {
+    // Exit 2, not a warning. Every way this resolution can fail ends in "no
+    // floor", and a warning about no floor is indistinguishable from a green run.
+    console.error(`::error::${floor.problem}`);
+    process.exit(2);
   }
-  if (minTests === undefined) {
-    console.log(
-      `::warning::no minimum test count is recorded for tier \`${label}\`, so a shrinking suite would not be detected. Add it to .github/ci-baselines/test-count-baseline.json.`
-    );
-  }
+  const minTests = floor.minTests;
+  if (minTests === undefined) console.log(`::warning::${floor.source}`);
 
   const problems = verdict(summary, minTests);
 

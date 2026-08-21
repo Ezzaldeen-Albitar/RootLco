@@ -1,0 +1,21 @@
+{
+  "headBase": "6cc453900cf5ac75a6072c2a9ce82c6bcea1bd19",
+  "trackedWebFiles": 93,
+  "appRouter": [
+    "apps/web/src/app/[locale]/(dashboard)/error.tsx",
+    "apps/web/src/app/[locale]/(dashboard)/gallery/page.tsx",
+    "apps/web/src/app/[locale]/(dashboard)/layout.tsx",
+    "apps/web/src/app/[locale]/(dashboard)/loading.tsx",
+    "apps/web/src/app/[locale]/(dashboard)/not-found.tsx",
+    "apps/web/src/app/[locale]/(dashboard)/page.tsx",
+    "apps/web/src/app/[locale]/layout.tsx",
+    "apps/web/src/app/globals.scss",
+    "apps/web/src/app/layout.tsx",
+    "apps/web/src/app/page.tsx"
+  ],
+  "rootLevelAppDir": 0,
+  "proxy": true,
+  "middleware": 0,
+  "e2e": ["apps/web/tests/e2e/foundation.spec.ts"],
+  "nestedLockfiles": 0
+}

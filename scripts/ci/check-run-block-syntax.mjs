@@ -39,7 +39,49 @@ export function neutraliseExpressions(body) {
   return body.replace(/\$\{\{[^}]*\}\}/g, 'GHEXPR');
 }
 
-export function checkBlock(body, bash = 'bash') {
+/**
+ * Candidate shells, in order. `bash` first: on a Linux runner it is the shell
+ * the workflow will actually use, and nothing should displace it.
+ *
+ * On Windows `bash` resolves to `C:\Windows\System32\bash.exe`, which is the
+ * **WSL launcher**, not a shell. With no distro installed it runs, exits 1, and
+ * prints `execvpe(/bin/bash) failed` to stderr — so `spawnSync` reports no
+ * `error`, and every block gets judged unparseable shell. The check does not go
+ * quiet, it goes uniformly red, which is a different way of telling you nothing
+ * (P1-26-F-061).
+ */
+const SHELL_CANDIDATES = [
+  'bash',
+  'C:\\Program Files\\Git\\bin\\bash.exe',
+  'C:\\Program Files (x86)\\Git\\bin\\bash.exe',
+];
+
+/** True when this shell can parse a trivial script — not merely start. */
+export function shellWorks(bash) {
+  const probe = spawnSync(bash, ['-c', 'exit 0'], { encoding: 'utf8' });
+  return !probe.error && probe.status === 0;
+}
+
+/**
+ * The first candidate that actually runs, or null.
+ *
+ * Resolved once: 126 blocks must not each pay for the probe, and must not
+ * silently disagree with each other about which shell they used.
+ */
+let resolved;
+export function resolveShell() {
+  if (resolved === undefined) resolved = SHELL_CANDIDATES.find((c) => shellWorks(c)) ?? null;
+  return resolved;
+}
+
+export function checkBlock(body, bash = resolveShell()) {
+  if (!bash) {
+    return {
+      ok: false,
+      unavailable: true,
+      message: 'no working bash was found, so nothing was parsed',
+    };
+  }
   // A fresh 0700 directory per call, rather than a predictable
   // `${tmpdir}/rootlco-run-block-${pid}.sh`. The old name was guessable, so on a
   // shared machine another process could pre-create it as a symlink and have
@@ -75,10 +117,18 @@ function main() {
   // A check that cannot run must not report success — the rule this whole
   // pipeline is built on. If `bash` is absent, that is a broken environment,
   // not a clean result.
-  const probe = spawnSync('bash', ['-c', 'exit 0'], { encoding: 'utf8' });
-  if (probe.error) {
+  //
+  // Absent is not the only way to be unusable. This probe used to test only
+  // `probe.error`, which is set when the executable cannot be STARTED; a shell
+  // that starts and then cannot run anything sailed past it and turned every
+  // block red instead (P1-26-F-061). `resolveShell` requires a trivial script to
+  // actually exit 0.
+  const shell = resolveShell();
+  if (!shell) {
     console.error(
-      `::error::bash is not available, so no run block was checked (${probe.error.message}).`
+      '::error::no working bash was found, so no run block was checked. ' +
+        'On Windows, `bash` on PATH is the WSL launcher and needs an installed distribution; ' +
+        'Git Bash is used instead when present.'
     );
     process.exit(2);
   }

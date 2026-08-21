@@ -23,7 +23,7 @@
  * a future edit that drops a required flag or de-references an operation fails
  * here as well as in CI.
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import {
@@ -39,6 +39,28 @@ import {
   stripComments,
   scanRegisteredOperations,
 } from '../../scripts/check-operation-test-coverage.mjs';
+
+/*
+ * Thirty seconds, matching `canonical-documents.test.ts:33`,
+ * `iam-directory-composition.test.ts:63` and `module-boundaries.test.ts:40` —
+ * every other file in this tier that reads the real repository.
+ *
+ * This one is a FIX for a reproduced failure, not insurance. The block below
+ * scans 445 real files and reads every file the manifest names; under
+ * `--coverage` v8 roughly doubles that (file 9168 ms -> 21108 ms), which put
+ * three of its tests at 4793 / 4562 / 4541 ms against the 5000 ms default. They
+ * failed twice — different members each time, `Error: Test timed out in
+ * 5000ms` — first on the run immediately after a merge, then reproduced in run
+ * 3 of a 5-run loop. Hosted CI runs exactly this `--coverage` configuration as
+ * a required check, on a shared runner, so it has been passing on luck.
+ *
+ * The bound is the second half of the fix. The first is hoisting the
+ * evaluation, which removes two thirds of the work; the bound is here because a
+ * real-filesystem scan of this size should not sit on the default at all, and
+ * because the fourth test in the block does its own 7107 ms pass over the
+ * manifest that the hoist does not touch.
+ */
+vi.setConfig({ testTimeout: 30_000 });
 
 const ROOT = process.cwd();
 
@@ -901,33 +923,50 @@ describe('something else entirely', () => {});
 });
 
 describe('operation coverage gate — real registry and real files', () => {
+  // Scanned ONCE for the whole block. Each test used to repeat this, so the
+  // same 430 files were read three times for one answer and the file timed out
+  // whenever the rest of the suite was running beside it.
+  const registered = scanRegisteredOperations(ROOT);
+  const readFile = (rel: string) => {
+    const abs = join(ROOT, rel);
+    return existsSync(abs) ? readFileSync(abs, 'utf8') : null;
+  };
+
+  // EVALUATED once too, for the same reason and only half-applied before.
+  //
+  // Hoisting the scan left three `evaluateCoverage()` calls behind — one per
+  // test below — and each builds its own `providedCache`, so every file named
+  // in the manifest was still being read three times for one answer. Under
+  // `--coverage` that is what tipped the block over the default 5000 ms bound:
+  // measured at 4793 / 4562 / 4541 ms on an idle machine, and observed failing
+  // twice, on different members each time, with `Error: Test timed out in
+  // 5000ms` — once on the first run after a merge, then reproduced in run 3 of
+  // a 5-run loop.
+  //
+  // The call is pure with respect to its inputs: `failures`, `matrix`,
+  // `providedCache` are all constructed per call and neither `registered` nor
+  // `manifest` is written to, so one shared result is what the three separate
+  // calls were already computing independently.
+  const evaluated = evaluateCoverage({ registered, manifest: MANIFEST, readFile });
+
   it('every registered operation passes the strict gate', () => {
-    const registered = scanRegisteredOperations(ROOT);
-    const readFile = (rel: string) => {
-      const abs = join(ROOT, rel);
-      return existsSync(abs) ? readFileSync(abs, 'utf8') : null;
-    };
-    const { failures } = evaluateCoverage({ registered, manifest: MANIFEST, readFile });
-    expect(failures).toEqual([]);
+    expect(evaluated.failures).toEqual([]);
   });
 
   it('every P1-15 operation is at operation depth, with nothing pending or unit-only', () => {
-    const registered = scanRegisteredOperations(ROOT);
-    const readFile = (rel: string) => {
-      const abs = join(ROOT, rel);
-      return existsSync(abs) ? readFileSync(abs, 'utf8') : null;
-    };
-    const { counts } = evaluateCoverage({ registered, manifest: MANIFEST, readFile });
+    const { counts } = evaluated;
 
     // 21 from P1-15 plus the 5 P1-23 operations that share the `shared.`
     // namespace: three notification reads, a document read, and a
-    // non-destructive retention evaluation.
+    // non-destructive retention evaluation. 28 with the two P1-OD-025 evidence
+    // reads — the category policy list and the version lifecycle read — which
+    // are P1-15 surface again, so the namespace is now three phases wide.
     // The counter selects by prefix, so it cannot separate the phases; what it
     // still proves exactly is that every operation in the namespace is at
     // operation depth, with none pending, unit-only or metadata-only.
-    expect(counts.p1_15.registered).toBe(26);
-    expect(counts.p1_15.publicApi).toBe(26);
-    expect(counts.p1_15.operationDepth).toBe(26);
+    expect(counts.p1_15.registered).toBe(28);
+    expect(counts.p1_15.publicApi).toBe(28);
+    expect(counts.p1_15.operationDepth).toBe(28);
     expect(counts.p1_15.invocationOnly).toBe(0);
     expect(counts.p1_15.pending).toBe(0);
     expect(counts.p1_15.unitOnly).toBe(0);
@@ -936,12 +975,7 @@ describe('operation coverage gate — real registry and real files', () => {
   });
 
   it('classifies every registered operation as public API surface, so none is hidden', () => {
-    const registered = scanRegisteredOperations(ROOT);
-    const readFile = (rel: string) => {
-      const abs = join(ROOT, rel);
-      return existsSync(abs) ? readFileSync(abs, 'utf8') : null;
-    };
-    const { counts, matrix } = evaluateCoverage({ registered, manifest: MANIFEST, readFile });
+    const { counts, matrix } = evaluated;
 
     expect(counts.internal).toBe(0);
     expect(counts.publicApi).toBe(counts.registered);
@@ -992,7 +1026,17 @@ describe('operation coverage gate — real registry and real files', () => {
       meta: 1,
       veh: 20,
     });
-  });
+    // 30 s, stated here rather than raised globally so it cannot quietly cover a
+    // different test that has genuinely regressed.
+    //
+    // This test opens and lexes every file the MANIFEST names — a real-filesystem
+    // walk over ~240 entries, not a unit computation — and the default 5 s budget
+    // is a measure of disk speed rather than of correctness. Under `--coverage`
+    // the instrumentation pushes it over, so the suite passed under `npm run
+    // test` and timed out under `npm run test:coverage` on the same tree. A test
+    // whose verdict depends on which command ran it is a flake, and the honest
+    // fix is a budget that matches the work rather than a retry.
+  }, 30_000);
 });
 
 /**

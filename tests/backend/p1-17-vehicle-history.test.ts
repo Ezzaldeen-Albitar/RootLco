@@ -45,6 +45,10 @@ const SUBJ_A = 'fx_p1_17_veh_hist_a';
 const ROLE_B = 'c1780000-0000-4000-8000-0000000000b1';
 const USER_RB = 'c1780000-0000-4000-8000-0000000000b2';
 const SUBJ_B = 'fx_p1_17_veh_hist_b';
+/** A tenant-A caller who additionally holds `iam.user.read` (`P1-27-INT-026`). */
+const ROLE_N = 'c1780000-0000-4000-8000-0000000000e1';
+const USER_RN = 'c1780000-0000-4000-8000-0000000000e2';
+const SUBJ_N = 'fx_p1_17_veh_hist_n';
 const CAT_A = 'c1780000-0000-4000-8000-0000000000c1';
 const DOC_A = 'c1780000-0000-4000-8000-0000000000d1';
 
@@ -53,7 +57,11 @@ const V = 'http://localhost/api/v1/vehicles';
 interface Body {
   readonly vehicleId?: string;
   readonly documentIds?: readonly string[];
-  readonly items?: readonly { readonly fieldCode?: string; readonly newValue?: string | null }[];
+  readonly items?: readonly {
+    readonly fieldCode?: string;
+    readonly newValue?: string | null;
+    readonly actorName?: string | null;
+  }[];
 }
 
 let admin: Pool;
@@ -103,12 +111,22 @@ async function seedWriter(
   tenantId: string,
   roleId: string,
   userId: string,
-  subject: string
+  subject: string,
+  /*
+   * DISTINCT per principal, and that is the point.
+   *
+   * Every seeded user used to be inserted as 'History Reader', so the positive
+   * assertion below proved a name came back and NOT that the right one did:
+   * resolving the viewer's own id instead of the actor's would have passed it
+   * just as well. The writer and the reader now carry different names, so the
+   * assertion attributes.
+   */
+  displayName: string
 ): Promise<void> {
   await admin.query(
     `INSERT INTO iam.user_accounts (id, tenant_id, identity_provider, provider_subject, email, display_name, status, created_by)
-     VALUES ($1,$2,$3,$4,$4||'@example.test','History Reader','active',$5) ON CONFLICT (id) DO NOTHING`,
-    [userId, tenantId, IDENTITY_PROVIDER, subject, USER_A]
+     VALUES ($1,$2,$3,$4,$4||'@example.test',$6,'active',$5) ON CONFLICT (id) DO NOTHING`,
+    [userId, tenantId, IDENTITY_PROVIDER, subject, USER_A, displayName]
   );
   await admin.query(
     `INSERT INTO iam.roles (id, tenant_id, role_code, name, created_by)
@@ -172,8 +190,28 @@ beforeAll(async () => {
      ON CONFLICT (permission_code) DO NOTHING`,
     [USER_A]
   );
-  await seedWriter(TENANT_A, ROLE_A, USER_RA, SUBJ_A);
-  await seedWriter(TENANT_B, ROLE_B, USER_RB, SUBJ_B);
+  await admin.query(
+    `INSERT INTO iam.permissions (permission_code, domain, description, risk_level, created_by)
+     VALUES ('iam.user.read','iam','Read user accounts','low',$1)
+     ON CONFLICT (permission_code) DO NOTHING`,
+    [USER_A]
+  );
+  // `History Writer` is the principal that CHANGES the vehicle, so it is the
+  // name the attribute ledger must report.
+  await seedWriter(TENANT_A, ROLE_A, USER_RA, SUBJ_A, 'History Writer');
+  await seedWriter(TENANT_B, ROLE_B, USER_RB, SUBJ_B, 'Tenant B Writer');
+  // A third caller, identical except that they also hold `iam.user.read`. The
+  // pair is what makes the actor-naming assertions mean something: the same
+  // history row, read twice, names a person for one of them and not the other.
+  // Named differently again, so reading the VIEWER's name would be visible.
+  await seedWriter(TENANT_A, ROLE_N, USER_RN, SUBJ_N, 'History Reader');
+  await admin.query(
+    `INSERT INTO iam.role_permissions (tenant_id, role_id, permission_id, effect, created_by)
+     SELECT $1::uuid,$2::uuid,p.id,'allow',$3::uuid FROM iam.permissions p
+      WHERE p.permission_code = 'iam.user.read'
+     ON CONFLICT (tenant_id, role_id, permission_id) DO NOTHING`,
+    [TENANT_A, ROLE_N, USER_A]
+  );
   await seedDocument();
   runtime = runtimeAppPool();
   __setPrimaryPoolForTests(runtime);
@@ -221,6 +259,49 @@ describe('attribute-change history', () => {
     // A successful read that returns nothing — not an error that also yields [].
     expect(crossTenant.status).toBe(200);
     expect(((await crossTenant.json()) as Body).items ?? []).toEqual([]);
+  });
+
+  /*
+   * `P1-27-INT-026` / `VHM-13`. The ledger stores an `actor_id` and no name, and
+   * the screen printed that uuid under a column headed "who". The read now
+   * resolves it through the IAM module's provider-free directory.
+   *
+   * The two cases below are one assertion in two halves: the SAME history row,
+   * read by two callers who differ only in `iam.user.read`, names a person for
+   * one and not the other. Either half alone would pass against a read that
+   * resolved nothing, or against one that resolved for everybody.
+   */
+  it('names the actor for a caller who may read users', async () => {
+    authAs(SUBJ_A);
+    const vehicle = await newVehicle();
+    expect((await update(vehicle, { color: 'green' })).status).toBe(200);
+
+    authAs(SUBJ_N);
+    const body = (await (await history(vehicle)).json()) as Body;
+    const row = (body.items ?? []).find((i) => i.fieldCode === 'color');
+    // The WRITER's name, not the reader's. `SUBJ_A` made the change and
+    // `SUBJ_N` is reading it, and the two carry different display names — so a
+    // read that resolved the viewer's own id instead of the row's actor would
+    // return 'History Reader' here and fail.
+    expect(row?.actorName).toBe('History Writer');
+    expect(row?.actorName).not.toBe('History Reader');
+  });
+
+  it('withholds the name from a caller who may not, without failing the read', async () => {
+    authAs(SUBJ_A);
+    const vehicle = await newVehicle();
+    expect((await update(vehicle, { color: 'silver' })).status).toBe(200);
+
+    // SUBJ_A holds `veh.vehicle.read` and NOT `iam.user.read`, so naming would
+    // publish a staff directory to somebody the permission model does not admit.
+    const response = await history(vehicle);
+    expect(response.status).toBe(200);
+    const row = ((await response.json()) as Body).items?.find((i) => i.fieldCode === 'color');
+    // Null, not absent and not the uuid: the screen says "User unavailable".
+    expect(row?.actorName).toBeNull();
+    // And the row itself is still there — one unnameable actor must not hide
+    // the record of what happened to the vehicle.
+    expect(row?.newValue).toBe('silver');
   });
 });
 

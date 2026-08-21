@@ -44,6 +44,20 @@ const VIN_A = '1HGCM82633A004352';
 const PLATE_A = 'ABC123';
 
 const BASE = 'http://localhost/api/v1/vehicles';
+/**
+ * The closed safe master projection, asserted EXACTLY.
+ *
+ * The exact-match assertion is the point: it fails when a field is added as
+ * readily as when one is removed, so a restricted identifier cannot arrive here
+ * unnoticed. That is why `mergedIntoId` below is a deliberate edit rather than a
+ * silently absorbed one — the test caught the addition on the first run.
+ *
+ * `mergedIntoId` is safe by the same reasoning as every other key: it is a
+ * vehicle id in the caller's own tenant, already returned by the detail read,
+ * and carries no personal data. It is published because search **returns**
+ * merged vehicles, and without it a result row is indistinguishable from a live
+ * one until a write answers 409 (`P1-27-INT-008`).
+ */
 const SAFE_KEYS = [
   'id',
   'displayNumber',
@@ -55,6 +69,7 @@ const SAFE_KEYS = [
   'lifecycleStatus',
   'workshopStatus',
   'createdAt',
+  'mergedIntoId',
 ];
 
 interface Hit {

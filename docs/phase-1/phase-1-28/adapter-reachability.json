@@ -1,0 +1,4 @@
+{
+  "$comment": "Declared non-REACHABLE states for published apt.*/rec.* operations. REACHABLE is never declared here: it is DERIVED by apps/web/tests/p1-28-qa.test.ts, which mocks the transport, runs every real adapter body and reads back the path actually requested. This file records only what that derivation cannot justify on its own, and scripts/ci/check-p1-28-adapter-reachability.mjs refuses any entry that does not satisfy every condition in its docblock. Adding an entry here is not a way to make a red gate green; it is a way to owe something in public.",
+  "operations": {}
+}

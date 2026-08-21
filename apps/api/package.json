@@ -1,0 +1,49 @@
+{
+  "name": "@rootlco/api",
+  "version": "0.1.0",
+  "private": true,
+  "description": "RootLco backend application — the HTTP API, domain modules and server foundation. Independent package boundary; see docs/adr/ADR-001-modular-monolith.md.",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=22.0.0",
+    "npm": ">=10.0.0"
+  },
+  "scripts": {
+    "build": "next build",
+    "dev": "next dev",
+    "dev:container": "next dev --webpack --hostname 0.0.0.0 --port 3000",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "eslint",
+    "lint:fix": "eslint --fix",
+    "start": "next start",
+    "typecheck": "tsc --noEmit"
+  },
+  "comment:dependencies": "Declared at the versions the repository root already resolved, never re-ranged. This package must be able to build and run on its own, so it names what it imports; the root package still declares the same runtime for the repository-level test tiers, which import API source through the @/ alias. Removing the duplicates from the root is a separate, verified step — an unverified removal would break `npm test` in a way no static check would catch. Security overrides stay at the root, which is the only place npm honours them.",
+  "dependencies": {
+    "@aws-sdk/client-s3": "3.1111.0",
+    "@aws-sdk/s3-request-presigner": "3.1111.0",
+    "@supabase/ssr": "^0.12.4",
+    "@supabase/supabase-js": "^2.97.0",
+    "next": "16.2.12",
+    "pg": "^8.22.0",
+    "pino": "^10.3.1",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "sharp": "0.35.3",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "@types/pg": "^8.20.0",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.2.12",
+    "prettier": "^3.9.6",
+    "sass": "^1.102.0",
+    "stylelint": "^17.14.1",
+    "stylelint-config-standard-scss": "^17.0.0",
+    "typescript": "^5"
+  }
+}

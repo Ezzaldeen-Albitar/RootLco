@@ -1,0 +1,13 @@
+// The single stylesheet entry point.
+//
+// Order matters: tokens must be emitted before anything reads them, and
+// Tailwind's layers must come after the reset so preflight does not override
+// the base layer.
+
+@use '../styles/tokens';
+@use '../styles/themes';
+@use '../styles/base';
+@use '../styles/print';
+@tailwind base;
+@tailwind components;
+@tailwind utilities;

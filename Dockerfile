@@ -36,8 +36,24 @@ WORKDIR /app
 # hadolint ignore=DL3018
 RUN apk add --no-cache libc6-compat
 # Copy only the manifests first so this layer is reused unless deps change.
+#
+# The repository is an npm WORKSPACE with ONE root lockfile. `npm ci` validates
+# every workspace manifest that lockfile references, so BOTH must be present —
+# omitting either fails the install outright rather than degrading quietly.
+# apps/web/package.json is here for that reason alone; no web code is built,
+# copied or shipped by this image, and the runner stage below proves it.
 COPY package.json package-lock.json ./
+COPY apps/api/package.json ./apps/api/
+COPY apps/web/package.json ./apps/web/
 # `npm ci` requires the lock file and installs exactly what it pins.
+#
+# The full graph is installed rather than `--workspace @rootlco/api`: the API
+# build resolves its own dependencies through the hoisted root node_modules, and
+# a partial install would silently change WHICH copy of a shared dependency the
+# build sees. What actually keeps the web tree out of the shipped image is
+# `output: standalone`, which traces only the modules the API server reaches at
+# runtime — a stronger guarantee than an install flag, and one the container
+# gate re-checks.
 RUN npm ci
 
 # -----------------------------------------------------------------------------
@@ -88,6 +104,9 @@ ENV NEXT_PUBLIC_COMMIT_SHA=${NEXT_PUBLIC_COMMIT_SHA}
 # are replaced at runtime; `output: standalone` does not persist them as config.
 ENV NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321
 ENV NEXT_PUBLIC_SUPABASE_ANON_KEY=build-time-placeholder-not-a-secret
+# Builds the API workspace only. `npm run build` delegates to @rootlco/api, so
+# the emitted tree is /app/apps/api/.next and the web application is never built
+# here — not as an optimisation, but because this image must not contain it.
 RUN npm run build
 
 # -----------------------------------------------------------------------------
@@ -168,10 +187,21 @@ RUN rm -f /sbin/apk \
       fi; \
     done
 
-# `output: standalone` emits a minimal server plus only the deps it actually uses.
-COPY --from=build --chown=nextjs:nodejs /app/.next/standalone ./
-COPY --from=build --chown=nextjs:nodejs /app/.next/static ./.next/static
-COPY --from=build --chown=nextjs:nodejs /app/public ./public
+# `output: standalone` emits a minimal server plus only the modules the server
+# actually reaches. In a workspace it preserves the repository shape, so the
+# tree it emits is:
+#
+#   /app/apps/api/.next/standalone/apps/api/server.js   the entry point
+#   /app/apps/api/.next/standalone/node_modules/…       only what server.js reaches
+#
+# The first COPY therefore lands `apps/api/` and `node_modules/` at the image
+# root, and the two that follow put static assets and public files where the
+# server expects them RELATIVE TO ITS OWN DIRECTORY. Flattening the workspace
+# path here would be the obvious-looking change and would break at runtime: the
+# server resolves its manifests from its own location, not from /app.
+COPY --from=build --chown=nextjs:nodejs /app/apps/api/.next/standalone ./
+COPY --from=build --chown=nextjs:nodejs /app/apps/api/.next/static ./apps/api/.next/static
+COPY --from=build --chown=nextjs:nodejs /app/apps/api/public ./apps/api/public
 
 USER nextjs
 EXPOSE 3000
@@ -179,4 +209,4 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD curl -fsS http://127.0.0.1:3000/api/health || exit 1
 
-CMD ["node", "server.js"]
+CMD ["node", "apps/api/server.js"]
