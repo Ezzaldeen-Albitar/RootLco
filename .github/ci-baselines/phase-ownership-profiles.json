@@ -93,6 +93,11 @@
       "branchPrefix": "chore/promotion-readiness",
       "profile": "repository-tooling",
       "why": "A repository-wide GATE change owned by no phase: the ownership gate learning that a promotion is not a phase change, and the coverage floor learning that a promotion is not an edit. Carries scripts/ci, tests/ci, .github/workflows and the phase records whose counts move with them — and, by that profile, no product source."
+    },
+    {
+      "branchPrefix": "chore/ci-base-ref-resolvable",
+      "profile": "repository-tooling",
+      "why": "A repository-wide CI change owned by no phase: the legacy workflow fetching the phase base branch so the evidence seal keeps the --not <base> term in its successor range."
     }
   ]
 }
