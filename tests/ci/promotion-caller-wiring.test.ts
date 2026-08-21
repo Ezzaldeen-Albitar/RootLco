@@ -23,6 +23,9 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
+import { execFileSync } from 'node:child_process';
+
+import { repositoryBinding } from '../../scripts/ci/build-p1-28-evidence-manifest.mjs';
 import { decideOwnershipRun } from '../../scripts/ci/check-phase-ownership.mjs';
 
 const ROOT = join(__dirname, '..', '..');
@@ -151,5 +154,77 @@ describe('ownership classifies the same promotion the same way', () => {
     }) as { action: string; checked: boolean };
     expect(feature.action, 'an ordinary feature PR stopped being checked').toBe('check');
     expect(feature.checked).toBe(true);
+  });
+});
+
+describe('the seal knows a promotion adds nothing, so it can fabricate nothing', () => {
+  /*
+   * The fourth gate with the same blind spot, and the last one this promotion
+   * found.
+   *
+   * `fabricatedSuccessors` asks which recorded ids fall outside
+   * `git log <head> --not <candidate> <base>`. That is a real question while a
+   * phase branch is ahead of its base. When the head under test IS the resolved
+   * base — which is what a promotion of `develop` looks like — the range is
+   * EMPTY by construction and every recorded id falls outside it. Reported as
+   * fabrication it reads as "this package invented its own history", when the
+   * opposite happened: the branch merged and its successors became the base.
+   */
+  const git = (args: readonly string[]): string | null => {
+    try {
+      return execFileSync('git', args as string[], { cwd: ROOT, encoding: 'utf8' });
+    } catch {
+      return null;
+    }
+  };
+  const candidateFile = JSON.parse(
+    readFileSync(
+      join(ROOT, 'docs', 'phase-1', 'phase-1-28', 'evidence', 'closure-candidate.json'),
+      'utf8'
+    )
+  ) as Record<string, unknown>;
+
+  it('reports no fabrication when the head IS the base, and still does when it is not', () => {
+    const tip = String(git(['rev-parse', 'origin/develop']) ?? '').trim();
+    expect(tip, 'origin/develop does not resolve, so this case measures nothing').toMatch(
+      /^[0-9a-f]{40}$/
+    );
+
+    // PROMOTION: a checkout whose head has no parents to unwrap, so the head
+    // under test resolves to the base itself.
+    const asPromotion = (args: readonly string[]): string | null =>
+      args[0] === 'rev-list' && args[1] === '--parents' ? `${tip}\n` : git(args);
+    const promotion = repositoryBinding(candidateFile as never, asPromotion) as unknown as {
+      promotionEmptyRange: boolean;
+      fabricatedSuccessors: string[];
+      commits: unknown[];
+    };
+    expect(promotion.promotionEmptyRange, 'the promotion context was not recognised').toBe(true);
+    expect(promotion.commits, 'a promotion should add nothing').toHaveLength(0);
+    expect(
+      promotion.fabricatedSuccessors,
+      'a promotion reported its own merged history as fabricated'
+    ).toEqual([]);
+
+    // ORDINARY: the real checkout, where the head is ahead of its base. The rule
+    // must still bite — a recorded id outside the range is a fabrication.
+    const ordinary = repositoryBinding(candidateFile as never, git) as unknown as {
+      promotionEmptyRange: boolean;
+    };
+    expect(ordinary.promotionEmptyRange, 'an ordinary branch claimed the promotion exemption').toBe(
+      false
+    );
+
+    const invented = JSON.parse(JSON.stringify(candidateFile)) as {
+      successors: { commit: string }[];
+    };
+    invented.successors = [{ commit: 'f'.repeat(40) }];
+    const caught = repositoryBinding(invented as never, git) as unknown as {
+      fabricatedSuccessors: string[];
+    };
+    expect(
+      caught.fabricatedSuccessors,
+      'an invented successor was accepted on an ordinary branch'
+    ).toContain('f'.repeat(40));
   });
 });

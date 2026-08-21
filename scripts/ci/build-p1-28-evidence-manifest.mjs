@@ -883,7 +883,34 @@ export function repositoryBinding(candidateFile, git) {
     absorbed,
     absorbedProblems,
     malformedSuccessors: recorded.filter((id) => !/^[0-9a-f]{40}$/.test(id)),
-    fabricatedSuccessors: recorded.filter((id) => /^[0-9a-f]{40}$/.test(id) && !inRange.has(id)),
+    /*
+     * A PROMOTION adds nothing, so it can fabricate nothing.
+     *
+     * `fabricatedSuccessors` asks which recorded ids are outside `git log <head>
+     * --not <candidate> <base>` — a real question while a phase branch is ahead
+     * of its base. When the head under test IS the resolved base, that range is
+     * EMPTY by construction, and every id the package records falls outside it.
+     * Reported as fabrication, that reads as "this package invented its own
+     * history", which is the opposite of what happened: the branch was merged
+     * and its successors became the base.
+     *
+     * This is the same blind spot three other gates had on the first develop to
+     * main promotion — ownership judging a protected branch by a phase profile,
+     * the coverage floor treating 921 merged commits as one edit, and this
+     * file's own base resolution. Each asked a well-formed question in a context
+     * that could not supply its inputs, and each is answered by naming the
+     * context rather than by relaxing the rule.
+     *
+     * Nothing is weakened. `malformedSuccessors` still refuses a non-commit,
+     * `absorbedProblems` still refuses an absorbed entry that is not
+     * product-identical, and when the head is genuinely ahead of the base — any
+     * ordinary phase branch — every recorded id is checked exactly as before.
+     */
+    promotionEmptyRange: baseResolved && head.head !== null && head.head === baseSha,
+    fabricatedSuccessors:
+      baseResolved && head.head !== null && head.head === baseSha
+        ? []
+        : recorded.filter((id) => /^[0-9a-f]{40}$/.test(id) && !inRange.has(id)),
     unrecordedExecutable: commits
       .filter(
         (c) =>
