@@ -314,6 +314,89 @@ describe('a profile refuses a bucket it never claimed', () => {
   });
 });
 
+describe('the permission catalogue is a bucket of its own', () => {
+  /*
+   * `supabase/seeds/04_iam_permission_catalog.sql` IS the canonical permission
+   * catalogue: 112 rows, the only shipping insert into `iam.permissions`, and
+   * ZERO migrations write to that table. Any change that adds a permission has to
+   * land there.
+   *
+   * Rolled into the `supabase` bucket it could only ever be granted alongside
+   * `config.toml` and the local bootstrap — a different question with a different
+   * answer. So it is separated, and each profile answers the two questions apart.
+   *
+   * This bucket is also the case the `allowed`-decides rule was written for. It is
+   * the twelfth bucket, and it landed REFUSED by every profile that had not
+   * claimed it. Under the rule it replaced, adding it would have silently widened
+   * all twelve profiles at once.
+   */
+  const CATALOGUE = 'supabase/seeds/04_iam_permission_catalog.sql';
+
+  it('classifies the catalogue apart from the harness, and after migrations', () => {
+    expect(classify(CATALOGUE), 'the catalogue fell into the harness bucket').toBe('dbSeeds');
+    expect(classify('supabase/config.toml'), 'the harness moved').toBe('supabase');
+    expect(classify('supabase/migrations/0001_x.sql'), 'a migration moved').toBe('migrations');
+
+    // Order matters: a catch-all `supabase/` rule declared first would swallow
+    // both of the buckets above.
+    const order = CLASSIFIERS.map((c) => c.bucket);
+    expect(
+      order.indexOf('dbSeeds'),
+      'dbSeeds is declared after the supabase catch-all'
+    ).toBeLessThan(order.indexOf('supabase'));
+    expect(
+      order.indexOf('migrations'),
+      'migrations is declared after the supabase catch-all'
+    ).toBeLessThan(order.indexOf('supabase'));
+  });
+
+  it('lets the PRE-P1-29 Backend lane seed a permission without opening the harness', () => {
+    for (const profile of ['pre-p1-29-backend', 'pre-p1-29-initiative']) {
+      expect(
+        evaluate([CATALOGUE], profile).failures,
+        `${profile} cannot add a permission, which is the one database change it needs`
+      ).toEqual([]);
+      expect(
+        evaluate(['supabase/config.toml'], profile).failures.length,
+        `${profile} was handed the database harness`
+      ).toBeGreaterThan(0);
+    }
+  });
+
+  it('keeps a screen out of the catalogue', () => {
+    const { failures } = evaluate([CATALOGUE], 'pre-p1-29-web');
+    expect(failures.length, 'the Web lane may seed a permission').toBeGreaterThan(0);
+    expect(failures[0]).toContain('must not seed a permission');
+  });
+
+  it('does not quietly take seed authority from the profiles that already had it', () => {
+    /*
+     * Both of these held the catalogue through the wider `supabase` bucket.
+     * Splitting a bucket must not narrow a profile that never asked to be
+     * narrowed — that would be a behaviour change smuggled in as a refactor.
+     */
+    for (const profile of ['p1-18-read-surface', 'p1-15-evidence-foundation']) {
+      expect(
+        evaluate([CATALOGUE], profile).failures,
+        `${profile} lost seed authority when the bucket was split`
+      ).toEqual([]);
+      expect(
+        evaluate(['supabase/config.toml'], profile).failures,
+        `${profile} lost harness authority when the bucket was split`
+      ).toEqual([]);
+    }
+  });
+
+  it('refuses the new bucket everywhere it was never claimed', () => {
+    for (const profile of ['p1-26-frontend', 'p1-27-frontend', 'repository-tooling']) {
+      expect(
+        evaluate([CATALOGUE], profile).failures.length,
+        `${profile} silently gained the permission catalogue when the bucket was added`
+      ).toBeGreaterThan(0);
+    }
+  });
+});
+
 describe('PRE-P1-29 ownership — an initiative that spans the product, in lanes that do not', () => {
   /*
    * PRE-P1-29 is an initiative rather than a phase, and it legitimately needs API

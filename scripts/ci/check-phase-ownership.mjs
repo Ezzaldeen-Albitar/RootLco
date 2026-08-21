@@ -104,6 +104,14 @@ export const CLASSIFIERS = [
   { bucket: 'apiSource', test: (p) => p.startsWith('apps/api/src/') },
   { bucket: 'apiConfig', test: (p) => p.startsWith('apps/api/') },
   { bucket: 'migrations', test: (p) => p.startsWith('supabase/migrations/') },
+  // Before the catch-all below, for the same reason `migrations` is: a seed is
+  // not the local database harness. `supabase/seeds/04_iam_permission_catalog.sql`
+  // IS the canonical permission catalogue — 112 rows, the only shipping insert
+  // into `iam.permissions`, and zero migrations write to that table. A change
+  // that adds a permission has to land there, so a profile has to be able to say
+  // whether it may. Rolled into `supabase` it could only be granted alongside
+  // `config.toml`, which is a different question with a different answer.
+  { bucket: 'dbSeeds', test: (p) => p.startsWith('supabase/seeds/') },
   { bucket: 'supabase', test: (p) => p.startsWith('supabase/') },
   { bucket: 'docs', test: (p) => p.startsWith('docs/') || /^[A-Z]+\.md$/.test(p) },
   { bucket: 'tooling', test: (p) => p.startsWith('scripts/') || p.startsWith('.github/') },
@@ -173,6 +181,7 @@ export const PROFILES = {
       'tests',
       'rootConfig',
       'migrations',
+      'dbSeeds',
       'supabase',
       'webGenerated',
       // This profile is the reason the bucket exists. Every read it publishes is
@@ -201,6 +210,7 @@ export const PROFILES = {
       'tests',
       'rootConfig',
       'migrations',
+      'dbSeeds',
       'supabase',
       // `apps/web/src/lib/api/idempotent-operations.ts`. A first draft of this
       // profile FORBADE it, reasoning that two new READ operations cannot move
@@ -366,6 +376,7 @@ export const PROFILES = {
     allowed: [
       'apiSource',
       'migrations',
+      'dbSeeds',
       'web',
       'webGenerated',
       'webContract',
@@ -379,8 +390,9 @@ export const PROFILES = {
         'PRE-P1-29 must not change API workspace configuration — a dependency or compiler change ' +
         'is its own review, not a rider on an administration feature',
       supabase:
-        'PRE-P1-29 must not change the database harness — permissions and roles are seeded by ' +
-        'MIGRATIONS, and acceptance fixtures live under scripts/dev/owner-acceptance',
+        'PRE-P1-29 must not change the database HARNESS — config.toml and the local bootstrap. ' +
+        'The permission catalogue it does need is supabase/seeds, which travels under its own ' +
+        'dbSeeds bucket, and the Owner acceptance fixtures live under scripts/dev/owner-acceptance',
     },
   },
   'pre-p1-29-backend': {
@@ -390,6 +402,7 @@ export const PROFILES = {
     allowed: [
       'apiSource',
       'migrations',
+      'dbSeeds',
       'webGenerated',
       'webContract',
       'docs',
@@ -409,7 +422,8 @@ export const PROFILES = {
         'pre-p1-29-web',
       apiConfig: 'PRE-P1-29 must not change API workspace configuration',
       supabase:
-        'PRE-P1-29 must not change the database harness — permissions and roles are seeded by MIGRATIONS',
+        'PRE-P1-29 must not change the database HARNESS — the permission catalogue it does need ' +
+        'is supabase/seeds, which travels under its own dbSeeds bucket',
     },
   },
   'pre-p1-29-web': {
@@ -428,6 +442,9 @@ export const PROFILES = {
       migrations:
         'a screen must not carry a migration — a permission the UI offers is seeded by the ' +
         'Backend lane that publishes the operation behind it',
+      dbSeeds:
+        'a screen must not seed a permission — the code a role editor offers is seeded by the ' +
+        'Backend lane that publishes the operation it guards',
       supabase: 'PRE-P1-29 must not change the database harness',
     },
   },
