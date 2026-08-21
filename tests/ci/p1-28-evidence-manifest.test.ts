@@ -1835,6 +1835,8 @@ interface Binding {
   readonly phaseHead: string | null;
   readonly checkoutHead: string | null;
   readonly unwrappedMergeRef: string | null;
+  /** The parent a content-free merge was read as, when the checkout was one. */
+  readonly mergeAddsNothingTo: string | null;
   readonly mergeRefBaseSide: string | null;
   readonly evilMergePaths: string[];
   readonly declinedUnwrap: string | null;
@@ -1848,6 +1850,7 @@ interface Binding {
   readonly absorbed: string[];
   readonly absorbedProblems: string[];
   readonly unrecordedExecutable: string[];
+  readonly fabricatedSuccessors: string[];
 }
 
 const bindingOf = (doc: unknown, git: GitRead): Binding =>
@@ -2286,6 +2289,12 @@ describe('P1-28-QA-005 — a merge-ref checkout does not make the base branch a 
        * preview of this pull request. The cross-check can only be made when a
        * base ref resolves, and when it can be made it may only make the rule
        * stricter.
+       *
+       * The merge carries a tree of its OWN, and that is now load-bearing: a
+       * merge that adds no content to its candidate-carrying parent is read as
+       * that parent whatever its other side is, which is the case immediately
+       * below. This one has content that came from neither parent, so there is
+       * something here to judge and the foreign base side is what judges it.
        */
       const stranger = repo.run(
         'commit-tree',
@@ -2297,7 +2306,7 @@ describe('P1-28-QA-005 — a merge-ref checkout does not make the base branch a 
       );
       const foreign = repo.run(
         'commit-tree',
-        repo.run('rev-parse', `${repo.branchHead}^{tree}`),
+        repo.candidateTree,
         '-p',
         stranger,
         '-p',
@@ -2305,11 +2314,78 @@ describe('P1-28-QA-005 — a merge-ref checkout does not make the base branch a 
         '-m',
         'Merge of something that is not the base'
       );
+      expect(
+        repo.run('rev-parse', `${foreign}^{tree}`),
+        'the merge carries its branch parent’s tree, so it adds nothing and this case measures the other rule'
+      ).not.toBe(repo.run('rev-parse', `${repo.branchHead}^{tree}`));
       repo.checkout(foreign);
       const bound = bindingOf(repo.document(), repo.git);
       expect(bound.unwrappedMergeRef, 'a merge with a foreign base side was unwrapped').toBe(null);
       expect(bound.declinedUnwrap, 'the decline was not explained').toContain(stranger.slice(0, 8));
       expect(bound.phaseHead).toBe(foreign);
+    }));
+
+  it('reads a merge that adds NOTHING as its parent, foreign base side and all', () =>
+    withScratchRepository((repo) => {
+      /*
+       * The same foreign base side, and the opposite verdict — because this is
+       * the shape a PROMOTION has, and declining it inverts the measurement.
+       *
+       * A promotion's merge ref is parented on the protected branch and on the
+       * branch being promoted. In a repository that promotes by merge commit the
+       * protected branch has accumulated topology the base branch has never
+       * seen, so neither parent contains the other and the case above would
+       * decline it. Declined, the merge ref becomes the head under test, and
+       * subtracting the base leaves the PROTECTED branch's history: the phase's
+       * own recorded successors read as fabricated and the promotion target's
+       * commits read as this phase's unnamed successors. That is not a
+       * hypothetical — it is what hosted CI reported, 4 and 24 of them.
+       *
+       * What makes reading the parent safe is the tree. A checkout identical in
+       * content to a parent can smuggle nothing in through the other one, so
+       * "adds nothing" is decided by bytes rather than by branch names, and the
+       * case above still declines the merge that does add something.
+       */
+      const stranger = repo.run(
+        'commit-tree',
+        repo.candidateTree,
+        '-p',
+        repo.previous,
+        '-m',
+        'a protected branch this base does not contain'
+      );
+      const branchTree = repo.run('rev-parse', `${repo.branchHead}^{tree}`);
+      const promotion = repo.run(
+        'commit-tree',
+        branchTree,
+        '-p',
+        stranger,
+        '-p',
+        repo.branchHead,
+        '-m',
+        'Merge branch into the protected branch'
+      );
+      expect(
+        repo.run('rev-parse', `${promotion}^{tree}`),
+        'the merge does not carry its parent’s tree, so it is not the shape under test'
+      ).toBe(branchTree);
+
+      repo.checkout(promotion);
+      const bound = bindingOf(repo.document(), repo.git);
+      expect(bound.declinedUnwrap, 'the promotion was declined as an unrelated merge').toBe(null);
+      expect(bound.topologyUnknown, 'the promotion made the Git world unknown').toBe(null);
+      expect(bound.unwrappedMergeRef, 'the merge that was unwrapped went unnamed').toBe(promotion);
+      expect(bound.mergeAddsNothingTo, 'the parent it was read as went unnamed').toBe(
+        repo.branchHead
+      );
+      expect(bound.phaseHead, 'the head under test is not this branch').toBe(repo.branchHead);
+      expect(bound.fabricatedSuccessors, 'the branch’s own successors read as fabricated').toEqual(
+        []
+      );
+      expect(
+        bound.unrecordedExecutable,
+        'the protected branch’s commits read as this branch’s successors'
+      ).toEqual([]);
     }));
 
   it('refuses an UNKNOWN successor range rather than reading it as “none”', () =>
