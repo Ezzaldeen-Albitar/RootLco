@@ -429,6 +429,119 @@ describe('a merge that adds nothing is the parent it adds nothing to', () => {
     ).toBe(onBranch.commits.length);
   }, 180_000);
 
+  it('reads a SECOND promotion, where the target already carries the candidate', () => {
+    /*
+     * The shape that only exists after a phase has been promoted once, and the
+     * one that took the protected reproof red on the second attempt.
+     *
+     * Until then the candidate separates a promotion merge ref's parents: the
+     * protected branch does not carry it and the base branch does. Once the
+     * phase has landed on the protected branch, BOTH parents carry it, and the
+     * question that resolves the ambiguity — which parent equals the resolved
+     * base ref? — answers backwards. On a promotion the resolved phase base IS
+     * the head being promoted, so matching it names the base branch the base
+     * side and the protected branch the branch side, inverting the roles. The
+     * head under test became the promotion merge on the protected branch, the
+     * phase's own recorded successor read as fabricated, and the protected
+     * branch's promotion commit read as an unnamed successor of this phase.
+     *
+     * The TREE still separates them, because a promotion merge ref carries the
+     * promoted branch's tree byte for byte and the protected branch's tree is a
+     * revision behind. That is a fact about content rather than about which ref
+     * points where, which is exactly why it still works once the candidate has
+     * stopped discriminating.
+     */
+    const develop = rev('origin/develop');
+    const other = protectedLine();
+
+    // A protected branch that HAS been promoted: it contains the base branch's
+    // history up to a point, so it carries the candidate too.
+    const promotedTarget = commit(treeOf(develop), [other, develop], 'promote develop to main');
+    expect(carries(promotedTarget, CANDIDATE_SHA), 'the target does not carry the candidate').toBe(
+      true
+    );
+    expect(carries(develop, CANDIDATE_SHA), 'the base branch does not carry the candidate').toBe(
+      true
+    );
+
+    // The base branch then moves on, and is promoted again.
+    /*
+     * A tree of its OWN, and that is load-bearing: built with the base branch's
+     * tree, all three trees would match, the discriminator would find two
+     * candidates rather than one, and it would correctly decline to choose —
+     * measuring nothing while appearing to.
+     */
+    const work = commit(treeOf(`${CANDIDATE_SHA}^`), [develop], 'more work on the base branch');
+    expect(
+      treeOf(work),
+      'the work carries the base branch tree, so no tree separates the parents'
+    ).not.toBe(treeOf(develop));
+    const secondPromotion = commit(treeOf(work), [promotedTarget, work], 'promotion preview');
+    expect(
+      treeOf(secondPromotion),
+      'the merge ref does not carry the promoted branch tree, so this is not the shape under test'
+    ).toBe(treeOf(work));
+
+    const binding = bindingIn(secondPromotion, work);
+    expect(binding.topologyUnknown, 'the second promotion made the Git world unknown').toBeNull();
+    expect(binding.declinedUnwrap, 'the second promotion was declined').toBeNull();
+    expect(binding.phaseHead, 'the protected branch was taken as the thing under test').not.toBe(
+      promotedTarget
+    );
+    expect(binding.mergeAddsNothingTo, 'the merge was not read as the branch it promotes').toBe(
+      work
+    );
+  }, 180_000);
+
+  it('reads a sync landed ON the base branch, where parent ORDER says the opposite', () => {
+    /*
+     * The other half of a second promotion, and the one that parent order gets
+     * backwards.
+     *
+     * Every merge a pull request lands on a protected branch puts that branch's
+     * previous tip FIRST, and the resolution below relies on it. A
+     * SYNCHRONISATION inverts that: the base branch merges the PROTECTED branch
+     * into itself, so the protected branch arrives as the second parent — the
+     * position the convention reserves for "this branch's work". Order alone
+     * then names the protected branch as the thing under test, and the whole of
+     * the base branch since the candidate reads as unnamed successors.
+     *
+     * A second promotion needs exactly this merge, because promoting leaves the
+     * base branch behind the protected one again.
+     *
+     * The tree corrects the order: the sync carries the base branch's tree byte
+     * for byte and the protected branch's tree is a revision behind.
+     */
+    const develop = rev('origin/develop');
+    const other = protectedLine();
+
+    // A protected branch that has been promoted once, so it carries the
+    // candidate — which is what stops the candidate from separating the parents.
+    const promotedTarget = commit(treeOf(develop), [other, develop], 'promote develop to main');
+    expect(carries(promotedTarget, CANDIDATE_SHA), 'the target does not carry the candidate').toBe(
+      true
+    );
+
+    // The base branch moves on, then merges the protected branch back in.
+    const work = commit(treeOf(`${CANDIDATE_SHA}^`), [develop], 'more work on the base branch');
+    const syncOnBase = commit(treeOf(work), [work, promotedTarget], 'sync the protected branch in');
+    expect(
+      treeOf(syncOnBase),
+      'the sync does not carry the base branch tree, so it is not the shape under test'
+    ).toBe(treeOf(work));
+
+    // The base ref IS this merge from the moment it lands, which is the state
+    // every protected push is read in.
+    const binding = bindingIn(syncOnBase, syncOnBase);
+    expect(binding.topologyUnknown, 'the sync made the Git world unknown').toBeNull();
+    expect(binding.declinedUnwrap, 'the sync was declined').toBeNull();
+    expect(
+      binding.phaseHead,
+      'parent order named the protected branch as the thing under test'
+    ).not.toBe(promotedTarget);
+    expect(binding.mergeAddsNothingTo, 'the sync was not read as the branch it sits on').toBe(work);
+  }, 180_000);
+
   it('names the parent it read, so a reader can see the merge was unwrapped', () => {
     const develop = rev('origin/develop');
     const promotion = commit(treeOf(develop), [protectedLine(), develop], 'promotion preview');

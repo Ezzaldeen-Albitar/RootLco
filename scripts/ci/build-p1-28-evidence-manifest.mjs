@@ -572,10 +572,64 @@ function headAt(git, rev, candidateSha, baseSha, hopsLeft) {
     branchSide = carries[0];
     baseSide = parents.find((p) => p !== branchSide) ?? null;
   } else if (carries.length === parents.length) {
+    /*
+     * WHICH PARENT'S TREE THIS MERGE CARRIES, when exactly one does.
+     *
+     * `null` means no single parent's tree matches — either both do, and the
+     * parents separate nothing, or neither does, and the merge carries content
+     * of its own. Both leave the answer to the rules below. A Git refusal is
+     * UNKNOWN and is raised as one.
+     */
+    const parentTrees = parents.map((p) => treeOf(git, p));
+    const checkoutTree = treeOf(git, checkout);
+    if (checkoutTree === null || parentTrees.some((t) => t === null)) {
+      return {
+        ...plain,
+        topologyUnknown: `Git could not compare the tree of merge ${checkout.slice(0, 8)} with the trees of its parents`,
+      };
+    }
+    const carried = parents.filter((_, i) => parentTrees[i] === checkoutTree);
+    const treeCarrier = carried.length === 1 ? carried[0] : null;
+
     const exactBase = baseSha ? parents.filter((p) => p === baseSha) : [];
     if (exactBase.length === 1) {
-      baseSide = exactBase[0];
-      branchSide = parents.find((p) => p !== baseSide) ?? null;
+      /*
+       * The ref names one parent. WHICH ROLE it plays is a second question, and
+       * until a phase had been promoted twice the answer was always the same.
+       *
+       * Once the phase has landed on the protected branch, that branch carries
+       * the candidate too, so a SECOND promotion's merge ref has two parents
+       * that both carry it and the ref match answers BACKWARDS: on a promotion
+       * the resolved phase base IS the head being promoted, so matching it names
+       * the base branch the base side and the protected branch the branch side,
+       * inverting the roles. Measured on exactly that run — the head under test
+       * became the promotion merge on the protected branch, the phase's own
+       * recorded successor read as fabricated, and the protected branch's
+       * promotion commit read as an unnamed successor of this phase.
+       *
+       * The tree settles it, and it is the same fact the unwrap below turns on:
+       * a merge that carries one parent's tree BYTE FOR BYTE added nothing to
+       * that parent, so that parent is the branch side. Content, not which ref
+       * happens to point where — which is why it still works after the candidate
+       * has stopped separating the parents.
+       *
+       * DELIBERATELY ASKED ONLY HERE. It corrects a role the ref already
+       * assigned; it never resolves a world the ref could not. The two cases
+       * below fail CLOSED on ambiguity and must keep doing so: letting content
+       * answer there would turn "I cannot tell which parent is the branch" into
+       * a verdict, which is the fail-open this whole function exists to refuse.
+       *
+       * Two matching trees say the parents are content-identical and separate
+       * nothing; none says the merge carries content of its own. Both keep the
+       * ref's answer. Git declining to name a tree is UNKNOWN.
+       */
+      if (treeCarrier !== null) {
+        branchSide = treeCarrier;
+        baseSide = parents.find((p) => p !== branchSide) ?? null;
+      } else {
+        baseSide = exactBase[0];
+        branchSide = parents.find((p) => p !== baseSide) ?? null;
+      }
     } else if (baseSha) {
       const checkoutOnBase = firstParentLineContains(git, checkout, baseSha);
       if (checkoutOnBase === null) {
@@ -586,7 +640,26 @@ function headAt(git, rev, candidateSha, baseSha, hopsLeft) {
         };
       }
       if (checkoutOnBase) {
-        [baseSide, branchSide] = parents;
+        /*
+         * The forge convention: a merge made ON a protected branch puts that
+         * branch's previous tip FIRST. True of every merge a pull request lands
+         * — and not true of a SYNCHRONISATION, where the base branch merges the
+         * protected branch INTO itself and the protected branch arrives second.
+         * Order alone then names the protected branch as this branch's work, and
+         * the whole of the base branch since the candidate reads as unnamed
+         * successors of the phase. Measured on the sync that a second promotion
+         * needs.
+         *
+         * So the tree corrects the order where it can, on the same footing as
+         * above: it decides a role the convention already assigned, and it does
+         * not rescue the ambiguity below.
+         */
+        if (treeCarrier !== null) {
+          branchSide = treeCarrier;
+          baseSide = parents.find((p) => p !== branchSide) ?? null;
+        } else {
+          [baseSide, branchSide] = parents;
+        }
       } else {
         return {
           ...plain,
