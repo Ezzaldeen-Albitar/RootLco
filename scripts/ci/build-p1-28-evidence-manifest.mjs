@@ -4023,9 +4023,19 @@ function main(argv) {
       if (repository.unwrappedMergeRef) {
         // Said out loud, because the head being judged is then not the commit
         // that is checked out, and a reader must not have to infer that.
+        /*
+         * The base side may have been DROPPED: a merge of a divergent line
+         * names a side that is not the base as it stood, and "its base null"
+         * would name a commit nobody can look up. Say which subtrahend was
+         * actually used instead — it is the number every count below depends on.
+         */
+        const side = repository.mergeRefBaseSide
+          ? `its base ${String(repository.mergeRefBaseSide).slice(0, 8)}`
+          : 'a line that is not on the base branch, so the subtrahend is the resolved ref ' +
+            String(repository.baseSha).slice(0, 8);
         process.stdout.write(
-          `  the checkout ${String(repository.checkoutHead).slice(0, 8)} is a merge of this branch with its base ` +
-            `${String(repository.mergeRefBaseSide).slice(0, 8)} and carries no content of its own, so the head under test is ` +
+          `  the checkout ${String(repository.checkoutHead).slice(0, 8)} is a merge of this branch with ` +
+            `${side} and carries no content of its own, so the head under test is ` +
             `this branch's own ${String(repository.phaseHead).slice(0, 8)}\n`
         );
       }
