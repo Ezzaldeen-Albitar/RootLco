@@ -577,11 +577,47 @@ export function classify(path) {
 }
 
 /**
+ * Whether an EMPTY changed set is the correct answer or a broken measurement.
+ *
+ * `git diff <base>...HEAD` runs from the MERGE BASE to the head, so an empty
+ * file list is truthful exactly when those two commits name the same tree
+ * object. That is the only fact that can separate "this branch changes nothing"
+ * from "the comparison failed and produced no output", and it is a fact about
+ * objects rather than about branch names.
+ *
+ * Takes a `git` reader rather than shelling out, for the reason the evidence
+ * seal's analysers do: a rule that can only be exercised by arranging a real
+ * repository is a rule whose failure paths go untested. `null` from the reader
+ * is a REFUSAL — a question Git declined to answer has not been answered — and
+ * every refusal here returns `null`, which the caller treats as not
+ * established, which fails closed.
+ *
+ * @param {string} base
+ * @param {(args: string[]) => string | null} git
+ * @returns {{ mergeBase: string, tree: string, truthful: boolean } | null}
+ */
+export function emptyDiffAgreesWithTrees(base, git) {
+  const sha = /^[0-9a-f]{40}$/;
+  const read = (args) => String(git(args) ?? '').trim();
+  const mergeBase = read(['merge-base', base, 'HEAD']);
+  if (!sha.test(mergeBase)) return null;
+  const from = read(['rev-parse', `${mergeBase}^{tree}`]);
+  const to = read(['rev-parse', 'HEAD^{tree}']);
+  if (!sha.test(from) || !sha.test(to)) return null;
+  return { mergeBase, tree: from, truthful: from === to };
+}
+
+/**
  * @param {readonly string[]} changed changed files vs the phase base
  * @param {string} profileName
+ * @param {boolean | null} [emptyDiffIsTruthful]
+ *   Whether an EMPTY changed set is the correct answer rather than a broken
+ *   measurement — that is, whether the tree the diff started from and the tree
+ *   it ended at are the same object. `null` means nothing established it, and
+ *   is treated as "not established", which fails closed.
  * @returns {{ failures: string[], counts: Record<string, number> }}
  */
-export function evaluate(changed, profileName) {
+export function evaluate(changed, profileName, emptyDiffIsTruthful = null) {
   /** @type {string[]} */
   const failures = [];
   /** @type {Record<string, number>} */
@@ -597,12 +633,36 @@ export function evaluate(changed, profileName) {
   counts.unclassified = 0;
   counts.changed = changed.length;
 
-  // Anti-vacuity. Every rule below iterates the changed set, so an empty set
-  // passes every rule having judged nothing — indistinguishable from a diff
-  // that silently produced no output because the base ref was wrong. A phase
-  // branch under review always has changes; zero means the measurement failed,
-  // not that the branch is clean.
+  /*
+   * Anti-vacuity. Every rule below iterates the changed set, so an empty set
+   * passes every rule having judged nothing — which is indistinguishable, from
+   * the file list alone, from a diff that silently produced no output because
+   * the base ref was wrong.
+   *
+   * From the file list alone. The TREES can tell those two apart, and now do:
+   * `git diff <base>...HEAD` is the diff from the merge base to the head, so an
+   * empty file list is truthful exactly when those two commits name the same
+   * tree object. Equal trees mean this branch changes nothing and there is
+   * nothing to own; unequal trees with no output mean the measurement failed,
+   * and that is still refused.
+   *
+   * The case that forced the distinction is a SYNC MERGE — protected `main`
+   * merged into `develop` so a promotion can satisfy its up-to-date rule. Such
+   * a merge changes zero files by construction, and changing zero files is
+   * precisely what makes it safe. Refusing it as a broken comparison would have
+   * required inventing a file change to satisfy a gate, which is the one repair
+   * this gate exists to prevent.
+   *
+   * Strictly stronger than what it replaces: the old rule could not see the
+   * difference and refused both worlds; this one refuses the broken world and
+   * says so about the empty one. `null` — nothing established the trees — is
+   * "not established", and fails closed with the same words as before.
+   */
   if (changed.length === 0) {
+    if (emptyDiffIsTruthful === true) {
+      counts.unchanged = 1;
+      return { failures, counts };
+    }
     failures.push(
       'no changed files were found against the base — a phase branch under review always has ' +
         'changes, so this is a broken comparison rather than a clean result'
@@ -744,7 +804,33 @@ function main() {
     process.exit(2);
   }
 
-  const { failures, counts } = evaluate(changed, profileName);
+  /*
+   * Asked only when it can change the answer, and asked of the same two commits
+   * the diff above ran between: `<base>...HEAD` starts at the merge base, so
+   * that is the tree an empty file list has to agree with.
+   */
+  let emptyDiffIsTruthful = null;
+  if (changed.length === 0) {
+    const read = (args) => {
+      try {
+        return execFileSync('git', args, { encoding: 'utf8' });
+      } catch {
+        // A refusal, reported as one. `''` would read as an answer.
+        return null;
+      }
+    };
+    const agreement = emptyDiffAgreesWithTrees(base, read);
+    emptyDiffIsTruthful = agreement === null ? null : agreement.truthful;
+    if (agreement?.truthful) {
+      console.log(
+        `  the diff from ${agreement.mergeBase.slice(0, 8)} to HEAD is empty AND both name ` +
+          `tree ${agreement.tree.slice(0, 8)}, so this branch changes nothing and there is ` +
+          'nothing to own'
+      );
+    }
+  }
+
+  const { failures, counts } = evaluate(changed, profileName, emptyDiffIsTruthful);
   const profile = PROFILES[profileName];
 
   console.log(

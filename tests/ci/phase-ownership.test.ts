@@ -24,6 +24,7 @@ import {
   classify,
   decideOwnershipRun,
   envFileBody,
+  emptyDiffAgreesWithTrees,
   evaluate,
   shellQuote,
 } from '../../scripts/ci/check-phase-ownership.mjs';
@@ -127,9 +128,143 @@ describe('p1-26-frontend profile', () => {
 
   it('fails on an empty change set rather than passing vacuously', () => {
     // Every rule iterates the changed set, so an empty set judges nothing. That
-    // is indistinguishable from a diff against the wrong base ref.
+    // is indistinguishable — FROM THE FILE LIST ALONE — from a diff against the
+    // wrong base ref. Nothing here establishes the trees, so nothing here can
+    // tell those apart, and the refusal stands.
     const { failures } = evaluate([], 'p1-26-frontend');
     expect(failures.some((f) => f.includes('broken comparison'))).toBe(true);
+  });
+
+  it('refuses an empty change set when the trees DISAGREE — the broken measurement', () => {
+    /*
+     * The world this guard was written for: a diff that produced no output while
+     * the two commits name different trees. Something is wrong with the
+     * comparison — a stale base ref, a sparse checkout, a wrong argument — and
+     * no verdict can be read off it.
+     */
+    const { failures } = evaluate([], 'p1-26-frontend', false);
+    expect(
+      failures.some((f) => f.includes('broken comparison')),
+      'an empty diff over differing trees was accepted'
+    ).toBe(true);
+  });
+
+  it('accepts an empty change set when the trees AGREE — a branch that changes nothing', () => {
+    /*
+     * A SYNC MERGE: protected `main` merged into `develop` so a promotion can
+     * satisfy its up-to-date rule. It changes zero files by construction, and
+     * changing zero files is exactly what makes it safe to land.
+     *
+     * `git diff <base>...HEAD` runs from the merge base to the head, so an empty
+     * file list is truthful precisely when those two name the same tree. That is
+     * a fact about objects, not a branch name, and it is the only thing that can
+     * separate this world from the one above.
+     *
+     * Refusing it would have left one repair available — inventing a file change
+     * to satisfy a gate — which is the repair this gate exists to prevent.
+     */
+    const { failures, counts } = evaluate([], 'repository-tooling', true);
+    expect(failures, 'a branch that changes nothing was refused').toEqual([]);
+    expect(counts.unchanged, 'the empty result was not reported as such').toBe(1);
+    expect(counts.changed, 'a file was counted that does not exist').toBe(0);
+  });
+
+  it('does not let the trees excuse a NON-empty change set', () => {
+    /*
+     * The flag answers one question — whether an EMPTY list is truthful — and it
+     * must not become a way past the rules that follow. A forbidden file is
+     * forbidden whatever the trees say.
+     */
+    const { failures } = evaluate(
+      [...FRONTEND_CHANGES, 'supabase/migrations/9999_whatever.sql'],
+      'p1-26-frontend',
+      true
+    );
+    expect(
+      failures.length,
+      'tree agreement waved a forbidden path through a non-empty change set'
+    ).toBeGreaterThan(0);
+  });
+
+  describe('what the trees say about an empty diff', () => {
+    /*
+     * The rule above turns on one input, and an input nothing can exercise is an
+     * input nobody has checked. On the branch that needed this — a sync merge —
+     * the moment the fix itself is committed the branch HAS changes, so the
+     * empty-diff path stops being reachable there and would go untested for as
+     * long as it survives. So the question is asked of a reader, and the reader
+     * is asked here.
+     */
+    const SHA = (c: string): string => c.repeat(40);
+    const world =
+      (table: Record<string, string | null>) =>
+      (args: readonly string[]): string | null =>
+        // `?? null` and not a bare index: an absent key and a key whose value is
+        // `null` are the same answer here — Git refused — and the index
+        // signature would otherwise widen this to `undefined`.
+        table[args.join(' ')] ?? null;
+
+    it('reports agreement when the merge base and HEAD name one tree', () => {
+      const answer = emptyDiffAgreesWithTrees(
+        'origin/develop',
+        world({
+          'merge-base origin/develop HEAD': `${SHA('a')}\n`,
+          [`rev-parse ${SHA('a')}^{tree}`]: `${SHA('b')}\n`,
+          'rev-parse HEAD^{tree}': `${SHA('b')}\n`,
+        })
+      ) as { truthful: boolean; mergeBase: string; tree: string } | null;
+      expect(answer, 'the reader refused a world it could answer').not.toBeNull();
+      expect(answer?.truthful, 'identical trees were not read as agreement').toBe(true);
+      expect(answer?.mergeBase).toBe(SHA('a'));
+      expect(answer?.tree).toBe(SHA('b'));
+    });
+
+    it('reports DISagreement when they name different trees', () => {
+      const answer = emptyDiffAgreesWithTrees(
+        'origin/develop',
+        world({
+          'merge-base origin/develop HEAD': `${SHA('a')}\n`,
+          [`rev-parse ${SHA('a')}^{tree}`]: `${SHA('b')}\n`,
+          'rev-parse HEAD^{tree}': `${SHA('c')}\n`,
+        })
+      ) as { truthful: boolean } | null;
+      expect(answer?.truthful, 'differing trees were read as agreement').toBe(false);
+    });
+
+    it.each([
+      ['the merge base', 'merge-base origin/develop HEAD'],
+      ['the base tree', `rev-parse ${SHA('a')}^{tree}`],
+      ['the head tree', 'rev-parse HEAD^{tree}'],
+    ])('returns null when Git will not name %s', (_what, refused) => {
+      /*
+       * A question Git declined to answer has not been answered. `null` is what
+       * that means here, and the caller turns it into the refusal — never into
+       * "the trees agree", which is the fail-open this whole guard exists to
+       * prevent.
+       */
+      const table: Record<string, string | null> = {
+        'merge-base origin/develop HEAD': `${SHA('a')}\n`,
+        [`rev-parse ${SHA('a')}^{tree}`]: `${SHA('b')}\n`,
+        'rev-parse HEAD^{tree}': `${SHA('b')}\n`,
+      };
+      table[refused] = null;
+      expect(
+        emptyDiffAgreesWithTrees('origin/develop', world(table)),
+        'a refusal was read as an answer'
+      ).toBeNull();
+    });
+
+    it('returns null on an answer that is present but not a commit', () => {
+      // An empty string is an answer, and it is not a sha. Reading it as one
+      // would compare two blanks and call them equal.
+      expect(
+        emptyDiffAgreesWithTrees(
+          'origin/develop',
+          world({ 'merge-base origin/develop HEAD': '\n' })
+        ),
+        'a blank was accepted as a commit'
+      ).toBeNull();
+    });
   });
 
   it('rejects an unknown profile instead of defaulting to a permissive one', () => {
