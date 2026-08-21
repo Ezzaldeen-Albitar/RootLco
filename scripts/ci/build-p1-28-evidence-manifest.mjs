@@ -905,6 +905,235 @@ function treeOf(git, rev) {
 }
 
 /**
+ * The successor history of an ARCHIVED phase, judged as data.
+ *
+ * Archival stops FUTURE accumulation; it does not stop caring what is already
+ * written down. Every id in either list must still be a commit this repository
+ * can inspect and a descendant of the candidate, and no id may appear in both
+ * lists — so an edit to the historical record is still caught.
+ *
+ * What it deliberately no longer asks is WHERE each id sits relative to the
+ * base branch. That question had an answer while the phase was in flight and
+ * has none afterwards: the base moves on, and every historical successor falls
+ * out of `git log <head> --not <candidate> <base>` the moment the phase lands.
+ * Asking it of an archived phase reports its own accepted history as fabricated.
+ */
+function archivedHistoryProblems(git, sha, recorded, absorbed) {
+  const problems = [];
+  const seen = new Map();
+  for (const [list, ids] of [
+    ['successors', recorded],
+    ['absorbedSuccessors', absorbed],
+  ]) {
+    const within = new Set();
+    for (const id of ids) {
+      if (!/^[0-9a-f]{40}$/.test(id)) {
+        problems.push(`${list} records \`${id}\`, which is not a 40-character commit id`);
+        continue;
+      }
+      if (within.has(id)) {
+        problems.push(`${list} records ${id.slice(0, 8)} twice`);
+        continue;
+      }
+      within.add(id);
+      if (seen.has(id)) {
+        problems.push(`${id.slice(0, 8)} is recorded in both ${seen.get(id)} and ${list}`);
+        continue;
+      }
+      seen.set(id, list);
+      if (git(['cat-file', '-e', `${id}^{commit}`]) === null) {
+        problems.push(
+          `${list} records ${id.slice(0, 8)}, which names no commit in this repository`
+        );
+        continue;
+      }
+      const after = ancestry(git, sha, id);
+      if (after === null) {
+        problems.push(
+          `Git could not determine whether ${id.slice(0, 8)} follows the candidate ${sha.slice(0, 8)}`
+        );
+      } else if (!after) {
+        problems.push(
+          `${list} records ${id.slice(0, 8)}, which does not follow the candidate ${sha.slice(0, 8)}`
+        );
+      }
+    }
+  }
+  return problems;
+}
+/** The canonical closure record, and the exact verdict that closes a phase. */
+export const CLOSURE_RECORD_PATH = `${PHASE_DIR}/closure-record.md`;
+export const ACCEPTED_VERDICT = 'OWNER ACCEPTANCE: PASS';
+export const PROMOTED_BRANCH = 'main';
+
+/** The two states this seal can be in. An unknown state is neither. */
+export const SEAL_LIFECYCLE = Object.freeze({ ACTIVE: 'ACTIVE', ARCHIVED: 'ARCHIVED' });
+
+/**
+ * Whether this phase is still being built, or is finished and promoted.
+ *
+ * ## Why a lifecycle at all
+ *
+ * The product rules in this file exist to keep one promise: every figure in the
+ * package describes the frozen candidate. While the phase is being built that
+ * promise needs the live tree to stay identical to the candidate, because a fix
+ * that quietly changes a product file makes every measurement describe a tree
+ * nobody has. That is the ACTIVE rule and it is not relaxed here.
+ *
+ * Once the Owner has accepted and the accepted tree has reached `main`, the
+ * package stops being a claim about the working repository and becomes a record
+ * of what was accepted. Holding the live tree to it forever does not protect the
+ * record — it makes every later phase impossible, and the only way out would be
+ * to RE-FREEZE the candidate onto new work, which is the one thing that would
+ * actually destroy the record: the Owner accepted a tree, and re-freezing
+ * silently replaces it with a tree they never saw.
+ *
+ * So archival PRESERVES the acceptance. It is not a relaxation of it.
+ *
+ * ## Computed, never asserted
+ *
+ * A field saying `"archived": true` would let an unfinished phase escape the
+ * product rule by editing its own package. Every condition below is taken from
+ * Git or from the canonical closure record, and each is a separate answer so a
+ * refusal can say WHICH one failed:
+ *
+ *   A  the Owner's verdict is exactly `OWNER ACCEPTANCE: PASS`
+ *   B  the recorded candidate exists in this repository
+ *   C  the candidate still names the tree the package records for it
+ *   D  the candidate is contained in the protected promotion branch
+ *   E  the canonical closure record exists and reports the phase CLOSED
+ *
+ * D is the one that cannot be faked from inside the package: a verdict typed
+ * into a file proves nothing until the tree it describes has actually been
+ * promoted, and that is `git merge-base --is-ancestor`, not prose.
+ *
+ * ## Fail closed
+ *
+ * Anything unproven leaves the seal ACTIVE, which is the strict state. Git
+ * refusing to answer is recorded as an UNKNOWN and reported, never read as a
+ * satisfied condition — a promotion branch that cannot be resolved is the shape
+ * a shallow clone has, and it must not archive a phase by accident.
+ */
+export function sealLifecycle(candidateFile, git, readClosureRecord = defaultClosureRecord) {
+  const candidate = candidateFile?.candidate ?? {};
+  const sha = String(candidate.FINAL_CODE_SHA ?? '');
+  const tree = String(candidate.FINAL_CODE_TREE ?? '');
+  const wellFormed = /^[0-9a-f]{40}$/.test(sha);
+  const unknowns = [];
+  const refusals = [];
+
+  /* A — the Owner's own words, matched exactly. */
+  const verdict = String(candidateFile?.ownerAcceptance?.verdict ?? '');
+  const ownerAccepted = verdict === ACCEPTED_VERDICT;
+  if (!ownerAccepted) {
+    refusals.push(
+      verdict === ''
+        ? 'the package records no Owner acceptance verdict'
+        : `the Owner acceptance verdict is \`${verdict}\`, not \`${ACCEPTED_VERDICT}\``
+    );
+  }
+
+  /* B — the candidate is a commit this repository can inspect. */
+  const candidateExists = wellFormed && git(['cat-file', '-e', `${sha}^{commit}`]) !== null;
+  if (!wellFormed) {
+    refusals.push('the package records no well-formed candidate commit');
+  } else if (!candidateExists) {
+    refusals.push(`the recorded candidate ${sha.slice(0, 8)} names no commit in this repository`);
+  }
+
+  /* C — and it still names the tree the package says it does. */
+  const actualTree = candidateExists
+    ? (lines(git(['rev-parse', `${sha}^{tree}`]))[0] ?? null)
+    : null;
+  if (candidateExists && actualTree === null) {
+    unknowns.push(`Git refused to name the tree of the candidate ${sha.slice(0, 8)}`);
+  }
+  const treeMatches = actualTree !== null && actualTree === tree;
+  if (candidateExists && actualTree !== null && !treeMatches) {
+    refusals.push(
+      `the candidate ${sha.slice(0, 8)} names tree ${String(actualTree).slice(0, 8)}, and the package records ${tree.slice(0, 8)}`
+    );
+  }
+
+  /*
+   * D — and it has actually been promoted. Resolved through the same ref forms
+   * as the base branch, because a checkout may carry the remote ref, the local
+   * head, or the bare name.
+   */
+  const promoted = resolveBaseRef(git, PROMOTED_BRANCH);
+  let containedInPromoted = false;
+  if (promoted.sha === null) {
+    unknowns.push(
+      `the promotion branch \`${PROMOTED_BRANCH}\` could not be resolved in this checkout — tried ${promoted.attempted.join(', ')}. A shallow clone carries none of them; fetch it before asking whether a phase is finished.`
+    );
+  } else if (candidateExists) {
+    const contained = ancestry(git, sha, promoted.sha);
+    if (contained === null) {
+      unknowns.push(
+        `Git could not determine whether the candidate ${sha.slice(0, 8)} is contained in \`${PROMOTED_BRANCH}\``
+      );
+    } else {
+      containedInPromoted = contained;
+      if (!contained) {
+        refusals.push(
+          `the candidate ${sha.slice(0, 8)} is not contained in \`${PROMOTED_BRANCH}\` (${promoted.sha.slice(0, 8)}), so the accepted tree has not been promoted`
+        );
+      }
+    }
+  }
+
+  /* E — the canonical closure record, read rather than declared. */
+  const record = readClosureRecord();
+  let closureClosed = false;
+  if (record === null) {
+    refusals.push(`${CLOSURE_RECORD_PATH} does not exist, so no closure is on record`);
+  } else {
+    closureClosed = CLOSED_STATUS.test(record);
+    if (!closureClosed) {
+      refusals.push(
+        `${CLOSURE_RECORD_PATH} does not report the phase CLOSED on \`${ACCEPTED_VERDICT}\``
+      );
+    }
+  }
+
+  const conditions = {
+    ownerAccepted,
+    candidateExists,
+    treeMatches,
+    containedInPromoted,
+    closureClosed,
+  };
+  const archived =
+    unknowns.length === 0 && Object.values(conditions).every((satisfied) => satisfied === true);
+
+  return {
+    state: archived ? SEAL_LIFECYCLE.ARCHIVED : SEAL_LIFECYCLE.ACTIVE,
+    archived,
+    conditions,
+    refusals,
+    unknowns,
+    promotionBranch: PROMOTED_BRANCH,
+    promotionSha: promoted.sha,
+    recordedTree: tree,
+    actualTree,
+  };
+}
+
+/**
+ * The closure record's status line.
+ *
+ * Both halves are required — a record that says CLOSED without the verdict, or
+ * carries the verdict under some other status, has not closed the phase.
+ */
+const CLOSED_STATUS = /\*\*Status:\s*CLOSED\b[^*]*OWNER ACCEPTANCE:\s*PASS/i;
+
+/** Reads the canonical closure record, or `null` when there is none. */
+function defaultClosureRecord() {
+  const path = join(ROOT, CLOSURE_RECORD_PATH.split(posix.sep).join(sep));
+  return existsSync(path) ? readFileSync(path, 'utf8') : null;
+}
+
+/**
  * What the repository says about the candidate, its tree and its successors.
  *
  * An ANALYSIS, not a verdict, for the same reason `reachability` is one.
@@ -958,7 +1187,7 @@ function treeOf(git, rev) {
  * makes the successor set UNKNOWN, and unknown is not none: a shallow clone that
  * cannot see the base is reported and refused, never waved through.
  */
-export function repositoryBinding(candidateFile, git) {
+export function repositoryBinding(candidateFile, git, readClosureRecord = undefined) {
   const candidate = candidateFile.candidate ?? {};
   const sha = candidate.FINAL_CODE_SHA ?? '';
   const tree = candidate.FINAL_CODE_TREE ?? '';
@@ -1118,7 +1347,18 @@ export function repositoryBinding(candidateFile, git) {
     absorbedProblems.push('absorbedSuccessors contains a duplicate commit id');
   }
 
+  /*
+   * The lifecycle is COMPUTED here rather than read from the package, and the
+   * two current-tree rules below are the only thing it changes.
+   */
+  const lifecycle = sealLifecycle(candidateFile, git, readClosureRecord);
+  const archivedHistory = lifecycle.archived
+    ? archivedHistoryProblems(git, sha, recorded, absorbed)
+    : [];
+
   return {
+    lifecycle,
+    archivedHistory,
     sha,
     tree,
     wellFormed,
@@ -2539,6 +2779,62 @@ export function reportRepository(binding, write = toStderr) {
    * none", and the whole reason this rule exists is that a merge-ref checkout
    * made the BASE's commits look like this phase's.
    */
+  /*
+   * ARCHIVED. The phase is accepted, the accepted tree is on the promotion
+   * branch, and the closure record says so — all five conditions COMPUTED, none
+   * of them read off a field the package could have written about itself.
+   *
+   * From here the package is a RECORD, not a claim about the working tree. The
+   * rules that follow all ask the same question in different words — does the
+   * live checkout still match the candidate, and are its later commits named as
+   * successors of this phase — and that question has no meaning once the phase
+   * has landed. Held anyway it would make every later phase impossible, and the
+   * only escape would be to re-freeze the candidate onto new work, which is the
+   * one act that would genuinely destroy what the Owner accepted.
+   *
+   * Everything about the RECORD is still judged: the candidate exists and still
+   * names its recorded tree (conditions B and C above, or this branch is not
+   * taken at all), and the successor history is checked as data by
+   * `archivedHistoryProblems`. The digests, the matrix, the tier figures and the
+   * unclosed-task set are judged by their own reporters, untouched by this.
+   */
+  if (binding.lifecycle.state === SEAL_LIFECYCLE.ARCHIVED) {
+    write(
+      `::notice::P1-28 is ARCHIVED — accepted, and the accepted candidate ${binding.sha.slice(0, 8)} is contained in \`${binding.lifecycle.promotionBranch}\` (${String(binding.lifecycle.promotionSha).slice(0, 8)}). The historical package is judged; the current product tree is not held to it.\n`
+    );
+    if (binding.malformedSuccessors.length > 0) {
+      sound = false;
+      write('::error::a successor is recorded without a 40-character commit id.\n');
+      for (const id of binding.malformedSuccessors) write(`  not a commit id: \`${id}\`\n`);
+    }
+    if (binding.archivedHistory.length > 0) {
+      sound = false;
+      write(
+        '::error::the recorded successor history of this ARCHIVED phase is not intact. Archival stops FUTURE accumulation; it does not license editing what is already written down.\n'
+      );
+      for (const problem of binding.archivedHistory) write(`  ${problem}\n`);
+    }
+    return sound;
+  }
+
+  /*
+   * ACTIVE. Not archived, and the refusals say which condition is missing — so a
+   * phase that believes it is finished can read why the gate disagrees instead of
+   * guessing. An UNKNOWN is listed separately from a refusal: one is "this is not
+   * true", the other is "Git would not say", and only the second is a reason to
+   * go and fix the checkout.
+   */
+  /*
+   * Only a package that CLAIMS acceptance is told why it is not archived. An
+   * in-flight phase has no promotion branch to resolve and no interest in one,
+   * and a gate that narrates that on every run is a gate whose output stops
+   * being read.
+   */
+  if (binding.lifecycle.conditions.ownerAccepted) {
+    for (const unknown of binding.lifecycle.unknowns) {
+      write(`::notice::seal lifecycle UNKNOWN, so the strict ACTIVE rules apply: ${unknown}\n`);
+    }
+  }
   if (!binding.baseResolved) {
     sound = false;
     write(
