@@ -533,8 +533,14 @@ const CONTENT_FREE_MERGE_HOPS = 10;
  * `phaseHead` for an explicit revision.
  *
  * `hopsLeft` bounds how far a chain of content-free merges may be followed.
+ *
+ * `unwrapped` says this revision was reached by stepping through a content-free
+ * merge rather than by being checked out. It changes exactly one thing, and the
+ * reason is stated where it is used: the resolved base ref describes the
+ * CHECKOUT, and once the walk has stepped inside, it no longer describes what is
+ * being read.
  */
-function headAt(git, rev, candidateSha, baseSha, hopsLeft) {
+function headAt(git, rev, candidateSha, baseSha, hopsLeft, unwrapped = false) {
   const row = lines(git(['rev-list', '--parents', '-n', '1', rev]))[0] ?? '';
   const ids = row.split(/\s+/).filter(Boolean);
   const checkout = ids[0] ?? null;
@@ -572,10 +578,64 @@ function headAt(git, rev, candidateSha, baseSha, hopsLeft) {
     branchSide = carries[0];
     baseSide = parents.find((p) => p !== branchSide) ?? null;
   } else if (carries.length === parents.length) {
+    /*
+     * WHICH PARENT'S TREE THIS MERGE CARRIES, when exactly one does.
+     *
+     * `null` means no single parent's tree matches — either both do, and the
+     * parents separate nothing, or neither does, and the merge carries content
+     * of its own. Both leave the answer to the rules below. A Git refusal is
+     * UNKNOWN and is raised as one.
+     */
+    const parentTrees = parents.map((p) => treeOf(git, p));
+    const checkoutTree = treeOf(git, checkout);
+    if (checkoutTree === null || parentTrees.some((t) => t === null)) {
+      return {
+        ...plain,
+        topologyUnknown: `Git could not compare the tree of merge ${checkout.slice(0, 8)} with the trees of its parents`,
+      };
+    }
+    const carried = parents.filter((_, i) => parentTrees[i] === checkoutTree);
+    const treeCarrier = carried.length === 1 ? carried[0] : null;
+
     const exactBase = baseSha ? parents.filter((p) => p === baseSha) : [];
     if (exactBase.length === 1) {
-      baseSide = exactBase[0];
-      branchSide = parents.find((p) => p !== baseSide) ?? null;
+      /*
+       * The ref names one parent. WHICH ROLE it plays is a second question, and
+       * until a phase had been promoted twice the answer was always the same.
+       *
+       * Once the phase has landed on the protected branch, that branch carries
+       * the candidate too, so a SECOND promotion's merge ref has two parents
+       * that both carry it and the ref match answers BACKWARDS: on a promotion
+       * the resolved phase base IS the head being promoted, so matching it names
+       * the base branch the base side and the protected branch the branch side,
+       * inverting the roles. Measured on exactly that run — the head under test
+       * became the promotion merge on the protected branch, the phase's own
+       * recorded successor read as fabricated, and the protected branch's
+       * promotion commit read as an unnamed successor of this phase.
+       *
+       * The tree settles it, and it is the same fact the unwrap below turns on:
+       * a merge that carries one parent's tree BYTE FOR BYTE added nothing to
+       * that parent, so that parent is the branch side. Content, not which ref
+       * happens to point where — which is why it still works after the candidate
+       * has stopped separating the parents.
+       *
+       * DELIBERATELY ASKED ONLY HERE. It corrects a role the ref already
+       * assigned; it never resolves a world the ref could not. The two cases
+       * below fail CLOSED on ambiguity and must keep doing so: letting content
+       * answer there would turn "I cannot tell which parent is the branch" into
+       * a verdict, which is the fail-open this whole function exists to refuse.
+       *
+       * Two matching trees say the parents are content-identical and separate
+       * nothing; none says the merge carries content of its own. Both keep the
+       * ref's answer. Git declining to name a tree is UNKNOWN.
+       */
+      if (treeCarrier !== null) {
+        branchSide = treeCarrier;
+        baseSide = parents.find((p) => p !== branchSide) ?? null;
+      } else {
+        baseSide = exactBase[0];
+        branchSide = parents.find((p) => p !== baseSide) ?? null;
+      }
     } else if (baseSha) {
       const checkoutOnBase = firstParentLineContains(git, checkout, baseSha);
       if (checkoutOnBase === null) {
@@ -586,7 +646,51 @@ function headAt(git, rev, candidateSha, baseSha, hopsLeft) {
         };
       }
       if (checkoutOnBase) {
-        [baseSide, branchSide] = parents;
+        /*
+         * The forge convention: a merge made ON a protected branch puts that
+         * branch's previous tip FIRST. True of every merge a pull request lands
+         * — and not true of a SYNCHRONISATION, where the base branch merges the
+         * protected branch INTO itself and the protected branch arrives second.
+         * Order alone then names the protected branch as this branch's work, and
+         * the whole of the base branch since the candidate reads as unnamed
+         * successors of the phase. Measured on the sync that a second promotion
+         * needs.
+         *
+         * So the tree corrects the order where it can, on the same footing as
+         * above: it decides a role the convention already assigned, and it does
+         * not rescue the ambiguity below.
+         */
+        if (treeCarrier !== null) {
+          branchSide = treeCarrier;
+          baseSide = parents.find((p) => p !== branchSide) ?? null;
+        } else {
+          [baseSide, branchSide] = parents;
+        }
+      } else if (unwrapped && treeCarrier !== null) {
+        /*
+         * INSIDE AN UNWRAP the resolved base ref no longer describes what is
+         * being read, and its silence is not evidence of anything.
+         *
+         * The refusal below is for a CHECKOUT: a two-parent merge somebody
+         * actually checked out, whose parents both carry the candidate and whose
+         * base ref names neither. Nothing there says which parent is this
+         * branch, and guessing is the fail-open this function exists to prevent.
+         *
+         * A revision reached by stepping THROUGH a content-free merge is not
+         * that. The level above already established what this commit is — it is
+         * the parent its merge added nothing to — and the base ref it was given
+         * belongs to the checkout, one or more levels out. A synchronisation
+         * landed on the base branch is exactly this: read it as a checkout and
+         * the ref identifies neither of its parents, because the ref points at
+         * the merge that landed it.
+         *
+         * So here, and only here, the tree is allowed to answer where the ref
+         * could not. It is the same fact used twice above, and the guard for a
+         * real checkout is untouched: both of its cases are top-level, both
+         * still refuse, and neither reaches this line.
+         */
+        branchSide = treeCarrier;
+        baseSide = parents.find((p) => p !== branchSide) ?? null;
       } else {
         return {
           ...plain,
@@ -673,7 +777,7 @@ function headAt(git, rev, candidateSha, baseSha, hopsLeft) {
         topologyUnknown: `more than ${CONTENT_FREE_MERGE_HOPS} content-free merges stand between the checkout and the head, so the head under test cannot be established`,
       };
     }
-    const inner = headAt(git, branchSide, candidateSha, baseSha, hopsLeft - 1);
+    const inner = headAt(git, branchSide, candidateSha, baseSha, hopsLeft - 1, true);
     /*
      * WHICH base side survives the unwrap, which is the load-bearing choice.
      *
