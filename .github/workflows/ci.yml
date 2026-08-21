@@ -71,15 +71,24 @@ jobs:
       # EMPTY, and without it develop's own history reads back as unnamed
       # executable successors of a candidate it long precedes.
       #
-      # Fetched rather than inferred, and `|| true` so a fork or mirror that
-      # genuinely lacks the branch gets the seal's own honest "the base could not
-      # be resolved" instead of a git error from this step.
+      # A fork or mirror may genuinely lack one of these branches, and that must
+      # not fail here — the seal's own "the base could not be resolved" is the
+      # honest report, not a git error from a fetch step. The first version wrote
+      # `|| true`, which `WFS-008` rejects and is right to: discarding an exit
+      # status hides every OTHER reason a fetch can fail — auth, network, a
+      # corrupt ref — behind the one case that is expected. The outcome is
+      # branched on explicitly instead, so an absent branch is reported and a
+      # broken fetch is still visible.
       - name: Make the phase base branches resolvable
         run: |
           set -euo pipefail
           for branch in develop main; do
-            git fetch --no-tags --quiet origin \
-              "+refs/heads/${branch}:refs/remotes/origin/${branch}" || true
+            if git fetch --no-tags --quiet origin \
+                 "+refs/heads/${branch}:refs/remotes/origin/${branch}"; then
+              echo "fetched ${branch}"
+            else
+              echo "::warning::could not fetch ${branch}; anything that needs it as a base will report its base as unknown"
+            fi
           done
           if git rev-parse --verify --quiet refs/remotes/origin/develop >/dev/null; then
             echo "origin/develop resolves"
