@@ -68,7 +68,7 @@
       "bytes": 9208
     },
     "docs/phase-1/phase-1-27/evidence/local-run-ledger.json": {
-      "sha256": "328aa3ed25b3ca94d7222703244086dc0ba6f0153c68e2e8bf6fe493ddbd387f",
+      "sha256": "00f77fcea96557ce7b7a375b786e656ba255166c125485b6d10cf7019c469917",
       "bytes": 1202
     },
     "docs/phase-1/phase-1-27/evidence/task-traceability.md": {
@@ -156,11 +156,11 @@
       "bytes": 187800
     },
     "docs/phase-1/phase-1-27/task-matrix-verdicts.json": {
-      "sha256": "dfe54cdde9e5dd3495d16f061cfdd8289957c2138c12f9f0113576e74e7e499b",
+      "sha256": "3208b70e3d82d43254d541dafd516b9105cf2b88de196d7ab8f5905b8ce4e929",
       "bytes": 264217
     },
     "docs/phase-1/phase-1-27/task-matrix.json": {
-      "sha256": "a8bcca7b38d502f78870a06a7f7a725450cd60e31cce5cc156c6778283883413",
+      "sha256": "444ccda6d965a817b2cbad510a074fad637a9fca9691a8a7bf827b9c5f6c6b4b",
       "bytes": 283618
     },
     "docs/phase-1/phase-1-27/task-register.md": {
