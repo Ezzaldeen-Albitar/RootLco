@@ -210,7 +210,7 @@ Its security premise stands unchanged:
 
 One integration consequence follows from this register and is recorded rather than designed away:
 the containment rule has to be enforced for the specific administration operations PRE-P1-29 uses,
-**not** by flipping scoped evaluation for all 180 declarations across 132 route files. The
+**not** by flipping scoped evaluation for all 170 tenant-scope operations across 136 files. The
 short-circuit that makes this a live question is `requiresScopedEvaluation`, which returns false for
 a tenant-scope operation whatever target is named
 ([`authorization.ts:62-65`](../../../apps/api/src/server/auth/authorization.ts)); the reader that
@@ -455,9 +455,10 @@ as well as the substance.
 
 Recorded rather than smoothed over.
 
-**Whether the tenant-scope short-circuit is a defect.** Unchanged from the scope document. 180
-declarations across 132 route files ask the scope-blind question. Wave E adjudicates it per
-operation. Wave B asserts nothing about the other 180.
+**Whether the tenant-scope short-circuit is a defect.** Unchanged from the scope document, except
+for the figure: **170 operations across 136 route files** ask the scope-blind question, measured by
+parsing each declaration rather than by scanning for the literal text (design §14). Wave E
+adjudicates it per operation. Wave B asserts nothing about the other 170.
 
 **Whether the platform role should be able to read tenant business data at all.** The design says no
 and grants nothing that would allow it, but the design has not been attacked yet. That is the
