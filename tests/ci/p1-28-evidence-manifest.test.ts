@@ -831,6 +831,7 @@ describe('P1-28-QA-005 — the seal is bound to the REPOSITORY, not to its own p
     unrecordedDocumentation: string[];
     lifecycle: { state: string; conditions: Record<string, boolean>; refusals: string[] };
     archivedHistory: string[];
+    phaseHead: string | null;
   };
 
   it('names a commit this repository actually contains, and the tree that commit has', () => {
@@ -858,9 +859,17 @@ describe('P1-28-QA-005 — the seal is bound to the REPOSITORY, not to its own p
      * that went on demanding an empty diff would have made this the last phase
      * the repository could ever ship.
      */
+    /*
+     * Against the HEAD UNDER TEST, not against `HEAD`. The two coincide on an
+     * ordinary branch and diverge the moment one merges its base in — the merge
+     * is unwrapped, so the binding measures the branch side while `HEAD` names
+     * the merge and carries the base's product changes too. Comparing with
+     * `HEAD` made this case fail on every branch that synchronises with
+     * protected develop, which is every branch.
+     */
     const direct = execFileSync(
       'git',
-      ['diff', '--name-only', `${binding.sha}..HEAD`, '--', 'apps', 'supabase'],
+      ['diff', '--name-only', `${binding.sha}..${binding.phaseHead}`, '--', 'apps', 'supabase'],
       { cwd: ROOT, encoding: 'utf8' }
     ).trim();
     const measured = direct === '' ? [] : direct.split(/\r?\n/);

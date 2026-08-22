@@ -371,7 +371,7 @@ both halves of work each of which was reviewed in its own lane.
 | Tenant administration screens                  | 11, plus the administration index page | `apps/web/src/app/[locale]/(dashboard)/administration/` — 12 `page.tsx` files                                   |
 | Superadmin or platform-administrator principal | none, anywhere                         | 0 hits for `super[ _-]?admin` in `apps/api/src`, `apps/web/src`, `supabase/migrations`, `supabase/seeds`        |
 
-`develop` and the branch this was measured on (`chore/pre-p1-29-seal-archival-lifecycle`) carry an
+`develop` and the branch this was measured on (the seal-archival branch (since merged to protected `develop` as `b969894c`)) carry an
 identical `apps/api/src`, `apps/web/src` and `supabase/` tree — `git diff develop HEAD` over those
 three paths is empty — so every figure above holds for both.
 
@@ -387,7 +387,7 @@ this document stated that the dead tenant-hint helpers had been removed from
 `apps/web/src/lib/api/session-cookie.ts`, completing a carried P1-26 follow-up. Both halves of the
 disagreement are now measured, and neither party was simply wrong.
 
-On the branch this document was written from (`chore/pre-p1-29-seal-archival-lifecycle`) and on
+On the branch this document was written from (the seal-archival branch (since merged to protected `develop` as `b969894c`)) and on
 `develop`, the helpers are present: the cookie name at `:43`, the reader at `:87`, the writer at
 `:123`. They are equally present on `chore/pre-p1-29-admin-rbac-ownership` and on
 `feature/pre-p1-29-multi-tenant-administration-rbac-workflow`. They are also dead on all four: no

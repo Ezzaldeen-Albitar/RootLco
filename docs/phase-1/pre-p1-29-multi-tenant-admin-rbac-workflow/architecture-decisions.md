@@ -18,7 +18,7 @@ Two boundaries apply throughout, and neither is negotiable inside this initiativ
   platform Superadmin bootstrap authority. The decisions below implement exactly those two
   authorisations and their consequences — no more.
 
-Measurements in this document were taken on branch `chore/pre-p1-29-seal-archival-lifecycle` at head
+Measurements in this document were taken on branch the seal-archival branch (since merged to protected `develop` as `b969894c`) at head
 `4e5e20d0`, which carries 124 migrations under `supabase/migrations/`. Where a fact lives on a
 different branch, the document says which branch and which commit.
 
@@ -142,7 +142,7 @@ The dead tenant-hint helpers that would have made a client-side tenant hint easy
 `readTenantHint`, `writeTenantHint` and the tenant-hint cookie constant were deleted from
 `apps/web/src/lib/api/session-cookie.ts` on branch `feature/pre-p1-29-web-coverage-and-tenant-hint`
 at commit `d502e07f`, completing a follow-up carried since P1-26. They are still present on
-`chore/pre-p1-29-seal-archival-lifecycle` (at `:43`, `:87`, `:123`); the removal has not yet reached
+the seal-archival branch (since merged to protected `develop` as `b969894c`) (at `:43`, `:87`, `:123`); the removal has not yet reached
 this branch. That removal is deliberate and must not be reverted to serve membership selection.
 
 ### Alternative rejected

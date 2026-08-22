@@ -27,7 +27,7 @@ document says "P1-29 dependency", it means: write it down, cite it, stop.
 ## 2. Where the platform actually stands
 
 These are measurements, not estimates. Every one was taken from the working tree on branch
-`chore/pre-p1-29-seal-archival-lifecycle`.
+the seal-archival branch (since merged to protected `develop` as `b969894c`).
 
 | Fact                                                           | Measured value                                                                                               | Evidence                                                                                                                                                                              |
 | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -480,7 +480,7 @@ not a design decision PRE-P1-29 would be overriding.
 ---
 
 _Every claim in this document about the codebase was measured against the working tree on branch
-`chore/pre-p1-29-seal-archival-lifecycle`, 124 migrations (the same count on `develop`), 2026-08-22,
+the seal-archival branch (since merged to protected `develop` as `b969894c`), 124 migrations (the same count on `develop`), 2026-08-22,
 and then re-verified claim by claim against that same tree. Where a claim is a negative — "no
 operation exists", "no column exists" — it was established by an exhaustive search of the named
 directory, not by sampling._

@@ -381,7 +381,7 @@ register was drafted and has since been overtaken; it is restated here as measur
 deleted, because the branch that fixes it is not merged.
 
 1. **The tenant-hint cookie helpers: removed on one unmerged branch, still present on `develop`.**
-   On `develop`, on `chore/pre-p1-29-seal-archival-lifecycle` and on both PRE-P1-29 branches
+   On `develop`, on the seal-archival branch (since merged to protected `develop` as `b969894c`) and on both PRE-P1-29 branches
    (`chore/pre-p1-29-admin-rbac-ownership`,
    `feature/pre-p1-29-multi-tenant-administration-rbac-workflow`) all three exports are present in
    `apps/web/src/lib/api/session-cookie.ts` at identical lines: `:43` (`TENANT_HINT_COOKIE`), `:87`
