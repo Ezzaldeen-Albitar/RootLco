@@ -1,6 +1,18 @@
 -- ============================================================================
 -- Migration: platform authority foundation (PRE-P1-29 Wave B, slice B1)
 --
+-- Rollback classification: ROLLBACK-SAFE. This file creates a role, a table, a
+--   function, two triggers and one policy, and writes no data. The down script is
+--   the exact inverse and destroys nothing:
+--     DROP POLICY sel_platform_grants_self ON iam.platform_grants;
+--     DROP FUNCTION iam.has_platform_authority(text);
+--     DROP TABLE iam.platform_grants;
+--     REVOKE USAGE ON SCHEMA org, iam, shared FROM app_platform;
+--     DROP ROLE app_platform;
+--   It becomes roll-forward-only the moment a platform grant is issued, because
+--   dropping the table would then discard the record of who held control-plane
+--   authority — which is exactly the history this relation exists to keep.
+--
 -- Specification: docs/phase-1/pre-p1-29-multi-tenant-admin-rbac-workflow/
 --                wave-b-control-plane-design-v2.md, revision 4, sections 5 and 6.1.
 --                Merged to protected develop as c081a019 (reviewed head 0bb6d882).
@@ -147,6 +159,16 @@ COMMENT ON COLUMN iam.platform_grants.status IS
 CREATE INDEX ix_platform_grants_account_active
   ON iam.platform_grants (user_account_id, permission_code)
   WHERE status = 'active';
+
+-- Every foreign key needs a supporting leading-column index (P1-03-DB-017), and
+-- a PARTIAL index does not supply one. uq_platform_grants_active already leads
+-- with user_account_id and covers fk_platform_grants_account; the catalogue
+-- reference had nothing, so a RESTRICT check on an iam.permissions delete would
+-- have sequential-scanned this table. Found by tests/db/org-security.test.ts
+-- rather than by review, which is the same way the P1-18 remediation found six
+-- of them.
+CREATE INDEX ix_platform_grants_permission_code
+  ON iam.platform_grants (permission_code);
 
 CREATE TRIGGER tg_platform_grants_touch_metadata
   BEFORE UPDATE ON iam.platform_grants

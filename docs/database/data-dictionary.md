@@ -650,6 +650,33 @@ credential authority. Contact fields are classified `restricted`.
 | `occurred_at`    | timestamp with time zone | NO   | now()             | internal       |
 | `correlation_id` | uuid                     | YES  | —                 | internal       |
 
+### `iam.platform_grants`
+
+**Scope:** platform · **Retention class:** operational · Assignment of platform (control-plane)
+authority to a canonical identity (PRE-P1-29 Wave B, slice B1). Deliberately carries NO `tenant_id`:
+platform authority exists outside every tenant and is not a tenants to hold, which is why the table
+appears in the documented tenant-column exception list. No application role holds INSERT, UPDATE or
+DELETE — an operator is established out of band on a privileged connection, so tenant-side
+escalation to platform authority is structurally impossible rather than merely forbidden. A grant is
+revoked, never edited.
+
+| Column            | Type                     | Null | Default           | Classification |
+| ----------------- | ------------------------ | ---- | ----------------- | -------------- |
+| `id`              | uuid                     | NO   | gen_random_uuid() | internal       |
+| `user_account_id` | uuid                     | NO   | —                 | internal       |
+| `permission_code` | text                     | NO   | —                 | internal       |
+| `status`          | text                     | NO   | active::text      | internal       |
+| `granted_at`      | timestamp with time zone | NO   | now()             | internal       |
+| `granted_by`      | uuid                     | NO   | —                 | internal       |
+| `revoked_at`      | timestamp with time zone | YES  | —                 | internal       |
+| `revoked_by`      | uuid                     | YES  | —                 | internal       |
+| `revoke_reason`   | text                     | YES  | —                 | internal       |
+| `record_version`  | integer                  | NO   | 1                 | internal       |
+| `created_at`      | timestamp with time zone | NO   | now()             | internal       |
+| `created_by`      | uuid                     | NO   | —                 | internal       |
+| `updated_at`      | timestamp with time zone | YES  | —                 | internal       |
+| `updated_by`      | uuid                     | YES  | —                 | internal       |
+
 ### `iam.permissions`
 
 **Scope:** platform · **Retention class:** operational · Platform-owned permission catalog; read-only to app roles; code immutable.

@@ -269,7 +269,7 @@ beforeEach(async () => {
 // ---------------------------------------------------------------------------
 
 describe('P1-15 / global security posture', () => {
-  it('the repository declares exactly 121 migrations, with 120 and 121 last', () => {
+  it('the repository declares exactly 127 migrations, with the three B1 files last', () => {
     // Counted from the repository, not from `supabase_migrations.schema_migrations`:
     // that bookkeeping table is created by the Supabase CLI and does not exist in
     // CI, where the database is built by `npm run db:apply-migrations` against a
@@ -327,11 +327,20 @@ describe('P1-15 / global security posture', () => {
     // The tail is asserted FOUR deep, one per branch that contributed. A shorter
     // tail would go on passing with any one of them missing — the shape that
     // lets a migration vanish in a merge and take its grants with it.
-    expect(files).toHaveLength(124);
-    expect(files.at(-4)).toBe('20260815090000_shared_reception_evidence_foundation.sql');
-    expect(files.at(-3)).toBe('20260815093000_rec_receiving_employee_identity.sql');
-    expect(files.at(-2)).toBe('20260815100000_rec_reception_evidence_contracts.sql');
-    expect(files.at(-1)).toBe('20260819090000_rec_damage_map_revision_required.sql');
+    expect(files).toHaveLength(127);
+    // Asserted SEVEN deep now, not four. PRE-P1-29 slice B1 appended three files
+    // from one branch, and simply sliding the four-deep window would have
+    // retired the guard for the four branches it was built to protect. The tail
+    // grows with each contributing branch rather than rotating.
+    expect(files.at(-7)).toBe('20260815090000_shared_reception_evidence_foundation.sql');
+    expect(files.at(-6)).toBe('20260815093000_rec_receiving_employee_identity.sql');
+    expect(files.at(-5)).toBe('20260815100000_rec_reception_evidence_contracts.sql');
+    expect(files.at(-4)).toBe('20260819090000_rec_damage_map_revision_required.sql');
+    // --- PRE-P1-29 Wave B slice B1, in the order the design fixes: foundation,
+    // then the lifecycle backstop, then the grants the backstop bounds. ---
+    expect(files.at(-3)).toBe('20260822090000_iam_platform_authority_foundation.sql');
+    expect(files.at(-2)).toBe('20260822091000_org_tenant_status_transition_backstop.sql');
+    expect(files.at(-1)).toBe('20260822092000_iam_platform_privilege_graph.sql');
   });
 
   it('migration 121 changes the shared surface DELIBERATELY, and the change is bounded', () => {
@@ -618,12 +627,20 @@ describe('P1-15 / global security posture', () => {
       // Append-only: the role holds INSERT and SELECT on file_scan_results and
       // nothing else, so a verdict can be recorded but never edited or withdrawn.
       'ins_file_scan_results_scanner',
+      // --- added by PRE-P1-29 Wave B slice B1 (migration 127) ---
+      // The platform half of replay protection. Narrow on BOTH axes — the tenant
+      // column absent AND the operation fixed — because the tenant-scoped policy
+      // beside it can never be true for a platform-scope row.
+      'ins_idempotency_keys_platform',
       'ins_idempotency_keys_tenant',
       // --- added by migration 117 ---
       'ins_message_templates_tenant',
       // --- added by migration 119 (DBCR-P1-16-001) ---
       'ins_notes_crm_customer',
       // --- added by migration 117 ---
+      // --- added by PRE-P1-29 Wave B slice B1 (migration 127) ---
+      // Written by org.provision_organization inside a tenant bootstrap window.
+      'ins_number_sequences_platform',
       'ins_outbound_messages_enqueue',
       'ins_template_versions_tenant',
       'lck_template_versions_reference',

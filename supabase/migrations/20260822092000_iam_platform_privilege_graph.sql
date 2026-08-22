@@ -1,6 +1,12 @@
 -- ============================================================================
 -- Migration: platform privilege graph (PRE-P1-29 Wave B, slice B1)
 --
+-- Rollback classification: ROLLBACK-SAFE. Grants and policies only — no table,
+--   no function, no trigger, no data. The down script REVOKEs every grant and
+--   DROPs every policy named below, and the result is a role that can do
+--   nothing, which is the state before this file ran. Reversing it disables the
+--   control plane; it cannot corrupt or lose anything.
+--
 -- Specification: wave-b-control-plane-design-v2.md revision 4, sections 6 and 7
 --                (migration M2). Merged as c081a019, reviewed head 0bb6d882.
 --

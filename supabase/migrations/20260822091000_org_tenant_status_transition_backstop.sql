@@ -1,6 +1,14 @@
 -- ============================================================================
 -- Migration: tenant status transition backstop (PRE-P1-29 Wave B, slice B1)
 --
+-- Rollback classification: ROLLBACK-SAFE. One function and one trigger, no data.
+--     DROP TRIGGER tg_tenants_status_transition ON org.tenants;
+--     DROP FUNCTION org.guard_tenant_status_transition();
+--   Reversing it does not corrupt anything, but it DOES remove the only
+--   table-level enforcement of the tenant lifecycle graph — so it must never be
+--   rolled back while the next migration's UPDATE (status) grant is still in
+--   place. That ordering is the whole reason this file precedes it.
+--
 -- Specification: wave-b-control-plane-design-v2.md revision 4, sections 6.4 and
 --                15 (migration M4). Merged as c081a019.
 --
