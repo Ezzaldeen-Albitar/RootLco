@@ -831,6 +831,7 @@ describe('P1-28-QA-005 — the seal is bound to the REPOSITORY, not to its own p
     unrecordedDocumentation: string[];
     lifecycle: { state: string; conditions: Record<string, boolean>; refusals: string[] };
     archivedHistory: string[];
+    phaseHead: string | null;
   };
 
   it('names a commit this repository actually contains, and the tree that commit has', () => {
