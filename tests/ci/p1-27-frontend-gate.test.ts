@@ -95,19 +95,25 @@ const OP = {
  *     this phase never calls. It also names `tenantId` in operation parameter
  *     lists. Scanning it would accuse the catalogue of being the list it is.
  *   - `read-operation.ts` names `tenantId` because it is the guard that REFUSES
- *     one; `session-cookie.ts` because a server-side session legitimately holds
- *     the resolved scope.
+ *     one.
+ *
+ *     `session-cookie.ts` was the third entry, and it has LEFT this list rather
+ *     than been removed from it. It matched on the signature
+ *     `writeTenantHint(tenantId: string, …)` — a helper with no caller anywhere,
+ *     carried since P1-26 removed the Workspace field from sign-in and recorded
+ *     its deletion as a follow-up. PRE-P1-29 deleted it, so the file now names no
+ *     scope at all and matches no rule. The exclusion is SHORTER than it was.
  *   - `client-log.ts` IS the structured logger the console rule tells people to
  *     use instead of `console.*`.
  *
- * A fourth file, or a new rule matching one of these three, fails the case that
- * pins this list — which is what makes "excluded" a measurement rather than a
- * word.
+ * A new file, or a new rule matching one of those that remain, fails the case
+ * that pins this list — which is what makes "excluded" a measurement rather than
+ * a word. It fails on a file LEAVING the list too, which is how the removal above
+ * was noticed rather than assumed.
  */
 const EXCLUDED_MODULE_MATCHES = [
   'no-client-asserted-scope: apps/web/src/lib/api/idempotent-operations.ts',
   'no-client-asserted-scope: apps/web/src/lib/api/read-operation.ts',
-  'no-client-asserted-scope: apps/web/src/lib/api/session-cookie.ts',
   'no-console-output: apps/web/src/lib/observability/client-log.ts',
   'no-duplicate-scan-on-a-queue: apps/web/src/lib/api/idempotent-operations.ts',
   'no-export-surface: apps/web/src/lib/api/idempotent-operations.ts',
