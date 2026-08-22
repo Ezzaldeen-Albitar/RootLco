@@ -47,6 +47,7 @@ import {
   gitReader,
   fakeGit,
   repositoryBinding,
+  reportRepository,
   tierBinding,
   packageArithmetic,
   tabletProjectSpecs,
@@ -828,6 +829,8 @@ describe('P1-28-QA-005 — the seal is bound to the REPOSITORY, not to its own p
     fabricatedSuccessors: string[];
     unrecordedExecutable: string[];
     unrecordedDocumentation: string[];
+    lifecycle: { state: string; conditions: Record<string, boolean>; refusals: string[] };
+    archivedHistory: string[];
   };
 
   it('names a commit this repository actually contains, and the tree that commit has', () => {
@@ -843,16 +846,66 @@ describe('P1-28-QA-005 — the seal is bound to the REPOSITORY, not to its own p
   });
 
   it('computes the product-identity claim instead of asserting it', () => {
+    /*
+     * Computed either way — what changes with the lifecycle is what the answer
+     * MEANS.
+     *
+     * While the phase is ACTIVE the tree must be identical to the candidate, or
+     * every figure in the package describes a tree nobody has. Once the phase is
+     * ARCHIVED the package is a record of what was accepted, and later work is
+     * expected to move the tree — so the assertion is that the binding still
+     * COMPUTES the drift honestly and that the gate no longer refuses it. A case
+     * that went on demanding an empty diff would have made this the last phase
+     * the repository could ever ship.
+     */
     const direct = execFileSync(
       'git',
       ['diff', '--name-only', `${binding.sha}..HEAD`, '--', 'apps', 'supabase'],
       { cwd: ROOT, encoding: 'utf8' }
     ).trim();
-    expect(direct, 'a product file changed after the freeze').toBe('');
-    expect(binding.productDiff).toEqual([]);
+    const measured = direct === '' ? [] : direct.split(/\r?\n/);
+    expect(binding.productDiff, 'the binding does not report what Git reports').toEqual(measured);
+
+    if (binding.lifecycle.state === 'ACTIVE') {
+      expect(direct, 'a product file changed after the freeze').toBe('');
+      return;
+    }
+    const said: string[] = [];
+    reportRepository(binding as never, (line: string) => said.push(line));
+    expect(
+      said.some((line) => line.includes('product file(s) differ')),
+      'the archived phase still held the live tree to its accepted candidate'
+    ).toBe(false);
   });
 
-  it('names every executable successor, and only documentation-only ones go unnamed', () => {
+  it('names every executable successor while the phase is ACTIVE, and stops once it is not', () => {
+    /*
+     * The successor rule is an ACTIVE rule, and this case now says so.
+     *
+     * It asks where a commit sits in `git log <head> --not <candidate> <base>`,
+     * which has an answer while the phase is being built and none afterwards:
+     * the base moves on, every historical successor leaves the range the moment
+     * the phase lands, and asking it of a finished phase reports that phase’s own
+     * accepted history as fabricated. So once P1-28 is ARCHIVED the assertion
+     * that belongs here is that the JUDGEMENT is sound — which is what the gate
+     * actually does — and the history is judged as data instead.
+     */
+    const said: string[] = [];
+    const sound = reportRepository(binding as never, (line: string) => said.push(line));
+
+    if (binding.lifecycle.state === 'ARCHIVED') {
+      expect(sound, `the archived package is not sound: ${said.join('')}`).toBe(true);
+      expect(
+        binding.archivedHistory,
+        'the recorded successor history of the archived phase is not intact'
+      ).toEqual([]);
+      expect(
+        said.some((line) => line.includes('product file(s) differ')),
+        'an archived phase still held the live tree to its candidate'
+      ).toBe(false);
+      return;
+    }
+
     expect(binding.fabricatedSuccessors, 'a recorded successor is in no commit range').toEqual([]);
     expect(binding.unrecordedExecutable, 'an executable successor is not named').toEqual([]);
     expectNonEmptySuccessorRange(
@@ -953,15 +1006,33 @@ describe('P1-28-QA-005 — the seal is bound to the REPOSITORY, not to its own p
       unnamed.unrecordedExecutable.length,
       'no executable successor exists to hide'
     ).toBeGreaterThan(0);
+    // Pinned, or the mutation goes vacuous the day this world archives: an
+    // ARCHIVED phase does not judge the successor range at all.
+    expect(
+      (unnamed as unknown as { lifecycle: { state: string } }).lifecycle.state,
+      'the mutated world archived itself, so it no longer tests the successor rule'
+    ).toBe('ACTIVE');
     expect(judge(soundInputsOver(ROOT, { repository: unnamed }), () => {}).repositoryOk).toBe(
       false
     );
 
-    // And the committed package, which names none because none exists, is sound.
+    // And the committed package is sound — while the phase is ACTIVE because it
+    // names every executable successor, and once ARCHIVED because the question
+    // is no longer asked of a phase that has landed.
     const now = repositoryBinding(candidateFile, git) as unknown as {
       unrecordedExecutable: string[];
+      lifecycle: { state: string };
     };
-    expect(now.unrecordedExecutable, 'the current candidate has an unnamed successor').toEqual([]);
+    if (now.lifecycle.state === 'ACTIVE') {
+      expect(now.unrecordedExecutable, 'the current candidate has an unnamed successor').toEqual(
+        []
+      );
+    } else {
+      expect(
+        reportRepository(now as never, () => {}),
+        'the archived package is not sound'
+      ).toBe(true);
+    }
   });
 
   it('fails on a tier figure the run ledger contradicts', () => {
@@ -987,6 +1058,558 @@ describe('P1-28-QA-005 — the seal is bound to the REPOSITORY, not to its own p
     doctored.hostedCi.checksTotal = 99;
     expect((packageArithmetic(doctored as never) as string[]).join(' ')).toContain('99');
   });
+});
+
+describe('P1-28-QA-005 — the seal lifecycle: ACTIVE while it is built, ARCHIVED once it lands', () => {
+  /*
+   * The seal held every future product tree to the Owner-accepted candidate,
+   * forever. That made all later product work impossible unless the candidate
+   * were re-frozen onto it — and re-freezing after acceptance is the one act
+   * that would genuinely destroy the record: the Owner accepted a tree, and
+   * re-freezing replaces it with a tree they never saw.
+   *
+   * So these cases are about a PRESERVATION, not a relaxation. They build real
+   * repositories with real commits, trees and ancestry, because every archival
+   * condition is a Git question and a case that inspected a string would prove
+   * nothing about any of them.
+   */
+  const CLOSED_RECORD =
+    '# Phase 1-28 — Closure Record\n\n**Status: CLOSED — `OWNER ACCEPTANCE: PASS`, 2026-08-20**\n';
+  const ACCEPTED = { ownerAcceptance: { verdict: 'OWNER ACCEPTANCE: PASS' } };
+
+  /** A document and a world that satisfy every archival condition. */
+  const archivedWorld = (repo: Scratch, over: Record<string, unknown> = {}) => {
+    repo.run('update-ref', 'refs/remotes/origin/main', repo.candidate);
+    return repo.document({ ...ACCEPTED, ...over });
+  };
+
+  /** Commit a file on top of the current checkout, and return the commit. */
+  const commitFile = (repo: Scratch, relative: string, body: string, message: string): string => {
+    const target = join(repo.root, relative);
+    mkdirSync(dirname(target), { recursive: true });
+    writeFileSync(target, body, 'utf8');
+    repo.run('add', '-A');
+    repo.run('commit', '--quiet', '-m', message);
+    return repo.run('rev-parse', 'HEAD');
+  };
+
+  const bind = (repo: Scratch, doc: unknown, record: string | null = CLOSED_RECORD) =>
+    repositoryBinding(doc as never, repo.git, () => record) as unknown as Binding & {
+      lifecycle: {
+        state: string;
+        archived: boolean;
+        conditions: Record<string, boolean>;
+        refusals: string[];
+        unknowns: string[];
+      };
+      archivedHistory: string[];
+    };
+
+  const speak = (binding: unknown): { sound: boolean; said: string[] } => {
+    const said: string[] = [];
+    const sound = reportRepository(binding as never, (line: string) => said.push(line));
+    return { sound, said };
+  };
+  const refusedProductDrift = (said: string[]): boolean =>
+    said.some((line) => line.includes('product file(s) differ'));
+
+  /* ------------------------------------------------------------ ACTIVE ---- */
+
+  it('ACTIVE — a product change invalidates the candidate, exactly as before', () =>
+    withScratchRepository((repo) => {
+      repo.checkout(repo.productChanged);
+      const binding = bind(repo, repo.document(), null);
+      expect(binding.lifecycle.state, 'an unaccepted phase archived itself').toBe('ACTIVE');
+
+      const { sound, said } = speak(binding);
+      expect(sound, 'a product change was accepted while the phase is ACTIVE').toBe(false);
+      expect(refusedProductDrift(said), 'the product rule stopped biting on an ACTIVE phase').toBe(
+        true
+      );
+    }));
+
+  it('ACTIVE — an unnamed executable successor still fails', () =>
+    withScratchRepository((repo) => {
+      repo.checkout(repo.branchHead);
+      // The document names no successor at all, and one of them is executable.
+      const binding = bind(repo, { ...repo.document(), successors: [] }, null);
+      expect(binding.lifecycle.state).toBe('ACTIVE');
+
+      const { sound, said } = speak(binding);
+      expect(sound).toBe(false);
+      expect(
+        said.some((line) => line.includes('is not named in')),
+        'the successor rule stopped biting on an ACTIVE phase'
+      ).toBe(true);
+    }));
+
+  /* ---------------------------------------------------------- ARCHIVED ---- */
+
+  it('ARCHIVED — every condition computed from Git and the closure record', () =>
+    withScratchRepository((repo) => {
+      repo.checkout(repo.branchHead);
+      const binding = bind(repo, archivedWorld(repo));
+
+      expect(binding.lifecycle.refusals, 'archival was refused').toEqual([]);
+      expect(binding.lifecycle.unknowns, 'a condition could not be measured').toEqual([]);
+      expect(binding.lifecycle.conditions).toEqual({
+        ownerAccepted: true,
+        candidateExists: true,
+        treeMatches: true,
+        containedInPromoted: true,
+        closureClosed: true,
+      });
+      expect(binding.lifecycle.state).toBe('ARCHIVED');
+    }));
+
+  it('ARCHIVED — a later apps/web change no longer invalidates the accepted candidate', () =>
+    withScratchRepository((repo) => {
+      repo.checkout(repo.branchHead);
+      const doc = archivedWorld(repo);
+      const after = commitFile(
+        repo,
+        'apps/web/src/features/admin/employees.tsx',
+        'export const Employees = () => null;\n',
+        'feat: an administration screen, long after P1-28 closed'
+      );
+      expect(
+        repo.run('diff', '--name-only', `${repo.candidate}..${after}`, '--', 'apps', 'supabase'),
+        'the world does not actually contain a product change, so this proves nothing'
+      ).not.toBe('');
+
+      const binding = bind(repo, doc);
+      expect(binding.lifecycle.state).toBe('ARCHIVED');
+      const { sound, said } = speak(binding);
+      expect(
+        refusedProductDrift(said),
+        'an archived phase still refused a later product change'
+      ).toBe(false);
+      expect(sound, 'an archived phase refused a later product change').toBe(true);
+    }));
+
+  it('ARCHIVED — a later migration is equally allowed', () =>
+    withScratchRepository((repo) => {
+      repo.checkout(repo.branchHead);
+      const doc = archivedWorld(repo);
+      const after = commitFile(
+        repo,
+        'supabase/migrations/20260901090000_multi_tenant_membership.sql',
+        'select 1;\n',
+        'feat(db): membership, long after P1-28 closed'
+      );
+      expect(
+        repo.run('diff', '--name-only', `${repo.candidate}..${after}`, '--', 'apps', 'supabase')
+      ).not.toBe('');
+
+      const { sound, said } = speak(bind(repo, doc));
+      expect(refusedProductDrift(said)).toBe(false);
+      expect(sound, 'an archived phase refused a later migration').toBe(true);
+    }));
+
+  it('ARCHIVED — later executable commits are not accumulated as successors', () =>
+    withScratchRepository((repo) => {
+      repo.checkout(repo.branchHead);
+      const doc = archivedWorld(repo, { successors: [] });
+      commitFile(repo, 'apps/api/src/routes/platform.ts', 'export const x = 1;\n', 'feat: later');
+
+      const { sound, said } = speak(bind(repo, doc));
+      expect(
+        said.some((line) => line.includes('is not named in')),
+        'an archived phase demanded that later work be named as its successor'
+      ).toBe(false);
+      expect(sound).toBe(true);
+    }));
+
+  /* -------------------------------------------- archival is not a bypass -- */
+
+  it('refuses archival when the Owner verdict is absent or is not PASS', () =>
+    withScratchRepository((repo) => {
+      repo.checkout(repo.branchHead);
+      repo.run('update-ref', 'refs/remotes/origin/main', repo.candidate);
+
+      for (const [label, over] of [
+        ['absent', {}],
+        ['not PASS', { ownerAcceptance: { verdict: 'RETURNED — OWNER ACCEPTANCE: FAIL' } }],
+      ] as const) {
+        const binding = bind(repo, repo.document(over));
+        expect(binding.lifecycle.state, `${label} acceptance archived the phase`).toBe('ACTIVE');
+        expect(binding.lifecycle.conditions.ownerAccepted).toBe(false);
+      }
+    }));
+
+  it('refuses archival when the accepted candidate has not reached the promotion branch', () =>
+    withScratchRepository((repo) => {
+      repo.checkout(repo.branchHead);
+      // `main` exists and is real — it simply does not contain the candidate.
+      repo.run('update-ref', 'refs/remotes/origin/main', repo.origin);
+      const binding = bind(repo, repo.document(ACCEPTED));
+
+      expect(binding.lifecycle.state, 'a verdict alone archived the phase').toBe('ACTIVE');
+      expect(binding.lifecycle.conditions.containedInPromoted).toBe(false);
+      expect(binding.lifecycle.refusals.join(' ')).toContain('has not been promoted');
+    }));
+
+  it('fails CLOSED when the promotion branch cannot be resolved at all', () =>
+    withScratchRepository((repo) => {
+      repo.checkout(repo.branchHead);
+      // No main ref of any form — the shape a shallow clone has.
+      const binding = bind(repo, repo.document(ACCEPTED));
+
+      expect(binding.lifecycle.state, 'an unresolvable promotion branch archived the phase').toBe(
+        'ACTIVE'
+      );
+      expect(binding.lifecycle.unknowns.join(' ')).toContain('could not be resolved');
+      expect(
+        binding.lifecycle.conditions.containedInPromoted,
+        'an unknown was read as a satisfied condition'
+      ).toBe(false);
+    }));
+
+  it('refuses archival when the closure record is missing or has been reopened', () =>
+    withScratchRepository((repo) => {
+      repo.checkout(repo.branchHead);
+      const doc = archivedWorld(repo);
+
+      expect(bind(repo, doc, null).lifecycle.state, 'no closure record archived the phase').toBe(
+        'ACTIVE'
+      );
+      const reopened = CLOSED_RECORD.replace('**Status: CLOSED', '**Status: REOPENED');
+      expect(bind(repo, doc, reopened).lifecycle.state, 'a reopened phase archived itself').toBe(
+        'ACTIVE'
+      );
+    }));
+
+  it('refuses archival when the candidate no longer names its recorded tree', () =>
+    withScratchRepository((repo) => {
+      repo.checkout(repo.branchHead);
+      repo.run('update-ref', 'refs/remotes/origin/main', repo.candidate);
+      const tampered = repo.document({
+        ...ACCEPTED,
+        candidate: {
+          FINAL_CODE_SHA: repo.candidate,
+          FINAL_CODE_TREE: 'f'.repeat(40),
+          baseBranch: 'develop',
+        },
+      });
+
+      const binding = bind(repo, tampered);
+      expect(binding.lifecycle.state, 'a rewritten tree archived the phase').toBe('ACTIVE');
+      expect(binding.lifecycle.conditions.treeMatches).toBe(false);
+      expect(binding.lifecycle.refusals.join(' ')).toContain('names tree');
+    }));
+
+  it('refuses archival when the candidate names no commit this repository has', () =>
+    withScratchRepository((repo) => {
+      repo.checkout(repo.branchHead);
+      repo.run('update-ref', 'refs/remotes/origin/main', repo.candidate);
+      const missing = repo.document({
+        ...ACCEPTED,
+        candidate: {
+          FINAL_CODE_SHA: 'a'.repeat(40),
+          FINAL_CODE_TREE: repo.candidateTree,
+          baseBranch: 'develop',
+        },
+      });
+
+      const binding = bind(repo, missing);
+      expect(binding.lifecycle.state).toBe('ACTIVE');
+      expect(binding.lifecycle.conditions.candidateExists).toBe(false);
+    }));
+
+  /* ------------------------------------- the record stays tamper-evident -- */
+
+  it('ARCHIVED — the recorded successor history is still judged as data', () =>
+    withScratchRepository((repo) => {
+      repo.checkout(repo.branchHead);
+
+      const malformed = bind(
+        repo,
+        archivedWorld(repo, { successors: [{ commit: 'not-a-commit', kind: 'x' }] })
+      );
+      expect(malformed.lifecycle.state).toBe('ARCHIVED');
+      expect(speak(malformed).sound, 'an archived phase accepted a malformed successor id').toBe(
+        false
+      );
+
+      const invented = bind(
+        repo,
+        archivedWorld(repo, { successors: [{ commit: 'b'.repeat(40), kind: 'x' }] })
+      );
+      expect(speak(invented).sound, 'an archived phase accepted a successor naming no commit').toBe(
+        false
+      );
+      expect(invented.archivedHistory.join(' ')).toContain('names no commit');
+
+      const notADescendant = bind(
+        repo,
+        archivedWorld(repo, { successors: [{ commit: repo.origin, kind: 'x' }] })
+      );
+      expect(
+        speak(notADescendant).sound,
+        'an archived phase accepted a successor that precedes the candidate'
+      ).toBe(false);
+      expect(notADescendant.archivedHistory.join(' ')).toContain('does not follow the candidate');
+
+      const bothLists = bind(
+        repo,
+        archivedWorld(repo, {
+          successors: [{ commit: repo.successor, kind: 'x' }],
+          absorbedSuccessors: [{ commit: repo.successor, kind: 'x' }],
+        })
+      );
+      expect(
+        speak(bothLists).sound,
+        'an archived phase accepted one commit in both successor lists'
+      ).toBe(false);
+    }));
+
+  it('ARCHIVED — the genuine history it already carries stays sound', () =>
+    withScratchRepository((repo) => {
+      repo.checkout(repo.branchHead);
+      const doc = archivedWorld(repo, {
+        successors: [{ commit: repo.successor, kind: 'evidence machinery' }],
+        absorbedSuccessors: [{ commit: repo.branchHead, kind: 'absorbed' }],
+      });
+      const binding = bind(repo, doc);
+      expect(binding.archivedHistory, 'a real history was reported as tampered').toEqual([]);
+      expect(speak(binding).sound).toBe(true);
+    }));
+
+  /* ----------------------------------------------------- the anti-escape -- */
+
+  it('reads the record’s CURRENT status, not a closed row somewhere in the record', () =>
+    withScratchRepository((repo) => {
+      /*
+       * Found by attacking the gate, and it worked before this case existed.
+       *
+       * Condition E used to test the WHOLE file, so a record whose status reads
+       * REOPENED on `OWNER ACCEPTANCE: FAIL` still satisfied it as long as it kept
+       * its own closure history — which is exactly how such a record gets written.
+       * This repository has reopened two phases on that verdict already.
+       *
+       * The consequence was not cosmetic. `ownerAcceptance.verdict` is a field the
+       * package writes about itself, so the closure record is the gate’s only
+       * INDEPENDENT reading of a reopening. A phase reopened for remediation, still
+       * naming its promoted candidate, would have stayed ARCHIVED — and the
+       * product-drift and successor rules would have gone quiet over precisely the
+       * remediation work the reopening exists to govern.
+       */
+      repo.checkout(repo.productChanged);
+      const doc = archivedWorld(repo);
+
+      const reopened = [
+        '# Phase — Closure Record',
+        '',
+        '**Status: REOPENED — `OWNER ACCEPTANCE: FAIL`, four defects found on the running app.**',
+        '',
+        '## History',
+        '',
+        '| Date | Status |',
+        '| --- | --- |',
+        `| 2026-08-20 | ${CLOSED_RECORD.trim().split('\n').at(-1)} |`,
+      ].join('\n');
+
+      const binding = bind(repo, doc, reopened);
+      expect(
+        binding.lifecycle.state,
+        'a reopened phase stayed archived on the strength of its own closure history'
+      ).toBe('ACTIVE');
+      expect(binding.lifecycle.conditions.closureClosed).toBe(false);
+      expect(binding.lifecycle.refusals.join(' ')).toContain('REOPENED');
+
+      // And the strict rules really do bite again on that world.
+      const { sound, said } = speak(binding);
+      expect(sound, 'the reopened phase was still judged sound').toBe(false);
+      expect(
+        refusedProductDrift(said),
+        'the reopening did not restore the product rule it exists to restore'
+      ).toBe(true);
+    }));
+
+  it('cannot be told the phase is closed by text parked in a comment or a fence', () =>
+    withScratchRepository((repo) => {
+      repo.checkout(repo.branchHead);
+      const doc = archivedWorld(repo);
+      const closed = CLOSED_RECORD.trim().split('\n').at(-1) as string;
+
+      for (const [label, record] of [
+        [
+          'an HTML comment',
+          [
+            '**Status: OPEN — the Owner has not walked the running app yet.**',
+            `<!-- ${closed} -->`,
+          ].join('\n'),
+        ],
+        [
+          /*
+           * The ORDER that makes the blanking load-bearing: a template or an
+           * example ABOVE the status the record actually states. Taking the first
+           * status line is enough when the decoy sits below it; when the decoy is
+           * first, only blanking keeps it from speaking for a record that says the
+           * opposite. Both orders are here because the first one alone passed with
+           * the blanking deleted.
+           */
+          'an HTML comment ABOVE the real status',
+          // Multi-line, so the decoy genuinely begins a line with `**Status:`.
+          // Written on one line it starts with `<!--` and the first-match rule
+          // alone would refuse it, leaving the blanking untested.
+          ['<!--', closed, '-->', '**Status: OPEN — not closed.**'].join('\n'),
+        ],
+        [
+          'a fenced template ABOVE the real status',
+          ['```markdown', closed, '```', '**Status: OPEN — not closed.**'].join('\n'),
+        ],
+        [
+          'a fenced template',
+          [
+            '**Status: OPEN — the Owner has not walked the running app yet.**',
+            '```markdown',
+            closed,
+            '```',
+          ].join('\n'),
+        ],
+      ] as const) {
+        expect(
+          bind(repo, doc, record).lifecycle.state,
+          `a closed line inside ${label} archived the phase`
+        ).toBe('ACTIVE');
+      }
+
+      // The control: the same line, actually stated, does archive it.
+      expect(bind(repo, doc, CLOSED_RECORD).lifecycle.state).toBe('ARCHIVED');
+    }));
+
+  it('an archived phase whose candidate was repointed is caught by its own history', () =>
+    withScratchRepository((repo) => {
+      /*
+       * The other escape the adversarial pass reported, and the reason it is a
+       * finding about ONE reporter rather than about the gate.
+       *
+       * Repointing FINAL_CODE_SHA at any already-promoted commit satisfies
+       * conditions B, C and D — the new pairing is self-consistent and the old
+       * commit really is in `main`. Read through `reportRepository` alone, a
+       * drifting ACTIVE phase becomes ARCHIVED and sound.
+       *
+       * It does not survive the package it would have to live in. The recorded
+       * successors no longer descend from the repointed candidate, which is
+       * exactly what `archivedHistoryProblems` is for — and on the real package
+       * four other reporters refuse it as well, starting with the prose half
+       * naming a different commit. This case pins the half that belongs here.
+       */
+      repo.checkout(repo.branchHead);
+      // A promoted commit on a DIVERGENT line — which is what an already-promoted
+      // commit looks like from a phase branch, and what makes the recorded
+      // successors stop descending from it.
+      repo.run('update-ref', 'refs/remotes/origin/main', repo.baseTip);
+      const repointed = repo.document({
+        ...ACCEPTED,
+        candidate: {
+          FINAL_CODE_SHA: repo.baseTip,
+          FINAL_CODE_TREE: repo.run('rev-parse', `${repo.baseTip}^{tree}`),
+          baseBranch: 'develop',
+        },
+        successors: [{ commit: repo.successor, kind: 'evidence machinery' }],
+      });
+
+      const binding = bind(repo, repointed);
+      expect(binding.lifecycle.state, 'the premise is wrong').toBe('ARCHIVED');
+      expect(
+        speak(binding).sound,
+        'a repointed candidate was accepted by the archived reporter'
+      ).toBe(false);
+    }));
+  it('refuses a promotion branch proved by a ref the local machine controls', () =>
+    withScratchRepository((repo) => {
+      /*
+       * Found by attacking the gate, and it worked before this case existed.
+       *
+       * Condition D is the one an unfinished phase cannot satisfy by editing its
+       * own package — but it can be satisfied by editing the CHECKOUT, if the
+       * promotion branch is resolved the way a base branch is. `resolveBaseRef`
+       * falls back from the remote-tracking ref to `refs/heads/<branch>` and then
+       * to the bare name, which is right for a base (a shallow clone may carry
+       * only a local ref) and wrong here: the whole value of D is that the machine
+       * running the gate cannot supply it.
+       *
+       * This repository already carries a stale local `main` eleven promotions
+       * behind the protected branch, so the fallback was never hypothetical.
+       */
+      repo.checkout(repo.productChanged);
+      const doc = repo.document(ACCEPTED);
+
+      // The protected branch does not contain the candidate. Correctly ACTIVE.
+      repo.run('update-ref', 'refs/remotes/origin/main', repo.origin);
+      expect(bind(repo, doc).lifecycle.state, 'the premise is wrong').toBe('ACTIVE');
+
+      // A local branch of the same name that DOES contain it, and no remote ref.
+      repo.run('update-ref', 'refs/heads/main', repo.candidate);
+      repo.run('update-ref', '-d', 'refs/remotes/origin/main');
+      const forged = bind(repo, doc);
+
+      expect(
+        forged.lifecycle.state,
+        'a ref the local machine controls proved the candidate was promoted'
+      ).toBe('ACTIVE');
+      expect(
+        forged.lifecycle.conditions.containedInPromoted,
+        'containment was satisfied by a local branch'
+      ).toBe(false);
+      expect(forged.lifecycle.unknowns.join(' ')).toContain('remote-tracking ref');
+
+      // And the strict rules really do still bite on that world.
+      const { sound, said } = speak(forged);
+      expect(sound, 'the escape succeeded').toBe(false);
+      expect(refusedProductDrift(said), 'the product rule was escaped through the checkout').toBe(
+        true
+      );
+    }));
+  it('an unfinished phase cannot archive itself to escape the product rule', () =>
+    withScratchRepository((repo) => {
+      /*
+       * The case the whole computation exists for. Everything an unfinished
+       * phase could write into its own package is present — and none of it is
+       * enough, because the two conditions that matter are taken from Git and
+       * from the closure record rather than from the package.
+       */
+      repo.checkout(repo.productChanged);
+      const claimsEverything = repo.document({
+        ...ACCEPTED,
+        // A field asserting the state outright. It decides nothing.
+        archived: true,
+        sealLifecycle: 'ARCHIVED',
+      });
+
+      const binding = bind(repo, claimsEverything, null);
+      expect(binding.lifecycle.state, 'a package archived itself by saying so').toBe('ACTIVE');
+      expect(binding.lifecycle.conditions.containedInPromoted, 'never promoted').toBe(false);
+      expect(binding.lifecycle.conditions.closureClosed, 'never closed').toBe(false);
+
+      const { sound, said } = speak(binding);
+      expect(sound, 'the escape succeeded').toBe(false);
+      expect(
+        refusedProductDrift(said),
+        'the product rule was escaped by a package asserting its own state'
+      ).toBe(true);
+    }));
+
+  it('and the same package archives the moment the facts are true, not before', () =>
+    withScratchRepository((repo) => {
+      /*
+       * The other half: the refusal above is about the FACTS, not about the
+       * package. Promote the candidate and supply the closure record, change
+       * nothing else, and the same document archives.
+       */
+      repo.checkout(repo.productChanged);
+      const doc = repo.document(ACCEPTED);
+
+      expect(bind(repo, doc, null).lifecycle.state).toBe('ACTIVE');
+      repo.run('update-ref', 'refs/remotes/origin/main', repo.candidate);
+      const now = bind(repo, doc, CLOSED_RECORD);
+      expect(now.lifecycle.state, 'the facts became true and the state did not follow').toBe(
+        'ARCHIVED'
+      );
+      expect(refusedProductDrift(speak(now).said)).toBe(false);
+    }));
 });
 
 describe('P1-28-QA-005 — a re-freeze may not carry the old head’s numbers forward', () => {
