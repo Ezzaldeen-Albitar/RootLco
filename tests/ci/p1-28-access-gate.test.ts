@@ -529,16 +529,32 @@ describe('rule 5 — no-scope-in-a-url', () => {
   it('does NOT extend the tenant clause outside the trees P1-28 owns', () => {
     /*
      * The judgement, asserted as the fact it rests on rather than left implicit.
-     * `tenantId` is a session CLAIM in `features/authentication/**` and
-     * `lib/api/session-cookie.ts` — the tenant a session belongs to, resolved
-     * server-side — and every P1-28 route loads those files. Extending the
-     * never-name-it clause to the closure would fire on four P1-26/P1-27 files
-     * that are doing nothing wrong, and a rule that must be suppressed to be
-     * usable stops being read.
+     * `tenantId` is a session CLAIM in `features/authentication/**` — the tenant a
+     * session belongs to, resolved server-side — and every P1-28 route loads those
+     * files. Extending the never-name-it clause to the closure would fire on files
+     * that are doing nothing wrong, and a rule that must be suppressed to be usable
+     * stops being read.
+     *
+     * The premise used to be read from `lib/api/session-cookie.ts`, which named
+     * `tenantId` in `writeTenantHint(tenantId: string, …)`. PRE-P1-29 deleted that
+     * helper — it had no caller, and P1-26 had recorded its removal as a follow-up
+     * after taking the Workspace field off sign-in — so the file names no scope at
+     * all now and the premise read false. It is taken from the session TYPE
+     * instead, which is where the claim actually lives and cannot be deleted
+     * without the session losing its tenant.
      */
     const claim = String(
       collectSources().get(
-        join(REPOSITORY_ROOT, 'apps', 'web', 'src', 'lib', 'api', 'session-cookie.ts')
+        join(
+          REPOSITORY_ROOT,
+          'apps',
+          'web',
+          'src',
+          'features',
+          'authentication',
+          'types',
+          'session.ts'
+        )
       )
     );
     expect(scopeInUrl(claim).some((found: { name: string }) => found.name === 'tenantId')).toBe(
