@@ -1113,10 +1113,13 @@ export function sealLifecycle(candidateFile, git, readClosureRecord = defaultClo
   if (record === null) {
     refusals.push(`${CLOSURE_RECORD_PATH} does not exist, so no closure is on record`);
   } else {
-    closureClosed = CLOSED_STATUS.test(record);
-    if (!closureClosed) {
+    const status = currentStatusLine(record);
+    closureClosed = status !== null && CLOSED_STATUS.test(status);
+    if (status === null) {
+      refusals.push(`${CLOSURE_RECORD_PATH} states no status at all`);
+    } else if (!closureClosed) {
       refusals.push(
-        `${CLOSURE_RECORD_PATH} does not report the phase CLOSED on \`${ACCEPTED_VERDICT}\``
+        `${CLOSURE_RECORD_PATH} currently reads ${status.slice(0, 72)} — not CLOSED on \`${ACCEPTED_VERDICT}\``
       );
     }
   }
@@ -1152,6 +1155,37 @@ export function sealLifecycle(candidateFile, git, readClosureRecord = defaultClo
  */
 const CLOSED_STATUS = /\*\*Status:\s*CLOSED\b[^*]*OWNER ACCEPTANCE:\s*PASS/i;
 
+/**
+ * The record's CURRENT status, which is not the same as a closed row somewhere
+ * in it.
+ *
+ * Found by attacking this gate. The rule used to test the whole file, so a
+ * record whose status reads
+ *
+ *   **Status: REOPENED — `OWNER ACCEPTANCE: FAIL`, four defects found**
+ *
+ * still satisfied condition E as long as it kept its own closure history —
+ * which is exactly how such a record gets written, and this repository has
+ * reopened two phases on `OWNER ACCEPTANCE: FAIL` already. A reopened phase
+ * would have stayed ARCHIVED, and the product-drift and successor rules would
+ * have gone quiet over precisely the remediation the reopening exists to
+ * govern.
+ *
+ * So: the FIRST status line the document states, and only that one. A history
+ * table below it is history; a row inside a table does not begin a line with
+ * `**Status:` and cannot be mistaken for the record's own.
+ *
+ * HTML comments and fenced blocks are blanked before the search, or a closed
+ * line parked in either could speak for a record that says the opposite. The
+ * blanking preserves line structure so the first VISIBLE status still wins.
+ */
+function currentStatusLine(record) {
+  const visible = String(record)
+    .replace(/<!--[\s\S]*?-->/g, (m) => m.replace(/[^\n]/g, ' '))
+    .replace(/^```[\s\S]*?^```/gm, (m) => m.replace(/[^\n]/g, ' '));
+  const match = /^\*\*Status:[^\n]*\*\*/m.exec(visible);
+  return match ? match[0] : null;
+}
 /** Reads the canonical closure record, or `null` when there is none. */
 function defaultClosureRecord() {
   const path = join(ROOT, CLOSURE_RECORD_PATH.split(posix.sep).join(sep));

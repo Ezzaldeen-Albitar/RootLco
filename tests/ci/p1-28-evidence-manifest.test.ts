@@ -1377,6 +1377,147 @@ describe('P1-28-QA-005 — the seal lifecycle: ACTIVE while it is built, ARCHIVE
 
   /* ----------------------------------------------------- the anti-escape -- */
 
+  it('reads the record’s CURRENT status, not a closed row somewhere in the record', () =>
+    withScratchRepository((repo) => {
+      /*
+       * Found by attacking the gate, and it worked before this case existed.
+       *
+       * Condition E used to test the WHOLE file, so a record whose status reads
+       * REOPENED on `OWNER ACCEPTANCE: FAIL` still satisfied it as long as it kept
+       * its own closure history — which is exactly how such a record gets written.
+       * This repository has reopened two phases on that verdict already.
+       *
+       * The consequence was not cosmetic. `ownerAcceptance.verdict` is a field the
+       * package writes about itself, so the closure record is the gate’s only
+       * INDEPENDENT reading of a reopening. A phase reopened for remediation, still
+       * naming its promoted candidate, would have stayed ARCHIVED — and the
+       * product-drift and successor rules would have gone quiet over precisely the
+       * remediation work the reopening exists to govern.
+       */
+      repo.checkout(repo.productChanged);
+      const doc = archivedWorld(repo);
+
+      const reopened = [
+        '# Phase — Closure Record',
+        '',
+        '**Status: REOPENED — `OWNER ACCEPTANCE: FAIL`, four defects found on the running app.**',
+        '',
+        '## History',
+        '',
+        '| Date | Status |',
+        '| --- | --- |',
+        `| 2026-08-20 | ${CLOSED_RECORD.trim().split('\n').at(-1)} |`,
+      ].join('\n');
+
+      const binding = bind(repo, doc, reopened);
+      expect(
+        binding.lifecycle.state,
+        'a reopened phase stayed archived on the strength of its own closure history'
+      ).toBe('ACTIVE');
+      expect(binding.lifecycle.conditions.closureClosed).toBe(false);
+      expect(binding.lifecycle.refusals.join(' ')).toContain('REOPENED');
+
+      // And the strict rules really do bite again on that world.
+      const { sound, said } = speak(binding);
+      expect(sound, 'the reopened phase was still judged sound').toBe(false);
+      expect(
+        refusedProductDrift(said),
+        'the reopening did not restore the product rule it exists to restore'
+      ).toBe(true);
+    }));
+
+  it('cannot be told the phase is closed by text parked in a comment or a fence', () =>
+    withScratchRepository((repo) => {
+      repo.checkout(repo.branchHead);
+      const doc = archivedWorld(repo);
+      const closed = CLOSED_RECORD.trim().split('\n').at(-1) as string;
+
+      for (const [label, record] of [
+        [
+          'an HTML comment',
+          [
+            '**Status: OPEN — the Owner has not walked the running app yet.**',
+            `<!-- ${closed} -->`,
+          ].join('\n'),
+        ],
+        [
+          /*
+           * The ORDER that makes the blanking load-bearing: a template or an
+           * example ABOVE the status the record actually states. Taking the first
+           * status line is enough when the decoy sits below it; when the decoy is
+           * first, only blanking keeps it from speaking for a record that says the
+           * opposite. Both orders are here because the first one alone passed with
+           * the blanking deleted.
+           */
+          'an HTML comment ABOVE the real status',
+          // Multi-line, so the decoy genuinely begins a line with `**Status:`.
+          // Written on one line it starts with `<!--` and the first-match rule
+          // alone would refuse it, leaving the blanking untested.
+          ['<!--', closed, '-->', '**Status: OPEN — not closed.**'].join('\n'),
+        ],
+        [
+          'a fenced template ABOVE the real status',
+          ['```markdown', closed, '```', '**Status: OPEN — not closed.**'].join('\n'),
+        ],
+        [
+          'a fenced template',
+          [
+            '**Status: OPEN — the Owner has not walked the running app yet.**',
+            '```markdown',
+            closed,
+            '```',
+          ].join('\n'),
+        ],
+      ] as const) {
+        expect(
+          bind(repo, doc, record).lifecycle.state,
+          `a closed line inside ${label} archived the phase`
+        ).toBe('ACTIVE');
+      }
+
+      // The control: the same line, actually stated, does archive it.
+      expect(bind(repo, doc, CLOSED_RECORD).lifecycle.state).toBe('ARCHIVED');
+    }));
+
+  it('an archived phase whose candidate was repointed is caught by its own history', () =>
+    withScratchRepository((repo) => {
+      /*
+       * The other escape the adversarial pass reported, and the reason it is a
+       * finding about ONE reporter rather than about the gate.
+       *
+       * Repointing FINAL_CODE_SHA at any already-promoted commit satisfies
+       * conditions B, C and D — the new pairing is self-consistent and the old
+       * commit really is in `main`. Read through `reportRepository` alone, a
+       * drifting ACTIVE phase becomes ARCHIVED and sound.
+       *
+       * It does not survive the package it would have to live in. The recorded
+       * successors no longer descend from the repointed candidate, which is
+       * exactly what `archivedHistoryProblems` is for — and on the real package
+       * four other reporters refuse it as well, starting with the prose half
+       * naming a different commit. This case pins the half that belongs here.
+       */
+      repo.checkout(repo.branchHead);
+      // A promoted commit on a DIVERGENT line — which is what an already-promoted
+      // commit looks like from a phase branch, and what makes the recorded
+      // successors stop descending from it.
+      repo.run('update-ref', 'refs/remotes/origin/main', repo.baseTip);
+      const repointed = repo.document({
+        ...ACCEPTED,
+        candidate: {
+          FINAL_CODE_SHA: repo.baseTip,
+          FINAL_CODE_TREE: repo.run('rev-parse', `${repo.baseTip}^{tree}`),
+          baseBranch: 'develop',
+        },
+        successors: [{ commit: repo.successor, kind: 'evidence machinery' }],
+      });
+
+      const binding = bind(repo, repointed);
+      expect(binding.lifecycle.state, 'the premise is wrong').toBe('ARCHIVED');
+      expect(
+        speak(binding).sound,
+        'a repointed candidate was accepted by the archived reporter'
+      ).toBe(false);
+    }));
   it('refuses a promotion branch proved by a ref the local machine controls', () =>
     withScratchRepository((repo) => {
       /*
