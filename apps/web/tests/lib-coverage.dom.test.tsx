@@ -288,7 +288,15 @@ describe('usePersistedFlag — the preference survives a reload without a flash'
 
     act(() => {
       window.localStorage.setItem('sidebar.collapsed', 'true');
-      window.dispatchEvent(new StorageEvent('storage', { key: 'sidebar.collapsed' }));
+      /*
+       * A bare event, and the bareness is the point: `subscribe` registers
+       * `window.addEventListener('storage', onChange)` and `onChange` takes no
+       * argument, so the hook never reads `event.key`. It re-reads the store on
+       * ANY storage event. Passing an init dict naming the key implied a
+       * dependency the hook does not have — and CodeQL flagged it as a
+       * superfluous argument, which it was.
+       */
+      window.dispatchEvent(new Event('storage'));
     });
     expect(result.current[0], 'a change from another tab was not followed').toBe(true);
   });
