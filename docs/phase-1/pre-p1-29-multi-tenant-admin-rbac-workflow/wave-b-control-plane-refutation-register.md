@@ -387,7 +387,71 @@ No finding is without a disposition.
 
 ---
 
-## 7. What this register does not settle
+## 7. The bounded adversarial pass over revision 1
+
+Run 2026-08-22 against the committed design and this register. Six lanes, 39 concerns, 37 agents.
+Nineteen concerns were raised `CONFIRMED` at critical or high; each was then handed to an
+independent reviewer whose brief was to **refute** it. **Sixteen fell. Three survived**, all high,
+none critical.
+
+**Verdict: NO-GO.** Design revision 2 repairs all three; see
+[wave-b-control-plane-design-v2.md §22](wave-b-control-plane-design-v2.md).
+
+### Dispositions for C1 to C12
+
+Polarity, stated once because it is easy to invert: **REFUTED means the attack on the disposition
+failed — the disposition holds and the design closes the finding.** CONFIRMED means the attack
+succeeded and the disposition was inadequate.
+
+| Finding | Attack outcome | What it turned on                                                                                                                                                                                                                                                                                                 |
+| ------- | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| C1      | **CONFIRMED**  | The disposition granted `EXECUTE` on the writer and stopped. Its three helpers are separately revoked and separately granted. Repaired in design §7.2.                                                                                                                                                            |
+| C2      | REFUTED        | The disposition claims only that §5 adds one relation and specifies its grant, policies and readers. It does.                                                                                                                                                                                                     |
+| C3      | **CONFIRMED**  | The disposition named one deferred constraint trigger on the grant write; there are two, and the second reads a table the design gave write access to and no read access. Repaired in design §6.3.                                                                                                                |
+| C4      | REFUTED        | The ten write privileges are right. The reads enumeration was short, which is a medium finding folded into design §6.2, not a failure of the disposition.                                                                                                                                                         |
+| C5      | REFUTED        | Attacked three ways and unbroken. Every citation exact.                                                                                                                                                                                                                                                           |
+| C6      | **CONFIRMED**  | The C6 concern itself survives — the registry guard is intact and the empty-conjunction reading is correct — but §4.2 cited §5.3 as the mechanism preventing a tenant role from holding a platform code, and §5.3 governs a different relation. Repaired in design §4.2, which now gives the two real mechanisms. |
+| C7      | **CONFIRMED**  | The reuse decision is sound; two clauses of its justification were false. The security-relevant flag is inert for a non-public operation, so the reuse buys key material and not signal. Repaired in design §10.                                                                                                  |
+| C8      | REFUTED        | The mapping from a malformed identifier to the standard validation refusal is exact. One inherited mismatch between two validators is recorded in design §11.                                                                                                                                                     |
+| C9      | **CONFIRMED**  | The remedy closes the original fail-open — all 650 policies carry a `TO` clause — but the disposition was incomplete. Repaired in design §3 and P-8.                                                                                                                                                              |
+| C10     | REFUTED        | The ownership work exists and enforces the design-only rule on this branch.                                                                                                                                                                                                                                       |
+| C11     | **CONFIRMED**  | Violated by the sentence carrying it: the coverage rule was honoured, and then the paragraph quoted an unmeasured "180 across 132". Repaired in design §14, which now names the method beside every figure.                                                                                                       |
+| C12     | **CONFIRMED**  | Additive-only is real and enforced, and the live count is right two ways — but §15 named two moving baseline values where four move. Repaired in design §15.                                                                                                                                                      |
+
+Five REFUTED, seven CONFIRMED. Note what that does **not** mean: only three of the seven were
+blocking. The rest were incomplete dispositions, false supporting clauses, or unmeasured numbers —
+real defects in a document whose whole purpose is to be relied on, and repaired as such.
+
+### The three blockers
+
+| #      | Severity | Statement                                                                                                                                                                                                                                                                                                                                                                                           |
+| ------ | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **B1** | HIGH     | The design enumerated `EXECUTE` one level shallower than the `SECURITY INVOKER` call chains it granted: the writer's three helpers and the context readers four paths depend on were never named. No existing gate would have caught it — the boot preflight probes only the writer, and the coverage matrix tests table privileges only.                                                           |
+| **B2** | HIGH     | The authority resolver reads `iam.user_accounts`, and no section granted `app_platform` a select privilege or wrote it a policy. Called from inside a policy expression it would raise rather than answer, making every policy in §6.3 and §6.4 unreachable.                                                                                                                                        |
+| **B3** | HIGH     | An unpredicated `UPDATE (status)` on `org.tenants` let the platform role return a live tenant to `provisioning`, reopening the bootstrap window the design names as its containment. Rated critical by the finder and downgraded on review: unreachable over the request surface, requires both platform codes, and `app_platform` is a no-login archetype — so no principal below it can escalate. |
+
+All three fail closed. All three are repaired by additive grant and policy lines plus one
+`WITH CHECK`. And all three are the same defect as C1, reappearing inside the fix written to close
+it — which is the single most useful thing this pass produced.
+
+### Six confirmed findings that were dropped on review
+
+Recorded because a register that keeps only what survived teaches nothing about how to read one.
+"Platform impersonation" (critical) read a condition in §9.2 as referring to §6.2, and declared a
+mechanism absent by searching for patterns that could not match the three places it is stated. "RLS
+dead path" used today's grant list to prove what tomorrow's design withholds. "Actor identity" read
+§6.2 and missed that §6.3 is the same permission code's second half. "Org API duplication",
+"half-provisioned tenant" and one supporting claim of the B3 finder all assumed the bootstrap window
+has one exit where the transition graph gives two. "Bootstrap deadlock" attributed three
+`TO app_runtime` policies to `app_platform`.
+
+Two of those — the one-exit assumption and the misread cross-reference — were caused by the
+document's own presentation rather than by careless reading, and revision 2 fixes the presentation
+as well as the substance.
+
+---
+
+## 8. What this register does not settle
 
 Recorded rather than smoothed over.
 

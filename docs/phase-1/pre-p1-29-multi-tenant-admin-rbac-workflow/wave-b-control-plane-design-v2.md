@@ -2,7 +2,13 @@
 
 **Classification:** Confidential — Commercial Product and Pilot Planning
 
-**Status:** design only. No product code exists against it. It has not yet been attacked.
+**Status:** design only, **revision 2**. No product code exists against it.
+
+Revision 1 was attacked by a bounded adversarial pass: 39 concerns across six lanes, 19 raised at
+critical or high, every one independently refuted, **16 fell and 3 survived** — all three high, no
+critical. This revision repairs those three and the substantive medium findings beside them, and
+records each repair where it lands rather than in a changelog nobody reads. Section 22 lists what
+changed, including two sentences revision 1 asserted as fact that the repository disproves.
 
 ---
 
@@ -33,24 +39,37 @@ Directive §8 asks whether a fourth database role archetype is right, and forbid
 answer is that it is not merely right — it is **forced**, and the reason is the policy layer rather
 than a preference about role design.
 
-Every administration write policy in the identity schema is written `TO app_runtime` and predicated
-on `iam.has_permission(...)`
+**Revision 1 gave the wrong reason here, and the reason matters.** It argued that the existing
+administration policies would _refuse_ a platform insert. They would not. Every policy in this
+repository is permissive — `AS RESTRICTIVE` appears **zero** times across all 650 `CREATE POLICY`
+statements — and permissive policies combine with OR. An existing policy cannot refuse anything; it
+can only decline to admit. A new permissive policy `TO app_runtime` carrying a platform predicate
+would therefore have been admitted, and revision 1's first argument collapses.
+
+The conclusion survives on two different and better grounds.
+
+**First: because policies OR, containment must be written rather than inherited.** Attaching a
+platform predicate to `app_runtime` does not create a second, separate path — it _widens
+`app_runtime` itself_. Every ordinary tenant session runs as `app_runtime`, so the platform write
+path would become reachable from the ordinary request surface, guarded only by application code.
+That is the shape the delegation backstop exists to defend against
+([`20260727090000_iam_grant_delegation_scope_backstop.sql:28-31`](../../../supabase/migrations/20260727090000_iam_grant_delegation_scope_backstop.sql)).
+
+**Second: the platform path would inherit `app_runtime`'s entire grant set** — every table privilege
+the whole product holds — when what it needs is a handful of writes into identity and organisation
+tables and nothing else. The role is the unit of least privilege, and reusing `app_runtime` abandons
+it.
+
+What remains true, and is why the platform path cannot reuse the existing administration policies as
+they stand: each is predicated on `iam.has_permission(...)`
 ([`20260726090000_iam_org_runtime_administration_capabilities.sql:299-316`, `:370-385`](../../../supabase/migrations/20260726090000_iam_org_runtime_administration_capabilities.sql)).
 `iam.has_permission` returns false unless the acting principal holds an **active account in the
 current tenant**
 ([`20260718097000_iam_context_and_permission_functions.sql:86-97`](../../../supabase/migrations/20260718097000_iam_context_and_permission_functions.sql)).
 
-A platform operator creating a tenant's first account cannot, by definition, already hold an account
-in it. So:
-
-| If the platform path runs as…                  | …then                                                                               |
-| ---------------------------------------------- | ----------------------------------------------------------------------------------- |
-| `app_runtime`, acting principal = the operator | the permission resolver returns false; the administration policy refuses the insert |
-| `app_runtime`, acting principal absent         | the permission resolver returns false for the same reason, one layer earlier        |
-| **a separate role**                            | the administration policies do not apply to it at all, and it needs its own         |
-
-The third is the only live option. `N-1` in the register works this through against the delegation
-backstop's three early exits and reaches the same place.
+and a platform operator creating that tenant's first account cannot have one. So the platform path
+needs policies of its own whatever role it runs as; the two grounds above decide that the role
+should be its own too.
 
 **So: one new database role, `app_platform`, following the existing archetype pattern**
 ([`0002_base_schemas.sql:62-74`](../../../supabase/migrations/0002_base_schemas.sql),
@@ -169,7 +188,13 @@ baseline pin at `.github/ci-baselines/schema-baseline.json:14` moves in the same
 post-change figures are deliberately not stated here — per C11, a number appears when it is
 measured.
 
-**A tenant role can never hold one.** §5.3 is the mechanism.
+**A tenant role can never hold one**, for two independent reasons. A tenant administrator cannot map
+a `platform.` code into a tenant role, because `ins_role_permissions_delegable` re-evaluates the
+writer's own authority against the code being written
+([`20260726090000:299-316`](../../../supabase/migrations/20260726090000_iam_org_runtime_administration_capabilities.sql))
+and no tenant actor holds one. And even if such a mapping existed it would confer nothing: §4.3
+routes a `platform.` code to the platform resolver, which reads `iam.platform_grants` and never
+consults `iam.role_permissions`. §5.3 governs the relation itself — a third barrier, not this one.
 
 ### 4.3 How a platform operation declares its authority
 
@@ -223,6 +248,23 @@ principal is absent, false when the account is not active, false when the code i
 when no active grant matches. It reads two tables and no more — `iam.platform_grants` and
 `iam.user_accounts` — and it never consults a tenant.
 
+Both reads must be granted, and **revision 1 granted neither** — that was blocker B2. `iam.user_accounts`
+forces row-level security
+([`20260718090000_iam_user_accounts_and_profiles.sql:326-327`](../../../supabase/migrations/20260718090000_iam_user_accounts_and_profiles.sql));
+its only select privilege and only select policy are for `app_runtime`/`app_readonly` (`:335-337`,
+`:354`). A `SECURITY INVOKER` resolver called from inside a policy expression is evaluated as
+`app_platform`, so without its own privilege it raises `insufficient_privilege` at executor start
+rather than answering false — and every policy in §6.3 and §6.4 becomes unreachable. So:
+
+| Read                  | Privilege                                           | Policy                                                                                                                                                 |
+| --------------------- | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `iam.platform_grants` | `SELECT` to `app_platform`                          | the acting principal's own active rows                                                                                                                 |
+| `iam.user_accounts`   | `SELECT (id, status, deleted_at)` to `app_platform` | `FOR SELECT TO app_platform USING (id = iam.current_user_id())` — one row, the operator's own, carrying no tenant term so it works in both §3.3 shapes |
+
+The column-scoped read is deliberate: the resolver needs an existence-and-active test, not a person's
+name or address. §6.1's prohibition is on tenant **business** tables, and this identity read is the
+one named exception to it.
+
 `iam.has_permission` is **not modified**. A platform question and a tenant question are answered by
 different functions, and neither can be made to answer the other's.
 
@@ -238,6 +280,11 @@ refuses every environment except two named pilot gates).
 That is deliberate and it is the answer to the escalation question: a Company Owner cannot delegate
 `platform.*` because no delegation mechanism reaches the relation, not merely because a rule says
 they should not.
+
+**And the rule is enforced rather than promised.** A prose prohibition that nothing checks is how the
+"declared but never wired" defect class in this repository begins. Slice B1 ships a gate asserting
+that no file under `apps/api/src` and no migration above 124 issues an insert, update or delete
+against `iam.platform_grants`, and a test that fails when the gate is removed.
 
 ### 5.4 The residual risk, named rather than designed away
 
@@ -267,6 +314,10 @@ No superuser. No bypass of row-level security. No ownership of any object. No bl
 generic always-true policy. No `SECURITY DEFINER` function is introduced anywhere in this design —
 §6.5 states the test that would have to be met before one could be, and it is not met.
 
+One named exception, and only one: the column-scoped read of `iam.user_accounts` that §5.2's
+resolver requires — the operator's own row, three columns. It is an identity read, not a business
+read.
+
 And, specifically: **no privilege on any tenant business table.** Not on customers, vehicles,
 appointments, receptions, work orders, invoices, payments, or any other domain table. The control
 plane creates tenants and their first administrator; it does not read their business.
@@ -279,11 +330,12 @@ plane creates tenants and their first administrator; it does not read their busi
 | Context              | Platform-origin (§3.3): tenant absent, acting principal set                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | Function execute     | `org.provision_organization(jsonb, text)` — currently revoked from public and granted to no application role ([`20260717107000_org_provisioning.sql:281-282`](../../../supabase/migrations/20260717107000_org_provisioning.sql))                                                                                                                                                                                                                                                                                                                                                              |
 | Table writes         | The ten the function performs: `org.tenants` (`:132`), `org.tenant_status_history` (`:142`), `org.tenant_subscriptions` (`:158`), `org.legal_companies` (`:172`), `org.branches` (`:187`), `org.company_settings` (`:204`), `org.branch_settings` (`:214`), `org.tenant_feature_overrides` (`:226`), `shared.number_sequences` (`:242`), `shared.idempotency_keys` (`:270`)                                                                                                                                                                                                                   |
-| Table reads          | `shared.idempotency_keys` for the replay check (`:105-111`); `org.tenants` returned by the insert                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| Table reads          | `shared.idempotency_keys` for the replay check (`:105-111`); `org.subscription_plans` for the plan lookup (`:147-152`); and every `RETURNING` target, because `RETURNING` is evaluated against the SELECT policy — `org.tenants` (`:132`), `org.legal_companies` (`:172`), `org.branches` (`:187`) and `org.tenant_subscriptions` (`:158`). Revision 1 named two of the six.                                                                                                                                                                                                                  |
 | Row-level policies   | New, for `app_platform`, on each of the ten. On `org.tenants` the insert check is `status = 'provisioning'` — the platform role may only ever create a tenant in the provisioning state, never a live one. On every child table the check is that the parent tenant is in that state. This is the **bootstrap window** and it recurs throughout §9.                                                                                                                                                                                                                                           |
 | Replay table         | Two new policies scoped to platform rows only: the tenant column absent **and** the operation name fixed to the provisioning one. Without them the platform role cannot use the replay protection at all, because the existing policies read `tenant_id = iam.current_tenant_id()` and the provisioning record is written with the tenant absent — the migration says so itself ([`20260725090000:355`](../../../supabase/migrations/20260725090000_iam_shared_runtime_write_capabilities.sql)). The narrowness matters: `app_platform` must not be able to read any tenant's replay records. |
+| Activation           | The adapter **never** sets `tenant.activate`. That branch (`:254-261`) calls `org.change_tenant_status(..., 'active', ...)` inside the provisioning transaction, which would close the bootstrap window before §6.3 has run and leave a live tenant with no Owner. Activation is a separate, later act — §9.1. Revision 1 missed this entirely.                                                                                                                                                                                                                                               |
 | Sequence access      | None required — identifiers are generated, not drawn from a sequence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| Trigger dependencies | The row-metadata trigger and the immutable-column guards already on those tables; none of them calls anything `app_platform` lacks                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| Trigger dependencies | The row-metadata trigger and the immutable-column guards on those tables. `shared.touch_row_metadata` calls `iam.current_user_id()` ([`0002_base_schemas.sql:195`](../../../supabase/migrations/0002_base_schemas.sql)), so the role needs EXECUTE on the context readers — §7.2, which revision 1 omitted.                                                                                                                                                                                                                                                                                   |
 | Audit                | §7                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | Rate limit           | §10                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 
@@ -294,35 +346,60 @@ protection in one transaction, rolling all of it back on any failure, and it is 
 
 ### 6.3 First Owner bootstrap — `platform.organization.provision`, second half
 
-| Layer                | Requirement                                                                                                                                                                                 |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Role                 | `app_platform`                                                                                                                                                                              |
-| Context              | Platform-on-target: the tenant just created, set positively                                                                                                                                 |
-| Table writes         | `iam.user_accounts`, `iam.roles`, `iam.role_permissions`, `iam.role_grants`, `iam.grant_scopes`                                                                                             |
-| Row-level policies   | New, for `app_platform`, each predicated on **both** the bootstrap window (target tenant in the provisioning state) **and** `iam.has_platform_authority('platform.organization.provision')` |
-| Trigger dependencies | The deferred delegation backstop fires on the grant write — §9.3                                                                                                                            |
-| Audit                | §7                                                                                                                                                                                          |
+| Layer                | Requirement                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Role                 | `app_platform`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| Context              | Platform-on-target: the tenant just created, set positively                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| Table writes         | `iam.user_accounts`, `iam.roles`, `iam.role_permissions`, `iam.role_grants`, `iam.grant_scopes`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| Row-level policies   | New, for `app_platform`, each predicated on **both** the bootstrap window (target tenant in the provisioning state) **and** `iam.has_platform_authority('platform.organization.provision')`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| Table reads          | `iam.role_grants` and `iam.grant_scopes`. Not optional: `tg_role_grants_require_scope` ([`20260718092000:205-208`](../../../supabase/migrations/20260718092000_iam_role_grants_and_scopes.sql)) reads `iam.role_grants` unconditionally as the writing role (`:183-184`), so a write-only grant aborts the bootstrap at commit. The select policies are the window-predicated analogue of the write ones. Revision 1 gave writes with no reads.                                                                                                                                                                                                                                                     |
+| Trigger dependencies | **Two** deferred constraint triggers fire on the grant write, not one: `tg_role_grants_require_scope` and the delegation backstop of §9.3. Revision 1 named only the second.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| First Owner state    | The account is inserted `active` rather than taking the `invited` default ([`20260718090000:73`](../../../supabase/migrations/20260718090000_iam_user_accounts_and_profiles.sql)), because an invited account resolves zero permissions ([`20260718097000:91-97`](../../../supabase/migrations/20260718097000_iam_context_and_permission_functions.sql)) and would hand the Owner a tenant they cannot enter. That makes `iam.user_status_history` a write of this slice too, and its privilege is listed with the others. The Owner's provider identity is established out of band before the transaction opens, the pattern `scripts/dev/owner-acceptance/create-owner-account.mjs` already uses. |
+| Audit                | §7                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 
-The window is what makes this safe, and it is **self-closing**: the tenant's status leaves
-`provisioning` by exactly one legal transition
-([`20260717101000_org_tenants.sql:211-216`](../../../supabase/migrations/20260717101000_org_tenants.sql)),
-and the moment it does, every one of these policies stops admitting a row. The platform role's write
-path into a tenant's identity tables closes by itself, with no second mechanism to remember.
+The window is what makes this safe: it **closes on the tenant's first legal transition**
+([`20260717101000_org_tenants.sql:211-216`](../../../supabase/migrations/20260717101000_org_tenants.sql)
+gives two exits, to `active` and to `closed`), and the moment it does, every one of these policies
+stops admitting a row.
+
+Revision 1 called that "self-closing, with no second mechanism to remember", and blocker **B3** showed
+the phrase was doing work the design had not earned: §6.4 handed the same role an unpredicated
+`UPDATE (status)`, so it could put a live tenant _back_ to `provisioning` and reopen the window. The
+window only closes if nothing can reopen it. §6.4 and §15's M3 now make that true.
 
 ### 6.4 Lifecycle — `platform.organization.lifecycle`
 
-| Layer              | Requirement                                                                                                                                                                                                                                                                                               |
-| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Role               | `app_platform`                                                                                                                                                                                                                                                                                            |
-| Context            | Platform-on-target                                                                                                                                                                                                                                                                                        |
-| Function execute   | `org.change_tenant_status(...)`, currently granted to no application role ([`20260717101000:232-235`](../../../supabase/migrations/20260717101000_org_tenants.sql))                                                                                                                                       |
-| Table writes       | `org.tenants` status **column only**, and `org.tenant_status_history`                                                                                                                                                                                                                                     |
-| Column-level grant | `GRANT UPDATE (status)` — the repository already does exactly this for the runtime's three settings columns ([`20260726090000:174`](../../../supabase/migrations/20260726090000_iam_org_runtime_administration_capabilities.sql)), so the platform role can change a status and demonstrably nothing else |
-| Row-level policies | New, predicated on `iam.has_platform_authority('platform.organization.lifecycle')`                                                                                                                                                                                                                        |
-| Actor              | Server-derived; the function's actor parameter is **not** bound from the request — §8                                                                                                                                                                                                                     |
-| Audit              | §7                                                                                                                                                                                                                                                                                                        |
+| Layer                | Requirement                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Role                 | `app_platform`                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| Context              | Platform-on-target                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| Function execute     | `org.change_tenant_status(...)`, currently granted to no application role ([`20260717101000:232-235`](../../../supabase/migrations/20260717101000_org_tenants.sql))                                                                                                                                                                                                                                                                               |
+| Table writes         | `org.tenants` status **column only**, and `org.tenant_status_history`                                                                                                                                                                                                                                                                                                                                                                             |
+| Column-level grant   | `GRANT UPDATE (status)`, column-scoped in the shape the repository already uses ([`20260726090000:174`](../../../supabase/migrations/20260726090000_iam_org_runtime_administration_capabilities.sql)) — but note that grant deliberately withholds `status`, so this is a new privilege and not a precedent for itself                                                                                                                            |
+| Row-level policies   | `USING (iam.has_platform_authority('platform.organization.lifecycle'))` **and a `WITH CHECK` restricting the destination to `('active','suspended','closed')`** — `provisioning` is refused outright. A `FOR UPDATE` policy with only a `USING` clause reuses it as the check, which is how revision 1 admitted `status = 'provisioning'`                                                                                                         |
+| Table backstop       | The policy is the second line of defence, not the first. M3 adds a `BEFORE UPDATE` trigger on `org.tenants` enforcing the transition graph for **every** writer, because the graph today lives only inside `org.change_tenant_status` (`:210-217`) and the table's two triggers (`:124-130`) validate no transition — the repository's whole enforcement is the _absence_ of an UPDATE privilege (`:167-170`, `:229`), which this section removes |
+| Trigger dependencies | `tg_tenants_touch_metadata` (`:124-126`) calls `shared.touch_row_metadata`, which calls `iam.current_user_id()` — EXECUTE required, §7.2                                                                                                                                                                                                                                                                                                          |
+| Actor                | Server-derived; the function's actor parameter is **not** bound from the request — §8                                                                                                                                                                                                                                                                                                                                                             |
+| Audit                | §7                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 
-### 6.5 On `SECURITY INVOKER`
+### 6.5 Organisation read — `platform.organization.read`
+
+Revision 1 declared this operation in §4.2 and §12.2 and then gave it no privilege graph. It has one.
+
+| Layer              | Requirement                                                                                   |
+| ------------------ | --------------------------------------------------------------------------------------------- |
+| Role               | `app_platform`                                                                                |
+| Context            | Platform-origin for a list, platform-on-target for one tenant                                 |
+| Table reads        | `org.tenants` only                                                                            |
+| Row-level policies | `FOR SELECT TO app_platform USING (iam.has_platform_authority('platform.organization.read'))` |
+| Writes             | None                                                                                          |
+| Audit              | A read is not audited; the rate limit and the denial path are its controls                    |
+| Rate limit         | §10                                                                                           |
+
+It reads the tenant root and nothing beneath it. A control-plane operator can see that a tenant
+exists and what state it is in; they cannot see its customers, its vehicles or its work.
+
+### 6.6 On `SECURITY INVOKER`
 
 Every function in this design is `SECURITY INVOKER`, and the design introduces none of its own
 beyond `iam.has_platform_authority` and `org.change_company_status` (§12.3), both invoker.
@@ -353,11 +430,48 @@ so the caller's privileges apply to the whole body:
 If the read-back fails the function raises `insufficient_privilege` and names the missing path
 (`:224-227`). That is the failure C1 predicted, spelled out by the code itself.
 
-**Design:** `app_platform` receives the three insert privileges, the two writer-scoped read
-policies, the chain read policy, and `EXECUTE` on the writer — each written for the new role and
-each predicated on the row's tenant matching the current one, exactly as the runtime's are. This is
-also why a platform action is performed inside the target tenant's context (§3.3): without it there
-is no lawful audit row to write.
+### 7.1 The tables
+
+`app_platform` receives the three insert privileges, the two writer-scoped read policies and the
+chain read policy — each written for the new role and each predicated on the row's tenant matching
+the current one, exactly as the runtime's are. This is also why a platform action is performed inside
+the target tenant's context (§3.3): without it there is no lawful audit row to write.
+
+### 7.2 The called functions — blocker B1
+
+Revision 1 granted `EXECUTE` on the writer and stopped. That was **blocker B1**, and the repository
+had already written down the rule it broke, three lines above the grants it should have copied:
+
+> `iam.audit_append` is SECURITY INVOKER, so its three helpers execute with the caller's privileges
+> too. All four were REVOKEd from PUBLIC when they were created; these are the only grants they
+> carry. — [`20260725090000:112-115`](../../../supabase/migrations/20260725090000_iam_shared_runtime_write_capabilities.sql)
+
+So the grant list is four functions, not one, plus the context readers that four separate paths
+depend on:
+
+| Function                                           | Why the platform role needs it                                                                                                                                                                                                                                     | Revoked at                                                                                  | Granted today to                           |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------- | ------------------------------------------ |
+| `iam.audit_append(...)`                            | the writer                                                                                                                                                                                                                                                         | —                                                                                           | `app_runtime` (`20260725090000:121-123`)   |
+| `iam.audit_mask(text, text)`                       | called per detail row (`:211-212`)                                                                                                                                                                                                                                 | [`20260718095000:226`](../../../supabase/migrations/20260718095000_iam_audit_subsystem.sql) | `app_runtime` (`20260725090000:124`)       |
+| `iam.audit_canonical(uuid)`                        | called for the read-back (`:222`)                                                                                                                                                                                                                                  | `20260718095000:227`                                                                        | `app_runtime` (`:125`)                     |
+| `iam.audit_hash(bytea, text)`                      | called to extend the chain (`:230`)                                                                                                                                                                                                                                | `20260718095000:228`                                                                        | `app_runtime` (`:126`)                     |
+| `iam.current_tenant_id()`, `iam.current_user_id()` | reached on four independent paths: the §5.2 resolver, `org.provision_organization` (`20260717107000:121`), `org.change_tenant_status` (`20260717101000:193`) and `shared.touch_row_metadata` (`0002_base_schemas.sql:195`), which every row-metadata trigger fires | [`0002_base_schemas.sql:164-169`](../../../supabase/migrations/0002_base_schemas.sql)       | `app_runtime`, `app_readonly` (`:171-178`) |
+
+Inlining is not an escape: every one of these carries `SET search_path = ''`, so PostgreSQL will not
+inline them and the privilege is checked. Nothing is inherited either — no blanket grant and no
+default-privilege statement exists anywhere in the series, and §9.3 positively requires
+`app_platform` **not** be an `app_runtime` member.
+
+The precedent for granting a context reader to a fourth archetype is the last line of the very block
+§2 cites as the archetype pattern:
+`GRANT EXECUTE ON FUNCTION iam.current_user_id() TO app_worker`
+([`20260718106000_shared_event_outbox.sql:76`](../../../supabase/migrations/20260718106000_shared_event_outbox.sql)).
+
+No existing gate would have caught the omission: the boot preflight probes only the writer
+([`apps/api/src/server/db/capabilities.ts:59-65`](../../../apps/api/src/server/db/capabilities.ts)),
+and the coverage matrix tests table privileges only
+([`scripts/ci/rls-matrix.mjs:87`, `:221-224`](../../../scripts/ci/rls-matrix.mjs)). §14 owes a
+function-privilege check as well as a role entry.
 
 **Deliberately absent, and asserted rather than assumed:** no `UPDATE` and no `DELETE` on any of the
 three tables — none exists for any role today, verified two ways (register §2) — and no access to
@@ -409,6 +523,16 @@ and the provisioning function already rolls its replay record back with its own 
 The replay contract is unchanged and now covers the whole act: the same key with the same request
 replays the stored result and creates nothing; the same key with a different request is refused.
 
+**Activation is not part of it, and must not be.** `org.provision_organization` carries an optional
+activation branch: with `tenant.activate` set it calls `org.change_tenant_status(..., 'active', ...)`
+inside the same transaction
+([`20260717107000:254-261`](../../../supabase/migrations/20260717107000_org_provisioning.sql)).
+Used here that would move the tenant out of `provisioning` **before** the Owner bootstrap of §6.3
+runs — closing the bootstrap window inside the transaction that depends on it, and, if the bootstrap
+were then skipped, producing exactly the live-tenant-with-no-Owner state §9.1 exists to prevent. The
+adapter therefore never sets it, and activation is a separate later act under
+`platform.organization.lifecycle`. Revision 1 did not notice this branch at all.
+
 ### 9.2 Why the bootstrap path is not a general way around delegation
 
 Normal tenant delegation is **untouched**. `ins_role_permissions_delegable` and
@@ -420,6 +544,9 @@ The bootstrap path cannot become a general alternative because of four independe
 enforced rather than promised:
 
 1. It is reachable only by `app_platform`, which the request path never uses for a tenant session.
+   Note the correction in §2: this holds because the bootstrap policies are written `TO app_platform`
+   and no ordinary session runs as that role — **not** because any policy refuses `app_runtime`.
+   Policies are permissive and refuse nothing.
 2. Its policies require `iam.has_platform_authority('platform.organization.provision')`.
 3. Its policies require the target tenant to be in the provisioning state — a window that closes
    itself on the tenant's first legal transition.
@@ -448,11 +575,18 @@ conditions. Saying so is the difference between this pass and the last one.
 
 **Two proofs are therefore required, and one alone is the vacuous proof again:**
 
-- Remove the execute grant → bootstrap fails at commit with `insufficient_privilege` naming the
-  function.
+- **Positive control first**, in the same test: an unmutated bootstrap succeeds. Without it a red
+  result proves only that something is broken.
+- Remove the execute grant → bootstrap fails at commit, asserted on the **error message naming the
+  function**, not on the error class: `42501` is raised by this trigger, by every row-level denial
+  and by every missing grant alike, so a class assertion cannot tell them apart.
 - Remove the bootstrap-window predicate → bootstrap succeeds against a tenant that is already live.
   This is the escalation the backstop does not catch for this role, and it is the one the window
   exists to prevent.
+- Condition 2 of §9.2 needs its own database-level proof, because §4.3 refuses a missing platform
+  authority in middleware before any statement runs — so a request-level test can never exercise it.
+  Call the bootstrap writes directly as `app_platform` with no `iam.platform_grants` row and be
+  refused.
 
 ---
 
@@ -476,11 +610,19 @@ exists before a tenant does, its security-relevant flag is what makes a breach a
 a counter, and the catalogue is pinned by four test files — a fifth name with identical semantics
 would be cost with no benefit.
 
-The one honest caveat: `auth-adjacent`'s stated rationale is about unauthenticated traffic, and a
-platform request is authenticated. Keying an authenticated operator by address is conservative
-rather than wrong — it bounds an operator who shares an address with others more tightly than
-necessary, and 10 per minute is generous for an operation performed a handful of times a day. If
-that ever bites, the answer is a documented rationale amendment, not a quieter policy.
+Two caveats, both of which revision 1 got wrong by overstating the benefit.
+
+**The security-relevant flag does not do what revision 1 said it does.** It is consulted on the
+public-operation path; for a non-public operation the flag buys no additional signal by itself. The
+reason to prefer `auth-adjacent` is its **key material**, not its flag. If a control-plane breach
+should raise a security event, that has to be arranged explicitly and is an implementation
+obligation of slice B9, not something reuse confers for free.
+
+**Its rationale text describes unauthenticated traffic**, and a platform request is authenticated.
+Keying an authenticated operator by address is conservative rather than wrong — it bounds an operator
+who shares an address with others more tightly than necessary, and 10 per minute is generous for an
+operation performed a handful of times a day. The honest response is to amend the rationale text in
+the same change, so the catalogue does not describe a policy differently from how it is used.
 
 ---
 
@@ -501,6 +643,12 @@ exactly as existing routes do
 ([`app/api/v1/vehicles/[vehicleId]/route.ts:44`](../../../apps/api/src/app/api/v1/vehicles/[vehicleId]/route.ts)),
 **before** any context is installed and before any statement is issued. A failure becomes the
 repository's standard validation refusal (`validation.ts:61-66`).
+
+One mismatch to close rather than inherit: the address validator and the context validator do not
+accept the same strings. `request-context.ts:63` pins the variant and variant-version digits, while
+the installed `zod`'s `.uuid()` is broader — so a value can pass address validation and then be
+rejected when the context is built, producing an internal error where a validation refusal belongs.
+Control-plane routes use a validator that matches `request-context.ts:63` exactly.
 
 A well-formed identifier naming something the operator may not reach produces a non-disclosing
 refusal — the same answer as a target that does not exist, so the control plane does not become an
@@ -571,31 +719,34 @@ write. The tenant-side operation that calls this function is wave C's.
 Each row is an attack this design must survive. Every one is restated as an attack the refuter
 should run; none is claimed to be closed by this document alone.
 
-| #    | Attack                                                                          | Where the design answers it                                                                                                                                  | Residual                                                                    |
-| ---- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------- |
-| T-1  | **A tenant administrator controls the account an operator authenticates with**  | §5.4 — disabling the account denies service; it cannot grant authority, because the resolver requires an active grant in a relation no tenant role can write | **Accepted, named.** Removed by wave D. The design's weakest point.         |
-| T-2  | Company Owner grants themselves platform authority                              | §5.3 — no product write path to the relation exists                                                                                                          | —                                                                           |
-| T-3  | Forged platform claim in a request                                              | §3.2 — authority is resolved from the relation, never from anything the client sends                                                                         | —                                                                           |
-| T-4  | Absent narrowing lists silently widen a platform request                        | §3.1, §6.1 — absence means no narrowing, so the design relies on `app_platform` holding **no grant** on any tenant business table rather than on the lists   | Attack this: enumerate what the role can actually reach                     |
-| T-5  | Tenant A's operator targets tenant B                                            | §11 non-disclosing refusal; §5.2 the resolver consults no tenant, so there is nothing to confuse                                                             | —                                                                           |
-| T-6  | Over-granted database role                                                      | §6.1 explicit prohibitions; §14 the matrix must be taught the role or none of it is checked                                                                  | Attack this: the matrix change is the only thing making §6 verifiable       |
-| T-7  | A table grant present without its policy, or a policy without its grant         | §6.2–§6.4 and §7 write both halves for every table                                                                                                           | —                                                                           |
-| T-8  | A called function's execute privilege missing                                   | §7 enumerates the writer's whole body; §9.3 the backstop                                                                                                     | —                                                                           |
-| T-9  | A dead row-level path — a policy that can never be true                         | §6.3's window is deliberately closable; §6.2's replay policies must be checked against the tenant-absent row shape                                           | Attack this: `N-5` was exactly this defect in the existing tree             |
-| T-10 | A broad bypass policy                                                           | §6.1 forbids; every policy above carries a real predicate                                                                                                    | —                                                                           |
-| T-11 | Definer-rights shortcut                                                         | §6.5                                                                                                                                                         | —                                                                           |
-| T-12 | Client-supplied actor                                                           | §8 four rules                                                                                                                                                | —                                                                           |
-| T-13 | Unthrottled high-authority operation                                            | §10 reuse of a policy with pre-tenant key material                                                                                                           | —                                                                           |
-| T-14 | Rate-limit key absent when the limiter runs                                     | §10 — operation and address both exist before authentication completes                                                                                       | —                                                                           |
-| T-15 | Malformed identifier reaching a statement                                       | §11                                                                                                                                                          | —                                                                           |
-| T-16 | Bootstrap deadlock — the first Owner needs an Owner                             | §6.3 the window; §9.2                                                                                                                                        | —                                                                           |
-| T-17 | Delegation bypass through the bootstrap path                                    | §9.2's four conditions; §9.3 states the backstop is **not** one of them                                                                                      | Attack this: the honest statement is also the exposed one                   |
-| T-18 | Replay abuse — two tenants from one key, or a key that reveals another tenant's | §6.2's narrow platform policies; §9.1                                                                                                                        | —                                                                           |
-| T-19 | Half-provisioned tenant with no recoverable Owner                               | §9.1 one transaction                                                                                                                                         | —                                                                           |
-| T-20 | Audit write denied at run time                                                  | §7 full path                                                                                                                                                 | —                                                                           |
-| T-21 | Audit rewritten or deleted                                                      | §7 — no such privilege exists for any role, verified two ways                                                                                                | —                                                                           |
-| T-22 | Duplicate operation or duplicate permission code                                | §12.1, §12.2                                                                                                                                                 | —                                                                           |
-| T-23 | A red test that passes with the feature removed                                 | §9.3 requires two proofs; §16 requires every mutation to change something                                                                                    | Attack this: it is the failure mode this repository has recorded most often |
+| #    | Attack                                                                                       | Where the design answers it                                                                                                                                  | Residual                                                                                                                            |
+| ---- | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
+| T-1  | **A tenant administrator controls the account an operator authenticates with**               | §5.4 — disabling the account denies service; it cannot grant authority, because the resolver requires an active grant in a relation no tenant role can write | **Accepted, named.** Removed by wave D. The design's weakest point.                                                                 |
+| T-2  | Company Owner grants themselves platform authority                                           | §5.3 — no product write path to the relation exists                                                                                                          | —                                                                                                                                   |
+| T-3  | Forged platform claim in a request                                                           | §3.2 — authority is resolved from the relation, never from anything the client sends                                                                         | —                                                                                                                                   |
+| T-4  | Absent narrowing lists silently widen a platform request                                     | §3.1, §6.1 — absence means no narrowing, so the design relies on `app_platform` holding **no grant** on any tenant business table rather than on the lists   | Attack this: enumerate what the role can actually reach                                                                             |
+| T-5  | Tenant A's operator targets tenant B                                                         | §11 non-disclosing refusal; §5.2 the resolver consults no tenant, so there is nothing to confuse                                                             | —                                                                                                                                   |
+| T-6  | Over-granted database role                                                                   | §6.1 explicit prohibitions; §14 the matrix must be taught the role or none of it is checked                                                                  | Attack this: the matrix change is the only thing making §6 verifiable                                                               |
+| T-7  | A table grant present without its policy, or a policy without its grant                      | §6.2–§6.4 and §7 write both halves for every table                                                                                                           | —                                                                                                                                   |
+| T-8  | A called function's execute privilege missing                                                | §7.2 names every called function by signature — the writer, its three helpers, and the two context readers that four separate paths depend on                | Revision 1 named only the writer. That was blocker B1                                                                               |
+| T-8b | A resolver that cannot read its own inputs                                                   | §5.2 grants the column-scoped `iam.user_accounts` read and its policy                                                                                        | Revision 1 granted neither. That was blocker B2                                                                                     |
+| T-24 | Provisioning activates the tenant and closes the bootstrap window inside its own transaction | §9.1 — the adapter never sets `tenant.activate`; activation is a separate later act                                                                          | Attack this: the branch at `20260717107000:254-261` is reachable from the request document if the adapter ever forwards it verbatim |
+| T-25 | The lifecycle privilege reopens the bootstrap window                                         | §6.4's `WITH CHECK` refuses `provisioning` as a destination, and M3's table trigger enforces the graph for every writer                                      | Revision 1 permitted exactly this. That was blocker B3                                                                              |
+| T-9  | A dead row-level path — a policy that can never be true                                      | §6.3's window is deliberately closable; §6.2's replay policies must be checked against the tenant-absent row shape                                           | Attack this: `N-5` was exactly this defect in the existing tree                                                                     |
+| T-10 | A broad bypass policy                                                                        | §6.1 forbids; every policy above carries a real predicate                                                                                                    | —                                                                                                                                   |
+| T-11 | Definer-rights shortcut                                                                      | §6.5                                                                                                                                                         | —                                                                                                                                   |
+| T-12 | Client-supplied actor                                                                        | §8 four rules                                                                                                                                                | —                                                                                                                                   |
+| T-13 | Unthrottled high-authority operation                                                         | §10 reuse of a policy with pre-tenant key material                                                                                                           | —                                                                                                                                   |
+| T-14 | Rate-limit key absent when the limiter runs                                                  | §10 — operation and address both exist before authentication completes                                                                                       | —                                                                                                                                   |
+| T-15 | Malformed identifier reaching a statement                                                    | §11                                                                                                                                                          | —                                                                                                                                   |
+| T-16 | Bootstrap deadlock — the first Owner needs an Owner                                          | §6.3 the window; §9.2                                                                                                                                        | —                                                                                                                                   |
+| T-17 | Delegation bypass through the bootstrap path                                                 | §9.2's four conditions; §9.3 states the backstop is **not** one of them                                                                                      | Attack this: the honest statement is also the exposed one                                                                           |
+| T-18 | Replay abuse — two tenants from one key, or a key that reveals another tenant's              | §6.2's narrow platform policies; §9.1                                                                                                                        | —                                                                                                                                   |
+| T-19 | Half-provisioned tenant with no recoverable Owner                                            | §9.1 one transaction                                                                                                                                         | —                                                                                                                                   |
+| T-20 | Audit write denied at run time                                                               | §7 full path                                                                                                                                                 | —                                                                                                                                   |
+| T-21 | Audit rewritten or deleted                                                                   | §7 — no such privilege exists for any role, verified two ways                                                                                                | —                                                                                                                                   |
+| T-22 | Duplicate operation or duplicate permission code                                             | §12.1, §12.2                                                                                                                                                 | —                                                                                                                                   |
+| T-23 | A red test that passes with the feature removed                                              | §9.3 requires two proofs; §16 requires every mutation to change something                                                                                    | Attack this: it is the failure mode this repository has recorded most often                                                         |
 
 ---
 
@@ -611,10 +762,30 @@ unverified by the gate whose job is to prove no role holds a privilege it should
 **The migration that creates `app_platform` and the change that teaches the matrix about it are the
 same change**, and the matrix change ships with a test that fails when the entry is removed.
 
-Per C11, this document quotes no coverage figure. The figures that exist today and were measured
-directly are: 124 migrations, 112 seeded permission codes across 17 domain prefixes, 305 published
-operations, 180 declarations carrying tenant scope across 132 route files, and 0 operation
-identifiers beginning `org.`. Everything the change moves is stated as "moves", not as a number.
+Entering the role in that list buys less than revision 1 implied, and the difference matters. The
+matrix has no allowlist, so adding the role buys the superuser and bypass checks, the forced-RLS
+invariant, and grant-to-policy coherence. It does **not** enforce §6.1's prohibition on business
+tables — that needs its own assertion — and it tests **table** privileges only
+([`rls-matrix.mjs:87`, `:221-224`](../../../scripts/ci/rls-matrix.mjs)), so the function grants of
+§7.2 fall outside it entirely. Slice B1 therefore ships three things, not one: the role entry, a
+business-table prohibition assertion, and a function-privilege check covering the six functions
+§7.2 names.
+
+Per C11, this document quotes no coverage figure. The figures below were each measured directly on
+2026-08-22 at `fe81f3eb`, and the tenant-scope figure is the one revision 1 got wrong:
+
+| Figure                                 | Value                                                                                                                                                               | How it was measured                                                                               |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| Migrations                             | 124                                                                                                                                                                 | file count under `supabase/migrations`                                                            |
+| Seeded permission codes                | 112, across 17 domain prefixes                                                                                                                                      | `supabase/seeds/04_iam_permission_catalog.sql`                                                    |
+| Published operations                   | 305                                                                                                                                                                 | `= defineOperation({` assignments under `apps/api/src`                                            |
+| Operations resolving to tenant scope   | **170** across **136** files — 166 declaring it, 4 inheriting the default at [`operation-registry.ts:185`](../../../apps/api/src/server/auth/operation-registry.ts) | parse each `defineOperation` body and read its `scope`, counting an absent `scope` as the default |
+| Operation identifiers beginning `org.` | 0                                                                                                                                                                   | two independent searches (register §2)                                                            |
+
+Revision 1 said "180 declarations across 132 route files". That was a raw text scan: it counted the
+literal `scope: 'tenant'` wherever it appeared, prose comments included, and it missed the four
+operations that declare no scope and inherit the default. Both halves were wrong, in opposite
+directions. Everything the change itself moves is stated as "moves", never as a predicted number.
 
 ---
 
@@ -628,43 +799,61 @@ every file below is numbered above it, and no applied file is edited.
 | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **M1**    | The `app_platform` role; `iam.platform_grants` with its constraints, triggers, forced row-level security and its read policy; `iam.has_platform_authority`; the schema-usage grants |
 | **M2**    | The privilege graph of §6 and §7 — execute grants, table grants (column-scoped where §6.4 says so), and every new policy, each with its predicate                                   |
-| **M3**    | `org.company_status_history` and `org.change_company_status`                                                                                                                        |
+| **M3**    | `org.company_status_history`, `org.change_company_status`, **and the `BEFORE UPDATE` transition backstop on `org.tenants`** that §6.4 depends on                                    |
 
-Seeds change once, in the seeds bucket: the three `platform.` codes of §4.2, moving the catalogue
-count and the domain count together with the baseline pin.
+Seeds change once, in the seeds bucket: the three `platform.` codes of §4.2.
+
+**Four baseline values move, not two.** The permission count and the domain count are the obvious
+pair; `structuralTotals` and `schemaHash` in the same baseline file also move, because M1 to M3 add
+a role, a relation, functions, policies and a trigger. `structuralTotals` cannot be reproduced on a
+developer machine — local Supabase schemas inflate it — so it is re-recorded from the hosted clean
+room, never from a local measurement. The re-record order is the one the repository already enforces:
+regenerate, then record, then commit. Recording before the documents are green bakes a failure count
+into the ledger, and the sequence never converges.
 
 ---
 
 ## 16. Proof plan
 
-Every rule above owes a proof, and **no mutation is accepted if removing it changes nothing.** Each
-row states its own precondition so a passing test cannot be vacuous.
+Every rule above owes a proof, and **no mutation is accepted if removing it changes nothing.**
 
-| #    | Mutation or case                                                                 | Must produce                                                                                               |
-| ---- | -------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| P-1  | Revoke the operator's platform grant                                             | The platform operation is refused                                                                          |
-| P-2  | Run the platform operation as `app_runtime`                                      | Refused                                                                                                    |
-| P-3  | An ordinary authenticated tenant user calls it                                   | Refused                                                                                                    |
-| P-4  | A Company Owner calls it                                                         | Refused                                                                                                    |
-| P-5  | Forge a platform claim in the request                                            | Refused; the relation is what decides                                                                      |
-| P-6  | Remove one table grant from §6                                                   | The operation fails naming that exact privilege — not a generic error                                      |
-| P-7  | Remove one policy from §6                                                        | Refused, and the test names which                                                                          |
-| P-8  | Set both narrowing lists empty on a platform request                             | No widened row set; nothing in a tenant's business tables becomes readable                                 |
-| P-9  | Remove the rate-limit declaration from a platform operation                      | A test turns red, not quiet                                                                                |
-| P-10 | Call a platform operation repeatedly                                             | The refusal is reached                                                                                     |
-| P-11 | Send a malformed target identifier                                               | The standard validation refusal; no database error                                                         |
-| P-12 | Send a forged actor in the request document                                      | The recorded actor is the authenticated operator; the forged value appears nowhere                         |
-| P-13 | Same replay key, same request                                                    | Replayed; nothing created                                                                                  |
-| P-14 | Same replay key, different request                                               | Refused                                                                                                    |
-| P-15 | Fail midway through provisioning                                                 | No tenant, no Owner, no replay record — nothing partial                                                    |
-| P-16 | Bootstrap a second Owner into the same tenant                                    | Refused or replayed as designed; never a second conflicting Owner                                          |
-| P-17 | **Remove the bootstrap-window predicate**                                        | Bootstrap succeeds against a live tenant — proving the window, not the backstop, is the containment (§9.3) |
-| P-18 | **Remove the backstop execute grant**                                            | Bootstrap fails with `insufficient_privilege` naming the function (§9.3)                                   |
-| P-19 | After bootstrap, delegate as a tenant administrator                              | Unchanged behaviour; the existing delegation tests still pass untouched                                    |
-| P-20 | Append an audit event as `app_platform`, then attempt to amend and to delete one | Append succeeds and reads back; both amendments refused                                                    |
-| P-21 | Company Owner acts on their own company, then on another                         | Accepted, then refused                                                                                     |
-| P-22 | A legal company transition, then an illegal one                                  | Accepted, then refused; history appended in the first case only                                            |
-| P-23 | Remove the fourth role from the coverage matrix                                  | The matrix test turns red (§14)                                                                            |
+Revision 1 claimed here that "each row states its own precondition so a passing test cannot be
+vacuous". That was untrue of five of its rows, and the claim is withdrawn rather than repaired by
+restating it. The rule is now narrower and checkable: **every row that mutates something also states
+a positive control**, and a proof whose only assertion is a refusal must first name what it expected
+to succeed. P-2 to P-5 and P-15 carry that control explicitly, because they are the rows the old
+claim did not cover.
+
+| #    | Mutation or case                                                                                     | Must produce                                                                                                                                                                                                              |
+| ---- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P-1  | Revoke the operator's platform grant                                                                 | The platform operation is refused                                                                                                                                                                                         |
+| P-2  | Run the platform operation as `app_runtime` — control: the same call as `app_platform` succeeds      | Refused                                                                                                                                                                                                                   |
+| P-3  | An ordinary authenticated tenant user calls it — control: a platform operator succeeds               | Refused                                                                                                                                                                                                                   |
+| P-4  | A Company Owner calls it — control: a platform operator succeeds                                     | Refused                                                                                                                                                                                                                   |
+| P-5  | Forge a platform claim in the request — control: the same request from a real grant holder succeeds  | Refused; the relation is what decides                                                                                                                                                                                     |
+| P-6  | Remove one table grant from §6                                                                       | The operation fails naming that exact privilege — not a generic error                                                                                                                                                     |
+| P-7  | Remove one policy from §6                                                                            | Refused, and the test names which                                                                                                                                                                                         |
+| P-8  | Set both narrowing lists empty on a platform request, **then remove the positive tenant assignment** | First: no widened row set, and nothing in a tenant's business tables becomes readable. Second: the request **fails** rather than succeeding broadly — revision 1 dropped this half, and it is the only half that can fail |
+| P-9  | Remove the rate-limit declaration from a platform operation                                          | A test turns red, not quiet                                                                                                                                                                                               |
+| P-10 | Call a platform operation repeatedly                                                                 | The refusal is reached                                                                                                                                                                                                    |
+| P-11 | Send a malformed target identifier                                                                   | The standard validation refusal; no database error                                                                                                                                                                        |
+| P-12 | Send a forged actor in the request document                                                          | The recorded actor is the authenticated operator; the forged value appears nowhere                                                                                                                                        |
+| P-13 | Same replay key, same request                                                                        | Replayed; nothing created                                                                                                                                                                                                 |
+| P-14 | Same replay key, different request                                                                   | Refused                                                                                                                                                                                                                   |
+| P-15 | Fail midway through provisioning — control: the unmutated run commits all of it                      | No tenant, no Owner, no replay record — nothing partial                                                                                                                                                                   |
+| P-16 | Bootstrap a second Owner into the same tenant                                                        | Refused or replayed as designed; never a second conflicting Owner                                                                                                                                                         |
+| P-17 | **Remove the bootstrap-window predicate**                                                            | Bootstrap succeeds against a live tenant — proving the window, not the backstop, is the containment (§9.3)                                                                                                                |
+| P-18 | **Remove the backstop execute grant**                                                                | Bootstrap fails with `insufficient_privilege` naming the function (§9.3)                                                                                                                                                  |
+| P-19 | After bootstrap, delegate as a tenant administrator                                                  | Unchanged behaviour; the existing delegation tests still pass untouched                                                                                                                                                   |
+| P-20 | Append an audit event as `app_platform`, then attempt to amend and to delete one                     | Append succeeds and reads back; both amendments refused                                                                                                                                                                   |
+| P-21 | Company Owner acts on their own company, then on another                                             | Accepted, then refused                                                                                                                                                                                                    |
+| P-22 | A legal company transition, then an illegal one                                                      | Accepted, then refused; history appended in the first case only                                                                                                                                                           |
+| P-23 | Remove the fourth role from the coverage matrix                                                      | The matrix test turns red (§14)                                                                                                                                                                                           |
+| P-24 | Remove any one function grant of §7.2                                                                | The operation fails naming **that function**, asserted on message text and never on error class — `42501` is raised by a trigger, by a row-level denial and by a missing grant alike                                      |
+| P-25 | Remove the `iam.user_accounts` read policy of §5.2                                                   | The authority check fails loudly rather than silently answering false                                                                                                                                                     |
+| P-26 | As `app_platform` holding lifecycle authority, set a live tenant back to `provisioning`              | Refused by the policy check; refused again by M3’s trigger with the policy removed and the grant present; and a bootstrap write against that tenant is still refused                                                      |
+| P-27 | Pass `tenant.activate` through the provisioning adapter                                              | The adapter refuses to forward it, and the tenant stays in `provisioning` until an explicit lifecycle call                                                                                                                |
+| P-28 | Insert into `iam.platform_grants` from API source or from a migration above 124                      | The §5.3 gate fails; removing the gate turns its own test red                                                                                                                                                             |
 
 ---
 
@@ -674,14 +863,20 @@ The surviving lane is imported unchanged in premise (register §4) and bounded i
 
 Scoped evaluation is **not** switched on globally. `requiresScopedEvaluation` returns false for a
 tenant-scope operation whatever target is named
-([`authorization.ts:62-65`](../../../apps/api/src/server/auth/authorization.ts)); 180 declarations
-across 132 route files are in that position, and adjudicating them is wave E's job. Wave B changes
+([`authorization.ts:62-65`](../../../apps/api/src/server/auth/authorization.ts)); **170 operations
+across 136 files** are in that position (§14), and adjudicating them is wave E's job. Wave B changes
 none of them.
 
-For the administration operations this initiative introduces, containment is proven per operation:
-the acting tenant, the target tenant, the target company and the target branch where applicable, with
-target containment authoritative — a forged target identifier must not widen reach. The proof is
-P-21, run for each.
+**And wave B introduces no operation a Company Owner can reach.** All three are `platform.`
+operations, outside every tenant. So the containment rule stands as the surviving lane's premise, but
+this wave has nothing to prove it against: **P-21 and slice B8 move to wave C**, which introduces the
+first Company-Owner-reachable administration operation. Revision 1 assigned them here, where they
+would have passed vacuously.
+
+One trap recorded for whichever wave runs P-21: its fixture Owner must hold a **company-scoped**
+grant, because `narrowScope` skips the membership test for an unrestricted caller
+([`resolve-context.ts:133`](../../../apps/api/src/server/context/resolve-context.ts)) — an
+unrestricted fixture would prove nothing.
 
 ---
 
@@ -709,17 +904,17 @@ No typed tenant identifier appears anywhere in this design, at sign-in or afterw
 Not started, and not startable until the refuter reports zero confirmed critical and zero confirmed
 high findings.
 
-| Slice | Contents                                                                       | Reviewable alone                                     |
-| ----- | ------------------------------------------------------------------------------ | ---------------------------------------------------- |
-| B1    | The role, the relation, the resolver, and the coverage-matrix change (§5, §14) | Yes                                                  |
-| B2    | Company status history and its transition function (§12.3)                     | Yes                                                  |
-| B3    | The platform request context and its two shapes (§3)                           | Yes                                                  |
-| B4    | Organisation read contract (§12.2)                                             | Yes                                                  |
-| B5    | Lifecycle contract (§6.4)                                                      | Yes                                                  |
-| B6    | The sanctioned path to the provisioning function (§6.2)                        | Yes                                                  |
-| B7    | First-Owner bootstrap (§6.3, §9)                                               | Yes — and it should be, it is the highest-risk slice |
-| B8    | Company-Owner target containment (§17)                                         | Yes                                                  |
-| B9    | Published contract and security proofs (§16)                                   | Last                                                 |
+| Slice  | Contents                                                                                                                                                                     | Reviewable alone                                     |
+| ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| B1     | The role, the relation, the resolver, and the coverage-matrix change (§5, §14)                                                                                               | Yes                                                  |
+| B2     | Company status history and its transition function (§12.3)                                                                                                                   | Yes                                                  |
+| B3     | The platform request context and its two shapes (§3)                                                                                                                         | Yes                                                  |
+| B4     | Organisation read contract (§12.2)                                                                                                                                           | Yes                                                  |
+| B5     | Lifecycle contract (§6.4)                                                                                                                                                    | Yes                                                  |
+| B6     | The sanctioned path to the provisioning function (§6.2)                                                                                                                      | Yes                                                  |
+| B7     | First-Owner bootstrap (§6.3, §9)                                                                                                                                             | Yes — and it should be, it is the highest-risk slice |
+| ~~B8~~ | Company-Owner target containment — **moved to wave C** (§17): wave B introduces no operation a Company Owner can reach, so the slice and its proof would pass vacuously here | n/a                                                  |
+| B9     | Published contract and security proofs (§16)                                                                                                                                 | Last                                                 |
 
 Separate pull requests where the review boundary justifies it. No web tier. No work-order domain.
 
@@ -744,16 +939,61 @@ is load-bearing rather than advisory, this becomes a design change and not a run
 
 ## 21. Gate
 
-This design is not approved. It has been written, not attacked.
+Revision 1 was attacked and did not pass. Six bounded lanes ran 39 concerns; 19 were raised at
+critical or high and each was independently refuted; **16 fell and 3 survived**, all three high and
+none critical. The verdict was **NO-GO**, and the three survivors are B1, B2 and B3 in §22.
 
-The next step is one bounded adversarial pass reading **this document and its register**, returning
-`CONFIRMED` or `REFUTED` with evidence for every disposition C1 to C12, for the eight new findings,
-and for the twenty-three attacks in §13. Implementation may begin only on:
+This revision repairs all three, plus twelve substantive medium findings and the false claims listed
+below. The gate is unchanged:
 
 ```
 CONFIRMED CRITICAL = 0
 CONFIRMED HIGH     = 0
 ```
 
-with every other confirmed item either fixed in the design or recorded as a non-blocking dependency
-that wave B does not rely on.
+Implementation may begin only when a pass over **this revision** returns that result, with every
+other confirmed item either fixed here or recorded as a non-blocking dependency wave B does not rely
+on. Revision 2 has been written; it has not yet been attacked.
+
+---
+
+## 22. What revision 1 got wrong
+
+Kept rather than folded away, because the pattern in the errors is more useful than the corrections.
+
+### The three blockers
+
+| #      | What revision 1 said                                                                                                                        | Why it was wrong                                                                                                                                                                                                                                                                                         | Where it is fixed                           |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------- |
+| **B1** | §7 called itself "the writer's whole body" and granted `EXECUTE` on `iam.audit_append` alone                                                | The writer is `SECURITY INVOKER` and calls three helpers, each revoked from public and granted only to `app_runtime`. Four separate paths also reach the context readers. The repository states this rule in prose three lines above the grants revision 1 should have copied (`20260725090000:112-115`) | §7.2, and a function-privilege check in §14 |
+| **B2** | §5.2 said the resolver "reads two tables and no more", and §5.1 specified the read for one of them                                          | `iam.user_accounts` forces row-level security with a select path for `app_runtime`/`app_readonly` only. A `SECURITY INVOKER` resolver called from inside a policy is evaluated as `app_platform`, so it raises rather than answering false — making every policy in §6.3 and §6.4 unreachable            | §5.2, §6.1                                  |
+| **B3** | §6.3 called the bootstrap window "self-closing, with no second mechanism to remember", while §6.4 granted an unpredicated `UPDATE (status)` | A `FOR UPDATE` policy with only a `USING` clause reuses it as the check, so `status = 'provisioning'` passed. The role could reopen the window on a live tenant, and the transition graph lives only inside a function a raw update never enters                                                         | §6.3, §6.4, M3 in §15, P-26                 |
+
+### Two sentences asserted as fact that the repository disproves
+
+**"The administration policies would refuse the insert."** They would not. All 650 policies in the
+tree are permissive — `AS RESTRICTIVE` appears zero times — and permissive policies OR. An existing
+policy declines to admit; it cannot refuse. §2 now gives the two real reasons for a separate role,
+and §9.2 condition 1 is restated on the same footing.
+
+**"180 declarations across 132 route files."** A raw text scan, counting prose comments and missing
+the four operations that inherit the default scope. The measured figure is 170 across 136, and §14
+now names the method beside every number it quotes.
+
+### The pattern
+
+Every one of the three blockers is the same defect seen from a different angle: **the design
+enumerated privileges one level shallower than the `SECURITY INVOKER` call chains it was granting.**
+That is the same class as C1 — the finding revision 1 was written to close — reappearing inside the
+fix for it. All three fail closed, none is reachable by a tenant principal, and all three are
+repaired by additive grant and policy lines plus one `WITH CHECK`. But each contradicted a sentence
+the document stated as fact, which is why they were blocking rather than cosmetic.
+
+### What the pass could not check
+
+Nothing was executed. No role, relation, resolver or migration exists, so every privilege conclusion
+here is reasoning over documented database semantics rather than measured behaviour. Several
+findings turn on predicates this document states in prose whose exact form an implementer has not
+yet written — where one plausible implementation would be safe and another would not, the trap is
+recorded rather than the verdict. And revision 1's own proof plan was defective in five rows, so
+"the proofs will catch it" is a weaker argument here than it reads.
