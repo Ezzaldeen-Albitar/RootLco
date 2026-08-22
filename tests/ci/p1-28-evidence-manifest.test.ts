@@ -1377,6 +1377,51 @@ describe('P1-28-QA-005 — the seal lifecycle: ACTIVE while it is built, ARCHIVE
 
   /* ----------------------------------------------------- the anti-escape -- */
 
+  it('refuses a promotion branch proved by a ref the local machine controls', () =>
+    withScratchRepository((repo) => {
+      /*
+       * Found by attacking the gate, and it worked before this case existed.
+       *
+       * Condition D is the one an unfinished phase cannot satisfy by editing its
+       * own package — but it can be satisfied by editing the CHECKOUT, if the
+       * promotion branch is resolved the way a base branch is. `resolveBaseRef`
+       * falls back from the remote-tracking ref to `refs/heads/<branch>` and then
+       * to the bare name, which is right for a base (a shallow clone may carry
+       * only a local ref) and wrong here: the whole value of D is that the machine
+       * running the gate cannot supply it.
+       *
+       * This repository already carries a stale local `main` eleven promotions
+       * behind the protected branch, so the fallback was never hypothetical.
+       */
+      repo.checkout(repo.productChanged);
+      const doc = repo.document(ACCEPTED);
+
+      // The protected branch does not contain the candidate. Correctly ACTIVE.
+      repo.run('update-ref', 'refs/remotes/origin/main', repo.origin);
+      expect(bind(repo, doc).lifecycle.state, 'the premise is wrong').toBe('ACTIVE');
+
+      // A local branch of the same name that DOES contain it, and no remote ref.
+      repo.run('update-ref', 'refs/heads/main', repo.candidate);
+      repo.run('update-ref', '-d', 'refs/remotes/origin/main');
+      const forged = bind(repo, doc);
+
+      expect(
+        forged.lifecycle.state,
+        'a ref the local machine controls proved the candidate was promoted'
+      ).toBe('ACTIVE');
+      expect(
+        forged.lifecycle.conditions.containedInPromoted,
+        'containment was satisfied by a local branch'
+      ).toBe(false);
+      expect(forged.lifecycle.unknowns.join(' ')).toContain('remote-tracking ref');
+
+      // And the strict rules really do still bite on that world.
+      const { sound, said } = speak(forged);
+      expect(sound, 'the escape succeeded').toBe(false);
+      expect(refusedProductDrift(said), 'the product rule was escaped through the checkout').toBe(
+        true
+      );
+    }));
   it('an unfinished phase cannot archive itself to escape the product rule', () =>
     withScratchRepository((repo) => {
       /*

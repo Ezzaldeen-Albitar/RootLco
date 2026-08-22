@@ -966,6 +966,29 @@ export const CLOSURE_RECORD_PATH = `${PHASE_DIR}/closure-record.md`;
 export const ACCEPTED_VERDICT = 'OWNER ACCEPTANCE: PASS';
 export const PROMOTED_BRANCH = 'main';
 
+/**
+ * The ONE ref condition D is allowed to read.
+ *
+ * Not `resolveBaseRef`, which falls back from the remote-tracking ref to
+ * `refs/heads/<branch>` and then to the bare name. That chain is right for a
+ * BASE branch — a shallow clone may legitimately carry only a local ref, and
+ * getting the base wrong costs a measurement. It is wrong for the PROMOTION
+ * branch, where the whole value of condition D is that the machine running the
+ * gate cannot satisfy it.
+ *
+ * Measured, on a real repository: with only the protected ref present a phase
+ * whose candidate is not promoted is correctly ACTIVE. Create
+ * `refs/heads/main` pointing at the candidate, drop the remote-tracking ref,
+ * and the SAME package archives — escaping the product rule on the strength of
+ * a ref nobody else has. This repository already carries a stale local `main`
+ * eleven promotions behind the protected branch, so the fallback is not
+ * hypothetical here.
+ *
+ * Absent, it is UNKNOWN and the seal stays ACTIVE. A checkout that cannot see
+ * the promotion branch has not proved a phase finished; it has failed to ask.
+ */
+export const PROMOTION_REF = `refs/remotes/origin/${PROMOTED_BRANCH}`;
+
 /** The two states this seal can be in. An unknown state is neither. */
 export const SEAL_LIFECYCLE = Object.freeze({ ACTIVE: 'ACTIVE', ARCHIVED: 'ARCHIVED' });
 
@@ -1060,11 +1083,13 @@ export function sealLifecycle(candidateFile, git, readClosureRecord = defaultClo
    * as the base branch, because a checkout may carry the remote ref, the local
    * head, or the bare name.
    */
-  const promoted = resolveBaseRef(git, PROMOTED_BRANCH);
+  const promotedSha =
+    lines(git(['rev-parse', '--verify', '--quiet', `${PROMOTION_REF}^{commit}`]))[0] ?? null;
+  const promoted = { sha: /^[0-9a-f]{40}$/.test(String(promotedSha)) ? promotedSha : null };
   let containedInPromoted = false;
   if (promoted.sha === null) {
     unknowns.push(
-      `the promotion branch \`${PROMOTED_BRANCH}\` could not be resolved in this checkout — tried ${promoted.attempted.join(', ')}. A shallow clone carries none of them; fetch it before asking whether a phase is finished.`
+      `the promotion branch \`${PROMOTED_BRANCH}\` could not be resolved through \`${PROMOTION_REF}\`. Only the remote-tracking ref counts — a local branch of the same name is whatever this machine last did, not the protected branch — so fetch it (\`git fetch origin +refs/heads/${PROMOTED_BRANCH}:${PROMOTION_REF}\`) before asking whether a phase is finished.`
     );
   } else if (candidateExists) {
     const contained = ancestry(git, sha, promoted.sha);
