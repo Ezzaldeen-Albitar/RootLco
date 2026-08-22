@@ -39,6 +39,15 @@ export const RUNTIME_LOGIN = 'rootlco_test_runtime';
 export const READONLY_LOGIN = 'rootlco_test_readonly';
 /** Login role for the asynchronous worker archetype. */
 export const WORKER_LOGIN = 'rootlco_test_worker';
+/**
+ * Login role for the control-plane archetype (PRE-P1-29 Wave B).
+ *
+ * Every platform privilege assertion runs here and never on the admin
+ * connection. That distinction is the whole point of slice B1: the design was
+ * reviewed three times and five under-grants survived, because inspecting a
+ * grant list is not the same as executing the path.
+ */
+export const PLATFORM_LOGIN = 'rootlco_test_platform';
 /** Login role used to demonstrate FORCE RLS against a non-BYPASSRLS owner. */
 export const OWNER_LOGIN = 'rootlco_test_owner';
 /** Deliberately weak, deliberately fake, local test databases only. */
@@ -77,6 +86,14 @@ export function workerPool(max = 5): Pool {
   return new Pool(config(WORKER_LOGIN, TEST_LOGIN_PASSWORD, max));
 }
 
+export function platformPool(max = 5): Pool {
+  return new Pool(config(PLATFORM_LOGIN, TEST_LOGIN_PASSWORD, max));
+}
+
+export function platformClient(): Client {
+  return new Client(config(PLATFORM_LOGIN, TEST_LOGIN_PASSWORD));
+}
+
 export function ownerClient(): Client {
   return new Client(config(OWNER_LOGIN, TEST_LOGIN_PASSWORD));
 }
@@ -110,12 +127,17 @@ export async function ensureTestLogins(admin: Pool): Promise<void> {
         CREATE ROLE ${WORKER_LOGIN} LOGIN PASSWORD '${TEST_LOGIN_PASSWORD}'
           NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
       END IF;
+      IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '${PLATFORM_LOGIN}') THEN
+        CREATE ROLE ${PLATFORM_LOGIN} LOGIN PASSWORD '${TEST_LOGIN_PASSWORD}'
+          NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
+      END IF;
     END;
     $$;
   `);
   await admin.query(`GRANT app_runtime TO ${RUNTIME_LOGIN}`);
   await admin.query(`GRANT app_readonly TO ${READONLY_LOGIN}`);
   await admin.query(`GRANT app_worker TO ${WORKER_LOGIN}`);
+  await admin.query(`GRANT app_platform TO ${PLATFORM_LOGIN}`);
 }
 
 export interface SessionContext {

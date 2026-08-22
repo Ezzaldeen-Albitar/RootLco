@@ -596,7 +596,7 @@ describe('P1-15 / global security posture', () => {
     //
     // The pin moves with the seed deliberately: it is what catches an accidental
     // catalog edit.
-    expect(Number(total.rows[0]?.n)).toBe(112);
+    expect(Number(total.rows[0]?.n)).toBe(115);
   });
 
   it('the exact write-policy inventory of the whole shared schema is unchanged apart from migrations 117 and 119', async () => {
