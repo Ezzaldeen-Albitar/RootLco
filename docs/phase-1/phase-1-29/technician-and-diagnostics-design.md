@@ -15,10 +15,13 @@ and a decision is put to the Owner rather than papered over.
 | **Workshop supervisor / dispatcher** | sees the branch board, adds jobs, finds an available technician, assigns, reassigns, watches progress, presents for QC, closes | **yes**, end to end                                      |
 | **Technician**                       | opens their own queue, starts the clock, records diagnostics, pauses, completes                                                | **partly** — everything except _opening their own queue_ |
 
-The gap is `INS-04`: nothing maps a signed-in user to a
-`technicianProfileId`. `GET /auth/session` returns
+The gap is `INS-04`, and it is narrower than it first appears:
+`tech.technician_profiles.user_id` **already carries the mapping**, uniquely per
+tenant and on an index that already exists, and the repository already selects
+it. What is missing is a contract — `GET /auth/session` returns
 `{userId, tenantId, email, displayName, companyIds, branchIds, permissions[]}`
-and no profile reference, and there is no technician directory read to search.
+and no profile reference, no operation resolves the profile from
+`iam.current_user_id()`, and there is no technician directory read to search.
 
 **Do not work around this on the client.** Matching on `displayName` or on the
 email local-part is a correctness defect (two technicians can share a name) and
@@ -26,7 +29,10 @@ a privacy defect (it would let any holder of `tech.technician.read` enumerate
 profiles by guessing). The honest options are in
 [blocker-register.md](blocker-register.md) under `INS-04`; the design below
 assumes the supervisor-navigates-to-a-technician form, which works for both
-personas at the cost of one extra step for the technician.
+the _supervisor_ persona fully and the _technician_ persona only through a
+supervisor. Note what it does not mean: a technician **selecting themselves**
+from `GET /technicians/available` is the self-assertion case the prohibition
+covers. There is no interim form of "My jobs", and none should be invented.
 
 ## A2. The dispatch flow
 
@@ -194,27 +200,68 @@ is the largest single scoping decision in the phase.
 
 ### B2.1 The four options, with a recommendation
 
-| #   | option                                                                                                                                                                           | what it costs                                                 | what it delivers                                                    |
-| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- | ------------------------------------------------------------------- |
-| 1   | **Backend adds template authoring** (CRUD + versioning + publish, ~6–8 operations, plus `dia.template.manage`-class permissions which **do not exist** in the 115-row catalogue) | a Backend slice; new permission codes; a new admin surface    | the real product                                                    |
-| 2   | **Platform-seed a small standard template catalogue** (migration + seed)                                                                                                         | one migration, no new API; tenants cannot author or customise | diagnostics becomes usable and demonstrable; customisation deferred |
-| 3   | **Defer diagnostics out of P1-29 entirely**                                                                                                                                      | the phase title stops matching the phase                      | an honest, smaller phase that ships                                 |
-| 4   | Build the diagnostics UI against templates that do not exist                                                                                                                     | nothing ships that can be demonstrated                        | nothing                                                             |
+| #   | option                                                                                                                                                                                                         | what it costs                                                                                             | what it delivers                                                                             |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| 1   | **Expose the template lifecycle that already exists** — HTTP authoring, versioning, publish/retire, read (~6–8 operations), plus catalogue-management permission codes which **do not exist** in the catalogue | a Backend slice; new permission codes; **no schema work** — the tables and their guards are already built | the real product                                                                             |
+| 2   | **Platform-seed a standard template catalogue** (migration + seed)                                                                                                                                             | **not representable** — see below                                                                         | nothing; it cannot be built                                                                  |
+| 3   | **Defer the diagnostics UI out of the FIRST P1-29 slice** — not out of the phase; [execution-decision.md](execution-decision.md) §1.1 keeps diagnostics in P1-29 final scope                                   | the phase cannot close until option 1 lands and the diagnostics slice ships                               | an honest first slice that ships, with diagnostics sequenced behind its Backend prerequisite |
+| 4   | Build the diagnostics UI against templates that do not exist                                                                                                                                                   | nothing ships that can be demonstrated                                                                    | nothing                                                                                      |
 
-**Recommendation: option 3 for the first P1-29 slice, with option 1 scoped as
-the Backend prerequisite for a diagnostics slice.**
+**Recommendation: option 1. Template authoring is the Backend prerequisite; the
+diagnostics slice is blocked until it closes, and an early P1-29 slice may ship
+without diagnostics UI. Option 3 is rejected — that is sequencing, and
+diagnostics stays in P1-29 scope. What changes is implementation order, not the
+phase definition.**
 
-Reasoning, stated so the Owner can overrule it: option 2 looks cheap and is a
-trap under the standing no-fake-data policy — a seeded "standard 30-point
-inspection" is business data invented by us, shipped to every tenant, and
-un-editable by any of them. Option 4 is not a real option. Option 1 is right but
-is a Backend phase, and P1-29 is scoped as Frontend. Option 3 is the only choice
-that leaves the tree honest, and it costs the phase a headline rather than a
-capability — because the capability is not there to lose.
+Reasoning:
 
-**If the Owner chooses to keep diagnostics in P1-29, the phase is not
-Frontend-only and must be re-scoped as Backend-plus-Frontend.** That is the
-decision, plainly.
+**Option 2 is not merely policy-forbidden, it is structurally impossible.**
+`dia.inspection_templates` carries `tenant_id uuid NOT NULL` with **no `scope`
+column** — unlike `dia.diagnostic_types`, which is dual-scope
+(`scope IN ('platform','tenant')` with the usual coherence CHECK). **A platform
+template cannot be represented in this schema.** Every template belongs to
+exactly one tenant, by design. So even setting aside the standing no-fake-data
+policy, which would independently forbid shipping an invented "standard
+30-point inspection" to every tenant, there is no row to insert. (The _type_
+vocabulary is a different question: `dia.diagnostic_types` **is** dual-scope, so
+a platform type catalogue is representable and is a legitimate seed candidate.
+It is also empty, and `inspection_templates.diagnostic_type_id` is NOT NULL, so
+it is the first link in the chain.)
+
+**Option 1 is much smaller than "build a template system", because the system is
+already built.** Migration `20260722101000_dia_templates_versions_items.sql`
+delivers all three tables with their guards: `dia.guard_template_version_publish`
+enforces `draft → published → retired` and stamps `published_at`;
+`dia.guard_template_item_frozen` rejects any change to an item — including a
+soft delete — once its parent version leaves `draft`;
+`template_items` carries `response_type IN ('numeric','text','boolean','select')`,
+`unit` (mandatory for numeric), `is_mandatory`, `validation_rule jsonb` and
+`sequence`; and RLS grants SELECT to `app_runtime`/`app_readonly` with INSERT and
+UPDATE to `app_runtime`. **The database is ready and the write path is already
+permitted.** What is missing is an HTTP surface and a permission vocabulary —
+routes, a service, and seeded codes. No schema design, no new guard, no
+migration to the `dia` tables themselves.
+
+The permission codes should be **derived from precedent, not invented**. The
+catalogue already contains `apt.catalogue.manage` for the appointment intake
+catalogue and `svc.price.publish` for a separate publish authority alongside
+`svc.price.manage`. Applying both conventions gives a `dia` catalogue-management
+code and a separate publish authority — which matches the schema, since publish
+is the irreversible act that freezes the items. That derivation, and its
+evidence, belongs in
+[backend-prerequisite-gate.md](backend-prerequisite-gate.md) under `BE-4`;
+nothing here should be treated as the naming decision.
+
+Option 4 is not a real option.
+
+**The phase is not Frontend-only either way.** The other two Critical findings —
+`INS-04` and `INS-10` — are both fixed in the Backend, and `INS-11`, `INS-12`
+and `INS-49` are declaration and CI work. Keeping diagnostics adds the
+**largest** Backend prerequisite to a phase that already carries several small
+ones; it changes the size of the Backend slice, not whether there is one.
+[execution-decision.md](execution-decision.md) records the decision: diagnostics
+stays in P1-29 final scope, `BE-4` is funded as a prerequisite of this phase,
+and the diagnostics slice is sequenced behind it. That is the decision, plainly.
 
 ## B3. The report screen, if and when it is built
 
@@ -228,8 +275,8 @@ screen, no fan-out. Proposed layout:
 | **Checklist**       | `PUT …/items/{templateItemId}` | one row per template item; exactly one of `resultValue` / `notApplicableReason` — an absent or empty `resultValue` **forces** a reason. `outstandingMandatory` from the read drives the completion gate.                                  |
 | **Measurements**    | `POST …/measurements`          | `measuredValue` crosses the wire as a **string** matching `^-?\d{1,15}(\.\d{1,6})?$` — never a JSON number. Client-side validation must match that regex exactly or the user gets a server-side refusal for something the field accepted. |
 | **DTCs**            | `POST …/dtcs`                  | `^[PBCU][0-9][0-9A-F]{3}$` — upper case, second character **decimal**, last three **hex**. Immutable after insert.                                                                                                                        |
-| **Findings**        | `POST …/findings`              | severity `info                                                                                                                                                                                                                            | low    | medium | high | critical`× disposition`monitor | repair_recommended | repair_required | no_action` |
-| **Recommendations** | `POST …/recommendations`       | text + priority `low                                                                                                                                                                                                                      | medium | high`  |
+| **Findings**        | `POST …/findings`              | severity `info \| low \| medium \| high \| critical`× disposition`monitor \| repair_recommended \| repair_required \| no_action`                                                                                                          |
+| **Recommendations** | `POST …/recommendations`       | text + priority `low \| medium \| high`                                                                                                                                                                                                   |
 | **Evidence**        | `POST …/evidence`              | needs a `documentVersionId` first — see B4                                                                                                                                                                                                |
 | **Reviews**         | `POST …/reviews`               | read-only history plus, for a holder of `dia.diagnostic.review`, one verdict                                                                                                                                                              |
 

@@ -65,9 +65,14 @@ contract mirror with a gate asserting exact parity.** P1-29 should:
 
 1. declare its contract mirror for the 58 operations (types + the fields each
    payload carries);
-2. extend the adapter-reachability gate's Authority A to those operations, so a
-   Backend change that alters a payload turns the gate red in the same
-   repository;
+2. extend the adapter-reachability gate's Authority A to those operations, so
+   that no operation in these four schemas can be published without a mirror
+   row. Be exact about the ceiling: Authority A matches published register ids
+   against the `operationId:` literals in the mirror, and neither the register
+   nor `openapi.v1.json` carries **any payload information at all** — that is
+   `INS-01`. **No gate here can turn red on a changed request body or a
+   response shape.** The mirror is a transcription held true by review; the
+   only thing that tests it against the Backend is a real response;
 3. keep DOM tests as they are — they test behaviour — and rely on the mirror,
    not on the mock, for shape.
 
@@ -162,7 +167,11 @@ One test per domain code, asserting the _distinct_ presentation:
 
 ## 5. Backend-side checks P1-29 should run (not own)
 
-P1-29 does not change `apps/api`, but it depends on facts that could drift:
+Whether P1-29 changes `apps/api` is an open Owner decision — the Backend
+prerequisites are sized in [implementation-slices.md](implementation-slices.md)
+§0, and whichever are funded bring their own Backend tests. The checks below are
+the separate case: facts in `apps/api` that P1-29 consumes without changing, and
+that could drift:
 
 - `verify:contracts` — `validate:authorization-coverage`,
   `validate:operation-coverage`, `validate:openapi`,
@@ -226,8 +235,12 @@ Two more, from the same history:
 | 20  | review the four history surfaces                    | each renders; ids not names for actors                           | `INS-30`                               |
 
 **Diagnostics is absent from this journey** because it cannot be entered
-(`INS-09`). If the Owner adds it, steps for template authoring must be added
-first — which means Backend work.
+(`INS-09`), not because it has left the phase. Diagnostics remains in P1-29
+final scope; when template authoring lands (`BE-4`, Backend work), this journey
+gains its diagnostics steps and they become part of what the Owner accepts.
+Until then, a pass on the twenty steps above **does not close P1-29** — only an
+explicit, recorded Owner deferral naming the phase that will own diagnostics can
+do that, and silence is not deferral.
 
 ### 6.3 What acceptance may **not** conclude
 

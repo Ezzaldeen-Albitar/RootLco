@@ -85,13 +85,31 @@ consumes it yet"_ — those are the rows a Frontend phase can actually build.
 | 16  | Complete work-order history                                  | Partly contracted `INT-043`      | Confirmed — four separate timelines, no unified read                        |
 
 **Requirement 3, corrected.** The finding register says departments "exist
-nowhere". They do not exist _usefully_, which is different and cheaper:
-`org.departments` is a real table with `org.department.manage` seeded as a
-permission; it holds zero rows, no route file references it, and — the part that
-actually blocks — **no `wo`, `dia`, `tech` or `qms` table carries a
-`department_id`**. Meanwhile `iam.grant_scopes.department_id` already exists, so
-the authorisation model anticipated departments before the operational model
-did. Closing this needs a migration and a small admin surface, not a new domain.
+nowhere". **They exist.** `org.departments` is a real table
+(`20260717104000_org_operational_structure.sql:109`) with RLS enabled and
+forced, three scope policies, grants to `app_runtime`/`app_readonly`, and
+`org.department.manage` seeded as a permission.
+
+More than that: **the authorisation layer implements department scope end to
+end**, not merely in anticipation. `iam.grant_scopes.scope_type` is
+`CHECK (scope_type IN ('company', 'branch', 'department'))`
+(`20260718092000:141`); `ck_grant_scopes_shape` requires all three ids when the
+type is `department` (`:145`); `fk_grant_scopes_department` is a real composite
+FK to `org.departments` (`:138-140`), made possible by a `uq_departments_scope_id`
+added at `:57-58` **for exactly that purpose**;
+`iam.has_permission_in_scope` takes a **fourth parameter** and resolves
+`scope_type = 'department'` (`20260718097000:126-130`, `:194`); the delegation
+backstop covers it (`20260727090000:159`, `:182` — _"branch covers its
+departments; department covers itself"_); and at least one shipped `rec` RLS
+policy already honours it (`20260815093000:168`). The IAM grant routes accept
+`scopeType: 'department'` with a `departmentId`.
+
+Three things are missing, and only the third is a schema change: the table holds
+**zero rows**; **no route** references departments, so `org.department.manage` is
+an orphan code declared by zero operations; and **no `wo`, `dia`, `tech` or
+`qms` table carries a `department_id`**. See `BE-7` in
+[backend-prerequisite-gate.md](backend-prerequisite-gate.md), whose
+administration half belongs to PRE-P1-29 rather than to this phase.
 
 ## 4. Declared outputs
 
@@ -152,7 +170,14 @@ And the reason the boundary sits exactly there:
 > There is no `POST /work-orders` anywhere in the platform; the conversion
 > command is the only way a work order comes to exist.
 
-**P1-29 therefore does not create work orders.** It receives them.
+**P1-29 therefore does not open ordinary work orders.** It receives them. That
+quoted boundary is about the ordinary path: the rework route is the second —
+and last — path in the platform that inserts a work order, and it is P1-29's.
+`POST /work-orders/{id}/rework` (`qms.rework.manage`, A38 in
+[permission-matrix.md](permission-matrix.md)) opens a `kind = 'rework'` order
+against an original that is **closed and not a cancellation**, item-scoped on
+an existing record. There is still no collection create route, and P1-29 must
+not invent one.
 
 **Out of scope for P1-29**, from the same boundary and from
 `pre-p1-29-…/scope.md`: services and pricing, quotations as a commercial
@@ -172,14 +197,14 @@ Personas describe the user experience. **They are never the authorisation
 mechanism** — every screen and every action is gated on a permission code
 evaluated by the Backend, and the persona names below bind to nothing in code.
 
-| Persona                        | What they need P1-29 for                                                           | Primary surfaces                                                   |
-| ------------------------------ | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| Service advisor / reception    | Hand a received vehicle into the workshop and answer "where is my customer's car?" | Work-order queue, work-order detail (read), timeline               |
-| Workshop manager               | Decide who works on what, unblock, and move the record forward                     | Queue, detail, assignment, transitions, additional work            |
-| Technician                     | Execute assigned work and record what was found                                    | My jobs, job detail, labour start/complete, findings, evidence     |
-| Diagnostic technician          | Perform the inspection and report findings                                         | Inspection workspace, findings, measurements, DTC, recommendations |
-| Branch manager / Company Owner | See the branch's load and intervene on exceptions                                  | Queue across branches in scope, privileged transitions, history    |
-| QC user                        | Receive the handoff and pass or fail it                                            | QC surface (P1-29 owns the handoff only, not QC administration)    |
+| Persona                        | What they need P1-29 for                                                           | Primary surfaces                                                                                                                                                      |
+| ------------------------------ | ---------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Service advisor / reception    | Hand a received vehicle into the workshop and answer "where is my customer's car?" | Work-order queue, work-order detail (read), timeline                                                                                                                  |
+| Workshop manager               | Decide who works on what, unblock, and move the record forward                     | Queue, detail, assignment, transitions, additional work                                                                                                               |
+| Technician                     | Execute assigned work and record what was found                                    | Assigned-job queue — reached by supervisor navigation, because a technician cannot reach their own (`INS-04`) — job detail, labour start/complete, findings, evidence |
+| Diagnostic technician          | Perform the inspection and report findings                                         | Inspection workspace, findings, measurements, DTC, recommendations                                                                                                    |
+| Branch manager / Company Owner | See the branch's load and intervene on exceptions                                  | Queue across branches in scope, privileged transitions, history                                                                                                       |
+| QC user                        | Receive the handoff and pass or fail it                                            | QC surface (P1-29 owns the handoff only, not QC administration)                                                                                                       |
 
 The diagnostic technician is **not** a distinct authorisation identity — the
 distinction is which permissions the person holds (`dia.diagnostic.record`
@@ -193,7 +218,7 @@ Assembled, because no P1-29 dependency list exists in the P1-29 voice.
 | ------------------------- | ----------------------------------------------------------------- | ---------------------------------------------------------------------- |
 | P1-9 (DB)                 | All 44 tables in `wo`, `dia`, `tech`, `qms`                       | Delivered                                                              |
 | P1-19 (Backend)           | 58 operations across work-order, diagnostics, quality, technician | Delivered, with the gaps in [blocker-register.md](blocker-register.md) |
-| P1-18 / P1-28 (reception) | The only work-order origin                                        | Delivered                                                              |
+| P1-18 / P1-28 (reception) | Origin of every ordinary work order; rework is created in P1-29   | Delivered                                                              |
 | P1-20 (quotation)         | Additional-work approval                                          | Delivered, base-scope approval absent                                  |
 | P1-21 (inventory)         | Parts demand and fulfilment                                       | Delivered, demand↔fulfilment link absent                               |
 | P1-15 (shared)            | Documents/evidence, notifications, outbox                         | Delivered; the notification consumer is missing                        |

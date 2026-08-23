@@ -16,7 +16,13 @@ Two properties are deliberate:
 ## 0. The Backend prerequisites, sized
 
 None of these is P1-29 Frontend work. They are listed first because three of the
-Frontend slices are shaped by whether they happen.
+Frontend slices are shaped by whether they happen, and because **they are the
+phase’s first slice** — see [§9, Slice A0](#9-slice-a0--backend-prerequisite-remediation).
+
+Each one is specified in full — problem, severity, evidence, missing capability,
+affected screens, ownership, dependency, minimal surface and acceptance proof —
+in [backend-prerequisite-gate.md](backend-prerequisite-gate.md). The table below
+is the index; that document is the gate.
 
 | id       | prerequisite                                                                                                    | size                       | unblocks                                           |
 | -------- | --------------------------------------------------------------------------------------------------------------- | -------------------------- | -------------------------------------------------- |
@@ -30,8 +36,12 @@ Frontend slices are shaped by whether they happen.
 | **BE-8** | a job-level note/work-log and job-level evidence                                                                | medium                     | `INS-27`, `INS-28` — Owner requirements 8, 12      |
 
 **BE-1, BE-2, BE-3 and BE-5 together are a small slice** and they lift the
-phase's two worst constraints plus its cheapest security gap. If any Backend
-work is funded for P1-29, it should be those four.
+phase's two worst constraints plus its cheapest security gap. **BE-1, BE-2, BE-3 and BE-5 together are a small slice** and they lift the
+phase's two worst constraints plus its cheapest security gap. They are the
+cheapest Backend work in the phase, so they are the Backend work to fund first.
+They are not a substitute for **BE-4**: diagnostics is in P1-29's final scope,
+so BE-4 is funded as well — see [execution-decision.md](execution-decision.md)
+§1.1, which governs wherever this document reads otherwise.
 
 ---
 
@@ -240,7 +250,7 @@ work is funded for P1-29, it should be those four.
 ## 8. Slice H — diagnostics — **BLOCKED**
 
 **Cannot start.** `INS-09`: no templates exist, no operation authors one, and no
-template-management permission code exists in the 115-row catalogue. `POST
+template-management permission code exists in the 112-code catalogue. `POST
 /jobs/{jobId}/inspections` requires a `templateVersionId`.
 
 **Depends on BE-4**, which is a Backend slice of real size — routes _and_ new
@@ -253,39 +263,118 @@ report-level only, and `needs_rework` unlocks nothing. The design is in
 [technician-and-diagnostics-design.md](technician-and-diagnostics-design.md)
 Part B and does not need revisiting.
 
-**Recommendation: exclude Slice H from P1-29 and rename the phase, or fund BE-4
-and accept that P1-29 is not a Frontend-only phase.** That is the Owner's
-decision and it should be taken before Slice A starts, because it determines
-whether the diagnostics navigation entry is flipped at all.
+**Owner decision, recorded in [execution-decision.md](execution-decision.md): Slice
+H stays in P1-29 and BE-4 is funded as a Backend prerequisite of this phase.**
+The phase is not renamed and diagnostics is not deferred out of it; P1-29 is a
+mixed Backend-and-Frontend phase, not a Frontend-only one. What remains is
+sequencing, not scope: BE-4 must close before Slice H starts, and the
+diagnostics navigation entry is flipped when Slice H ships.
 
 ---
 
-## 9. Dependency graph
+## 9. Slice A0 — Backend prerequisite remediation
 
-```
-        BE-5 (parity gate, very small) ── advisable before anything
-        BE-1, BE-2, BE-3 (small)  ┐
-                                  │
-   A ──► B ──► C ──┬──► D ──► E ◄─┘   (E needs BE-2 for "my queue")
-                   │
-                   ├──► F
-                   │
-                   └──► G
+**The first slice of P1-29 is Backend.** It has no frontend deliverable and it
+is not optional: [execution-decision.md](execution-decision.md) §4 fixes the
+invariant that _a Backend prerequisite precedes every frontend feature that
+consumes it_, and A0 is where those prerequisites are closed.
 
-   H  ◄── BE-4 (large)      BLOCKED
-```
+Its content is [backend-prerequisite-gate.md](backend-prerequisite-gate.md).
+The build order inside A0:
 
-D and E consume **BE-1** (the job graph) and **BE-2** (technician identity).
-B consumes **BE-3** (the customer) for Owner requirement 2.
-Nothing else in A–G is blocked.
+| order | item                                     | why here                                                                      |
+| ----- | ---------------------------------------- | ----------------------------------------------------------------------------- |
+| 1     | **BE-5** — permission parity gate        | first, so it polices `BE-4`'s new codes as they are written rather than after |
+| 2     | **BE-2** — caller → technician profile   | very small; unblocks the technician persona and closes a Critical             |
+| 3     | **BE-1** — publish the state catalogues  | small; unblocks Slices C and D from hard-coding a tenant-overridable graph    |
+| 4     | **BE-3** — customer projection           | small–medium; closes a Critical and unblocks the board column                 |
+| 5     | **BE-4** — diagnostic template lifecycle | the large one; hard-blocks Slice H                                            |
+| —     | **BE-6**, **BE-7**, **BE-8**             | Owner-scoped. `BE-7`'s administration half belongs to PRE-P1-29, not here.    |
+
+**A0 exit criteria**
+
+1. Each funded prerequisite passes its own **acceptance proof** as written in
+   the gate document — a measurement, not an opinion.
+2. `BE-5` is **red-proved**: the gate fails on a deliberately misspelt code in a
+   scratch declaration, and passes on the tree.
+3. Every new operation is in the operation register, the OpenAPI document, and
+   the P1-29 contract mirror **in the same change** — the publication-and-
+   mirroring rule the P1-28 gate states as absolute.
+4. No new permission code exists that `BE-5` does not police.
+5. `verify:contracts` **and** `verify:inventories` both green — they are
+   separate scripts and one proves nothing about the other.
+
+**A0 does not touch `apps/web`.** It is a Backend branch, with a Backend
+ownership profile — see §11.
 
 ---
 
-## 10. What each option delivers
+## 10. Dependency graph
+
+```
+   A0 ─┬─ BE-5 ──────────────────────────► (polices every new code)
+       ├─ BE-2 ───────────────────────┐
+       ├─ BE-1 ──────────────┐        │
+       ├─ BE-3 ────┐         │        │
+       └─ BE-4 ────┼─────────┼────────┼──────────────┐
+                   │         │        │              │
+   A ──► B ◄───────┘   ──►   C ◄──────┘   ──► D ──► E ◄┘ (E needs BE-2)
+                             │                       ▲
+                             ├──► F                  │
+                             ├──► G                  │
+                             └──► H ◄────────────────┘  BLOCKED on BE-4
+                                         then H ──► (P1-29-H) acceptance
+```
+
+- **B** consumes `BE-3` (the customer) for Owner requirement 2.
+- **C** and **D** consume `BE-1` (the state catalogues); D is the acute case,
+  because the **job** graph is published nowhere at all.
+- **E** consumes `BE-2`; without it, Slice E ships the supervisor form only.
+- **H** is hard-blocked on `BE-4`.
+- **A**, **F** and **G** are blocked by nothing.
+
+---
+
+## 11. PRE-P1-29 dependency, per slice
+
+Named exactly, per the nine dimensions in
+[permission-matrix.md](permission-matrix.md) §8. "Depends on PRE-P1-29" is not
+an acceptable entry.
+
+| slice                      | PRE-P1-29 dimension it depends on                                | nature                                                                                                                                                                                                                                                                        |
+| -------------------------- | ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **A0**                     | none                                                             | its work is P1-29's own Backend                                                                                                                                                                                                                                               |
+| **A**                      | 1 tenant resolution · 6 company/branch scope                     | **shipped**; the board must name the scope pair (`T-02`)                                                                                                                                                                                                                      |
+| **B**                      | 1 · 6                                                            | shipped                                                                                                                                                                                                                                                                       |
+| **C**                      | 1 · 6 · 9 audit attribution                                      | shipped                                                                                                                                                                                                                                                                       |
+| **D**                      | 1 · 6 · 9                                                        | shipped. **Note:** a composed action writes two audit records; do not claim otherwise                                                                                                                                                                                         |
+| **E**                      | 4 employee membership (**technician half only**, via `BE-2`) · 6 | the technician half is `BE-2`, a P1-29 prerequisite — **not** a PRE-P1-29 deliverable                                                                                                                                                                                         |
+| **F**                      | 6 · 9                                                            | shipped. **Not** dimension 7: `wo.additional_work.approve` consults no approval limit                                                                                                                                                                                         |
+| **G**                      | 6 · 9                                                            | shipped                                                                                                                                                                                                                                                                       |
+| **H**                      | 1 · 6                                                            | shipped, once `BE-4` lands                                                                                                                                                                                                                                                    |
+| **P1-29-H (acceptance)**   | **5 role / grant authority**                                     | **the one hard dependency.** `iam.roles`, `iam.role_permissions`, `iam.role_grants`, `iam.grant_scopes`, `iam.user_accounts` and `org.tenants` all hold **0 rows**. No screen can be exercised by hand until a tenant, a user and roles carrying the 22 codes are provisioned |
+| Owner requirements 3 and 4 | **3 Company Owner administration**                               | `BE-7`'s management half is PRE-P1-29's organisation-administration gap — the same one that covers companies and branches                                                                                                                                                     |
+
+Dimensions **2** (cross-tenant multi-membership), **7** (workflow authority) and
+**8** (subscription enforcement) are depended on by **no P1-29 slice**. Recording
+that is the point of the exercise: three of the nine dimensions are not in
+P1-29's way at all, and one — dimension 5 — is in its way completely, but only
+at acceptance.
+
+---
+
+## 12. What each step reaches
+
+[execution-decision.md](execution-decision.md) fixes the phase at **A–H with
+BE-4**: diagnostics stays in scope, and its absence blocks closure rather than
+redefining the phase. The rows below are therefore successively larger states on
+the way to that endpoint, not alternatives to it. The last row is P1-29; the
+first three say honestly what is usable before it is reached, and none of them
+is a permissible place to stop.
 
 | option                   | slices            | Owner requirements met                    | honest description                                                               |
 | ------------------------ | ----------------- | ----------------------------------------- | -------------------------------------------------------------------------------- |
-| **Minimum honest phase** | A, B, C           | 1, 14 (partly), 15 (handoff), 16 (partly) | a usable work-order record with a correct lifecycle                              |
+| **Minimum honest start** | A, B, C           | 1, 14 (partly), 15 (handoff), 16 (partly) | a usable work-order record with a correct lifecycle                              |
 | **Workshop operations**  | A–G               | + 7 (partly), 14, 15                      | the supervisor's job, end to end; the technician still needs a supervisor's link |
 | **+ small Backend**      | A–G with BE-1/2/3 | + 2, 5 (partly), 7                        | the technician persona works; the customer is visible                            |
 | **Full phase title**     | A–H with BE-4     | + 9, 10, 11                               | not a Frontend phase                                                             |

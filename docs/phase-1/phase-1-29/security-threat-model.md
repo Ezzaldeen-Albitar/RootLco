@@ -90,10 +90,15 @@ gate asserts declaration-to-catalogue parity.** (`INS-11`)
 
 **Status.** **Uncontrolled.**
 
-**P1-29 owes.** P1-29 is a Frontend phase and will not normally edit
-declarations — but it will _read_ them to build its permission constants, and a
-divergence between `features/work-orders/permissions.ts` and the real
-declarations produces a UI that hides the wrong things. Propose the parity gate
+**P1-29 owes.** The phase's own Backend prerequisites are the largest source of
+new declarations here — `BE-4` alone introduces diagnostic-template permission
+codes that do not exist yet — and its Frontend then reads those declarations to
+build `features/work-orders/permissions.ts`, so a divergence between the two
+produces a UI that hides the wrong things. Build the parity gate (a small script
+over the registry and the seeded catalogue) as `BE-5`, in the Backend
+prerequisite slice and before the declarations it must police are written; it is
+the cheapest control in this document. See
+[implementation-slices.md](implementation-slices.md). Propose the parity gate
 (a small script over the registry and the seeded catalogue) as phase work even
 though the defect is Backend-side; it is the cheapest control in this document.
 

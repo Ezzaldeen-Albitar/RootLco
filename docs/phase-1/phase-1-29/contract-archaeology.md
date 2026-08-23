@@ -46,8 +46,8 @@ Of 305 registered operations, 58 are in P1-29 scope:
 | adjacent, consumed not owned |          2 | `rec.reception-convert-to-work-order`, `sal.invoice-preview` |
 
 The two adjacent operations are listed because P1-29 depends on them at its two
-boundaries: the only way a work order is created, and the only way a closed work
-order becomes money.
+boundaries: the only way an `ordinary` work order is created, and the only way a
+closed work order becomes money.
 
 ---
 
@@ -97,7 +97,7 @@ contract; the UI must not assume the Backend will cap them.
 header records the reconciliation: the reception conversion already inserts the
 `wo.work_orders` row, so a second creation path would be a second truth.
 
-The only creation path is
+The only path that opens an **ordinary** work order is
 **`POST /receptions/{receptionId}/convert-to-work-order`** — module `reception`,
 permission `rec.reception.convert`, scope branch, audit class privileged,
 idempotent **and** version-guarded.
@@ -335,14 +335,14 @@ deleting or deactivating the graph rows would not open a back door. `closed` and
 target state `is_terminal`, and **returns early for a cancellation target** — so
 cancelling bypasses every blocker by design.
 
-|     | blocker                                                                                                  |
-| --- | -------------------------------------------------------------------------------------------------------- |
-| B1  | a job is not terminal                                                                                    |
-| B2  | a labour session is still running (open-ended)                                                           |
-| B3  | a required additional-work request is unresolved                                                         |
-| B4  | a job requiring diagnostics has no completed diagnostic report                                           |
-| B5  | quality control has not passed                                                                           |
-| B6  | the sixth condition enumerated by `wo.guard_work_order_closure` and reported by the eligibility endpoint |
+|     | blocker                                                                                                                                                                                                                                                  |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| B1  | a job is not terminal                                                                                                                                                                                                                                    |
+| B2  | a labour session is still running (open-ended)                                                                                                                                                                                                           |
+| B3  | a required additional-work request is unresolved                                                                                                                                                                                                         |
+| B4  | a job requiring diagnostics has no completed diagnostic report                                                                                                                                                                                           |
+| B5  | quality control has not passed                                                                                                                                                                                                                           |
+| B6  | safety-critical rework has no independent sign-off (named by `ERR-WO-001`’s catalogue description; the rework route notes that without its own insert path "closure blocker B6 can never fire, because nothing in the platform can produce its subject") |
 
 `GET /work-orders/{id}/closure-eligibility` reports **all six at once** as
 `{workOrderId, state, eligible, blockers[…]}`, so the UI can explain the whole
@@ -454,17 +454,17 @@ something, that is a Backend change. `INS-08`.
 
 ### 8.3 What diagnostics is, and what it is not
 
-| concept                          | status                                                                                                                                            |
-| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| symptom / customer complaint     | **absent** from `dia` entirely — the nearest thing is `rec.complaint_details`, upstream in reception                                              |
-| checklist answers                | present: `dia.report_item_results`, one answer per template item, `result_value` or `not_applicable_reason`                                       |
-| free observations                | **absent** — every answer hangs off a template item                                                                                               |
-| findings                         | present and first-class: severity ∈ `info                                                                                                         | low    | medium | high | critical`, disposition ∈ `monitor | repair_recommended | repair_required | no_action` |
-| probable cause / confirmed cause | **absent** — no `cause`, `diagnosis` or `root_cause` column exists anywhere in `dia`                                                              |
-| recommended action               | present, flat: `dia.recommendations` (text plus `priority ∈ low                                                                                   | medium | high`) |
-| measurements                     | present: label, numeric value, unit, `within_range`                                                                                               |
-| DTCs                             | present, code-format enforced, immutable after insert                                                                                             |
-| evidence                         | present, **report-level only** — no `template_item_id`, `finding_id` or `measurement_id`, so a photograph cannot be tied to the item it evidences |
+| concept                          | status                                                                                                                                                         |
+| -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| symptom / customer complaint     | **absent** from `dia` entirely — the nearest thing is `rec.complaint_details`, upstream in reception                                                           |
+| checklist answers                | present: `dia.report_item_results`, one answer per template item, `result_value` or `not_applicable_reason`                                                    |
+| free observations                | **absent** — every answer hangs off a template item                                                                                                            |
+| findings                         | present and first-class: severity ∈ `info \| low \| medium \| high \| critical`, disposition ∈ `monitor \| repair_recommended \| repair_required \| no_action` |
+| probable cause / confirmed cause | **absent** — no `cause`, `diagnosis` or `root_cause` column exists anywhere in `dia`                                                                           |
+| recommended action               | present, flat: `dia.recommendations` (text plus `priority ∈ low \| medium \| high`)                                                                            |
+| measurements                     | present: label, numeric value, unit, `within_range`                                                                                                            |
+| DTCs                             | present, code-format enforced, immutable after insert                                                                                                          |
+| evidence                         | present, **report-level only** — no `template_item_id`, `finding_id` or `measurement_id`, so a photograph cannot be tied to the item it evidences              |
 
 Severity (5 values, on findings) and priority (3 values, on recommendations) are
 **two vocabularies on two different entities**. There is no priority on a

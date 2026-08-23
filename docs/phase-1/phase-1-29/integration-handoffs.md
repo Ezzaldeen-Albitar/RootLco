@@ -40,15 +40,15 @@ constant and call it information. Do not surface it. `INS-16`.
 
 ### 1.3 What inventory owns
 
-| capability                                            | operation                               | notes                                                                                                                                             |
-| ----------------------------------------------------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| availability                                          | `GET /stock-availability`               | `{companyId*, branchId*, itemId?, locationId?, includeQuarantine?, cursor, limit}`; `onHand`/`reserved`/`available` are exact decimal **strings** |
-| reserve                                               | `POST /stock-reservations`              | `inv.reserve_stock(...)` takes the balance row lock; `status ∈ active                                                                             | released | consumed | expired`; `work_order_id` is a nullable composite FK, indexed |
-| release                                               | `POST /stock-reservations/{id}/release` | idempotent — a non-active reservation returns silently                                                                                            |
-| issue                                                 | `POST /stock-issues`                    | body accepts `requiredPartRef`; writes `inv.part_issues` with `work_order_id` **NOT NULL**                                                        |
-| consume                                               | _(none)_                                | not an operation — `inv.consume_reservation` runs automatically inside `inv.issue_part` when a reservation id is supplied                         |
-| return                                                | `POST /stock-returns`                   | keyed on the **issue**, not the work order; a ceiling trigger caps the returned quantity                                                          |
-| customer-supplied / damaged / external-purchase parts | three create operations                 | **create-only — no read operation exists for any of them**                                                                                        |
+| capability                                            | operation                               | notes                                                                                                                                                          |
+| ----------------------------------------------------- | --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| availability                                          | `GET /stock-availability`               | `{companyId*, branchId*, itemId?, locationId?, includeQuarantine?, cursor, limit}`; `onHand`/`reserved`/`available` are exact decimal **strings**              |
+| reserve                                               | `POST /stock-reservations`              | `inv.reserve_stock(...)` takes the balance row lock; `status ∈ active \| released \| consumed \| expired`; `work_order_id` is a nullable composite FK, indexed |
+| release                                               | `POST /stock-reservations/{id}/release` | idempotent — a non-active reservation returns silently                                                                                                         |
+| issue                                                 | `POST /stock-issues`                    | body accepts `requiredPartRef`; writes `inv.part_issues` with `work_order_id` **NOT NULL**                                                                     |
+| consume                                               | _(none)_                                | not an operation — `inv.consume_reservation` runs automatically inside `inv.issue_part` when a reservation id is supplied                                      |
+| return                                                | `POST /stock-returns`                   | keyed on the **issue**, not the work order; a ceiling trigger caps the returned quantity                                                                       |
+| customer-supplied / damaged / external-purchase parts | three create operations                 | **create-only — no read operation exists for any of them**                                                                                                     |
 
 ### 1.4 The two reads P1-29 will want, and what it actually gets
 
@@ -112,11 +112,11 @@ panel, or a "parts ready" indicator. None of them has a contract behind it.
 `wo.additional_work_requests` carries them separately, and conflating any two is
 a product error:
 
-| column              | meaning                 | mutability                                                                                                                |
-| ------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `is_required`       | **technical necessity** | **immutable after insert**                                                                                                |
-| `state` (`pending   | approved                | rejected                                                                                                                  | withdrawn`) | **commercial decision** | only `pending` has outbound edges |
-| `fulfillment_state` | **execution**           | written only by the fulfilment operation, which refuses unless `state = 'approved'`; `waived` requires a non-empty reason |
+| column                                                   | meaning                 | mutability                                                                                                                |
+| -------------------------------------------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `is_required`                                            | **technical necessity** | **immutable after insert**                                                                                                |
+| `state` (`pending \| approved \| rejected \| withdrawn`) | **commercial decision** | only `pending` has outbound edges                                                                                         |
+| `fulfillment_state`                                      | **execution**           | written only by the fulfilment operation, which refuses unless `state = 'approved'`; `waived` requires a non-empty reason |
 
 ### 2.2 Approval is forgery-resistant by construction
 
