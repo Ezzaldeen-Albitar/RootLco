@@ -246,5 +246,54 @@ COMMENT ON FUNCTION iam.has_platform_authority(text) IS
   'True iff the current acting principal holds p_code as an ACTIVE platform grant and the account itself is active and not deleted (PRE-P1-29 Wave B, design section 5.2). Consults no tenant: platform authority exists outside every tenant, and iam.has_permission — which requires an active account in the CURRENT tenant — structurally cannot answer this question. SECURITY INVOKER; trusts only the server-set context. Absent principal, inactive account, unknown code and revoked grant all resolve to false.';
 
 REVOKE EXECUTE ON FUNCTION iam.has_platform_authority(text) FROM PUBLIC;
+
+-- ----------------------------------------------------------------------------
+-- 4. iam.holds_any_platform_authority — 'is this session a control-plane
+--    operator at all?'
+--
+--    Some control-plane acts are not tied to one code. Appending the audit
+--    record for an operation is the clear case: the operation itself is already
+--    authority-gated, and the audit write should be permitted to any operator
+--    rather than duplicating the operation's own code into the audit policy.
+--
+--    What it must NOT be is absent. Without it the audit policies could be
+--    satisfied by tenant context alone, and a platform session holds whatever
+--    tenant context it sets — so a connection with zero platform grants could
+--    have named any tenant and appended a chain-valid record to it.
+-- ----------------------------------------------------------------------------
+-- plpgsql rather than sql, for one reason: the EXCEPTION block. Its sibling
+-- iam.has_platform_authority carries one, and the foundation's stated rule is
+-- "malformed context value -> deny, never error". This function had no such
+-- block, so a session whose app.user_id is not a uuid got a raised 22P02 out of
+-- every audit and replay policy while the sibling quietly answered false. Both
+-- fail closed, but a refusal shaped like a crash is a different refusal, and
+-- every test in this slice asserts 42501.
+CREATE OR REPLACE FUNCTION iam.holds_any_platform_authority()
+RETURNS boolean
+LANGUAGE plpgsql
+STABLE
+SECURITY INVOKER
+SET search_path = ''
+AS $$
+BEGIN
+  RETURN EXISTS (
+    SELECT 1
+      FROM iam.platform_grants g
+      JOIN iam.user_accounts u ON u.id = g.user_account_id
+     WHERE g.user_account_id = iam.current_user_id()
+       AND g.status = 'active'
+       AND u.status = 'active'
+       AND u.deleted_at IS NULL
+  );
+EXCEPTION
+  WHEN invalid_text_representation THEN
+    RETURN false;
+END;
+$$;
+
+COMMENT ON FUNCTION iam.holds_any_platform_authority() IS
+  'True iff the acting principal holds ANY active platform grant on an active, undeleted account. The coarse companion to iam.has_platform_authority(text), for control-plane acts that are not tied to one permission code — the audit write of an operation whose own code has already been checked. SECURITY INVOKER; consults no tenant.';
+
+REVOKE EXECUTE ON FUNCTION iam.holds_any_platform_authority() FROM PUBLIC;
 -- Granted to app_platform by the privilege-graph migration, deliberately not
 -- here: this file establishes shape, the next file establishes reach.

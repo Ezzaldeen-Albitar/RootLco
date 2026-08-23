@@ -36,6 +36,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Pool } from 'pg';
 import {
   adminPool,
+  roleSurfaceFingerprint,
   ensureTestLogins,
   platformPool,
   withCommittedTx,
@@ -50,6 +51,8 @@ const READ = 'platform.organization.read';
 const LIFECYCLE = 'platform.organization.lifecycle';
 
 let admin: Pool;
+/** The platform surface as this file found it — see roleSurfaceFingerprint. */
+let surfaceBaseline: string;
 let platform: Pool;
 /** A committed tenant sitting inside its bootstrap window, for the whole file. */
 let windowTenant: string;
@@ -101,6 +104,46 @@ async function dropTenants(): Promise<void> {
   }
   await admin.query(`DELETE FROM org.tenants WHERE tenant_code LIKE 'b1m_%'`);
 }
+/**
+ * Gives a tenant a recoverable Owner so it can be activated at all.
+ *
+ * org.guard_tenant_status_transition now refuses provisioning -> active unless
+ * org.tenant_has_recoverable_owner is true. Every mutation that exercises the
+ * lifecycle therefore has to do what a real bootstrap does first, or it fails
+ * for the wrong reason and proves nothing about the privilege under test.
+ */
+async function establishOwner(tenantId: string): Promise<void> {
+  await withCommittedTx(platform, { userId: OPERATOR, tenantId }, async (db) => {
+    const tag = 'own-' + tenantId.slice(0, 8);
+    const account = await db.query<{ id: string }>(
+      `INSERT INTO iam.user_accounts
+         (tenant_id, identity_provider, provider_subject, email, display_name, status, created_by)
+       VALUES ($1,'local',$2,$3,'Owner','active',$4) RETURNING id`,
+      [tenantId, tag, tag + '@example.invalid', OPERATOR]
+    );
+    const role = await db.query<{ id: string }>(
+      `INSERT INTO iam.roles (tenant_id, role_code, name, created_by)
+       VALUES ($1,'company_owner','Company Owner',$2) RETURNING id`,
+      [tenantId, OPERATOR]
+    );
+    // The role has to CONFER something. Readiness resolves iam.role.manage and
+    // iam.grant.manage through the role-permission mapping with the same
+    // allow/deny arithmetic iam.has_permission uses, so an empty role is an
+    // owner who can administer nothing.
+    await db.query(
+      `INSERT INTO iam.role_permissions (tenant_id, role_id, permission_id, effect, created_by)
+       SELECT $1, $2, p.id, 'allow', $3
+         FROM iam.permissions p
+        WHERE p.permission_code IN ('iam.role.manage', 'iam.grant.manage', 'iam.user.manage')`,
+      [tenantId, role.rows[0]!.id, OPERATOR]
+    );
+    await db.query(
+      `INSERT INTO iam.role_grants (tenant_id, user_id, role_id, scope_mode, status, granted_by, created_by)
+       VALUES ($1,$2,$3,'unrestricted','active',$4,$4)`,
+      [tenantId, account.rows[0]!.id, role.rows[0]!.id, OPERATOR]
+    );
+  });
+}
 
 /** True iff app_platform currently holds EXECUTE on the named function. */
 async function hasExecute(signature: string): Promise<boolean> {
@@ -120,6 +163,15 @@ async function hasTable(table: string, privilege: string): Promise<boolean> {
   return r.rows[0]!.ok;
 }
 
+/** True iff app_platform holds the privilege on that ONE column. */
+async function hasColumn(table: string, column: string, privilege: string): Promise<boolean> {
+  const r = await admin.query<{ ok: boolean }>(
+    `SELECT has_column_privilege('app_platform', $1, $2, $3) AS ok`,
+    [table, column, privilege]
+  );
+  return r.rows[0]!.ok;
+}
+
 /** True iff the named policy exists on the named table. */
 async function hasPolicy(table: string, policy: string): Promise<boolean> {
   const [schema, name] = table.split('.');
@@ -131,22 +183,125 @@ async function hasPolicy(table: string, policy: string): Promise<boolean> {
   return r.rows[0]!.n === '1';
 }
 
-/** Runs `body` with one privilege removed, then restores it whatever happens. */
+/**
+ * Passed where a hand-written CREATE POLICY used to be.
+ *
+ * The hand-copied form failed in the worst way available to it. Two restores in
+ * this file carried the PRE-REMEDIATION text of policies that had since been
+ * tightened, so running the suite silently reverted the tenant term on
+ * sel_role_grants_platform_lifecycle and the coherence terms on
+ * ins_tenant_status_history_platform_lifecycle IN THE LIVE DATABASE. Nothing
+ * caught it: every assertion keyed on the policy NAME, and the definition
+ * round-trip added afterwards agreed too, because by then the live policy
+ * already matched the stale literal it was being compared against. The suite was
+ * green and the database was weaker than its own migrations.
+ *
+ * A mutation may now only put back what it took away.
+ */
+const RESTORE_FROM_CATALOGUE = '-- restore is derived from the live policy before the drop';
+
+/** Reconstructs a CREATE POLICY statement for a policy that exists right now. */
+async function captureCreatePolicy(table: string, policy: string): Promise<string> {
+  const [schema, name] = table.split('.');
+  const r = await admin.query<{
+    cmd: string;
+    roles: string;
+    qual: string | null;
+    withcheck: string | null;
+  }>(
+    `SELECT cmd, array_to_string(roles, ', ') AS roles, qual, with_check AS withcheck
+       FROM pg_policies WHERE schemaname = $1 AND tablename = $2 AND policyname = $3`,
+    [schema, name, policy]
+  );
+  const row = r.rows[0];
+  if (!row) throw new Error(`cannot capture ${table}.${policy}: it does not exist`);
+  const parts = [`CREATE POLICY ${policy} ON ${table}`, `FOR ${row.cmd} TO ${row.roles}`];
+  if (row.qual !== null) parts.push(`USING (${row.qual})`);
+  if (row.withcheck !== null) parts.push(`WITH CHECK (${row.withcheck})`);
+  return parts.join(' ');
+}
+
+/** The USING and WITH CHECK of a policy, as PostgreSQL renders them. */
+async function policyDefinition(table: string, policy: string): Promise<string> {
+  const [schema, name] = table.split('.');
+  const r = await admin.query<{ def: string }>(
+    `SELECT coalesce(qual,'-') || ' :: ' || coalesce(with_check,'-') AS def
+       FROM pg_policies WHERE schemaname = $1 AND tablename = $2 AND policyname = $3`,
+    [schema, name, policy]
+  );
+  return r.rows[0]?.def ?? '(absent)';
+}
+
+/**
+ * Runs `body` with one privilege removed, then restores it whatever happens.
+ *
+ * `snapshot` is optional and is what stops the restore from lying. Every policy
+ * restore in this file is a hand-copied literal, and both the precondition and
+ * the restore assertion key on the policy NAME — so a restore that reinstates a
+ * SEMANTICALLY DIFFERENT predicate satisfies them both, leaves the database
+ * weakened for every later case in the run, and is invisible to the matrix test,
+ * which also keys on names. That is the same class as the already-found bug
+ * where a column-list GRANT was used to restore a table-level one; passing a
+ * snapshot closes it for policies too.
+ */
 async function withoutPrivilege(
   present: () => Promise<boolean>,
   drop: string,
   restore: string,
-  body: () => Promise<void>
+  body: () => Promise<void>,
+  snapshot?: () => Promise<string>
 ): Promise<void> {
   // Step 1 — the mutation must have something to remove.
   expect(await present(), `precondition: the target of \`${drop}\` must exist first`).toBe(true);
+  // If the mutation touches a POLICY, capture it — both its rendered predicate
+  // and a CREATE statement that will put it back exactly — before dropping it.
+  // The target is derived from the DROP statement, so every policy case in this
+  // file and every one added later is covered without opting in.
+  // Broadened, and then made fail-closed, because the narrow form was a hole.
+  // The guard only recognised a bare `DROP POLICY <name> ON <table>`; writing the
+  // mutation as `DROP POLICY IF EXISTS` or `ALTER POLICY` left target null, so no
+  // restore was derived, the hand-written-restore hard error never fired, and the
+  // suite could put back whatever it liked. A guard that a different spelling
+  // walks past is not a guard.
+  const target =
+    /(?:DROP|ALTER)\s+POLICY\s+(?:IF\s+EXISTS\s+)?"?(\w+)"?\s+ON\s+([\w."]+)/i.exec(drop);
+  if (!target && /\bPOLICY\b/i.test(drop)) {
+    throw new Error(
+      'this mutation touches a POLICY in a form the restore harness does not recognise, ' +
+        'so it cannot derive a catalogue restore: ' +
+        drop
+    );
+  }
+  const probe = snapshot ?? (target ? () => policyDefinition(target[2]!, target[1]!) : undefined);
+  const before = probe ? await probe() : null;
+  // Prefixed with a DROP, because a mutation may REPLACE a policy rather than
+  // merely remove it — in which case a bare CREATE collides with the weakened
+  // one the mutation installed.
+  const derivedRestore = target
+    ? `DROP POLICY IF EXISTS ${target[1]!} ON ${target[2]!}; ` +
+      (await captureCreatePolicy(target[2]!, target[1]!))
+    : null;
   await admin.query(drop);
   try {
     expect(await present(), `\`${drop}\` must actually remove it`).toBe(false);
     await body();
   } finally {
-    await admin.query(restore);
-    expect(await present(), `\`${restore}\` must put it back`).toBe(true);
+    // The DERIVED statement wins for policies. `restore` is only used for
+    // grants, which have no catalogue form to reconstruct from.
+    const effective = derivedRestore ?? restore;
+    if (derivedRestore && restore !== RESTORE_FROM_CATALOGUE) {
+      throw new Error(
+        'a policy mutation must pass RESTORE_FROM_CATALOGUE, not a hand-copied CREATE POLICY'
+      );
+    }
+    await admin.query(effective);
+    expect(await present(), `\`${effective}\` must put it back`).toBe(true);
+    if (probe) {
+      expect(
+        await probe(),
+        'the restore must reinstate the SAME predicate, not merely a policy of the same name'
+      ).toBe(before);
+    }
   }
 }
 
@@ -166,6 +321,7 @@ beforeAll(async () => {
   admin = adminPool();
   await ensureTestLogins(admin);
   platform = platformPool();
+  surfaceBaseline = await roleSurfaceFingerprint(admin, 'app_platform');
 
   await dropTenants();
   await admin.query(`DELETE FROM iam.platform_grants WHERE user_account_id = $1`, [OPERATOR]);
@@ -173,8 +329,12 @@ beforeAll(async () => {
   await admin.query(`DELETE FROM org.tenants WHERE id = $1`, [OPERATOR_HOME]);
 
   await admin.query(
+  // 'provisioning', then an owner, then activation — the order the product uses.
+  // A tenant may not ARRIVE at 'active' without a recoverable administrator, by
+  // INSERT or by UPDATE, and the operator's home tenant is not exempt just
+  // because it exists to hold an account.
     `INSERT INTO org.tenants (id, tenant_code, display_name, default_locale, default_timezone, status, created_by)
-     VALUES ($1,'b1m_operator_home','B1M home','en','UTC','active',$2)`,
+     VALUES ($1,'b1m_operator_home','B1M home','en','UTC','provisioning',$2)`,
     [OPERATOR_HOME, SYSTEM]
   );
   await admin.query(
@@ -191,6 +351,28 @@ beforeAll(async () => {
     );
   }
 
+  // The operator's own account becomes its home tenant's administrator, so the
+  // home tenant can go live at all. Ordinary tenant authority — platform
+  // authority is still the separate relation, which is the whole point of it.
+  const homeRole = await admin.query<{ id: string }>(
+    `INSERT INTO iam.roles (tenant_id, role_code, name, created_by)
+     VALUES ($1,'fx_home_owner','Home owner',$2) RETURNING id`,
+    [OPERATOR_HOME, SYSTEM]
+  );
+  await admin.query(
+    `INSERT INTO iam.role_permissions (tenant_id, role_id, permission_id, effect, created_by)
+     SELECT $1, $2, p.id, 'allow', $3 FROM iam.permissions p
+      WHERE p.permission_code IN ('iam.role.manage', 'iam.grant.manage', 'iam.user.manage')`,
+    [OPERATOR_HOME, homeRole.rows[0]!.id, SYSTEM]
+  );
+  await admin.query(
+    `INSERT INTO iam.role_grants
+       (tenant_id, user_id, role_id, scope_mode, status, granted_by, created_by)
+     VALUES ($1,$2,$3,'unrestricted','active',$4,$4)`,
+    [OPERATOR_HOME, OPERATOR, homeRole.rows[0]!.id, SYSTEM]
+  );
+  await admin.query(`UPDATE org.tenants SET status = 'active' WHERE id = $1`, [OPERATOR_HOME]);
+
   windowTenant = await withCommittedTx(platform, { userId: OPERATOR }, async (db) => {
     const r = await db.query<{ out: { tenant_id: string } }>(
       'SELECT org.provision_organization($1::jsonb, $2) AS out',
@@ -198,6 +380,7 @@ beforeAll(async () => {
     );
     return r.rows[0]!.out.tenant_id;
   });
+  await establishOwner(windowTenant);
 });
 
 afterAll(async () => {
@@ -205,6 +388,15 @@ afterAll(async () => {
   await admin.query(`DELETE FROM iam.platform_grants WHERE user_account_id = $1`, [OPERATOR]);
   await admin.query(`DELETE FROM iam.user_accounts WHERE id = $1`, [OPERATOR]);
   await admin.query(`DELETE FROM org.tenants WHERE id = $1`, [OPERATOR_HOME]);
+  // Every mutation in this file restores what it took. Proving that is not
+  // optional: a suite here once left two policies in their pre-remediation form
+  // and stayed green, because every assertion matched on the policy NAME. This
+  // compares the whole surface — predicates, grants, memberships, role
+  // attributes — against what the file found when it started.
+  expect(
+    await roleSurfaceFingerprint(admin, 'app_platform'),
+    'this suite must leave the platform surface exactly as it found it'
+  ).toBe(surfaceBaseline);
   await Promise.all([platform.end(), admin.end()]);
 });
 
@@ -260,16 +452,33 @@ describe('removing an EXECUTE turns its path red', () => {
     );
   });
 
-  it('a narrowing reader — B1-UG-002 reproduced on demand', async () => {
-    await withoutPrivilege(
-      () => hasExecute('iam.allowed_company_ids()'),
-      `REVOKE EXECUTE ON FUNCTION iam.allowed_company_ids() FROM app_platform`,
-      `GRANT EXECUTE ON FUNCTION iam.allowed_company_ids() TO app_platform`,
-      async () => {
-        const code = await pathFails((db) => db.query(`SELECT iam.allowed_company_ids()`));
-        expect(code).toBe('42501');
-      }
+  it('WITHDRAWN: B1-UG-002 was not an under-grant, and the mutation proved nothing', async () => {
+    /*
+     * Recorded rather than deleted, because the mistake is the useful part.
+     *
+     * The two narrowing readers were granted here as a repair "found by
+     * execution". The 42501 that prompted it came from a PROBE that called them
+     * directly — no sanctioned path does. The mutation then revoked the grant
+     * and called the helper directly again, so the only thing it turned red was
+     * its own probe. A test can manufacture the dependency it then verifies.
+     *
+     * The grants are withdrawn. What remains is a stronger property than the one
+     * the grant was supposed to protect: the control plane cannot ask what
+     * narrowing it carries, and no policy of its own would consult the answer.
+     */
+    for (const fn of ['iam.allowed_company_ids()', 'iam.allowed_branch_ids()']) {
+      expect(await hasExecute(fn), fn + ' must NOT be executable by app_platform').toBe(false);
+    }
+    const consulting = await admin.query<{ n: string }>(
+      `SELECT count(*)::text AS n FROM pg_policies
+        WHERE 'app_platform' = ANY (roles)
+          AND (coalesce(qual,'') || coalesce(with_check,'')) LIKE '%allowed_%_ids%'`
     );
+    expect(consulting.rows[0]!.n).toBe('0');
+
+    // And the refusal is real, not merely absent from the catalogue.
+    const code = await pathFails((db) => db.query(`SELECT iam.allowed_company_ids()`));
+    expect(code).toBe('42501');
   });
 });
 
@@ -332,10 +541,7 @@ describe('removing a table privilege turns its path red', () => {
     await withoutPrivilege(
       () => hasPolicy('iam.user_accounts', 'sel_user_accounts_platform_bootstrap'),
       `DROP POLICY sel_user_accounts_platform_bootstrap ON iam.user_accounts`,
-      `CREATE POLICY sel_user_accounts_platform_bootstrap ON iam.user_accounts
-         FOR SELECT TO app_platform
-         USING (EXISTS (SELECT 1 FROM org.tenants t
-                         WHERE t.id = user_accounts.tenant_id AND t.status = 'provisioning'))`,
+      RESTORE_FROM_CATALOGUE,
       async () => {
         // The plain INSERT still succeeds — which is precisely why this defect
         // survived three rounds of document review.
@@ -373,12 +579,7 @@ describe('removing a policy turns its path red', () => {
     await withoutPrivilege(
       () => hasPolicy('iam.user_accounts', 'ins_user_accounts_platform_bootstrap'),
       `DROP POLICY ins_user_accounts_platform_bootstrap ON iam.user_accounts`,
-      `CREATE POLICY ins_user_accounts_platform_bootstrap ON iam.user_accounts
-         FOR INSERT TO app_platform
-         WITH CHECK (
-           iam.has_platform_authority('platform.organization.provision')
-           AND EXISTS (SELECT 1 FROM org.tenants t
-                        WHERE t.id = user_accounts.tenant_id AND t.status = 'provisioning'))`,
+      RESTORE_FROM_CATALOGUE,
       async () => {
         const code = await pathFails((db) =>
           db.query(
@@ -397,11 +598,7 @@ describe('removing a policy turns its path red', () => {
     await withoutPrivilege(
       () => hasPolicy('org.tenant_status_history', 'ins_tenant_status_history_platform_lifecycle'),
       `DROP POLICY ins_tenant_status_history_platform_lifecycle ON org.tenant_status_history`,
-      `CREATE POLICY ins_tenant_status_history_platform_lifecycle ON org.tenant_status_history
-         FOR INSERT TO app_platform
-         WITH CHECK (
-           iam.has_platform_authority('platform.organization.lifecycle')
-           AND to_state IN ('active','suspended','closed'))`,
+      RESTORE_FROM_CATALOGUE,
       async () => {
         // With only the PROVISIONING history policy left, the transition fails —
         // because the status UPDATE has already moved the parent out of
@@ -415,12 +612,22 @@ describe('removing a policy turns its path red', () => {
     );
   });
 
-  it('the lifecycle WITH CHECK — without it, provisioning becomes a legal destination', async () => {
-    // The policy's WITH CHECK and the table trigger are two independent
-    // defences against reopening the bootstrap window. Removing the policy must
-    // still leave the tenant protected, by the trigger — so this case proves
-    // the SECOND line holds when the first is gone, which is the only way to
-    // know the pair is not one control wearing two hats.
+  it('the lifecycle WITH CHECK — the trigger is a SECOND defence, not the same one', async () => {
+    /*
+     * This case used to DROP the policy outright, and that made it vacuous.
+     *
+     * With no UPDATE policy at all, app_platform's statement matches zero rows:
+     * a silent no-op, no error, and — the part that mattered — NO TRIGGER. The
+     * test then asserted the tenant was still active, which was trivially true,
+     * and its comment claimed to prove "the second line holds when the first is
+     * gone". It would have passed identically with
+     * org.guard_tenant_status_transition deleted.
+     *
+     * To actually exercise the trigger the policy has to ADMIT the write. So the
+     * mutation now replaces the policy with one whose WITH CHECK permits
+     * anything, leaving the trigger as the only thing standing between the
+     * control plane and a reopened bootstrap window.
+     */
     const live = await withCommittedTx(platform, { userId: OPERATOR }, async (db) => {
       const r = await db.query<{ out: { tenant_id: string } }>(
         'SELECT org.provision_organization($1::jsonb, $2) AS out',
@@ -428,56 +635,36 @@ describe('removing a policy turns its path red', () => {
       );
       return r.rows[0]!.out.tenant_id;
     });
+    await establishOwner(live);
     await withCommittedTx(platform, { userId: OPERATOR, tenantId: live }, async (db) => {
       await db.query(`SELECT org.change_tenant_status($1,'active','go live')`, [live]);
     });
 
     await withoutPrivilege(
-      () => hasPolicy('org.tenants', 'upd_tenants_platform_lifecycle'),
-      `DROP POLICY upd_tenants_platform_lifecycle ON org.tenants`,
-      `CREATE POLICY upd_tenants_platform_lifecycle ON org.tenants
+      async () =>
+        (await policyDefinition('org.tenants', 'upd_tenants_platform_lifecycle')).includes(
+          'status = ANY'
+        ),
+      `DROP POLICY upd_tenants_platform_lifecycle ON org.tenants;
+       CREATE POLICY upd_tenants_platform_lifecycle ON org.tenants
          FOR UPDATE TO app_platform
          USING (iam.has_platform_authority('platform.organization.lifecycle'))
-         WITH CHECK (
-           iam.has_platform_authority('platform.organization.lifecycle')
-           AND status IN ('active','suspended','closed'))`,
+         WITH CHECK (iam.has_platform_authority('platform.organization.lifecycle'))`,
+      RESTORE_FROM_CATALOGUE,
       async () => {
-        // The invariant is that the ROW DOES NOT CHANGE — not that an error is
-        // raised, and the difference is worth stating because the first run of
-        // this case asserted the error and failed.
-        //
-        // With the policy dropped, app_platform has no UPDATE policy on
-        // org.tenants at all, so the statement matches zero rows. Under
-        // row-level security that is a SILENT NO-OP: no error, no rows, no
-        // trigger. A test that demanded a SQLSTATE would report this as a
-        // failure of the control while the tenant was in fact perfectly safe,
-        // and a test that accepted "no error" as success would report a breach
-        // that never happened. Assert the state.
+        // The policy now admits the row, so the statement reaches the table and
+        // the trigger fires. 23514 is the trigger and nothing else: a policy
+        // refusal would be 42501, and a silent no-op would be no error at all.
         let raised = '(none)';
-        let affected = -1;
         try {
-          affected = await withRolledBackTx(
-            platform,
-            { userId: OPERATOR, tenantId: live },
-            async (db) => {
-              const r = await db.query(
-                `UPDATE org.tenants SET status = 'provisioning' WHERE id = $1`,
-                [live]
-              );
-              return (r as { rowCount: number | null }).rowCount ?? 0;
-            }
-          );
+          await withCommittedTx(platform, { userId: OPERATOR, tenantId: live }, async (db) => {
+            await db.query(`UPDATE org.tenants SET status = 'provisioning' WHERE id = $1`, [live]);
+          });
         } catch (err) {
           raised = (err as { code?: string }).code ?? '(none)';
         }
+        expect(raised, 'the trigger must refuse, not the policy and not silence').toBe('23514');
 
-        if (raised === '(none)') {
-          expect(affected, 'with no UPDATE policy the statement must match no rows').toBe(0);
-        } else {
-          expect(['42501', '23514']).toContain(raised);
-        }
-
-        // Whichever way it was stopped, the tenant is still live.
         const after = await admin.query<{ status: string }>(
           `SELECT status FROM org.tenants WHERE id = $1`,
           [live]
@@ -485,6 +672,10 @@ describe('removing a policy turns its path red', () => {
         expect(after.rows[0]!.status).toBe('active');
       }
     );
+
+    // And with the real policy back, the window is refused twice over.
+    const restored = await policyDefinition('org.tenants', 'upd_tenants_platform_lifecycle');
+    expect(restored).toContain('status = ANY');
   });
 });
 
@@ -498,6 +689,8 @@ describe('the table backstop survives the policy being gone', () => {
       );
       return r.rows[0]!.out.tenant_id;
     });
+
+    await establishOwner(t);
 
     const present = await admin.query<{ n: string }>(
       `SELECT count(*)::text AS n FROM pg_trigger
@@ -517,5 +710,294 @@ describe('the table backstop survives the policy being gone', () => {
     await expect(
       admin.query(`UPDATE org.tenants SET status = 'active' WHERE id = $1`, [t])
     ).rejects.toMatchObject({ code: '23514' });
+  });
+});
+
+// ---------------------------------------------------------------------------
+describe('the readiness path — B1-UG-003, B1-UG-004 and B1-UG-005', () => {
+  /*
+   * Three of the five under-grants live on the lifecycle path rather than the
+   * bootstrap path, and none of them had a mutation until now. That mattered:
+   * all three were REPAIRED in migration source, so the suites were green, but
+   * nothing proved the repairs were load-bearing. A grant nobody depends on and
+   * a grant nobody has removed look identical from a passing test.
+   *
+   * Each case provisions its own tenant. The shared windowTenant is not usable
+   * here because activating it would take it out of its bootstrap window for
+   * every later case in this file.
+   */
+  async function readyTenant(code: string): Promise<string> {
+    const id = await withCommittedTx(platform, { userId: OPERATOR }, async (db) => {
+      const r = await db.query<{ out: { tenant_id: string } }>(
+        'SELECT org.provision_organization($1::jsonb, $2) AS out',
+        [JSON.stringify(spec(code)), code.replace(/_/g, '-') + '-key']
+      );
+      return r.rows[0]!.out.tenant_id;
+    });
+    await establishOwner(id);
+    return id;
+  }
+
+  /** Attempts a transition as the platform role; returns the SQLSTATE or '(none)'. */
+  async function transitionFails(tenant: string, to: string): Promise<string> {
+    try {
+      await withCommittedTx(platform, { userId: OPERATOR, tenantId: tenant }, async (db) => {
+        await db.query('SELECT org.change_tenant_status($1, $2, $3)', [tenant, to, 'b1 mutation']);
+      });
+    } catch (err) {
+      return (err as { code?: string }).code ?? '(none)';
+    }
+    return '(none)';
+  }
+
+  it('the readiness function EXECUTE — B1-UG-003 reproduced on demand', async () => {
+    const t = await readyTenant('b1m_ug003');
+    await withoutPrivilege(
+      () => hasExecute('org.tenant_has_recoverable_owner(uuid)'),
+      `REVOKE EXECUTE ON FUNCTION org.tenant_has_recoverable_owner(uuid) FROM app_platform`,
+      `GRANT EXECUTE ON FUNCTION org.tenant_has_recoverable_owner(uuid) TO app_platform`,
+      async () => {
+        // The guard trigger calls it as the WRITING role, so the privilege is
+        // needed by a function the caller never names. Without it the transition
+        // raises rather than being refused on its merits.
+        expect(await transitionFails(t, 'active')).toBe('42501');
+      }
+    );
+    // Restored: the same transition now succeeds, so the mutation was the cause.
+    expect(await transitionFails(t, 'active')).toBe('(none)');
+    const after = await admin.query<{ s: string }>(
+      `SELECT status AS s FROM org.tenants WHERE id = $1`,
+      [t]
+    );
+    expect(after.rows[0]!.s).toBe('active');
+  });
+
+  it('the tenant_id column of iam.user_accounts — B1-UG-004 reproduced on demand', async () => {
+    const t = await readyTenant('b1m_ug004');
+    // Three of the four columns were already granted. Only tenant_id was
+    // missing, and it is the one the readiness join needs — which is why the
+    // grant read as complete right up until it ran.
+    for (const col of ['id', 'status', 'deleted_at']) {
+      expect(await hasColumn('iam.user_accounts', col, 'SELECT')).toBe(true);
+    }
+    await withoutPrivilege(
+      () => hasColumn('iam.user_accounts', 'tenant_id', 'SELECT'),
+      `REVOKE SELECT (tenant_id) ON iam.user_accounts FROM app_platform`,
+      `GRANT SELECT (tenant_id) ON iam.user_accounts TO app_platform`,
+      async () => {
+        expect(await transitionFails(t, 'active')).toBe('42501');
+        // The other three are untouched, so this is a one-column proof.
+        expect(await hasColumn('iam.user_accounts', 'id', 'SELECT')).toBe(true);
+      }
+    );
+    expect(await transitionFails(t, 'active')).toBe('(none)');
+  });
+
+  it('the lifecycle read of role_grants — B1-UG-005 reproduced on demand', async () => {
+    // B1-UG-005 is the one no negative test could have found: the failure was a
+    // REFUSAL of something legitimate. So the mutation has to be driven from the
+    // positive control — reactivation of a tenant that genuinely has an owner.
+    const t = await readyTenant('b1m_ug005');
+    expect(await transitionFails(t, 'active')).toBe('(none)');
+    expect(await transitionFails(t, 'suspended')).toBe('(none)');
+
+    await withoutPrivilege(
+      () => hasPolicy('iam.role_grants', 'sel_role_grants_platform_lifecycle'),
+      `DROP POLICY sel_role_grants_platform_lifecycle ON iam.role_grants`,
+      RESTORE_FROM_CATALOGUE,
+      async () => {
+        // The grant still exists and the owner is still active. Only the control
+        // plane's ability to SEE the grant has gone — and readiness, being
+        // SECURITY INVOKER, therefore answers false and refuses a perfectly
+        // legal reactivation. 23514, not 42501: not a privilege error, the
+        // invariant firing on a false negative.
+        const stillThere = await admin.query<{ n: string }>(
+          `SELECT count(*)::text AS n FROM iam.role_grants
+             WHERE tenant_id = $1 AND status = 'active'`,
+          [t]
+        );
+        expect(stillThere.rows[0]!.n).toBe('1');
+        expect(await transitionFails(t, 'active')).toBe('23514');
+      }
+    );
+
+    expect(await transitionFails(t, 'active')).toBe('(none)');
+    const after = await admin.query<{ s: string }>(
+      `SELECT status AS s FROM org.tenants WHERE id = $1`,
+      [t]
+    );
+    expect(after.rows[0]!.s).toBe('active');
+  });
+});
+
+// ---------------------------------------------------------------------------
+describe('the row lock the lifecycle takes', () => {
+  /*
+   * org.change_tenant_status opens with SELECT status ... FOR UPDATE
+   * (20260717101000:199). It is a read, so it needs both halves — the table
+   * privilege and a policy that admits the row — and the two fail in visibly
+   * different ways. Only one of them looks like a permission problem, which is
+   * exactly why both are worth pinning.
+   */
+  async function lifecycleFails(tenant: string): Promise<string> {
+    try {
+      await withCommittedTx(platform, { userId: OPERATOR, tenantId: tenant }, async (db) => {
+        await db.query('SELECT org.change_tenant_status($1, $2, $3)', [
+          tenant,
+          'active',
+          'b1 lock mutation',
+        ]);
+      });
+    } catch (err) {
+      return (err as { code?: string }).code ?? '(none)';
+    }
+    return '(none)';
+  }
+
+  async function readyTenant(code: string): Promise<string> {
+    const id = await withCommittedTx(platform, { userId: OPERATOR }, async (db) => {
+      const r = await db.query<{ out: { tenant_id: string } }>(
+        'SELECT org.provision_organization($1::jsonb, $2) AS out',
+        [JSON.stringify(spec(code)), code.replace(/_/g, '-') + '-key']
+      );
+      return r.rows[0]!.out.tenant_id;
+    });
+    await establishOwner(id);
+    return id;
+  }
+
+  it('removing SELECT on org.tenants stops the FOR UPDATE read', async () => {
+    const t = await readyTenant('b1m_lock');
+    await withoutPrivilege(
+      () => hasTable('org.tenants', 'SELECT'),
+      `REVOKE SELECT ON org.tenants FROM app_platform`,
+      // Exactly what 20260822092000:116 grants. An earlier draft restored a
+      // COLUMN list here, which reads as equivalent and is not: has_table_privilege
+      // stays false after a column-only grant, so the restore assertion caught it
+      // — and the run left the database under-granted for every later case.
+      `GRANT SELECT ON org.tenants TO app_platform`,
+      async () => {
+        expect(await lifecycleFails(t)).toBe('42501');
+      }
+    );
+    expect(await lifecycleFails(t)).toBe('(none)');
+  });
+
+  it('removing the RLS SELECT policy makes the tenant look non-existent instead', async () => {
+    const t = await readyTenant('b1m_nopol');
+    await withoutPrivilege(
+      () => hasPolicy('org.tenants', 'sel_tenants_platform'),
+      `DROP POLICY sel_tenants_platform ON org.tenants`,
+      RESTORE_FROM_CATALOGUE,
+      async () => {
+        // Not 42501. Row-level security removes the ROW, so the lock read finds
+        // nothing and the function reports that the tenant does not exist. A
+        // refusal arriving in the vocabulary of absence is the harder kind to
+        // diagnose, and it is worth having written down.
+        expect(await lifecycleFails(t)).toBe('P0002');
+        const untouched = await admin.query<{ s: string }>(
+          `SELECT status AS s FROM org.tenants WHERE id = $1`,
+          [t]
+        );
+        expect(untouched.rows[0]!.s).toBe('provisioning');
+      }
+    );
+    expect(await lifecycleFails(t)).toBe('(none)');
+  });
+});
+
+// ---------------------------------------------------------------------------
+describe('the two identity SELECT policies are distinct, not redundant', () => {
+  /*
+   * Permissive policies combine with OR, so adding one can silently cover a gap
+   * another exists to expose. Not hypothetical here: the first repair for
+   * B1-UG-005 gave app_platform an unconditional lifecycle read of
+   * iam.user_accounts, and it made the B1-UG-001 mutation stop reproducing —
+   * the new policy answered the very read whose ABSENCE that mutation
+   * demonstrates. The repair was then narrowed to accounts that actually hold an
+   * active grant, which is both less privilege and a restored proof.
+   *
+   * This case is the standing guard on that property.
+   */
+  it('the lifecycle read does not cover a newly created Owner that holds no grant yet', async () => {
+    const t = await withCommittedTx(platform, { userId: OPERATOR }, async (db) => {
+      const r = await db.query<{ out: { tenant_id: string } }>(
+        'SELECT org.provision_organization($1::jsonb, $2) AS out',
+        [JSON.stringify(spec('b1m_interact')), 'b1m-interact-key']
+      );
+      return r.rows[0]!.out.tenant_id;
+    });
+
+    // The precondition that makes this an INTERACTION test rather than a repeat
+    // of the B1-UG-001 mutation: the other policy is present throughout.
+    expect(await hasPolicy('iam.user_accounts', 'sel_user_accounts_platform_lifecycle')).toBe(true);
+
+    await withoutPrivilege(
+      () => hasPolicy('iam.user_accounts', 'sel_user_accounts_platform_bootstrap'),
+      `DROP POLICY sel_user_accounts_platform_bootstrap ON iam.user_accounts`,
+      RESTORE_FROM_CATALOGUE,
+      async () => {
+        expect(await hasPolicy('iam.user_accounts', 'sel_user_accounts_platform_lifecycle')).toBe(
+          true
+        );
+
+        // A brand-new Owner holds no grant yet, so the lifecycle policy's EXISTS
+        // arm is false and it cannot answer this read. B1-UG-001 reproduces.
+        let code = '(none)';
+        try {
+          await withRolledBackTx(platform, { userId: OPERATOR, tenantId: t }, async (db) => {
+            await db.query(
+              `INSERT INTO iam.user_accounts
+                 (tenant_id, identity_provider, provider_subject, email, display_name, status, created_by)
+               VALUES ($1,'local','b1m-int','i@example.invalid','I','active',$2) RETURNING id`,
+              [t, OPERATOR]
+            );
+          });
+        } catch (err) {
+          code = (err as { code?: string }).code ?? '(none)';
+        }
+        expect(code).toBe('42501');
+
+        // The other half of distinctness: once an account DOES hold an active
+        // grant, the lifecycle policy admits it — narrowly, and on its own.
+        //
+        // The fixture is built on the ADMIN connection, deliberately. Building it
+        // through the platform path would need INSERT ... RETURNING on
+        // iam.user_accounts, which is the exact read this mutation has removed —
+        // the setup would fail for the reason under test and prove nothing.
+        await admin.query(
+          `INSERT INTO iam.user_accounts
+             (tenant_id, identity_provider, provider_subject, email, display_name, status, created_by)
+           VALUES ($1,'local','b1m-int-owner','int-owner@example.invalid','Int Owner','active',$2)`,
+          [t, SYSTEM]
+        );
+        await admin.query(
+          `INSERT INTO iam.roles (tenant_id, role_code, name, created_by)
+           VALUES ($1,'company_owner','Company Owner',$2)`,
+          [t, SYSTEM]
+        );
+        await admin.query(
+          `INSERT INTO iam.role_grants
+             (tenant_id, user_id, role_id, scope_mode, status, granted_by, created_by)
+           SELECT $1, u.id, r.id, 'unrestricted', 'active', $2, $2
+             FROM iam.user_accounts u, iam.roles r
+            WHERE u.tenant_id = $1 AND u.provider_subject = 'b1m-int-owner'
+              AND r.tenant_id = $1 AND r.role_code = 'company_owner'`,
+          [t, SYSTEM]
+        );
+        const seen = await withRolledBackTx(
+          platform,
+          { userId: OPERATOR, tenantId: t },
+          async (db) => {
+            const r = await db.query<{ n: string }>(
+              `SELECT count(*)::text AS n FROM iam.user_accounts WHERE tenant_id = $1`,
+              [t]
+            );
+            return r.rows[0]!.n;
+          }
+        );
+        expect(seen).toBe('1');
+      }
+    );
   });
 });

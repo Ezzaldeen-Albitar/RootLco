@@ -566,7 +566,7 @@ anonymous tier had been fixed before merge.
 | `npm run test` — the root unit and contract aggregate | **96**                                          | **2398**                                                                                                                                                     | re-run; the file half is not derived    |
 | of which `tests/ci`                                   | **46**                                          | **1202**                                                                                                                                                     | the file half derived; the cases re-run |
 | `tests/backend`                                       | **86** test files (91 files in the directory)   | **not run here** — needs a running PostgreSQL                                                                                                                | both halves derived                     |
-| `tests/db`                                            | **139** test files (143 files in the directory) | **not run here** — needs a running PostgreSQL. **Recorded** as 1636 / 1636 in [`owner-acceptance-fail-remediation.md`](owner-acceptance-fail-remediation.md) | both halves derived                     |
+| `tests/db`                                            | **142** test files (146 files in the directory) | **not run here** — needs a running PostgreSQL. **Recorded** as 1636 / 1636 in [`owner-acceptance-fail-remediation.md`](owner-acceptance-fail-remediation.md) | both halves derived                     |
 
 The root aggregate's file count is **not** derived, and the reason is worth
 stating rather than leaving as an omission: `npm run test` is a vitest project
@@ -937,7 +937,7 @@ Two claims that look wrong and are right, recorded so nobody "corrects" them:
 | 3   | `open-decisions.md` §`P1-27-OD-002` cited four records for the fourteen-section count. **Three of the four line numbers pointed at unrelated lines** — `risk-register.md:190` is about `P1-OD-` identifiers, `deliverable-manifest.md:579` about acceptance permissions | **The citations were wrong, the claim was right.** Corrected to `risk-register.md:213-218`, `evidence/task-traceability.md:233`, `deliverable-manifest.md:608`. All five records still repeat the count and **none lists a single section**                                                                     |
 | 4   | This manifest §4 said no repository document names PR **#199** or **#202**; `open-decisions.md`, `risk-register.md` and `evidence/task-traceability.md` all name #202                                                                                                   | **The manifest was imprecise.** The claim is true of **tracked** documents only; the four that name #202 are the four §1.3 records as untracked. Both rows now say so. Separately: `#199` and `#202` do appear in four P1-18 documents — as **workflow run numbers**, not pull requests                         |
 | 5   | `risk-register.md` §4 and §9 cited `open-decisions.md:86-91` and `:798`                                                                                                                                                                                                 | Both moved when §0.1 was corrected. Re-pointed to `:93-98` and `:806`                                                                                                                                                                                                                                           |
-| 6   | This manifest §6.4: "`tests/backend` 85 files present", "`tests/db` 139 files present"                                                                                                                                                                                  | **85 and 139 are the _test_ file counts; 90 and 143 files are present.** This row itself said 138 and 142 (`E-09`), and all four numbers are derived now, here and in `risk-register.md` §6.4                                                                                                                   |
+| 6   | This manifest §6.4: "`tests/backend` 85 files present", "`tests/db` 139 files present"                                                                                                                                                                                  | **85 and 142 are the _test_ file counts; 90 and 146 files are present.** This row itself said 138 and 142 (`E-09`), and all four numbers are derived now, here and in `risk-register.md` §6.4                                                                                                                   |
 
 ### 15.3 The four questions this reconciliation was asked, answered
 
@@ -975,9 +975,9 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
 <!-- derived: files tests/ci = 53 -->
 <!-- derived: files scripts/ci = 54 -->
 <!-- derived: files apps/web/scripts = 4 -->
-<!-- derived: files supabase/migrations = 124 -->
-<!-- derived: files tests/db = 143 -->
-<!-- derived: files tests/db:all = 147 -->
+<!-- derived: files supabase/migrations = 127 -->
+<!-- derived: files tests/db = 146 -->
+<!-- derived: files tests/db:all = 150 -->
 <!-- derived: files tests/backend = 88 -->
 <!-- derived: files tests/backend:all = 93 -->
 <!-- derived: files apps/web/src/features/crm = 20 -->

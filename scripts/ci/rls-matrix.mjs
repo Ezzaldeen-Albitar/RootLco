@@ -9,6 +9,12 @@
  *
  * Two levels:
  *   --level critical  every table in the security-critical schemas. Runs on each PR.
+ *                     `shared` joined that set in PRE-P1-29 Wave B slice B1:
+ *                     app_platform holds SELECT and INSERT on
+ *                     shared.idempotency_keys and INSERT on
+ *                     shared.number_sequences, so part of the control plane's
+ *                     live privilege graph sat in a schema that only the
+ *                     nightly run — which happens after the merge — inspected.
  *   --level full      every application table in every application schema. Nightly.
  *
  * Both produce the same shape, so the nightly artifact is comparable with the PR
@@ -21,6 +27,17 @@
  * Every cell that is deliberately not asserted carries a `skipReason`. A cell
  * with neither a verdict nor a reason fails the run — silence is not a result.
  *
+ * A cell is "covered" only by a policy that applies to THAT CELL'S ROLE. That
+ * sounds obvious and was not true here until PRE-P1-29 Wave B slice B1: the
+ * policy lookup keyed on table and command alone, so any role granted a
+ * privilege on a table that carried some other role's policy was recorded as
+ * `granted-with-policy` and passed. See the comment above the policy query.
+ *
+ * A cell is "granted" if the role holds the privilege on the TABLE **or on any
+ * COLUMN of it**. Same slice, same kind of blind spot: has_table_privilege is
+ * false for a column-level grant, so every column-scoped privilege in the
+ * database was being reported as denied.
+ *
  * Usage:
  *   node scripts/ci/rls-matrix.mjs --level critical --json out.json --markdown out.md
  * Env: DB_HOST DB_PORT DB_NAME DB_USER DB_PASSWORD (same convention as tests/db/helpers.ts)
@@ -31,19 +48,8 @@ import { pathToFileURL } from 'node:url';
 import pg from 'pg';
 
 /** Application schemas, split by how much scrutiny each gets on a pull request. */
-export const CRITICAL_SCHEMAS = ['iam', 'org', 'inv', 'wo', 'crm', 'sal', 'quo'];
-export const ADDITIONAL_SCHEMAS = [
-  'veh',
-  'apt',
-  'rec',
-  'tech',
-  'dia',
-  'qms',
-  'svc',
-  'wty',
-  'rpt',
-  'shared',
-];
+export const CRITICAL_SCHEMAS = ['iam', 'org', 'shared', 'inv', 'wo', 'crm', 'sal', 'quo'];
+export const ADDITIONAL_SCHEMAS = ['veh', 'apt', 'rec', 'tech', 'dia', 'qms', 'svc', 'wty', 'rpt'];
 
 /**
  * Schemas that exist but hold no application data, with the reason. Anything in
@@ -61,7 +67,17 @@ export const NON_APPLICATION_SCHEMAS = {
   storage: 'Supabase-managed, absent from a bare postgres container.',
   vault: 'Supabase-managed, absent from a bare postgres container.',
   auth: 'Supabase-managed, absent from a bare postgres container.',
-  net: 'Supabase-managed, absent from a bare postgres container.',
+  net:
+    'Supabase-managed (pg_net), absent from a bare postgres container — but NOT ' +
+    'harmless, and the previous one-line dismissal said more than it knew. It ' +
+    'grants ALL privileges to PUBLIC on two RLS-DISABLED tables and a sequence, ' +
+    'so every role in the database — app_readonly included, which this file ' +
+    'declares SELECT-only — can INSERT into net.http_request_queue and make the ' +
+    'database issue an arbitrary outbound HTTP request, then read the response ' +
+    'body back from net._http_response. PostgreSQL has no per-role revoke of a ' +
+    'PUBLIC grant, so no application-role change can scope it away; it is ' +
+    'recorded as a platform-configuration dependency in the PRE-P1-29 Wave B B1 ' +
+    'NO-GO register rather than left described as nothing.',
   pgbouncer: 'Supabase-managed, absent from a bare postgres container.',
   cron: 'Supabase-managed, absent from a bare postgres container.',
   supabase_functions:
@@ -82,9 +98,45 @@ export const RUNTIME_ROLES = [
   { role: 'app_runtime', expectation: 'read and write within scope', mayWrite: true },
   { role: 'app_readonly', expectation: 'SELECT only', mayWrite: false },
   { role: 'app_worker', expectation: 'narrow asynchronous write surface', mayWrite: true },
+  /*
+   * PRE-P1-29 Wave B slice B1. The privilege-graph migration names THIS gate as
+   * the standing control for the over-grant direction, and until the role was
+   * listed here that claim was false: RUNTIME_ROLES is the only population this
+   * matrix iterates and the only one the superuser/BYPASSRLS check covers, so a
+   * later GRANT to app_platform — or the role acquiring BYPASSRLS — would not
+   * have failed CI. A control named in a migration and implemented nowhere is
+   * the defect class this initiative has spent three rounds removing.
+   */
+  { role: 'app_platform', expectation: 'control-plane only; no business-table reach', mayWrite: true },
 ];
 
-export const ACTIONS = ['SELECT', 'INSERT', 'UPDATE', 'DELETE'];
+/*
+ * All EIGHT table privileges, not the four that read like the interesting ones.
+ *
+ * TRUNCATE is the omission that mattered: row-level security does not apply to
+ * TRUNCATE AT ALL, so a TRUNCATE grant is an unconditional "delete every row of
+ * every tenant" that no policy can qualify — and the gate never asked for it.
+ * REFERENCES lets a role attach a foreign key and learn of rows it cannot read;
+ * TRIGGER lets it attach a function that executes with the rights of whoever
+ * writes the table, which on a vendor table written by a superuser worker is the
+ * whole ballgame. MAINTAIN exists from PostgreSQL 17.
+ *
+ * Column-capable privileges are SELECT, INSERT, UPDATE and REFERENCES; the rest
+ * are table-level only, which the column probe below accounts for.
+ */
+export const ACTIONS = [
+  'SELECT',
+  'INSERT',
+  'UPDATE',
+  'DELETE',
+  'TRUNCATE',
+  'REFERENCES',
+  'TRIGGER',
+  'MAINTAIN',
+];
+
+/** The subset PostgreSQL will accept in has_any_column_privilege. */
+const COLUMN_CAPABLE = new Set(['SELECT', 'INSERT', 'UPDATE', 'REFERENCES']);
 
 /**
  * Tables exempt from the FORCE RLS requirement, with the reason. Structural
@@ -164,17 +216,40 @@ export async function buildMatrix(client, schemas, options = {}) {
     client,
     `SELECT c.relname AS table_name,
             n.nspname AS schema_name,
+            c.relkind::text AS relkind,
             c.relrowsecurity  AS rls_enabled,
             c.relforcerowsecurity AS rls_forced,
+            coalesce('security_invoker=true' = ANY (c.reloptions), false) AS security_invoker,
             (SELECT count(*) FROM pg_policy p WHERE p.polrelid = c.oid) AS policy_count
        FROM pg_class c
        JOIN pg_namespace n ON n.oid = c.relnamespace
-      WHERE c.relkind IN ('r', 'p')
+      -- Views and materialized views too. Every RootLco table is owned by
+      -- postgres, which is BYPASSRLS, and a view that is not security_invoker
+      -- runs with its owner's rights — so one granted view over a business table
+      -- is a complete, permanent RLS bypass this gate could not report.
+      WHERE c.relkind IN ('r', 'p', 'v', 'm', 'f')
         AND n.nspname = ANY($1)
       ORDER BY n.nspname, c.relname`,
     [schemas]
   );
 
+  /*
+   * `applies_to` is the half this query was missing, and its absence made the
+   * whole over-grant direction of the matrix unenforceable.
+   *
+   * A policy is not a property of a table, it is a property of a table AND a set
+   * of roles. Selecting only the command meant a cell was judged "covered" by
+   * any policy for that action on that table, no matter whose. So granting one
+   * role a privilege on a table policied for a DIFFERENT role produced
+   * `granted-with-policy` and passed — which is precisely the escalation the
+   * matrix exists to catch. Proved by mutation: GRANT SELECT ON
+   * crm.business_partners TO app_platform, a role with no policy on that table
+   * and no USAGE on that schema, and this gate exited 0.
+   *
+   * Membership is resolved with pg_has_role rather than by comparing names, so
+   * a policy naming a group role still covers a member of it, and polroles =
+   * '{0}' (PUBLIC) covers everyone.
+   */
   const policies = await query(
     client,
     `SELECT n.nspname AS schema_name,
@@ -182,12 +257,18 @@ export async function buildMatrix(client, schemas, options = {}) {
             p.polname AS policy_name,
             CASE p.polcmd WHEN 'r' THEN 'SELECT' WHEN 'a' THEN 'INSERT'
                           WHEN 'w' THEN 'UPDATE' WHEN 'd' THEN 'DELETE'
-                          ELSE 'ALL' END AS command
+                          ELSE 'ALL' END AS command,
+            ARRAY(
+              SELECT rr FROM unnest($2::text[]) AS rr
+               WHERE p.polroles = '{0}'::oid[]
+                  OR EXISTS (SELECT 1 FROM unnest(p.polroles) AS o
+                              WHERE pg_has_role(rr, o, 'MEMBER'))
+            ) AS applies_to
        FROM pg_policy p
        JOIN pg_class c ON c.oid = p.polrelid
        JOIN pg_namespace n ON n.oid = c.relnamespace
       WHERE n.nspname = ANY($1)`,
-    [schemas]
+    [schemas, RUNTIME_ROLES.map((r) => r.role)]
   );
 
   const policyIndex = new Map();
@@ -199,31 +280,81 @@ export async function buildMatrix(client, schemas, options = {}) {
 
   const cells = [];
   const failures = [];
+  // Observations that are not failures on their own but change how a later
+  // grant must be read. Surfaced in the artifact, not in the exit code.
+  const matrixNotes = [];
 
   for (const table of tables) {
     const qualified = `${table.schema_name}.${table.table_name}`;
     const tablePolicies = policyIndex.get(qualified) ?? [];
 
-    // ---- table-level invariants ----------------------------------------
-    if (!table.rls_enabled) {
-      failures.push(
-        `\`${qualified}\` has ROW LEVEL SECURITY disabled. Every application table must enable it.`
-      );
-    }
-    if (!table.rls_forced && !FORCE_RLS_EXEMPT[qualified]) {
-      failures.push(
-        `\`${qualified}\` does not FORCE row level security, so the table owner bypasses every policy.`
-      );
+    /*
+     * A VIEW is judged on a different property, because it cannot carry RLS at
+     * all — asserting "enable row level security" against one is a category
+     * error that would fail every legitimate view forever.
+     *
+     * What matters for a view is whose rights it runs with. Every RootLco table
+     * is owned by postgres, which is BYPASSRLS, so a view that is NOT
+     * security_invoker executes with the owner's rights and is a complete,
+     * standing bypass of the policies on the tables underneath it. One granted
+     * to a runtime role is the finding; the grant check below does the rest.
+     */
+    const isView = table.relkind === 'v' || table.relkind === 'm' || table.relkind === 'f';
+
+    if (isView) {
+      if (!table.security_invoker) {
+        // Not yet a failure on its own — an ungranted view reaches nobody. It
+        // becomes one the moment a runtime role holds anything on it, which the
+        // per-cell UNGUARDED branch below reports.
+        matrixNotes.push(
+          `\`${qualified}\` is a ${table.relkind === 'm' ? 'materialized view' : 'view'} without security_invoker, so it runs with its owner's rights.`
+        );
+      }
+    } else {
+      // ---- table-level invariants ----------------------------------------
+      if (!table.rls_enabled) {
+        failures.push(
+          `\`${qualified}\` has ROW LEVEL SECURITY disabled. Every application table must enable it.`
+        );
+      }
+      if (!table.rls_forced && !FORCE_RLS_EXEMPT[qualified]) {
+        failures.push(
+          `\`${qualified}\` does not FORCE row level security, so the table owner bypasses every policy.`
+        );
+      }
     }
 
     for (const { role, mayWrite } of RUNTIME_ROLES) {
       for (const action of ACTIONS) {
-        const [{ granted }] = await query(
+        /*
+         * BOTH forms, because has_table_privilege answers FALSE for a
+         * column-level grant and this gate was therefore blind to the entire
+         * column-grant class. That is not a hypothetical shape in this schema:
+         * app_platform's only UPDATE is GRANT UPDATE (status) ON org.tenants and
+         * its identity read is GRANT SELECT (id, tenant_id, status, deleted_at)
+         * ON iam.user_accounts, and app_runtime holds column-scoped UPDATE on
+         * iam.user_accounts too. Every one of them was recorded as
+         * denied-by-grant. A GRANT SELECT (col) ON a business table would have
+         * passed this gate untouched.
+         */
+        // DELETE has no column-level form in PostgreSQL — has_any_column_privilege
+        // rejects it outright — so the column probe is asked only where columns
+        // can carry a privilege at all.
+        const columnCapable = COLUMN_CAPABLE.has(action);
+        const [{ granted_table: grantedTable, granted_column: grantedColumn }] = await query(
           client,
-          `SELECT has_table_privilege($1, $2, $3) AS granted`,
+          columnCapable
+            ? `SELECT has_table_privilege($1, $2, $3) AS granted_table,
+                      has_any_column_privilege($1, $2, $3) AS granted_column`
+            : `SELECT has_table_privilege($1, $2, $3) AS granted_table, false AS granted_column`,
           [role, qualified, action]
         );
-        const covering = tablePolicies.filter((p) => p.command === action || p.command === 'ALL');
+        const granted = grantedTable || grantedColumn;
+        const covering = tablePolicies.filter(
+          (p) =>
+            (p.command === action || p.command === 'ALL') &&
+            (p.applies_to ?? []).includes(role)
+        );
 
         let verdict;
         // Every cell carries a `skipReason`, and this one is always null: the
@@ -235,6 +366,13 @@ export async function buildMatrix(client, schemas, options = {}) {
 
         if (!granted) {
           verdict = 'denied-by-grant';
+        } else if (isView) {
+          verdict = 'UNGUARDED';
+          failures.push(
+            table.security_invoker
+              ? `\`${role}\` holds ${action} on the view \`${qualified}\`. Views are not part of the sanctioned surface: grant on the underlying table instead, where a policy can apply.`
+              : `\`${role}\` holds ${action} on \`${qualified}\`, a view WITHOUT security_invoker. It executes with its owner's rights, and every RootLco relation is owned by a BYPASSRLS role — so this is a standing bypass of every policy beneath it.`
+          );
         } else if (!table.rls_enabled) {
           verdict = 'UNGUARDED';
           failures.push(
@@ -269,6 +407,9 @@ export async function buildMatrix(client, schemas, options = {}) {
           role,
           action,
           granted,
+          // Recorded separately so the artifact shows WHICH form the grant took;
+          // a column-scoped privilege reads very differently from a table one.
+          grantedVia: granted ? (grantedTable ? 'table' : 'column') : null,
           rlsEnabled: table.rls_enabled,
           rlsForced: table.rls_forced,
           policiesCovering: covering.map((p) => p.policy_name),
@@ -294,6 +435,34 @@ export async function buildMatrix(client, schemas, options = {}) {
     );
   }
 
+  // ---- no runtime role may INHERIT another role's privileges ---------------
+  //
+  // This is the hole underneath all the others. has_table_privilege resolves
+  // privileges reached through MEMBERSHIP, so a runtime role granted another
+  // one would read as "granted" on everything that role can touch — and the
+  // policy-applicability test above, which resolves membership with
+  // pg_has_role for exactly the right reason, would then report each of those
+  // cells as covered by the OTHER role's policy. Every cell would land on a
+  // passing verdict and the run would exit 0.
+  //
+  // No amount of per-cell checking can see that, because per-cell is where it
+  // hides. It has to be asserted about the roles themselves.
+  const memberships = await query(
+    client,
+    `SELECT r.rolname AS member, g.rolname AS granted
+       FROM pg_auth_members m
+       JOIN pg_roles r ON r.oid = m.member
+       JOIN pg_roles g ON g.oid = m.roleid
+      WHERE r.rolname = ANY($1)
+      ORDER BY 1, 2`,
+    [RUNTIME_ROLES.map((r) => r.role)]
+  );
+  for (const row of memberships) {
+    failures.push(
+      `runtime role \`${row.member}\` is a member of \`${row.granted}\` — it inherits every privilege that role holds, and every privilege check in this matrix resolves inherited privileges.`
+    );
+  }
+
   // ---- no runtime role may bypass RLS or be a superuser -------------------
   const dangerous = await query(
     client,
@@ -315,6 +484,7 @@ export async function buildMatrix(client, schemas, options = {}) {
     securityDefinerFunctions: secdef.length,
     failures,
     advisories,
+    notes: matrixNotes,
     cells,
   };
 }
@@ -355,6 +525,16 @@ export function toMarkdown(matrix, level) {
     }
     lines.push('');
     lines.push('</details>');
+    lines.push('');
+  }
+  if ((matrix.notes ?? []).length > 0) {
+    // Observations that are not failures but change how a later grant reads — a
+    // non-invoker view awaiting a grant, say. Rendered here so the inline
+    // "surfaced in the artifact" note beside matrixNotes is true of the markdown
+    // a reviewer actually reads, not only of the JSON.
+    lines.push('### Notes');
+    lines.push('');
+    for (const note of matrix.notes) lines.push(`- ${note}`);
     lines.push('');
   }
   if (matrix.advisories?.length) {

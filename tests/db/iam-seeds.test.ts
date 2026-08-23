@@ -109,8 +109,6 @@ beforeAll(async () => {
       display_name: 'Ephemeral IAM Tenant',
       locale: 'en',
       timezone: 'UTC',
-      activate: true,
-      activation_reason: 'ephemeral IAM baseline assertion',
     },
     company: {
       code: 'fxprov_iam_main',

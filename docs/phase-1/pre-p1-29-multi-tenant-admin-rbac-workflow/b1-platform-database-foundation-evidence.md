@@ -132,7 +132,7 @@ single transaction rather than as a sequence of individually-plausible statement
 | --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
 | Audit history cannot be amended or deleted    | `UPDATE`/`DELETE` on `iam.audit_records` → `42501`, at the privilege layer, before any policy                        |
 | A committed audit event cannot be read back   | writer-scoped read admits only a record with no chain link; after commit that is never any row                       |
-| The audit actor is the authenticated operator | `actor_id` on the written record equals the context principal, not any argument a caller could forge                 |
+| The audit actor was whatever the CALLER passed — found, then CLOSED, see §11 | `iam.audit_append` writes its `p_actor` argument (`20260725090000:199-204`) and `iam.current_user_id()` appears nowhere in its body, so the writer cannot bind the actor. The row-level policy now does, on the parent and transitively on both child tables |
 | Platform authority cannot be self-granted     | `INSERT`/`UPDATE`/`DELETE` on `iam.platform_grants` as `app_platform` → `42501`; no write policy exists for any role |
 | `app_runtime` cannot see the relation at all  | `SELECT` → `42501`                                                                                                   |
 | A non-platform code cannot be assigned        | `ck_platform_grants_platform_code` → `23514`                                                                         |
@@ -142,7 +142,7 @@ single transaction rather than as a sequence of individually-plausible statement
 | The bootstrap window closes                   | after the first legal transition, the same insert → `42501`                                                          |
 | The window cannot be reopened                 | direct write to `provisioning` refused by the trigger (`23514`) even on a `BYPASSRLS` connection                     |
 | No business-schema reach                      | `SELECT` on `crm/veh/apt/wo/inv/sal` → `42501`; zero privileges across all fourteen business schemas                 |
-| No `DELETE` anywhere; `UPDATE` on one column  | `information_schema` enumeration returns exactly `org.tenants.status`                                                |
+| No effective `DELETE`, `UPDATE` or `TRUNCATE` in any RootLco schema; one column-scoped `UPDATE` | `has_table_privilege` and `has_column_privilege` over every relation in the 17 product schemas return exactly `org.tenants.status`. Measured EFFECTIVELY: `information_schema` lists privileges granted to a NAMED grantee and cannot see one held through PUBLIC or membership, and this row previously read "No `DELETE` anywhere" on that basis while `app_platform` held DELETE on two `net` tables via PUBLIC. The population is stated because it must be — this is a claim about RootLco schemas, not about the database |
 | Not an `app_runtime` member                   | `pg_has_role(...) = false` — the delegation backstop's early exit depends on this                                    |
 
 ---
@@ -180,33 +180,63 @@ applied would make every later suite fail for a reason unrelated to itself.
 
 ---
 
-## 8. The activation branch, and the one residual hazard
+## 8. The activation branch, and the hazard B1 closed
 
 `org.provision_organization` carries an optional activation branch: with `tenant.activate` set it
 calls `org.change_tenant_status(…, 'active', …)` **inside the provisioning transaction**
 (`20260717107000:254-261`). The design review found it; B1 executed it.
 
-The finding is that **the separation of the permission codes is itself the control**, and it holds
-for the operator shape that matters:
+### What this section used to say, and why it was wrong
 
-- an operator holding **only** `platform.organization.provision` cannot activate during
-  provisioning, because the activation branch enters the lifecycle path and its policy requires
-  `platform.organization.lifecycle`. The whole transaction rolls back, so there is no tenant at all
-  — and therefore no active tenant without an Owner.
-- an operator holding **both** codes can produce an active tenant with no Owner in one call.
+An earlier revision recorded this as a **residual** and deferred it to the B6 provisioning adapter:
 
-That second case is a real operational hazard and B1 does not close it at the database layer. It is
-recorded rather than argued away:
+> Residual: an operator holding both `provision` and `lifecycle` can create an ACTIVE tenant with no
+> initial Owner by passing `tenant.activate`. … The compensating control is the B6 provisioning
+> adapter, which must never forward `tenant.activate`. **B6 owes the proof.**
 
-> **Residual: an operator holding both `provision` and `lifecycle` can create an ACTIVE tenant with
-> no initial Owner by passing `tenant.activate`.** It is not an escalation — the operator already
-> holds both authorities and could reach the same state in two calls — but it is a state nobody can
-> administer. The compensating control is the B6 provisioning adapter, which must never forward
-> `tenant.activate`, and the design records that at §9.1 and §6.2. **B6 owes the proof (`P-27`).**
+The reasoning was that separating the permission codes was itself the control, which is true for an
+operator holding only `provision` and false for one holding both — and that closing it properly
+"would mean a Wave-B design change rather than a B1 under-grant".
 
-Closing it in the database would mean either editing the applied provisioning function — forbidden —
-or adding a guard that refuses activation while the tenant has no Owner, which is a Wave-B design
-change rather than a B1 under-grant. It is therefore raised here and deferred, not silently absorbed.
+That was the wrong call, for a reason the directive states plainly: **no application-layer rule can
+make an invalid STATE unrepresentable.** An adapter that declines to forward a flag is a promise, not
+a constraint, and the state it is promising to avoid is a live tenant nobody can administer with its
+bootstrap window already shut behind it. It is also not reachable only through that flag — a direct
+UPDATE, or a direct INSERT, reaches it too.
+
+### What the database does now
+
+Every arrival at `active` — by INSERT or by UPDATE, from any writer including a `BYPASSRLS`
+connection — requires the tenant to have a recoverable administrator.
+`org.guard_tenant_status_transition` is `BEFORE INSERT OR UPDATE` on `org.tenants` and calls
+`org.tenant_has_recoverable_owner`, which asks two separate questions of one account:
+
+1. does it hold at least one **active, in-window, unrestricted** grant, so it can act tenant-wide;
+2. does it **effectively hold** `iam.role.manage`, `iam.grant.manage` and `iam.user.manage`,
+   resolved as a faithful transcription of `iam.has_permission` — every active in-window grant, no
+   scope filter, no `iam.roles` join, deny wins.
+
+Those two questions are separate conjuncts on purpose. An earlier repair folded the unrestricted
+requirement **into** the permission arithmetic and reintroduced the original defect in a new form: a
+deny carried by a scoped grant became invisible to the predicate while remaining decisive for the
+authority engine, so the predicate reported an owner the engine refuses.
+
+The three codes are derived from the write points rather than chosen. Recovery means bringing a new
+administrator into being, and `ck_role_grants_no_self_grant` forbids doing it to yourself — so it
+needs a second account, which `ins_user_accounts_admin` gates on `iam.user.manage`, and which is
+inert at its `'invited'` default until `upd_user_accounts_admin` activates it, on the same code. The
+set is closed: `ins_role_permissions_delegable` refuses to map a code the actor does not hold, so
+those three are the smallest set that can reproduce itself. The shipped last-holder guard at
+`apps/api/src/modules/iam/application/access-administration-service.ts:479` independently protects
+exactly the same three.
+
+The consequence for the branch this section began with: **`tenant.activate` is now inert.**
+Provisioning creates no accounts, so inside its own transaction no grant exists and none can; the
+activation branch always raises and rolls the whole call back. That is recorded in the migration
+source and pinned by `tests/db/org-provisioning.test.ts`, in the canonical function's own suite,
+where a caller reading it will find it.
+
+Nothing was deferred to B6 here.
 
 ---
 
@@ -280,6 +310,75 @@ foreign-key index showed up in the hash as well as in the tier.
 | **B1 total**                                      | **58**, all passing against the cleanly replayed database |
 
 <!-- B1-MEASUREMENTS-END -->
+
+---
+
+## 11. A claim this document made that was false
+
+Recorded rather than quietly edited, because the failure mode is the one this repository names as
+its dominant defect class: **a stated rule the code does not implement, with a test that asserts the
+code rather than the rule.**
+
+An earlier revision of §5 said:
+
+> The audit actor is the authenticated operator — `actor_id` on the written record equals the
+> context principal, not any argument a caller could forge.
+
+**That is not true.** `iam.audit_append` writes its `p_actor` argument directly
+([`20260725090000:199-204`](../../../supabase/migrations/20260725090000_iam_shared_runtime_write_capabilities.sql)),
+and `iam.current_user_id()` appears nowhere in its body. The database binds the **tenant** — every
+insert policy checks it — and it does not bind the **actor**.
+
+The test cited for the claim could not have caught it: it passed the operator id as the `p_actor`
+argument **and** as the session principal, then asserted the recorded actor was that id. Both worlds
+satisfy that assertion. The test now passes a different actor and asserts what the database really
+does, so the record states the true thing.
+
+### What was then done about it, and what remains true
+
+The finding above stood for one revision. It has since been **closed in the database**, and the
+correction is worth as much detail as the error.
+
+`iam.audit_append` still writes its `p_actor` argument verbatim and still never consults the
+session — the WRITER does not bind the actor and was not changed. The **row-level policy** binds it:
+
+```sql
+CREATE POLICY ins_audit_records_platform ON iam.audit_records
+  FOR INSERT TO app_platform
+  WITH CHECK (
+    tenant_id = iam.current_tenant_id()
+    AND (iam.has_platform_authority('platform.organization.provision')
+      OR iam.has_platform_authority('platform.organization.lifecycle'))
+    AND actor_id = iam.current_user_id()
+  );
+```
+
+A wrapper function was the obvious alternative and does not work in this repository: it would have
+to be `SECURITY INVOKER` like everything else, so revoking `EXECUTE` on the generic writer to force
+callers through it would revoke it from the wrapper's own body too. Constraining the finished ROW
+needs no new abstraction and cannot be bypassed by calling the writer directly — which is why
+`app_platform` **keeps** its `EXECUTE` on `iam.audit_append` and still cannot record an actor other
+than itself.
+
+The child tables carry the same binding transitively: a detail row or a chain link must name a
+parent record in the same tenant, authored by `iam.current_user_id()`. Without that a foreign-key
+check — which bypasses row-level security — let fabricated field changes be attached to a committed
+record belonging to a tenant employee.
+
+|                              |                                                                                                                                                                                              |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Enforced by the database     | The audit row's **tenant**, the **write-level authority** (a read-only platform code cannot append at all), and the **actor**, which must equal the session principal on the parent and on both child tables |
+| NOT enforced by the database | The **authenticity of the session principal**. `iam.current_user_id()` reads `app.user_id`, which the connection sets — so the policy proves the recorded actor is COHERENT with the principal the session claimed for authorization, not that the claim itself is genuine |
+| Where the remainder lives    | The API layer, which must derive `app.user_id` from the authenticated platform session and never from a request document — design §8                                                        |
+| Who owes that proof          | **B3.** A request carrying a forged actor must produce an audit row naming the authenticated operator. B1 cannot prove it, because B1 has no request.                                        |
+
+That distinction is deliberate and is not a hedge: an attacker who can set `app.user_id` to another
+operator's id already holds that operator's platform authority, because the resolver reads the same
+value. Binding the actor removes a strictly separate power — writing audit **as somebody else while
+acting as yourself** — and that is the power the policy takes away.
+
+The pre-existing `app_runtime` half is untouched and is recorded as a separate remediation
+dependency rather than expanded into this slice.
 
 ---
 

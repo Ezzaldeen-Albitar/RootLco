@@ -297,10 +297,22 @@ const ALLOWED_ROUTINES = new Set([
   // because iam.has_permission requires an active account in the CURRENT tenant
   // and so structurally cannot answer a platform question.
   'iam.has_platform_authority',
+  // The any-authority form. Used by the audit and replay policies, which ask
+  // whether the caller is a platform principal at all rather than which code it
+  // holds — a distinction that matters because those two surfaces are shared
+  // with the tenant runtime and must not widen for it.
+  'iam.holds_any_platform_authority',
   // The table-level tenant lifecycle backstop. Enforces the transition graph for
   // EVERY writer, so granting UPDATE (status) to the control plane cannot reopen
   // a closed bootstrap window.
   'org.guard_tenant_status_transition',
+  // Bootstrap readiness, derived from canonical artefacts rather than a new
+  // marker: an active grant inside its validity window held by an active,
+  // undeleted account of the same tenant. The guard above calls it to refuse
+  // any transition INTO active that would leave nobody able to administer.
+  'org.tenant_has_recoverable_owner',
+  // Attribution for the history row the lifecycle writes.
+  'org.stamp_tenant_status_history',
   'apt.emit_appointment_status_history',
   'apt.guard_appointment_catalog_refs',
   'apt.guard_appointment_status_coherence',
@@ -1128,6 +1140,9 @@ describe('database foundation', () => {
       'tg_template_versions_touch_metadata',
       'tg_template_versions_touch_metadata',
       'tg_tenant_feature_overrides_immutable',
+      // PRE-P1-29 Wave B slice B1. On org.tenant_status_history, not on
+      // org.tenants: it stamps the history row rather than the tenant.
+      'tg_tenant_status_history_stamp',
       'tg_tenant_subscriptions_immutable',
       'tg_tenant_subscriptions_touch_metadata',
       'tg_tenants_immutable_columns',
@@ -1658,8 +1673,16 @@ describe('database foundation', () => {
       'sel_rework_link_details_gated',
       'sel_rework_links_scope',
       'sel_role_grants_platform_bootstrap',
+      // B1-UG-005. The bootstrap read is window-scoped, so readiness could not
+      // see the grant once a tenant left provisioning and a legitimate
+      // reactivation was refused. Gated on the lifecycle authority.
+      'sel_role_grants_platform_lifecycle',
       'sel_role_grants_tenant',
       'sel_role_permissions_platform_bootstrap',
+      // Readiness resolves permissions THROUGH the role mapping, and the
+      // bootstrap read above is window-scoped — so outside the window a
+      // perfectly administrable tenant would look unadministrable.
+      'sel_role_permissions_platform_lifecycle',
       'sel_role_permissions_tenant',
       'sel_roles_platform_bootstrap',
       'sel_roles_tenant',
@@ -1711,6 +1734,11 @@ describe('database foundation', () => {
       'sel_trims_visible',
       'sel_units_of_measure_visible',
       'sel_user_accounts_platform_bootstrap',
+      // B1-UG-005, and narrowed to accounts that actually HOLD an active grant:
+      // that keeps the control plane away from ordinary employee records, and
+      // stops this policy ORing with the bootstrap read and making the
+      // B1-UG-001 mutation irreproducible.
+      'sel_user_accounts_platform_lifecycle',
       'sel_user_accounts_platform_self',
       'sel_user_accounts_tenant',
       'sel_user_employee_links_tenant',

@@ -72,8 +72,8 @@ async function main() {
   // Ensure the two validation tenants exist (reference data is seeded on reset).
   await c.query(
     `INSERT INTO org.tenants (id, tenant_code, display_name, status, default_locale, default_timezone, created_by)
-     VALUES ($1,'perf_tenant_a','Perf Tenant A','active','en','UTC',$3),
-            ($2,'perf_tenant_b','Perf Tenant B','active','en','UTC',$3)
+     VALUES ($1,'perf_tenant_a','Perf Tenant A','provisioning','en','UTC',$3),
+            ($2,'perf_tenant_b','Perf Tenant B','provisioning','en','UTC',$3)
      ON CONFLICT (id) DO NOTHING`,
     [TENANT_A, TENANT_B, SYS]
   );
