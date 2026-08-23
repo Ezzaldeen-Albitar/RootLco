@@ -158,6 +158,33 @@ SELECT '(schema net)', a.privilege_type
  ORDER BY 1, 2;
 ```
 
+### And the effective privileges, captured the same way section 7 will
+
+The ACL fingerprint above records what the catalogue says. This records what the
+roles can actually **do** — and it must be taken now, with the identical query
+section 7 uses, or the post-remediation comparison is not a comparison.
+
+```sql
+SELECT r.rolname,
+       has_schema_privilege(r.rolname, 'net', 'USAGE')                          AS schema_usage,
+       has_table_privilege(r.rolname, 'net.http_request_queue', 'INSERT')       AS queue_insert,
+       has_table_privilege(r.rolname, 'net._http_response', 'SELECT')           AS response_read,
+       has_table_privilege(r.rolname, 'net._http_response', 'TRIGGER')          AS response_trigger,
+       has_sequence_privilege(r.rolname, 'net.http_request_queue_id_seq', 'USAGE') AS seq_usage,
+       has_function_privilege(r.rolname,
+         'net.http_delete(text, jsonb, jsonb, integer, jsonb)', 'EXECUTE')      AS http_delete,
+       has_function_privilege(r.rolname, 'net.http_get(text, jsonb, jsonb, integer)', 'EXECUTE') AS http_get
+  FROM pg_roles r
+ WHERE r.rolname IN ('app_platform', 'app_runtime', 'app_worker', 'app_readonly')
+ ORDER BY 1;
+```
+
+At the time of writing every column except `http_get` returns **true for all
+four roles**, and every one of those privileges arrives through PUBLIC — not one
+`app_*` role appears as a grantee anywhere in `net`. `response_trigger` is
+included because it is the ingredient of the escalation in section 8a, not
+because anything legitimate wants it.
+
 ---
 
 ## 5. REMEDIATION — the minimal ACL delta
@@ -395,6 +422,45 @@ Revoking database-wide `TEMPORARY` from PUBLIC is a recognised hardening step
 deliberate platform-posture decision with the blast radius above understood, not
 as a silent rider on slice B1. It is recorded here for that decision, not
 executed by it.
+
+---
+
+## 8b. Provider engagement record
+
+Filled in as the escalation progresses. Empty fields mean not yet done, not
+assumed. Nothing in this section may be inferred from an ambiguous reply — if the
+provider's answer does not plainly say which category it falls into, it is
+category **E** until clarified.
+
+| field | value |
+| --- | --- |
+| Support ticket / case identifier | *(not yet raised)* |
+| Date raised | |
+| Provider response category | *(A / B / C / D / E — see below)* |
+| Provider response summary | |
+| Approved remediation procedure | |
+| Executing principal | |
+| Execution timestamp | |
+| PRE fingerprint captured | |
+| POST fingerprint captured | |
+| PRE ≠ POST | |
+| Effective-authority verification (section 7) | |
+| Verdict | |
+
+**Response categories**, decided before reading the reply so the reply cannot
+choose its own:
+
+| | meaning | consequence |
+| --- | --- | --- |
+| **A** | Provider will apply the ACL hardening | wait, then run sections 4 → 7 |
+| **B** | Provider supplies a supported customer execution context | run section 3 first in that context; proceed only if it passes |
+| **C** | Provider confirms another supported platform configuration achieving the invariant | verify by section 7 regardless of the mechanism |
+| **D** | Provider states the PUBLIC ACL cannot be changed | blocker stays open; containment must move outside PostgreSQL (network egress), which is an infrastructure decision outside slice B1 |
+| **E** | The response does not address the security requirement | re-escalate; do not close, do not downgrade |
+
+Categories D and E do **not** close `B1-PGNET-BLOCKER`. Neither does a category A
+or B whose postcheck fails any condition in section 7 — a committed transaction
+is not evidence, the fingerprint delta is.
 
 ---
 
