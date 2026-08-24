@@ -13,12 +13,39 @@ carries the detail.
 | Frozen B1 remote head            | `3d3e5a4e302c7826799891701c40bdd7ad84486f`                                                           |
 | Security-verified executable SHA | `81672c762ab6880db36ef37696331d6011d3190e`                                                           |
 | P1-29 preparation                | frozen, remote-durable — `planning/p1-29-work-order-diagnostics-technician-preparation` @ `b5be9f4c` |
-| Parallel wave preparation        | complete, remote-durable — `planning/pre-p1-29-remaining-waves-and-p1-29-a0` @ `d4f91a32`            |
+| Parallel wave preparation        | complete, remote-durable — `planning/pre-p1-29-remaining-waves-and-p1-29-a0` @ `809f9eb8`            |
+| **Backend remediation plan**     | **DESIGN READY** — [`../pre-p1-29-backend-remediation/`](../pre-p1-29-backend-remediation/README.md) |
 | P1-29 implementation             | **NOT STARTED**                                                                                      |
 | P1-28                            | ARCHIVED                                                                                             |
 | `origin/develop` · `origin/main` | `c081a019` · `25705d84`                                                                              |
 
 **The next event is the Supabase provider response. Nothing below starts before it.**
+
+> **Correction, recorded rather than silently overwritten.** This table originally cited the
+> parallel wave preparation at `d4f91a32`. That was this document's own **parent** commit; adding
+> this map moved the branch to `809f9eb8`, which the table could not have known when it was
+> written. The row above now carries the head that actually holds it.
+
+## 0. Since this map was written
+
+The **Backend remediation plan** now exists:
+[`docs/phase-1/pre-p1-29-backend-remediation/`](../pre-p1-29-backend-remediation/README.md).
+
+It re-cuts the ten prerequisites `BE-1`…`BE-10` into **nine implementation contracts**
+`BR-01`…`BR-09` — the axis an implementer works on — answers the architecture questions the
+prerequisite registers left open, and records **nine corrections** to the preparation package found
+by reading the schema rather than the documents.
+
+Two things it establishes that change how §3 and §5 below should be read:
+
+- **`BE-6` had no owner** under the eight-slice cut it was asked for. `BR-09` was added so that
+  Owner requirement 6 is not orphaned.
+- **Eight of the nine slices have no technical dependency on B1 at all.** The sequencing below is an
+  Owner release-governance decision, not a constraint the repository imposes — see
+  [`dependency-graph.md` §4](../pre-p1-29-backend-remediation/dependency-graph.md). If the provider
+  response is slow, that section says exactly what could proceed without it.
+
+**Nothing in that directory authorises code either.**
 
 ---
 
