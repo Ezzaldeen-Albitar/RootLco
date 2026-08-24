@@ -368,6 +368,20 @@ const EXPECTED_AUDIT_ACTIONS = [
   'tech.labor.session_corrected',
   'tech.labor.session_started',
   'tech.labor.session_stopped',
+  // Technician roster administration (BR-03). Sorted after `tech.labor.*` and
+  // NOT grouped by lifecycle: this list is the sorted projection of the catalog,
+  // so `certificate_number_recorded` precedes `certification_recorded` because
+  // `e` (0x65) precedes `i` (0x69) — a reading order would fail the assertion.
+  'tech.technician.availability_recorded',
+  'tech.technician.availability_withdrawn',
+  'tech.technician.certificate_number_recorded',
+  'tech.technician.certification_recorded',
+  'tech.technician.certification_updated',
+  'tech.technician.profile_created',
+  'tech.technician.profile_retired',
+  'tech.technician.profile_updated',
+  'tech.technician.skill_set',
+  'tech.technician.skill_withdrawn',
   'veh.vehicle.authorized_party_added',
   'veh.vehicle.authorized_party_retired',
   'veh.vehicle.created',

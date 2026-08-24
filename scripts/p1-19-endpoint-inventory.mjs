@@ -132,6 +132,39 @@ function annotations(source) {
 }
 
 /**
+ * The SUCCESSOR contracts annotated in a file header.
+ *
+ * `PHASE_PREFIXES` was written as "the four schemas this phase delivers.
+ * Everything else is a predecessor's", and for four phases that was true: every
+ * `wo.` / `tech.` / `dia.` / `qms.` operation in the tree was P1-19's. BR-03 is
+ * the first successor to add one — technician roster administration, which
+ * P1-19 could not have delivered because the permission it needs did not exist
+ * — and it made the premise false.
+ *
+ * The rule that replaces it is not weaker. Every operation in these namespaces
+ * must still name an OWNER; only the vocabulary of owners has grown. An
+ * unannotated route is still refused, so the check that catches a P1-19 route
+ * with no task keeps working, and a successor cannot escape it by writing
+ * nothing — writing nothing is exactly what fails.
+ *
+ * What DOES change is the register: a successor's operation is not part of
+ * P1-19's delivered surface and is excluded from the tables that describe it,
+ * while every correctness reconciliation below — seeded permission, catalogued
+ * audit action, and the `scope: 'branch'` inertness rule — runs over the whole
+ * namespace regardless of owner. That is strictly more than was checked before.
+ *
+ * Extend the pattern when a further contract adds to these namespaces. Adding
+ * an owner is a deliberate, reviewable act; inheriting P1-19's task identifiers
+ * for work P1-19 did not do would corrupt its traceability, which is the one
+ * outcome this must not permit.
+ */
+function successorOwners(source) {
+  return [
+    ...new Set([...source.matchAll(/PRE-P1-29-BR-(\d{2})/g)].map((m) => `PRE-P1-29-BR-${m[1]}`)),
+  ].sort();
+}
+
+/**
  * Seeded permission codes and their risk levels.
  *
  * Read from the seed's INSERT rows, NOT from a free-text scan of the file: a
@@ -229,18 +262,34 @@ const operations = [];
 for (const file of walk(API_ROOT)) {
   const source = readFileSync(file, 'utf8');
   const notes = annotations(source);
-  for (const op of parseOperations(source, file)) operations.push({ ...op, tasks: notes });
+  const owners = successorOwners(source);
+  for (const op of parseOperations(source, file)) {
+    operations.push({ ...op, tasks: notes, successorOwners: owners });
+  }
 }
 operations.sort((a, b) => a.id.localeCompare(b.id));
 
-const phase = operations.filter((op) => PHASE_PREFIXES.some((p) => op.id.startsWith(p)));
+/**
+ * Every operation in the four schemas, whoever delivered it. The correctness
+ * reconciliations run over this set.
+ */
+const namespace = operations.filter((op) => PHASE_PREFIXES.some((p) => op.id.startsWith(p)));
+/** The subset P1-19 itself delivered. The register describes only these. */
+const phase = namespace.filter((op) => op.tasks.length > 0);
+/** In the namespace, owned by a later contract. Named here so it is never silent. */
+const successorOwned = namespace.filter(
+  (op) => op.tasks.length === 0 && op.successorOwners.length > 0
+);
 const permissionSeed = seededPermissions();
 const audits = auditCatalog();
 const events = eventCatalog();
 const published = publishedEvents();
 
 const problems = [];
-for (const op of phase) {
+// Over the whole NAMESPACE, not only P1-19's own operations: a seeded-permission
+// or inert-scope defect is a defect whoever wrote it, and narrowing these to the
+// phase would have meant BR-03 adding `tech.` routes that nothing here judged.
+for (const op of namespace) {
   if (op.method === null || op.path === null) problems.push(`${op.id}: incomplete declaration`);
   if (op.permissions.length === 0 && !op.publicRoute) {
     problems.push(`${op.id}: no permission and not declared public`);
@@ -258,8 +307,22 @@ for (const op of phase) {
       );
     }
   }
-  if (op.tasks.length === 0) {
-    problems.push(`${op.id}: its route file carries no P1-19-BE annotation`);
+  // Unowned is still refused. An operation in these schemas names either the
+  // P1-19 task that delivered it or the successor contract that did; writing
+  // neither is the failure, and it is the same failure it always was.
+  if (op.tasks.length === 0 && op.successorOwners.length === 0) {
+    problems.push(
+      `${op.id}: its route file names no owner — neither a P1-19-BE annotation nor a ` +
+        `successor contract`
+    );
+  }
+  // Both would mean an operation claiming two deliverers, which makes the
+  // register ambiguous in exactly the direction that matters: a successor's work
+  // counted as P1-19's.
+  if (op.tasks.length > 0 && op.successorOwners.length > 0) {
+    problems.push(
+      `${op.id}: its route file names BOTH a P1-19-BE task and ${op.successorOwners.join(', ')}`
+    );
   }
   if (op.scope === 'branch' && !op.scopeEnforced) {
     problems.push(
@@ -321,9 +384,27 @@ lines.push('`defineOperation` literal that guards the route, so this table canno
 lines.push('describe a surface the code does not expose, and cannot omit one it does.');
 lines.push('');
 lines.push(
-  `Operations in the registry: **${operations.length}**. Delivered by P1-19: **${phase.length}**.`
+  `Operations in the registry: **${operations.length}**. In the four P1-19 schemas: ` +
+    `**${namespace.length}**. Delivered by P1-19: **${phase.length}**.`
 );
 lines.push('');
+if (successorOwned.length > 0) {
+  lines.push(
+    `**${successorOwned.length}** operation(s) in these schemas were delivered by a LATER ` +
+      'contract and are deliberately absent from the tables below — this document describes ' +
+      "P1-19's surface, not the schemas'. They are named here so their absence is a stated " +
+      'fact rather than a gap, and every correctness reconciliation this script performs ' +
+      '(seeded permission, catalogued audit action, non-inert branch scope) is applied to ' +
+      'them exactly as it is to P1-19’s own.'
+  );
+  lines.push('');
+  lines.push('| Operation | Owner | Route |');
+  lines.push('| --- | --- | --- |');
+  for (const op of successorOwned) {
+    lines.push(`| \`${op.id}\` | ${op.successorOwners.join(', ')} | \`${op.file}\` |`);
+  }
+  lines.push('');
+}
 lines.push('## The surface');
 lines.push('');
 lines.push(

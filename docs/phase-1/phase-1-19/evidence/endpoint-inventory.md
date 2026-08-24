@@ -5,7 +5,23 @@ registry. Do not hand-edit.** Every column is read out of the
 `defineOperation` literal that guards the route, so this table cannot
 describe a surface the code does not expose, and cannot omit one it does.
 
-Operations in the registry: **305**. Delivered by P1-19: **58**.
+Operations in the registry: **316**. In the four P1-19 schemas: **69**. Delivered by P1-19: **58**.
+
+**11** operation(s) in these schemas were delivered by a LATER contract and are deliberately absent from the tables below — this document describes P1-19's surface, not the schemas'. They are named here so their absence is a stated fact rather than a gap, and every correctness reconciliation this script performs (seeded permission, catalogued audit action, non-inert branch scope) is applied to them exactly as it is to P1-19’s own.
+
+| Operation                                     | Owner           | Route                                                                                                        |
+| --------------------------------------------- | --------------- | ------------------------------------------------------------------------------------------------------------ |
+| `tech.technician-availability-record`         | PRE-P1-29-BR-03 | `apps/api/src/app/api/v1/technicians/[technicianProfileId]/availability/route.ts`                            |
+| `tech.technician-availability-withdraw`       | PRE-P1-29-BR-03 | `apps/api/src/app/api/v1/technicians/[technicianProfileId]/availability/[availabilityId]/route.ts`           |
+| `tech.technician-certification-detail-record` | PRE-P1-29-BR-03 | `apps/api/src/app/api/v1/technicians/[technicianProfileId]/certifications/[certificationId]/detail/route.ts` |
+| `tech.technician-certification-record`        | PRE-P1-29-BR-03 | `apps/api/src/app/api/v1/technicians/[technicianProfileId]/certifications/route.ts`                          |
+| `tech.technician-certification-update`        | PRE-P1-29-BR-03 | `apps/api/src/app/api/v1/technicians/[technicianProfileId]/certifications/[certificationId]/route.ts`        |
+| `tech.technician-create`                      | PRE-P1-29-BR-03 | `apps/api/src/app/api/v1/technicians/route.ts`                                                               |
+| `tech.technician-detail`                      | PRE-P1-29-BR-03 | `apps/api/src/app/api/v1/technicians/[technicianProfileId]/route.ts`                                         |
+| `tech.technician-list`                        | PRE-P1-29-BR-03 | `apps/api/src/app/api/v1/technicians/route.ts`                                                               |
+| `tech.technician-skill-set`                   | PRE-P1-29-BR-03 | `apps/api/src/app/api/v1/technicians/[technicianProfileId]/skills/[skillId]/route.ts`                        |
+| `tech.technician-skill-withdraw`              | PRE-P1-29-BR-03 | `apps/api/src/app/api/v1/technicians/[technicianProfileId]/skills/[skillId]/route.ts`                        |
+| `tech.technician-update`                      | PRE-P1-29-BR-03 | `apps/api/src/app/api/v1/technicians/[technicianProfileId]/route.ts`                                         |
 
 ## The surface
 

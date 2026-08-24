@@ -29,6 +29,8 @@ import { TechnicianCatalogRepository } from './data/technician-catalog-repositor
 import { TechnicianEligibilityService } from './application/technician-eligibility-service';
 import { LaborSessionRepository } from './data/labor-session-repository';
 import { LaborSessionService } from './application/labor-session-service';
+import { TechnicianRosterRepository } from './data/technician-roster-repository';
+import { TechnicianRosterService } from './application/technician-roster-service';
 
 export type {
   AvailabilityRow,
@@ -44,6 +46,14 @@ export type {
   EligibilityVerdict,
 } from './application/technician-eligibility-service';
 export type { LaborSessionView, SessionPageInput } from './application/labor-session-service';
+export type {
+  AvailabilityWindowView,
+  CertificateNumberView,
+  HeldCertificationView,
+  HeldSkillView,
+  TechnicianProfileDetail,
+  TechnicianProfileView,
+} from './application/technician-roster-service';
 export type { LaborSessionRow } from './data/labor-session-repository';
 
 export {
@@ -52,6 +62,9 @@ export {
   CERTIFICATION_STATUSES,
   INELIGIBILITY_REASONS,
   LABOR_SOURCES,
+  MAX_CERTIFICATE_NUMBER,
+  MAX_EMPLOYMENT_REF,
+  MAX_TRADE,
   MAX_UNAVAILABILITY_REASON,
   TechnicianRuleError,
   assertEligible,
@@ -79,6 +92,11 @@ export const technicianModule = composeModule({
     return {
       eligibility: new TechnicianEligibilityService(profiles),
       laborSessions: new LaborSessionService(new LaborSessionRepository(), profiles),
+      // BR-03. The roster WRITES, kept beside the reads they maintain: the
+      // eligibility service consumes exactly the rows this service produces, and
+      // splitting them across modules would have put `tech` writes outside the
+      // module that owns the schema.
+      roster: new TechnicianRosterService(new TechnicianRosterRepository(), profiles),
     };
   },
 });

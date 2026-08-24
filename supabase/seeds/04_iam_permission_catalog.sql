@@ -228,6 +228,12 @@ INSERT INTO iam.permissions (permission_code, domain, description, risk_level, c
   -- Reading technician skills, certifications and availability. Employment-derived
   -- data, so it is its own code rather than part of a general read.
   ('tech.technician.read',     'tech','Read technician profiles, eligibility and queues','low',   '00000000-0000-4000-8000-000000000001'),
+  -- BR-03. The WRITE counterpart of the read above, minted rather than folded into
+  -- tech.assignment.manage: assignment decides who touches a vehicle today, whereas a
+  -- roster write creates the SUBJECT of every labor record and the entity certifications
+  -- hang off. Reusing the assignment code would have silently widened every existing
+  -- assignment grant into roster administration.
+  ('tech.technician.manage',   'tech','Administer technician profiles, skills, certifications and availability','medium','00000000-0000-4000-8000-000000000001'),
   -- Phase 1-19 (dia) - Diagnostics. Recording findings is distinct from completing a
   -- report, and completing is distinct from reviewing it.
   ('dia.diagnostic.record',    'dia', 'Create diagnostic reports and record their entries','medium','00000000-0000-4000-8000-000000000001'),

@@ -1083,6 +1083,66 @@ export const MANIFEST = {
     required: ['denial', 'cross-tenant'],
     note: 'the profile is resolved through the technician module BEFORE any wo row is read, so the queue cannot enumerate work by guessing profile ids (cross-tenant: a tenant-B caller gets 404); one query joins job and work order so the queue is not an N+1; the projection is asserted to disclose NO employee-derived detail — no trade, no employment reference, no user id, nothing from the restricted certification details',
   },
+  // ========================================================================
+  // BR-03 (PRE-P1-29 backend remediation) — technician roster and capability
+  // administration. Same derived-evidence model as the rest of `tech.`: the
+  // floor comes from the registration, and `required` below only adds to it.
+  // ========================================================================
+  'tech.technician-list': {
+    files: ['tests/backend/br-03-technician-roster.test.ts'],
+    required: ['success', 'denial', 'isolation'],
+    note: 'keyset page of ONE branch roster, newest first; company and branch are required because they ARE the authorization target, so the A2-scoped principal is refused A1 and served A2 (isolation) rather than handed an empty list — an empty roster and a forbidden one read the same to a screen. No cross-tenant flag: the operation names no resource id, and the measured behaviour for a tenant-B caller naming a tenant-A pair is 200-and-EMPTY rather than 403, because iam.has_permission_in_scope returns true for any pair on an unrestricted grant and the tenant boundary is the query predicate with RLS behind it. The page walk uses eight rows created back to back, which is the P1-27-INT-006 condition a millisecond-truncating cursor silently drops',
+  },
+  'tech.technician-create': {
+    files: ['tests/backend/br-03-technician-roster.test.ts'],
+    required: ['success', 'denial', 'audit', 'idempotency', 'isolation'],
+    note: 'the ONLY roster operation whose authorization target comes from the body, because there is no row yet to resolve one from — scopeTargetOption narrows the pre-handler check and the service re-decides the same pair before the insert. isActive is deliberately absent from the schema and .strict() makes sending it a 422 rather than a silent drop, which is the exact shape a mass assignment would take. A user account in ANOTHER tenant is refused by naming a real foreign account, not a random uuid, so the check is proved tenant-scoped rather than existence-scoped. Replay is counted as DELTAS on the roster and on the audit trail (CSA-22), and no key at all is ERR-INT-002',
+  },
+  'tech.technician-detail': {
+    files: ['tests/backend/br-03-technician-roster.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation'],
+    note: 'the aggregate read that closes INS-24 — an assignment names a technicianProfileId and until this slice nothing resolved it. Asserts the projection as a KEY SET in both directions, because NFR-PRV-001 forbids personal data here and a field-by-field assertion cannot catch an ADDITION; the certificate number is proved absent even for the principal holding iam.sensitive.view. A tenant-B caller gets 404; an out-of-scope caller whose grant union CONTAINS the branch gets 403 rather than a second 404, which is the shipped bil.invoice-read shape and is recorded in the test as measured rather than assumed',
+  },
+  'tech.technician-update': {
+    files: ['tests/backend/br-03-technician-roster.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'stale-version'],
+    note: 'branch_id and user_id are named by tg_technician_profiles_immutable, so the schema has no word for either and sending one is a 422 — never a silent drop, because a caller who believed a branch transfer happened would act on a roster that never changed, and the test asserts the STORED branch is unchanged. The documented transfer path is driven end to end: the create in the target branch is refused while the first profile is live, retiring frees the uq_technician_profiles_active_user slot, and both halves survive. Retirement is a soft delete and deactivation is not retirement',
+  },
+  'tech.technician-skill-set': {
+    files: ['tests/backend/br-03-technician-capabilities.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit'],
+    note: 'PUT because uq_technician_skills_profile_skill permits one live level per skill and skill_id is immutable, so re-sending MOVES the existing row rather than adding one — asserted on the row id, not on the response. The catalogue check is the one the foreign keys cannot make: fk_technician_skills_skill is single-column because a platform row carries tenant_id IS NULL, so all three answers are proved — a platform row accepted, another tenant’s refused, and an INACTIVE one refused, the last because a retired skill would record an eligibility requirement nobody can satisfy',
+  },
+  'tech.technician-skill-withdraw': {
+    files: ['tests/backend/br-03-technician-capabilities.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit'],
+    note: 'soft delete, asserted on BOTH counts: the live row is gone and the row itself survives, because an assignment made while the skill stood keeps its evidence. Withdrawing frees the partial unique index so the skill can be recorded again at a different level, and the test proves the second row is a NEW one rather than a resurrection',
+  },
+  'tech.technician-certification-record': {
+    files: ['tests/backend/br-03-technician-capabilities.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
+    note: 'calendar dates, not instants: certificationIsValidOn compares YYYY-MM-DD, and ck_technician_certifications_expiry is INCLUSIVE (expires_on >= issued_on) so a credential issued and expiring on the same day is accepted — the API uses the database’s rule rather than a stricter one invented at the boundary, and refuses the inverted case here so the caller gets a violation path instead of a transaction-aborting 23514. certStatus is absent from the body because a recorded credential is active. A repeated key replays; a DIFFERENT key with the same content is a real second attempt and uq_technician_certifications_active refuses it',
+  },
+  'tech.technician-certification-update': {
+    files: ['tests/backend/br-03-technician-capabilities.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'stale-version'],
+    note: 'NOT in the original BR-03 contract and added on proof: technician-eligibility-service refuses a revoked credential outright and certificationIsValidOn refuses any non-active status, so without this path two of the three states are unreachable and that refusal could never fire in production. The test moves a credential to revoked and back. certification_id and issued_on are named by the immutability guard and are absent from the schema, so re-pointing or back-dating is a 422',
+  },
+  'tech.technician-certification-detail-record': {
+    files: ['tests/backend/br-03-technician-capabilities.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit'],
+    note: 'the only BR-03 operation that touches restricted data, and the only place in this domain with real defence in depth for a permission: the declaration is tech.technician.manage AND iam.sensitive.view, and every policy on tech.technician_certification_details requires the second independently. Proved in both directions one permission apart — ROSTER_ADMIN is refused, ROSTER_SENSITIVE is served — and the number is asserted ABSENT from the aggregate read and from iam.audit_record_details, because the audit trail is not gated by iam.sensitive.view and copying it there would defeat the policy protecting the column',
+  },
+  'tech.technician-availability-record': {
+    files: ['tests/backend/br-03-technician-capabilities.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
+    note: 'the rows GET /technicians/available already read and assertEligible already consumes, which until this slice could only arrive by seed or by hand. Overlap is ex_technician_availability_overlap translated rather than predicted, because a read-then-check would still lose to a concurrent insert; two TOUCHING windows are accepted, which is what makes a split shift expressible at all. The kind is required and has no default because available and unavailable mean opposite things to eligibility, and { offset: true } is mandatory because a zoneless instant would be read in the server’s zone and shift the shift',
+  },
+  'tech.technician-availability-withdraw': {
+    files: ['tests/backend/br-03-technician-capabilities.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'stale-version'],
+    note: 'required rather than convenient: the EXCLUDE constraint has no notion of “the wrong window”, so without this a mistyped interval would block that technician for its whole span permanently — the test withdraws one and then records a replacement over the same interval to prove it. The window is addressed UNDER a technician, so naming another technician’s window is a 404 rather than a deletion of a row the caller did not name',
+  },
   // --- Wave 6: additional work, customer approvals, the execution gate. ----
   'wo.additional-work-request': {
     files: ['tests/backend/p1-19-additional-work.test.ts'],
