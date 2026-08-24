@@ -308,8 +308,14 @@ export const ROUTE_TEMPLATES = Object.freeze([
  *
  * A `Set` membership check used to precede this. It was removed: `find` already
  * answers the same question, so the check decided nothing, and a line that
- * cannot change any outcome is a line no test can pin. 189 short strings is not
+ * cannot change any outcome is a line no test can pin. 256 short strings is not
  * a hot path worth an untestable branch.
+ *
+ * That figure is corrected by whichever slice grows the array — it was 169 when
+ * this was written, 189 after P1-22 added its twenty operations, and 256 after
+ * PRE-P1-29-BR-03 added eight. Nothing pins it: `route-templates.test.ts`
+ * asserts a floor and filesystem equality, not this number, so it is prose that
+ * has to be maintained by hand and is stated here rather than left to rot.
  */
 export function internRouteTemplate(path: string): string | null {
   return ROUTE_TEMPLATES.find((template) => template === path) ?? null;

@@ -197,7 +197,7 @@ describe('the API application lives in the workspace', () => {
     }
   });
 
-  it('discovers the same 261 operations from the root, apps/api and apps/web', () => {
+  it('discovers the same 316 operations from the root, apps/api and apps/web', () => {
     // The decisive cwd proof, run against a REAL validator rather than the
     // helper alone: `check-authorization-coverage.mjs` derived the repository
     // from `process.cwd()` until this migration, so its answer used to depend on

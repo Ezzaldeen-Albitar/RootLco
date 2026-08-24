@@ -122,7 +122,7 @@ Three gate interactions changed real behaviour. None was predicted; each was fou
 `requestFingerprint` interns the route template against the literal list in
 `apps/api/src/server/http/route-templates.ts`, and an unregistered template is **refused rather than
 hashed**. Eight new templates were absent from it, so every `POST /technicians` answered 400 with
-`Idempotency key required` while the header was demonstrably present on the request. Ten templates
+`Idempotency key required` while the header was demonstrably present on the request. Eight templates
 were added; `tests/foundation/route-templates.test.ts` reconciles the list against the route modules
 in both directions.
 
@@ -183,6 +183,11 @@ Recorded with their caveats rather than as a clean sheet.
 | tier                                                          | result                                                                                         |
 | ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
 | BR-03 backend suites                                          | **69 / 69** — `br-03-technician-roster.test.ts` 29, `br-03-technician-capabilities.test.ts` 40 |
+| backend tier (`test:backend`)                                 | **90 files / 2125 tests**, 0 failed                                                            |
+| database tier (`test:db`)                                     | **143 files / 1718 tests**, 0 failed — added after the first hosted run, see §7.3              |
+| unit tier (`test:unit`)                                       | **106 files / 2953 tests**, 0 failed                                                           |
+| web tier (`test:web`)                                         | **102 files / 2889 tests**, 0 failed                                                           |
+| `verify:classifications` (needs a database)                   | six guards, all reconciled                                                                     |
 | `typecheck` (root), `typecheck:api`, `typecheck:web`          | clean                                                                                          |
 | `lint`, `lint:api`, `lint:web`                                | clean in tracked trees                                                                         |
 | `format:check:all`                                            | clean                                                                                          |
@@ -219,6 +224,87 @@ final tree.
 | 8   | owner annotation removed from a route header                  | the inventory reports both its operations unowned                                                    |
 | 9   | route header names both a P1-19 task and a successor contract | the inventory refuses the ambiguity                                                                  |
 | 10  | `tech.technician.manage` removed from the catalogue seed      | the parity gate reports 9 `UNKNOWN PERMISSION` violations                                            |
+
+### 7.3 The first hosted run, and the tier that was never run
+
+**17 of 21 checks green. Four red, and all four were one cause.** `ci-gate` is derived from the
+others; `Database migrations and RLS tests`, `database-security / security-matrix` and
+`hosted-clean-room` each failed on **the same two assertions**:
+
+| file                                                          | assertion                                                      |
+| ------------------------------------------------------------- | -------------------------------------------------------------- |
+| `tests/db/p1-15-shared-services-runtime-capabilities.test.ts` | a hand-pinned catalogue total of `112`                         |
+| `tests/db/p1-19-catalog-reconciliation.test.ts`               | an exhaustive permission-code list for `wo`/`tech`/`dia`/`qms` |
+
+Everything reproduced before the push was correct: `static-quality`, `unit-coverage`, `web-quality`,
+`integration-tests`, `migration-replay`, CodeQL and the browser tier were all green, and every
+command in the hosted `Repository gates` step exited 0 locally.
+
+**The cause is not a surprise in the code. It is a gap in the local verification surface, and it is
+structural rather than personal.** `test:db` is in **no local aggregate at all** — not
+`verify:workspaces`, not `verify:repository`, not `verify:contracts`, not `gate:p1-13`. It appears
+only in hosted workflows (`ci.yml`, `_reusable-clean-room.yml`, `_reusable-database-assurance.yml`,
+`nightly-assurance.yml`). A developer can run every documented local gate, see green everywhere, and
+never once execute the tier that owns the permission catalogue's mirrors. That is recorded here as a
+finding against the tooling, and is being addressed separately rather than inside this slice.
+
+The tier now runs clean locally: **143 files, 1718 tests, zero failures**, against a database reset
+to this branch's exact 124 migrations and 113-code catalogue. Hosted CI measured 1717; the extra case
+is the one `it.each` entry the new permission code generates, which is the arithmetic agreeing rather
+than a discrepancy.
+
+#### How each mirror was repaired
+
+The pinned total became a **fourth term in the existing sum** — `109 + 1 + 1 + 1 + 1 = 113` — with its
+own sentence, exactly as the three remediations before it recorded theirs. The sum is written out on
+purpose so a checkout carrying only some of the seeds fails at 110, 111 or 112 rather than passing a
+pin that was moved once and reused.
+
+The permission list was **split by owner**: `P1_19_PERMISSIONS` (22 codes, untouched) and
+`SUCCESSOR_PERMISSIONS` (`tech.technician.manage`, `PRE-P1-29-BR-03`), merged for the comparison.
+Folding the code into the P1-19 array would have made that file state that P1-19 seeded it — the same
+corruption §5.2 refused when it declined to give BR-03 routes a `P1-19-BE` task identifier. The merge
+comparator was also changed from `localeCompare` to code-point order, because the assertion compares
+against SQL `ORDER BY permission_code` and locale collation weights `.` and `_` differently from byte
+order; the merged 23-code list was then checked element-by-element against the live database.
+
+#### What a four-modality sweep found that CI could not
+
+CI can only fail on what a gate reads. A parallel sweep over counts, exhaustive lists, generated
+artefacts and the database tier surfaced 189 candidates across 28 files, which triage by
+gate-boundness reduced to three more real defects — **none of which any gate would ever have caught**:
+
+- `.github/ci-baselines/schema-baseline.json` — `permissionCount` was `113`, while the
+  `permissionCountNote` beside it narrated the history term by term and stopped at `112`. A number and
+  its own explanation disagreeing is the defect this file exists to prevent.
+- `tests/ci/repository-paths.test.ts` — the test was titled _"discovers the same 261 operations"_ while
+  asserting 316. `reception-read-surface-plan.md:539` shows the convention is to move the title with
+  the number, so leaving it was a regression against an established practice.
+- `scripts/ci/check-phase-ownership.mjs` and `tests/ci/phase-ownership.test.ts` — the same sentence,
+  duplicated, asserting in the present tense that the catalogue "IS … 112 rows". Both now say 113 and
+  name `permissionCount` as the authority, which demotes the prose from a mirror to a pointer.
+
+Three findings were examined and **deliberately left alone**, because changing them would have been
+the dishonest option:
+
+- `scripts/ci/check-permission-parity.mjs` — its floors docblock says "the measured value on `develop`
+  **at the time this gate was written**". Correctly labelled history; rewriting it would destroy what
+  makes the floors defensible.
+- `docs/phase-1/pre-p1-29-multi-tenant-admin-rbac-workflow/**` — another lane's Wave-A discovery and
+  Wave-B design records, pinned to named refs, read by no gate, and belonging to the frozen B1 work
+  this session must not touch.
+- `docs/database/permission-catalog-reference.md` — it declares itself a rendering of the seed and asks
+  to be regenerated after a seed change, but it already held **49** rows against a **113**-code seed
+  and contained no `tech.` code at all, so it has been stale since Phase 1-19. Adding one row would
+  have implied a currency it does not have. Spun off as its own task.
+
+BR-08a's own record had two figures that read as live claims and were measurements: its parser-source
+row and its floors table. Rather than restate them at today's numbers — which would misreport what
+BR-08a measured — both are now **anchored to `c081a019`**, the commit they were taken at.
+
+Three gates that run only in hosted workflows were also executed locally against this tree and pass:
+`check-route-registry-parity`, `check-test-honesty`, and `check-idempotency-evidence` — the last
+reporting **147 of 147** idempotency promises backed by replay evidence, including this slice's three.
 
 ## 8. Deliberately out of scope
 

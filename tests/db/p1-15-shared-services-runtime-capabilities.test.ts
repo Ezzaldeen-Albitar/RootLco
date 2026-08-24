@@ -594,9 +594,14 @@ describe('P1-15 / global security posture', () => {
     // migrations fails here at 110 or 111 rather than passing a pin that was
     // moved once and then reused.
     //
+    // + 1 = 113 for PRE-P1-29-BR-03, which mints `tech.technician.manage`: the
+    // technician roster had no write path at all, and the eleven operations that
+    // give it one could not be gated by `tech.technician.read`. It is a fourth
+    // independent term in the same sum for the same reason as the three above.
+    //
     // The pin moves with the seed deliberately: it is what catches an accidental
     // catalog edit.
-    expect(Number(total.rows[0]?.n)).toBe(112);
+    expect(Number(total.rows[0]?.n)).toBe(113);
   });
 
   it('the exact write-policy inventory of the whole shared schema is unchanged apart from migrations 117 and 119', async () => {

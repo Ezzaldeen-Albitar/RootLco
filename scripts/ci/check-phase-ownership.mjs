@@ -106,8 +106,10 @@ export const CLASSIFIERS = [
   { bucket: 'migrations', test: (p) => p.startsWith('supabase/migrations/') },
   // Before the catch-all below, for the same reason `migrations` is: a seed is
   // not the local database harness. `supabase/seeds/04_iam_permission_catalog.sql`
-  // IS the canonical permission catalogue — 112 rows, the only shipping insert
-  // into `iam.permissions`, and zero migrations write to that table. A change
+  // IS the canonical permission catalogue — 113 rows at the time of writing,
+  // pinned by `permissionCount` in `.github/ci-baselines/schema-baseline.json`
+  // rather than by this sentence — the only shipping insert into
+  // `iam.permissions`, and zero migrations write to that table. A change
   // that adds a permission has to land there, so a profile has to be able to say
   // whether it may. Rolled into `supabase` it could only be granted alongside
   // `config.toml`, which is a different question with a different answer.
