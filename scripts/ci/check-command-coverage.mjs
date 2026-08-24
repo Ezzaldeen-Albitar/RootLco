@@ -496,6 +496,16 @@ export const REGISTER = Object.freeze([
     why: 'apps/api is Backend-only — no page, stylesheet, client component or tracked build output',
   },
   {
+    name: 'validate:permission-parity',
+    owner: ROOT,
+    tier: 'required',
+    // `required` rather than `informational` because failing it IS a verdict.
+    // `defineOperation` never checks a code against the catalogue, and no RLS
+    // policy in the work-order domain consults a permission code, so a misspelt
+    // code has no second line of defence anywhere.
+    why: 'every permission an operation or a navigation entry declares exists in the seeded catalogue',
+  },
+  {
     name: 'validate:generated-artifacts',
     owner: ROOT,
     tier: 'required',
