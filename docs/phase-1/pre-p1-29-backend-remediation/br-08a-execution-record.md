@@ -250,6 +250,54 @@ was changed to make that true.**
 - It does **not** touch `GOV-P1-29-001`.
 - It does **not** begin any P1-29 frontend, `BR-01`…`BR-07` or `BR-09` work.
 
+## 6a. What a new branch owes before CI can go green
+
+Adding **one** `scripts/ci` script and **one** `tests/ci` file cascaded into fourteen derived
+figures and a three-step evidence fixed point. Recorded because the next `BR-` slice will pay the
+same cost, and because two of the steps are only correct in one order.
+
+**The eleven derived figures**
+
+| document                                              | figure                                                                                                                                                    |
+| ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `docs/engineering/ci-automation/pull-request-body.md` | `scripts/ci` 54 → 55                                                                                                                                      |
+| `phase-1-27/deliverable-manifest.md`                  | four `<!-- derived -->` command figures, plus `tests/ci` 53 → 54 and `scripts/ci` 54 → 55                                                                 |
+| `phase-1-27/deliverable-manifest.md` (**prose**)      | `**54** in the directory` → `**55**` — a _separate_ claim from the derived comment, asserted by a suite in `apps/web`, and the one this pass missed first |
+| `phase-1-27/evidence/task-traceability.md`            | the same four command figures                                                                                                                             |
+| `phase-1-27/clean-room-evidence.md`                   | unit tests 2864 → 2953, unit files 105 → 106                                                                                                              |
+
+**The closing-value binding moves in threes.** `closing-value-ledger.json` binds a figure by an
+exact `locator` — the whole document line, value included — plus a `value` and a `binding` to the
+run ledger. Editing the document alone produced `LOCATOR_NOT_UNIQUE: 0 match(es)`, which is worse
+than the disagreement it was fixing. Document line, `locator` and `value` must change together, and
+the replacement must be **width-preserving** or Prettier realigns the table and breaks the locator
+again.
+
+**The fixed point is three steps, and the order is not interchangeable**
+
+```
+0. finalise every document, then format          (digest unformatted bytes and format:check undoes you)
+1. regenerate the evidence manifest              (the tier run must see a CONSISTENT tree)
+2. record the tier                               (writes the run ledger AFTER the run)
+3. regenerate the evidence manifest again        (the ledger is itself a digested document)
+```
+
+The run ledger is one of the manifest's 40 digested documents, and the manifest excludes only
+itself. So recording always invalidates exactly one digest, and step 3 is not optional. Recording
+**before** step 1 is what produced a run measured against an inconsistent tree — the record came
+back `5 failed`, then `2 failed`, then `1 failed`, each number an artefact of the tree the run
+happened to see rather than a defect in the product.
+
+**Final record, taken on a consistent tree:**
+
+| tier | tests | passed | failed | files | measured at |
+| ---- | ----: | -----: | -----: | ----: | ----------- |
+| unit |  2953 |   2953 |  **0** |   106 | `9fd47ba7`  |
+| web  |  2889 |   2889 |  **0** |   102 | `9fd47ba7`  |
+
+No executable path changed in the correction, so the record does not expire against the commits
+that carry it.
+
 ## 7. Verification
 
 | check                                               | result                                                       |
