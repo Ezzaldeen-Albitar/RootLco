@@ -298,6 +298,26 @@ happened to see rather than a defect in the product.
 No executable path changed in the correction, so the record does not expire against the commits
 that carry it.
 
+## 6b. `verify:policies` is not the required set
+
+Hosted CI failed once on this branch, at `static-quality / Repository gates`, while
+`verify:policies` was exiting 0 locally. **The two lists are different**, and the difference is not
+small: the `Repository gates` step invokes twenty-one `validate:*` commands plus `security:all` and
+`validate:canonical-docs --record-only`, and **`validate:p1-24-register` is in that step and not in
+`verify:policies`.**
+
+So a local `verify:policies` green is a necessary and **not sufficient** condition. The reliable
+local equivalent is `verify:workspaces`, or running the workflow step's list directly.
+
+**What it caught was a real, if small, defect of mine.** The P1-24 operation register records which
+test files reference each operation, and my fixture used `id: 'meta.ping'` — a **real** operation
+id — as an example of a public declaration. The generator therefore credited
+`tests/ci/permission-parity.test.ts` as a test of `meta.ping`, which it is not.
+
+Fixed by changing the fixture to `fixture.public` rather than by regenerating the register. A
+generated evidence artefact should record the repository, and the honest repair was to stop the
+test from making a claim it did not mean — not to write the false claim down.
+
 ## 7. Verification
 
 | check                                               | result                                                       |

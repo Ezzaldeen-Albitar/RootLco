@@ -247,7 +247,7 @@ describe('the declaration parser reads permissions and nothing that looks like o
   it('counts a public operation that declares no permissions without inventing one', () => {
     const source = `
       import { defineOperation } from '@/server/auth/operation-registry';
-      export const OP = defineOperation({ id: 'meta.ping', public: true });
+      export const OP = defineOperation({ id: 'fixture.public', public: true });
     `;
     const { references, malformed, operations } = parse(source);
     expect(operations).toBe(1);
