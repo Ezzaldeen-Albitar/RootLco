@@ -117,6 +117,7 @@
     "validate:p1-28-traceability": "node scripts/ci/check-p1-28-traceability.mjs",
     "validate:p1-28-version-sourcing": "node scripts/ci/check-p1-28-version-sourcing.mjs",
     "validate:p1-28-write-reachability": "node scripts/ci/check-p1-28-write-reachability.mjs",
+    "validate:permission-parity": "node scripts/ci/check-permission-parity.mjs",
     "validate:phase-ownership": "node scripts/ci/check-phase-ownership.mjs",
     "validate:plain-language": "node scripts/ci/check-plain-language.mjs",
     "validate:product-name": "node scripts/ci/check-product-name-authority.mjs",
@@ -127,6 +128,7 @@
     "validate:structural-review": "node scripts/db/structural-review.mjs",
     "validate:svc-quo-inv-classification": "node scripts/check-svc-quo-inv-classification.mjs",
     "validate:upgrade-matrix": "node scripts/db/phase-upgrade-matrix.mjs",
+    "validate:use-server-exports": "node scripts/ci/check-use-server-exports.mjs",
     "validate:veh-classification": "node scripts/check-veh-classification.mjs",
     "validate:web-boundary": "npm run validate:boundary --workspace @rootlco/web",
     "validate:web-brand": "npm run validate:brand --workspace @rootlco/web",
@@ -139,12 +141,11 @@
     "verify:classifications": "npm run validate:crm-classification && npm run validate:veh-classification && npm run validate:aptrec-classification && npm run validate:wo-tech-dia-qms-classification && npm run validate:svc-quo-inv-classification && npm run validate:sal-wty-rpt-classification",
     "verify:contracts": "npm run validate:module-boundaries && npm run validate:authorization-coverage && npm run validate:operation-coverage && npm run validate:openapi && npm run validate:exact-money && npm run validate:p1-24-register && npm run validate:idempotent-operations",
     "verify:inventories": "npm run validate:p1-19-inventory && npm run validate:p1-20-inventory && npm run validate:p1-21-inventory && npm run validate:p1-22-inventory && npm run validate:p1-23-inventory",
-    "verify:policies": "npm run validate:encoding && npm run validate:run-block-syntax && npm run validate:command-coverage && npm run validate:web-topology && npm run validate:use-server-exports && npm run validate:api-backend-only && npm run validate:generated-artifacts && npm run validate:product-name && npm run validate:plain-language && npm run validate:p1-26-frontend && npm run validate:p1-27-frontend && npm run validate:p1-27-reachability && npm run validate:p1-27-evidence && npm run validate:p1-27-matrix && npm run validate:p1-28-matrix && npm run validate:p1-28-write-reachability && npm run validate:p1-28-adapter-reachability && npm run validate:p1-28-access && npm run validate:p1-28-version-sourcing && npm run validate:p1-28-traceability && npm run validate:p1-28-evidence && npm run validate:p1-27-doc-counts && npm run validate:p1-27-lifecycle && npm run validate:p1-27-closing-values",
+    "verify:policies": "npm run validate:encoding && npm run validate:run-block-syntax && npm run validate:command-coverage && npm run validate:web-topology && npm run validate:use-server-exports && npm run validate:api-backend-only && npm run validate:permission-parity && npm run validate:generated-artifacts && npm run validate:product-name && npm run validate:plain-language && npm run validate:p1-26-frontend && npm run validate:p1-27-frontend && npm run validate:p1-27-reachability && npm run validate:p1-27-evidence && npm run validate:p1-27-matrix && npm run validate:p1-28-matrix && npm run validate:p1-28-write-reachability && npm run validate:p1-28-adapter-reachability && npm run validate:p1-28-access && npm run validate:p1-28-version-sourcing && npm run validate:p1-28-traceability && npm run validate:p1-28-evidence && npm run validate:p1-27-doc-counts && npm run validate:p1-27-lifecycle && npm run validate:p1-27-closing-values",
     "verify:repository": "npm run typecheck && npm run lint && npm run format:check && npm run test:unit && npm run security:all",
     "verify:storage": "vitest run tests/acceptance/storage-round-trip.test.ts",
     "verify:web": "npm run typecheck:web && npm run lint:web && npm run style:check:web && npm run format:check:web && npm run test:web && npm run validate:web-tokens && npm run validate:web-theme && npm run validate:web-brand && npm run validate:notification-authority && npm run validate:web-boundary && npm run validate:p1-27-frontend && npm run build:web && npm run test:web-e2e",
-    "verify:workspaces": "npm run verify:policies && npm run verify:repository && npm run verify:api && npm run verify:web && npm run verify:contracts && npm run verify:inventories && npm run format:check:all",
-    "validate:use-server-exports": "node scripts/ci/check-use-server-exports.mjs"
+    "verify:workspaces": "npm run verify:policies && npm run verify:repository && npm run verify:api && npm run verify:web && npm run verify:contracts && npm run verify:inventories && npm run format:check:all"
   },
   "comment:overrides": "Security overrides. Each entry forces a PATCHED version of a transitive dependency whose direct parent still pins a vulnerable range, so `npm audit` reports zero HIGH/CRITICAL rather than a permanently ignored baseline. Remove an entry only when the parent's own pin has caught up. See docs/engineering/ci-automation/security-model.md.",
   "overrides": {

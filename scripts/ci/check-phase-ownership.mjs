@@ -448,6 +448,110 @@ export const PROFILES = {
       supabase: 'PRE-P1-29 must not change the database harness',
     },
   },
+  /*
+   * P1-29 is a MIXED phase — Backend prerequisites first, then the screens that
+   * consume them — so it gets THREE profiles rather than one permissive profile
+   * spanning both halves. The precedent is P1-28's: four of its five prefixes
+   * map to `p1-27-frontend`, and the exception `remediation/p1-28-owner-qa-backend`
+   * carries its own narrower profile, listed FIRST so the general rule cannot
+   * reach it. A profile that permits both halves forbids nothing across the one
+   * boundary that matters, and so declares nothing.
+   *
+   * `BR-08a` — the slice that adds these — is deliberately NOT one of them. It
+   * changes a gate, its suite and the baseline it reads, which is
+   * `repository-tooling`'s subject and already has a rule (`chore/pre-p1-29-`).
+   * A slice that legislated its own compliance would be declaring nothing about
+   * itself, which is the same fail-open in a different costume.
+   */
+  'p1-29-planning': {
+    why:
+      'a P1-29 preparation or planning branch: documentation only. Preparation decides what will ' +
+      'be built and may not build any of it, and this profile is what makes that a mechanical ' +
+      'fact rather than an intention',
+    allowed: ['docs'],
+    forbidden: {
+      // The whole content of this declaration. Preparation slices in this
+      // repository have twice been the place where an "obviously safe" script
+      // or test edit rode along with the documents, and a docs-only claim that
+      // only the author checks is not a claim.
+      tooling:
+        'a preparation slice must not change CI behaviour — that is what makes its own docs-only ' +
+        'claim checkable by something other than its author',
+      tests: 'nor a test: a preparation slice proves nothing by running anything',
+      web: 'preparation authorises no screen',
+      webGenerated: 'nor regenerates a manifest',
+      webContract: 'nor edits a contract mirror',
+      apiSource: 'preparation authorises no route, service or handler',
+      apiConfig: 'nor API workspace configuration',
+      migrations: 'preparation designs a migration; it does not write one',
+      dbSeeds: 'nor seeds a permission — the slice that publishes the operation seeds its code',
+      supabase: 'preparation must not change the database',
+      rootConfig:
+        'a documents-only branch needs no root configuration, and a lockfile or script change ' +
+        'hidden beside a plan is exactly what this profile exists to refuse',
+    },
+  },
+  'p1-29-backend': {
+    why:
+      'the Backend prerequisite lane of P1-29 (slice A0, contracts BR-01 … BR-09): the work-order, ' +
+      'diagnostics, technician and quality contracts the frontend cannot be built without, with ' +
+      'the migrations and permission seeds they need',
+    allowed: [
+      'apiSource',
+      'migrations',
+      // Two of the prerequisites mint a permission code — `tech.technician.manage`
+      // and `dia.catalogue.manage` — and the only shipping insert into
+      // `iam.permissions` is `supabase/seeds/04_iam_permission_catalog.sql`.
+      // A Backend lane that could not open its own catalogue could not deliver
+      // them, which is the reason `dbSeeds` is a bucket of its own.
+      'dbSeeds',
+      // The idempotent-operations manifest is GENERATED from the Backend
+      // register. A slice that publishes an operation must be able to regenerate
+      // it or `validate:generated-artifacts` goes red on its own change.
+      'webGenerated',
+      'docs',
+      'tooling',
+      'tests',
+      'rootConfig',
+    ],
+    forbidden: {
+      web:
+        'the P1-29 Backend lane is Backend-only — the screens are a separate change under ' +
+        'p1-29-frontend, so no screen ships against a contract nobody reviewed',
+      webContract:
+        'the contract-mirror allow-list names P1-28 appointment and reception files. A P1-29 ' +
+        'operation has no row in it, so a Backend slice reaching for one is reaching for another ' +
+        "phase's sealed artefact",
+      apiConfig: 'P1-29 must not change API workspace configuration',
+      supabase:
+        'P1-29 must not change the database HARNESS — the migrations and the permission catalogue ' +
+        'it does need travel under their own buckets',
+    },
+  },
+  'p1-29-frontend': {
+    why:
+      'the Frontend lane of P1-29: the work-order board and detail, the technician workspace, the ' +
+      'diagnostics experience, and the contract mirror that lets them consume the Backend without ' +
+      'importing it',
+    allowed: ['web', 'docs', 'tooling', 'tests', 'rootConfig'],
+    forbidden: {
+      apiSource:
+        'a Frontend phase must not change API source — route it through the Backend lane. This is ' +
+        'the same boundary p1-26-frontend and p1-27-frontend hold, declared under its own name ' +
+        'because a profile borrowed from another phase declares nothing about this one',
+      apiConfig: 'a Frontend phase must not change API workspace configuration',
+      webGenerated:
+        'the idempotent-operations manifest is GENERATED from the Backend register — a screen that ' +
+        'hand-edits it desynchronises the two, and the register is not on this side of the lane',
+      webContract:
+        'that allow-list holds six frozen P1-28 files. The P1-29 mirror is new source under ' +
+        'apps/web and travels as web',
+      migrations: 'a screen must not carry a migration',
+      dbSeeds:
+        'a screen must not seed a permission — the Backend lane that publishes the operation does',
+      supabase: 'a Frontend phase must not change the database',
+    },
+  },
   'backend-login-contract': {
     why: 'the login-identity Backend remediation P1-26 is blocked on',
     allowed: ['apiSource', 'apiConfig', 'docs', 'tooling', 'tests', 'rootConfig'],
