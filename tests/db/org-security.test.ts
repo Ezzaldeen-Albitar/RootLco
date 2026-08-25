@@ -28,6 +28,11 @@ const TENANT_COLUMN_EXCEPTIONS = new Set([
   'shared.retention_classes', // platform retention definitions (no tenant scope)
   'shared.localization_keys', // platform localization-key catalogue
   'shared.localized_texts', // governed platform localization content
+  // PRE-P1-29 Wave B slice B1. Platform authority exists OUTSIDE every tenant —
+  // a tenant column here would imply a tenant could hold or scope it, which is
+  // the precise thing the control-plane design forbids. Justified in the table
+  // COMMENT and in the data dictionary, as this list requires.
+  'iam.platform_grants',
 ]);
 
 /** Tables whose tenant_id is nullable BY DESIGN (documented adaptation). */

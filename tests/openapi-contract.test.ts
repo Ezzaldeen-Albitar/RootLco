@@ -394,6 +394,11 @@ describe('OpenAPI contract', () => {
       'iam',
       'inv',
       'org',
+      // PRE-P1-29 Wave B: the control-plane vocabulary. No operation declares one
+      // yet — B1 is database-only — so this entry is currently unexercised by the
+      // loop below, and it is added with the seed rather than after it so the
+      // catalogue and the list never disagree.
+      'platform',
       'qms',
       'quo',
       'rec',

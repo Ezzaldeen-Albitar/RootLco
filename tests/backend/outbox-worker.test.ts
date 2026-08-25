@@ -267,7 +267,11 @@ async function plantForeignEvents(): Promise<readonly string[]> {
   await admin.query(
     `INSERT INTO org.tenants
        (id, tenant_code, display_name, status, default_locale, default_timezone, created_by)
-     VALUES ($1, $2, 'P1-13 foreign outbox fixture', 'active', 'en', 'UTC', $3)
+     -- 'provisioning', not 'active'. This tenant exists only as a foreign-key
+     -- anchor for the outbox rows below; nothing here reads its status. B1 made
+     -- ACTIVE-with-no-recoverable-administrator unrepresentable on INSERT too,
+     -- for every writer including this admin connection.
+     VALUES ($1, $2, 'P1-13 foreign outbox fixture', 'provisioning', 'en', 'UTC', $3)
      ON CONFLICT (id) DO NOTHING`,
     [FOREIGN_TENANT, FOREIGN_TENANT_CODE, USER_A]
   );
@@ -882,7 +886,9 @@ describe('the harness boundary is a lease, and it fails closed', () => {
     await admin.query(
       `INSERT INTO org.tenants
          (id, tenant_code, display_name, status, default_locale, default_timezone, created_by)
-       VALUES ($1, 'fx_p1_13_intruder', 'P1-13 mid-run producer', 'active', 'en', 'UTC', $2)
+       -- provisioning, for the same reason as plantForeignEvents above: this is
+       -- an FK anchor, not a live tenant.
+       VALUES ($1, 'fx_p1_13_intruder', 'P1-13 mid-run producer', 'provisioning', 'en', 'UTC', $2)
        ON CONFLICT (id) DO NOTHING`,
       [INTRUDER_TENANT, USER_A]
     );

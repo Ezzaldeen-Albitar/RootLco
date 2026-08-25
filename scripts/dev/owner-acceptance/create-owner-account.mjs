@@ -187,14 +187,53 @@ async function upsertIdentity(supabase, { email, password, tenantId, confirm }) 
   return created.body.id;
 }
 
+/**
+ * Creates a tenant in its PROVISIONING window.
+ *
+ * PRE-P1-29 Wave B slice B1 made ACTIVE-with-no-recoverable-administrator an
+ * unrepresentable state — on INSERT as well as UPDATE, and for every writer
+ * including this one, which connects with row-level security bypassed. So the
+ * tenant is created provisioning here and activated by activateTenants() below,
+ * after the owner grants exist. Note that ON CONFLICT would not have rescued
+ * the old form: PostgreSQL fires BEFORE ROW INSERT triggers before the arbiter
+ * index is probed, so a re-run raised too.
+ */
 async function ensureTenant(client, { id, code, name, locale }) {
   await client.query(
     `INSERT INTO org.tenants
        (id, tenant_code, display_name, status, default_locale, default_timezone, created_by)
-     VALUES ($1, $2, $3, 'active', $4, 'Asia/Amman', $5)
+     VALUES ($1, $2, $3, 'provisioning', $4, 'Asia/Amman', $5)
      ON CONFLICT (id) DO NOTHING`,
     [id, code, name, locale, SYSTEM_ACTOR]
   );
+}
+
+/**
+ * Takes every fixture tenant live, once its owner exists.
+ *
+ * Idempotent by the WHERE clause rather than by ON CONFLICT: the transition
+ * guard refuses a no-op status change, so a re-run must present no rows rather
+ * than the same row twice.
+ */
+async function activateTenants(client, tenantIds) {
+  const { rows } = await client.query(
+    `UPDATE org.tenants SET status = 'active'
+      WHERE id = ANY($1::uuid[]) AND status = 'provisioning'
+      RETURNING id, tenant_code`,
+    [tenantIds]
+  );
+  for (const row of rows) log(`  activated ${row.tenant_code}`);
+  const stuck = await client.query(
+    `SELECT tenant_code, status FROM org.tenants
+      WHERE id = ANY($1::uuid[]) AND status <> 'active'`,
+    [tenantIds]
+  );
+  if (stuck.rows.length > 0) {
+    throw new Error(
+      'tenant(s) could not be activated — no recoverable administrator: ' +
+        stuck.rows.map((r) => `${r.tenant_code}=${r.status}`).join(', ')
+    );
+  }
 }
 
 async function ensureCompany(client, { id, tenantId, code, name }) {
@@ -634,6 +673,11 @@ async function main() {
       summary[person.key] = { email: person.email, subject, status: person.status };
       log(`  identity ${person.email.padEnd(34)} ${person.status}`);
     }
+
+    // Every owner grant now exists, so the tenants can go live. This is the
+    // point B1 moved activation to; before it, the tenants were inserted active
+    // and the environment could be built with nobody able to administer it.
+    await activateTenants(client, [IDS.tenantA, IDS.tenantB, IDS.tenantC]);
 
     // --- content, so every screen has something to show ---------------------
     await ensureCompanySettings(client, {

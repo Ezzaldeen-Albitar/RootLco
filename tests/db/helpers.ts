@@ -39,6 +39,15 @@ export const RUNTIME_LOGIN = 'rootlco_test_runtime';
 export const READONLY_LOGIN = 'rootlco_test_readonly';
 /** Login role for the asynchronous worker archetype. */
 export const WORKER_LOGIN = 'rootlco_test_worker';
+/**
+ * Login role for the control-plane archetype (PRE-P1-29 Wave B).
+ *
+ * Every platform privilege assertion runs here and never on the admin
+ * connection. That distinction is the whole point of slice B1: the design was
+ * reviewed three times and five under-grants survived, because inspecting a
+ * grant list is not the same as executing the path.
+ */
+export const PLATFORM_LOGIN = 'rootlco_test_platform';
 /** Login role used to demonstrate FORCE RLS against a non-BYPASSRLS owner. */
 export const OWNER_LOGIN = 'rootlco_test_owner';
 /** Deliberately weak, deliberately fake, local test databases only. */
@@ -51,6 +60,27 @@ export const USER_A = 'a0000000-0000-4000-8000-000000000001';
 export const USER_B = 'b0000000-0000-4000-8000-000000000001';
 const ROLE_FIXTURE_EMPLOYEE_A = 'a0000000-0000-4000-8000-0000000000e1';
 const ROLE_FIXTURE_EMPLOYEE_B = 'b0000000-0000-4000-8000-0000000000e1';
+/**
+ * The fixture tenants' recoverable owners.
+ *
+ * PRE-P1-29 Wave B slice B1 made ACTIVE-without-a-recoverable-owner an
+ * unrepresentable state: org.guard_tenant_status_transition refuses any arrival
+ * at 'active', by INSERT or by UPDATE, unless some active account of the tenant
+ * holds an effective allow on iam.role.manage AND iam.grant.manage.
+ *
+ * These fixtures used to create both tenants live and ownerless in a single
+ * INSERT, which is exactly that state — so the seed now builds them the way the
+ * product does: provisioning first, then an owner, then activation.
+ *
+ * Deliberately SEPARATE from USER_A/USER_B. Those two are ordinary employees and
+ * a great many suites assert what they cannot do; giving the employee role
+ * administrative codes would quietly rewrite the premise of those tests.
+ */
+export const OWNER_A = 'a0000000-0000-4000-8000-0000000000f1';
+export const OWNER_B = 'b0000000-0000-4000-8000-0000000000f1';
+const ROLE_FIXTURE_OWNER_A = 'a0000000-0000-4000-8000-0000000000f2';
+const ROLE_FIXTURE_OWNER_B = 'b0000000-0000-4000-8000-0000000000f2';
+
 export const COMPANY_A1 = 'a1000000-0000-4000-8000-000000000001';
 export const BRANCH_A1 = 'a1100000-0000-4000-8000-000000000001';
 
@@ -75,6 +105,14 @@ export function readonlyPool(): Pool {
 
 export function workerPool(max = 5): Pool {
   return new Pool(config(WORKER_LOGIN, TEST_LOGIN_PASSWORD, max));
+}
+
+export function platformPool(max = 5): Pool {
+  return new Pool(config(PLATFORM_LOGIN, TEST_LOGIN_PASSWORD, max));
+}
+
+export function platformClient(): Client {
+  return new Client(config(PLATFORM_LOGIN, TEST_LOGIN_PASSWORD));
 }
 
 export function ownerClient(): Client {
@@ -110,12 +148,17 @@ export async function ensureTestLogins(admin: Pool): Promise<void> {
         CREATE ROLE ${WORKER_LOGIN} LOGIN PASSWORD '${TEST_LOGIN_PASSWORD}'
           NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
       END IF;
+      IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '${PLATFORM_LOGIN}') THEN
+        CREATE ROLE ${PLATFORM_LOGIN} LOGIN PASSWORD '${TEST_LOGIN_PASSWORD}'
+          NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
+      END IF;
     END;
     $$;
   `);
   await admin.query(`GRANT app_runtime TO ${RUNTIME_LOGIN}`);
   await admin.query(`GRANT app_readonly TO ${READONLY_LOGIN}`);
   await admin.query(`GRANT app_worker TO ${WORKER_LOGIN}`);
+  await admin.query(`GRANT app_platform TO ${PLATFORM_LOGIN}`);
 }
 
 export interface SessionContext {
@@ -215,8 +258,8 @@ export async function ensureOrgFixtures(admin: Pool): Promise<void> {
   await admin.query(
     `INSERT INTO org.tenants (id, tenant_code, display_name, status, default_locale, default_timezone, created_by)
      VALUES
-       ($1, 'tenant_a', 'Fixture Tenant A', 'active', 'en', 'UTC', $3),
-       ($2, 'tenant_b', 'Fixture Tenant B', 'active', 'ar', 'UTC', $3)
+       ($1, 'tenant_a', 'Fixture Tenant A', 'provisioning', 'en', 'UTC', $3),
+       ($2, 'tenant_b', 'Fixture Tenant B', 'provisioning', 'ar', 'UTC', $3)
      ON CONFLICT (id) DO NOTHING`,
     [TENANT_A, TENANT_B, USER_A]
   );
@@ -304,6 +347,176 @@ export async function ensureOrgFixtures(admin: Pool): Promise<void> {
       [tenantId, userId, roleId, SYS]
     );
   }
+
+  // ---- the recoverable owner, and only then the activation --------------------
+  //
+  // See OWNER_A/OWNER_B above. Both tenants were inserted 'provisioning', so
+  // this is the sanctioned order rather than a workaround: create somebody who
+  // can administer the tenant, then let it go live.
+  await admin.query(
+    `INSERT INTO iam.user_accounts
+       (id, tenant_id, identity_provider, provider_subject, email, display_name, status, created_by)
+     VALUES
+       ($1,$3,'test_harness','fx_db_owner_a','db-owner-a@example.test','Fixture Owner A','active',$5),
+       ($2,$4,'test_harness','fx_db_owner_b','db-owner-b@example.test','Fixture Owner B','active',$5)
+     ON CONFLICT (id) DO NOTHING`,
+    [OWNER_A, OWNER_B, TENANT_A, TENANT_B, SYS]
+  );
+  await admin.query(
+    `INSERT INTO iam.roles (id, tenant_id, role_code, name, created_by)
+     VALUES ($1,$3,'fx_db_owner','DB fixture owner',$5),
+            ($2,$4,'fx_db_owner','DB fixture owner',$5)
+     ON CONFLICT (id) DO NOTHING`,
+    [ROLE_FIXTURE_OWNER_A, ROLE_FIXTURE_OWNER_B, TENANT_A, TENANT_B, SYS]
+  );
+  for (const [tenantId, roleId] of [
+    [TENANT_A, ROLE_FIXTURE_OWNER_A],
+    [TENANT_B, ROLE_FIXTURE_OWNER_B],
+  ] as const) {
+    // The two codes org.tenant_has_recoverable_owner resolves: define authority,
+    // and confer it. A role that maps neither is an owner in name only.
+    await admin.query(
+      `INSERT INTO iam.role_permissions (tenant_id, role_id, permission_id, effect, created_by)
+       SELECT $1::uuid, $2::uuid, p.id, 'allow', $3::uuid
+         FROM iam.permissions p
+        WHERE p.permission_code IN ('iam.role.manage', 'iam.grant.manage', 'iam.user.manage')
+          AND NOT EXISTS (
+            SELECT 1 FROM iam.role_permissions rp
+             WHERE rp.tenant_id = $1::uuid AND rp.role_id = $2::uuid
+               AND rp.permission_id = p.id
+          )`,
+      [tenantId, roleId, SYS]
+    );
+  }
+  for (const [tenantId, userId, roleId] of [
+    [TENANT_A, OWNER_A, ROLE_FIXTURE_OWNER_A],
+    [TENANT_B, OWNER_B, ROLE_FIXTURE_OWNER_B],
+  ] as const) {
+    await admin.query(
+      `INSERT INTO iam.role_grants
+         (tenant_id, user_id, role_id, scope_mode, granted_by, created_by)
+       SELECT $1::uuid, $2::uuid, $3::uuid, 'unrestricted', $4::uuid, $4::uuid
+        WHERE NOT EXISTS (
+          SELECT 1 FROM iam.role_grants
+           WHERE tenant_id = $1::uuid AND user_id = $2::uuid
+             AND role_id = $3::uuid AND status = 'active'
+        )`,
+      [tenantId, userId, roleId, SYS]
+    );
+  }
+  // Idempotent, and it must stay so: the guard refuses a no-op transition only
+  // because the WHERE clause never presents one.
+  await admin.query(
+    `UPDATE org.tenants SET status = 'active'
+      WHERE id = ANY($1::uuid[]) AND status = 'provisioning'`,
+    [[TENANT_A, TENANT_B]]
+  );
+}
+
+/**
+ * A complete, comparable fingerprint of everything one database role can reach.
+ *
+ * This exists because a mutation suite in this repository once left the database
+ * WEAKER than its own migrations and stayed green doing it: two policy restores
+ * were hand-copied literals written before those policies were tightened, so
+ * running the suite silently reverted a tenant term and two coherence terms.
+ * Every assertion keyed on the policy NAME, so nothing noticed.
+ *
+ * A suite that mutates privileges takes this before it starts and compares after
+ * it finishes. Any difference means it did not put back what it took away —
+ * which is a failed run even if every case inside it passed.
+ *
+ * Policy PREDICATES are included, not just names, because the name is exactly
+ * what the original defect matched on.
+ */
+export async function roleSurfaceFingerprint(admin: Pool, role: string): Promise<string> {
+  const lines: string[] = [];
+  /*
+   * EVERY column is aliased, and that is not style.
+   *
+   * node-pg returns each row as an object keyed by column name, so two columns
+   * that PostgreSQL names the same thing collapse into one — the later value
+   * wins and the earlier is gone. The first version of this query selected
+   * `coalesce(qual, '-')` and `coalesce(with_check, '-')` side by side; both
+   * arrive named `coalesce`, so with_check overwrote qual and the fingerprint
+   * could not see a policy's USING clause at all. Since with_check is NULL on a
+   * SELECT policy, rewriting one to a weaker predicate moved nothing.
+   *
+   * That is precisely the blindness this helper exists to prevent, in the helper
+   * itself. The anti-vacuity test in the matrix suite caught it on its first run,
+   * which is the whole argument for writing a guard on the guard.
+   */
+  const add = async (label: string, sql: string) => {
+    const r = await admin.query<Record<string, unknown>>(sql, [role]);
+    for (const row of r.rows) lines.push(label + ' ' + Object.values(row).join(' | '));
+  };
+
+  await add(
+    'role',
+    `SELECT rolcanlogin AS a, rolsuper AS b, rolbypassrls AS c, rolcreatedb AS d,
+            rolcreaterole AS e, rolreplication AS f, rolinherit AS g, rolconnlimit AS h
+       FROM pg_roles WHERE rolname = $1`
+  );
+  await add(
+    'memberOf',
+    `SELECT g.rolname AS a FROM pg_auth_members m
+       JOIN pg_roles r ON r.oid = m.member JOIN pg_roles g ON g.oid = m.roleid
+      WHERE r.rolname = $1 ORDER BY 1`
+  );
+  await add(
+    'hasMember',
+    `SELECT r.rolname AS a FROM pg_auth_members m
+       JOIN pg_roles g ON g.oid = m.roleid JOIN pg_roles r ON r.oid = m.member
+      WHERE g.rolname = $1 ORDER BY 1`
+  );
+  await add(
+    'schema',
+    `SELECT n.nspname AS a, x.privilege_type AS b
+       FROM pg_namespace n, aclexplode(n.nspacl) x, pg_roles r
+      WHERE r.oid = x.grantee AND r.rolname = $1 ORDER BY 1, 2`
+  );
+  await add(
+    'relation',
+    `SELECT c.relnamespace::regnamespace || '.' || c.relname AS a, c.relkind AS b,
+            x.privilege_type AS c, x.is_grantable AS d
+       FROM pg_class c, aclexplode(c.relacl) x, pg_roles r
+      WHERE r.oid = x.grantee AND r.rolname = $1 ORDER BY 1, 3`
+  );
+  // RLS posture of every relation the role can touch. A mutation that switched
+  // ENABLE/FORCE off on a table this role holds a grant on would otherwise be
+  // invisible to the fidelity check — the fingerprint records the policies but
+  // not whether they are being enforced at all.
+  await add(
+    'rls',
+    `SELECT c.relnamespace::regnamespace || '.' || c.relname AS a,
+            c.relrowsecurity AS b, c.relforcerowsecurity AS d
+       FROM pg_class c
+      WHERE EXISTS (SELECT 1 FROM aclexplode(c.relacl) x JOIN pg_roles r ON r.oid = x.grantee
+                     WHERE r.rolname = $1)
+      ORDER BY 1`
+  );
+  await add(
+    'column',
+    `SELECT c.relnamespace::regnamespace || '.' || c.relname AS a, att.attname AS b,
+            x.privilege_type AS c, x.is_grantable AS d
+       FROM pg_class c JOIN pg_attribute att ON att.attrelid = c.oid AND att.attnum > 0,
+            aclexplode(att.attacl) x, pg_roles r
+      WHERE r.oid = x.grantee AND r.rolname = $1 ORDER BY 1, 2, 3`
+  );
+  await add(
+    'execute',
+    `SELECT p.oid::regprocedure::text AS a FROM pg_proc p, aclexplode(p.proacl) x, pg_roles r
+      WHERE r.oid = x.grantee AND r.rolname = $1 AND x.privilege_type = 'EXECUTE'
+      ORDER BY 1`
+  );
+  await add(
+    'policy',
+    `SELECT schemaname || '.' || tablename AS a, policyname AS b, cmd AS c,
+            permissive AS d, array_to_string(roles, ',') AS e,
+            coalesce(qual, '-') AS f, coalesce(with_check, '-') AS g
+       FROM pg_policies WHERE roles @> ARRAY[$1]::name[] ORDER BY 1, 2`
+  );
+  return lines.join('\n');
 }
 
 /**

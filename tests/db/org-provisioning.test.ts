@@ -33,8 +33,6 @@ const specA = {
     display_name: 'Ephemeral Provisioning Tenant A',
     locale: 'ar',
     timezone: 'Asia/Amman',
-    activate: true,
-    activation_reason: 'ephemeral provisioning assertion',
   },
   subscription: {
     plan_code: PLAN_CODE,
@@ -63,8 +61,6 @@ const specB = {
     display_name: 'Ephemeral Provisioning Tenant B',
     locale: 'en',
     timezone: 'UTC',
-    activate: true,
-    activation_reason: 'ephemeral generic-path assertion',
   },
   subscription: {
     plan_code: PLAN_CODE,
@@ -205,7 +201,7 @@ describe('ephemeral pilot-shape provisioning', () => {
   it('provisions exactly ONE complete organization with ar locale and draft subscription', async () => {
     expect(await orgFootprint(admin, tenantAId)).toEqual({
       tenants: 1,
-      history: 2,
+      history: 1,
       subscriptions: 1,
       companies: 1,
       branches: 1,
@@ -215,7 +211,11 @@ describe('ephemeral pilot-shape provisioning', () => {
       `SELECT status, default_locale FROM org.tenants WHERE id = $1`,
       [tenantAId]
     );
-    expect(tenant.rows[0]).toEqual({ status: 'active', default_locale: 'ar' });
+    // 'provisioning', not 'active'. See the contract test at the end of this
+    // file: PRE-P1-29 Wave B slice B1 made tenant.activate inert, because a
+    // tenant activated inside its own provisioning transaction is a tenant
+    // nobody can administer.
+    expect(tenant.rows[0]).toEqual({ status: 'provisioning', default_locale: 'ar' });
     const subscription = await admin.query(
       `SELECT status FROM org.tenant_subscriptions WHERE tenant_id = $1`,
       [tenantAId]
@@ -277,7 +277,7 @@ describe('ephemeral pilot-shape provisioning', () => {
   it('the generic en/UTC path has the same complete footprint', async () => {
     expect(await orgFootprint(admin, tenantBId)).toEqual({
       tenants: 1,
-      history: 2,
+      history: 1,
       subscriptions: 1,
       companies: 1,
       branches: 1,
@@ -294,8 +294,6 @@ describe('org.provision_organization — atomicity, idempotency, failure injecti
       display_name: 'Provisioning Test Tenant',
       locale: 'en',
       timezone: 'UTC',
-      activate: true,
-      activation_reason: 'test activation',
     },
     subscription: {
       plan_code: PLAN_CODE,
@@ -320,7 +318,7 @@ describe('org.provision_organization — atomicity, idempotency, failure injecti
     const before = await orgFootprint(admin, r1.tenant_id);
     expect(before).toEqual({
       tenants: 1,
-      history: 2,
+      history: 1,
       subscriptions: 1,
       companies: 1,
       branches: 1,
@@ -442,5 +440,94 @@ describe('org.provision_organization — atomicity, idempotency, failure injecti
         '42501'
       );
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+describe('the tenant.activate option, after PRE-P1-29 Wave B slice B1', () => {
+  /*
+   * org.provision_organization accepts tenant.activate, and every spec in this
+   * file used to set it. It is now INERT — not deprecated, not discouraged:
+   * structurally impossible to satisfy.
+   *
+   * org.guard_tenant_status_transition refuses any transition into 'active'
+   * unless org.tenant_has_recoverable_owner is true, and provisioning creates no
+   * accounts. So inside the provisioning transaction there is no grant, there
+   * can be no grant, and the activation branch always raises. The option
+   * described a state the Owner explicitly forbade: live, with nobody able to
+   * administer it and the bootstrap window shut behind.
+   *
+   * Recorded here rather than only in the B1 suite because this is the canonical
+   * function's own file, and a caller reading it should find the answer.
+   */
+  it('is refused, and takes the whole provisioning call with it', async () => {
+    const activating = {
+      actor_id: USER_A,
+      tenant: {
+        code: 'fx_prov_inert',
+        display_name: 'Inert Activation Tenant',
+        locale: 'en',
+        timezone: 'UTC',
+        activate: true,
+        activation_reason: 'proving the option is inert',
+      },
+      subscription: {
+        plan_code: PLAN_CODE,
+        status: 'draft',
+        effective_from: '2026-07-01T00:00:00Z',
+      },
+      company: { code: 'fx_prov_inert_co', legal_name: 'Inert Co', base_currency: 'USD' },
+      branch: { code: 'main', name: 'Inert Main', timezone: 'UTC' },
+      sequences: [{ code: 'org_document', prefix_template: 'DOC-', pad_width: 6 }],
+    };
+
+    await expect(
+      admin.query(`SELECT org.provision_organization($1::jsonb, 'fx-key-inert') AS r`, [
+        JSON.stringify(activating),
+      ])
+    ).rejects.toMatchObject({ code: '23514' });
+
+    // Atomic: no tenant, and no replay row that a retry could resolve against.
+    const left = await admin.query(
+      `SELECT (SELECT count(*)::int FROM org.tenants WHERE tenant_code = 'fx_prov_inert') AS tenants,
+              (SELECT count(*)::int FROM shared.idempotency_keys
+                WHERE idempotency_key = 'fx-key-inert') AS keys`
+    );
+    expect(left.rows[0]).toEqual({ tenants: 0, keys: 0 });
+  });
+
+  it('the same organisation provisions fine without it', async () => {
+    // The positive control. Without it the refusal above could be about
+    // anything else in the spec.
+    const plain = {
+      actor_id: USER_A,
+      tenant: {
+        code: 'fx_prov_inert',
+        display_name: 'Inert Activation Tenant',
+        locale: 'en',
+        timezone: 'UTC',
+      },
+      subscription: {
+        plan_code: PLAN_CODE,
+        status: 'draft',
+        effective_from: '2026-07-01T00:00:00Z',
+      },
+      company: { code: 'fx_prov_inert_co', legal_name: 'Inert Co', base_currency: 'USD' },
+      branch: { code: 'main', name: 'Inert Main', timezone: 'UTC' },
+      sequences: [{ code: 'org_document', prefix_template: 'DOC-', pad_width: 6 }],
+    };
+    const r = await admin.query(
+      `SELECT org.provision_organization($1::jsonb, 'fx-key-inert-ok') AS r`,
+      [JSON.stringify(plain)]
+    );
+    const tenantId = r.rows[0].r.tenant_id;
+    expect(tenantId).toBeTruthy();
+    const status = await admin.query(`SELECT status FROM org.tenants WHERE id = $1`, [tenantId]);
+    expect(status.rows[0].status).toBe('provisioning');
+
+    await deleteTenantCascade(admin, [tenantId]);
+    await admin.query(
+      `DELETE FROM shared.idempotency_keys WHERE idempotency_key = 'fx-key-inert-ok'`
+    );
   });
 });

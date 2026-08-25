@@ -317,7 +317,7 @@ describe('a profile refuses a bucket it never claimed', () => {
 describe('the permission catalogue is a bucket of its own', () => {
   /*
    * `supabase/seeds/04_iam_permission_catalog.sql` IS the canonical permission
-   * catalogue: 113 rows at the time of writing — pinned by `permissionCount` in
+   * catalogue: 116 rows at the time of writing — pinned by `permissionCount` in
    * `.github/ci-baselines/schema-baseline.json` rather than by this sentence — the
    * only shipping insert into `iam.permissions`, and ZERO migrations write to that
    * table. Any change that adds a permission has to

@@ -17,6 +17,11 @@ const MIGRATIONS_DIR = join(__dirname, '..', '..', 'supabase', 'migrations');
 /** The complete allow-list of tables permitted to exist in module schemas
  *  during Phase 1-2. Anything else is a phase violation. */
 const ALLOWED_TABLES = new Set([
+  // PRE-P1-29 Wave B slice B1: the identity-to-platform-authority relation. It
+  // is infrastructure, not a business domain — it holds no customer, vehicle,
+  // order or money, and it carries no tenant column because platform authority
+  // is not a tenant's to hold.
+  'iam.platform_grants',
   'apt.appointment_services',
   'apt.appointment_status_history',
   'apt.appointment_types',
@@ -287,6 +292,27 @@ const ENVIRONMENT_EXTENSIONS = new Set([
 
 /** The complete allow-list of routines permitted in module schemas. */
 const ALLOWED_ROUTINES = new Set([
+  // --- PRE-P1-29 Wave B slice B1 ---
+  // The control-plane authority resolver. SECURITY INVOKER; consults no tenant,
+  // because iam.has_permission requires an active account in the CURRENT tenant
+  // and so structurally cannot answer a platform question.
+  'iam.has_platform_authority',
+  // The any-authority form. Used by the audit and replay policies, which ask
+  // whether the caller is a platform principal at all rather than which code it
+  // holds — a distinction that matters because those two surfaces are shared
+  // with the tenant runtime and must not widen for it.
+  'iam.holds_any_platform_authority',
+  // The table-level tenant lifecycle backstop. Enforces the transition graph for
+  // EVERY writer, so granting UPDATE (status) to the control plane cannot reopen
+  // a closed bootstrap window.
+  'org.guard_tenant_status_transition',
+  // Bootstrap readiness, derived from canonical artefacts rather than a new
+  // marker: an active grant inside its validity window held by an active,
+  // undeleted account of the same tenant. The guard above calls it to refuse
+  // any transition INTO active that would leave nobody able to administer.
+  'org.tenant_has_recoverable_owner',
+  // Attribution for the history row the lifecycle writes.
+  'org.stamp_tenant_status_history',
   'apt.emit_appointment_status_history',
   'apt.guard_appointment_catalog_refs',
   'apt.guard_appointment_status_coherence',
@@ -942,6 +968,9 @@ describe('database foundation', () => {
       'tg_plate_history_close',
       'tg_plate_history_immutable',
       'tg_plate_history_touch_metadata',
+      // --- PRE-P1-29 Wave B slice B1 ---
+      'tg_platform_grants_immutable',
+      'tg_platform_grants_touch_metadata',
       'tg_powertrain_types_immutable',
       'tg_powertrain_types_touch_metadata',
       'tg_price_list_assignments_immutable',
@@ -1111,9 +1140,14 @@ describe('database foundation', () => {
       'tg_template_versions_touch_metadata',
       'tg_template_versions_touch_metadata',
       'tg_tenant_feature_overrides_immutable',
+      // PRE-P1-29 Wave B slice B1. On org.tenant_status_history, not on
+      // org.tenants: it stamps the history row rather than the tenant.
+      'tg_tenant_status_history_stamp',
       'tg_tenant_subscriptions_immutable',
       'tg_tenant_subscriptions_touch_metadata',
       'tg_tenants_immutable_columns',
+      // --- PRE-P1-29 Wave B slice B1: the lifecycle-graph backstop ---
+      'tg_tenants_status_transition',
       'tg_tenants_touch_metadata',
       'tg_timeline_events_stamp',
       'tg_timezones_touch_metadata',
@@ -1229,8 +1263,11 @@ describe('database foundation', () => {
       'ins_approval_decisions_scope',
       'ins_approval_evidence_scope',
       'ins_approval_limits_admin',
+      'ins_audit_integrity_links_platform',
       'ins_audit_integrity_links_writer',
+      'ins_audit_record_details_platform',
       'ins_audit_record_details_writer',
+      'ins_audit_records_platform',
       'ins_audit_records_writer',
       'ins_authorizations_scope',
       'ins_authorized_receivers_gated',
@@ -1238,8 +1275,10 @@ describe('database foundation', () => {
       'ins_battery_readings_tenant',
       'ins_body_types_tenant',
       'ins_branch_service_availability_scope',
+      'ins_branch_settings_platform',
       'ins_branch_settings_scope',
       'ins_branch_status_history_tenant',
+      'ins_branches_platform',
       'ins_branches_scope',
       'ins_business_partners_tenant',
       'ins_cancellation_reasons_tenant',
@@ -1249,6 +1288,7 @@ describe('database foundation', () => {
       'ins_communication_log_tenant',
       'ins_communication_preferences_tenant',
       'ins_company_profiles_tenant',
+      'ins_company_settings_platform',
       'ins_company_settings_scope',
       'ins_complaint_details_gated',
       'ins_complaints_scope',
@@ -1299,6 +1339,8 @@ describe('database foundation', () => {
       'ins_findings_scope',
       'ins_fuel_levels_tenant',
       'ins_grant_scopes_admin',
+      'ins_grant_scopes_platform_bootstrap',
+      'ins_idempotency_keys_platform',
       'ins_idempotency_keys_tenant',
       'ins_individual_profiles_tenant',
       'ins_inspection_templates_tenant',
@@ -1318,6 +1360,7 @@ describe('database foundation', () => {
       'ins_jobs_scope',
       'ins_labor_sessions_scope',
       'ins_leak_observations_scope',
+      'ins_legal_companies_platform',
       'ins_legal_companies_tenant',
       'ins_login_audit_self',
       'ins_makes_tenant',
@@ -1325,6 +1368,7 @@ describe('database foundation', () => {
       'ins_message_templates_tenant',
       'ins_models_tenant',
       'ins_notes_crm_customer',
+      'ins_number_sequences_platform',
       'ins_odometer_readings_tenant',
       'ins_opening_inventory_batches_scope',
       'ins_opening_inventory_lines_scope',
@@ -1373,8 +1417,11 @@ describe('database foundation', () => {
       'ins_rework_link_details_gated',
       'ins_rework_links_scope',
       'ins_role_grants_delegable',
+      'ins_role_grants_platform_bootstrap',
       'ins_role_permissions_delegable',
+      'ins_role_permissions_platform_bootstrap',
       'ins_roles_admin',
+      'ins_roles_platform_bootstrap',
       'ins_saved_filters_owner',
       'ins_security_events_runtime',
       'ins_service_categories_tenant',
@@ -1403,13 +1450,20 @@ describe('database foundation', () => {
       'ins_template_items_tenant',
       'ins_template_versions_tenant',
       'ins_template_versions_tenant',
+      'ins_tenant_feature_overrides_platform',
+      'ins_tenant_status_history_platform_lifecycle',
+      'ins_tenant_status_history_platform_provisioning',
+      'ins_tenant_subscriptions_platform',
+      'ins_tenants_platform_provisioning',
       'ins_timeline_events_tenant',
       'ins_transmission_history_tenant',
       'ins_trims_tenant',
       'ins_units_of_measure_tenant',
       'ins_user_accounts_admin',
+      'ins_user_accounts_platform_bootstrap',
       'ins_user_sessions_self',
       'ins_user_status_history_admin',
+      'ins_user_status_history_platform_bootstrap',
       'ins_vehicle_alerts_tenant',
       'ins_vehicle_attribute_history_tenant',
       'ins_vehicle_content_details_gated',
@@ -1451,9 +1505,12 @@ describe('database foundation', () => {
       'sel_approval_limits_tenant',
       'sel_audit_integrity_links_chain',
       'sel_audit_integrity_links_permitted',
+      'sel_audit_integrity_links_platform_chain',
       'sel_audit_record_details_permitted',
+      'sel_audit_record_details_platform_unlinked',
       'sel_audit_record_details_unlinked',
       'sel_audit_records_permitted',
+      'sel_audit_records_platform_unlinked',
       'sel_audit_records_unlinked',
       'sel_authorizations_scope',
       'sel_authorized_receivers_gated',
@@ -1463,6 +1520,7 @@ describe('database foundation', () => {
       'sel_branch_service_availability_scope',
       'sel_branch_settings_scope',
       'sel_branch_status_history_tenant',
+      'sel_branches_platform',
       'sel_branches_scope',
       'sel_business_partners_tenant',
       'sel_cancellation_reasons_visible',
@@ -1527,7 +1585,9 @@ describe('database foundation', () => {
       'sel_financial_events_gated',
       'sel_findings_scope',
       'sel_fuel_levels_visible',
+      'sel_grant_scopes_platform_bootstrap',
       'sel_grant_scopes_tenant',
+      'sel_idempotency_keys_platform',
       'sel_idempotency_keys_tenant',
       'sel_individual_profiles_tenant',
       'sel_inspection_templates_tenant',
@@ -1548,6 +1608,7 @@ describe('database foundation', () => {
       'sel_labor_sessions_scope',
       'sel_languages_all',
       'sel_leak_observations_scope',
+      'sel_legal_companies_platform',
       'sel_legal_companies_tenant',
       'sel_legal_holds_tenant',
       'sel_localization_keys_all',
@@ -1576,7 +1637,9 @@ describe('database foundation', () => {
       'sel_payment_allocations_gated',
       'sel_payment_methods_scope',
       'sel_permissions_all',
+      'sel_permissions_platform',
       'sel_plate_history_tenant',
+      'sel_platform_grants_self',
       'sel_powertrain_types_visible',
       'sel_price_list_assignments_tenant',
       'sel_price_list_versions_tenant',
@@ -1609,8 +1672,19 @@ describe('database foundation', () => {
       'sel_retention_classes_all',
       'sel_rework_link_details_gated',
       'sel_rework_links_scope',
+      'sel_role_grants_platform_bootstrap',
+      // B1-UG-005. The bootstrap read is window-scoped, so readiness could not
+      // see the grant once a tenant left provisioning and a legitimate
+      // reactivation was refused. Gated on the lifecycle authority.
+      'sel_role_grants_platform_lifecycle',
       'sel_role_grants_tenant',
+      'sel_role_permissions_platform_bootstrap',
+      // Readiness resolves permissions THROUGH the role mapping, and the
+      // bootstrap read above is window-scoped — so outside the window a
+      // perfectly administrable tenant would look unadministrable.
+      'sel_role_permissions_platform_lifecycle',
       'sel_role_permissions_tenant',
+      'sel_roles_platform_bootstrap',
       'sel_roles_tenant',
       'sel_saved_filters_owner',
       'sel_search_metadata_tenant',
@@ -1634,6 +1708,7 @@ describe('database foundation', () => {
       'sel_stock_movements_scope',
       'sel_stock_reservations_scope',
       'sel_storage_locations_scope',
+      'sel_subscription_plans_platform',
       'sel_subscription_plans_published',
       'sel_system_settings_visible',
       'sel_tags_tenant',
@@ -1649,18 +1724,28 @@ describe('database foundation', () => {
       'sel_template_versions_visible',
       'sel_tenant_feature_overrides_tenant',
       'sel_tenant_status_history_tenant',
+      'sel_tenant_subscriptions_platform',
       'sel_tenant_subscriptions_tenant',
+      'sel_tenants_platform',
       'sel_tenants_self',
       'sel_timeline_events_tenant',
       'sel_timezones_all',
       'sel_transmission_history_tenant',
       'sel_trims_visible',
       'sel_units_of_measure_visible',
+      'sel_user_accounts_platform_bootstrap',
+      // B1-UG-005, and narrowed to accounts that actually HOLD an active grant:
+      // that keeps the control plane away from ordinary employee records, and
+      // stops this policy ORing with the bootstrap read and making the
+      // B1-UG-001 mutation irreproducible.
+      'sel_user_accounts_platform_lifecycle',
+      'sel_user_accounts_platform_self',
       'sel_user_accounts_tenant',
       'sel_user_employee_links_tenant',
       'sel_user_profiles_tenant',
       'sel_user_sessions_admin',
       'sel_user_sessions_own',
+      'sel_user_status_history_platform_bootstrap',
       'sel_user_status_history_tenant',
       'sel_vehicle_alerts_tenant',
       'sel_vehicle_attribute_history_tenant',
@@ -1831,6 +1916,7 @@ describe('database foundation', () => {
       'upd_template_items_tenant',
       'upd_template_versions_tenant',
       'upd_template_versions_tenant',
+      'upd_tenants_platform_lifecycle',
       'upd_tenants_settings',
       'upd_transmission_history_tenant',
       'upd_trims_tenant',

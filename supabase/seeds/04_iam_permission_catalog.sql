@@ -334,7 +334,28 @@ INSERT INTO iam.permissions (permission_code, domain, description, risk_level, c
   -- mappings are tenant provisioning, so on a freshly replayed database this
   -- code exists and is held by nobody, and cross-branch selection is refused for
   -- every actor until a tenant deliberately grants it.
-  ('rec.reception.receiving_employee.assign_any', 'rec', 'Name a receiving employee who is not eligible for the visit branch', 'high', '00000000-0000-4000-8000-000000000001')
+  ('rec.reception.receiving_employee.assign_any', 'rec', 'Name a receiving employee who is not eligible for the visit branch', 'high', '00000000-0000-4000-8000-000000000001'),
+
+  -- PRE-P1-29 Wave B, slice B1 — the platform (control-plane) vocabulary.
+  --
+  -- These are the first codes in this catalogue that are NOT a tenant authority.
+  -- They are resolved by iam.has_platform_authority against iam.platform_grants,
+  -- never by iam.has_permission, which requires an active account IN THE CURRENT
+  -- TENANT and so structurally cannot answer a platform question. A tenant
+  -- administrator cannot map one into a role: ins_role_permissions_delegable
+  -- re-evaluates the writer's own authority against the code being written, and
+  -- no tenant actor holds one.
+  --
+  -- Three, not four: provisioning and initial-Owner bootstrap are ONE act in one
+  -- transaction, so splitting their authority would allow creating tenants nobody
+  -- can use, or placing an Owner into a tenant the actor did not create.
+  --
+  -- Mapped to NO role, like every code above. On a freshly replayed database
+  -- these exist and are held by nobody until an operator is established out of
+  -- band, which is the only way platform authority is ever assigned.
+  ('platform.organization.provision',  'platform', 'Create a tenant with its first company, branch and Owner', 'critical', '00000000-0000-4000-8000-000000000001'),
+  ('platform.organization.read',       'platform', 'Read tenants from the control plane',                       'medium',   '00000000-0000-4000-8000-000000000001'),
+  ('platform.organization.lifecycle',  'platform', 'Suspend, reactivate or close an existing tenant',           'critical', '00000000-0000-4000-8000-000000000001')
 ON CONFLICT (permission_code) DO NOTHING;
 
 DO $$
