@@ -220,7 +220,7 @@ describe('the API application lives in the workspace', () => {
     }
   });
 
-  it('discovers the same 317 operations from the root, apps/api and apps/web', () => {
+  it('discovers the same 325 operations from the root, apps/api and apps/web', () => {
     // The decisive cwd proof, run against a REAL validator rather than the
     // helper alone: `check-authorization-coverage.mjs` derived the repository
     // from `process.cwd()` until this migration, so its answer used to depend on
@@ -256,10 +256,13 @@ describe('the API application lives in the workspace', () => {
     // path, so the module count moves by six while this one moves by eight.
     expect(report.operations).toHaveLength(325);
 
-    // ~1 s per process by construction, not by slowness. The budget is stated
-    // here rather than raised globally, so it cannot quietly cover a different
-    // test that has genuinely regressed.
-  }, 30_000);
+    // Three node processes, each loading the whole route surface, so the cost
+    // grows with the surface. The budget was 30 s and began timing out inside the
+    // full tier as PRE-P1-29 took the registry past 300 operations — a timeout,
+    // not an assertion failure, and green on the hosted Linux runner throughout.
+    // Raised to 120 s and still stated HERE rather than in `vitest.config.ts`, so
+    // it cannot quietly cover a different test that has genuinely regressed.
+  }, 120_000);
 
   it('refuses to answer for a tree that is not there', () => {
     // A path helper that silently returns a directory which does not exist is
