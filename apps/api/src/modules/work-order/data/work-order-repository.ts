@@ -81,6 +81,21 @@ export interface WorkOrderListFilter {
   readonly openedFrom?: Date | undefined;
   /** Inclusive upper bound on `opened_at`. */
   readonly openedTo?: Date | undefined;
+  /**
+   * Narrows to work orders whose reception visit names this partner in ANY role
+   * (BR-05).
+   *
+   * Any role, not only `service_requester`: someone searching for a customer
+   * wants every car that customer is connected to, and a payer or an authorized
+   * receiver is such a connection. That is deliberately wider than the customer
+   * the projection REPORTS, and the two are different questions.
+   *
+   * A SELECTOR, never an authorization claim — it narrows a result set the caller
+   * is already entitled to. A partner from another tenant matches nothing, so the
+   * answer is an empty page rather than a 404 or a 403, and the endpoint is not
+   * an oracle for another tenant's customer list.
+   */
+  readonly customerId?: string | undefined;
 }
 
 export interface JobRow {
@@ -496,6 +511,7 @@ export class WorkOrderRepository extends Repository {
       filter.kind ?? null,
       filter.openedFrom ?? null,
       filter.openedTo ?? null,
+      filter.customerId ?? null,
     ];
     const keyset = keysetFragment(
       page,
@@ -527,6 +543,19 @@ export class WorkOrderRepository extends Repository {
           AND ($5::text IS NULL OR kind = $5)
           AND ($6::timestamptz IS NULL OR opened_at >= $6)
           AND ($7::timestamptz IS NULL OR opened_at <= $7)
+          -- BR-05. Applied IN THE QUERY, never after the page is fetched.
+          -- Post-filtering a fetched page produces short pages and a hasMore that
+          -- lies, which is the P1-28 round-two defect exactly; here the predicate
+          -- runs before the keyset window, so every page is full and complete.
+          -- EXISTS rather than a join: a partner may hold several roles on one
+          -- visit, and a join would return the work order once per role.
+          AND ($8::uuid IS NULL OR EXISTS (
+                SELECT 1
+                  FROM rec.reception_party_roles r
+                 WHERE r.tenant_id = wo.work_orders.tenant_id
+                   AND r.reception_visit_id = wo.work_orders.reception_visit_id
+                   AND r.partner_id = $8
+                   AND r.deleted_at IS NULL))
           ${keyset.predicate}
         ${keyset.order}
         ${keyset.limitClause}`,
