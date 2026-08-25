@@ -231,10 +231,7 @@ export {
  * three times, because all three lock the same visit row and there is exactly one
  * way to do that correctly.
  */
-export type {
-  WorkOrderPartyRow,
-  WorkOrderVehicleRow,
-} from './data/party-context-repository';
+export type { WorkOrderPartyRow, WorkOrderVehicleRow } from './data/party-context-repository';
 export { SERVICE_REQUESTER } from './data/party-context-repository';
 
 export const receptionModule = composeModule({

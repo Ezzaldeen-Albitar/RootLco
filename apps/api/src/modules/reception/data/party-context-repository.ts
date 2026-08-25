@@ -129,7 +129,11 @@ export class PartyContextRepository extends Repository {
    */
   async partiesForWorkOrders(
     db: DbHandle,
-    workOrders: readonly { readonly id: string; readonly receptionVisitId: string; readonly openedAt: Date }[]
+    workOrders: readonly {
+      readonly id: string;
+      readonly receptionVisitId: string;
+      readonly openedAt: Date;
+    }[]
   ): Promise<readonly WorkOrderPartyRow[]> {
     if (workOrders.length === 0) return [];
     const context = this.assertContext(db);
@@ -201,7 +205,11 @@ export class PartyContextRepository extends Repository {
    */
   async vehiclesForWorkOrders(
     db: DbHandle,
-    workOrders: readonly { readonly id: string; readonly vehicleId: string; readonly openedAt: Date }[]
+    workOrders: readonly {
+      readonly id: string;
+      readonly vehicleId: string;
+      readonly openedAt: Date;
+    }[]
   ): Promise<readonly WorkOrderVehicleRow[]> {
     if (workOrders.length === 0) return [];
     const context = this.assertContext(db);
