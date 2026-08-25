@@ -337,6 +337,19 @@ export class TemplateAuthoringService extends ApplicationService {
     if (version === null) {
       throw new AppFailure('ERR-RES-001', { message: 'Template version was not found' });
     }
+    // STALENESS IS DECIDED FIRST, and the order is the contract's rather than an
+    // implementation detail. Two callers publish one version: the first wins, and
+    // the second is holding a view from before that happened. Told
+    // `ERR-TRN-001` it would learn the move is impossible — which is true of the
+    // CURRENT state and false of the state it knows about, so it would have no
+    // reason to re-read. Told `ERR-CON-001` it re-reads, sees `published`, and
+    // only then gets `ERR-TRN-001` — which is the honest sequence and the one
+    // BR-04 §8 specifies.
+    if (version.recordVersion !== expectedVersion) {
+      throw new AppFailure('ERR-CON-001', {
+        message: 'The template version changed while this request was in flight; re-read and retry',
+      });
+    }
     this.assertVersionMove(version.status as TemplateVersionStatus, toStatus);
 
     if (toStatus === 'published') {

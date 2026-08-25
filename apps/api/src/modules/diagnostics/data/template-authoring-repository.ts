@@ -209,11 +209,16 @@ export class TemplateAuthoringRepository extends Repository {
       filter.status ?? null,
       filter.diagnosticTypeId ?? null,
     ];
+    // `nextParamIndex` is the index of the NEXT placeholder, so it is one PAST
+    // the values already bound. Passing `values.length` instead makes LIMIT reuse
+    // the last bound value — which fails as `argument of LIMIT must be type
+    // bigint, not type uuid` rather than as a wrong page, so it is caught, but
+    // only by a test that actually pages.
     const keyset = keysetFragment(
       page,
       { sort: 'created_at', id: 'id' },
       TEMPLATE_ORDER,
-      values.length
+      values.length + 1
     );
     const result = await this.run<TemplateColumns>(
       db,

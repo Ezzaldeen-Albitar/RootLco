@@ -9,14 +9,14 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 
 | Measure                  | Value |
 | ------------------------ | ----- |
-| Public operations        | 317   |
+| Public operations        | 325   |
 | Domains (modules)        | 19    |
-| OpenAPI paths            | 257   |
-| OpenAPI operations       | 317   |
+| OpenAPI paths            | 263   |
+| OpenAPI operations       | 325   |
 | OpenAPI schemas          | 3     |
 | OpenAPI security schemes | 1     |
-| Permission codes seeded  | 113   |
-| Audit actions catalogued | 194   |
+| Permission codes seeded  | 114   |
+| Audit actions catalogued | 199   |
 | Domain events catalogued | 50    |
 | Structured error codes   | 28    |
 
@@ -24,7 +24,7 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 
 | Classification    | Operations |
 | ----------------- | ---------- |
-| Covered           | 317        |
+| Covered           | 325        |
 | Partially covered | 0          |
 | Uncovered         | 0          |
 | Not applicable    | 0          |
@@ -37,7 +37,7 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 | billing         | 8          | 8       | 5      | 5       | 5          | 2               |
 | crm             | 29         | 29      | 15     | 15      | 15         | 0               |
 | delivery        | 6          | 6       | 5      | 5       | 5          | 1               |
-| diagnostics     | 13         | 13      | 10     | 10      | 10         | 2               |
+| diagnostics     | 21         | 21      | 15     | 15      | 14         | 4               |
 | iam             | 38         | 38      | 24     | 22      | 10         | 6               |
 | inventory       | 14         | 14      | 10     | 11      | 8          | 0               |
 | meta            | 1          | 1       | 0      | 0       | 0          | 0               |
@@ -121,6 +121,14 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 | `dia.diagnostic-recommendation-record`              | POST   | `/api/v1/inspections/{inspectionId}/recommendations`                                | branch  | `dia.diagnostic.record`                                              | dia.diagnostic.entry_recorded                | yes  | —   | audit authorization cross-tenant denial idempotency isolation route service success                                           | Covered |
 | `dia.diagnostic-review`                             | POST   | `/api/v1/inspections/{inspectionId}/reviews`                                        | branch  | `dia.diagnostic.review`                                              | dia.diagnostic.reviewed                      | yes  | —   | audit authorization cross-tenant denial idempotency isolation route service success                                           | Covered |
 | `dia.diagnostic-transition`                         | POST   | `/api/v1/inspections/{inspectionId}/transition`                                     | branch  | `dia.diagnostic.record`                                              | dia.diagnostic.state_changed                 | yes  | yes | audit authorization cross-tenant denial idempotency isolation route service stale-version success                             | Covered |
+| `dia.template-create`                               | POST   | `/api/v1/inspection-templates`                                                      | tenant  | `dia.catalogue.manage`                                               | dia.inspection_template.created              | yes  | —   | audit authorization cross-tenant denial idempotency isolation route service success                                           | Covered |
+| `dia.template-detail`                               | GET    | `/api/v1/inspection-templates/{templateId}`                                         | tenant  | `dia.diagnostic.read`                                                | —                                            | —    | —   | authorization cross-tenant denial isolation route service success                                                             | Covered |
+| `dia.template-item-create`                          | POST   | `/api/v1/template-versions/{versionId}/items`                                       | tenant  | `dia.catalogue.manage`                                               | dia.template_item.created                    | yes  | —   | audit authorization cross-tenant denial idempotency isolation route service success                                           | Covered |
+| `dia.template-list`                                 | GET    | `/api/v1/inspection-templates`                                                      | tenant  | `dia.diagnostic.read`                                                | —                                            | —    | —   | authorization cross-tenant denial isolation route service success                                                             | Covered |
+| `dia.template-update`                               | PATCH  | `/api/v1/inspection-templates/{templateId}`                                         | tenant  | `dia.catalogue.manage`                                               | dia.inspection_template.updated              | —    | yes | audit authorization cross-tenant denial isolation route service stale-version success                                         | Covered |
+| `dia.template-version-create`                       | POST   | `/api/v1/inspection-templates/{templateId}/versions`                                | tenant  | `dia.catalogue.manage`                                               | dia.template_version.created                 | yes  | —   | audit authorization cross-tenant denial idempotency isolation route service success                                           | Covered |
+| `dia.template-version-list-publishable`             | GET    | `/api/v1/jobs/{jobId}/inspection-templates`                                         | branch  | `dia.diagnostic.record`                                              | —                                            | —    | —   | authorization cross-tenant denial isolation route service success                                                             | Covered |
+| `dia.template-version-status-set`                   | POST   | `/api/v1/template-versions/{versionId}/status`                                      | tenant  | `dia.catalogue.manage`                                               | dia.template_version.status_changed          | yes  | yes | audit authorization cross-tenant denial idempotency isolation route service stale-version success                             | Covered |
 | `iam.approval-limit-create`                         | POST   | `/api/v1/iam/approval-limits`                                                       | tenant  | `iam.approval.manage`                                                | iam.approval_limit.created                   | yes  | —   | audit authorization denial idempotency route service success                                                                  | Covered |
 | `iam.approval-limit-end`                            | PATCH  | `/api/v1/iam/approval-limits/{limitId}`                                             | tenant  | `iam.approval.manage`                                                | iam.approval_limit.ended                     | —    | yes | audit authorization cross-tenant denial route service stale-version success                                                   | Covered |
 | `iam.approval-limit-list`                           | GET    | `/api/v1/iam/approval-limits`                                                       | tenant  | `iam.approval.manage`                                                | —                                            | —    | —   | authorization route service success                                                                                           | Covered |
