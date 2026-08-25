@@ -243,6 +243,15 @@ const EXPECTED_AUDIT_ACTIONS = [
   'dia.diagnostic.entry_recorded',
   'dia.diagnostic.reviewed',
   'dia.diagnostic.state_changed',
+  // PRE-P1-29-BR-04 — inspection-template authoring. Filed under the TEMPLATE and
+  // the VERSION rather than under a report: these record what an inspection ASKS,
+  // which is a different fact from what one ANSWERS, and the five above are the
+  // answering half.
+  'dia.inspection_template.created',
+  'dia.inspection_template.updated',
+  'dia.template_item.created',
+  'dia.template_version.created',
+  'dia.template_version.status_changed',
   'iam.approval_limit.created',
   'iam.approval_limit.ended',
   'iam.audit.viewed',

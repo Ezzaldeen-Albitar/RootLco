@@ -180,7 +180,26 @@ describe('the API application lives in the workspace', () => {
     // 258 with PRE-P1-29-BR-01's `technicians/me/queue`: one module, one
     // operation — the two counts move together here because the route publishes a
     // single verb, unlike the BR-03 modules above it.
-    expect(routeFiles.length).toBe(258);
+    //
+    // 264 with the six PRE-P1-29-BR-04 inspection-template modules:
+    // `inspection-templates`, `inspection-templates/[templateId]`,
+    // `inspection-templates/[templateId]/versions`,
+    // `template-versions/[versionId]/items`,
+    // `template-versions/[versionId]/status` and
+    // `jobs/[jobId]/inspection-templates`.
+    //
+    // Six modules carry EIGHT operations, because the collection and the
+    // id-addressed template each co-locate two verbs on one path — the same
+    // reason BR-03's eight modules carried eleven, and the whole reason both
+    // this number and the operation count below are asserted rather than one.
+    //
+    // This is deliberately NOT the 263 that `validate:authorization-coverage`
+    // and the OpenAPI document report. Those count PATHS; this walk counts every
+    // `route.ts` under the API root, and the two differ by one — measured at 258
+    // files against 257 paths before this slice, and 264 against 263 after, so
+    // the gap is pre-existing and unchanged. Reconciling them by editing
+    // whichever number looked wrong is how a real gap would get hidden.
+    expect(routeFiles.length).toBe(264);
 
     // Non-vacuity. A discovery assertion that only checks a count would pass
     // against a set with one route swapped for another, so the comparison that
@@ -232,7 +251,10 @@ describe('the API application lives in the workspace', () => {
     // path — eight and eleven again moving by different amounts, which is the
     // whole reason both numbers are asserted rather than one.
     // 317 with BR-01: one operation over one module.
-    expect(report.operations).toHaveLength(317);
+    // 325 with BR-04: eight operations over six modules — the inspection-template
+    // collection and the id-addressed template each co-locate two verbs on one
+    // path, so the module count moves by six while this one moves by eight.
+    expect(report.operations).toHaveLength(325);
 
     // ~1 s per process by construction, not by slowness. The budget is stated
     // here rather than raised globally, so it cannot quietly cover a different
