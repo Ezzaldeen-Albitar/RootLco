@@ -23,7 +23,12 @@
 import { z } from 'zod';
 import { defineOperation } from '@/server/auth/operation-registry';
 import { handleOperation } from '@/server/http/route-handler';
-import { parseJsonBody, parseOrFail, schemas, searchParamsToObject } from '@/server/http/validation';
+import {
+  parseJsonBody,
+  parseOrFail,
+  schemas,
+  searchParamsToObject,
+} from '@/server/http/validation';
 import { diagnosticsModule, MAX_TEMPLATE_NAME, TEMPLATE_STATUSES } from '@/modules/diagnostics';
 
 export const runtime = 'nodejs';
@@ -35,9 +40,7 @@ export const dynamic = 'force-dynamic';
  */
 export const InspectionTemplateCreateBody = z
   .object({
-    code: z
-      .string()
-      .regex(/^[a-z][a-z0-9_]{1,62}$/, 'code must match ^[a-z][a-z0-9_]{1,62}$'),
+    code: z.string().regex(/^[a-z][a-z0-9_]{1,62}$/, 'code must match ^[a-z][a-z0-9_]{1,62}$'),
     name: z.string().trim().min(1).max(MAX_TEMPLATE_NAME),
     diagnosticTypeId: schemas.uuid,
   })

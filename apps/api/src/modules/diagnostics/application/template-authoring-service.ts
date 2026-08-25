@@ -163,7 +163,10 @@ export class TemplateAuthoringService extends ApplicationService {
 
   async listTemplates(
     db: DbHandle,
-    filter: { readonly status?: TemplateStatus | undefined; readonly diagnosticTypeId?: string | undefined },
+    filter: {
+      readonly status?: TemplateStatus | undefined;
+      readonly diagnosticTypeId?: string | undefined;
+    },
     page: PageInput
   ): Promise<Page<TemplateRow>> {
     return this.templates.pageTemplates(db, filter, pageRequest(TEMPLATE_ORDER, page));
@@ -214,7 +217,8 @@ export class TemplateAuthoringService extends ApplicationService {
     }
     if (!changed) {
       throw new AppFailure('ERR-CON-001', {
-        message: 'The inspection template changed while this request was in flight; re-read and retry',
+        message:
+          'The inspection template changed while this request was in flight; re-read and retry',
       });
     }
 
@@ -278,7 +282,9 @@ export class TemplateAuthoringService extends ApplicationService {
       if (source.templateId !== templateId) {
         throw new AppFailure('ERR-VAL-001', {
           message: 'copyFromVersionId must name a version of the same template',
-          safeDetails: { violations: [{ path: 'body.copyFromVersionId', rule: 'foreign_template' }] },
+          safeDetails: {
+            violations: [{ path: 'body.copyFromVersionId', rule: 'foreign_template' }],
+          },
         });
       }
     }
@@ -513,7 +519,10 @@ export class TemplateAuthoringService extends ApplicationService {
    * this tenant may reference it. Reported as a 422 naming the field rather than
    * a 404, because the caller supplied a value the request cannot accept.
    */
-  private async requireVisibleDiagnosticType(db: DbHandle, diagnosticTypeId: string): Promise<void> {
+  private async requireVisibleDiagnosticType(
+    db: DbHandle,
+    diagnosticTypeId: string
+  ): Promise<void> {
     if (await this.templates.diagnosticTypeVisible(db, diagnosticTypeId)) return;
     throw new AppFailure('ERR-VAL-001', {
       message:
@@ -531,7 +540,8 @@ export class TemplateAuthoringService extends ApplicationService {
    * trains a user to reload and retry an action that can never succeed.
    */
   private assertVersionMove(from: TemplateVersionStatus, to: TemplateVersionTargetStatus): void {
-    const legal = (from === 'draft' && to === 'published') || (from === 'published' && to === 'retired');
+    const legal =
+      (from === 'draft' && to === 'published') || (from === 'published' && to === 'retired');
     if (legal) return;
     throw new AppFailure('ERR-TRN-001', {
       message: `A template version cannot move from ${from} to ${to}; the graph is draft → published → retired`,
