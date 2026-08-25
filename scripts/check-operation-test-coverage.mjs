@@ -1323,6 +1323,63 @@ export const MANIFEST = {
     required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
     note: 'reviewer separation is proved in BOTH directions by two principals one permission apart — FULL creates reports and does NOT hold dia.diagnostic.review, REVIEWER holds it and did not create the report — so a service that refused every review could not pass; attribution is the database’s (dia.stamp_review overwrites reviewer_id from the session on every insert) and the test asserts the stamped id rather than a requested one; only a completed report may be reviewed, which the schema does not enforce; the table is append-only so two reviews both survive, which is what makes needs_rework usable',
   },
+  // ========================================================================
+  // PRE-P1-29-BR-04 (dia.) — inspection-template authoring. The write layer the
+  // three dia template tables never had: they held ZERO rows, no INSERT existed
+  // anywhere in apps/api, and POST /jobs/{jobId}/inspections required a
+  // templateVersionId nothing could produce. Enforcement is route-layer ONLY —
+  // the three tables carry no company_id/branch_id, so a scoped RLS predicate is
+  // impossible and the declaration is the whole control. That is exactly why
+  // every entry here owes `denial` and `cross-tenant`.
+  // ========================================================================
+  'dia.template-create': {
+    files: ['tests/backend/br-04-template-authoring.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
+    note: 'the first INSERT into dia.inspection_templates that has ever existed. The diagnostic-type check is the one the foreign key cannot make: fk_inspection_templates_diagnostic_type is single-column because a platform row carries tenant_id IS NULL, so all three answers are proved — a PLATFORM row accepted, another tenant’s refused, and an INACTIVE one refused. Creating a template creates NO version, and the list renders that intermediate state. code is 422 on the same regex the CHECK uses, so the caller gets a violation path instead of a 23514',
+  },
+  'dia.template-list': {
+    files: ['tests/backend/br-04-template-authoring.test.ts'],
+    required: ['denial', 'cross-tenant'],
+    note: 'keyset-paged because a tenant’s template library is unbounded. The paging test reads two pages and reconciles the union against the whole set, which is what catches a cursor that drops or repeats a row at the boundary — the P1-16 customer-search defect in a new place. Costs dia.diagnostic.read rather than dia.catalogue.manage: reading the library is not administering it, and a service advisor needs the former',
+  },
+  'dia.template-detail': {
+    files: ['tests/backend/br-04-template-authoring.test.ts'],
+    required: ['denial', 'cross-tenant'],
+    note: 'versions are NOT paged — a template has few — and each carries itemCount so a caller can tell an empty draft from an authored one without a second read, which is the fact that decides whether publishing will be refused. A template the caller cannot see and one that does not exist are the same 404, so the endpoint is not an existence oracle for another tenant’s library',
+  },
+  'dia.template-update': {
+    files: ['tests/backend/br-04-template-authoring.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'stale-version'],
+    note: 'code is absent from the schema and sending one is a 422, because a template code is an identifier tenants build on and changing it after versions exist would silently re-label published history. An empty body is 422 rather than a no-op. The active/inactive status is ORTHOGONAL to the version graph (C-05) and the test proves it: deactivating a template withdraws its published versions from the technician read while the versions themselves stay published and every report against them stays readable',
+  },
+  'dia.template-version-create': {
+    files: ['tests/backend/br-04-template-authoring.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
+    note: 'version_number is SERVER-assigned as max+1; ck_template_versions_number guards the value and says nothing about the sequence, so a client-supplied one is refused by .strict(). copyFromVersionId exists because the item freeze covers INSERT (C-06), so superseding a published version means re-authoring it — and re-typing forty items to change one is what makes people edit in place instead. The copy must name a version of the SAME template or 422, and the test proves the copy is independently editable while the source stays frozen',
+  },
+  'dia.template-version-status-set': {
+    files: ['tests/backend/br-04-template-authoring.test.ts'],
+    required: [
+      'success',
+      'denial',
+      'cross-tenant',
+      'isolation',
+      'audit',
+      'stale-version',
+      'idempotency',
+    ],
+    note: 'one command for publish and retire because dia.guard_template_version_publish is one BEFORE UPDATE OF status trigger; two verbs for one guarded transition would let the two drift. toStatus is a CLOSED enum, unlike wo.work-order-transition’s toState whose vocabulary is a live tenant catalogue — getting either backwards is the defect execution-decision.md §5 binding 4 names. published_at is asserted to be the GUARD’s stamp and never the service’s. ERR-TRN-001 and ERR-CON-001 are proved DISTINCT and in the contract’s order: a stale caller is told to re-read first, and only then that the move is impossible. The empty-version refusal is the one rule with no database counterpart, so it is tested directly',
+  },
+  'dia.template-item-create': {
+    files: ['tests/backend/br-04-template-authoring.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
+    note: 'draft-only, and the authority is tg_template_items_frozen rather than the service — it is BEFORE INSERT OR UPDATE, so a published version cannot even be APPENDED to. Proved TWICE: the service refuses with a named ERR-TRN-001, and the same write made directly as app_runtime is refused by the trigger with the service out of the path entirely. The direct UPDATE cases set the tenant GUCs first, because without them RLS narrows to nothing and a zero-row no-op would RESOLVE — an assertion that passed while the trigger never ran. unit is required for a numeric item, mirroring ck_template_items_unit so the caller gets body.unit instead of a SQLSTATE',
+  },
+  'dia.template-version-list-publishable': {
+    files: ['tests/backend/br-04-template-authoring.test.ts'],
+    required: ['denial', 'cross-tenant'],
+    note: 'the operation that makes the technician’s screen possible: it returns exactly the set POST /jobs/{jobId}/inspections accepts, and without it a technician must be handed a templateVersionId from somewhere — INS-04 in a different costume. Costs dia.diagnostic.record rather than dia.diagnostic.read because its only consumer is the act of opening an inspection. The ONLY branch-scoped operation of the eight, because it is reached THROUGH a job while the library itself carries no branch column; authorized against the job’s own branch exactly as dia.diagnostic-create is',
+  },
   // --- Wave 8: quality control, reopen refusal and rework. -------------------
   'qms.qc-record-open': {
     files: ['tests/backend/p1-19-quality-rework.test.ts'],

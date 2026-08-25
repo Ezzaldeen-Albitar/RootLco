@@ -1042,7 +1042,23 @@ describe('P1-28-QA-005 — the seal is bound to the REPOSITORY, not to its own p
         'the archived package is not sound'
       ).toBe(true);
     }
-  });
+
+    // An explicit budget, on the `repository-paths.test.ts` precedent, rather
+    // than a raised global `testTimeout`.
+    //
+    // This case builds a synthetic world anchored on `main` and asks
+    // `git log <head> --not <candidate> main` twice, so its cost grows with the
+    // distance between `main` and the branch head — and `main` is deliberately
+    // far behind. Measured on a Windows checkout: ~29 s run alone against the
+    // 30 s default, and ~90 s inside the full tier, where it is the slowest test
+    // in the suite and the only one that shells out to `git` over a range this
+    // long. It therefore began timing out as PRE-P1-29 added commits, while
+    // passing on the hosted Linux runner throughout.
+    //
+    // The budget is stated HERE so it cannot quietly cover a different test that
+    // has genuinely regressed, which is exactly what raising `testTimeout` in
+    // `vitest.config.ts` would have done.
+  }, 240_000);
 
   it('fails on a tier figure the run ledger contradicts', () => {
     const doctored = JSON.parse(readRepo(CANDIDATE_PATH)) as {

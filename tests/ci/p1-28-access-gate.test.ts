@@ -169,7 +169,14 @@ describe('rule 1 — gate-before-read', () => {
     );
     expect([...callees].sort()).toEqual(['listAppointmentTypes', 'listSourceChannels']);
     expect(firstAwaitedRead(stripped, callees)).toBeGreaterThan(-1);
-  });
+
+    // `collectSources()` walks the whole source tree, so this case costs what the
+    // repository is big, not what the assertion is worth. It began timing out
+    // against the 30 s default inside the full tier as PRE-P1-29 grew the tree —
+    // a timeout, not an assertion failure, and green on the hosted Linux runner
+    // throughout. Stated on the case, never as a global `testTimeout`, so it
+    // cannot cover a different test that has genuinely regressed.
+  }, 120_000);
 
   it('fires when the DENY gate follows the read, even with a capability holds() above it', () => {
     /*

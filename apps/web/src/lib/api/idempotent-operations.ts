@@ -10,7 +10,7 @@
  * The backend requires an `Idempotency-Key` header on every operation it
  * registers as idempotent, and answers `400 ERR-INT-002` without one — before
  * authorization is evaluated. That set is NOT "the POST operations": it is
- * currently 147 operations (PATCH 3, POST 138, PUT 6).
+ * currently 151 operations (PATCH 3, POST 142, PUT 6).
  *
  * The client used to infer the answer from the HTTP method, which was wrong for
  * every non-POST member of that set. This table is the contract instead of a
@@ -24,7 +24,7 @@
  * thirteen of them stating which class a write declares, none of them checkable
  * — because the Web tier held no data from which one could be derived.
  *
- * Currently approval 13, export 1, financial 13, none 124, privileged 153, security 13.
+ * Currently approval 13, export 1, financial 13, none 127, privileged 158, security 13.
  *
  * `(absent)` above would mean an operation the document publishes with NO audit
  * class. It is emitted as the empty string rather than defaulted to `none`,
@@ -49,7 +49,7 @@ export interface PublishedOperation {
   readonly auditClass: string;
 }
 
-/** Every operation the contract publishes. 317 of them. */
+/** Every operation the contract publishes. 325 of them. */
 export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze([
   {
     template: '/additional-work/{requestId}/approval',
@@ -850,6 +850,41 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     auditClass: 'security',
   },
   {
+    template: '/inspection-templates',
+    method: 'GET',
+    operationId: 'dia.template-list',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/inspection-templates',
+    method: 'POST',
+    operationId: 'dia.template-create',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/inspection-templates/{templateId}',
+    method: 'GET',
+    operationId: 'dia.template-detail',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/inspection-templates/{templateId}',
+    method: 'PATCH',
+    operationId: 'dia.template-update',
+    idempotent: false,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/inspection-templates/{templateId}/versions',
+    method: 'POST',
+    operationId: 'dia.template-version-create',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
     template: '/inspections/{inspectionId}',
     method: 'GET',
     operationId: 'dia.diagnostic-detail',
@@ -1007,6 +1042,13 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     template: '/jobs/{jobId}/history',
     method: 'GET',
     operationId: 'wo.job-history',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/jobs/{jobId}/inspection-templates',
+    method: 'GET',
+    operationId: 'dia.template-version-list-publishable',
     idempotent: false,
     auditClass: 'none',
   },
@@ -1921,6 +1963,13 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     auditClass: 'approval',
   },
   {
+    template: '/template-versions/{versionId}/items',
+    method: 'POST',
+    operationId: 'dia.template-item-create',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
     template: '/template-versions/{versionId}/preview',
     method: 'POST',
     operationId: 'shared.template-version-preview',
@@ -1932,6 +1981,13 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     method: 'POST',
     operationId: 'shared.template-version-retire',
     idempotent: false,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/template-versions/{versionId}/status',
+    method: 'POST',
+    operationId: 'dia.template-version-status-set',
+    idempotent: true,
     auditClass: 'privileged',
   },
   {

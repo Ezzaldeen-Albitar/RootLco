@@ -985,6 +985,41 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
       'A completed diagnostic report was reviewed as approved, rejected or needs_rework. Records the reviewer as the DATABASE stamped it: dia.stamp_review() overwrites reviewer_id with iam.current_user_id() on every insert and raises without an actor, so attribution cannot be forged and the two can never differ. Reviewer SEPARATION is an application rule against dia.diagnostic_reports.created_by, because no constraint references it — and it catches the report’s creator, not everyone who recorded an entry, since the schema records no per-entry authorship a review could be checked against.',
   },
   {
+    code: 'dia.inspection_template.created',
+    class: 'privileged',
+    entityType: 'dia.inspection_template',
+    description:
+      'An inspection template was created in a tenant library (PRE-P1-29-BR-04). Filed as privileged because a template is the container every future version of a set of inspection questions hangs from, and because the three dia template tables held ZERO rows before this slice — no INSERT existed anywhere in apps/api, so no diagnostic report could be created at all and closure blocker B4 had an unsatisfiable subject. The diagnostic type is recorded as internal rather than public: it names a catalogue row that may be tenant-scoped, and dia.diagnostic_types is dual-scope so the id alone does not say whose it is. Creating a template creates NO version; a template with no version is a legitimate intermediate state.',
+  },
+  {
+    code: 'dia.inspection_template.updated',
+    class: 'privileged',
+    entityType: 'dia.inspection_template',
+    description:
+      'An inspection template was renamed or moved between active and inactive (PRE-P1-29-BR-04). `code` is NOT updatable and never appears here: a template code is an identifier tenants build on, and changing it after versions exist would silently re-label published history. The rename IS recorded with its previous value, which is the only history a rename gets — dia.inspection_templates has no history table, so a renamed template does silently re-label its own published versions in every future read. That is a known limitation recorded in the slice evidence, and this audit detail is what makes it reconstructible. The active/inactive status is orthogonal to a VERSION status: it withdraws the template from new inspections while every report already recorded against it stays readable.',
+  },
+  {
+    code: 'dia.template_version.created',
+    class: 'privileged',
+    entityType: 'dia.template_version',
+    description:
+      'A draft version of an inspection template was created (PRE-P1-29-BR-04). version_number is SERVER-assigned as max+1 and is recorded here because ck_template_versions_number guards only the VALUE (> 0) and says nothing about the sequence, so the assigned number is a fact the audit record has to carry rather than one a reader could re-derive. When copyFromVersionId was supplied, the source and the copied item count are both recorded: a copy is how a published version is legitimately superseded (its item set is frozen against appends as well as edits), so which version a new one descends from is the lineage of the questions themselves.',
+  },
+  {
+    code: 'dia.template_version.status_changed',
+    class: 'privileged',
+    entityType: 'dia.template_version',
+    description:
+      'An inspection template version moved through draft → published → retired (PRE-P1-29-BR-04). The graph is owned by dia.guard_template_version_publish, which also stamps published_at — so the timestamp is the DATABASE’s and never the service’s, and the two can never disagree. Publishing is the moment a version’s item set becomes the immutable structure of every inspection recorded against it, which is why this is privileged and why the authority is dia.catalogue.manage rather than dia.diagnostic.record. Retirement stops NEW reports only: a report already citing a retired version keeps resolving to the questions it was actually asked. Unlike wo.work_order.transition this vocabulary is a CHECK constraint and a plpgsql guard, not a tenant-extensible catalogue.',
+  },
+  {
+    code: 'dia.template_item.created',
+    class: 'privileged',
+    entityType: 'dia.template_version',
+    description:
+      'One item was authored on a DRAFT inspection template version (PRE-P1-29-BR-04). Filed under the VERSION rather than the item row, for the same reason dia.diagnostic.entry_recorded is filed under the report: "what questions does this version ask" should be one audit query and not one per item. Draft-only is the database’s rule, not the service’s — tg_template_items_frozen is BEFORE INSERT OR UPDATE, so a published version cannot even be APPENDED to, and "add one more check to the published inspection" is deliberately not a supported operation. response_type and is_mandatory are recorded because together they decide whether a report can ever be completed: a mandatory item with no result blocks completion through dia.guard_diagnostic_report_transition.',
+  },
+  {
     code: 'wo.additional_work.requested',
     class: 'privileged',
     entityType: 'wo.additional_work_request',

@@ -24,8 +24,10 @@
  */
 import { composeModule } from '@/server/layering';
 import { DiagnosticsRepository } from './data/diagnostics-repository';
+import { TemplateAuthoringRepository } from './data/template-authoring-repository';
 import { DiagnosticsCompletionService } from './application/diagnostics-completion-service';
 import { DiagnosticReportService } from './application/diagnostic-report-service';
+import { TemplateAuthoringService } from './application/template-authoring-service';
 
 export type {
   DiagnosticEvidenceRow,
@@ -41,6 +43,39 @@ export type {
   TemplateItemRow,
   TemplateVersionRow,
 } from './data/diagnostics-repository';
+
+/**
+ * The AUTHORING row shapes (BR-04).
+ *
+ * Aliased rather than merged with the read-side shapes above: the read layer's
+ * `TemplateVersionRow` is what a report pins, and the authoring one carries
+ * `itemCount` and `recordVersion` because an author needs to know whether a draft
+ * is empty and what to send as `If-Match`. Two names for two jobs.
+ */
+export type {
+  PublishableVersionRow,
+  TemplateItemRow as AuthoredTemplateItemRow,
+  TemplateRow as InspectionTemplateRow,
+  TemplateVersionRow as AuthoredTemplateVersionRow,
+} from './data/template-authoring-repository';
+
+export type {
+  InspectionTemplateDetail,
+  TemplateCreateInput,
+  TemplateItemCreateInput,
+  TemplateStatus,
+  TemplateUpdateInput,
+  TemplateVersionCreateInput,
+  TemplateVersionTargetStatus,
+} from './application/template-authoring-service';
+
+export {
+  MAX_ITEM_PROMPT,
+  MAX_ITEM_UNIT,
+  MAX_TEMPLATE_NAME,
+  TEMPLATE_STATUSES,
+  TEMPLATE_VERSION_TARGET_STATUSES,
+} from './application/template-authoring-service';
 
 export type {
   DiagnosticReportDetail,
@@ -106,6 +141,7 @@ export const diagnosticsModule = composeModule({
     return {
       completion: new DiagnosticsCompletionService(repository),
       reports: new DiagnosticReportService(repository),
+      templates: new TemplateAuthoringService(new TemplateAuthoringRepository()),
     };
   },
 });

@@ -25,7 +25,7 @@ this document following it. A seed change and a regeneration of this file are on
 
 That gate exists because nothing was watching. This document was reconciled by hand on 2026-07-22
 (Phase 1-14, finding PC-2) against a seed holding 43 codes, and then stood still through six phases
-while the seed grew to 113. It listed no `tech.` code at all — not even `tech.technician.read`,
+while the seed grew to 114. It listed no `tech.` code at all — not even `tech.technician.read`,
 which Phase 1-19 seeded. `tests/db/iam-seeds.test.ts` is the assertion usually credited with
 covering this, and it does not: it asserts a FLOOR — at least 19 codes across `org` and `iam`, valid
 risk levels, no wildcard — which every one of those six phases satisfied while the drift
@@ -41,11 +41,11 @@ each such case in a comment beside the row.
 
 | Measure                               | Value |
 | ------------------------------------- | ----- |
-| Permission codes seeded               | 113   |
+| Permission codes seeded               | 114   |
 | Domains                               | 17    |
 | Risk `low`                            | 21    |
 | Risk `medium`                         | 49    |
-| Risk `high`                           | 43    |
+| Risk `high`                           | 44    |
 | Risk `critical`                       | 0     |
 | Baseline roles (fixture-proven)       | 6     |
 | Baseline role grants (fixture-proven) | 23    |
@@ -56,7 +56,7 @@ each such case in a comment beside the row.
 | -------- | ----- | ----- | -------- | ------ | ---------- |
 | `apt`    | 4     | 1     | 2        | 1      | 0          |
 | `crm`    | 10    | 1     | 6        | 3      | 0          |
-| `dia`    | 4     | 1     | 2        | 1      | 0          |
+| `dia`    | 5     | 1     | 2        | 2      | 0          |
 | `iam`    | 10    | 2     | 3        | 5      | 0          |
 | `inv`    | 9     | 2     | 4        | 3      | 0          |
 | `org`    | 9     | 3     | 3        | 3      | 0          |
@@ -96,6 +96,7 @@ by" column would be a guess dressed as a derivation. Read the seed for it.
 | `crm.customer.read`                           | crm    | low    | Search and read customers in the tenant                                                |
 | `crm.customer.restriction.manage`             | crm    | high   | Impose and lift customer restrictions                                                  |
 | `crm.customer.vehicle.manage`                 | crm    | medium | Link customers to vehicles                                                             |
+| `dia.catalogue.manage`                        | dia    | high   | Author inspection templates, versions and items                                        |
 | `dia.diagnostic.complete`                     | dia    | medium | Complete a diagnostic report                                                           |
 | `dia.diagnostic.read`                         | dia    | low    | Read diagnostic reports and their evidence                                             |
 | `dia.diagnostic.record`                       | dia    | medium | Create diagnostic reports and record their entries                                     |

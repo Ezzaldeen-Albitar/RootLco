@@ -336,6 +336,19 @@ import '@/app/api/v1/deliveries/[deliveryId]/completion/route';
 import '@/app/api/v1/deliveries/[deliveryId]/warranties/route';
 import '@/app/api/v1/warranties/[warrantyId]/route';
 
+// --- PRE-P1-29-BR-04 inspection-template authoring -------------------------
+// The authoring surface for `dia.inspection_templates`, `dia.template_versions`
+// and `dia.template_items`, which held zero rows and had no write path at all.
+// `/jobs/{jobId}/inspection-templates` is the technician's read and is the only
+// one of the eight that is branch-scoped — it is reached THROUGH a job, whereas
+// the library itself carries no company or branch column.
+import '@/app/api/v1/inspection-templates/route';
+import '@/app/api/v1/inspection-templates/[templateId]/route';
+import '@/app/api/v1/inspection-templates/[templateId]/versions/route';
+import '@/app/api/v1/template-versions/[versionId]/status/route';
+import '@/app/api/v1/template-versions/[versionId]/items/route';
+import '@/app/api/v1/jobs/[jobId]/inspection-templates/route';
+
 const DOCUMENT_PATH = join(process.cwd(), 'docs', 'api', 'openapi.v1.json');
 
 describe('OpenAPI contract', () => {
