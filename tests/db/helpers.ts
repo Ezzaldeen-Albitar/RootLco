@@ -755,6 +755,241 @@ const PERMISSION_CATALOG_SEED = join(
   '04_iam_permission_catalog.sql'
 );
 const PERMISSION_SEED_CONFLICT_ARM = /ON\s+CONFLICT\s*\(\s*permission_code\s*\)\s*DO\s+NOTHING/gi;
+/** One row of the platform permission catalog, exactly as seed 04 declares it. */
+export interface SeededPermission {
+  readonly permissionCode: string;
+  readonly domain: string;
+  readonly description: string;
+  readonly riskLevel: string;
+}
+
+function seedFail(message: string): never {
+  throw new Error(`${PERMISSION_CATALOG_SEED}: ${message}`);
+}
+
+function seedLineOf(sql: string, index: number): number {
+  let line = 1;
+  for (let i = 0; i < index && i < sql.length; i += 1) if (sql.charCodeAt(i) === 10) line += 1;
+  return line;
+}
+
+/**
+ * Blanks `--` and block comments, preserving every offset and newline so a parse
+ * error can still name the line it happened on.
+ *
+ * A scanner with modes rather than a regular expression, for the reason
+ * `scripts/ci/check-p1-27-doc-counts.mjs` records: a text scanner that cannot
+ * tell code from prose about code is the defect this family keeps producing.
+ * This seed is mostly commentary, and that commentary quotes permission codes
+ * and risk levels ("svc.price.read is 'medium' rather than 'low'") in the same
+ * shape as the rows below it. String literals and dollar-quoted bodies are left
+ * intact, so a `--` inside a description stays data rather than becoming a
+ * comment.
+ */
+function stripSqlComments(sql: string): string {
+  const out = [...sql];
+  const blank = (from: number, to: number): void => {
+    for (let k = from; k < to; k += 1) if (out[k] !== '\n') out[k] = ' ';
+  };
+  let i = 0;
+  while (i < sql.length) {
+    const ch = sql[i];
+    if (ch === "'") {
+      i += 1;
+      while (i < sql.length) {
+        if (sql[i] === "'") {
+          if (sql[i + 1] === "'") {
+            i += 2;
+            continue;
+          }
+          i += 1;
+          break;
+        }
+        i += 1;
+      }
+      continue;
+    }
+    if (ch === '$') {
+      const tag = /^\$[A-Za-z_0-9]*\$/.exec(sql.slice(i))?.[0];
+      if (tag !== undefined) {
+        const close = sql.indexOf(tag, i + tag.length);
+        i = close === -1 ? sql.length : close + tag.length;
+        continue;
+      }
+    }
+    if (ch === '-' && sql[i + 1] === '-') {
+      const nl = sql.indexOf('\n', i);
+      const stop = nl === -1 ? sql.length : nl;
+      blank(i, stop);
+      i = stop;
+      continue;
+    }
+    if (ch === '/' && sql[i + 1] === '*') {
+      const close = sql.indexOf('*/', i + 2);
+      const stop = close === -1 ? sql.length : close + 2;
+      blank(i, stop);
+      i = stop;
+      continue;
+    }
+    i += 1;
+  }
+  return out.join('');
+}
+
+/**
+ * Reads the comma-separated `('a','b',...)` tuples of a VALUES list starting at
+ * `from`, and reports where it stopped. Every field must be a quoted literal;
+ * anything else is a parse failure naming its line, never a silently skipped row.
+ */
+function parseValueTuples(sql: string, from: number): { rows: string[][]; end: number } {
+  const rows: string[][] = [];
+  let i = from;
+  const skipSpace = (): void => {
+    while (i < sql.length && /\s/.test(sql[i] as string)) i += 1;
+  };
+  for (;;) {
+    skipSpace();
+    if (sql[i] === ',') {
+      i += 1;
+      continue;
+    }
+    if (sql[i] !== '(') break;
+    i += 1;
+    const fields: string[] = [];
+    let expecting: 'value' | 'separator' = 'value';
+    for (;;) {
+      skipSpace();
+      if (i >= sql.length) seedFail(`line ${seedLineOf(sql, i)}: unterminated VALUES tuple`);
+      const ch = sql[i] as string;
+      if (ch === ')') {
+        if (expecting === 'value' && fields.length > 0) {
+          seedFail(`line ${seedLineOf(sql, i)}: trailing comma in a VALUES tuple`);
+        }
+        i += 1;
+        break;
+      }
+      if (expecting === 'separator') {
+        if (ch !== ',') seedFail(`line ${seedLineOf(sql, i)}: expected "," or ")", found "${ch}"`);
+        i += 1;
+        expecting = 'value';
+        continue;
+      }
+      if (ch !== "'")
+        seedFail(`line ${seedLineOf(sql, i)}: expected a quoted value, found "${ch}"`);
+      const opened = i;
+      i += 1;
+      let value = '';
+      for (;;) {
+        if (i >= sql.length) {
+          seedFail(`line ${seedLineOf(sql, opened)}: unterminated string literal`);
+        }
+        if (sql[i] === "'") {
+          if (sql[i + 1] === "'") {
+            value += "'";
+            i += 2;
+            continue;
+          }
+          i += 1;
+          break;
+        }
+        value += sql[i];
+        i += 1;
+      }
+      fields.push(value);
+      expecting = 'separator';
+    }
+    rows.push(fields);
+  }
+  return { rows, end: i };
+}
+
+/**
+ * The platform permission catalog as `04_iam_permission_catalog.sql` DECLARES it
+ * — parsed from the seed file, never read back from a database.
+ *
+ * ## Why this exists
+ *
+ * Two database suites used to restate this file's contents: a literal catalogue
+ * total in `p1-15-shared-services-runtime-capabilities.test.ts` and an
+ * exhaustive code list in `p1-19-catalog-reconciliation.test.ts`. Adding one
+ * permission code to the seed stale-dated both, and every local gate stayed
+ * green. That is the defect `scripts/ci/check-p1-27-doc-counts.mjs` was built
+ * for and states plainly: a number written by hand that nothing recomputes. The
+ * expectation now moves with the seed by construction, so the only way to change
+ * it is to change the authority it is read from.
+ *
+ * ## What this does NOT make true by construction
+ *
+ * This reads a FILE. It never queries a database, so the suites using it still
+ * compare two independent things: the seed says what the catalog is, and the
+ * database is asked what it actually holds. A code missing from the database, an
+ * extra code, a wrong domain, a wrong description, a wrong risk level, and a
+ * migration that inserts a permission behind the seed's back all still fail —
+ * and so does a checkout whose seed changed without the database being re-reset,
+ * which is exactly the drift these suites exist to report.
+ *
+ * What it cannot catch, and no seed-derived expectation ever could, is a typo in
+ * the seed itself: `wo.work_order.tranistion` would be declared and seeded
+ * consistently. That direction is held by the CONSUMERS, which do not read this
+ * file — `tests/backend/p1-23-authorization.test.ts` grants each route-declared
+ * code and requires the operation to SUCCEED, and `tests/ci/p1-28-access-gate.test.ts`
+ * requires every code a screen consults to exist in this catalogue.
+ *
+ * Rows come back in declaration order with duplicates PRESERVED: the seed's own
+ * `ON CONFLICT (permission_code) DO NOTHING` swallows a repeated code silently,
+ * so a caller that must prove there is no duplicate has to be able to see one.
+ */
+export function readSeededPermissionCatalog(): SeededPermission[] {
+  const sql = stripSqlComments(readFileSync(PERMISSION_CATALOG_SEED, 'utf8'));
+
+  const headers = [...sql.matchAll(/INSERT\s+INTO\s+iam\.permissions\s*\(([^()]*)\)\s*VALUES/gi)];
+  if (headers.length !== 1) {
+    seedFail(
+      `expected exactly one "INSERT INTO iam.permissions (...) VALUES", found ${headers.length}`
+    );
+  }
+  const header = headers[0] as RegExpMatchArray & { index: number };
+  const columns = (header[1] as string).split(',').map((name) => name.trim().toLowerCase());
+
+  // Mapped BY NAME, never by position: a reordered column list would otherwise
+  // silently swap every description and risk level in the parsed catalogue.
+  const columnAt = (name: string): number => {
+    const at = columns.indexOf(name);
+    if (at === -1) seedFail(`column "${name}" is missing from the seed's column list`);
+    return at;
+  };
+  const codeAt = columnAt('permission_code');
+  const domainAt = columnAt('domain');
+  const descriptionAt = columnAt('description');
+  const riskAt = columnAt('risk_level');
+
+  const { rows, end } = parseValueTuples(sql, header.index + (header[0] as string).length);
+
+  // The statement must end in the seed's own conflict arm. This is what proves
+  // the scan consumed the WHOLE list: a parser that stopped early would
+  // under-count the catalogue and hand every caller a quietly wrong expectation,
+  // which is worse than the literal it replaces.
+  if (!/^\s*ON\s+CONFLICT\s*\(\s*permission_code\s*\)\s*DO\s+NOTHING\s*;/i.test(sql.slice(end))) {
+    seedFail(
+      `the VALUES list did not end at "ON CONFLICT (permission_code) DO NOTHING;" ` +
+        `(stopped on line ${seedLineOf(sql, end)} after ${rows.length} rows)`
+    );
+  }
+
+  return rows.map((fields, index) => {
+    if (fields.length !== columns.length) {
+      seedFail(
+        `row ${index + 1} declares ${fields.length} values but the column list declares ${columns.length}`
+      );
+    }
+    return {
+      permissionCode: fields[codeAt] as string,
+      domain: fields[domainAt] as string,
+      description: fields[descriptionAt] as string,
+      riskLevel: fields[riskAt] as string,
+    };
+  });
+}
 
 /**
  * Puts the governed platform permission catalog back exactly as seed 04 defines

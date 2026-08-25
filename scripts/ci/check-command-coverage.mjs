@@ -496,6 +496,29 @@ export const REGISTER = Object.freeze([
     why: 'apps/api is Backend-only — no page, stylesheet, client component or tracked build output',
   },
   {
+    name: 'validate:permission-catalog',
+    owner: ROOT,
+    tier: 'required',
+    // `docs/database/permission-catalog-reference.md` declared itself a
+    // rendering of the IAM seed and said that regenerating it after a seed
+    // change was part of that change — and then nothing regenerated it and
+    // nothing read it. It was reconciled by hand once, against a seed of 43
+    // codes, and stood still through six phases while the seed reached 112,
+    // holding not one `tech.` code. Every tier stayed green throughout, because
+    // the only executable claim over that catalog is a FLOOR in
+    // `tests/db/iam-seeds.test.ts` (at least 19 codes across `org` and `iam`),
+    // and a floor cannot detect growth. This is the missing half: the document
+    // is derived from the seed, the risk vocabulary from the CHECK constraint
+    // that decides it, and the baseline-role table from the fixture that proves
+    // it — so a seed change without a regeneration fails here rather than
+    // ageing quietly into a reference that reads authoritative and is wrong.
+    // Mutation-proved by tests/ci/permission-catalog-reference.test.ts, which
+    // plants one defect at a time — a wildcard code, a domain column that
+    // disagrees with its own code, a duplicate, a reordered INSERT, a row
+    // commented out of the catalog — and asserts this names that one.
+    why: 'the permission catalog reference still renders the seed it claims to render',
+  },
+  {
     name: 'validate:permission-parity',
     owner: ROOT,
     tier: 'required',
@@ -621,6 +644,38 @@ export const REGISTER = Object.freeze([
     owner: ROOT,
     tier: 'environment',
     why: 'domain classification validators — every one needs PostgreSQL (P1-25-F-023)',
+  },
+  {
+    name: 'verify:database',
+    owner: ROOT,
+    tier: 'environment',
+    // The local mirror of the hosted `database` job in `ci.yml`, in that job's own
+    // order: seed state, the six classifications, then the Database tier. It
+    // exists because PR #263 (BR-03) added one row to
+    // `supabase/seeds/04_iam_permission_catalog.sql` and stale-dated two
+    // hand-maintained mirrors in `tests/db/` — a pinned catalogue total and an
+    // exhaustive permission-code list — while every local gate the author ran
+    // stayed green and three hosted jobs went red.
+    //
+    // Deliberately NOT reachable from `verify:workspaces`, and that is the whole
+    // design. The aggregate is the command a developer runs before every commit,
+    // including a docs-only one, and the clean room mirrors it to claim that a
+    // fresh clone passes "exactly what a developer runs"; requiring a live
+    // PostgreSQL would make that claim false for anyone without the stack up and
+    // would train people to skip the aggregate — the precise failure this
+    // register exists to prevent. The clean room also runs `test:db` INSIDE its
+    // schema-hash envelope and runs the aggregate AFTER the closing hash, so a
+    // `test:db` folded into the aggregate would execute a schema-mutating suite
+    // outside the envelope that guards it, and double-run a serial suite.
+    //
+    // `environment` is therefore the honest tier, with the honest cost stated:
+    // nothing enforces this command. It is documented as the pre-push step in
+    // CONTRIBUTING §8 for any change touching `supabase/seeds/**` or
+    // `supabase/migrations/**`. The durable fix for the defect class is to
+    // derive those two `tests/db/` mirrors from the seed file instead of
+    // maintaining them by hand; this aggregate shortens the feedback loop, it
+    // does not close the hole.
+    why: 'the pre-push Database aggregate — seed state, classifications and the Database tier, all needing PostgreSQL (mirrors the hosted `database` job)',
   },
   {
     name: 'validate:use-server-exports',

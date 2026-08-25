@@ -10,10 +10,18 @@
  *    wrong when written and would have reached PostgreSQL as `23514`; this is what
  *    stops a future edit putting them back.
  *
- * 2. The 22 new permission codes had no by-name coverage — only a catalog TOTAL,
+ * 2. The permission codes in this wave's four domains had no by-name coverage —
+ *    only a catalog TOTAL,
  *    which is blind to a typo. Ship `wo.work_order.tranistion` and the count is
  *    still right, while every principal is denied once Wave 4 requires the correct
- *    spelling. P1-15 asserted its own two codes by name; this does the same.
+ *    spelling. P1-15 asserted its own two codes by name; this does the same, for
+ *    every code the seed declares across the four domains.
+ *
+ *    The list those cases run over is READ FROM THE SEED rather than restated
+ *    here. It was restated once, and adding a single code to the seed stale-dated
+ *    it while every local gate stayed green — the defect
+ *    `scripts/ci/check-p1-27-doc-counts.mjs` exists to end: a value written by
+ *    hand that nothing recomputes.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Pool } from 'pg';
@@ -35,7 +43,7 @@ import {
   TEMPLATE_VERSION_STATUSES,
 } from '@/modules/diagnostics';
 import { QC_CHECK_RESULTS, QC_OVERALL_RESULTS } from '@/modules/quality';
-import { adminPool } from './helpers';
+import { adminPool, readSeededPermissionCatalog } from './helpers';
 
 let admin: Pool;
 
@@ -99,74 +107,83 @@ describe('P1-19 vocabularies reconcile with the live CHECK constraints', () => {
   );
 });
 
-/**
- * The codes P1-19 itself seeded across its four domains.
- *
- * Kept SEPARATE from the successor list below rather than merged into one array,
- * for the same reason `scripts/p1-19-endpoint-inventory.mjs` refuses to let a
- * later contract borrow a `P1-19-BE` task identifier: folding a successor’s code
- * in here would make this file say P1-19 seeded something it did not, and this
- * file is the register a reader consults to find out.
- */
-const P1_19_PERMISSIONS: readonly (readonly [string, string, string])[] = [
-  ['dia.diagnostic.complete', 'dia', 'medium'],
-  ['dia.diagnostic.read', 'dia', 'low'],
-  ['dia.diagnostic.record', 'dia', 'medium'],
-  ['dia.diagnostic.review', 'dia', 'high'],
-  ['qms.quality_control.finalize', 'qms', 'high'],
-  ['qms.quality_control.read', 'qms', 'low'],
-  ['qms.quality_control.record', 'qms', 'medium'],
-  ['qms.rework.manage', 'qms', 'high'],
-  ['qms.rework.sign_off', 'qms', 'high'],
-  ['tech.assignment.manage', 'tech', 'medium'],
-  ['tech.labor.correct', 'tech', 'high'],
-  ['tech.labor.record', 'tech', 'low'],
-  ['tech.technician.read', 'tech', 'low'],
-  ['wo.additional_work.approve', 'wo', 'high'],
-  ['wo.additional_work.request', 'wo', 'medium'],
-  ['wo.job.manage', 'wo', 'medium'],
-  ['wo.job.transition', 'wo', 'medium'],
-  ['wo.work_order.close', 'wo', 'high'],
-  ['wo.work_order.create', 'wo', 'high'],
-  ['wo.work_order.line.manage', 'wo', 'medium'],
-  ['wo.work_order.read', 'wo', 'low'],
-  ['wo.work_order.transition', 'wo', 'medium'],
-];
+/** The four domains this wave introduced. */
+const P1_19_DOMAINS = ['wo', 'tech', 'dia', 'qms'] as const;
 
 /**
- * Codes seeded into P1-19’s four domains by a LATER contract.
+ * Every code the seed declares in P1-19's four DOMAINS, read from the seed.
  *
- * `tech.technician.manage` is PRE-P1-29-BR-03’s: the technician roster shipped in
- * P1-19 with reads only, so there was no write path to gate and no reason for the
- * code to exist. Eleven operations now administer profiles, held skills, held
- * certifications and availability windows, and none of them could be gated by
- * `tech.technician.read` — reading a roster is not administering one.
+ * ## Domain-scoped, not phase-scoped — and the difference is load-bearing
  *
- * Naming it here is what keeps the assertion below EXHAUSTIVE. Without it the
- * “and no others” claim would simply be false, and the honest repair is to record
- * the owner rather than to widen the query or drop the claim.
+ * P1-19 introduced these four domains, and for four phases it was also the only
+ * contract that had seeded a code into them, so "the P1-19 codes" and "the codes
+ * in the P1-19 domains" named the same set and nothing had to choose. They are
+ * different sets now: PRE-P1-29-BR-03 seeded `tech.technician.manage` into
+ * `tech`, because the technician roster shipped with reads only and eleven new
+ * administration operations could not be gated by `tech.technician.read`.
+ *
+ * The QUERY below is domain-scoped, so this list must be too or the "and no
+ * others" claim is simply false. What it must NOT do is let that scoping quietly
+ * restate itself as provenance: nothing here says P1-19 seeded these codes, and
+ * the cases below are titled for the domains rather than for the phase.
+ * `scripts/p1-19-endpoint-inventory.mjs` refuses the same conflation from the
+ * other side — it will not let a successor borrow a `P1-19-BE` task identifier
+ * for work P1-19 did not do — and this file is the register a reader consults to
+ * find out who seeded what.
+ *
+ * This was an exhaustive hand-written list of twenty-two `[code, domain, risk]`
+ * triples, which is a second copy of `04_iam_permission_catalog.sql` that
+ * nothing kept in step with the first. It is derived now, so a seed change moves
+ * the expectation by construction rather than by somebody remembering.
+ *
+ * Deriving it does NOT make the cases below compare the database to itself: the
+ * seed file declares, and the database is asked what it actually holds. A code
+ * the seed declares that the database lacks, a code the database holds that the
+ * seed does not declare, and a domain or risk level that differs between them
+ * all still fail. `readSeededPermissionCatalog` records what derivation
+ * deliberately gives up and which suites hold that direction instead.
+ *
+ * Sorted by codepoint, and the database side is sorted the same way at the point
+ * of comparison, so neither assertion depends on the server's collation.
  */
-const SUCCESSOR_PERMISSIONS: readonly (readonly [string, string, string])[] = [
-  ['tech.technician.manage', 'tech', 'medium'],
-];
+const PERMISSIONS: readonly (readonly [string, string, string])[] = readSeededPermissionCatalog()
+  .filter((permission) => (P1_19_DOMAINS as readonly string[]).includes(permission.domain))
+  .map(
+    (permission) =>
+      [permission.permissionCode, permission.domain, permission.riskLevel] as [
+        string,
+        string,
+        string,
+      ]
+  )
+  .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
 
-/**
- * Every code the four domains should hold, whoever seeded it, in the QUERY’s order.
- *
- * Sorted by code point rather than with `localeCompare`, because the comparison
- * below is against `ORDER BY permission_code` in PostgreSQL. `localeCompare`
- * applies locale collation, which weights `.` and `_` differently from a plain
- * byte order and could therefore disagree with the database on a pair these codes
- * do not currently contain but easily might. The hand-written list this replaces
- * was already in code-point order and matched the database, so this reproduces it
- * exactly rather than approximating it.
- */
-const PERMISSIONS: readonly (readonly [string, string, string])[] = [
-  ...P1_19_PERMISSIONS,
-  ...SUCCESSOR_PERMISSIONS,
-].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
+describe('the permission codes in P1-19’s four domains are seeded exactly once each', () => {
+  it('derives a real slice of the catalogue, so the cases below are not vacuous', () => {
+    // The floor guards the derivation itself. An EMPTY table would at least be
+    // refused by the runner ("No test found in suite"), but a TRUNCATED parse
+    // would not: it would quietly run fewer by-name cases below and stay green,
+    // which is the failure mode a derived expectation has and a literal does
+    // not. A FLOOR, not the count — pinning the exact number here would
+    // reinstate the hand-maintained value this file just dropped.
+    expect(PERMISSIONS.length).toBeGreaterThan(15);
 
-describe('P1-19 permission codes are seeded exactly once each', () => {
+    // A code repeated in the seed is swallowed by its own
+    // `ON CONFLICT (permission_code) DO NOTHING`, so the database would hold one
+    // row for two declarations and the count comparison below would be the only
+    // thing that noticed. Name it here, where the failure says what is wrong.
+    const codes = PERMISSIONS.map(([code]) => code);
+    const duplicates = codes.filter((code, at) => codes.indexOf(code) !== at);
+    expect(duplicates, 'the seed declares these codes more than once').toEqual([]);
+
+    // Every parsed row is a real catalogue row and not a fragment of the seed's
+    // own commentary, which quotes codes and risk levels in the same shape.
+    for (const [code, domain, risk] of PERMISSIONS) {
+      expect(code.startsWith(`${domain}.`), `${code} is not in domain ${domain}`).toBe(true);
+      expect(['low', 'medium', 'high', 'critical']).toContain(risk);
+    }
+  });
+
   it.each(PERMISSIONS)(
     '%s exists once with the declared domain and risk',
     async (code, domain, risk) => {
@@ -181,12 +198,14 @@ describe('P1-19 permission codes are seeded exactly once each', () => {
     }
   );
 
-  it('adds exactly these codes and no others across the four P1-19 domains', async () => {
+  it('holds exactly the codes the seed declares, and no others, across those four domains', async () => {
     const { rows } = await admin.query<{ permission_code: string }>(
-      `SELECT permission_code FROM iam.permissions
-        WHERE domain IN ('wo','tech','dia','qms') ORDER BY permission_code`
+      `SELECT permission_code FROM iam.permissions WHERE domain = ANY($1::text[])`,
+      [[...P1_19_DOMAINS]]
     );
-    expect(rows.map((row) => row.permission_code)).toEqual(PERMISSIONS.map(([code]) => code));
+    expect(rows.map((row) => row.permission_code).sort()).toEqual(
+      PERMISSIONS.map(([code]) => code)
+    );
   });
 
   it('separates recording quality control from finalizing it', async () => {

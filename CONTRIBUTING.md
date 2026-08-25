@@ -190,6 +190,20 @@ Rules:
 - A migration is never edited after it has been applied on a shared branch. Correct it with a new migration.
 - A pull request that adds application code depending on a schema that does not yet exist in a migration is rejected.
 
+### Pre-push step for schema and seed changes
+
+No local aggregate runs the Database tier. `npm run verify:workspaces` deliberately does not, because it is the command run before **every** commit — including a documentation-only one — and the hosted clean room mirrors it to claim that a fresh clone passes exactly what a developer runs. Requiring a live PostgreSQL would make that claim false for anyone without the stack up.
+
+So any change touching `supabase/seeds/**` or `supabase/migrations/**` runs this before pushing, with the local stack up:
+
+```bash
+npm run supabase:start && npm run supabase:reset && npm run verify:database
+```
+
+`verify:database` is the local mirror of the hosted `database` job in `ci.yml`, in that job’s own order: `validate:seed-state`, the six `verify:classifications` validators, then `test:db`.
+
+This is a convention, not a gate — `verify:database` is registered `environment` in `scripts/ci/check-command-coverage.mjs` and nothing forces it to run. It exists because a seed row and the tests that mirror it drift silently: adding one permission code to `supabase/seeds/04_iam_permission_catalog.sql` broke a pinned catalogue total and an exhaustive permission-code list in `tests/db/`, and every local gate stayed green while three hosted jobs went red.
+
 ## 9. Documentation synchronisation rule
 
 Documentation is part of the change, not a follow-up.
