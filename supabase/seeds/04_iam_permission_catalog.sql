@@ -242,6 +242,13 @@ INSERT INTO iam.permissions (permission_code, domain, description, risk_level, c
   -- reviewer-separation policy has something to enforce against.
   ('dia.diagnostic.review',    'dia', 'Review a completed diagnostic report',           'high',   '00000000-0000-4000-8000-000000000001'),
   ('dia.diagnostic.read',      'dia', 'Read diagnostic reports and their evidence',     'low',    '00000000-0000-4000-8000-000000000001'),
+  -- PRE-P1-29-BR-04. Authoring the inspection-template library is a different
+  -- authority from recording against one: a technician who may fill in an
+  -- inspection must not thereby be able to change what the inspection ASKS, which
+  -- would silently re-shape every future report. Risk `high` for the same reason
+  -- `apt.catalogue.manage` and `rec.catalogue.manage` are: a catalogue defines
+  -- what the operational surface can express at all.
+  ('dia.catalogue.manage',     'dia', 'Author inspection templates, versions and items', 'high',   '00000000-0000-4000-8000-000000000001'),
   -- Phase 1-19 (qms) - Quality. Recording individual check results is separated from
   -- finalizing the record, for the same reason transition is separated from close and
   -- request from approve above: finalizing as passed is the act that clears closure
