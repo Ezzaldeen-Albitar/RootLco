@@ -224,6 +224,10 @@ import '@/app/api/v1/jobs/[jobId]/reassignments/route';
 import '@/app/api/v1/assignments/[assignmentId]/end/route';
 import '@/app/api/v1/technicians/[technicianProfileId]/queue/route';
 import '@/app/api/v1/technicians/available/route';
+// BR-01. This list is hand-maintained and is its own documented trap: a route
+// missing here is missing from the published contract AND the test still passes,
+// because both sides agree on the same incomplete registry.
+import '@/app/api/v1/technicians/me/queue/route';
 // Technician roster administration (BR-03). This list is hand-maintained, which
 // is exactly how P1-27-INT-113 shipped six operations that answered 500 to every
 // request: an operation absent from here is absent from every registry-walking

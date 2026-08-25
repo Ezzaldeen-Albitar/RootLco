@@ -176,7 +176,11 @@ describe('the API application lives in the workspace', () => {
     // collection, the profile, the held skill, the certification collection, the
     // held certification and its restricted detail sidecar, and the availability
     // collection and window.
-    expect(routeFiles.length).toBe(257);
+    //
+    // 258 with PRE-P1-29-BR-01's `technicians/me/queue`: one module, one
+    // operation — the two counts move together here because the route publishes a
+    // single verb, unlike the BR-03 modules above it.
+    expect(routeFiles.length).toBe(258);
 
     // Non-vacuity. A discovery assertion that only checks a count would pass
     // against a set with one route swapped for another, so the comparison that
@@ -197,7 +201,7 @@ describe('the API application lives in the workspace', () => {
     }
   });
 
-  it('discovers the same 316 operations from the root, apps/api and apps/web', () => {
+  it('discovers the same 317 operations from the root, apps/api and apps/web', () => {
     // The decisive cwd proof, run against a REAL validator rather than the
     // helper alone: `check-authorization-coverage.mjs` derived the repository
     // from `process.cwd()` until this migration, so its answer used to depend on
@@ -227,7 +231,8 @@ describe('the API application lives in the workspace', () => {
     // collection, the profile and the held skill each co-locate two verbs on one
     // path — eight and eleven again moving by different amounts, which is the
     // whole reason both numbers are asserted rather than one.
-    expect(report.operations).toHaveLength(316);
+    // 317 with BR-01: one operation over one module.
+    expect(report.operations).toHaveLength(317);
 
     // ~1 s per process by construction, not by slowness. The budget is stated
     // here rather than raised globally, so it cannot quietly cover a different

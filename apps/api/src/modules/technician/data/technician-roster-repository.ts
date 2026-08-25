@@ -295,6 +295,50 @@ export class TechnicianRosterRepository extends Repository {
   }
 
   /**
+   * The CALLER's own live technician profile id, bounded to one company/branch.
+   *
+   * BR-01. The subject is `context.principal.userId` — resolved from the session
+   * inside the request transaction — and never a value the caller supplied. That
+   * is the whole point of the slice: `tech.technician-queue` takes the profile id
+   * from the path, so a technician had no legitimate way to learn their own id and
+   * the only shapes available to a client were guessing or matching on a display
+   * name. Both are `T-11`.
+   *
+   * Three predicates, each load-bearing:
+   *
+   *  - `tenant_id` — a tenant-A identity resolves nothing in tenant B.
+   *    `fk_technician_profiles_user` is composite `(tenant_id, user_id)`, so the
+   *    cross-tenant pair cannot exist in the first place; this makes that explicit
+   *    at the query rather than relying on it.
+   *  - `company_id`/`branch_id` — the caller NAMES the scope, and a profile in a
+   *    branch they did not name resolves to null. Without this a caller holding
+   *    the read in branch Y could name Y and be served their branch-X queue.
+   *  - `deleted_at IS NULL` — matching `uq_technician_profiles_active_user`, which
+   *    is what makes "at most one" true rather than hoped for.
+   *
+   * `is_active` is deliberately NOT a predicate here. An inactive technician
+   * resolves, and their queue is then empty on its own merits — collapsing the two
+   * into one null would be identical behaviour with less honest code, and the
+   * contract requires the inactive case to be indistinguishable from the others
+   * anyway (`§8`, `S5`).
+   */
+  async ownLiveProfileIdInScope(
+    db: DbHandle,
+    scope: { readonly companyId: string; readonly branchId: string }
+  ): Promise<string | null> {
+    const context = this.assertContext(db);
+    const result = await this.run<{ id: string }>(
+      db,
+      `SELECT id FROM tech.technician_profiles
+        WHERE tenant_id = $1 AND user_id = $2
+          AND company_id = $3 AND branch_id = $4
+          AND deleted_at IS NULL`,
+      [context.principal.tenantId, context.principal.userId, scope.companyId, scope.branchId]
+    );
+    return result.rows[0]?.id ?? null;
+  }
+
+  /**
    * True when the user account exists in the caller's tenant.
    *
    * Deliberately does NOT check `status`. A roster is an operational record and

@@ -1,9 +1,9 @@
 {
   "generatedBy": "scripts/p1-24-operation-register.mjs",
   "totals": {
-    "operations": 316,
-    "openapiPaths": 256,
-    "openapiOperations": 316,
+    "operations": 317,
+    "openapiPaths": 257,
+    "openapiOperations": 317,
     "openapiSchemas": 3,
     "events": 50,
     "eventsProduced": 47,
@@ -14,7 +14,7 @@
     "auditActions": 194
   },
   "counts": {
-    "Covered": 316
+    "Covered": 317
   },
   "operations": [
     {
@@ -10218,6 +10218,44 @@
       "tests": ["tests/backend/br-03-technician-roster.test.ts"],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/technicians/route.ts"
+    },
+    {
+      "id": "tech.technician-me-queue",
+      "domain": "technician",
+      "method": "GET",
+      "route": "/api/v1/technicians/me/queue",
+      "permissions": ["tech.technician.read"],
+      "public": false,
+      "scope": "branch",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/technicians/me/queue",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "isolation",
+        "denial",
+        "cross-tenant"
+      ],
+      "providedEvidence": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/br-01-technician-identity.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/technicians/me/queue/route.ts"
     },
     {
       "id": "tech.technician-queue",

@@ -9,10 +9,10 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 
 | Measure                  | Value |
 | ------------------------ | ----- |
-| Public operations        | 316   |
+| Public operations        | 317   |
 | Domains (modules)        | 19    |
-| OpenAPI paths            | 256   |
-| OpenAPI operations       | 316   |
+| OpenAPI paths            | 257   |
+| OpenAPI operations       | 317   |
 | OpenAPI schemas          | 3     |
 | OpenAPI security schemes | 1     |
 | Permission codes seeded  | 113   |
@@ -24,7 +24,7 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 
 | Classification    | Operations |
 | ----------------- | ---------- |
-| Covered           | 316        |
+| Covered           | 317        |
 | Partially covered | 0          |
 | Uncovered         | 0          |
 | Not applicable    | 0          |
@@ -49,7 +49,7 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 | reporting       | 2          | 2       | 0      | 0       | 0          | 0               |
 | service-catalog | 5          | 5       | 4      | 4       | 4          | 2               |
 | shared-services | 28         | 28      | 18     | 18      | 6          | 6               |
-| technician      | 17         | 17      | 12     | 12      | 4          | 5               |
+| technician      | 18         | 18      | 12     | 12      | 4          | 5               |
 | vehicle         | 27         | 27      | 12     | 12      | 12         | 0               |
 | warranty        | 2          | 2       | 1      | 1       | 1          | 0               |
 | work-order      | 26         | 26      | 15     | 16      | 13         | 8               |
@@ -315,6 +315,7 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 | `tech.technician-create`                            | POST   | `/api/v1/technicians`                                                               | branch  | `tech.technician.manage`                                             | tech.technician.profile_created              | yes  | —   | audit authorization denial idempotency isolation route service success                                                        | Covered |
 | `tech.technician-detail`                            | GET    | `/api/v1/technicians/{technicianProfileId}`                                         | branch  | `tech.technician.read`                                               | —                                            | —    | —   | authorization cross-tenant denial isolation route service success                                                             | Covered |
 | `tech.technician-list`                              | GET    | `/api/v1/technicians`                                                               | branch  | `tech.technician.read`                                               | —                                            | —    | —   | authorization denial isolation route service success                                                                          | Covered |
+| `tech.technician-me-queue`                          | GET    | `/api/v1/technicians/me/queue`                                                      | branch  | `tech.technician.read`                                               | —                                            | —    | —   | authorization cross-tenant denial isolation route service success                                                             | Covered |
 | `tech.technician-queue`                             | GET    | `/api/v1/technicians/{technicianProfileId}/queue`                                   | branch  | `tech.technician.read`                                               | —                                            | —    | —   | authorization cross-tenant denial isolation route service success                                                             | Covered |
 | `tech.technician-skill-set`                         | PUT    | `/api/v1/technicians/{technicianProfileId}/skills/{skillId}`                        | branch  | `tech.technician.manage`                                             | tech.technician.skill_set                    | —    | —   | audit authorization cross-tenant denial isolation route service success                                                       | Covered |
 | `tech.technician-skill-withdraw`                    | DELETE | `/api/v1/technicians/{technicianProfileId}/skills/{skillId}`                        | branch  | `tech.technician.manage`                                             | tech.technician.skill_withdrawn              | —    | —   | audit authorization cross-tenant denial isolation route service success                                                       | Covered |
