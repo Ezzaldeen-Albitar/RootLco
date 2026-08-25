@@ -300,6 +300,13 @@ jobs:
           # calling itself complete, and a gate met forty minutes late is met
           # after the claim has already been written down.
           npm run validate:p1-28-adapter-reachability
+          # The IAM permission catalog reference against the seed it claims to
+          # render. It rode `verify:contracts` -> `verify:workspaces` in the
+          # clean room the moment it was registered, and that is the slowest job
+          # in the pull request; a document that drifted for six phases deserves
+          # the fast job, for the same reason the P1-28 gates below are named
+          # here rather than left to the aggregate alone.
+          npm run validate:permission-catalog
 
       # =======================================================================
       # Changed-file ownership — P1-27-DO-003.
