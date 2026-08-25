@@ -171,7 +171,12 @@ describe('the API application lives in the workspace', () => {
     // 249 with the nine P1-18 evidence-contract modules: the evidence-binding trio,
     // the capture override, the signature event and list, and the capture-policy
     // and damage-map-template catalogues.
-    expect(routeFiles.length).toBe(249);
+    //
+    // 257 with the eight PRE-P1-29-BR-03 technician roster modules: the roster
+    // collection, the profile, the held skill, the certification collection, the
+    // held certification and its restricted detail sidecar, and the availability
+    // collection and window.
+    expect(routeFiles.length).toBe(257);
 
     // Non-vacuity. A discovery assertion that only checks a count would pass
     // against a set with one route swapped for another, so the comparison that
@@ -192,7 +197,7 @@ describe('the API application lives in the workspace', () => {
     }
   });
 
-  it('discovers the same 261 operations from the root, apps/api and apps/web', () => {
+  it('discovers the same 316 operations from the root, apps/api and apps/web', () => {
     // The decisive cwd proof, run against a REAL validator rather than the
     // helper alone: `check-authorization-coverage.mjs` derived the repository
     // from `process.cwd()` until this migration, so its answer used to depend on
@@ -218,7 +223,11 @@ describe('the API application lives in the workspace', () => {
     // moves both counts by one per new module, for the same reason.
     // 305: the same nine modules publish thirteen operations, because the catalogue
     // modules co-locate a read and a write on one path.
-    expect(report.operations).toHaveLength(305);
+    // 316 with BR-03: eleven operations over eight modules, because the roster
+    // collection, the profile and the held skill each co-locate two verbs on one
+    // path — eight and eleven again moving by different amounts, which is the
+    // whole reason both numbers are asserted rather than one.
+    expect(report.operations).toHaveLength(316);
 
     // ~1 s per process by construction, not by slowness. The budget is stated
     // here rather than raised globally, so it cannot quietly cover a different

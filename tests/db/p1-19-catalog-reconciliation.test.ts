@@ -99,7 +99,16 @@ describe('P1-19 vocabularies reconcile with the live CHECK constraints', () => {
   );
 });
 
-const PERMISSIONS: readonly (readonly [string, string, string])[] = [
+/**
+ * The codes P1-19 itself seeded across its four domains.
+ *
+ * Kept SEPARATE from the successor list below rather than merged into one array,
+ * for the same reason `scripts/p1-19-endpoint-inventory.mjs` refuses to let a
+ * later contract borrow a `P1-19-BE` task identifier: folding a successor’s code
+ * in here would make this file say P1-19 seeded something it did not, and this
+ * file is the register a reader consults to find out.
+ */
+const P1_19_PERMISSIONS: readonly (readonly [string, string, string])[] = [
   ['dia.diagnostic.complete', 'dia', 'medium'],
   ['dia.diagnostic.read', 'dia', 'low'],
   ['dia.diagnostic.record', 'dia', 'medium'],
@@ -123,6 +132,39 @@ const PERMISSIONS: readonly (readonly [string, string, string])[] = [
   ['wo.work_order.read', 'wo', 'low'],
   ['wo.work_order.transition', 'wo', 'medium'],
 ];
+
+/**
+ * Codes seeded into P1-19’s four domains by a LATER contract.
+ *
+ * `tech.technician.manage` is PRE-P1-29-BR-03’s: the technician roster shipped in
+ * P1-19 with reads only, so there was no write path to gate and no reason for the
+ * code to exist. Eleven operations now administer profiles, held skills, held
+ * certifications and availability windows, and none of them could be gated by
+ * `tech.technician.read` — reading a roster is not administering one.
+ *
+ * Naming it here is what keeps the assertion below EXHAUSTIVE. Without it the
+ * “and no others” claim would simply be false, and the honest repair is to record
+ * the owner rather than to widen the query or drop the claim.
+ */
+const SUCCESSOR_PERMISSIONS: readonly (readonly [string, string, string])[] = [
+  ['tech.technician.manage', 'tech', 'medium'],
+];
+
+/**
+ * Every code the four domains should hold, whoever seeded it, in the QUERY’s order.
+ *
+ * Sorted by code point rather than with `localeCompare`, because the comparison
+ * below is against `ORDER BY permission_code` in PostgreSQL. `localeCompare`
+ * applies locale collation, which weights `.` and `_` differently from a plain
+ * byte order and could therefore disagree with the database on a pair these codes
+ * do not currently contain but easily might. The hand-written list this replaces
+ * was already in code-point order and matched the database, so this reproduces it
+ * exactly rather than approximating it.
+ */
+const PERMISSIONS: readonly (readonly [string, string, string])[] = [
+  ...P1_19_PERMISSIONS,
+  ...SUCCESSOR_PERMISSIONS,
+].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
 
 describe('P1-19 permission codes are seeded exactly once each', () => {
   it.each(PERMISSIONS)(

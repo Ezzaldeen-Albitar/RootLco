@@ -101,11 +101,11 @@ compares source to source, so it reads the seed and **cross-checks its length ag
 
 ### 3.2 What it parses, and what it refuses to read
 
-| source             | AST context                                                                                                |
-| ------------------ | ---------------------------------------------------------------------------------------------------------- |
-| route declarations | the `permissions` array property of a parsed `defineOperation(...)` call — 248 route files, 305 operations |
-| navigation         | the `permission` property of a parsed object literal in `apps/web/src/config/navigation.ts`                |
-| the catalogue      | the `INSERT … VALUES` statement, comments stripped, first string literal of each top-level tuple           |
+| source             | AST context                                                                                                              |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------ |
+| route declarations | the `permissions` array property of a parsed `defineOperation(...)` call — 248 route files, 305 operations at `c081a019` |
+| navigation         | the `permission` property of a parsed object literal in `apps/web/src/config/navigation.ts`                              |
+| the catalogue      | the `INSERT … VALUES` statement, comments stripped, first string literal of each top-level tuple                         |
 
 **Nothing is found by text search.** `auditAction`, `featureFlag`, `rateLimitPolicy`, `id` and
 `module` are sibling properties of the same object literal and all carry dotted strings; the web
@@ -147,13 +147,13 @@ than the claim going quietly false.
 
 Floors — minimums, not equalities, so growth does not redden the build:
 
-| input                   | floor | measured on `develop` |
-| ----------------------- | ----: | --------------------: |
-| route files             |   200 |                   248 |
-| operations              |   250 |                   305 |
-| distinct declared codes |    80 |                   101 |
-| catalogue entries       |   100 |                   112 |
-| navigation permissions  |     4 |                    32 |
+| input                   | floor | measured on `develop` at `c081a019` |
+| ----------------------- | ----: | ----------------------------------: |
+| route files             |   200 |                                 248 |
+| operations              |   250 |                                 305 |
+| distinct declared codes |    80 |                                 101 |
+| catalogue entries       |   100 |                                 112 |
+| navigation permissions  |     4 |                                  32 |
 
 Plus: catalogue-vs-baseline equality; tuples-parsed must equal codes-extracted; an unparseable
 source is a **violation**, never a file with no operations; a missing `INSERT INTO iam.permissions`

@@ -1026,6 +1026,77 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
     description:
       'A customer decision on additional work was recorded — the immutable row wo.guard_additional_work_state requires to exist BEFORE the request may be marked approved, which is the forgery-resistance control. Records the decision, the channel, the deciding reception party role and the evidence count; the presented scope is recorded as a fact rather than reproduced, because it is what a customer was told about their own vehicle. tg_customer_approvals_immutable freezes the decision and no application role holds DELETE, so the row can be neither edited nor erased.',
   },
+  // ---- Technician roster administration (BR-03) ---------------------------
+  {
+    code: 'tech.technician.profile_created',
+    class: 'privileged',
+    entityType: 'tech.technician_profile',
+    description:
+      'A user was established as a technician in one branch. The profile is the operational half of an identity that already exists in iam.user_accounts — it holds no name, contact, payroll or government id, because tech.technician_profiles deliberately refuses to duplicate them and employment_ref is an opaque non-PII link. uq_technician_profiles_active_user makes one live profile per user per tenant the database’s invariant, so this action is also the record of which branch a technician belongs to.',
+  },
+  {
+    code: 'tech.technician.profile_updated',
+    class: 'privileged',
+    entityType: 'tech.technician_profile',
+    description:
+      'A technician’s trade, employment reference or active state changed. Never their branch or their user: tg_technician_profiles_immutable freezes tenant_id, company_id, branch_id, user_id and created_at, so a transfer is a retirement followed by a new profile in the target branch and both halves are recorded. Deactivating is distinct from retiring — an inactive technician is still on the roster and still holds their slot.',
+  },
+  {
+    code: 'tech.technician.profile_retired',
+    class: 'privileged',
+    entityType: 'tech.technician_profile',
+    description:
+      'A technician profile was retired. Soft delete: deleted_at is set and the row stays readable, because assignments, labour sessions and eligibility decisions were all made against it and cascading them away would erase why work was legal at the time. Retirement frees the one-live-profile-per-user slot, which is what makes a branch transfer possible at all.',
+  },
+  {
+    code: 'tech.technician.skill_set',
+    class: 'privileged',
+    entityType: 'tech.technician_skill',
+    description:
+      'A technician’s proficiency level in one skill was recorded or replaced. uq_technician_skills_profile_skill makes the relation one live level per skill, and tg_technician_skills_immutable freezes skill_id, so a change moves the LEVEL of the existing row rather than adding a second. The level is what assertEligible compares against a job’s requirement, so this action directly changes who may be assigned.',
+  },
+  {
+    code: 'tech.technician.skill_withdrawn',
+    class: 'privileged',
+    entityType: 'tech.technician_skill',
+    description:
+      'A technician’s skill was withdrawn. Soft delete, for the same reason retirement is: assignments already decided against the skill keep their evidence. Withdrawal narrows eligibility immediately for future assignments and changes nothing about existing ones.',
+  },
+  {
+    code: 'tech.technician.certification_recorded',
+    class: 'privileged',
+    entityType: 'tech.technician_certification',
+    description:
+      'A credential a technician holds was recorded, with the calendar dates it was issued and expires on. Dates, not instants: certificationIsValidOn compares YYYY-MM-DD, and ck_technician_certifications_expiry allows expires_on = issued_on because a credential valid for a single day is legal. The certificate NUMBER is not part of this record — it is restricted and lives in a separate 1:1 table behind iam.sensitive.view.',
+  },
+  {
+    code: 'tech.technician.certification_updated',
+    class: 'privileged',
+    entityType: 'tech.technician_certification',
+    description:
+      'A credential was revoked, marked expired, restored to active, or re-dated. The status is not derived from the expiry date: an issuing body revokes a credential on a day the printed expiry does not know, and the eligibility service refuses a revoked credential outright. Neither certification_id nor issued_on can change here — tg_technician_certifications_immutable freezes both, so the history every past assignment was decided under stays intact.',
+  },
+  {
+    code: 'tech.technician.certificate_number_recorded',
+    class: 'privileged',
+    entityType: 'tech.technician_certification',
+    description:
+      'The RESTRICTED certificate number for a credential was recorded or replaced. The number itself is never copied into this record — iam.audit_records is not gated by iam.sensitive.view, so publishing it here would defeat the very policy that protects the column. The record states that a restricted value was set, and the value stays in tech.technician_certification_details where every SELECT, INSERT and UPDATE policy demands the sensitive permission.',
+  },
+  {
+    code: 'tech.technician.availability_recorded',
+    class: 'privileged',
+    entityType: 'tech.technician_availability',
+    description:
+      'An availability or unavailability window was recorded for a technician. Both kinds share one table and one overlap constraint and mean opposite things to eligibility, which is why the kind is recorded rather than inferred. ex_technician_availability_overlap — a gist EXCLUDE over tstzrange(available_from, available_to) per live technician — owns the no-double-booking invariant, so it holds against concurrent writers where a read-then-check would not.',
+  },
+  {
+    code: 'tech.technician.availability_withdrawn',
+    class: 'privileged',
+    entityType: 'tech.technician_availability',
+    description:
+      'An availability window was withdrawn, freeing the interval it held. The withdrawal path is required rather than convenient: the EXCLUDE constraint has no notion of “the wrong window”, so without it a mistyped interval would block that technician for its entire span, permanently. Soft delete, so assignments decided while the window stood keep their evidence.',
+  },
   {
     code: 'tech.labor.session_corrected',
     class: 'privileged',

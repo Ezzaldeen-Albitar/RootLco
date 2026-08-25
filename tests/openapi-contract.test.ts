@@ -224,6 +224,18 @@ import '@/app/api/v1/jobs/[jobId]/reassignments/route';
 import '@/app/api/v1/assignments/[assignmentId]/end/route';
 import '@/app/api/v1/technicians/[technicianProfileId]/queue/route';
 import '@/app/api/v1/technicians/available/route';
+// Technician roster administration (BR-03). This list is hand-maintained, which
+// is exactly how P1-27-INT-113 shipped six operations that answered 500 to every
+// request: an operation absent from here is absent from every registry-walking
+// suite, and nothing else notices.
+import '@/app/api/v1/technicians/route';
+import '@/app/api/v1/technicians/[technicianProfileId]/route';
+import '@/app/api/v1/technicians/[technicianProfileId]/skills/[skillId]/route';
+import '@/app/api/v1/technicians/[technicianProfileId]/certifications/route';
+import '@/app/api/v1/technicians/[technicianProfileId]/certifications/[certificationId]/route';
+import '@/app/api/v1/technicians/[technicianProfileId]/certifications/[certificationId]/detail/route';
+import '@/app/api/v1/technicians/[technicianProfileId]/availability/route';
+import '@/app/api/v1/technicians/[technicianProfileId]/availability/[availabilityId]/route';
 import '@/app/api/v1/jobs/[jobId]/labor-sessions/route';
 import '@/app/api/v1/labor-sessions/[sessionId]/stop/route';
 import '@/app/api/v1/labor-sessions/[sessionId]/corrections/route';
