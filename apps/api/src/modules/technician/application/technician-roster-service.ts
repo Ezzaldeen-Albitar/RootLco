@@ -188,6 +188,38 @@ export class TechnicianRosterService extends ApplicationService {
   }
 
   // -------------------------------------------------------------------------
+  // Caller identity (BR-01)
+  // -------------------------------------------------------------------------
+
+  /**
+   * Resolves the SIGNED-IN caller to their own technician profile id, or null.
+   *
+   * The one place in this module where the subject is the session rather than a
+   * request field. Nothing is accepted from the caller except the company/branch
+   * pair they are asking about, and that pair is an authorization TARGET which the
+   * pipeline has already evaluated `tech.technician.read` against — it narrows the
+   * answer, it cannot widen it.
+   *
+   * Returns null rather than throwing for every "no answer" case: no profile in
+   * this tenant, a profile in a branch the caller did not name, a soft-deleted
+   * profile. The caller sees an empty queue for all three and cannot tell them
+   * apart. That is a security decision, not an ergonomic one — `ERR-RES-001` here
+   * would tell an unauthorised prober that somebody else IS a technician, which is
+   * the enumeration oracle (`T-11`) this slice exists to close, moved rather than
+   * removed.
+   *
+   * The resolved id is returned to the ROUTE and never to the wire, and it is not
+   * logged: writing it at info level would reconstruct in the log exactly the
+   * identifier the contract withholds from the response.
+   */
+  async ownProfileIdInScope(
+    db: DbHandle,
+    scope: { readonly companyId: string; readonly branchId: string }
+  ): Promise<string | null> {
+    return this.roster.ownLiveProfileIdInScope(db, scope);
+  }
+
+  // -------------------------------------------------------------------------
   // Profiles
   // -------------------------------------------------------------------------
 

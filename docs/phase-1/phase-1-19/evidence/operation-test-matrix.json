@@ -1,9 +1,9 @@
 {
   "generatedFrom": "scripts/check-operation-test-coverage.mjs",
   "counts": {
-    "registered": 69,
-    "publicApi": 69,
-    "operationDepth": 69,
+    "registered": 70,
+    "publicApi": 70,
+    "operationDepth": 70,
     "invocationOnly": 0,
     "pending": 0,
     "unitOnly": 0,
@@ -1664,6 +1664,38 @@
       "declared": ["success", "denial", "isolation"],
       "required": ["route", "service", "success", "authorization", "isolation", "denial"],
       "provided": ["authorization", "denial", "isolation", "route", "service", "success"],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "tech.technician-me-queue",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/technicians/me/queue",
+      "public": false,
+      "files": ["tests/backend/br-01-technician-identity.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "isolation"],
+      "declared": ["success", "denial", "cross-tenant", "isolation"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "isolation",
+        "denial",
+        "cross-tenant"
+      ],
+      "provided": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false
