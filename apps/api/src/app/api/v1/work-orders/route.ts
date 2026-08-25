@@ -58,6 +58,17 @@ const Query = z
     kind: z.enum(WORK_ORDER_KINDS).optional(),
     openedFrom: z.string().datetime({ offset: true }).optional(),
     openedTo: z.string().datetime({ offset: true }).optional(),
+    /**
+     * BR-05. Narrows to work orders whose reception visit names this partner in
+     * ANY role — a customer search wants every car they are connected to.
+     *
+     * There is deliberately NO `asOf` parameter beside it. The reference instant
+     * for the customer projection is server-derived from the work order; a
+     * client-supplied one would be an oracle and a way to read a party role out
+     * of its window. `.strict()` makes sending one a 422 rather than a silent
+     * ignore.
+     */
+    customerId: schemas.uuid.optional(),
     cursor: schemas.cursor.optional(),
     limit: schemas.limit.optional(),
   })
@@ -97,6 +108,7 @@ export async function GET(request: Request): Promise<Response> {
             kind: query.kind,
             openedFrom: query.openedFrom === undefined ? undefined : new Date(query.openedFrom),
             openedTo: query.openedTo === undefined ? undefined : new Date(query.openedTo),
+            customerId: query.customerId,
           },
           { cursor: query.cursor, limit: query.limit }
         ),

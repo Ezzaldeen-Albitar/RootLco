@@ -143,5 +143,11 @@ describe('browser-exposed service-role scanner', () => {
     // began exceeding the default 5 s under full-suite load. Stated here rather
     // than raised globally, so the budget cannot quietly cover a different test
     // that has genuinely regressed.
-  }, 30_000);
+    //
+    // 30 s -> 120 s for the same reason a second time: PRE-P1-29 has added ~2400
+    // tracked files since, and this began timing out under full-tier load while
+    // passing alone and passing on the hosted Linux runner. The note above was
+    // written when the first raise happened; this is that argument recurring,
+    // which is itself the evidence that the cost really does track the tree.
+  }, 120_000);
 });
