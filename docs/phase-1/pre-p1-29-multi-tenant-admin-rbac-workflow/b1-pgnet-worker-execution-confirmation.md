@@ -86,3 +86,33 @@ provider — remains a platform-posture decision, not a B1 rider.
 required" is **false as stated**: the primitive is a `pg_temp` callable, non-
 persistent but worker-reachable for the window the attacker controls, and the chain
 closes to superuser. B1 cannot be merged or declared GO while this is open.
+
+## Decision (2026-08-25) — root fix via provider, blocker stays open
+
+The Owner selected the **provider / root-fix path**: pursue the runbook §5
+remediation (`REVOKE ALL ON net._http_response FROM PUBLIC`,
+`REVOKE ALL ON net.http_request_queue FROM PUBLIC`,
+`REVOKE USAGE ON SCHEMA net FROM PUBLIC`, and the wrapper/sequence revokes)
+executed by an **authorised principal** — `net.*` is owned by `supabase_admin`
+and the migration role `postgres` is not a superuser, so this requires provider
+engagement per runbook §8b (categories A–E). The repo-controllable `TEMPORARY`
+co-factor revoke was **not** shipped (its PostgREST/service-role blast radius is
+unvalidated locally, per §8a).
+
+The §5 precondition was re-verified at the current head: **zero pg_net call sites**
+in `supabase/ apps/ src/ scripts/ .github/` (the only match is the classification
+note in `scripts/ci/rls-matrix.mjs`), so removing `net.*` from every app role is
+safe for RootLco.
+
+`scripts/security/pgnet-escalation-verifier.mjs` is the §7 postcheck instrument:
+modelling the §5 revoke on the isolated candidate flipped it from **BLOCK** to
+**PASS** (residual defence-in-depth warning only: `TEMPORARY` present but no
+reachable worker-relation trigger), and the candidate was restored byte-for-byte
+to its baseline `net` ACL (`=arwdDxtm/supabase_admin`). When the provider applies
+§5 against a real target, this verifier — run against that target — is the
+evidence that closes the blocker, alongside the executable exposure pin in
+`tests/db/pre-p1-29-b1-platform-privilege-closure.test.ts` flipping from
+"pinned exposure" to "pinned absence".
+
+**Status until then:** `B1-PGNET-BLOCKER` OPEN; B1 not merged; BR-04 and the rest
+of PRE-P1-29 remain paused.
