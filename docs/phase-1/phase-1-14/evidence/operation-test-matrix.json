@@ -1,11 +1,11 @@
 {
   "generatedFrom": "scripts/check-operation-test-coverage.mjs",
   "counts": {
-    "registered": 317,
+    "registered": 325,
     "publicApi": 317,
     "internal": 0,
     "withRequiredEvidence": 317,
-    "invocationOnly": 0,
+    "invocationOnly": 8,
     "p1_15": {
       "registered": 28,
       "publicApi": 28,
@@ -47,13 +47,13 @@
       "metadataOnly": 0
     },
     "p1_19": {
-      "registered": 70,
+      "registered": 78,
       "publicApi": 70,
       "operationDepth": 70,
-      "invocationOnly": 0,
+      "invocationOnly": 8,
       "pending": 0,
       "unitOnly": 0,
-      "unreferenced": 0,
+      "unreferenced": 8,
       "metadataOnly": 0
     },
     "p1_20": {
@@ -2264,6 +2264,70 @@
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false
+    },
+    {
+      "id": "dia.template-create",
+      "files": [],
+      "referenced": false,
+      "required": [],
+      "provided": [],
+      "missing": ["<undeclared>"]
+    },
+    {
+      "id": "dia.template-detail",
+      "files": [],
+      "referenced": false,
+      "required": [],
+      "provided": [],
+      "missing": ["<undeclared>"]
+    },
+    {
+      "id": "dia.template-item-create",
+      "files": [],
+      "referenced": false,
+      "required": [],
+      "provided": [],
+      "missing": ["<undeclared>"]
+    },
+    {
+      "id": "dia.template-list",
+      "files": [],
+      "referenced": false,
+      "required": [],
+      "provided": [],
+      "missing": ["<undeclared>"]
+    },
+    {
+      "id": "dia.template-update",
+      "files": [],
+      "referenced": false,
+      "required": [],
+      "provided": [],
+      "missing": ["<undeclared>"]
+    },
+    {
+      "id": "dia.template-version-create",
+      "files": [],
+      "referenced": false,
+      "required": [],
+      "provided": [],
+      "missing": ["<undeclared>"]
+    },
+    {
+      "id": "dia.template-version-list-publishable",
+      "files": [],
+      "referenced": false,
+      "required": [],
+      "provided": [],
+      "missing": ["<undeclared>"]
+    },
+    {
+      "id": "dia.template-version-status-set",
+      "files": [],
+      "referenced": false,
+      "required": [],
+      "provided": [],
+      "missing": ["<undeclared>"]
     },
     {
       "id": "iam.approval-limit-create",
