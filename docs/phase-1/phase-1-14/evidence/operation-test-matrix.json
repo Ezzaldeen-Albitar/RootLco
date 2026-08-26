@@ -1,11 +1,11 @@
 {
   "generatedFrom": "scripts/check-operation-test-coverage.mjs",
   "counts": {
-    "registered": 331,
+    "registered": 334,
     "publicApi": 331,
     "internal": 0,
     "withRequiredEvidence": 331,
-    "invocationOnly": 0,
+    "invocationOnly": 3,
     "p1_15": {
       "registered": 28,
       "publicApi": 28,
@@ -47,13 +47,13 @@
       "metadataOnly": 0
     },
     "p1_19": {
-      "registered": 84,
+      "registered": 87,
       "publicApi": 84,
       "operationDepth": 84,
-      "invocationOnly": 0,
+      "invocationOnly": 3,
       "pending": 0,
       "unitOnly": 0,
-      "unreferenced": 0,
+      "unreferenced": 3,
       "metadataOnly": 0
     },
     "p1_20": {
@@ -11152,6 +11152,22 @@
       "unitOnly": false
     },
     {
+      "id": "wo.job-evidence-list",
+      "files": [],
+      "referenced": false,
+      "required": [],
+      "provided": [],
+      "missing": ["<undeclared>"]
+    },
+    {
+      "id": "wo.job-evidence-record",
+      "files": [],
+      "referenced": false,
+      "required": [],
+      "provided": [],
+      "missing": ["<undeclared>"]
+    },
+    {
       "id": "wo.job-history",
       "surface": "public-api",
       "method": "GET",
@@ -11746,6 +11762,14 @@
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false
+    },
+    {
+      "id": "wo.work-order-evidence-list",
+      "files": [],
+      "referenced": false,
+      "required": [],
+      "provided": [],
+      "missing": ["<undeclared>"]
     },
     {
       "id": "wo.work-order-history",

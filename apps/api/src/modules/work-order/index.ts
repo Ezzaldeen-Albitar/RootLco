@@ -117,9 +117,16 @@ export {
   type WorkOrderKind,
 } from './domain/work-order';
 
-export type { JobBoardRow, WorkLogEntryRow } from './data/job-board-repository';
+export type {
+  JobBoardRow,
+  JobEvidenceRow,
+  WorkLogEntryRow,
+  WorkOrderEvidenceRow,
+} from './data/job-board-repository';
 export {
+  MAX_JOB_EVIDENCE_NOTE,
   MAX_WORK_LOG_ENTRY,
+  RECOMMENDED_EVIDENCE_TYPES,
   QC_OVERALL_RESULTS,
   STATE_CODE_PATTERN,
   type JobAssignmentView,

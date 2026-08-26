@@ -52,11 +52,17 @@ import { pageRequest, type Page } from '@/server/db/pagination';
 // repository — the module-boundary gate refuses that, and its allow-list is
 // capped at the two closure predicates the database guard itself joins across.
 import { technicianModule } from '@/modules/technician';
+// BR-07. The refused-state rule and the version's scan state both belong to
+// shared-services — `shared.document_versions` is its table. Imported, never
+// re-declared: the constant already existed in three places before this slice.
+import { EVIDENCE_REFUSED_STATES, sharedServicesModule } from '@/modules/shared-services';
 import {
   JOB_BOARD_ORDER,
   WORK_LOG_ORDER,
   type JobBoardRepository,
   type JobBoardRow,
+  type JobEvidenceRow,
+  type WorkOrderEvidenceRow,
   type WorkLogEntryRow,
 } from '../data/job-board-repository';
 import type { WorkOrderCatalogService } from './work-order-catalog-service';
@@ -76,6 +82,43 @@ export type QcOverallResult = (typeof QC_OVERALL_RESULTS)[number];
 export const STATE_CODE_PATTERN = /^[a-z][a-z0-9_]{1,62}$/;
 
 export const MAX_WORK_LOG_ENTRY = 4000;
+
+/**
+ * The note bound for JOB evidence.
+ *
+ * Deliberately NOT the domain's `MAX_EVIDENCE_NOTE`, which is 500 and belongs to
+ * customer-approval evidence. The BR-07 contract specifies 1..1000 here, so the
+ * two are different numbers for different columns and share no name — reusing
+ * one identifier for both would silently move whichever limit was written second.
+ *
+ * `evidenceType` reuses the domain's MAX_EVIDENCE_TYPE unchanged: that one IS 64
+ * on every evidence table, so a second constant would be a second copy.
+ */
+export const MAX_JOB_EVIDENCE_NOTE = 1000;
+
+/**
+ * The RECOMMENDED evidence vocabulary — a convention, not an invariant.
+ *
+ * `wo.job_evidence.evidence_type` is free text with only a non-blank CHECK,
+ * exactly like both sibling evidence tables. Adding a CHECK here would give
+ * three tables three contracts for one field name, so the column stays open and
+ * this list is what the API recommends and a picker should offer, with an
+ * "other" escape.
+ *
+ * Exported so the value is stated ONCE and a consumer cannot quietly invent a
+ * different list. It is deliberately NOT used to validate: whatever a UI offers
+ * becomes the de-facto vocabulary, and pretending otherwise would be claiming a
+ * control that does not exist.
+ */
+export const RECOMMENDED_EVIDENCE_TYPES: readonly string[] = Object.freeze([
+  'before',
+  'after',
+  'defect',
+  'part_removed',
+  'part_fitted',
+  'measurement',
+  'other',
+]);
 
 export interface PageInput {
   readonly cursor?: string | undefined;
@@ -347,5 +390,146 @@ export class JobBoardService extends ApplicationService {
       });
     }
     return error;
+  }
+
+  // ---- Job evidence (BR-07) ----------------------------------------------
+
+  /**
+   * Binds an existing document version to a job as work evidence.
+   *
+   * TWO STEPS, deliberately not one. The version is captured through the
+   * attachments chain first and bound here second. A single upload-and-bind
+   * would have to hold `shared.document.manage` AND this job authority in one
+   * declaration — widening one of them — and would put file bytes through a
+   * work-order route, duplicating a subsystem that already ships.
+   *
+   * NO state compatibility check: evidence may be bound in ANY job state,
+   * including terminal. A technician evidencing finished work is the normal
+   * case, and refusing it would lose the evidence rather than defer it.
+   */
+  async recordJobEvidence(
+    db: DbHandle,
+    jobId: string,
+    input: {
+      readonly documentVersionId: string;
+      readonly evidenceType: string;
+      readonly note?: string | undefined;
+    },
+    authorizeScope?: ScopeAuthorizer
+  ): Promise<JobEvidenceRow> {
+    const scope = await this.board.jobScope(db, jobId);
+    if (scope === null) {
+      throw new AppFailure('ERR-RES-001', { message: 'Job was not found' });
+    }
+    if (authorizeScope !== undefined) {
+      await authorizeScope({ companyId: scope.companyId, branchId: scope.branchId });
+    }
+
+    /*
+     * The scan gate, BEFORE any write, so a refused version never leaves a row.
+     *
+     * `pending` is permitted here and refused at DOWNLOAD, and that asymmetry is
+     * deliberate rather than an oversight — see EVIDENCE_REFUSED_STATES. Capture
+     * happens when the work happens; a scan takes as long as it takes.
+     */
+    const state = await sharedServicesModule().attachments.scanState(db, input.documentVersionId);
+    if (EVIDENCE_REFUSED_STATES.includes(state.status)) {
+      throw new AppFailure('ERR-DOC-001', {
+        message: `Document version is "${state.status}" and may not be attached as work evidence`,
+      });
+    }
+
+    let evidence: JobEvidenceRow;
+    try {
+      evidence = await this.board.insertJobEvidence(db, {
+        jobId,
+        companyId: scope.companyId,
+        branchId: scope.branchId,
+        documentVersionId: input.documentVersionId,
+        evidenceType: input.evidenceType,
+        note: input.note ?? null,
+      });
+    } catch (error) {
+      if (isSqlState(error, SQLSTATE.foreignKeyViolation)) {
+        // fk_job_evidence_version is (tenant_id, document_version_id): a version
+        // from another tenant does not exist to be referenced. Reported as a
+        // missing resource, never as a raw 23503 and never as a 500.
+        throw new AppFailure('ERR-RES-001', {
+          message: `Document version ${input.documentVersionId} is not visible in this scope`,
+          cause: error,
+        });
+      }
+      if (isSqlState(error, SQLSTATE.checkViolation)) {
+        throw new AppFailure('ERR-VAL-001', {
+          message: 'evidenceType may not be blank and note may not be blank when present',
+          safeDetails: { violations: [{ path: 'body.evidenceType', rule: 'blank' }] },
+        });
+      }
+      if (isSqlState(error, SQLSTATE.insufficientPrivilege)) {
+        throw new AppFailure('ERR-IAM-001', {
+          message: 'This job is outside the scope your access grants',
+        });
+      }
+      throw error;
+    }
+
+    await appendAudit(db, {
+      action: 'wo.job.evidence_recorded',
+      entityType: 'wo.job',
+      entityId: jobId,
+      companyId: scope.companyId,
+      branchId: scope.branchId,
+      details: [
+        { field: 'job_evidence_id', classification: 'internal', value: evidence.id },
+        // The VERSION, never a storage key and never a signed URL: the
+        // attachments contract keeps deciding who may open it.
+        {
+          field: 'document_version_id',
+          classification: 'internal',
+          value: evidence.documentVersionId,
+        },
+        { field: 'evidence_type', classification: 'public', value: evidence.evidenceType },
+      ],
+    });
+
+    return evidence;
+  }
+
+  /** One job's evidence. Scope-checked exactly as the write is. */
+  async listJobEvidence(
+    db: DbHandle,
+    jobId: string,
+    authorizeScope?: ScopeAuthorizer
+  ): Promise<readonly JobEvidenceRow[]> {
+    const scope = await this.board.jobScope(db, jobId);
+    if (scope === null) {
+      throw new AppFailure('ERR-RES-001', { message: 'Job was not found' });
+    }
+    if (authorizeScope !== undefined) {
+      await authorizeScope({ companyId: scope.companyId, branchId: scope.branchId });
+    }
+    return this.board.evidenceForJob(db, jobId);
+  }
+
+  /**
+   * A work order's evidence across every one of its jobs.
+   *
+   * Unpaged: a work order's evidence is bounded by its job count in practice.
+   * If that proves wrong it becomes a PAGED read in a later slice rather than a
+   * silently truncated one.
+   */
+  async listWorkOrderEvidence(
+    db: DbHandle,
+    workOrderId: string,
+    authorizeScope?: ScopeAuthorizer
+  ): Promise<readonly WorkOrderEvidenceRow[]> {
+    const scope = await this.board.workOrderScope(db, workOrderId);
+    if (scope === null) {
+      throw new AppFailure('ERR-RES-001', { message: 'Work order was not found' });
+    }
+    if (authorizeScope !== undefined) {
+      await authorizeScope({ companyId: scope.companyId, branchId: scope.branchId });
+    }
+    return this.board.evidenceForWorkOrder(db, workOrderId);
   }
 }

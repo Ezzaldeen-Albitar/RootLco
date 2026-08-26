@@ -81,6 +81,29 @@ export interface JobBoardRow {
   readonly hasOpenLaborSession: boolean;
 }
 
+/**
+ * One bound piece of job evidence (PRE-P1-29-BR-07).
+ *
+ * NO storage key, NO URL, NO checksum and NO bytes — deliberately (`T-09`). A
+ * `documentVersionId` is a REFERENCE the attachments module resolves under its
+ * own authorization; putting a storage URL here would make evidence readable by
+ * reference and route around that check entirely.
+ */
+export interface JobEvidenceRow {
+  readonly id: string;
+  readonly jobId: string;
+  readonly documentVersionId: string;
+  readonly evidenceType: string;
+  readonly note: string | null;
+  readonly createdAt: string;
+  readonly createdBy: string;
+}
+
+/** A work order's evidence, carrying the title of the job it evidences. */
+export interface WorkOrderEvidenceRow extends JobEvidenceRow {
+  readonly jobTitle: string;
+}
+
 export interface WorkLogEntryRow {
   readonly id: string;
   readonly jobId: string;
@@ -426,5 +449,164 @@ export class JobBoardRepository extends Repository {
       [context.principal.tenantId, jobId]
     );
     return result.rows[0]?.created_at ?? null;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Job evidence (BR-07)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Binds one document version to one job.
+   *
+   * `company_id`/`branch_id` come from the JOB row and `created_by` from the
+   * resolved principal — never from the request. A caller cannot file evidence
+   * into a branch it merely named, and cannot attribute it to somebody else.
+   *
+   * Append-only: no update and no delete here, and none at the grant layer
+   * either, so a mis-attached photograph is permanent.
+   */
+  async insertJobEvidence(
+    db: DbHandle,
+    input: {
+      readonly jobId: string;
+      readonly companyId: string;
+      readonly branchId: string;
+      readonly documentVersionId: string;
+      readonly evidenceType: string;
+      readonly note: string | null;
+    }
+  ): Promise<JobEvidenceRow> {
+    const context = this.assertContext(db);
+    const result = await this.run<{
+      id: string;
+      job_id: string;
+      document_version_id: string;
+      evidence_type: string;
+      note: string | null;
+      created_at: string;
+      created_by: string;
+    }>(
+      db,
+      `INSERT INTO wo.job_evidence
+         (tenant_id, company_id, branch_id, job_id, document_version_id,
+          evidence_type, note, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+       RETURNING id, job_id, document_version_id, evidence_type, note,
+                 created_at::text AS created_at, created_by`,
+      [
+        context.principal.tenantId,
+        input.companyId,
+        input.branchId,
+        input.jobId,
+        input.documentVersionId,
+        input.evidenceType,
+        input.note,
+        context.principal.userId,
+      ]
+    );
+    const row = result.rows[0];
+    if (row === undefined) throw new Error('job evidence insert returned no row');
+    return {
+      id: row.id,
+      jobId: row.job_id,
+      documentVersionId: row.document_version_id,
+      evidenceType: row.evidence_type,
+      note: row.note,
+      createdAt: row.created_at,
+      createdBy: row.created_by,
+    };
+  }
+
+  /** One job's evidence, oldest first. Unpaged, matching the diagnostic list. */
+  async evidenceForJob(db: DbHandle, jobId: string): Promise<readonly JobEvidenceRow[]> {
+    const context = this.assertContext(db);
+    const result = await this.run<{
+      id: string;
+      job_id: string;
+      document_version_id: string;
+      evidence_type: string;
+      note: string | null;
+      created_at: string;
+      created_by: string;
+    }>(
+      db,
+      `SELECT id, job_id, document_version_id, evidence_type, note,
+              created_at::text AS created_at, created_by
+         FROM wo.job_evidence
+        WHERE tenant_id = $1 AND job_id = $2
+        ORDER BY created_at ASC, id ASC`,
+      [context.principal.tenantId, jobId]
+    );
+    return result.rows.map((row) => ({
+      id: row.id,
+      jobId: row.job_id,
+      documentVersionId: row.document_version_id,
+      evidenceType: row.evidence_type,
+      note: row.note,
+      createdAt: row.created_at,
+      createdBy: row.created_by,
+    }));
+  }
+
+  /**
+   * A work order's evidence across ALL its jobs, in one statement.
+   *
+   * The join is what makes a work-order gallery possible without one call per
+   * job. `jobTitle` travels with each row because a gallery that shows six
+   * photographs and cannot say which piece of work each evidences is not much
+   * of a gallery.
+   */
+  async evidenceForWorkOrder(
+    db: DbHandle,
+    workOrderId: string
+  ): Promise<readonly WorkOrderEvidenceRow[]> {
+    const context = this.assertContext(db);
+    const result = await this.run<{
+      id: string;
+      job_id: string;
+      document_version_id: string;
+      evidence_type: string;
+      note: string | null;
+      created_at: string;
+      created_by: string;
+      job_title: string;
+    }>(
+      db,
+      `SELECT e.id, e.job_id, e.document_version_id, e.evidence_type, e.note,
+              e.created_at::text AS created_at, e.created_by, j.title AS job_title
+         FROM wo.job_evidence e
+         JOIN wo.jobs j
+           ON j.tenant_id = e.tenant_id AND j.company_id = e.company_id
+          AND j.branch_id = e.branch_id AND j.id = e.job_id
+        WHERE e.tenant_id = $1 AND j.work_order_id = $2 AND j.deleted_at IS NULL
+        ORDER BY e.created_at ASC, e.id ASC`,
+      [context.principal.tenantId, workOrderId]
+    );
+    return result.rows.map((row) => ({
+      id: row.id,
+      jobId: row.job_id,
+      documentVersionId: row.document_version_id,
+      evidenceType: row.evidence_type,
+      note: row.note,
+      createdAt: row.created_at,
+      createdBy: row.created_by,
+      jobTitle: row.job_title,
+    }));
+  }
+
+  /** The scope of one work order, for the check that precedes the read. */
+  async workOrderScope(
+    db: DbHandle,
+    workOrderId: string
+  ): Promise<{ readonly companyId: string; readonly branchId: string } | null> {
+    const context = this.assertContext(db);
+    const result = await this.run<{ company_id: string; branch_id: string }>(
+      db,
+      `SELECT company_id, branch_id FROM wo.work_orders
+        WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL`,
+      [context.principal.tenantId, workOrderId]
+    );
+    const row = result.rows[0];
+    return row === undefined ? null : { companyId: row.company_id, branchId: row.branch_id };
   }
 }
