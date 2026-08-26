@@ -417,6 +417,8 @@ export async function deleteTenantCascade(admin: Pool, tenantIds: string[]): Pro
   // teardown fails with a foreign-key violation and takes EVERY suite that uses
   // these fixtures down with it, not just the one that wrote a log.
   await deleteFrom('wo.job_work_logs');
+  // BR-07. Same RESTRICT rule as the work log: the evidence goes before the job.
+  await deleteFrom('wo.job_evidence');
   await deleteFrom('wo.jobs');
   await deleteFrom('wo.work_order_status_history');
   await deleteFrom('wo.work_orders');

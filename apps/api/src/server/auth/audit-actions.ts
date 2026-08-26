@@ -1189,6 +1189,13 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
       'A progress entry was appended to a job work log (PRE-P1-29-BR-06). Written under tech.labor.record rather than wo.job.manage, because the log is the technician’s narration of the labour they are already recording — requiring a management code would mean a technician cannot describe their own work. wo.job_work_logs is append-only at the GRANT layer (SELECT + INSERT to app_runtime and nothing else), so there is no corresponding updated or deleted action and there cannot be one: a correction is a new entry. The audit row records the entry’s length rather than its text, because the entry is the technician’s own words about the vehicle in front of them and is already stored, attributed, in the log itself.',
   },
   {
+    code: 'wo.job.evidence_recorded',
+    class: 'privileged',
+    entityType: 'wo.job',
+    description:
+      'A captured document version was bound to a job as work evidence (PRE-P1-29-BR-07, Owner requirement 12). Written under tech.labor.record rather than shared.document.manage: that code governs the DOCUMENT — uploading, versioning, linking — while binding an existing version to a job is a work-order act about a work-order subject, exactly as dia.diagnostic-evidence-record carries dia.diagnostic.record. wo.job_evidence is append-only at the GRANT layer, so there is no corresponding updated or deleted action and there cannot be one: evidence cannot be unbound. The audit row records the document VERSION id and never a storage key or a signed URL, because the attachments contract keeps deciding who may open it.',
+  },
+  {
     code: 'wo.job.updated',
     class: 'privileged',
     entityType: 'wo.job',

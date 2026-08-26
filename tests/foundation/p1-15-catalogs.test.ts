@@ -412,6 +412,7 @@ const EXPECTED_AUDIT_ACTIONS = [
   'wo.job.assigned',
   'wo.job.assignment_ended',
   'wo.job.created',
+  'wo.job.evidence_recorded',
   'wo.job.state_changed',
   'wo.job.updated',
   'wo.job.work_log_recorded',

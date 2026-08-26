@@ -219,6 +219,8 @@ import '@/app/api/v1/work-orders/[workOrderId]/jobs/route';
 import '@/app/api/v1/jobs/route';
 import '@/app/api/v1/jobs/[jobId]/route';
 import '@/app/api/v1/jobs/[jobId]/work-logs/route';
+import '@/app/api/v1/jobs/[jobId]/evidence/route';
+import '@/app/api/v1/work-orders/[workOrderId]/evidence/route';
 import '@/app/api/v1/work-order-catalogue/route';
 import '@/app/api/v1/quality-controls/route';
 import '@/app/api/v1/jobs/[jobId]/transition/route';

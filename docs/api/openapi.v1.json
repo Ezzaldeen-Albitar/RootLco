@@ -3,7 +3,7 @@
   "info": {
     "title": "Commercial Multi-Tenant Automotive CRM and ERP Platform — API",
     "version": "0.1.0",
-    "summary": "331 operations across 19 backend modules (billing, crm, delivery, diagnostics, iam, inventory, meta, payments, pricing, quality, quotation, reception, reporting, service-catalog, shared-services, technician, vehicle, warranty, work-order).",
+    "summary": "334 operations across 19 backend modules (billing, crm, delivery, diagnostics, iam, inventory, meta, payments, pricing, quality, quotation, reception, reporting, service-catalog, shared-services, technician, vehicle, warranty, work-order).",
     "description": "Shared components and conventions every backend module composes, and the operations built on them. Sessions are bearer tokens issued by the authentication provider recorded in ADR-019; authorization is evaluated in the database on every request and is never carried in a token. Money is an exact decimal string with an ISO-4217 code, never a JSON number. Pages are opaque-cursor; offset paging is not offered. Every failure is an RFC 9457 problem document carrying a stable catalog code. The product name is deliberately absent: it is pending owner approval (ADR-011).",
     "contact": {
       "name": "RootLco — Root Link Company"
@@ -8206,6 +8206,118 @@
         "x-scope": "branch",
         "x-audit-class": "none",
         "x-rate-limit-policy": "expensive-read",
+        "x-cache-category": "never"
+      }
+    },
+    "/api/v1/jobs/{jobId}/evidence": {
+      "get": {
+        "operationId": "wo.job-evidence-list",
+        "summary": "List the work evidence bound to one job, oldest first.",
+        "tags": ["work-order"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["wo.work_order.read"],
+        "x-scope": "branch",
+        "x-audit-class": "none",
+        "x-rate-limit-policy": "low-risk-metadata",
+        "x-cache-category": "never"
+      },
+      "post": {
+        "operationId": "wo.job-evidence-record",
+        "summary": "Bind a captured document version to a job as work evidence.",
+        "tags": ["work-order"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["tech.labor.record"],
+        "x-scope": "branch",
+        "x-audit-class": "privileged",
+        "x-rate-limit-policy": "standard-command",
         "x-cache-category": "never"
       }
     },
@@ -18227,6 +18339,60 @@
       "get": {
         "operationId": "wo.work-order-closure-eligibility",
         "summary": "Report every unmet closure condition for a work order.",
+        "tags": ["work-order"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["wo.work_order.read"],
+        "x-scope": "branch",
+        "x-audit-class": "none",
+        "x-rate-limit-policy": "expensive-read",
+        "x-cache-category": "never"
+      }
+    },
+    "/api/v1/work-orders/{workOrderId}/evidence": {
+      "get": {
+        "operationId": "wo.work-order-evidence-list",
+        "summary": "List the work evidence of a work order across all of its jobs.",
         "tags": ["work-order"],
         "parameters": [
           {

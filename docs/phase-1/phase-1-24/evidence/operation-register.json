@@ -1,9 +1,9 @@
 {
   "generatedBy": "scripts/p1-24-operation-register.mjs",
   "totals": {
-    "operations": 331,
-    "openapiPaths": 267,
-    "openapiOperations": 331,
+    "operations": 334,
+    "openapiPaths": 269,
+    "openapiOperations": 334,
     "openapiSchemas": 3,
     "events": 50,
     "eventsProduced": 47,
@@ -11,10 +11,10 @@
     "outboxForeignWriters": 0,
     "errorCodes": 28,
     "permissionCodes": 114,
-    "auditActions": 200
+    "auditActions": 201
   },
   "counts": {
-    "Covered": 331
+    "Covered": 334
   },
   "operations": [
     {
@@ -12320,6 +12320,86 @@
       "file": "apps/api/src/app/api/v1/jobs/[jobId]/route.ts"
     },
     {
+      "id": "wo.job-evidence-list",
+      "domain": "work-order",
+      "method": "GET",
+      "route": "/api/v1/jobs/{jobId}/evidence",
+      "permissions": ["wo.work_order.read"],
+      "public": false,
+      "scope": "branch",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/jobs/{jobId}/evidence",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "isolation",
+        "denial"
+      ],
+      "providedEvidence": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/br-07-work-and-diagnostic-evidence.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/jobs/[jobId]/evidence/route.ts"
+    },
+    {
+      "id": "wo.job-evidence-record",
+      "domain": "work-order",
+      "method": "POST",
+      "route": "/api/v1/jobs/{jobId}/evidence",
+      "permissions": ["tech.labor.record"],
+      "public": false,
+      "scope": "branch",
+      "transaction": "transactional write",
+      "auditClass": "privileged",
+      "auditAction": "wo.job.evidence_recorded",
+      "idempotent": true,
+      "versionGuarded": false,
+      "openapi": "POST /api/v1/jobs/{jobId}/evidence",
+      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "isolation",
+        "denial"
+      ],
+      "providedEvidence": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/br-07-work-and-diagnostic-evidence.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/jobs/[jobId]/evidence/route.ts"
+    },
+    {
       "id": "wo.job-history",
       "domain": "work-order",
       "method": "GET",
@@ -12920,6 +13000,44 @@
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/work-orders/[workOrderId]/route.ts"
+    },
+    {
+      "id": "wo.work-order-evidence-list",
+      "domain": "work-order",
+      "method": "GET",
+      "route": "/api/v1/work-orders/{workOrderId}/evidence",
+      "permissions": ["wo.work_order.read"],
+      "public": false,
+      "scope": "branch",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/work-orders/{workOrderId}/evidence",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "isolation",
+        "denial"
+      ],
+      "providedEvidence": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/br-07-work-and-diagnostic-evidence.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/work-orders/[workOrderId]/evidence/route.ts"
     },
     {
       "id": "wo.work-order-history",
