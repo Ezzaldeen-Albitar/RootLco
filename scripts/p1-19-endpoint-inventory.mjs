@@ -276,8 +276,7 @@ function publishedEvents() {
 const operations = [];
 for (const file of walk(API_ROOT)) {
   const source = readFileSync(file, 'utf8');
-  const notes = annotations(source);
-  const owners = successorOwners(source);
+  // No file-wide scan any more: attribution is per operation, below.
   for (const op of parseOperations(source, file)) {
     /*
      * Attribution is PER OPERATION, not per file, and BR-06 is why.
