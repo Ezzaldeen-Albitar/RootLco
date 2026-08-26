@@ -39,9 +39,9 @@ which costs this slice nothing, because `BR-08b` already exported every schema i
 | `apps/web/src/lib/contracts/*.ts`           | the mirror — 48 operations, 54 exported interfaces, four modules |
 | `scripts/ci/check-p1-29-payload-parity.mjs` | the parity gate                                                  |
 | `tests/ci/p1-29-payload-extraction.test.ts` | reads the zod schemas as VALUES, under `vitest`                  |
-| `tests/ci/p1-29-payload-parity.test.ts`     | `C1`–`C11`, 15 cases, every one a mutation                       |
+| `tests/ci/p1-29-payload-parity.test.ts`     | `C1`–`C11` and more, 25 cases, every one a mutation              |
 | `scripts/ci/check-p1-29-access.mjs`         | `gate-before-read` for P1-29, armed over an empty set            |
-| `tests/ci/p1-29-access-gate.test.ts`        | 7 cases, planting ungated pages                                  |
+| `tests/ci/p1-29-access-gate.test.ts`        | 14 cases, planting ungated pages                                 |
 | `tests/ci/vite-import-meta.d.ts`            | the one type the root tsconfig lacks, and why it must be ambient |
 
 Both gates are wired into `verify:policies` and registered in
@@ -52,12 +52,8 @@ locally and in hosted CI. A gate no workflow runs is a gate that does not exist 
 ## 3. The extraction mechanism, which is `BR-08b` paying off
 
 A `.mjs` gate cannot import a TypeScript route module. So the gate shells out to `vitest`, where
-`@/` resolves, and the schemas are read **as values** and converted with `z.toJSONSchema`:
-
-```
-GLOBBED 269 route modules
-EXTRACTED 48 / 48
-```
+`@/` resolves, and the schemas are read **as values** and converted with `z.toJSONSchema`: 269 route
+modules globbed, **48 / 48** P1-29 bodies converted.
 
 The contract only ever tested this against hand-written _reconstructions_ of two bodies. It now runs
 against the real ones, and recovers field names, the required/optional split, primitive types, enum
@@ -74,7 +70,7 @@ UNCONVERTIBLE:   2
   /notifications/route.ts        :: Body — Date cannot be represented in JSON Schema
 ```
 
-Both are outside P1-29 (`att.`, `shared.`), so all 48 bodies here convert. The fallback was narrowed
+Both are `shared.` operations — `shared.attachment-version-register` and `shared.notification-enqueue`, not the `att.` domain an earlier draft named, which does not exist — so both are outside P1-29 and all 48 bodies here convert. The fallback was narrowed
 to the same P1-29 census the gate computes, and the limit is **recorded rather than quietly worked
 around**: a later slice generalising this gate to the whole tree meets exactly those two walls, and
 should meet them as a known cost rather than as a surprise.
@@ -194,6 +190,59 @@ Seven mutations prove it bites, including the defect `check-p1-28-access.mjs` re
 docblock: a page whose only `holds` computes a **control capability** and denies nothing would read
 as gated to anything keyed on the first `holds` of any kind. This gate keys on `if (!holds(`.
 
+## 6.1 What the adversarial review found, and it was the gates
+
+Six independent reviewers over the branch, each finding handed to a separate agent told to refute it.
+The previous slice's review found nothing wrong with the code and three things wrong with the record.
+**This one found the opposite**, and the two worst findings were false greens in gates whose entire
+purpose is to prevent false greens.
+
+### The payload gate skipped type comparison for 36% of the surface — CRITICAL
+
+`compareType`'s pattern branch `return`ed unconditionally after checking only for an enum. Written for
+the four state vocabularies, it keyed on `spec.pattern !== undefined`, so it also exempted every uuid,
+ISO date-time, decimal string, currency code and DTC code — **50 of the surface's 140 field
+positions**. Reproduced: `toState: string` changed to `number`, `boolean`, `string[]`, and a reference
+to an interface nothing declares. All four printed `0 problem(s)`.
+
+Requiredness and field-name checks still ran, so exactly the TYPE half was lost — the half a reader of
+§5's table would assume was covered, because that table lists "primitive type" as compared.
+
+### Nullability was computed and never compared — HIGH
+
+`describeType` produced a `nullable` flag that nothing read. `string | null` → `string` and `string` →
+`string | null` both passed. These are opposite mistakes and both matter: dropping `| null` on
+`wo.job-update.jobType` makes CLEARING the field unreachable, because omit means "leave alone" and
+null means "clear"; inventing one promises a request the API refuses.
+
+### `gate-before-read` had four false negatives — HIGH
+
+Every hole was a page that should have been refused and was not: a negated check falling through
+instead of returning; a docblock quoting the rule, which armed the gate for a page that had none;
+`await Promise.all([...])` and `await api.listX()` reads, invisible to a bare-identifier regex; and
+seven P1-29 resource segments missing from a hand-written list, so ungated pages under them were not
+violations — they were not even pages, and the run printed the reassuring ZERO-pages banner.
+
+**The fix was to stop reimplementing a rule that already existed.** `denyAndReturnGate` and
+`stripComments` are exported from the P1-28 gates and already knew every one of those shapes. The
+sibling rule forbids MODIFYING those files — both remain byte-identical — not importing them, and a
+second, weaker implementation of the same rule was never the point of it.
+
+The segment list is now DERIVED from the operation register rather than hand-written. A hand-frozen
+list is right for a MIRROR, where silent growth grows the thing being checked; it is wrong for a
+coverage rule, where silent growth grows the rule's REACH. Twelve resource roots, and a new P1-29
+operation extends the gate automatically.
+
+### And the records were wrong too
+
+The design document promised a shared contracts module justified by `QueueEntry` — neither exists,
+and `QueueEntry` is a **response** type this request-only mirror has no reason to carry. It cited
+`INS-14` for the feature-import rule; `INS-14` is "reviewer separation compares the report's creator
+only". It said four fields carry the slug regex; six do. It attributed eight declared omissions to
+`work-order-contract.ts` — the P1-28 precedent, a **different file sharing a basename**, which
+declares none. And it printed a console transcript no shipped code emits. All corrected in place, with
+the correction recorded rather than swapped.
+
 ## 7. Both P1-28 gates are byte-unchanged
 
 `check-p1-28-adapter-reachability.mjs` and `check-p1-28-access.mjs` are what P1-28's seal rests on.
@@ -218,17 +267,17 @@ Widening either to reach P1-29 would change a gate a sealed phase depends on, so
 
 ## 9. Gates
 
-| gate                                        | result                                                       |
-| ------------------------------------------- | ------------------------------------------------------------ |
-| `typecheck` (root) · `typecheck:web`        | green                                                        |
-| `lint`                                      | green                                                        |
-| `format:check` · `format:check:api`         | green                                                        |
-| `verify:contracts`                          | green — 334 operations, 269 paths                            |
-| `verify:inventories`                        | green                                                        |
-| `validate:command-coverage`                 | **88/88** required commands reachable locally and hosted     |
-| `validate:p1-29-payload-parity`             | 87 in scope, 51 writes, 48 bodies, 54 interfaces, 0 problems |
-| `validate:p1-29-access`                     | 0 pages, rule armed, 0 violations                            |
-| `verify:policies`                           | green                                                        |
-| `tests/ci/p1-29-payload-parity.test.ts`     | **15 / 15** — `C1`–`C11`                                     |
-| `tests/ci/p1-29-access-gate.test.ts`        | **7 / 7**                                                    |
-| `tests/ci/p1-29-payload-extraction.test.ts` | **1 / 1** — 48 / 48 converted                                |
+| gate                                        | result                                                        |
+| ------------------------------------------- | ------------------------------------------------------------- |
+| `typecheck` (root) · `typecheck:web`        | green                                                         |
+| `lint`                                      | green                                                         |
+| `format:check` · `format:check:api`         | green                                                         |
+| `verify:contracts`                          | green — 334 operations, 269 paths                             |
+| `verify:inventories`                        | green                                                         |
+| `validate:command-coverage`                 | **88/88** required commands reachable locally and hosted      |
+| `validate:p1-29-payload-parity`             | 87 in scope, 51 writes, 48 bodies, 54 interfaces, 0 problems  |
+| `validate:p1-29-access`                     | 0 pages, 12 roots derived, rule armed, 0 violations           |
+| `verify:policies`                           | green                                                         |
+| `tests/ci/p1-29-payload-parity.test.ts`     | **25 / 25** — `C1`–`C11` plus the two gate holes review found |
+| `tests/ci/p1-29-access-gate.test.ts`        | **14 / 14** — four of them the review's false negatives       |
+| `tests/ci/p1-29-payload-extraction.test.ts` | **1 / 1** — 48 / 48 converted                                 |

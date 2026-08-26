@@ -19,7 +19,7 @@ Measured against `a30e81e3` at **334 operations**:
 | writes                        | 35                          | **51**                                                                                 |
 | writes carrying a body        | **34**                      | **48**                                                                                 |
 | bodyless writes               | `{tech.labor-session-stop}` | **3** — plus `tech.technician-availability-withdraw`, `tech.technician-skill-withdraw` |
-| state-vocabulary regex fields | 3                           | **4** — `wo.job-create.state` is the fourth                                            |
+| state-vocabulary regex fields | 3                           | **4** state vocabularies, of **6** fields carrying the regex — see §7                  |
 | closed enums named            | 4                           | **17**                                                                                 |
 | the evidence-body collision   | "three-way after `BR-07`"   | **three-way** — the contract was right; see §1.2                                       |
 
@@ -75,10 +75,11 @@ strength of a coincidence.
 end to end rather than taken on faith: a `vitest` run globs every route module under
 `apps/api/src/app/api/v1/**/route.ts` and converts each operation's body with `z.toJSONSchema`.
 
-```
-GLOBBED 269 route modules
-EXTRACTED 48 / 48
-```
+269 route modules are globbed and all **48 / 48** P1-29 bodies convert. (An earlier draft of this
+document showed those two figures as a `GLOBBED … EXTRACTED …` console transcript. They were real
+measurements from a scratch version of the extractor, but the shipped one prints nothing, so a reader
+could not reproduce the lines by running anything. Quoting output no code emits is the same defect as
+quoting a file inaccurately, and it is worth more to say the numbers plainly.)
 
 `import.meta.glob` is what makes this need no generated import list, and `vitest` is what makes `@/`
 resolve. A plain `.mjs` script cannot import TypeScript route modules, so the extraction runs there
@@ -119,15 +120,25 @@ here, and the repository has already written down why.** There is no `work-order
 Creating four such feature directories to hold nothing but DTOs would commit the frontend lane to a
 decomposition it has not made.
 
-**The mirror therefore lives under `apps/web/src/lib/contracts/`**, one module per domain, with a
-shared module for the types more than one domain needs. This also satisfies `INS-14` — _a feature may
-never import another feature_ — **by construction rather than by discipline**, because `lib/` is not
-a feature and every feature may already import it, exactly as they import `CursorPage<T>` from
+**The mirror therefore lives under `apps/web/src/lib/contracts/`**, one module per domain. This
+satisfies _a feature may never import another feature_ — the rule
+`features/receptions/work-order-contract.ts:23`, `support-api.ts:29` and `catalogue-api.ts:29` each
+state in their own docblocks — **by construction rather than by discipline**, because `lib/` is not a
+feature and every feature may already import it, exactly as they import `CursorPage<T>` from
 `lib/api/read-operation.ts` today.
 
-`QueueEntry` is the case that forces the shared module: it is declared in the work-order module of
-`apps/api` and served by `tech.technician-queue`. Under a per-feature layout it would have to be
-duplicated or cross-imported; under this one it is simply a shared contract type.
+**Two corrections to the first draft of this section, both found by review.** It attributed that rule
+to `INS-14`, which is a different finding entirely — _"reviewer separation compares the report's
+creator only"_ (`docs/product/README.md:201`). The rule is a repository convention carried in
+docblocks; it has no finding id, and inventing a citation for it made a real constraint look like a
+tracked defect.
+
+It also promised **a shared module for the types more than one domain needs**, justified by
+`QueueEntry` — and no such module ships, because none is needed. `QueueEntry` is an element of
+`tech.technician-queue`'s **response**, and this mirror is REQUEST-only. Nothing in the 48 request
+bodies crosses a domain. The four modules import nothing, from each other or from anywhere: the
+shared module was a solution to a problem this slice's scope does not have, and it is removed rather
+than built empty.
 
 ---
 
@@ -179,6 +190,22 @@ it: five fields carry array cardinality — `wo.additional-work-approval.evidenc
 characters". Leaving it off the list would have made the gate's own stated ceiling **overstate what
 it checks**, which is the one thing a gate's output must never do.
 
+**And the left column was false when this table was written, in exactly that way.** The gate's
+pattern branch `return`ed after checking only for an enum, which silently skipped the primitive-type
+comparison for every field carrying a `pattern` — 50 of the surface's 140 field positions, including
+27 uuids, 8 ISO date-times, 3 decimal strings and a currency code, all exempted to protect the four
+state vocabularies the branch was written for. `toState: string` could be changed to `number`,
+`boolean`, `string[]`, or a reference to an interface nothing declares, and the gate printed
+`0 problem(s)`.
+
+Nothing disclosed it. Not comparing `pattern` **as a facet** is what the ceiling says, and that is
+true and fine; skipping the type comparison of every field that happens to carry one is a different
+thing entirely. The rule stated two paragraphs above is the rule it broke.
+
+Found by adversarial review, fixed at `check-p1-29-payload-parity.mjs`, and now held by six
+mutations in `tests/ci/p1-29-payload-parity.test.ts` — four wrong primitives on a `toState`, a uuid
+declared as a number, and the enum direction that `C10` already covered.
+
 **The two decisions are linked, and that is the point.** Facets are excluded from the comparison
 precisely _because_ they cannot be compared — which is exactly why §4 forbids sharing a type across
 operations. If facets were comparable, sharing would be caught the moment two operations diverged.
@@ -199,20 +226,39 @@ declaration. Only absences need words:
 | present | absent  | must appear in `DISPOSITIONS` as `PENDING` or `DELIBERATELY_ABSENT`, **with a reason** — otherwise **FAIL** |
 | absent  | present | **FAIL**, always — an unexpected field is drift in the dangerous direction                                  |
 
-This is what makes `C8` and `C9` work at field granularity: `work-order-contract.ts`'s eight
-deliberate omissions pass because each is declared with a reason, and a ninth, undeclared, fails. It
-also keeps the mirror small — 48 interfaces and a disposition table that lists only what is missing,
-rather than 48 interfaces plus a 48-entry restatement of every field that is present.
+This is what makes `C8` and `C9` work at field granularity, and both are proved by mutating a real
+field out of the mirror: undeclared, it fails; declared with a reason, it passes; declared with a
+blank reason or a state outside the vocabulary, it fails again.
+
+It also keeps the mirror small — **54 interfaces** (48 request bodies plus 6 nested element types)
+and a disposition table listing only what is missing, rather than a 48-entry restatement of every
+field that is present. `DISPOSITIONS` is **empty today**, which is the honest state: this mirror
+omits nothing.
+
+**A correction to the first draft.** It said "`work-order-contract.ts`'s eight deliberate omissions
+pass because each is declared with a reason". That was wrong twice over. The eight omissions belong
+to `apps/web/src/features/receptions/work-order-contract.ts` — the P1-28 precedent, a **different
+file that happens to share a basename** with this mirror's work-order module — and they are described
+in the `BR-08` contract's prose, not declared anywhere in that file, which contains zero disposition
+markers. Nothing in this repository declares an omission the way §6 requires; this slice is the first
+thing that could, and it currently has none to declare.
 
 ---
 
 ## 7. Decision: no enum for a tenant-extensible vocabulary
 
-Four fields carry `^[a-z][a-z0-9_]{1,62}$` rather than an enum, because their vocabulary is a live
-tenant-owned catalogue: `wo.job-transition.toState`, `wo.work-order-closure.toState`,
-`wo.work-order-transition.toState`, and — the one the contract missed — `wo.job-create.state`.
+**Six** fields carry `^[a-z][a-z0-9_]{1,62}$` rather than an enum — not four, as the first draft of
+this section and its §1 table both said. Four are state vocabularies owned by a live tenant
+catalogue: `wo.job-transition.toState`, `wo.work-order-closure.toState`,
+`wo.work-order-transition.toState`, and — the one the contract missed — `wo.job-create.state`. The
+other two are tenant-**authored** slugs being created rather than selected:
+`dia.template-create.code` and `dia.template-item-create.itemCode`.
 
-For these the mirror declares `string`, and **the gate fails if it declares a union of literals.**
+The distinction matters for the reason, not the outcome: all six are `string` in the mirror, but only
+the first four are members of a catalogue, so only those four are what the rule below is _about_.
+Counting six as state vocabularies would be as wrong as counting four.
+
+For all six the mirror declares `string`, and **the gate fails if it declares a union of literals.**
 The repository already reached this conclusion once, in the precedent this mirror follows:
 
 > _"`wo.work_order_states` is a live catalogue and the response's `state` is a row of it. There is no

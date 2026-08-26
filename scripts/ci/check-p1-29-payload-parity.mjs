@@ -365,11 +365,31 @@ function compareShape(ctx, operationId, path, schema, iface, interfaces) {
 
 function compareType(ctx, operationId, path, spec, field, interfaces) {
   const note = ctx.note;
-  // A tenant-extensible vocabulary: pattern, no enum. Must be `string`.
+  // A pattern-constrained string. The mirror must declare `string` — not a union
+  // of literals, and not some other primitive.
+  //
+  // The first version of this branch `return`ed unconditionally after checking
+  // only for an enum, which silently disabled the PRIMITIVE-TYPE comparison for
+  // every field carrying a pattern. That is 50 of the surface's 140 fields — 27
+  // uuids, 8 ISO date-times, 3 decimal strings, a currency code, a DTC code —
+  // exempted to protect the 4 state vocabularies the branch was written for.
+  // `toState: string` could be changed to `number`, `boolean`, `string[]`, or a
+  // reference to an interface nothing declares, and the gate printed
+  // `0 problem(s)`.
+  //
+  // It was disclosed nowhere: the stated ceiling is that pattern is not compared
+  // AS A FACET, which is true and fine. Skipping the type comparison of every
+  // field that happens to carry one is a different thing, and the record's own
+  // rule for this — "a gate's stated ceiling must never overstate what it checks"
+  // — is exactly what it violated.
   if (spec.enum === undefined && spec.pattern !== undefined && spec.type === 'string') {
     if (field.kind === 'enum') {
       note(
         `${operationId}${path}: the API constrains this by PATTERN, not an enum — the vocabulary is tenant-extensible, so the mirror must declare \`string\`, never a union of literals`
+      );
+    } else if (field.kind !== 'string') {
+      note(
+        `${operationId}${path}: API is a pattern-constrained string, mirror declares \`${field.kind}\``
       );
     }
     return;
@@ -459,11 +479,39 @@ function compareType(ctx, operationId, path, spec, field, interfaces) {
     return;
   }
 
-  // anyOf [T, null] — a nullable primitive.
+  // `anyOf [T, null]` — a nullable field. `describeType` already computes a
+  // `nullable` flag from the mirror; the first version computed it and then never
+  // compared it, so `string | null` -> `string` and `string` -> `string | null`
+  // both passed.
+  //
+  // Both directions are real drift, and they are opposite mistakes. Dropping
+  // `| null` tells a caller a field can never be cleared when the API accepts an
+  // explicit null — on `wo.job-update.jobType`, omit means "leave alone" and null
+  // means "clear it", and a mirror without the null cannot express the second.
+  // Adding `| null` where the API forbids it promises a request that will be
+  // refused.
   if (Array.isArray(spec.anyOf)) {
     const nonNull = spec.anyOf.find((x) => x.type !== 'null');
-    if (nonNull) compareType(ctx, operationId, path, nonNull, field, interfaces);
+    const apiNullable = spec.anyOf.some((x) => x.type === 'null');
+    if (apiNullable && !field.nullable) {
+      note(
+        `${operationId}${path}: API accepts null, mirror does not — an explicit null is how this field is CLEARED, and omitting it from the type makes that unreachable`
+      );
+    }
+    // Recurse with nullability already settled at THIS level, or the sub-spec —
+    // which is the plain `string` half and carries no null — would read the
+    // field's `| null` as an invention of the mirror's.
+    if (nonNull) {
+      compareType(ctx, operationId, path, nonNull, { ...field, nullable: false }, interfaces);
+    }
     return;
+  }
+
+  // The other direction: the mirror invents a null the API never accepts.
+  if (field.nullable && spec.type !== 'null') {
+    note(
+      `${operationId}${path}: mirror accepts null, API does not — the type promises a request the API refuses`
+    );
   }
 
   const want = JSON_PRIMITIVE[spec.type];

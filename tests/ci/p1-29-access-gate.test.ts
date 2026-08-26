@@ -1,14 +1,24 @@
 /**
  * The red-proof for `check-p1-29-access.mjs` (`PRE-P1-29-BR-08c`).
  *
- * The gate currently examines ZERO route pages, because P1-29 has no screens yet.
- * A pass over an empty set is worth nothing, so its teeth are proved here instead:
- * pages are PLANTED under a scratch app root in each shape the rule is meant to
- * refuse, and the gate is required to go red on every one of them.
+ * The gate examines ZERO route pages, because P1-29 has no screens yet. A pass
+ * over an empty set is worth nothing, so its teeth are proved here instead: pages
+ * are PLANTED under a scratch app root in each shape the rule must refuse, and the
+ * gate is required to go red on every one.
  *
- * This is the whole reason the rule is armed before the screens exist. A gate
- * written afterwards is tuned to whatever was already built; this one has to be
- * satisfied by code that does not exist yet.
+ * ## Four of these cases exist because the first version failed them
+ *
+ * An adversarial review took the original gate apart, and every hole was a FALSE
+ * NEGATIVE — a page that should have been refused and was not: a negated check
+ * that fell through instead of returning; a docblock quoting the rule, which armed
+ * the gate for a page that had none; `await Promise.all([...])` and
+ * `await api.listX()` reads, invisible to a bare-identifier regex; and seven P1-29
+ * resource segments missing from a hand-written list, so ungated pages under them
+ * were not violations — they were not even pages.
+ *
+ * The gate now imports `denyAndReturnGate` and `stripComments` from the P1-28
+ * gates, which already knew every one of those shapes. These cases exist so that
+ * reuse cannot silently regress.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { execFileSync } from 'node:child_process';
@@ -52,7 +62,6 @@ function plant(name: string, segment: string, source: string): string {
 }
 
 const GATED = `
-import { holds } from '@/lib/auth';
 export default async function Page({ params }) {
   const { locale } = await params;
   const session = await requireSession(locale);
@@ -71,8 +80,7 @@ describe('the armed rule has teeth before any screen exists', () => {
       'work-orders',
       `
       export default async function Page({ params }) {
-        const { locale } = await params;
-        const session = await requireSession(locale);
+        const session = await requireSession(await params);
         const orders = await listWorkOrders();
         if (!holds(session.permissions, WORK_ORDER_PERMISSIONS.read)) {
           return <PermissionDeniedState />;
@@ -90,12 +98,10 @@ describe('the armed rule has teeth before any screen exists', () => {
     const app = plant(
       'no-permission',
       'technicians',
-      `
-      export default async function Page() {
+      `export default async function Page() {
         const queue = await listTechnicianQueue();
         return <Screen queue={queue} />;
-      }
-      `
+      }`
     );
     const { code, out } = run(app);
     expect(code).not.toBe(0);
@@ -103,24 +109,19 @@ describe('the armed rule has teeth before any screen exists', () => {
   });
 
   it('a page whose only `holds` computes a CONTROL capability is refused', () => {
-    // The defect the P1-28 gate records: a route page is full of `holds` calls
-    // that enable a button and deny nothing. Keying on the first `holds` of any
-    // kind would read this page as gated.
     const app = plant(
       'capability-only',
       'inspections',
-      `
-      export default async function Page({ params }) {
+      `export default async function Page({ params }) {
         const session = await requireSession(await params);
         const findings = await listFindings();
         const canEdit = holds(session.permissions, DIA_PERMISSIONS.manage);
         return <Screen findings={findings} canEdit={canEdit} />;
-      }
-      `
+      }`
     );
     const { code, out } = run(app);
     expect(code).not.toBe(0);
-    expect(out).toMatch(/consults a permission but never denies and returns on one/);
+    expect(out).toMatch(/consults a permission but never denies and RETURNS on one/);
   });
 
   it('a correctly gated page passes', () => {
@@ -129,7 +130,7 @@ describe('the armed rule has teeth before any screen exists', () => {
     expect(code).toBe(0);
   });
 
-  it('a page outside P1-29 segments is not this gate’s business', () => {
+  it('a page outside every P1-29 root is not this gate’s business', () => {
     const app = plant(
       'foreign',
       'receptions',
@@ -141,6 +142,129 @@ describe('the armed rule has teeth before any screen exists', () => {
   });
 });
 
+describe('the four holes an adversarial review found in the first version', () => {
+  it('a negated check that FALLS THROUGH instead of returning is refused', () => {
+    // The original regex matched the condition and never looked at the
+    // consequent, so this page passed. `denyAndReturnGate` requires the return.
+    const app = plant(
+      'falls-through',
+      'work-orders',
+      `export default async function Page({ params }) {
+        const session = await requireSession(await params);
+        let canEdit = true;
+        if (!holds(session.permissions, WO.manage)) {
+          canEdit = false;
+        }
+        const orders = await listWorkOrders();
+        return <Screen orders={orders} canEdit={canEdit} />;
+      }`
+    );
+    const { code, out } = run(app);
+    expect(code).not.toBe(0);
+    expect(out).toMatch(/never denies and RETURNS on one/);
+  });
+
+  it('a docblock QUOTING the rule does not satisfy it', () => {
+    // Prose describing a rule naturally contains the rule. The original searched
+    // the raw source, so this page — which has no gate at all — passed.
+    const app = plant(
+      'comment-only',
+      'jobs',
+      `/**
+        * The shape this page must have is:
+        *   if (!holds(session.permissions, X)) return <PermissionDeniedState />;
+        */
+      export default async function Page() {
+        const jobs = await listJobs();
+        return <Screen jobs={jobs} />;
+      }`
+    );
+    const { code, out } = run(app);
+    expect(code).not.toBe(0);
+    expect(out).toMatch(/consults no permission at all/);
+  });
+
+  it('a read via `await Promise.all([...])` before the gate is seen', () => {
+    // Promise.all is the shipped read shape in this repository, and the original
+    // read detector required `await` followed by a bare identifier and `(`.
+    const app = plant(
+      'promise-all',
+      'jobs',
+      `export default async function Page({ params }) {
+        const session = await requireSession(await params);
+        const [jobs, techs] = await Promise.all([listJobs(), listTechnicians()]);
+        if (!holds(session.permissions, WO.read)) {
+          return <PermissionDeniedState />;
+        }
+        return <Screen jobs={jobs} techs={techs} />;
+      }`
+    );
+    const { code, out } = run(app);
+    expect(code).not.toBe(0);
+    expect(out).toMatch(/reads before it denies on a permission/);
+  });
+
+  it('a namespaced read `await api.listX()` before the gate is seen', () => {
+    const app = plant(
+      'namespaced-read',
+      'technicians',
+      `export default async function Page({ params }) {
+        const session = await requireSession(await params);
+        const techs = await api.listTechnicians();
+        if (!holds(session.permissions, TECH.read)) {
+          return <PermissionDeniedState />;
+        }
+        return <Screen techs={techs} />;
+      }`
+    );
+    const { code, out } = run(app);
+    expect(code).not.toBe(0);
+    expect(out).toMatch(/reads before it denies on a permission/);
+  });
+
+  it('every P1-29 resource root is derived, including the seven a hand-written list missed', async () => {
+    const mod = await import('../../scripts/ci/check-p1-29-access.mjs');
+    const roots: string[] = mod.ownedSegments();
+    // The five the original list omitted outright and that are resource ROOTS.
+    for (const missed of [
+      'additional-work',
+      'inspection-templates',
+      'rework-links',
+      'labor-sessions',
+      'assignments',
+      'template-versions',
+    ]) {
+      expect(roots, `${missed} must be an owned root`).toContain(missed);
+    }
+    // `reopen-attempts` and `rework` are NESTED under work-orders, so a page for
+    // either matches the `work-orders` root rather than needing its own.
+    expect(roots).toContain('work-orders');
+    // And the derivation must not reach outside its lane: sub-resource names
+    // like `status` would judge other phases' screens.
+    for (const notARoot of ['status', 'detail', 'me', 'end', 'items', 'versions']) {
+      expect(roots, `${notARoot} must NOT be an owned root`).not.toContain(notARoot);
+    }
+  });
+
+  it('an ungated page under each newly-covered root is refused', () => {
+    for (const segment of [
+      'additional-work',
+      'inspection-templates',
+      'rework-links',
+      'labor-sessions',
+    ]) {
+      const app = plant(
+        `ungated-${segment}`,
+        segment,
+        'export default async function Page() { const x = await listThings(); return <S x={x} />; }'
+      );
+      const { code, out } = run(app);
+      expect(code, `${segment} must be examined`).not.toBe(0);
+      expect(out).toMatch(/consults no permission at all/);
+    }
+  });
+});
+
 describe('the empty set is reported, never passed off as proof', () => {
   it('says out loud that a zero-page run proves nothing', () => {
     const { code, out } = run(join(ROOT, 'apps', 'web', 'src', 'app'));
@@ -149,13 +273,27 @@ describe('the empty set is reported, never passed off as proof', () => {
     expect(out).toMatch(/ZERO pages exist yet — this run proves nothing about any screen/);
     expect(out).toMatch(/ARMED/);
   });
+
+  it('an empty segment derivation is itself a violation', async () => {
+    const mod = await import('../../scripts/ci/check-p1-29-access.mjs');
+    // A gate that owns no segments examines no pages and passes everything.
+    expect(mod.ownedSegments(join(scratch, 'no-such-register.json'))).toEqual([]);
+  });
 });
 
-describe('the P1-28 access gate is untouched', () => {
-  it('check-p1-28-access.mjs is byte-unchanged against develop', () => {
+describe('the P1-28 gates are untouched', () => {
+  it('are byte-unchanged against develop, even though this gate imports them', () => {
     const diff = execFileSync(
       'git',
-      ['diff', '--name-only', 'origin/develop', '--', 'scripts/ci/check-p1-28-access.mjs'],
+      [
+        'diff',
+        '--name-only',
+        'origin/develop',
+        '--',
+        'scripts/ci/check-p1-28-access.mjs',
+        'scripts/ci/check-p1-28-write-reachability.mjs',
+        'scripts/ci/check-p1-28-adapter-reachability.mjs',
+      ],
       { cwd: ROOT, encoding: 'utf8' }
     );
     expect(diff.trim()).toBe('');

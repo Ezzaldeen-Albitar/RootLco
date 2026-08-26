@@ -269,6 +269,84 @@ describe('C8/C9 — the three-state vocabulary works at FIELD granularity', () =
   });
 });
 
+describe('two holes an adversarial review found, both of which printed 0 problems', () => {
+  /**
+   * The pattern branch used to `return` unconditionally after checking only for an
+   * enum, which disabled the PRIMITIVE-TYPE comparison for every field carrying a
+   * pattern — 50 of the surface's 140 fields, to protect the 4 state vocabularies
+   * it was written for. Every one of these mutations passed green.
+   */
+  it.each([
+    ['number', 'readonly toState: number;'],
+    ['boolean', 'readonly toState: boolean;'],
+    ['an array', 'readonly toState: string[];'],
+    ['an undeclared interface', 'readonly toState: NoSuchInterface;'],
+  ])('a pattern-constrained string declared as %s is refused', (_label, replacement) => {
+    const root = mirrorCopy(`pattern-${replacement.length}`);
+    edit(root, 'work-order-contract.ts', 'readonly toState: string;', replacement);
+    const { code, out } = runGate(root);
+    expect(code).not.toBe(0);
+    expect(out).toMatch(/API is a pattern-constrained string, mirror declares/);
+  });
+
+  it('a uuid field declared as a number is refused', () => {
+    // 27 of the 50 exempted fields were uuids. The branch was never about them.
+    const root = mirrorCopy('uuid-number');
+    edit(
+      root,
+      'work-order-contract.ts',
+      'readonly technicianProfileId: string;',
+      'readonly technicianProfileId: number;'
+    );
+    const { code, out } = runGate(root);
+    expect(code).not.toBe(0);
+    expect(out).toMatch(/pattern-constrained string, mirror declares `number`/);
+  });
+
+  it('C10 still holds: the enum direction is reported as the vocabulary message', () => {
+    const root = mirrorCopy('pattern-enum');
+    edit(
+      root,
+      'work-order-contract.ts',
+      'readonly toState: string;',
+      "readonly toState: 'a' | 'b';"
+    );
+    const { code, out } = runGate(root);
+    expect(code).not.toBe(0);
+    expect(out).toMatch(/tenant-extensible, so the mirror must declare `string`, never a union/);
+  });
+
+  /**
+   * `describeType` computed a `nullable` flag and nothing ever compared it, so a
+   * dropped `| null` and an invented one both passed.
+   */
+  it('dropping `| null` is refused — it makes CLEARING the field unreachable', () => {
+    const root = mirrorCopy('null-dropped');
+    edit(
+      root,
+      'work-order-contract.ts',
+      'readonly jobType?: string | null;',
+      'readonly jobType?: string;'
+    );
+    const { code, out } = runGate(root);
+    expect(code).not.toBe(0);
+    expect(out).toMatch(/API accepts null, mirror does not/);
+  });
+
+  it('inventing `| null` the API does not accept is refused', () => {
+    const root = mirrorCopy('null-invented');
+    edit(
+      root,
+      'work-order-contract.ts',
+      'readonly title: string;',
+      'readonly title: string | null;'
+    );
+    const { code, out } = runGate(root);
+    expect(code).not.toBe(0);
+    expect(out).toMatch(/mirror accepts null, API does not/);
+  });
+});
+
 describe('C10 — a tenant-extensible vocabulary must never be an enum', () => {
   it('fails when the mirror declares a union for a regex-constrained state', () => {
     const root = mirrorCopy('c10');
