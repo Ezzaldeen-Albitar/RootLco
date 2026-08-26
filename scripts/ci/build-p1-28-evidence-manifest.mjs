@@ -1318,6 +1318,42 @@ export function repositoryBinding(candidateFile, git, readClosureRecord = undefi
     git(['merge-base', '--is-ancestor', sha, head.head]) !== null;
 
   /*
+   * The ancestry question, ASKED — and kept apart from the fail-closed gate
+   * above.
+   *
+   * `isAncestorOfHead` is a four-way collapse, and it must stay one: the ACTIVE
+   * refusals and the product-diff guard below are all fail-CLOSED readings of
+   * it, and widening it would change verdicts. But `false` there means any of
+   * "the candidate is absent", "the base would not resolve", "the head would
+   * not resolve", "Git refused" and "Git said no" — so it cannot be read as an
+   * answer, and the summary may not print one from it. That is the same
+   * fail-open this package exists to prevent, one field to the left.
+   *
+   * `ancestry` is the tri-state this file already uses everywhere else for
+   * exactly this reason: `true`, `false`, and `null` when Git would not say.
+   * The question it asks needs no base branch, so it is answerable in the
+   * shallow-clone world where `baseResolved` is false — and answering it there
+   * is the difference between "NOT an ancestor" and the truth.
+   */
+  const headAncestry = exists && head.head ? ancestry(git, sha, head.head) : null;
+  /*
+   * Why the diff was not taken, in the gate's own words. The summary used to
+   * name a CAUSE — "an ancestry this candidate does not have" — that it had not
+   * established, and which is wrong in every one of these worlds but the fourth.
+   */
+  const productNotTaken = isAncestorOfHead
+    ? null
+    : !exists
+      ? 'the candidate names no commit in this repository'
+      : !head.head
+        ? 'the head under test could not be resolved'
+        : !baseResolved
+          ? `the base branch \`${base.branch || '(unnamed)'}\` could not be resolved, and this gate does not diff across an unresolved base`
+          : headAncestry === false
+            ? 'the candidate is not an ancestor of it'
+            : 'Git would not answer the ancestry question';
+
+  /*
    * `null` from `git` is a REFUSAL, and `lines(null)` is `[]` — which reads as
    * "no product file differs" and "this branch added no successors". Both are
    * the fail-OPEN this package exists to prevent, so each is captured as its own
@@ -1443,6 +1479,8 @@ export function repositoryBinding(candidateFile, git, readClosureRecord = undefi
     declinedUnwrap: head.declined,
     topologyUnknown: head.topologyUnknown,
     isAncestorOfHead,
+    headAncestry,
+    productNotTaken,
     productDiff,
     productDiffUnknown,
     rangeUnknown,
@@ -2990,6 +3028,92 @@ export function reportRepository(binding, write = toStderr) {
   return sound;
 }
 
+/**
+ * What the repository check actually established, in one sentence.
+ *
+ * This sentence used to be PROSE. It asserted, unconditionally, that "apps/**
+ * and supabase/** are byte-identical to it" — a clause no branch of this gate
+ * ever set, derived from no field, and true only by coincidence of when it was
+ * written. On an ARCHIVED phase it was reliably FALSE: `reportRepository`
+ * returns at the ARCHIVED branch above, deliberately, BEFORE the product-diff
+ * refusal, because a landed phase is a record and the live tree is not held to
+ * it. So the gate printed `::notice::…the current product tree is not held to
+ * it` and then, on the very next line, claimed the current product tree was
+ * identical to it. Both sentences, contradicting each other, in one passing run.
+ *
+ * The docblock at the call site asks this sentence to "say WHAT was verified
+ * against the repository and what was merely attested". Prose cannot do that:
+ * it says whatever it said the day it was typed. So every clause here is
+ * DERIVED from the same binding fields the refusals above read, and the drift
+ * clause is derived from `productDiff` — the field `reportRepository` refuses
+ * on when the phase is ACTIVE. The sentence can no longer disagree with the
+ * check, because it is now computed from the check's own input.
+ *
+ * The count is reported rather than dropped. It costs nothing — `productDiff`
+ * is already computed on the binding for the ACTIVE refusal — and it answers
+ * the one question a reader of an ARCHIVED package actually has: do these
+ * figures still describe roughly the tree I am looking at, or a tree thousands
+ * of lines ago? Silence would leave that unanswerable and would re-create the
+ * original defect in the negative: a summary that does not name its evidence.
+ */
+export function repositoryVerifiedLine(binding) {
+  const head = String(binding.phaseHead).slice(0, 8);
+  const clauses = [`the candidate exists`, `its tree is ${binding.actualTree?.slice(0, 8)}`];
+
+  /*
+   * Ancestry is read from the TRI-STATE, never from `isAncestorOfHead`.
+   *
+   * The first revision of this function printed `it is NOT an ancestor of X`
+   * whenever `isAncestorOfHead` was false. That field is a four-way collapse —
+   * absent candidate, unresolvable base, unresolvable head, Git refusal, and
+   * Git's actual "no" — so four of its five falses are "nobody asked", and the
+   * clause asserted a negative over them. On an ARCHIVED phase, where
+   * `reportRepository` returns before every refusal that would have caught it,
+   * pointing the recorded `baseBranch` at a ref a shallow clone does not carry
+   * printed `it is NOT an ancestor of f0412be2` in an exit-0 run while
+   * `git merge-base --is-ancestor` exited 0. That is the defect this whole
+   * function exists to remove, one clause to the left of where it was found.
+   */
+  if (binding.headAncestry === true) clauses.push(`it is an ancestor of ${head}`);
+  else if (binding.headAncestry === false) clauses.push(`it is NOT an ancestor of ${head}`);
+  else clauses.push(`ancestry with ${head} is UNKNOWN — Git would not answer`);
+
+  clauses.push(`${binding.recorded.length} executable successor(s) are named`);
+
+  /*
+   * The identity clause is LAST because it is the only one that may carry a
+   * trailing explanation, and it is the only one that may decline to answer.
+   *
+   * `productDiff` is `[]` in THREE different worlds and only one of them is
+   * "the trees match": the diff ran and found nothing, the diff refused to run
+   * (`productDiffUnknown`), or the diff was never attempted at all —
+   * `repositoryBinding` guards the `git diff` behind `isAncestorOfHead` and
+   * leaves the empty array behind. Reading that empty array as "byte-identical"
+   * is precisely the fail-open this package exists to prevent, so each world is
+   * named in its own words, and the third names the REASON the gate recorded
+   * rather than guessing at one.
+   */
+  if (!binding.isAncestorOfHead) {
+    clauses.push(`product identity with ${head} was NOT COMPUTED — ${binding.productNotTaken}`);
+  } else if (binding.productDiffUnknown) {
+    // A command that would not run has not said "identical". Never fill this in.
+    clauses.push(`product identity with ${head} is UNKNOWN — Git would not answer`);
+  } else if (binding.productDiff.length === 0) {
+    clauses.push(`apps/** and supabase/** are byte-identical to it`);
+  } else {
+    const permitted =
+      binding.lifecycle?.state === SEAL_LIFECYCLE.ARCHIVED
+        ? ` — permitted, because ARCHIVED does not hold the live tree to a landed candidate`
+        : ``;
+    clauses.push(
+      `${binding.productDiff.length} product file(s) under apps/** and supabase/** ` +
+        `differ from it${permitted}`
+    );
+  }
+
+  return `  repository-verified: ${clauses.slice(0, -1).join(', ')}, and ${clauses.at(-1)}\n`;
+}
+
 /** Report tier figures that are checked against nothing. Returns true when sound. */
 export function reportTiers(binding, arithmetic, write = toStderr) {
   let sound = true;
@@ -4481,11 +4605,11 @@ function main(argv) {
       // attested, in the same breath. The first revision of this gate printed
       // "candidate deadbeef" over a commit that did not exist, so a summary that
       // does not name its evidence is the thing being corrected here.
-      process.stdout.write(
-        `  repository-verified: the candidate exists, its tree is ${repository.actualTree?.slice(0, 8)}, ` +
-          `it is an ancestor of ${String(repository.phaseHead).slice(0, 8)}, apps/** and supabase/** are byte-identical to it, and ` +
-          `${repository.recorded.length} executable successor(s) are named\n`
-      );
+      //
+      // Every clause is DERIVED in `repositoryVerifiedLine`, never asserted
+      // here: the second revision typed an identity claim straight into this
+      // template and printed it over a tree that differed by hundreds of files.
+      process.stdout.write(repositoryVerifiedLine(repository));
       process.stdout.write(
         `  successor set computed as \`git log ${String(repository.phaseHead).slice(0, 8)} --not ${repository.sha.slice(0, 8)} ${String(repository.baseSha).slice(0, 8)}\` — ` +
           `base ${repository.baseBranch} resolved at ${repository.baseRef}\n`

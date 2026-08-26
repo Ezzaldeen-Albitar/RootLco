@@ -48,6 +48,7 @@ import {
   fakeGit,
   repositoryBinding,
   reportRepository,
+  repositoryVerifiedLine,
   tierBinding,
   packageArithmetic,
   tabletProjectSpecs,
@@ -4042,5 +4043,236 @@ describe('P1-28-QA-005 — the validator can be made to fail, so its passing mea
         expect(serialise(buildManifest(root))).not.toBe(serialise(built as never));
       }
     );
+  });
+});
+
+describe('P1-28-QA-005 — the summary may not assert a comparison the gate did not make', () => {
+  /*
+   * THE DEFECT THIS SUITE EXISTS FOR.
+   *
+   * The success summary carried the clause "apps/** and supabase/** are
+   * byte-identical to it" as PROSE inside a template literal. No branch of the
+   * gate ever set it, no field derived it, and on an ARCHIVED phase it was
+   * reliably FALSE — `reportRepository` returns at the ARCHIVED branch BEFORE
+   * the product-diff refusal, on purpose, because a landed phase is a record
+   * and the live tree is not held to it.
+   *
+   * So the gate printed the notice "the current product tree is not held to it"
+   * and then claimed, one line later, that the current product tree was
+   * identical to it. Reproduced on 2026-08-26: `npm run validate:p1-28-evidence`
+   * exited 0 with that clause over a head whose `apps/**` differed by 227 files.
+   *
+   * The verdict was RIGHT — nothing requires a branch head to be product-
+   * identical to a sealed, archived candidate. Only the sentence was wrong, and
+   * a gate whose job is to refuse unbacked claims may not make one itself.
+   *
+   * These cases pin the sentence to the fields, in a repository they build.
+   */
+  const CLOSED =
+    '# Phase 1-28 — Closure Record\n\n**Status: CLOSED — `OWNER ACCEPTANCE: PASS`, 2026-08-20**\n';
+  const ACCEPTED = { ownerAcceptance: { verdict: 'OWNER ACCEPTANCE: PASS' } };
+
+  /** An ARCHIVED world: promoted candidate, accepting document, closure record. */
+  const archivedBinding = (repo: Scratch, head: string) => {
+    repo.checkout(head);
+    repo.run('update-ref', 'refs/remotes/origin/main', repo.candidate);
+    return repositoryBinding(repo.document(ACCEPTED) as never, repo.git, () => CLOSED) as never;
+  };
+
+  const claimsIdentity = (line: string): boolean => line.includes('byte-identical');
+
+  it('does not claim byte-identity at an ARCHIVED head whose product tree really moved', () => {
+    withScratchRepository((repo) => {
+      const binding = archivedBinding(repo, repo.productChanged) as unknown as {
+        lifecycle: { state: string };
+        productDiff: string[];
+        isAncestorOfHead: boolean;
+      };
+
+      // The premise, computed — not assumed. Without real drift this proves nothing.
+      expect(binding.lifecycle.state, 'the world is not ARCHIVED, so the premise is wrong').toBe(
+        'ARCHIVED'
+      );
+      expect(binding.isAncestorOfHead, 'the candidate is not contained in the head').toBe(true);
+      expect(
+        binding.productDiff.length,
+        'no product file actually differs, so this case cannot catch the claim'
+      ).toBeGreaterThan(0);
+
+      const line = repositoryVerifiedLine(binding as never);
+
+      expect(
+        claimsIdentity(line),
+        'the summary claims apps/** and supabase/** are byte-identical over a tree that differs'
+      ).toBe(false);
+      // And it says what IS true, rather than falling silent: the defect was a
+      // sentence that did not name its evidence, and silence is that defect again.
+      expect(line).toContain(`${binding.productDiff.length} product file(s)`);
+      expect(line).toMatch(/ARCHIVED does not hold the live tree/);
+    });
+  });
+
+  it('still claims byte-identity when the diff ran and really found nothing', () => {
+    /*
+     * The case above is satisfied by deleting the clause outright. This one is
+     * not: it fails if the fix were "never say identical", which would trade a
+     * false claim for a useless summary and leave the ACTIVE path — where
+     * identity IS refused, so the claim IS backed — with nothing to report.
+     */
+    withScratchRepository((repo) => {
+      const binding = archivedBinding(repo, repo.branchHead) as unknown as {
+        productDiff: string[];
+        isAncestorOfHead: boolean;
+      };
+      expect(binding.isAncestorOfHead).toBe(true);
+      expect(
+        binding.productDiff,
+        'the documentation-only head moved a product file, so the premise is wrong'
+      ).toEqual([]);
+
+      expect(claimsIdentity(repositoryVerifiedLine(binding as never))).toBe(true);
+    });
+  });
+
+  it('does not read an un-taken diff as identity when the candidate is not an ancestor', () => {
+    /*
+     * `repositoryBinding` guards `git diff` behind `isAncestorOfHead` and leaves
+     * `productDiff` as `[]` when it never ran. ACTIVE returns before the summary
+     * on that condition; ARCHIVED does not, so an empty array here means "not
+     * asked", not "identical". Reading it as identity is the same fail-open in a
+     * new place — and the first draft of this fix did exactly that.
+     */
+    withScratchRepository((repo) => {
+      const binding = archivedBinding(repo, repo.origin) as unknown as {
+        isAncestorOfHead: boolean;
+        headAncestry: boolean | null;
+        productDiff: string[];
+      };
+      expect(binding.isAncestorOfHead, 'the head still contains the candidate').toBe(false);
+      expect(binding.productDiff, 'the diff ran after all, so this case proves nothing').toEqual(
+        []
+      );
+
+      // Git was ASKED here and said no, which is what entitles the sentence to
+      // say so. The case beside this one covers the worlds where it was never
+      // asked, and there the answer may not be asserted at all.
+      expect(binding.headAncestry, 'Git did not actually answer, so the premise is wrong').toBe(
+        false
+      );
+
+      const line = repositoryVerifiedLine(binding as never);
+      expect(claimsIdentity(line), 'an un-taken diff was reported as byte-identity').toBe(false);
+      expect(line).toContain('NOT COMPUTED');
+      expect(line, 'a genuine negative must still be stated plainly').toContain(
+        'it is NOT an ancestor of'
+      );
+    });
+  });
+
+  it('does not assert a NEGATIVE ancestry when it was the BASE ref that would not resolve', () => {
+    /*
+     * THE DEFECT THIS CASE EXISTS FOR — found by attacking the fix above, not
+     * the code it fixed.
+     *
+     * The first revision of `repositoryVerifiedLine` printed `it is NOT an
+     * ancestor of X` whenever `isAncestorOfHead` was false. That field is
+     * fail-CLOSED by design and must stay so, but it is a FOUR-way collapse:
+     *
+     *   exists && baseResolved && Boolean(head.head) && git([...]) !== null
+     *
+     * so `false` also means "the candidate is absent", "the base would not
+     * resolve", "the head would not resolve" and "Git refused" — none of which
+     * is Git saying no. Four falses that mean *nobody asked*, printed as a
+     * confident negative.
+     *
+     * This is the shallow-clone world the gate's own base-refusal message
+     * explicitly anticipates. The ACTIVE path fails closed on `!baseResolved`;
+     * the ARCHIVED path returns before it, so the sentence printed the negative
+     * in a run that exits 0 — while `git merge-base --is-ancestor` exited 0 and
+     * the candidate WAS an ancestor. The same fail-open the whole function
+     * exists to remove, one clause to the left of where it was found.
+     */
+    withScratchRepository((repo) => {
+      repo.checkout(repo.branchHead);
+      repo.run('update-ref', 'refs/remotes/origin/main', repo.candidate);
+      repo.dropBaseRefs();
+      const binding = repositoryBinding(
+        repo.document(ACCEPTED) as never,
+        repo.git,
+        () => CLOSED
+      ) as unknown as {
+        lifecycle: { state: string };
+        baseResolved: boolean;
+        isAncestorOfHead: boolean;
+        headAncestry: boolean | null;
+      };
+
+      // The premises, every one computed. This world is only interesting if the
+      // gate still PASSES in it, and if the candidate really is an ancestor.
+      expect(binding.lifecycle.state, 'the premise is wrong: not ARCHIVED').toBe('ARCHIVED');
+      expect(binding.baseResolved, 'the base resolved after all').toBe(false);
+      expect(binding.isAncestorOfHead, 'the fail-closed field did not collapse').toBe(false);
+      expect(binding.headAncestry, 'the candidate really is NOT an ancestor here').toBe(true);
+      expect(
+        reportRepository(binding as never, () => {}),
+        'the gate refuses this world, so the summary would never print'
+      ).toBe(true);
+
+      const line = repositoryVerifiedLine(binding as never);
+      expect(
+        line.includes('NOT an ancestor'),
+        'the summary asserts a negative ancestry that Git never gave'
+      ).toBe(false);
+      expect(line).toContain('it is an ancestor of');
+      // And the un-taken diff names the REASON the gate recorded, not a guess.
+      expect(line).toMatch(/could not be resolved/);
+    });
+  });
+
+  it('reports a refused diff as UNKNOWN rather than as identity', () => {
+    withScratchRepository((repo) => {
+      const real = archivedBinding(repo, repo.productChanged) as unknown as Record<string, unknown>;
+      // Git declining to answer: `productDiff` is empty for the second reason.
+      const refused = { ...real, productDiffUnknown: true, productDiff: [] };
+
+      const line = repositoryVerifiedLine(refused as never);
+      expect(claimsIdentity(line), 'a refusal was reported as byte-identity').toBe(false);
+      expect(line).toContain('UNKNOWN');
+    });
+  });
+
+  it('leaves the identity claim nowhere to be typed by hand', () => {
+    /*
+     * Every case above calls `repositoryVerifiedLine` directly, so all of them
+     * would still pass if someone re-typed the clause into the template in
+     * `main()` — which is precisely how the defect arrived, and the one path
+     * a unit test of a pure function cannot see.
+     *
+     * So the summary block itself is pinned: it must DELEGATE, and it must not
+     * spell out a comparison. The window is the success arm of `--check`, from
+     * the in-sync branch to its `return 0` — the only place this gate prints a
+     * verdict a reader will quote.
+     */
+    const source = readRepo('scripts/ci/build-p1-28-evidence-manifest.mjs');
+    const open = source.indexOf('  if (committed === rendered) {');
+    const close = source.indexOf('    return 0;', open);
+    expect(open, 'the success arm moved; this guard is now pointed at nothing').toBeGreaterThan(0);
+    expect(
+      close,
+      'the success arm has no return; this guard is now pointed at nothing'
+    ).toBeGreaterThan(open);
+    const summaryBlock = source.slice(open, close);
+
+    expect(summaryBlock, 'the summary no longer delegates to the derived sentence').toContain(
+      'process.stdout.write(repositoryVerifiedLine(repository));'
+    );
+    expect(
+      summaryBlock.includes('byte-identical'),
+      'the identity wording is typed into the summary block, where no field derives it'
+    ).toBe(false);
+    expect(
+      summaryBlock.includes('identical to it'),
+      'an identity comparison is spelled out in the summary block rather than derived'
+    ).toBe(false);
   });
 });
