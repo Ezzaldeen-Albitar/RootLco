@@ -60,7 +60,7 @@
       "bytes": 81669
     },
     "docs/phase-1/phase-1-27/evidence/closing-value-ledger.json": {
-      "sha256": "c1f384dc1accb9faecac3f6de3da5d85011abb67a3aa0cf5df932757fd8068f8",
+      "sha256": "2d02a56b13745da5c4305ed1acdcdd41ec2997fcc0b926d422d6163f022ab543",
       "bytes": 50344
     },
     "docs/phase-1/phase-1-27/evidence/lifecycle-ledger.json": {
@@ -68,7 +68,7 @@
       "bytes": 9208
     },
     "docs/phase-1/phase-1-27/evidence/local-run-ledger.json": {
-      "sha256": "db9e3e653cfa4975296f99177c5b70d735d50dbc0843c034e25bf007b1d5f028",
+      "sha256": "2503a0a452429d4020cad82e6bd7138b2630f4869ab79c41ad8dcceb30aaf1e0",
       "bytes": 1202
     },
     "docs/phase-1/phase-1-27/evidence/task-traceability.md": {
