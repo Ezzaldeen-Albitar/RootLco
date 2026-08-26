@@ -38,7 +38,7 @@ import { appendAudit } from '@/server/audit/audit';
 import { publishEvent } from '@/server/events/publisher';
 import { pageRequest, type Page } from '@/server/db/pagination';
 import { workOrderModule } from '@/modules/work-order';
-import { sharedServicesModule } from '@/modules/shared-services';
+import { EVIDENCE_REFUSED_STATES, sharedServicesModule } from '@/modules/shared-services';
 import {
   REPORT_HISTORY_ORDER,
   type DiagnosticEvidenceRow,
@@ -148,9 +148,6 @@ export interface ReportHistoryView {
   };
   readonly transitions: Page<ReportHistoryEntry>;
 }
-
-/** Version states a document may be in and still be bound as diagnostic evidence. */
-const EVIDENCE_REFUSED_STATES: readonly string[] = Object.freeze(['rejected', 'quarantined']);
 
 const toReportView = (row: DiagnosticReportRow): DiagnosticReportView => ({
   id: row.id,

@@ -44,7 +44,7 @@ import { SQLSTATE, isSqlState } from '@/server/db/repository';
 import { appendAudit } from '@/server/audit/audit';
 import { publishEvent } from '@/server/events/publisher';
 import { diagnosticsModule } from '@/modules/diagnostics';
-import { sharedServicesModule } from '@/modules/shared-services';
+import { EVIDENCE_REFUSED_STATES, sharedServicesModule } from '@/modules/shared-services';
 import type {
   AdditionalWorkRequestRow,
   ApprovalEvidenceRow,
@@ -174,9 +174,6 @@ export interface DecideInput {
    */
   readonly quotationRevisionRef?: string | undefined;
 }
-
-/** Version states a document may be in and still be bound as evidence. */
-const EVIDENCE_REFUSED_STATES: readonly string[] = Object.freeze(['rejected', 'quarantined']);
 
 const toRequestView = (row: AdditionalWorkRequestRow): AdditionalWorkRequestView => ({
   id: row.id,

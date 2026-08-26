@@ -172,6 +172,7 @@ export {
   DOWNLOADABLE_STATES,
   decodeUploadToken,
   encodeUploadToken,
+  EVIDENCE_REFUSED_STATES,
   isLinkableEntityType,
   isLinkPurpose,
   LINK_PURPOSES,
