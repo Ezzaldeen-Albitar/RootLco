@@ -2,10 +2,10 @@
   "generatedFrom": "scripts/check-operation-test-coverage.mjs",
   "counts": {
     "registered": 334,
-    "publicApi": 331,
+    "publicApi": 334,
     "internal": 0,
-    "withRequiredEvidence": 331,
-    "invocationOnly": 3,
+    "withRequiredEvidence": 334,
+    "invocationOnly": 0,
     "p1_15": {
       "registered": 28,
       "publicApi": 28,
@@ -48,12 +48,12 @@
     },
     "p1_19": {
       "registered": 87,
-      "publicApi": 84,
-      "operationDepth": 84,
-      "invocationOnly": 3,
+      "publicApi": 87,
+      "operationDepth": 87,
+      "invocationOnly": 0,
       "pending": 0,
       "unitOnly": 0,
-      "unreferenced": 3,
+      "unreferenced": 0,
       "metadataOnly": 0
     },
     "p1_20": {
@@ -11153,19 +11153,80 @@
     },
     {
       "id": "wo.job-evidence-list",
-      "files": [],
-      "referenced": false,
-      "required": [],
-      "provided": [],
-      "missing": ["<undeclared>"]
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/jobs/{jobId}/evidence",
+      "public": false,
+      "files": ["tests/backend/br-07-work-and-diagnostic-evidence.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "cross-tenant", "isolation"],
+      "declared": ["success", "denial", "cross-tenant", "isolation"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "isolation",
+        "denial"
+      ],
+      "provided": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
     },
     {
       "id": "wo.job-evidence-record",
-      "files": [],
-      "referenced": false,
-      "required": [],
-      "provided": [],
-      "missing": ["<undeclared>"]
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/jobs/{jobId}/evidence",
+      "public": false,
+      "files": ["tests/backend/br-07-work-and-diagnostic-evidence.test.ts"],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "isolation"
+      ],
+      "declared": ["success", "denial", "cross-tenant", "isolation", "audit", "idempotency"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "isolation",
+        "denial"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
     },
     {
       "id": "wo.job-history",
@@ -11765,11 +11826,35 @@
     },
     {
       "id": "wo.work-order-evidence-list",
-      "files": [],
-      "referenced": false,
-      "required": [],
-      "provided": [],
-      "missing": ["<undeclared>"]
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/work-orders/{workOrderId}/evidence",
+      "public": false,
+      "files": ["tests/backend/br-07-work-and-diagnostic-evidence.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "cross-tenant", "isolation"],
+      "declared": ["success", "denial", "cross-tenant", "isolation"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "isolation",
+        "denial"
+      ],
+      "provided": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
     },
     {
       "id": "wo.work-order-history",

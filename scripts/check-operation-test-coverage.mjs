@@ -1240,6 +1240,18 @@ export const MANIFEST = {
     files: ['tests/backend/br-06-work-execution-controls.test.ts'],
     required: ['success', 'denial', 'cross-tenant', 'isolation'],
   },
+  'wo.job-evidence-record': {
+    files: ['tests/backend/br-07-work-and-diagnostic-evidence.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
+  },
+  'wo.job-evidence-list': {
+    files: ['tests/backend/br-07-work-and-diagnostic-evidence.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation'],
+  },
+  'wo.work-order-evidence-list': {
+    files: ['tests/backend/br-07-work-and-diagnostic-evidence.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation'],
+  },
   'wo.job-transition': {
     files: [
       'tests/backend/p1-19-job-lifecycle.test.ts',
