@@ -35,7 +35,7 @@ export const dynamic = 'force-dynamic';
 
 const Params = z.object({ reservationId: schemas.uuid }).strict();
 
-const ReleaseBody = z
+export const ReleaseBody = z
   .object({
     reason: z.string().min(1).max(MAX_REASON).optional(),
   })

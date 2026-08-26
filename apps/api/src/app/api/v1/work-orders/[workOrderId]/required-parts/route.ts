@@ -35,7 +35,7 @@ export const dynamic = 'force-dynamic';
 
 const Params = z.object({ workOrderId: schemas.uuid });
 
-const Body = z
+export const Body = z
   .object({
     jobId: schemas.uuid.optional(),
     description: z.string().trim().min(1).max(MAX_LINE_DESCRIPTION),

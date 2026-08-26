@@ -21,7 +21,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const Params = z.object({ candidateId: schemas.uuid });
-const Body = z
+export const Body = z
   .object({
     decision: z.enum(DUPLICATE_DECISIONS),
     reason: z.string().min(MIN_REASON).max(MAX_REASON),

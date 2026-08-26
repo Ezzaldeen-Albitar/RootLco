@@ -23,7 +23,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const Params = z.object({ companyId: schemas.uuid });
-const SettingBody = z
+export const SettingBody = z
   .object({
     /** Matches `ck_company_settings_key_format`. */
     settingKey: z.string().regex(/^[a-z][a-z0-9_.]{1,126}$/),

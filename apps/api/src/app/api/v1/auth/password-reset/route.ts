@@ -24,7 +24,7 @@ import { iamModule } from '@/modules/iam';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const ResetBody = z.object({
+export const ResetBody = z.object({
   email: z.string().min(3).max(320),
   /** Must be an allow-listed absolute destination. Omit to use the default. */
   redirectTo: z.string().url().max(2048).optional(),

@@ -27,7 +27,7 @@ const Params = z.object({ vehicleId: schemas.uuid });
 const Query = z
   .object({ cursor: schemas.cursor.optional(), limit: schemas.limit.optional() })
   .strict();
-const Body = z
+export const Body = z
   .object({
     partnerId: schemas.uuid,
     ownershipKind: z.enum(OWNERSHIP_KINDS).optional(),

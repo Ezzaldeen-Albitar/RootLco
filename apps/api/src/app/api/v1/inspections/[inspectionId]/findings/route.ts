@@ -42,7 +42,7 @@ export const dynamic = 'force-dynamic';
 
 const Params = z.object({ inspectionId: schemas.uuid });
 
-const Body = z
+export const Body = z
   .object({
     templateItemId: schemas.uuid.optional(),
     severity: z.enum(FINDING_SEVERITIES),

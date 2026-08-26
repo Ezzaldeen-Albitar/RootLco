@@ -37,7 +37,7 @@ const Params = z.object({ customerId: schemas.uuid });
 const Query = z
   .object({ cursor: schemas.cursor.optional(), limit: schemas.limit.optional() })
   .strict();
-const Body = z
+export const Body = z
   .object({
     restrictionType: z.enum(RESTRICTION_TYPES),
     reason: z.string().min(MIN_REASON).max(MAX_REASON),

@@ -21,7 +21,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const Params = z.object({ roleId: schemas.uuid });
-const PatchBody = z
+export const PatchBody = z
   .object({
     name: z.string().min(1).max(200).optional(),
     description: z.string().max(1000).nullable().optional(),

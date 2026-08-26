@@ -30,7 +30,7 @@ const Query = z
   .object({ cursor: schemas.cursor.optional(), limit: schemas.limit.optional() })
   .strict();
 const line = z.string().min(1).max(MAX_ADDRESS_LINE).nullable().optional();
-const Body = z
+export const Body = z
   .object({
     addressType: z.enum(ADDRESS_TYPES),
     line1: z.string().min(1).max(MAX_ADDRESS_LINE),

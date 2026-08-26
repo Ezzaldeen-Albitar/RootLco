@@ -45,7 +45,7 @@ const Params = z.object({ receptionId: schemas.uuid });
  * malformed instant as a named 422; restating the grammar in the route would
  * give one rule two owners that can disagree.
  */
-const CreateBody = z
+export const CreateBody = z
   .object({
     requirementCode: z.enum(CAPTURE_REQUIREMENTS),
     documentId: schemas.uuid,

@@ -43,7 +43,7 @@ export const dynamic = 'force-dynamic';
 
 const Params = z.object({ vehicleId: schemas.uuid });
 
-const Body = z
+export const Body = z
   .object({
     vin: z.string().min(1).max(MAX_VIN_INPUT).nullable().optional(),
     makeId: schemas.uuid.nullable().optional(),

@@ -38,7 +38,7 @@ const Params = z.object({ appointmentId: schemas.uuid });
 /** Bounded but not decoded here; the offset rule belongs to the module domain. */
 const Instant = z.string().min(1).max(64);
 
-const Body = z.object({ confirmedFrom: Instant, confirmedTo: Instant }).strict();
+export const Body = z.object({ confirmedFrom: Instant, confirmedTo: Instant }).strict();
 
 export const APPOINTMENT_RESCHEDULE_OPERATION = defineOperation({
   id: 'apt.appointment-reschedule',

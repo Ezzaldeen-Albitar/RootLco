@@ -36,7 +36,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const Params = z.object({ reworkLinkId: schemas.uuid });
-const Body = z.object({ signOffBy: schemas.uuid }).strict();
+export const Body = z.object({ signOffBy: schemas.uuid }).strict();
 
 export const REWORK_SIGN_OFF_OPERATION = defineOperation({
   id: 'qms.rework-sign-off',

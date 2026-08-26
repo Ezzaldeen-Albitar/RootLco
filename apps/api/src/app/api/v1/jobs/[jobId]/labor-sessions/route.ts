@@ -31,7 +31,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const Params = z.object({ jobId: schemas.uuid });
-const Body = z.object({ technicianProfileId: schemas.uuid }).strict();
+export const Body = z.object({ technicianProfileId: schemas.uuid }).strict();
 const Query = z
   .object({ cursor: schemas.cursor.optional(), limit: schemas.limit.optional() })
   .strict();

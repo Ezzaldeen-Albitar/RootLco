@@ -33,7 +33,7 @@ export const dynamic = 'force-dynamic';
 
 const Params = z.object({ inspectionId: schemas.uuid });
 
-const Body = z
+export const Body = z
   .object({
     code: z.string().regex(DTC_CODE, 'must be an OBD-II code such as P0300'),
     description: z.string().trim().min(1).max(MAX_DTC_DESCRIPTION).optional(),

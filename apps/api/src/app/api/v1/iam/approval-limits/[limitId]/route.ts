@@ -19,7 +19,9 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const Params = z.object({ limitId: schemas.uuid });
-const PatchBody = z.object({ effectiveTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }).strict();
+export const PatchBody = z
+  .object({ effectiveTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) })
+  .strict();
 
 export const APPROVAL_LIMIT_END_OPERATION = defineOperation({
   id: 'iam.approval-limit-end',

@@ -36,7 +36,7 @@ export const dynamic = 'force-dynamic';
 
 const Params = z.object({ inspectionId: schemas.uuid });
 
-const Body = z
+export const Body = z
   .object({
     // A closed CHECK vocabulary, unlike the work-order and job graphs whose codes
     // live in tenant-extensible catalog tables — so an enum is exact here.

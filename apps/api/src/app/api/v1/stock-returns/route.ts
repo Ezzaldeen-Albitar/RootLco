@@ -36,7 +36,7 @@ const QuantityString = z
     `must be a decimal string of at most 3 places (max ${QUANTITY_MAX})`
   );
 
-const CreateBody = z
+export const CreateBody = z
   .object({
     partIssueId: schemas.uuid,
     quantity: QuantityString,

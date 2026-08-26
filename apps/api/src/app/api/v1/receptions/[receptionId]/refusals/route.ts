@@ -21,7 +21,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const Params = z.object({ receptionId: schemas.uuid });
-const Body = z
+export const Body = z
   .object({
     refusalType: z.enum(REFUSAL_TYPES),
     refusalReasonId: schemas.uuid.nullable().optional(),

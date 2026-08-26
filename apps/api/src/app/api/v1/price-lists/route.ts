@@ -69,7 +69,7 @@ export async function GET(request: Request): Promise<Response> {
  * an `amount` or `status` field and believing it took effect. Status is not
  * settable — a list is created `active` and its lifecycle is a separate concern.
  */
-const CreateBody = z
+export const CreateBody = z
   .object({
     priceListCode: z.string().regex(EXTERNAL_CODE, 'must be an external code'),
     name: z.string().min(1).max(MAX_NAME),
