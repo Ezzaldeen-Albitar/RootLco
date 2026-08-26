@@ -8,8 +8,8 @@
  * **Assigning a technician notified nobody.** `job.assigned` was published to the
  * shared outbox and consumed by no worker: `consumersFor('job.assigned')` returned
  * an empty set, so the worker completed the event having done nothing. This is the
- * FIRST consumer in the registry, which is why the general shape `DEP-B6` records —
- * *notifications are enqueue-on-request only, and no domain event raises one* —
+ * FIRST consumer in the registry, which is why the general shape `DEP-B6` records
+ * — *notifications are enqueue-on-request only, and no domain event raises one* —
  * was true of every event and not just this one.
  *
  * ## Build one consumer. Build nothing else.
@@ -66,14 +66,14 @@
  *
  * ## `BR-09-OPEN-01` — the channel is an Owner decision, and this is not blocked on it
  *
- * The consumer is written against the notification service's own channel
- * abstraction: it resolves whichever ACTIVE, APPROVED template the tenant has for
- * this purpose and uses that template's channel. Choosing in-app, email or both
- * changes seeded content and configuration — not this file.
+ * `ck_message_templates_channel` is exactly `email | in_app`, so the Owner's
+ * "in-app, email, or both" is **one template row per channel** rather than a third
+ * value. This consumer resolves whichever ACTIVE, APPROVED templates the tenant
+ * has for its template code and enqueues one notification per channel found.
+ * Choosing changes SEEDED CONTENT, not this file.
  *
- * Until the Owner supplies that content there is no approved template, so the
- * outcome is `skipped` and recorded. **It is never reported as delivered**, and no
- * channel is guessed.
+ * Until that content exists there are no templates, so the outcome is `skipped`
+ * and recorded. **It is never reported as delivered**, and no channel is guessed.
  */
 import {
   registerConsumer,
@@ -83,11 +83,11 @@ import {
 } from '../consumer-registry';
 import type { WorkerDb } from '../worker-db';
 import { log } from '@/server/observability/logger';
-// The FOUNDATION CONTRACT, never `@/modules/shared-services`: `server/` is the
-// API foundation and boundary rule B3 refuses a foundation file that imports a
-// domain module. This contract and its `setNotificationService()` seam exist
-// for precisely this dependency, and `installSharedServicesRuntime()` binds the
-// real implementation at boot.
+// The FOUNDATION CONTRACT, never `@/modules/shared-services`: `server/` is the API
+// foundation and boundary rule B3 refuses a foundation file that imports a domain
+// module. This contract and its `setNotificationService()` seam exist for exactly
+// this dependency, and the shared-services composition root binds the real
+// implementation.
 import { notificationService } from '@/server/contracts/notification-service';
 import { AppFailure } from '@/server/errors/app-failure';
 
@@ -101,22 +101,25 @@ export const JOB_ASSIGNED_NOTIFIER = 'wo.job_assigned_notifier';
 export const CONSUMED_PAYLOAD_FIELDS: readonly string[] = Object.freeze(['jobId', 'assignmentId']);
 
 /**
- * The purpose this notification is sent under.
+ * The template this notification is sent from.
  *
- * `shared.message_templates.purpose` is how a tenant's approved content is found
- * without this file naming a template id — which it must not, because a template
- * id is content and content is the Owner's.
+ * A `template_code`, not a template id and not a `purpose`. The distinction is
+ * forced by the schema and worth stating: `ck_message_templates_purpose` is a
+ * CLOSED vocabulary — `transactional | marketing | system` — so `purpose`
+ * CLASSIFIES a template and cannot identify one. `template_code` is the stable
+ * identifier (`^[a-z][a-z0-9_]{1,62}$`), which is what lets this file name the
+ * content it needs without naming a row the Owner has not written yet.
  */
-export const ASSIGNMENT_TEMPLATE_PURPOSE = 'job_assignment';
+export const ASSIGNMENT_TEMPLATE_CODE = 'job_assigned_notification';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * A payload this consumer cannot read is a POISON message, not a lookup.
  *
- * The worker's definition, and the reason it matters: a best-effort parse would
- * turn a publisher contract change into a silently wrong notification, whereas a
- * refusal turns it into a dead letter somebody can see.
+ * The worker's own definition, and the reason it matters: a best-effort parse
+ * would turn a publisher contract change into a silently wrong notification,
+ * whereas a refusal turns it into a dead letter somebody can see.
  */
 export class PoisonPayloadError extends Error {
   public override readonly name = 'PoisonPayloadError';
@@ -126,13 +129,11 @@ interface AssignmentRecipient {
   readonly technicianProfileId: string;
   readonly userId: string;
   readonly jobTitle: string;
-  readonly workOrderId: string;
 }
 
 function readPayload(event: ConsumedEvent): { jobId: string; assignmentId: string } {
-  const payload = event.payload;
-  const jobId = payload['jobId'];
-  const assignmentId = payload['assignmentId'];
+  const jobId = event.payload['jobId'];
+  const assignmentId = event.payload['assignmentId'];
   if (typeof jobId !== 'string' || !UUID.test(jobId)) {
     throw new PoisonPayloadError(`job.assigned payload has no readable jobId (event ${event.id})`);
   }
@@ -155,11 +156,6 @@ function readPayload(event: ConsumedEvent): { jobId: string; assignmentId: strin
  *
  * Every predicate carries `tenant_id` from the OUTBOX ROW, so a cross-tenant
  * recipient is not representable rather than merely unreturned.
- *
- * A retired technician still resolves: the profile is soft-deleted, not removed,
- * and `deleted_at IS NULL` is deliberately NOT applied to the assignment. Delivery
- * to somebody who has since left is the read surface's problem, not a reason to
- * lose the record that they were assigned.
  */
 async function resolveRecipient(
   db: WorkerDb,
@@ -170,9 +166,8 @@ async function resolveRecipient(
     technician_profile_id: string;
     user_id: string;
     job_title: string;
-    work_order_id: string;
   }>(
-    `SELECT a.technician_profile_id, p.user_id, j.title AS job_title, j.work_order_id
+    `SELECT a.technician_profile_id, p.user_id, j.title AS job_title
        FROM wo.job_assignments a
        JOIN tech.technician_profiles p
          ON p.tenant_id = a.tenant_id
@@ -192,62 +187,61 @@ async function resolveRecipient(
     technicianProfileId: row.technician_profile_id,
     userId: row.user_id,
     jobTitle: row.job_title,
-    workOrderId: row.work_order_id,
   };
 }
 
 /**
- * The tenant's ACTIVE, APPROVED template for this purpose — or null.
+ * Every ACTIVE, APPROVED template the tenant has for this code — one per channel.
  *
- * The channel comes FROM the template rather than from a constant here, which is
- * what keeps `BR-09-OPEN-01` out of this file: choosing in-app, email or both is a
- * content and configuration decision, and this consumer consumes whichever one the
- * Owner approves.
+ * A tenant row SHADOWS a platform row of the same channel, the same override
+ * precedence every other catalogue in this platform uses, which is what
+ * `DISTINCT ON (channel)` with a `scope = 'tenant'` preference expresses.
  *
- * A platform template applies to every tenant; a tenant template shadows it. Same
- * override precedence every other catalogue in this platform uses.
+ * Only an **approved** version is usable: `active_version_id` can point at a
+ * draft, and sending unapproved content would be exactly the silent substitution
+ * the version model exists to prevent.
  */
-async function resolveTemplate(
+async function resolveTemplates(
   db: WorkerDb,
   tenantId: string
-): Promise<{ templateVersionId: string; channel: string; locale: string } | null> {
+): Promise<readonly { templateVersionId: string; channel: string; locale: string }[]> {
   const result = await db.query<{
     active_version_id: string;
     channel: string;
     locale_code: string;
   }>(
-    `SELECT t.active_version_id, t.channel, t.locale_code
+    `SELECT DISTINCT ON (t.channel)
+            t.active_version_id, t.channel, t.locale_code
        FROM shared.message_templates t
+       JOIN shared.template_versions v
+         ON v.id = t.active_version_id
+        AND v.status = 'approved'
       WHERE (t.scope = 'platform' OR t.tenant_id = $1)
-        AND t.purpose = $2
+        AND t.template_code = $2
         AND t.status = 'active'
-        AND t.active_version_id IS NOT NULL
         AND t.deleted_at IS NULL
-      ORDER BY (t.scope = 'tenant') DESC, t.template_code ASC
-      LIMIT 1`,
-    [tenantId, ASSIGNMENT_TEMPLATE_PURPOSE]
+      ORDER BY t.channel ASC, (t.scope = 'tenant') DESC`,
+    [tenantId, ASSIGNMENT_TEMPLATE_CODE]
   );
-  const row = result.rows[0];
-  if (row === undefined) return null;
-  return {
+  return result.rows.map((row) => ({
     templateVersionId: row.active_version_id,
     channel: row.channel,
     locale: row.locale_code,
-  };
+  }));
 }
 
 /**
  * Is this the terminal consent refusal, or something transient?
  *
  * `ERR-NTF-001` is the notification contract's code for "recipient consent not
- * granted", raised by the service for both `consent_not_granted` and
- * `consent_stale`. It is matched on the CODE rather than on a message, because a
- * message is prose and prose gets reworded.
+ * granted", raised for both `consent_not_granted` and `consent_stale`. Matched on
+ * the CODE rather than a message, because a message is prose and prose gets
+ * reworded.
  *
- * Everything that is not this code is treated as transient. That asymmetry is
+ * Everything that is not this code is treated as transient, and the asymmetry is
  * deliberate: mistaking a transient fault for terminal loses a notification
- * silently, while mistaking a terminal refusal for transient only wastes
- * retries — so the safe default when unsure is to retry.
+ * silently, while mistaking a terminal refusal for transient only wastes retries.
+ * When unsure, retry.
  */
 function isConsentRefusal(error: unknown): boolean {
   return error instanceof AppFailure && error.code === 'ERR-NTF-001';
@@ -257,15 +251,15 @@ function isConsentRefusal(error: unknown): boolean {
  * The recipient's consent decision for this channel.
  *
  * Staff notification about their own assigned work has no consent RECORD in this
- * platform — `shared.notification_consents` models customer contact consent, and
- * a technician is not a customer. So the evaluation is made here, explicitly, and
- * carries `consentRecordId: null` to say exactly that: no record was consulted,
- * because none governs this case.
+ * platform — the consent model covers customer contact, and a technician is not a
+ * customer. So the evaluation is made here, explicitly, and carries
+ * `consentRecordId: null` to say precisely that: no record was consulted, because
+ * none governs this case.
  *
- * It is NOT hard-coded to `true` and forgotten. `assertConsent` also refuses a
- * STALE evaluation, so `evaluatedAt` is stamped at decision time rather than
- * borrowed from the event — an event that sat in the queue through a backoff
- * would otherwise arrive with an evaluation the policy correctly rejects as old.
+ * It is not hard-coded and forgotten. The policy also refuses a STALE evaluation,
+ * so `evaluatedAt` is stamped at decision time rather than borrowed from the
+ * event — an event that sat through a backoff would otherwise arrive carrying an
+ * evaluation the policy correctly rejects as old.
  *
  * If the Owner later decides staff may opt out of assignment notifications, this
  * is the one function that changes.
@@ -277,8 +271,9 @@ function evaluateStaffConsent(): {
 } {
   return { granted: true, consentRecordId: null, evaluatedAt: new Date() };
 }
+
 /**
- * Enqueues one notification for the technician an assignment names.
+ * Enqueues one notification per configured channel for the assigned technician.
  *
  * ## What the body may say, and what it may not
  *
@@ -290,10 +285,10 @@ function evaluateStaffConsent(): {
  *
  * ## Attribution is deliberately split
  *
- * The ASSIGNMENT carries the supervisor's actor id. The NOTIFICATION carries
- * `SYSTEM_ACTOR_ID`, because the platform sends it *because an assignment
- * happened* — not the supervisor who assigned. Running it as the assigning user
- * would require every supervisor to hold `shared.notification.send`, coupling the
+ * The ASSIGNMENT carries the supervisor's actor id. The NOTIFICATION is sent by
+ * the platform *because an assignment happened*, under the worker's system actor —
+ * not by the supervisor who assigned. Running it as the assigning user would
+ * require every supervisor to hold `shared.notification.send`, coupling the
  * authority to assign work to the authority to send messages. The evidence must
  * not conflate the two.
  */
@@ -303,11 +298,9 @@ export const jobAssignedNotifier: Consumer = {
   supportedSchemaVersions: [1],
   async handle(event: ConsumedEvent, db: WorkerDb): Promise<ConsumerOutcome> {
     // Poison before anything else: a payload we cannot read must not become a
-    // lookup with a guessed argument.
-    // Both fields are validated: an unreadable jobId is as much a poison payload
-    // as an unreadable assignmentId, even though the recipient resolves from the
-    // latter. Validating only what is consumed would let a malformed publisher
-    // change through unnoticed.
+    // lookup with a guessed argument. Both ids are validated even though the
+    // recipient resolves from one — validating only what is consumed would let a
+    // malformed publisher change through unnoticed.
     const { assignmentId } = readPayload(event);
 
     const recipient = await resolveRecipient(db, event.tenantId, assignmentId);
@@ -324,51 +317,53 @@ export const jobAssignedNotifier: Consumer = {
       return 'skipped';
     }
 
-    const template = await resolveTemplate(db, event.tenantId);
-    if (template === null) {
+    const templates = await resolveTemplates(db, event.tenantId);
+    if (templates.length === 0) {
       /*
        * BR-09-OPEN-01 is still open: no approved assignment template exists, so
        * there is nothing to send and no channel to guess.
        *
        * Recorded as skipped rather than applied, so nothing anywhere can claim a
-       * notification was delivered. This is the same shape as the roster gap
-       * above, and it resolves the moment the Owner approves content — with no
-       * change to this file.
+       * notification was delivered. Same shape as the roster gap above, and it
+       * resolves the moment the Owner approves content — with no change here.
        */
       log.info('job.assigned: no approved assignment template for tenant', {
         module: 'wo.job_assigned_notifier',
         result: 'skipped',
         ...(event.correlationId === null ? {} : { correlationId: event.correlationId }),
         tenantRef: event.tenantId,
-        context: { eventId: event.id, purpose: ASSIGNMENT_TEMPLATE_PURPOSE },
+        context: { eventId: event.id, templateCode: ASSIGNMENT_TEMPLATE_CODE },
       });
       return 'skipped';
     }
 
     const consent = evaluateStaffConsent();
     try {
-      await notificationService().queueMessage(db as never, {
-        channel: template.channel as never,
-        templateVersionId: template.templateVersionId,
-        locale: template.locale,
-        // Keyed by the EVENT id, so a redelivery that somehow reached the
-        // service would still collapse there. The AUTHORITATIVE dedupe remains
-        // the registry's `shared.processed_events` marker; this is defence in
-        // depth and deliberately not a second mechanism to reason about.
-        dedupeKey: `job.assigned:${event.id}`,
-        recipientRef: recipient.userId,
-        // The job title and NOTHING else about the work. No customer, no
-        // registration, no cost, no restricted sidecar content — a notification
-        // must not become an oracle for data the recipient could not read
-        // through an authorized operation.
-        variables: { jobTitle: recipient.jobTitle },
-        consentEvaluation: consent,
-        // The outbox row carries company and branch, and the publisher does not
-        // put them in the payload. Passing null rather than guessing keeps the
-        // notification scoped by its recipient, which is the fact that matters.
-        companyId: null,
-        branchId: null,
-      });
+      // One per CONFIGURED channel. With a single template this is exactly one
+      // notification; with both channels configured it is one each, which is what
+      // "both" means. Sequential rather than concurrent, so a failure on the first
+      // channel is not raced by a second enqueue.
+      for (const template of templates) {
+        await notificationService().queueMessage(db as never, {
+          channel: template.channel as never,
+          templateVersionId: template.templateVersionId,
+          locale: template.locale,
+          // Keyed by the event AND the channel: two channels are two distinct
+          // intents, and one key for both would make the second look like a
+          // duplicate of the first and be dropped. The AUTHORITATIVE dedupe
+          // remains the registry's processed-events marker; this is defence in
+          // depth, deliberately not a second mechanism to reason about.
+          dedupeKey: `job.assigned:${event.id}:${template.channel}`,
+          recipientRef: recipient.userId,
+          variables: { jobTitle: recipient.jobTitle },
+          consentEvaluation: consent,
+          // The outbox row carries company and branch; the publisher does not put
+          // them in the payload. Passing null rather than guessing keeps the
+          // notification scoped by its recipient, which is the fact that matters.
+          companyId: null,
+          branchId: null,
+        });
+      }
     } catch (error) {
       if (isConsentRefusal(error)) {
         /*
@@ -377,7 +372,7 @@ export const jobAssignedNotifier: Consumer = {
          * ceiling, and dead-letters an event whose outcome was determined
          * correctly on the first try.
          *
-         * There is deliberately NO fallback to a second channel: sending by a
+         * There is deliberately NO fallback to another channel: sending by a
          * route the recipient did not consent to is the bypass this refusal
          * exists to prevent.
          */
@@ -392,10 +387,11 @@ export const jobAssignedNotifier: Consumer = {
         return 'skipped';
       }
       // Anything else is transient as far as this consumer can tell. Throw, and
-      // let backoff, the attempt ceiling and the dead-letter queue do their work
-      // — which is the entire reason this effect lives behind the outbox.
+      // let backoff, the attempt ceiling and the dead-letter queue do their work —
+      // which is the entire reason this effect lives behind the outbox.
       throw error;
     }
+
     return 'applied';
   },
 };
@@ -410,8 +406,8 @@ export const jobAssignedNotifier: Consumer = {
  * import executes nothing.
  *
  * Safe to call more than once. `registerConsumer` throws on a duplicate code, so
- * an already-registered consumer is treated as the success it is rather than as
- * an error to surface at boot.
+ * an already-registered consumer is treated as the success it is rather than as an
+ * error to surface at boot.
  */
 export function registerJobAssignedNotifier(): void {
   try {
