@@ -136,8 +136,12 @@ export interface JobReassignmentResult {
  * frontend type would have been its only definition anywhere.
  *
  * It lives in the work-order module although the operation is registered under
- * `technician`, because `QueueEntry` does: declaring it beside the operation id
- * would have forced a `technician -> work-order` import that does not exist.
+ * `technician`, because `QueueEntry` does and an envelope belongs beside the
+ * shape it wraps. No import-graph argument supports the placement and none is
+ * offered: the barrel edge already runs BOTH ways — `labor-session-service.ts`
+ * imports `workOrderModule`, this file imports `technicianModule` — and
+ * barrel-to-barrel imports between modules are the approved form, so declaring
+ * this type in `technician` would have been legal too.
  */
 export interface TechnicianQueueResult {
   readonly technicianProfileId: string;
