@@ -1,6 +1,12 @@
 -- ============================================================================
 -- PRE-P1-29-BR-06 — wo.job_work_logs, the progressive work log.
 --
+-- Rollback classification: DESTRUCTIVE-AFTER-FIRST-WRITE. DROP TABLE is clean and
+-- lossless until the first entry exists; after that it destroys a record nothing
+-- else in the platform holds — the work log is not derivable from job state, from
+-- labour sessions or from the status history. There is no down script, and the
+-- window closes the first time a technician uses it.
+--
 -- Closes Owner requirement 8 and finding INS-27. Before this table there was no
 -- work-log or note table anywhere in the four schemas:
 --

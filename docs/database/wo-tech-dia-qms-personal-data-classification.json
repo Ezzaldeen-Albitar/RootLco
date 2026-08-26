@@ -3288,6 +3288,51 @@
       "classification": "internal",
       "searchable": false,
       "dataType": "uuid"
+    },
+    "wo.job_work_logs.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.job_work_logs.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.job_work_logs.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.job_work_logs.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.job_work_logs.job_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.job_work_logs.entry": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "wo.job_work_logs.logged_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "wo.job_work_logs.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "wo.job_work_logs.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
     }
   }
 }

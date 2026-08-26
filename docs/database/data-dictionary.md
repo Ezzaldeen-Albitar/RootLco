@@ -3423,6 +3423,10 @@ its columns. Restricted columns (gated by `iam.sensitive.view`): `certificate_nu
 
 `id`, `scope`, `tenant_id`, `from_state`, `to_state`, `requires_reason`, `is_active`, `record_version`, `created_at`, `created_by`, `updated_at`, `updated_by`, `deleted_at`, `deleted_by`
 
+### wo.job_work_logs
+
+`id`, `tenant_id`, `company_id`, `branch_id`, `job_id`, `entry`, `logged_at`, `created_at`, `created_by`
+
 ### wo.jobs
 
 `id`, `tenant_id`, `company_id`, `branch_id`, `work_order_id`, `title`, `job_type`, `state`, `requires_diagnostic`, `record_version`, `created_at`, `created_by`, `updated_at`, `updated_by`, `deleted_at`, `deleted_by`
