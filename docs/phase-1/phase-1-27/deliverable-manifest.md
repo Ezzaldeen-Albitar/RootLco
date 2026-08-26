@@ -972,8 +972,8 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
      whose regexes read the label and the number as adjacent cells. -->
 
 <!-- derived: files apps/web/tests = 102 -->
-<!-- derived: files tests/ci = 55 -->
-<!-- derived: files scripts/ci = 55 -->
+<!-- derived: files tests/ci = 58 -->
+<!-- derived: files scripts/ci = 57 -->
 <!-- derived: files apps/web/scripts = 4 -->
 <!-- derived: files supabase/migrations = 126 -->
 <!-- derived: files tests/db = 143 -->
@@ -987,10 +987,10 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
 <!-- derived: tracked docs/phase-1/phase-1-27 = 41 -->
 <!-- derived: tracked docs/phase-1/phase-1-27:md = 31 -->
 <!-- derived: tracked docs/product = 13 -->
-<!-- derived: commands registered = 167 -->
-<!-- derived: commands required = 86 -->
-<!-- derived: commands reachable = 86 -->
-<!-- derived: commands hosted-ci = 86 -->
+<!-- derived: commands registered = 169 -->
+<!-- derived: commands required = 88 -->
+<!-- derived: commands reachable = 88 -->
+<!-- derived: commands hosted-ci = 88 -->
 <!-- derived: cases vehicle-screens.dom.test.tsx = 43 -->
 <!-- derived: cases tailwind-theme-gate.test.ts = 8 -->
 <!-- derived: cases navigation.test.ts = 22 -->
