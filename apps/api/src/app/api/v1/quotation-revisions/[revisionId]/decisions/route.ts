@@ -58,7 +58,7 @@ const Evidence = z
   })
   .strict();
 
-const Body = z
+export const Body = z
   .object({
     decision: z.enum(DECISIONS),
     channel: z.enum(DECISION_CHANNELS),

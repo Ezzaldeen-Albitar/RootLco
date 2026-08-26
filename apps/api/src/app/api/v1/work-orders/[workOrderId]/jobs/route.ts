@@ -30,7 +30,7 @@ export const dynamic = 'force-dynamic';
 
 const Params = z.object({ workOrderId: schemas.uuid });
 
-const Body = z
+export const Body = z
   .object({
     // `.trim()` before the length check, so trailing whitespace cannot buy length
     // and a blank-but-not-empty title is refused here rather than by

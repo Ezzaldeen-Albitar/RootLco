@@ -32,7 +32,7 @@ export const dynamic = 'force-dynamic';
 
 const Params = z.object({ jobId: schemas.uuid });
 
-const Body = z
+export const Body = z
   .object({
     toState: z.string().regex(/^[a-z][a-z0-9_]{1,62}$/, 'must be a lower-snake state code'),
     reason: z.string().min(1).max(MAX_REASON).optional(),

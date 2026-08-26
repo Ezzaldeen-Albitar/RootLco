@@ -192,8 +192,20 @@ export interface TransitionInput {
   readonly expectedVersion: number;
 }
 
-/** What a state-change command returns. */
-export interface TransitionResult {
+/**
+ * What a WORK-ORDER state-change command returns.
+ *
+ * Named for its aggregate, and that is BR-08b's `B4`. Two interfaces called
+ * `TransitionResult` shipped — this one and shared-services'
+ * `{aggregate, id, from, to, recordVersion, nextStates}` — so a contract gate keyed
+ * on the type NAME would bind to whichever it happened to find first and compare
+ * the wrong shape.
+ *
+ * The generic one keeps the generic name; the narrow one takes the specific name.
+ * Renaming the other way round would have made the cross-aggregate helper sound
+ * like a work-order type.
+ */
+export interface WorkOrderTransitionResult {
   readonly state: string;
   readonly recordVersion: number;
 }
@@ -937,7 +949,7 @@ export class WorkOrderService extends ApplicationService {
     jobId: string,
     input: TransitionInput,
     authorizeScope?: ScopeAuthorizer
-  ): Promise<TransitionResult> {
+  ): Promise<WorkOrderTransitionResult> {
     const locked = await this.repository.lockJob(db, jobId);
     if (locked === null) {
       throw new AppFailure('ERR-RES-001', { message: `Job ${jobId} is not visible` });
@@ -1367,7 +1379,7 @@ export class WorkOrderService extends ApplicationService {
     workOrderId: string,
     input: TransitionInput,
     authorizeScope?: ScopeAuthorizer
-  ): Promise<TransitionResult> {
+  ): Promise<WorkOrderTransitionResult> {
     return this.move(db, workOrderId, input, 'transition', authorizeScope);
   }
 
@@ -1393,7 +1405,7 @@ export class WorkOrderService extends ApplicationService {
     workOrderId: string,
     input: TransitionInput,
     authorizeScope?: ScopeAuthorizer
-  ): Promise<TransitionResult> {
+  ): Promise<WorkOrderTransitionResult> {
     return this.move(db, workOrderId, input, 'closure', authorizeScope);
   }
 
@@ -1416,7 +1428,7 @@ export class WorkOrderService extends ApplicationService {
     input: TransitionInput,
     via: 'transition' | 'closure',
     authorizeScope?: ScopeAuthorizer
-  ): Promise<TransitionResult> {
+  ): Promise<WorkOrderTransitionResult> {
     const locked = await this.repository.lockWorkOrder(db, workOrderId);
     if (locked === null) {
       throw new AppFailure('ERR-RES-001', { message: `Work order ${workOrderId} is not visible` });

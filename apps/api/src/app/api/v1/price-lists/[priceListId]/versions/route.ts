@@ -29,7 +29,7 @@ export const dynamic = 'force-dynamic';
 
 const Params = z.object({ priceListId: schemas.uuid });
 
-const Body = z
+export const Body = z
   .object({
     effectiveFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'must be an ISO date (YYYY-MM-DD)'),
     notes: z.string().min(1).max(MAX_NOTES).optional(),

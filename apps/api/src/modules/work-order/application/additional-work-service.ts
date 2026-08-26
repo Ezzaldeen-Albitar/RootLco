@@ -212,6 +212,18 @@ const toApprovalView = (
   evidence: evidence.map(toEvidenceView),
 });
 
+/**
+ * The wire shape of `wo.additional-work-approval` (PRE-P1-29-BR-08b).
+ *
+ * Two aggregates in one response because the decision writes both: the request
+ * moves state and the approval records what the customer was shown. Returning
+ * only one would make a caller re-read to learn the other half of its own write.
+ */
+export interface AdditionalWorkDecisionResult {
+  readonly request: AdditionalWorkRequestView;
+  readonly approval: CustomerApprovalView;
+}
+
 export class AdditionalWorkService extends ApplicationService {
   protected readonly module = 'work-order';
 
@@ -534,10 +546,7 @@ export class AdditionalWorkService extends ApplicationService {
     requestId: string,
     input: DecideInput,
     authorizeScope?: ScopeAuthorizer
-  ): Promise<{
-    readonly request: AdditionalWorkRequestView;
-    readonly approval: CustomerApprovalView;
-  }> {
+  ): Promise<AdditionalWorkDecisionResult> {
     const request = await this.lockDecidableRequest(db, requestId, authorizeScope);
     if (request.recordVersion !== input.expectedVersion) {
       // The stale-scope refusal. What the customer was shown belonged to the request

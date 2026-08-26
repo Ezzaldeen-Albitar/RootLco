@@ -30,7 +30,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const Params = z.object({ customerId: schemas.uuid });
-const Body = z
+export const Body = z
   .object({
     vehicleId: schemas.uuid,
     relationshipRole: z.enum(VEHICLE_RELATIONSHIP_ROLES),

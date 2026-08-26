@@ -15,7 +15,7 @@ import { sharedServicesModule } from '@/modules/shared-services';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const Body = z
+export const Body = z
   .object({
     templateCode: z.string().regex(/^[a-z][a-z0-9_]{1,62}$/),
     name: z.string().min(1).max(200),

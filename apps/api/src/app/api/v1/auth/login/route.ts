@@ -27,7 +27,7 @@ import { iamModule } from '@/modules/iam';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const LoginBody = z.object({
+export const LoginBody = z.object({
   /**
    * Optional. A lookup key, never a grant.
    *

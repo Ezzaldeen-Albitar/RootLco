@@ -44,7 +44,7 @@ export const dynamic = 'force-dynamic';
 
 const Params = z.object({ serviceId: schemas.uuid });
 
-const Body = z
+export const Body = z
   .object({
     serviceCategoryId: schemas.uuid.optional(),
     name: z.string().min(1).max(MAX_NAME).optional(),

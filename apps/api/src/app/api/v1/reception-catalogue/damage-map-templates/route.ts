@@ -38,7 +38,7 @@ export const dynamic = 'force-dynamic';
  * form is both absent. `ck_damage_map_templates_scope` says the same thing, and
  * the module reports half a pair as a 422 naming the field.
  */
-const CreateBody = z
+export const CreateBody = z
   .object({
     mapType: z.enum(DAMAGE_MAP_TYPES),
     perspective: z.string().min(1).max(MAX_TEMPLATE_PERSPECTIVE).nullable().optional(),

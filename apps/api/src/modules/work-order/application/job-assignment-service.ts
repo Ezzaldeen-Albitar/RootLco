@@ -111,6 +111,39 @@ const toQueueEntry = (row: TechnicianQueueRow): QueueEntry => ({
   displayNumber: row.displayNumber,
 });
 
+/**
+ * The wire shape of `wo.job-reassignment` (PRE-P1-29-BR-08b).
+ *
+ * Named here rather than in the frontend mirror, and that is the whole point of
+ * `BR-08b`: naming it on the far side would create a type with no counterpart in
+ * `apps/api`, which is exactly the drift a mirror exists to prevent and which
+ * nothing would catch.
+ *
+ * `ended` is nullable because a first assignment ends nothing — a handover
+ * closes a predecessor, an initial assignment does not have one.
+ */
+export interface JobReassignmentResult {
+  readonly ended: AssignmentView | null;
+  readonly opened: AssignmentView;
+}
+
+/**
+ * The wire shape of `tech.technician-queue` (PRE-P1-29-BR-08b).
+ *
+ * **The strongest case for naming these backend-side.** This envelope existed
+ * only inside the route handler — the service returns a bare `QueueEntry[]` — so
+ * even a type-checker pointed at the service layer would never have found it. A
+ * frontend type would have been its only definition anywhere.
+ *
+ * It lives in the work-order module although the operation is registered under
+ * `technician`, because `QueueEntry` does: declaring it beside the operation id
+ * would have forced a `technician -> work-order` import that does not exist.
+ */
+export interface TechnicianQueueResult {
+  readonly technicianProfileId: string;
+  readonly items: readonly QueueEntry[];
+}
+
 export class JobAssignmentService extends ApplicationService {
   protected readonly module = 'work-order';
 
@@ -264,7 +297,7 @@ export class JobAssignmentService extends ApplicationService {
     jobId: string,
     input: AssignInput & { readonly reason: string },
     authorizeScope?: ScopeAuthorizer
-  ): Promise<{ readonly ended: AssignmentView | null; readonly opened: AssignmentView }> {
+  ): Promise<JobReassignmentResult> {
     const job = await this.lockAssignableJob(db, jobId, authorizeScope);
     const current = await this.repository.lockActivePrimaryAssignment(db, jobId);
 

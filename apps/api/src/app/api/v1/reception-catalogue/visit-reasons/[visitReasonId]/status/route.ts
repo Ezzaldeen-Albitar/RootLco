@@ -36,7 +36,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const Params = z.object({ visitReasonId: schemas.uuid });
-const Body = z.object({ status: z.enum(CATALOGUE_STATUSES) }).strict();
+export const Body = z.object({ status: z.enum(CATALOGUE_STATUSES) }).strict();
 
 export const VISIT_REASON_STATUS_OPERATION = defineOperation({
   id: 'rec.catalogue-visit-reason-status-set',

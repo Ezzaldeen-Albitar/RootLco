@@ -35,7 +35,7 @@ const Params = z.object({ receptionId: schemas.uuid });
  * its origin from the visit. The empty strict shape is still enforced so a caller
  * cannot appear to seed a state or a kind that this operation does not accept.
  */
-const Body = z.object({}).strict().nullable();
+export const Body = z.object({}).strict().nullable();
 
 export const RECEPTION_CONVERT_OPERATION = defineOperation({
   id: 'rec.reception-convert-to-work-order',

@@ -28,7 +28,7 @@ export const dynamic = 'force-dynamic';
 
 const Params = z.object({ deliveryId: schemas.uuid }).strict();
 
-const RecordBody = z
+export const RecordBody = z
   .object({
     templateItemId: schemas.uuid,
     // Borrowed from the domain so the schema and the CHECK constraint cannot drift.

@@ -34,7 +34,9 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const Params = z.object({ inspectionId: schemas.uuid });
-const Body = z.object({ summary: z.string().trim().min(1).max(MAX_SUMMARY).optional() }).strict();
+export const Body = z
+  .object({ summary: z.string().trim().min(1).max(MAX_SUMMARY).optional() })
+  .strict();
 
 export const DIAGNOSTIC_COMPLETE_OPERATION = defineOperation({
   id: 'dia.diagnostic-complete',

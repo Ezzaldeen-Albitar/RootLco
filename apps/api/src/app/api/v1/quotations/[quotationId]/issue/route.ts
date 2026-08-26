@@ -37,7 +37,7 @@ export const dynamic = 'force-dynamic';
 
 const Params = z.object({ quotationId: schemas.uuid });
 
-const Body = z
+export const Body = z
   .object({
     revisionId: schemas.uuid,
     // A full timestamp, unlike the effective DATES elsewhere in this phase:

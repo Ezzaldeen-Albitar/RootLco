@@ -35,7 +35,7 @@ const ScopeInput = z
   })
   .strict();
 
-const GrantBody = z
+export const GrantBody = z
   .object({
     userId: schemas.uuid,
     roleId: schemas.uuid,

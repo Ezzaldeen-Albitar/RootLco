@@ -19,7 +19,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const Params = z.object({ templateId: schemas.uuid });
-const Body = z.object({ versionId: z.string().uuid().nullable() }).strict();
+export const Body = z.object({ versionId: z.string().uuid().nullable() }).strict();
 
 export const TEMPLATE_ACTIVATION_OPERATION = defineOperation({
   id: 'shared.template-activation-set',

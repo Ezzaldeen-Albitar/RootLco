@@ -60,7 +60,7 @@ const Origin = z.discriminatedUnion('kind', [
     .strict(),
 ]);
 
-const Body = z
+export const Body = z
   .object({
     companyId: schemas.uuid,
     branchId: schemas.uuid,

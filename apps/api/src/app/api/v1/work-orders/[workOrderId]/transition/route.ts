@@ -51,7 +51,7 @@ const Params = z.object({ workOrderId: schemas.uuid });
  * `ck_work_order_states_code`, so a syntactically impossible code is refused here
  * rather than sent to the database as a lookup that cannot match.
  */
-const Body = z
+export const Body = z
   .object({
     toState: z.string().regex(/^[a-z][a-z0-9_]{1,62}$/, 'must be a lower-snake state code'),
     reason: z.string().min(1).max(MAX_REASON).optional(),

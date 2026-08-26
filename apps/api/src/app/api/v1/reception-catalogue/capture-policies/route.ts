@@ -43,7 +43,7 @@ export const dynamic = 'force-dynamic';
 
 const Query = z.object({}).strict();
 
-const SetBody = z
+export const SetBody = z
   .object({
     requirementCode: z.enum(CAPTURE_POLICY_REQUIREMENTS),
     refusalType: z.enum(CAPTURE_POLICY_REFUSAL_TYPES).nullable().optional(),

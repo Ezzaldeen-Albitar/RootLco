@@ -38,7 +38,7 @@ export const dynamic = 'force-dynamic';
 
 const Params = z.object({ reworkLinkId: schemas.uuid });
 
-const Body = z
+export const Body = z
   .object({
     // Matches `ck_rework_link_details_cost` (>= 0) and the column's scale of 4.
     reworkCost: z

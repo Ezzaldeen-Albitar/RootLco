@@ -26,7 +26,7 @@ const Params = z.object({ vehicleId: schemas.uuid });
 const Query = z
   .object({ cursor: schemas.cursor.optional(), limit: schemas.limit.optional() })
   .strict();
-const Body = z
+export const Body = z
   .object({
     countryCode: z.string().min(2).max(3),
     plateRaw: z.string().min(1).max(MAX_PLATE_RAW),

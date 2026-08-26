@@ -65,7 +65,7 @@ const UnitCost = z
   })
   .strict();
 
-const CreateBody = z
+export const CreateBody = z
   .object({
     workOrderId: schemas.uuid,
     description: z.string().min(1).max(MAX_DESCRIPTION),

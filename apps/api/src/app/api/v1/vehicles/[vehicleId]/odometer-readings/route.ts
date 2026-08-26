@@ -32,7 +32,7 @@ const Params = z.object({ vehicleId: schemas.uuid });
 const Query = z
   .object({ cursor: schemas.cursor.optional(), limit: schemas.limit.optional() })
   .strict();
-const Body = z
+export const Body = z
   .object({
     value: z.number().min(0).max(MAX_ODOMETER_VALUE),
     unit: z.enum(ODOMETER_UNITS),

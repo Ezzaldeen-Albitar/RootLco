@@ -25,7 +25,7 @@ import { iamModule } from '@/modules/iam';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const CompletionBody = z.object({
+export const CompletionBody = z.object({
   /** The provider's recovery token, taken from the emailed link. */
   token: z.string().min(8).max(2048),
   password: z.string().min(1).max(200),

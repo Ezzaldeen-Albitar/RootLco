@@ -43,7 +43,7 @@ export const dynamic = 'force-dynamic';
 
 const Params = z.object({ serviceId: schemas.uuid, versionId: schemas.uuid });
 
-const Body = z
+export const Body = z
   .object({
     // A plain date, because `svc.service_versions.effective_from` is a `date` and the
     // gist EXCLUDE ranges over `daterange`. Accepting a timestamp would imply a

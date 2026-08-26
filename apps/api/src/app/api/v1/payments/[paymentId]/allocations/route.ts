@@ -48,7 +48,7 @@ const MoneyAmount = z
     'must be an unsigned decimal string of at most 14 integer digits and 4 decimal places'
   );
 
-const AllocateBody = z
+export const AllocateBody = z
   .object({
     invoiceId: schemas.uuid,
     amount: MoneyAmount,

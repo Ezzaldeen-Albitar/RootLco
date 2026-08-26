@@ -22,7 +22,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const Params = z.object({ roleId: schemas.uuid, mappingId: schemas.uuid });
-const PatchBody = z.object({ effect: z.enum(['allow', 'deny']) }).strict();
+export const PatchBody = z.object({ effect: z.enum(['allow', 'deny']) }).strict();
 
 export const ROLE_PERMISSION_UPDATE_OPERATION = defineOperation({
   id: 'iam.role-permission-update',

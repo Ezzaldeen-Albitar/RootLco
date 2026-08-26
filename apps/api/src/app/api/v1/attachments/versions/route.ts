@@ -15,7 +15,7 @@ import { sharedServicesModule } from '@/modules/shared-services';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const Body = z
+export const Body = z
   .object({
     uploadToken: z.string().min(1).max(1024),
     /** Optional cross-check against the token. Disagreement is refused. */

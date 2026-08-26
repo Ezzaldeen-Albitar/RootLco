@@ -28,7 +28,7 @@ const Params = z.object({ customerId: schemas.uuid });
 const Query = z
   .object({ cursor: schemas.cursor.optional(), limit: schemas.limit.optional() })
   .strict();
-const Body = z
+export const Body = z
   .object({
     channel: z.enum(CONTACT_CHANNELS),
     value: z.string().min(1).max(MAX_CONTACT_VALUE),

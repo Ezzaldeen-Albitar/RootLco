@@ -36,7 +36,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const Params = z.object({ warningLightCodeId: schemas.uuid });
-const Body = z.object({ status: z.enum(CATALOGUE_STATUSES) }).strict();
+export const Body = z.object({ status: z.enum(CATALOGUE_STATUSES) }).strict();
 
 export const WARNING_LIGHT_CODE_STATUS_OPERATION = defineOperation({
   id: 'rec.catalogue-warning-light-code-status-set',

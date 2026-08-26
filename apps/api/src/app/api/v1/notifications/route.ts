@@ -24,7 +24,7 @@ import { sharedServicesModule } from '@/modules/shared-services';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const Body = z
+export const Body = z
   .object({
     /** The frozen contract's wider union is accepted and then refused by policy. */
     channel: z.enum(['email', 'sms', 'whatsapp', 'in_app']),

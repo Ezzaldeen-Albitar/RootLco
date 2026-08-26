@@ -29,7 +29,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const Params = z.object({ customerId: schemas.uuid });
-const Body = z
+export const Body = z
   .object({
     /** The record that survives. The path customer is redirected into it. */
     survivorId: schemas.uuid,

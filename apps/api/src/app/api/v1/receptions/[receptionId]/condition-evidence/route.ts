@@ -183,7 +183,7 @@ const Leak = z
   })
   .strict();
 
-const Body = z.discriminatedUnion('kind', [
+export const Body = z.discriminatedUnion('kind', [
   Complaint,
   Inspection,
   ConditionItem,

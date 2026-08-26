@@ -15,7 +15,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const Params = z.object({ versionId: z.string().uuid() });
-const Body = z.object({ reason: z.string().min(1).max(500) }).strict();
+export const Body = z.object({ reason: z.string().min(1).max(500) }).strict();
 
 export const ATTACHMENT_VERSION_REJECT_OPERATION = defineOperation({
   id: 'shared.attachment-version-reject',

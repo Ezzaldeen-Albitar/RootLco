@@ -36,7 +36,7 @@ export const dynamic = 'force-dynamic';
 
 const Params = z.object({ deliveryId: schemas.uuid }).strict();
 
-const VerifyBody = z
+export const VerifyBody = z
   .object({
     receiverPartnerId: schemas.uuid,
     identityEvidenceDocumentVersionId: schemas.uuid.optional(),

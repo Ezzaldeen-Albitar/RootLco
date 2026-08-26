@@ -22,7 +22,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const Params = z.object({ userId: schemas.uuid });
-const PatchBody = z
+export const PatchBody = z
   .object({
     displayName: z.string().min(1).max(200).optional(),
     mfaRequired: z.boolean().optional(),

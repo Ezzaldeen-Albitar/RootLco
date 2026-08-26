@@ -23,7 +23,7 @@ import { iamModule } from '@/modules/iam';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const InviteBody = z.object({
+export const InviteBody = z.object({
   email: z.string().min(3).max(320),
   displayName: z.string().min(1).max(200),
   mfaRequired: z.boolean().optional(),

@@ -33,7 +33,7 @@ const Params = z.object({ receptionId: schemas.uuid });
  * enforced so a caller who tries to smuggle a status alongside it gets a 422 rather
  * than the quiet impression that it was applied.
  */
-const Body = z.object({}).strict().nullable();
+export const Body = z.object({}).strict().nullable();
 
 export const RECEPTION_APPROVE_OPERATION = defineOperation({
   id: 'rec.reception-approve',

@@ -63,7 +63,7 @@ const Line = z
   })
   .strict();
 
-const Body = z
+export const Body = z
   .object({
     workOrderId: schemas.uuid,
     payerPartnerRef: schemas.uuid.optional(),
