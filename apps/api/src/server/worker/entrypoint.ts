@@ -19,6 +19,11 @@
  * safer than forcing a completion whose consumers may not have finished.
  */
 import { OutboxWorker } from './outbox-worker';
+// BR-09. Consumers are registered HERE, at process boot, rather than by importing
+// them for their side effects — see consumers/index.ts. A worker that starts with
+// an empty registry completes every event having done nothing, which is exactly
+// the INS-25 failure this slice closes.
+import { registerWorkerConsumers } from './consumers';
 import { closeWorkerPool } from './worker-db';
 import { workerReadiness, type ReadinessReport } from '../health/readiness';
 import { log } from '../observability/logger';
@@ -37,6 +42,7 @@ export interface WorkerProcess {
  * (a supervisor, a test) decides when to stop.
  */
 export function startOutboxWorker(): WorkerProcess {
+  registerWorkerConsumers();
   const worker = new OutboxWorker();
   let draining = false;
 
