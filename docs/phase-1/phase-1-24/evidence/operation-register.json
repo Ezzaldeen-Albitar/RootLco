@@ -12277,7 +12277,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-19-work-order-jobs.test.ts"],
+      "tests": [
+        "tests/backend/p1-19-work-order-jobs.test.ts",
+        "tests/ci/p1-29-payload-parity.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/work-orders/[workOrderId]/jobs/route.ts"
     },
