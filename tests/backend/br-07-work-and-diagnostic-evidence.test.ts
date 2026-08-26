@@ -34,7 +34,7 @@
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Pool } from 'pg';
 import {
@@ -647,9 +647,13 @@ describe('S5 — the shared refusal rule has ONE declaration', () => {
     const root = join(process.cwd(), 'apps', 'api', 'src');
     const hits: string[] = [];
     const walk = (dir: string): void => {
-      for (const entry of readdirSync(dir)) {
-        const full = join(dir, entry);
-        if (statSync(full).isDirectory()) {
+      // `withFileTypes` rather than readdir-then-stat: the two-call form is a
+      // check-then-use race (`js/file-system-race`), and CodeQL is right to flag
+      // it even here. One readdir returns the entry KIND with the name, so there
+      // is no window between deciding what a path is and acting on it.
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const full = join(dir, entry.name);
+        if (entry.isDirectory()) {
           walk(full);
           continue;
         }
