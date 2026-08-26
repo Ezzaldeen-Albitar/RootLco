@@ -258,17 +258,39 @@ promise, not as a defect of this slice.
 
 ## 8. Gates
 
-| gate                                | result                                                 |
-| ----------------------------------- | ------------------------------------------------------ |
-| `typecheck:api`                     | green                                                  |
-| `typecheck` (root)                  | green                                                  |
-| `typecheck:web`                     | green — the root typecheck does **not** reach it       |
-| `build:api`                         | ✓ Compiled successfully in 27.3s                       |
-| `lint`                              | green                                                  |
-| `format:check` · `format:check:api` | green — the root prettier run does not reach `apps/**` |
-| `validate:module-boundaries`        | green                                                  |
-| `validate:openapi`                  | 269 paths, 334 operations, structurally valid          |
-| `verify:contracts`                  | green — register reconciled at 334 operations          |
+| gate                                | result                                                    |
+| ----------------------------------- | --------------------------------------------------------- |
+| `typecheck:api`                     | green                                                     |
+| `typecheck` (root)                  | green                                                     |
+| `typecheck:web`                     | green — the root typecheck does **not** reach it          |
+| `build:api`                         | ✓ Compiled successfully in 27.3s                          |
+| `lint`                              | green                                                     |
+| `format:check` · `format:check:api` | green — the root prettier run does not reach `apps/**`    |
+| `validate:module-boundaries`        | green                                                     |
+| `validate:openapi`                  | 269 paths, 334 operations, structurally valid             |
+| `verify:contracts`                  | green — register reconciled at 334 operations             |
+| `verify:inventories`                | green — P1-19 58 operations, P1-20 17, P1-21 14, P1-22 20 |
+| `validate:generated-artifacts`      | 2367 tracked file(s), 0 failure(s)                        |
+| `validate:phase-ownership`          | `p1-29-backend`, 180 changed file(s), **0 violation(s)**  |
+| `verify:policies`                   | green — 0 problem(s)                                      |
+| unit tier                           | **2979 / 2979**, 107 files, recorded at `1a9e9c9f`        |
+| web tier                            | **2889 / 2889**, 102 files, recorded at `1a9e9c9f`        |
+| backend tier                        | **2232 / 2232**, 95 files                                 |
+
+### 8.1 One red run, and why it is not re-run-until-green
+
+The first `--record web` was taken while a six-agent review was running against the same machine, and
+`apps/web/tests/stylelint-policy.test.ts` failed with `STACK_TRACE_ERROR` — a blown time budget, not
+an assertion. That test already carries a raised `COLD_START_TIMEOUT_MS` and a docblock that says
+exactly what to do about this:
+
+> _A test whose verdict depends on how busy the host is has stopped being a check. It gets re-run
+> until it passes, and that habit is what lets a real failure through._
+
+So the red is recorded here rather than discarded. It was re-recorded on an idle machine, in a
+dedicated worktree, with the two tiers run sequentially and nothing else running — the load was
+mine, it was identified, and it was removed. `judgeRunLedger` would have refused the red record
+anyway; the point of writing it down is that the reason was diagnosed rather than assumed.
 
 ## 9. Definition of Done
 
