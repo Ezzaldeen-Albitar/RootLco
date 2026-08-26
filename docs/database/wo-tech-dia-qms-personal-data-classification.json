@@ -3333,6 +3333,56 @@
       "classification": "internal",
       "searchable": false,
       "dataType": "uuid"
+    },
+    "wo.job_evidence.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.job_evidence.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.job_evidence.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.job_evidence.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.job_evidence.job_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.job_evidence.document_version_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.job_evidence.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.job_evidence.evidence_type": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "wo.job_evidence.note": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "wo.job_evidence.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
     }
   }
 }

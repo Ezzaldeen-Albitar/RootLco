@@ -328,14 +328,14 @@ describe('P1-15 / global security posture', () => {
     // The tail is asserted FOUR deep, one per branch that contributed. A shorter
     // tail would go on passing with any one of them missing — the shape that
     // lets a migration vanish in a merge and take its grants with it.
-    expect(files).toHaveLength(125);
-    expect(files.at(-4)).toBe('20260815093000_rec_receiving_employee_identity.sql');
-    expect(files.at(-3)).toBe('20260815100000_rec_reception_evidence_contracts.sql');
-    expect(files.at(-2)).toBe('20260819090000_rec_damage_map_revision_required.sql');
+    expect(files).toHaveLength(126);
+    expect(files.at(-4)).toBe('20260815100000_rec_reception_evidence_contracts.sql');
+    expect(files.at(-3)).toBe('20260819090000_rec_damage_map_revision_required.sql');
+    expect(files.at(-2)).toBe('20260826090000_wo_job_work_logs.sql');
     // PRE-P1-29-BR-06. The tail SHIFTS by one rather than growing: it is four
     // deep on purpose, so that any one migration vanishing in a merge — and
     // taking its grants with it — fails here rather than somewhere confusing.
-    expect(files.at(-1)).toBe('20260826090000_wo_job_work_logs.sql');
+    expect(files.at(-1)).toBe('20260826093000_wo_job_evidence.sql');
   });
 
   it('migration 121 changes the shared surface DELIBERATELY, and the change is bounded', () => {
