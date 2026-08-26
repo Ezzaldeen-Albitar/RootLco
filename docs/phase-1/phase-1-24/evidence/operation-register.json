@@ -1,9 +1,9 @@
 {
   "generatedBy": "scripts/p1-24-operation-register.mjs",
   "totals": {
-    "operations": 325,
-    "openapiPaths": 263,
-    "openapiOperations": 325,
+    "operations": 331,
+    "openapiPaths": 267,
+    "openapiOperations": 331,
     "openapiSchemas": 3,
     "events": 50,
     "eventsProduced": 47,
@@ -11,10 +11,10 @@
     "outboxForeignWriters": 0,
     "errorCodes": 28,
     "permissionCodes": 114,
-    "auditActions": 199
+    "auditActions": 200
   },
   "counts": {
-    "Covered": 325
+    "Covered": 331
   },
   "operations": [
     {
@@ -4833,6 +4833,36 @@
       "tests": ["tests/backend/p1-19-quality-rework.test.ts"],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/quality-controls/[recordId]/checks/[qcCheckId]/route.ts"
+    },
+    {
+      "id": "qms.qc-record-branch-list",
+      "domain": "quality",
+      "method": "GET",
+      "route": "/api/v1/quality-controls",
+      "permissions": ["qms.quality_control.read"],
+      "public": false,
+      "scope": "branch",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/quality-controls",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": ["route", "service", "success", "authorization", "isolation", "denial"],
+      "providedEvidence": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/br-06-work-execution-controls.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/quality-controls/route.ts"
     },
     {
       "id": "qms.qc-record-detail",
@@ -12252,6 +12282,44 @@
       "file": "apps/api/src/app/api/v1/work-orders/[workOrderId]/jobs/route.ts"
     },
     {
+      "id": "wo.job-detail",
+      "domain": "work-order",
+      "method": "GET",
+      "route": "/api/v1/jobs/{jobId}",
+      "permissions": ["wo.work_order.read"],
+      "public": false,
+      "scope": "branch",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/jobs/{jobId}",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "isolation",
+        "denial"
+      ],
+      "providedEvidence": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/br-06-work-execution-controls.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/jobs/[jobId]/route.ts"
+    },
+    {
       "id": "wo.job-history",
       "domain": "work-order",
       "method": "GET",
@@ -12288,6 +12356,36 @@
       "tests": ["tests/backend/p1-19-job-lifecycle.test.ts"],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/jobs/[jobId]/history/route.ts"
+    },
+    {
+      "id": "wo.job-list",
+      "domain": "work-order",
+      "method": "GET",
+      "route": "/api/v1/jobs",
+      "permissions": ["wo.work_order.read"],
+      "public": false,
+      "scope": "branch",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/jobs",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": ["route", "service", "success", "authorization", "isolation", "denial"],
+      "providedEvidence": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/br-06-work-execution-controls.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/jobs/route.ts"
     },
     {
       "id": "wo.job-reassignment",
@@ -12427,6 +12525,86 @@
       "tests": ["tests/backend/p1-19-work-order-jobs.test.ts"],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/jobs/[jobId]/route.ts"
+    },
+    {
+      "id": "wo.job-work-log-list",
+      "domain": "work-order",
+      "method": "GET",
+      "route": "/api/v1/jobs/{jobId}/work-logs",
+      "permissions": ["wo.work_order.read"],
+      "public": false,
+      "scope": "branch",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/jobs/{jobId}/work-logs",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "isolation",
+        "denial"
+      ],
+      "providedEvidence": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/br-06-work-execution-controls.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/jobs/[jobId]/work-logs/route.ts"
+    },
+    {
+      "id": "wo.job-work-log-record",
+      "domain": "work-order",
+      "method": "POST",
+      "route": "/api/v1/jobs/{jobId}/work-logs",
+      "permissions": ["tech.labor.record"],
+      "public": false,
+      "scope": "branch",
+      "transaction": "transactional write",
+      "auditClass": "privileged",
+      "auditAction": "wo.job.work_log_recorded",
+      "idempotent": true,
+      "versionGuarded": false,
+      "openapi": "POST /api/v1/jobs/{jobId}/work-logs",
+      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "isolation",
+        "denial"
+      ],
+      "providedEvidence": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/br-06-work-execution-controls.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/jobs/[jobId]/work-logs/route.ts"
     },
     {
       "id": "wo.required-part-list",
@@ -12587,6 +12765,28 @@
       "tests": ["tests/backend/p1-19-work-order-lines.test.ts"],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/work-orders/[workOrderId]/service-lines/route.ts"
+    },
+    {
+      "id": "wo.work-order-catalogue",
+      "domain": "work-order",
+      "method": "GET",
+      "route": "/api/v1/work-order-catalogue",
+      "permissions": ["wo.work_order.read"],
+      "public": false,
+      "scope": "tenant",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/work-order-catalogue",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": ["route", "service", "success", "authorization", "denial"],
+      "providedEvidence": ["authorization", "denial", "route", "service", "success"],
+      "missingEvidence": [],
+      "tests": ["tests/backend/br-06-work-execution-controls.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/work-order-catalogue/route.ts"
     },
     {
       "id": "wo.work-order-closure",

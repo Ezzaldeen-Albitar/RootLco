@@ -10,7 +10,7 @@
  * The backend requires an `Idempotency-Key` header on every operation it
  * registers as idempotent, and answers `400 ERR-INT-002` without one — before
  * authorization is evaluated. That set is NOT "the POST operations": it is
- * currently 151 operations (PATCH 3, POST 142, PUT 6).
+ * currently 152 operations (PATCH 3, POST 143, PUT 6).
  *
  * The client used to infer the answer from the HTTP method, which was wrong for
  * every non-POST member of that set. This table is the contract instead of a
@@ -24,7 +24,7 @@
  * thirteen of them stating which class a write declares, none of them checkable
  * — because the Web tier held no data from which one could be derived.
  *
- * Currently approval 13, export 1, financial 13, none 127, privileged 158, security 13.
+ * Currently approval 13, export 1, financial 13, none 132, privileged 159, security 13.
  *
  * `(absent)` above would mean an operation the document publishes with NO audit
  * class. It is emitted as the empty string rather than defaulted to `none`,
@@ -49,7 +49,7 @@ export interface PublishedOperation {
   readonly auditClass: string;
 }
 
-/** Every operation the contract publishes. 325 of them. */
+/** Every operation the contract publishes. 331 of them. */
 export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze([
   {
     template: '/additional-work/{requestId}/approval',
@@ -1018,6 +1018,20 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     auditClass: 'none',
   },
   {
+    template: '/jobs',
+    method: 'GET',
+    operationId: 'wo.job-list',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/jobs/{jobId}',
+    method: 'GET',
+    operationId: 'wo.job-detail',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
     template: '/jobs/{jobId}',
     method: 'PATCH',
     operationId: 'wo.job-update',
@@ -1091,6 +1105,20 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     template: '/jobs/{jobId}/transition',
     method: 'POST',
     operationId: 'wo.job-transition',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/jobs/{jobId}/work-logs',
+    method: 'GET',
+    operationId: 'wo.job-work-log-list',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/jobs/{jobId}/work-logs',
+    method: 'POST',
+    operationId: 'wo.job-work-log-record',
     idempotent: true,
     auditClass: 'privileged',
   },
@@ -1315,6 +1343,13 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     template: '/prices',
     method: 'GET',
     operationId: 'svc.price-resolve',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/quality-controls',
+    method: 'GET',
+    operationId: 'qms.qc-record-branch-list',
     idempotent: false,
     auditClass: 'none',
   },
@@ -2183,6 +2218,13 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     template: '/warranties/{warrantyId}',
     method: 'GET',
     operationId: 'wty.warranty-detail',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/work-order-catalogue',
+    method: 'GET',
+    operationId: 'wo.work-order-catalogue',
     idempotent: false,
     auditClass: 'none',
   },

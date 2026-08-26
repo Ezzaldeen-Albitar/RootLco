@@ -412,6 +412,11 @@ export async function deleteTenantCascade(admin: Pool, tenantIds: string[]): Pro
   await deleteFrom('wo.work_order_service_lines');
   await deleteFrom('wo.job_assignments');
   await deleteFrom('wo.job_status_history');
+  // BR-06. `fk_job_work_logs_job` is ON DELETE RESTRICT, like every other child
+  // in this domain, so the log must go before the job it describes — otherwise
+  // teardown fails with a foreign-key violation and takes EVERY suite that uses
+  // these fixtures down with it, not just the one that wrote a log.
+  await deleteFrom('wo.job_work_logs');
   await deleteFrom('wo.jobs');
   await deleteFrom('wo.work_order_status_history');
   await deleteFrom('wo.work_orders');

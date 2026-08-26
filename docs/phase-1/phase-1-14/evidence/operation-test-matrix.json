@@ -2,10 +2,10 @@
   "generatedFrom": "scripts/check-operation-test-coverage.mjs",
   "counts": {
     "registered": 331,
-    "publicApi": 325,
+    "publicApi": 331,
     "internal": 0,
-    "withRequiredEvidence": 325,
-    "invocationOnly": 6,
+    "withRequiredEvidence": 331,
+    "invocationOnly": 0,
     "p1_15": {
       "registered": 28,
       "publicApi": 28,
@@ -48,12 +48,12 @@
     },
     "p1_19": {
       "registered": 84,
-      "publicApi": 78,
-      "operationDepth": 78,
-      "invocationOnly": 6,
+      "publicApi": 84,
+      "operationDepth": 84,
+      "invocationOnly": 0,
       "pending": 0,
       "unitOnly": 0,
-      "unreferenced": 6,
+      "unreferenced": 0,
       "metadataOnly": 0
     },
     "p1_20": {
@@ -4315,11 +4315,27 @@
     },
     {
       "id": "qms.qc-record-branch-list",
-      "files": [],
-      "referenced": false,
-      "required": [],
-      "provided": [],
-      "missing": ["<undeclared>"]
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/quality-controls",
+      "public": false,
+      "files": ["tests/backend/br-06-work-execution-controls.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "isolation"],
+      "declared": ["success", "denial"],
+      "required": ["route", "service", "success", "authorization", "isolation", "denial"],
+      "provided": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
     },
     {
       "id": "qms.qc-record-detail",
@@ -11105,11 +11121,35 @@
     },
     {
       "id": "wo.job-detail",
-      "files": [],
-      "referenced": false,
-      "required": [],
-      "provided": [],
-      "missing": ["<undeclared>"]
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/jobs/{jobId}",
+      "public": false,
+      "files": ["tests/backend/br-06-work-execution-controls.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "cross-tenant", "isolation"],
+      "declared": ["success", "denial", "isolation"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "isolation",
+        "denial"
+      ],
+      "provided": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
     },
     {
       "id": "wo.job-history",
@@ -11145,11 +11185,27 @@
     },
     {
       "id": "wo.job-list",
-      "files": [],
-      "referenced": false,
-      "required": [],
-      "provided": [],
-      "missing": ["<undeclared>"]
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/jobs",
+      "public": false,
+      "files": ["tests/backend/br-06-work-execution-controls.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "isolation"],
+      "declared": ["success", "denial", "isolation"],
+      "required": ["route", "service", "success", "authorization", "isolation", "denial"],
+      "provided": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
     },
     {
       "id": "wo.job-reassignment",
@@ -11321,19 +11377,80 @@
     },
     {
       "id": "wo.job-work-log-list",
-      "files": [],
-      "referenced": false,
-      "required": [],
-      "provided": [],
-      "missing": ["<undeclared>"]
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/jobs/{jobId}/work-logs",
+      "public": false,
+      "files": ["tests/backend/br-06-work-execution-controls.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "cross-tenant", "isolation"],
+      "declared": ["success", "denial", "cross-tenant", "isolation"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "isolation",
+        "denial"
+      ],
+      "provided": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
     },
     {
       "id": "wo.job-work-log-record",
-      "files": [],
-      "referenced": false,
-      "required": [],
-      "provided": [],
-      "missing": ["<undeclared>"]
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/jobs/{jobId}/work-logs",
+      "public": false,
+      "files": ["tests/backend/br-06-work-execution-controls.test.ts"],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "isolation"
+      ],
+      "declared": ["success", "denial", "cross-tenant", "isolation", "audit", "idempotency"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "isolation",
+        "denial"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
     },
     {
       "id": "wo.required-part-list",
@@ -11491,11 +11608,19 @@
     },
     {
       "id": "wo.work-order-catalogue",
-      "files": [],
-      "referenced": false,
-      "required": [],
-      "provided": [],
-      "missing": ["<undeclared>"]
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/work-order-catalogue",
+      "public": false,
+      "files": ["tests/backend/br-06-work-execution-controls.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization"],
+      "declared": ["success", "denial"],
+      "required": ["route", "service", "success", "authorization", "denial"],
+      "provided": ["authorization", "denial", "route", "service", "success"],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
     },
     {
       "id": "wo.work-order-closure",
