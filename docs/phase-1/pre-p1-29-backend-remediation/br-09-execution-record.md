@@ -92,6 +92,38 @@ reason not to choose alone:
   `outbound_messages` INSERT grant, so it shrinks the problem rather than removing
   it.
 
+## 3a. Owner decision — recorded 2026-08-26
+
+**Design B selected: payload-carries-the-facts.** `app_worker` is **not** to be
+granted broad USAGE or read access to `wo` or `tech`. The worker stays narrow, and
+`job.assigned` carries what its consumer needs: the technician profile, the
+recipient's user id, and the job title.
+
+**The enqueue authority is NOT to be solved by a broad INSERT grant on
+`shared.outbound_messages`.** A narrowly scoped, security-reviewed write path is a
+**separate remediation** — because BR-09's approved contract carries zero
+migrations and zero grants, and because the gap is platform-wide rather than
+BR-09's: no application role can enqueue a notification today, so the
+"enqueue-on-request" path `DEP-B6` describes cannot write either.
+
+Tracked as **`BR-09-BLOCK-01` → deferred to a dedicated enqueue-authority
+remediation.** BR-09 remains BLOCKED until that lands.
+
+### Why the payload change is not implemented on this branch yet
+
+The publisher change and the consumer that needs it are **one contract change**
+and should land together. Adding `technicianProfileId`, the recipient user id and
+the job title to a published event now would alter a shipped event's payload on a
+branch that cannot merge — leaving a live contract half-moved, with the only
+consumer that justifies it still parked. It is queued to land with the unblocked
+slice, in one reviewable change.
+
+What that change will need, recorded so it is not rediscovered: the work-order
+module holds `technicianProfileId` on the assignment row and the job title on
+`wo.jobs`, but the recipient's **user id** lives in `tech.technician_profiles` —
+so the publisher reaches it through the **technician module's port**, the same way
+BR-06 resolved `hasOpenLaborSession` rather than reading a sibling schema.
+
 ## 4. A separate contract discrepancy, already resolved
 
 Independent of the blocker, three contract statements did not match the repository
