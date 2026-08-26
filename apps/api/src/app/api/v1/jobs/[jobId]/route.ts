@@ -27,6 +27,7 @@ import { defineOperation } from '@/server/auth/operation-registry';
 import { handleOperation } from '@/server/http/route-handler';
 import { parseOrFail, schemas } from '@/server/http/validation';
 import { AppFailure } from '@/server/errors/app-failure';
+import { callerHoldsPermission } from '@/server/auth/authorization';
 import { MAX_JOB_TITLE, MAX_JOB_TYPE, workOrderModule } from '@/modules/work-order';
 
 export const runtime = 'nodejs';
@@ -97,5 +98,67 @@ export async function PATCH(
       return { body: job, recordVersion: job.recordVersion };
     },
     { params: raw, body }
+  );
+}
+
+/**
+ * GET /api/v1/jobs/{jobId} (PRE-P1-29-BR-06 — `INS-03`).
+ *
+ * Before this, every job screen was reached and refreshed through its parent
+ * work order. That is workable for a detail pane opened from a board and
+ * impossible for one opened from a queue — which is precisely the screen the new
+ * `GET /jobs` makes possible, so the two land together.
+ *
+ * ## `nextStates` comes from the CATALOGUE, never from a constant
+ *
+ * Computed the same way `wo.work-order-detail` computes the work order's edges:
+ * by asking `workOrderCatalog` for the tenant's own job graph. A hard-coded edge
+ * list here would be wrong for any tenant that configured its own, and would
+ * disagree with `wo.guard_job_transition`, which reads the table.
+ *
+ * ## `assignments` is OMITTED, not empty, without `tech.technician.read`
+ *
+ * `T-05`. The distinction is deliberate and load-bearing: an empty array asserts
+ * *this job has no assignments*, which is a claim about the data; an absent key
+ * says *this response does not answer that question*, which is the truth. A board
+ * that rendered "unassigned" from an array emptied by an authorization rule would
+ * be displaying a fabrication.
+ */
+export const JOB_DETAIL_OPERATION = defineOperation({
+  id: 'wo.job-detail',
+  module: 'work-order',
+  method: 'GET',
+  path: '/jobs/{jobId}',
+  summary: 'Read one job with its board context and the edges it can currently take.',
+  permissions: ['wo.work_order.read'],
+  scope: 'branch',
+  auditClass: 'none',
+  rateLimitPolicy: 'low-risk-metadata',
+  cacheCategory: 'never',
+});
+
+export async function GET(
+  request: Request,
+  route: { params: Promise<{ jobId: string }> }
+): Promise<Response> {
+  const raw = await route.params;
+  return handleOperation(
+    JOB_DETAIL_OPERATION,
+    request,
+    async ({ db, authorizeScope }) => {
+      const params = parseOrFail(Params, raw, 'path');
+      // The staff gate is asked against the JOB's own scope, resolved first, so
+      // the question is "may this caller read staff HERE" rather than anywhere.
+      const scope = await workOrderModule().jobBoard.scopeOf(db, params.jobId);
+      const mayReadStaff =
+        scope === null ? false : await callerHoldsPermission(db, 'tech.technician.read', scope);
+      return {
+        body: await workOrderModule().jobBoard.jobDetail(db, params.jobId, {
+          authorizeScope,
+          mayReadStaff,
+        }),
+      };
+    },
+    { params: raw }
   );
 }

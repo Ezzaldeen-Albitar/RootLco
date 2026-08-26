@@ -1,13 +1,13 @@
 {
   "generatedFrom": "scripts/check-operation-test-coverage.mjs",
   "counts": {
-    "registered": 78,
+    "registered": 84,
     "publicApi": 78,
     "operationDepth": 78,
-    "invocationOnly": 0,
+    "invocationOnly": 6,
     "pending": 0,
     "unitOnly": 0,
-    "unreferenced": 0,
+    "unreferenced": 6,
     "metadataOnly": 0
   },
   "operations": [
@@ -932,6 +932,14 @@
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false
+    },
+    {
+      "id": "qms.qc-record-branch-list",
+      "files": [],
+      "referenced": false,
+      "required": [],
+      "provided": [],
+      "missing": ["<undeclared>"]
     },
     {
       "id": "qms.qc-record-detail",
@@ -2728,6 +2736,14 @@
       "unitOnly": false
     },
     {
+      "id": "wo.job-detail",
+      "files": [],
+      "referenced": false,
+      "required": [],
+      "provided": [],
+      "missing": ["<undeclared>"]
+    },
+    {
       "id": "wo.job-history",
       "surface": "public-api",
       "method": "GET",
@@ -2758,6 +2774,14 @@
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false
+    },
+    {
+      "id": "wo.job-list",
+      "files": [],
+      "referenced": false,
+      "required": [],
+      "provided": [],
+      "missing": ["<undeclared>"]
     },
     {
       "id": "wo.job-reassignment",
@@ -2928,6 +2952,22 @@
       "unitOnly": false
     },
     {
+      "id": "wo.job-work-log-list",
+      "files": [],
+      "referenced": false,
+      "required": [],
+      "provided": [],
+      "missing": ["<undeclared>"]
+    },
+    {
+      "id": "wo.job-work-log-record",
+      "files": [],
+      "referenced": false,
+      "required": [],
+      "provided": [],
+      "missing": ["<undeclared>"]
+    },
+    {
       "id": "wo.required-part-list",
       "surface": "public-api",
       "method": "GET",
@@ -3080,6 +3120,14 @@
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false
+    },
+    {
+      "id": "wo.work-order-catalogue",
+      "files": [],
+      "referenced": false,
+      "required": [],
+      "provided": [],
+      "missing": ["<undeclared>"]
     },
     {
       "id": "wo.work-order-closure",

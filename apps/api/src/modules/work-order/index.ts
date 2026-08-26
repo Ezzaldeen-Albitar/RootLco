@@ -51,6 +51,8 @@ import { WorkOrderCatalogService } from './application/work-order-catalog-servic
 import { WorkOrderService } from './application/work-order-service';
 import { JobAssignmentService } from './application/job-assignment-service';
 import { AdditionalWorkService } from './application/additional-work-service';
+import { JobBoardService } from './application/job-board-service';
+import { JobBoardRepository } from './data/job-board-repository';
 
 export type { AssignInput, AssignmentView, QueueEntry } from './application/job-assignment-service';
 export type { AssignmentRow, LineRow, TechnicianQueueRow } from './data/work-order-repository';
@@ -115,6 +117,16 @@ export {
   type WorkOrderKind,
 } from './domain/work-order';
 
+export type { JobBoardRow, QcRecordRow, WorkLogEntryRow } from './data/job-board-repository';
+export {
+  MAX_WORK_LOG_ENTRY,
+  QC_OVERALL_RESULTS,
+  STATE_CODE_PATTERN,
+  type JobAssignmentView,
+  type JobDetail,
+  type QcOverallResult,
+} from './application/job-board-service';
+
 /** Composition root: constructs the module's services once per process. */
 export const workOrderModule = composeModule({
   module: 'work-order',
@@ -126,6 +138,11 @@ export const workOrderModule = composeModule({
       workOrders: new WorkOrderService(repository, catalog),
       jobAssignments: new JobAssignmentService(repository, catalog),
       additionalWork: new AdditionalWorkService(repository, catalog),
+      // BR-06. Shares the catalogue service rather than constructing a second
+      // one: `wo.job-detail` computes its reachable edges from the SAME tenant
+      // graph `wo.work-order-detail` does, and two instances would be two caches
+      // of one tenant's configuration.
+      jobBoard: new JobBoardService(new JobBoardRepository(), catalog),
     };
   },
 });
