@@ -212,41 +212,58 @@ describe('C3–C7 — the five drift classes each turn the gate red', () => {
 });
 
 describe('C8/C9 — the three-state vocabulary works at FIELD granularity', () => {
-  it('C9 — an undeclared omission fails', () => {
-    const root = mirrorCopy('c9');
+  /**
+   * These two cases vary the DISPOSITION POLICY, not the tree, so they call the
+   * comparison directly instead of spawning the gate.
+   *
+   * The first version copied the gate to `scripts/ci/zz-c8-gate.mjs` with a
+   * different `DISPOSITIONS` literal and deleted it afterwards. That raced
+   * `tests/ci/dependency-path-proof.test.ts`, which enumerates
+   * `scripts/ci/*.mjs` and reads each one: it listed the copy, read it after the
+   * delete, failed to COLLECT, and contributed zero assertions — so vitest
+   * reported `numFailedTests: 0` and the run ledger recorded a GREEN tier over a
+   * file that never ran. Writing a scratch file into a directory other tests walk
+   * is the whole defect, and not writing one is the whole fix.
+   */
+  const OMITTED = 'wo.job-create.jobType';
+
+  async function compare(dispositions: Record<string, unknown>) {
+    const mod = await import('../../scripts/ci/check-p1-29-payload-parity.mjs');
+    const root = mirrorCopy(`disp-${Object.keys(dispositions).length}`);
     edit(root, 'work-order-contract.ts', 'readonly jobType?: string;', '');
-    const { code, out } = runGate(root);
-    expect(code).not.toBe(0);
-    expect(out).toMatch(/NOT declared in DISPOSITIONS/);
+    const interfaces = mod.readMirror(root);
+    const schemas = JSON.parse(readFileSync(schemasPath, 'utf8')) as Record<string, unknown>;
+    return mod.compareOperation({
+      operationId: 'wo.job-create',
+      schema: schemas['wo.job-create'],
+      interfaces,
+      dispositions,
+    }) as string[];
+  }
+
+  it('C9 — an undeclared omission fails', async () => {
+    const problems = await compare({});
+    expect(problems.join(' ')).toMatch(/NOT declared in DISPOSITIONS/);
   });
 
-  it('C8 — the SAME omission passes once it is declared with a reason', () => {
-    const root = mirrorCopy('c8');
-    edit(root, 'work-order-contract.ts', 'readonly jobType?: string;', '');
-    // Declare it, exactly as a real deliberate subset would.
-    const gate = readFileSync(GATE, 'utf8').replace(
-      'export const DISPOSITIONS = Object.freeze({});',
-      `export const DISPOSITIONS = Object.freeze({
-        'wo.job-create.jobType': { state: 'DELIBERATELY_ABSENT', reason: 'the screen does not offer a job type' },
-      });`
-    );
-    // ROOT and the typescript-source import are both resolved relative to the
-    // gate's own location, so the copy has to live in scripts/ci to run at all.
-    const realCopy = join(ROOT, 'scripts', 'ci', 'zz-c8-gate.mjs');
-    writeFileSync(realCopy, gate);
-    try {
-      const out = execFileSync(
-        process.execPath,
-        [realCopy, '--schemas', schemasPath, '--mirror-root', root],
-        { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }
-      );
-      expect(out).toMatch(/0 problem\(s\)/);
-    } finally {
-      rmSync(realCopy, { force: true });
-    }
+  it('C8 — the SAME omission passes once it is declared with a reason', async () => {
+    const problems = await compare({
+      [OMITTED]: { state: 'DELIBERATELY_ABSENT', reason: 'the screen does not offer a job type' },
+    });
+    expect(problems).toEqual([]);
   });
 
-  it('a disposition with no reason is refused', async () => {
+  it('a declared omission with NO reason is still refused', async () => {
+    const problems = await compare({ [OMITTED]: { state: 'DELIBERATELY_ABSENT', reason: '  ' } });
+    expect(problems.join(' ')).toMatch(/carries no reason/);
+  });
+
+  it('a disposition state outside the vocabulary is refused', async () => {
+    const problems = await compare({ [OMITTED]: { state: 'PROBABLY_FINE', reason: 'because' } });
+    expect(problems.join(' ')).toMatch(/is not one of PENDING\/DELIBERATELY_ABSENT/);
+  });
+
+  it('the vocabulary is exactly the two states the contract names', async () => {
     const mod = await import('../../scripts/ci/check-p1-29-payload-parity.mjs');
     expect(mod.DISPOSITION_STATES).toEqual(['PENDING', 'DELIBERATELY_ABSENT']);
   });

@@ -138,6 +138,43 @@ the gate really does check that operation's contract there. The invoking backend
 in its `tests` array and its `missingEvidence` is still empty, so the register gained a true
 reference rather than a phantom.
 
+## 5.2 The red-proofs manufactured a FALSE GREEN, and it reached the run ledger
+
+The worst defect in this slice was mine, and it was in the tests rather than the gate.
+
+`C8` needed the gate to run with a different `DISPOSITIONS` policy. The first version copied the
+whole gate to `scripts/ci/zz-c8-gate.mjs`, ran it, and deleted it in a `finally` — because `ROOT` and
+the `../lib/typescript-source.mjs` import are both resolved relative to the gate's own location, so
+a copy anywhere else could not run.
+
+`tests/ci/dependency-path-proof.test.ts` **enumerates `scripts/ci/*.mjs` and reads each one**. Run
+concurrently, it listed the copy and read it after the delete:
+
+```
+tests/ci/dependency-path-proof.test.ts — status: failed, assertions: 0
+ENOENT: no such file or directory, open '...\scripts\ci\zz-c8-gate.mjs'
+```
+
+**A file that fails to COLLECT contributes zero assertions, so `numFailedTests` was `0`.** The tier
+recorded 3002 passed / 0 failed while eight cases had not run at all, and that record was written
+into `local-run-ledger.json` as green. `judgeRunLedger` refuses a record carrying failures — there
+were none to carry. This is the exact false-green shape the whole evidence apparatus exists to
+prevent, produced by the tests written to prove a gate cannot produce one.
+
+It was caught only because the total moved: 3002 on one run and 2994 on the next, with the same tree.
+A count that changes without the tree changing is the symptom; the diff between the two JSON reports
+named the file in one line.
+
+**The fix is a design change, not a retry.** `compareOperation()` is now exported and takes the
+disposition policy as a PARAMETER, so the cases vary the policy without a copy of anything:
+separating the policy DATA from the comparison LOGIC removes the need to rewrite the gate to test it.
+Nothing is written into `scripts/ci` any more, the race cannot recur, and `C8`/`C9` gained two cases
+the subprocess design could not reach — a declared omission whose reason is blank, and a disposition
+state outside the vocabulary.
+
+The general rule this slice paid to learn: **a test must not write a scratch file into a directory
+other tests walk.** The blast radius is not the test that wrote it.
+
 ## 6. `gate-before-read`, armed over zero pages
 
 There are **no P1-29 route pages**. The contract is explicit about the sequencing — _"in the first

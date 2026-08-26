@@ -110,6 +110,33 @@ export const DISPOSITIONS = Object.freeze({});
 const problems = [];
 const note = (message) => problems.push(message);
 
+/**
+ * Compare ONE operation's schema against the mirror, with the disposition policy
+ * passed in rather than read from module state.
+ *
+ * Exported so `C8`/`C9` can vary the policy without rewriting the gate. The first
+ * version of those cases copied this whole file to `scripts/ci/zz-c8-gate.mjs`
+ * with a different `DISPOSITIONS` literal, ran it, and deleted it — which raced
+ * `tests/ci/dependency-path-proof.test.ts`, a file that enumerates
+ * `scripts/ci/*.mjs` and reads each one. It listed the copy and read it after the
+ * delete, failed to COLLECT, contributed zero assertions, and vitest reported
+ * `numFailedTests: 0` — so the run ledger recorded a green tier over a test file
+ * that never ran. A gate whose own tests can manufacture a false green is worse
+ * than no gate.
+ *
+ * Separating the policy DATA from the comparison LOGIC removes the need for a
+ * copy at all, which is the fix rather than a workaround.
+ */
+export function compareOperation({ operationId, schema, interfaces, dispositions = {} }) {
+  const found = [];
+  const ctx = { note: (m) => found.push(m), dispositions };
+  const typeName = typeNameFor(operationId);
+  const iface = interfaces.get(typeName);
+  if (!iface) return [`${operationId}: the mirror declares no \`${typeName}\``];
+  compareShape(ctx, operationId, '', schema, iface, interfaces);
+  return found;
+}
+
 /* -- the operation surface ------------------------------------------------- */
 
 function loadRegister() {
@@ -279,7 +306,8 @@ const JSON_PRIMITIVE = {
 };
 
 /** Compare one operation's schema against one mirror interface. */
-function compareShape(operationId, path, schema, iface, interfaces) {
+function compareShape(ctx, operationId, path, schema, iface, interfaces) {
+  const note = ctx.note;
   const props = schema.properties ?? {};
   const required = new Set(schema.required ?? []);
   const names = Object.keys(props);
@@ -303,7 +331,7 @@ function compareShape(operationId, path, schema, iface, interfaces) {
     const field = iface.fields.get(name);
     if (!field) {
       const key = `${operationId}${path}.${name}`;
-      const declared = DISPOSITIONS[key];
+      const declared = ctx.dispositions[key];
       if (!declared) {
         note(
           `${operationId}${path}.${name}: present on the API, absent from the mirror, and NOT declared in DISPOSITIONS`
@@ -325,7 +353,7 @@ function compareShape(operationId, path, schema, iface, interfaces) {
       );
     }
 
-    compareType(operationId, `${path}.${name}`, spec, field, interfaces);
+    compareType(ctx, operationId, `${path}.${name}`, spec, field, interfaces);
   }
 
   for (const name of iface.fields.keys()) {
@@ -335,7 +363,8 @@ function compareShape(operationId, path, schema, iface, interfaces) {
   }
 }
 
-function compareType(operationId, path, spec, field, interfaces) {
+function compareType(ctx, operationId, path, spec, field, interfaces) {
+  const note = ctx.note;
   // A tenant-extensible vocabulary: pattern, no enum. Must be `string`.
   if (spec.enum === undefined && spec.pattern !== undefined && spec.type === 'string') {
     if (field.kind === 'enum') {
@@ -402,7 +431,7 @@ function compareType(operationId, path, spec, field, interfaces) {
         );
         return;
       }
-      compareShape(operationId, `${path}[]`, element, nested, interfaces);
+      compareShape(ctx, operationId, `${path}[]`, element, nested, interfaces);
       return;
     }
     const want = JSON_PRIMITIVE[element.type];
@@ -426,14 +455,14 @@ function compareType(operationId, path, spec, field, interfaces) {
       );
       return;
     }
-    compareShape(operationId, path, spec, nested, interfaces);
+    compareShape(ctx, operationId, path, spec, nested, interfaces);
     return;
   }
 
   // anyOf [T, null] — a nullable primitive.
   if (Array.isArray(spec.anyOf)) {
     const nonNull = spec.anyOf.find((x) => x.type !== 'null');
-    if (nonNull) compareType(operationId, path, nonNull, field, interfaces);
+    if (nonNull) compareType(ctx, operationId, path, nonNull, field, interfaces);
     return;
   }
 
@@ -534,13 +563,14 @@ function main() {
       note(`${body.id}: no schema extracted`);
       continue;
     }
-    const typeName = typeNameFor(body.id);
-    const iface = interfaces.get(typeName);
-    if (!iface) {
-      note(`${body.id}: the mirror declares no \`${typeName}\``);
-      continue;
+    for (const problem of compareOperation({
+      operationId: body.id,
+      schema,
+      interfaces,
+      dispositions: DISPOSITIONS,
+    })) {
+      note(problem);
     }
-    compareShape(body.id, '', schema, iface, interfaces);
   }
 
   console.log(
