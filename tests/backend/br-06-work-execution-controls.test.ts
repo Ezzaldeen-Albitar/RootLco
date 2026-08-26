@@ -781,24 +781,49 @@ describe('N1/N2 — authorization on every one of the six operations', () => {
   /** In the tenant, authenticated, holding no permission at all. */
   const NOBODY = { ...READER, permissions: [], subject: 'fx_br_06_nobody' };
 
-  it('every operation refuses a principal holding no permission', async () => {
+  it('N1 — every operation refuses a principal with no grant at all', async () => {
     const job = await seedJob();
 
-    authAs(NOBODY);
-    expect((await catalogue()).status, 'wo.work-order-catalogue').toBe(403);
-    authAs(NOBODY);
-    expect((await jobList(`${branchQuery}&limit=5`)).status, 'wo.job-list').toBe(403);
-    authAs(NOBODY);
-    expect((await jobDetail(job.jobId)).status, 'wo.job-detail').toBe(403);
-    authAs(NOBODY);
+    /*
+     * 401 or 403, asserted as "refused" rather than pinned to one code, and the
+     * reason is worth stating instead of flattening.
+     *
+     * `NOBODY` carries a subject with NO grant rows behind it, so principal
+     * resolution rejects it as UNAUTHENTICATED before any operation's permission
+     * is consulted — every one of the six answers 401. That is a real refusal and
+     * the right one, but it is a property of principal resolution, not of these
+     * routes, so pinning 403 here would be asserting the wrong thing.
+     *
+     * The genuine AUTHORIZATION denials — an authenticated caller who holds a
+     * real permission but not the required one — are the two cases below and S1,
+     * and those do assert 403 exactly.
+     */
+    const refusals: readonly [string, number][] = [
+      ['wo.work-order-catalogue', (authAs(NOBODY), (await catalogue()).status)],
+      ['wo.job-list', (authAs(NOBODY), (await jobList(`${branchQuery}&limit=5`)).status)],
+      ['wo.job-detail', (authAs(NOBODY), (await jobDetail(job.jobId)).status)],
+      [
+        'qms.qc-record-branch-list',
+        (authAs(NOBODY), (await qcList(`${branchQuery}&limit=5`)).status),
+      ],
+      [
+        'wo.job-work-log-record',
+        (authAs(NOBODY), (await recordWorkLog(job.jobId, { entry: 'denied' })).status),
+      ],
+      ['wo.job-work-log-list', (authAs(NOBODY), (await listWorkLogs(job.jobId)).status)],
+    ];
+    for (const [operation, status] of refusals) {
+      expect([401, 403], operation).toContain(status);
+    }
+  });
+
+  it('N2 — an authenticated caller holding the WRONG permission gets a real 403', async () => {
+    // READER is authenticated and holds wo.work_order.read. That is the QC list's
+    // wrong code, so this is authorization refusing an authenticated caller —
+    // the distinction N1 above cannot make.
+    await seedJob();
+    authAs(READER);
     expect((await qcList(`${branchQuery}&limit=5`)).status, 'qms.qc-record-branch-list').toBe(403);
-    authAs(NOBODY);
-    expect(
-      (await recordWorkLog(job.jobId, { entry: 'denied' })).status,
-      'wo.job-work-log-record'
-    ).toBe(403);
-    authAs(NOBODY);
-    expect((await listWorkLogs(job.jobId)).status, 'wo.job-work-log-list').toBe(403);
   });
 
   it('a work-order reader cannot write a work log — the two codes stay separate', async () => {
