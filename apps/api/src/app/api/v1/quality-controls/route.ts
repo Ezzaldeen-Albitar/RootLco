@@ -34,7 +34,8 @@ import {
   scopeTargetOption,
   searchParamsToObject,
 } from '@/server/http/validation';
-import { QC_OVERALL_RESULTS, workOrderModule } from '@/modules/work-order';
+import { qualityModule } from '@/modules/quality';
+import { QC_OVERALL_RESULTS } from '@/modules/work-order';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -70,7 +71,7 @@ export async function GET(request: Request): Promise<Response> {
     async ({ db }) => {
       const query = parseOrFail(QcBranchListQuery, raw, 'query');
       return {
-        body: await workOrderModule().jobBoard.listQcRecords(
+        body: await qualityModule().qcQueue.listForBranch(
           db,
           {
             companyId: query.companyId,

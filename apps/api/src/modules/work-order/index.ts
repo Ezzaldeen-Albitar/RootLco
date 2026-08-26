@@ -117,7 +117,7 @@ export {
   type WorkOrderKind,
 } from './domain/work-order';
 
-export type { JobBoardRow, QcRecordRow, WorkLogEntryRow } from './data/job-board-repository';
+export type { JobBoardRow, WorkLogEntryRow } from './data/job-board-repository';
 export {
   MAX_WORK_LOG_ENTRY,
   QC_OVERALL_RESULTS,

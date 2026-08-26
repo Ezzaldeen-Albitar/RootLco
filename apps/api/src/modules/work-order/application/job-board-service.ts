@@ -47,13 +47,16 @@ import type { ScopeAuthorizer } from '@/server/auth/authorization';
 import { appendAudit } from '@/server/audit/audit';
 import { isSqlState, SQLSTATE } from '@/server/db/repository';
 import { pageRequest, type Page } from '@/server/db/pagination';
+// BR-06. `hasOpenLaborSession` is technician data, so it is resolved through the
+// technician module's PORT rather than by reading `tech.` from a work-order
+// repository — the module-boundary gate refuses that, and its allow-list is
+// capped at the two closure predicates the database guard itself joins across.
+import { technicianModule } from '@/modules/technician';
 import {
   JOB_BOARD_ORDER,
-  QC_BRANCH_ORDER,
   WORK_LOG_ORDER,
   type JobBoardRepository,
   type JobBoardRow,
-  type QcRecordRow,
   type WorkLogEntryRow,
 } from '../data/job-board-repository';
 import type { WorkOrderCatalogService } from './work-order-catalog-service';
@@ -135,7 +138,8 @@ export class JobBoardService extends ApplicationService {
     },
     page: PageInput
   ): Promise<Page<JobBoardRow>> {
-    return this.board.pageJobs(db, filter, pageRequest(JOB_BOARD_ORDER, page));
+    const rows = await this.board.pageJobs(db, filter, pageRequest(JOB_BOARD_ORDER, page));
+    return { ...rows, items: await this.withOpenSessions(db, rows.items) };
   }
 
   /**
@@ -183,12 +187,35 @@ export class JobBoardService extends ApplicationService {
         };
       });
 
+    const [withSessions] = await this.withOpenSessions(db, [job]);
+    const resolved = withSessions ?? job;
+
     if (!options.mayReadStaff) {
       // OMITTED, not empty. An empty array would assert "no assignments", which
       // is a claim about the data rather than about this caller's authority.
-      return { job, nextStates };
+      return { job: resolved, nextStates };
     }
-    return { job, nextStates, assignments: await this.openAssignments(db, jobId) };
+    return { job: resolved, nextStates, assignments: await this.openAssignments(db, jobId) };
+  }
+
+  /**
+   * Fills in `hasOpenLaborSession` from the technician module's port.
+   *
+   * ONE call for the whole page. The flag is a WARNING and never a guarantee:
+   * nothing prevents a second session on one job (`INS-40`).
+   */
+  private async withOpenSessions(
+    db: DbHandle,
+    rows: readonly JobBoardRow[]
+  ): Promise<readonly JobBoardRow[]> {
+    if (rows.length === 0) return rows;
+    const open = new Set(
+      await technicianModule().laborSessionPort.jobsWithOpenSession(
+        db,
+        rows.map((row) => row.id)
+      )
+    );
+    return rows.map((row) => ({ ...row, hasOpenLaborSession: open.has(row.id) }));
   }
 
   private async openAssignments(
@@ -196,19 +223,6 @@ export class JobBoardService extends ApplicationService {
     jobId: string
   ): Promise<readonly JobAssignmentView[]> {
     return this.board.openAssignmentsFor(db, jobId);
-  }
-
-  /** The branch QC queue. `overallResult` is a closed enum, unlike job state. */
-  async listQcRecords(
-    db: DbHandle,
-    filter: {
-      readonly companyId: string;
-      readonly branchId: string;
-      readonly overallResult?: QcOverallResult | undefined;
-    },
-    page: PageInput
-  ): Promise<Page<QcRecordRow>> {
-    return this.board.pageQcRecords(db, filter, pageRequest(QC_BRANCH_ORDER, page));
   }
 
   /**

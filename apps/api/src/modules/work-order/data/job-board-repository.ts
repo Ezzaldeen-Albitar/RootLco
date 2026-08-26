@@ -59,11 +59,6 @@ export const JOB_BOARD_ORDER: OrderingContract = Object.freeze({
   direction: 'desc',
 });
 
-export const QC_BRANCH_ORDER: OrderingContract = Object.freeze({
-  key: 'qms.quality_control_records:created_at_desc',
-  direction: 'desc',
-});
-
 export const WORK_LOG_ORDER: OrderingContract = Object.freeze({
   key: 'wo.job_work_logs:logged_at_desc',
   direction: 'desc',
@@ -84,15 +79,6 @@ export interface JobBoardRow {
   readonly openAssignmentCount: number;
   /** A warning. The platform does not prevent a second session (`INS-40`). */
   readonly hasOpenLaborSession: boolean;
-}
-
-export interface QcRecordRow {
-  readonly id: string;
-  readonly workOrderId: string;
-  readonly overallResult: string;
-  readonly checkerId: string | null;
-  readonly finalizedAt: string | null;
-  readonly recordVersion: number;
 }
 
 export interface WorkLogEntryRow {
@@ -197,13 +183,7 @@ export class JobBoardRepository extends Repository {
                   AND s.company_id = j.company_id AND s.branch_id = j.branch_id
                   AND s.job_id = j.id AND s.valid_to IS NULL
                   AND s.deleted_at IS NULL)::text AS open_assignment_count,
-              EXISTS (
-                SELECT 1 FROM tech.labor_sessions l
-                 WHERE l.tenant_id = j.tenant_id
-                   AND l.company_id = j.company_id AND l.branch_id = j.branch_id
-                   AND l.job_id = j.id AND l.ended_at IS NULL
-                   AND l.deleted_at IS NULL
-              ) AS has_open_labor_session
+              false AS has_open_labor_session
          FROM wo.jobs j
          JOIN wo.work_orders w
            ON w.tenant_id = j.tenant_id AND w.company_id = j.company_id
@@ -261,13 +241,7 @@ export class JobBoardRepository extends Repository {
                   AND s.company_id = j.company_id AND s.branch_id = j.branch_id
                   AND s.job_id = j.id AND s.valid_to IS NULL
                   AND s.deleted_at IS NULL)::text AS open_assignment_count,
-              EXISTS (
-                SELECT 1 FROM tech.labor_sessions l
-                 WHERE l.tenant_id = j.tenant_id
-                   AND l.company_id = j.company_id AND l.branch_id = j.branch_id
-                   AND l.job_id = j.id AND l.ended_at IS NULL
-                   AND l.deleted_at IS NULL
-              ) AS has_open_labor_session
+              false AS has_open_labor_session
          FROM wo.jobs j
          JOIN wo.work_orders w
            ON w.tenant_id = j.tenant_id AND w.company_id = j.company_id
@@ -335,73 +309,6 @@ export class JobBoardRepository extends Repository {
       technicianProfileId: row.technician_profile_id,
       assignmentRole: row.assignment_role,
       validFrom: row.valid_from,
-    }));
-  }
-
-  /**
-   * The branch QC queue.
-   *
-   * `overall_result` IS a closed vocabulary here — `qms.qc_status_history`
-   * CHECK-constrains the same three literals — which is exactly why it is an enum
-   * while job `state` is not. Getting that backwards in either direction is a
-   * defect, so the two are handled differently on purpose.
-   */
-  async pageQcRecords(
-    db: DbHandle,
-    filter: {
-      readonly companyId: string;
-      readonly branchId: string;
-      readonly overallResult?: string | undefined;
-    },
-    page: PageRequest
-  ): Promise<Page<QcRecordRow>> {
-    const context = this.assertContext(db);
-    const values: unknown[] = [
-      context.principal.tenantId,
-      filter.companyId,
-      filter.branchId,
-      filter.overallResult ?? null,
-    ];
-    const keyset = keysetFragment(
-      page,
-      { sort: 'created_at', id: 'id' },
-      QC_BRANCH_ORDER,
-      values.length + 1
-    );
-    const result = await this.run<{
-      id: string;
-      work_order_id: string;
-      overall_result: string;
-      checker_id: string | null;
-      finalized_at: string | null;
-      record_version: number;
-      created_at_cursor: string;
-    }>(
-      db,
-      `SELECT id, work_order_id, overall_result, checker_id,
-              finalized_at::text AS finalized_at, record_version,
-              ${cursorTimestamp('created_at')} AS created_at_cursor
-         FROM qms.quality_control_records
-        WHERE tenant_id = $1 AND company_id = $2 AND branch_id = $3
-          AND deleted_at IS NULL
-          AND ($4::text IS NULL OR overall_result = $4)
-          ${keyset.predicate}
-        ${keyset.order}
-        ${keyset.limitClause}`,
-      [...values, ...keyset.values]
-    );
-    const rows = result.rows.map((row) => ({
-      id: row.id,
-      workOrderId: row.work_order_id,
-      overallResult: row.overall_result,
-      checkerId: row.checker_id,
-      finalizedAt: row.finalized_at,
-      recordVersion: row.record_version,
-      cursor: row.created_at_cursor,
-    }));
-    return buildPage(rows, page, QC_BRANCH_ORDER, (row) => ({
-      sortValue: row.cursor,
-      id: row.id,
     }));
   }
 

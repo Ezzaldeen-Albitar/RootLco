@@ -13,6 +13,30 @@
  */
 import { Repository } from '@/server/db/repository';
 import type { DbHandle } from '@/server/db/transaction';
+import {
+  buildPage,
+  cursorTimestamp,
+  keysetFragment,
+  type OrderingContract,
+  type Page,
+  type PageRequest,
+} from '@/server/db/pagination';
+
+/** Newest first, matching every other operational queue in the platform. */
+export const QC_BRANCH_ORDER: OrderingContract = Object.freeze({
+  key: 'qms.quality_control_records:created_at_desc',
+  direction: 'desc',
+});
+
+/** One QC record as the branch queue renders it (PRE-P1-29-BR-06). */
+export interface QcRecordRow {
+  readonly id: string;
+  readonly workOrderId: string;
+  readonly overallResult: string;
+  readonly checkerId: string | null;
+  readonly finalizedAt: string | null;
+  readonly recordVersion: number;
+}
 
 export interface QcCheckRow {
   readonly id: string;
@@ -161,6 +185,79 @@ const toReworkRow = (row: ReworkColumns): ReworkLinkRow => ({
 
 export class QualityRepository extends Repository {
   protected readonly module = 'quality';
+
+  /**
+   * The branch QC queue, keyset-paged (PRE-P1-29-BR-06, `INS-13`, `DEP-B4`).
+   *
+   * Thirteen `qms` operations shipped and every one read QC records PER WORK
+   * ORDER, so a QC supervisor could inspect a record they already had the id of
+   * and could not see the queue they were meant to work through.
+   *
+   * It lives HERE rather than in the work-order module because `qms` is this
+   * module’s schema — the module-boundary gate refuses a sibling schema in
+   * another module’s SQL, and the operation is declared `module: 'quality'`
+   * precisely because this is where it belongs.
+   *
+   * `overall_result` IS a closed vocabulary — `qms.qc_status_history`
+   * CHECK-constrains the same three literals — which is why the route declares an
+   * enum for it while the job board’s tenant-extensible `state` gets a format
+   * check and an empty page.
+   */
+  async pageQcRecords(
+    db: DbHandle,
+    filter: {
+      readonly companyId: string;
+      readonly branchId: string;
+      readonly overallResult?: string | undefined;
+    },
+    page: PageRequest
+  ): Promise<Page<QcRecordRow>> {
+    const context = this.assertContext(db);
+    const values: unknown[] = [
+      context.principal.tenantId,
+      filter.companyId,
+      filter.branchId,
+      filter.overallResult ?? null,
+    ];
+    const keyset = keysetFragment(
+      page,
+      { sort: 'created_at', id: 'id' },
+      QC_BRANCH_ORDER,
+      values.length + 1
+    );
+    const result = await this.run<{
+      id: string;
+      work_order_id: string;
+      overall_result: string;
+      checker_id: string | null;
+      finalized_at: string | null;
+      record_version: number;
+      created_at_cursor: string;
+    }>(
+      db,
+      `SELECT id, work_order_id, overall_result, checker_id,
+              finalized_at::text AS finalized_at, record_version,
+              ${cursorTimestamp('created_at')} AS created_at_cursor
+         FROM qms.quality_control_records
+        WHERE tenant_id = $1 AND company_id = $2 AND branch_id = $3
+          AND deleted_at IS NULL
+          AND ($4::text IS NULL OR overall_result = $4)
+          ${keyset.predicate}
+        ${keyset.order}
+        ${keyset.limitClause}`,
+      [...values, ...keyset.values]
+    );
+    const rows = result.rows.map((row) => ({
+      id: row.id,
+      workOrderId: row.work_order_id,
+      overallResult: row.overall_result,
+      checkerId: row.checker_id,
+      finalizedAt: row.finalized_at,
+      recordVersion: row.record_version,
+      cursor: row.created_at_cursor,
+    }));
+    return buildPage(rows, page, QC_BRANCH_ORDER, (row) => ({ sortValue: row.cursor, id: row.id }));
+  }
 
   /** Active QC checks visible to the tenant, tenant rows shadowing platform. */
   async qcChecks(db: DbHandle): Promise<readonly QcCheckRow[]> {

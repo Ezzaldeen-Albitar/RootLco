@@ -97,6 +97,11 @@ export const technicianModule = composeModule({
       // splitting them across modules would have put `tech` writes outside the
       // module that owns the schema.
       roster: new TechnicianRosterService(new TechnicianRosterRepository(), profiles),
+      // BR-06. The open-session PORT, exposed as a repository rather than wrapped
+      // in a service because it carries no rule: it is a read the owning module
+      // performs on behalf of the work-order board, which is exactly the shape of
+      // the OpenInventoryCommitments precedent.
+      laborSessionPort: new LaborSessionRepository(),
     };
   },
 });
