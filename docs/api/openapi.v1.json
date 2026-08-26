@@ -3,7 +3,7 @@
   "info": {
     "title": "Commercial Multi-Tenant Automotive CRM and ERP Platform — API",
     "version": "0.1.0",
-    "summary": "325 operations across 19 backend modules (billing, crm, delivery, diagnostics, iam, inventory, meta, payments, pricing, quality, quotation, reception, reporting, service-catalog, shared-services, technician, vehicle, warranty, work-order).",
+    "summary": "331 operations across 19 backend modules (billing, crm, delivery, diagnostics, iam, inventory, meta, payments, pricing, quality, quotation, reception, reporting, service-catalog, shared-services, technician, vehicle, warranty, work-order).",
     "description": "Shared components and conventions every backend module composes, and the operations built on them. Sessions are bearer tokens issued by the authentication provider recorded in ADR-019; authorization is evaluated in the database on every request and is never carried in a token. Money is an exact decimal string with an ISO-4217 code, never a JSON number. Pages are opaque-cursor; offset paging is not offered. Every failure is an RFC 9457 problem document carrying a stable catalog code. The product name is deliberately absent: it is pending owner approval (ADR-011).",
     "contact": {
       "name": "RootLco — Root Link Company"
@@ -7928,7 +7928,113 @@
         "x-cache-category": "never"
       }
     },
+    "/api/v1/jobs": {
+      "get": {
+        "operationId": "wo.job-list",
+        "summary": "List the jobs of one branch, newest first, with their board context.",
+        "tags": ["work-order"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["wo.work_order.read"],
+        "x-scope": "branch",
+        "x-audit-class": "none",
+        "x-rate-limit-policy": "expensive-read",
+        "x-cache-category": "never"
+      }
+    },
     "/api/v1/jobs/{jobId}": {
+      "get": {
+        "operationId": "wo.job-detail",
+        "summary": "Read one job with its board context and the edges it can currently take.",
+        "tags": ["work-order"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["wo.work_order.read"],
+        "x-scope": "branch",
+        "x-audit-class": "none",
+        "x-rate-limit-policy": "low-risk-metadata",
+        "x-cache-category": "never"
+      },
       "patch": {
         "operationId": "wo.job-update",
         "summary": "Update a job's descriptive fields.",
@@ -8555,6 +8661,118 @@
           }
         },
         "x-required-permissions": ["wo.job.transition"],
+        "x-scope": "branch",
+        "x-audit-class": "privileged",
+        "x-rate-limit-policy": "standard-command",
+        "x-cache-category": "never"
+      }
+    },
+    "/api/v1/jobs/{jobId}/work-logs": {
+      "get": {
+        "operationId": "wo.job-work-log-list",
+        "summary": "Read one job work log, newest entry first.",
+        "tags": ["work-order"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["wo.work_order.read"],
+        "x-scope": "branch",
+        "x-audit-class": "none",
+        "x-rate-limit-policy": "low-risk-metadata",
+        "x-cache-category": "never"
+      },
+      "post": {
+        "operationId": "wo.job-work-log-record",
+        "summary": "Append one progress entry to a job work log.",
+        "tags": ["work-order"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["tech.labor.record"],
         "x-scope": "branch",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -10415,6 +10633,60 @@
           }
         },
         "x-required-permissions": ["svc.price.read"],
+        "x-scope": "branch",
+        "x-audit-class": "none",
+        "x-rate-limit-policy": "expensive-read",
+        "x-cache-category": "never"
+      }
+    },
+    "/api/v1/quality-controls": {
+      "get": {
+        "operationId": "qms.qc-record-branch-list",
+        "summary": "List the quality-control records of one branch, newest first.",
+        "tags": ["quality"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["qms.quality_control.read"],
         "x-scope": "branch",
         "x-audit-class": "none",
         "x-rate-limit-policy": "expensive-read",
@@ -17606,6 +17878,60 @@
         },
         "x-required-permissions": ["wty.warranty.issue"],
         "x-scope": "branch",
+        "x-audit-class": "none",
+        "x-rate-limit-policy": "low-risk-metadata",
+        "x-cache-category": "never"
+      }
+    },
+    "/api/v1/work-order-catalogue": {
+      "get": {
+        "operationId": "wo.work-order-catalogue",
+        "summary": "Read the work-order and job state graphs the caller tenant is configured with.",
+        "tags": ["work-order"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["wo.work_order.read"],
+        "x-scope": "tenant",
         "x-audit-class": "none",
         "x-rate-limit-policy": "low-risk-metadata",
         "x-cache-category": "never"

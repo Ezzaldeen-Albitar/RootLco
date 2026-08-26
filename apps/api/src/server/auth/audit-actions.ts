@@ -1182,6 +1182,13 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
       'A job moved between states in the graph held by wo.job_transitions. Separate from wo.job.updated because that action deliberately never records a state change: the update path cannot write the state column, and this is the only action a job movement is recorded under. The assignment precondition is the database’s — wo.guard_job_transition refuses an assignment_required target with no active wo.job_assignments row.',
   },
   {
+    code: 'wo.job.work_log_recorded',
+    class: 'privileged',
+    entityType: 'wo.job',
+    description:
+      'A progress entry was appended to a job work log (PRE-P1-29-BR-06). Written under tech.labor.record rather than wo.job.manage, because the log is the technician’s narration of the labour they are already recording — requiring a management code would mean a technician cannot describe their own work. wo.job_work_logs is append-only at the GRANT layer (SELECT + INSERT to app_runtime and nothing else), so there is no corresponding updated or deleted action and there cannot be one: a correction is a new entry. The audit row records the entry’s length rather than its text, because the entry is the technician’s own words about the vehicle in front of them and is already stored, attributed, in the log itself.',
+  },
+  {
     code: 'wo.job.updated',
     class: 'privileged',
     entityType: 'wo.job',

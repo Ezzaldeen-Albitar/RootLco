@@ -1216,6 +1216,30 @@ export const MANIFEST = {
     required: ['denial', 'cross-tenant', 'isolation'],
     note: 'the decision plus its evidence, which is the only way an append-only wo.customer_approval_evidence row is readable at all; an undecided request is a 404 rather than an empty decision, because "no decision" and "a decision with no content" are different facts',
   },
+  'wo.work-order-catalogue': {
+    files: ['tests/backend/br-06-work-execution-controls.test.ts'],
+    required: ['success', 'denial'],
+  },
+  'wo.job-list': {
+    files: ['tests/backend/br-06-work-execution-controls.test.ts'],
+    required: ['success', 'denial', 'isolation'],
+  },
+  'wo.job-detail': {
+    files: ['tests/backend/br-06-work-execution-controls.test.ts'],
+    required: ['success', 'denial', 'isolation'],
+  },
+  'qms.qc-record-branch-list': {
+    files: ['tests/backend/br-06-work-execution-controls.test.ts'],
+    required: ['success', 'denial'],
+  },
+  'wo.job-work-log-record': {
+    files: ['tests/backend/br-06-work-execution-controls.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
+  },
+  'wo.job-work-log-list': {
+    files: ['tests/backend/br-06-work-execution-controls.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation'],
+  },
   'wo.job-transition': {
     files: [
       'tests/backend/p1-19-job-lifecycle.test.ts',

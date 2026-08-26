@@ -9,14 +9,14 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 
 | Measure                  | Value |
 | ------------------------ | ----- |
-| Public operations        | 325   |
+| Public operations        | 331   |
 | Domains (modules)        | 19    |
-| OpenAPI paths            | 263   |
-| OpenAPI operations       | 325   |
+| OpenAPI paths            | 267   |
+| OpenAPI operations       | 331   |
 | OpenAPI schemas          | 3     |
 | OpenAPI security schemes | 1     |
 | Permission codes seeded  | 114   |
-| Audit actions catalogued | 199   |
+| Audit actions catalogued | 200   |
 | Domain events catalogued | 50    |
 | Structured error codes   | 28    |
 
@@ -24,7 +24,7 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 
 | Classification    | Operations |
 | ----------------- | ---------- |
-| Covered           | 325        |
+| Covered           | 331        |
 | Partially covered | 0          |
 | Uncovered         | 0          |
 | Not applicable    | 0          |
@@ -43,7 +43,7 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 | meta            | 1          | 1       | 0      | 0       | 0          | 0               |
 | payments        | 4          | 4       | 2      | 2       | 2          | 0               |
 | pricing         | 6          | 6       | 4      | 4       | 4          | 2               |
-| quality         | 13         | 13      | 7      | 8       | 7          | 2               |
+| quality         | 14         | 14      | 7      | 8       | 7          | 2               |
 | quotation       | 6          | 6       | 5      | 5       | 5          | 2               |
 | reception       | 71         | 71      | 43     | 43      | 36         | 22              |
 | reporting       | 2          | 2       | 0      | 0       | 0          | 0               |
@@ -52,7 +52,7 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 | technician      | 18         | 18      | 12     | 12      | 4          | 5               |
 | vehicle         | 27         | 27      | 12     | 12      | 12         | 0               |
 | warranty        | 2          | 2       | 1      | 1       | 1          | 0               |
-| work-order      | 26         | 26      | 15     | 16      | 13         | 8               |
+| work-order      | 31         | 31      | 16     | 17      | 14         | 8               |
 
 ## Operations
 
@@ -183,6 +183,7 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 | `inv.stock-return-create`                           | POST   | `/api/v1/stock-returns`                                                             | branch  | `inv.stock.operate`                                                  | inv.part.returned                            | yes  | —   | audit authorization denial idempotency isolation route service success                                                        | Covered |
 | `meta.ping`                                         | GET    | `/api/v1/meta/ping`                                                                 | tenant  | `org.tenant.read`                                                    | —                                            | —    | —   | authorization route service success                                                                                           | Covered |
 | `qms.qc-check-result`                               | PUT    | `/api/v1/quality-controls/{recordId}/checks/{qcCheckId}`                            | branch  | `qms.quality_control.record`                                         | qms.quality_control.check_recorded           | yes  | —   | audit authorization cross-tenant denial idempotency isolation route service success                                           | Covered |
+| `qms.qc-record-branch-list`                         | GET    | `/api/v1/quality-controls`                                                          | branch  | `qms.quality_control.read`                                           | —                                            | —    | —   | authorization cross-tenant denial isolation route service success                                                             | Covered |
 | `qms.qc-record-detail`                              | GET    | `/api/v1/quality-controls/{recordId}`                                               | branch  | `qms.quality_control.read`                                           | —                                            | —    | —   | authorization cross-tenant denial isolation route service success                                                             | Covered |
 | `qms.qc-record-finalize`                            | POST   | `/api/v1/quality-controls/{recordId}/finalization`                                  | branch  | `qms.quality_control.finalize`                                       | qms.quality_control.finalized                | yes  | yes | audit authorization cross-tenant denial idempotency isolation outbox route service stale-version success                      | Covered |
 | `qms.qc-record-list`                                | GET    | `/api/v1/work-orders/{workOrderId}/quality-controls`                                | branch  | `qms.quality_control.read`                                           | —                                            | —    | —   | authorization cross-tenant denial isolation route service success                                                             | Covered |
@@ -367,14 +368,19 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 | `wo.job-assignment-end`                             | POST   | `/api/v1/assignments/{assignmentId}/end`                                            | branch  | `tech.assignment.manage`                                             | wo.job.assignment_ended                      | —    | yes | audit authorization cross-tenant denial isolation route service stale-version success                                         | Covered |
 | `wo.job-assignment-list`                            | GET    | `/api/v1/jobs/{jobId}/assignments`                                                  | branch  | `tech.technician.read`                                               | —                                            | —    | —   | authorization cross-tenant denial isolation route service success                                                             | Covered |
 | `wo.job-create`                                     | POST   | `/api/v1/work-orders/{workOrderId}/jobs`                                            | branch  | `wo.job.manage`                                                      | wo.job.created                               | yes  | —   | audit authorization cross-tenant denial idempotency isolation route service success                                           | Covered |
+| `wo.job-detail`                                     | GET    | `/api/v1/jobs/{jobId}`                                                              | branch  | `wo.work_order.read`                                                 | —                                            | —    | —   | authorization cross-tenant denial isolation route service success                                                             | Covered |
 | `wo.job-history`                                    | GET    | `/api/v1/jobs/{jobId}/history`                                                      | branch  | `wo.work_order.read`                                                 | —                                            | —    | —   | authorization cross-tenant denial isolation route service success                                                             | Covered |
+| `wo.job-list`                                       | GET    | `/api/v1/jobs`                                                                      | branch  | `wo.work_order.read`                                                 | —                                            | —    | —   | authorization cross-tenant denial isolation route service success                                                             | Covered |
 | `wo.job-reassignment`                               | POST   | `/api/v1/jobs/{jobId}/reassignments`                                                | branch  | `tech.assignment.manage`                                             | wo.job.assigned                              | yes  | —   | audit authorization cross-tenant denial idempotency isolation outbox rollback route service success                           | Covered |
 | `wo.job-transition`                                 | POST   | `/api/v1/jobs/{jobId}/transition`                                                   | branch  | `wo.job.transition`                                                  | wo.job.state_changed                         | yes  | yes | audit authorization concurrency cross-tenant denial idempotency isolation outbox route service stale-version success          | Covered |
 | `wo.job-update`                                     | PATCH  | `/api/v1/jobs/{jobId}`                                                              | branch  | `wo.job.manage`                                                      | wo.job.updated                               | —    | yes | audit authorization cross-tenant denial isolation route service stale-version success                                         | Covered |
+| `wo.job-work-log-list`                              | GET    | `/api/v1/jobs/{jobId}/work-logs`                                                    | branch  | `wo.work_order.read`                                                 | —                                            | —    | —   | authorization cross-tenant denial isolation route service success                                                             | Covered |
+| `wo.job-work-log-record`                            | POST   | `/api/v1/jobs/{jobId}/work-logs`                                                    | branch  | `tech.labor.record`                                                  | wo.job.work_log_recorded                     | yes  | —   | audit authorization cross-tenant denial idempotency isolation route service success                                           | Covered |
 | `wo.required-part-list`                             | GET    | `/api/v1/work-orders/{workOrderId}/required-parts`                                  | branch  | `wo.work_order.read`                                                 | —                                            | —    | —   | authorization cross-tenant denial isolation route service success                                                             | Covered |
 | `wo.required-part-record`                           | POST   | `/api/v1/work-orders/{workOrderId}/required-parts`                                  | branch  | `wo.work_order.line.manage`                                          | wo.work_order.required_part_recorded         | yes  | —   | audit authorization cross-tenant denial idempotency isolation route service success                                           | Covered |
 | `wo.service-line-list`                              | GET    | `/api/v1/work-orders/{workOrderId}/service-lines`                                   | branch  | `wo.work_order.read`                                                 | —                                            | —    | —   | authorization cross-tenant denial isolation route service success                                                             | Covered |
 | `wo.service-line-record`                            | POST   | `/api/v1/work-orders/{workOrderId}/service-lines`                                   | branch  | `wo.work_order.line.manage`                                          | wo.work_order.service_line_recorded          | yes  | —   | audit authorization cross-tenant denial idempotency isolation route service success                                           | Covered |
+| `wo.work-order-catalogue`                           | GET    | `/api/v1/work-order-catalogue`                                                      | tenant  | `wo.work_order.read`                                                 | —                                            | —    | —   | authorization denial route service success                                                                                    | Covered |
 | `wo.work-order-closure`                             | POST   | `/api/v1/work-orders/{workOrderId}/closure`                                         | branch  | `wo.work_order.transition`<br>`wo.work_order.close`                  | wo.work_order.closed                         | yes  | yes | audit authorization concurrency cross-tenant denial idempotency isolation outbox route service stale-version success          | Covered |
 | `wo.work-order-closure-eligibility`                 | GET    | `/api/v1/work-orders/{workOrderId}/closure-eligibility`                             | branch  | `wo.work_order.read`                                                 | —                                            | —    | —   | authorization cross-tenant denial isolation route service success                                                             | Covered |
 | `wo.work-order-detail`                              | GET    | `/api/v1/work-orders/{workOrderId}`                                                 | branch  | `wo.work_order.read`                                                 | —                                            | —    | —   | authorization cross-tenant denial isolation route service success                                                             | Covered |

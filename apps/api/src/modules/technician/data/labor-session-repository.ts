@@ -75,6 +75,38 @@ export class LaborSessionRepository extends Repository {
   protected readonly module = 'technician';
 
   /**
+   * Which of these jobs currently have an OPEN labour session (PRE-P1-29-BR-06).
+   *
+   * A PORT, existing so the work-order job board can render its
+   * `hasOpenLaborSession` column without reading `tech.` itself. The module
+   * boundary gate refuses a sibling schema in another module’s SQL, and its
+   * allow-list is deliberately capped at the two closure predicates the database
+   * guard ITSELF joins across — a board convenience column is not one of those,
+   * so the honest answer is this method rather than a third exception.
+   *
+   * BATCHED: one statement for a whole page, because a per-row lookup would make
+   * the board an N+1.
+   *
+   * Reports a FACT and promises no invariant. `tech.labor_sessions` has no
+   * one-open-session-per-job constraint (`INS-40`), so two technicians genuinely
+   * can hold a session on one job; a caller may WARN about that and must not
+   * claim it is prevented.
+   */
+  async jobsWithOpenSession(db: DbHandle, jobIds: readonly string[]): Promise<readonly string[]> {
+    if (jobIds.length === 0) return [];
+    const context = this.assertContext(db);
+    const result = await this.run<{ job_id: string }>(
+      db,
+      `SELECT DISTINCT job_id
+         FROM tech.labor_sessions
+        WHERE tenant_id = $1 AND job_id = ANY($2::uuid[])
+          AND ended_at IS NULL AND deleted_at IS NULL`,
+      [context.principal.tenantId, [...jobIds]]
+    );
+    return result.rows.map((row) => row.job_id);
+  }
+
+  /**
    * Opens a session. `started_at` is the column default, so it is `now()`.
    *
    * `source` is `manual` because a request IS a manual entry; `timer` is reserved

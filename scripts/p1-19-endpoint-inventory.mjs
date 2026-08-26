@@ -56,12 +56,22 @@ function parseOperations(source, file) {
   // Each declaration plus the handler text that follows it, up to the next
   // declaration. The handler is what shows whether a `scope: 'branch'` claim is
   // actually enforced, and it cannot be read from the declaration alone.
-  const chunks = source
-    .split(/export const [A-Z0-9_]+_OPERATION = defineOperation\(\{/)
-    .slice(1)
-    .map((part) => {
+  const segments = source.split(/export const [A-Z0-9_]+_OPERATION = defineOperation\(\{/);
+  // The file HEADER — everything before the first declaration — is the fallback
+  // owner for every operation in the file, because most route files annotate once
+  // at the top and say nothing further below.
+  const header = segments[0] ?? '';
+  const chunks = segments.slice(1).map((part, index) => {
+    // The prose immediately BEFORE this declaration. For the first operation that
+    // is the header; for a later one it is the tail of the previous segment,
+    // which is where a second contract's docblock sits when one route file
+    // legitimately carries operations from two contracts.
+    const preceding = index === 0 ? header : (segments[index] ?? '');
+    {
       const end = part.indexOf('\n})');
       return {
+        preceding,
+        header,
         block: end === -1 ? part : part.slice(0, end),
         // Comments STRIPPED. The first version of the scope check below was satisfied
         // by the very comment explaining the fix — prose naming `authorizeScope` made
@@ -70,7 +80,8 @@ function parseOperations(source, file) {
         // and it is not repeated here.
         handler: part.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, ''),
       };
-    });
+    }
+  });
   for (const chunk of chunks) {
     const block = chunk.block;
     const scalar = (name) => {
@@ -90,6 +101,10 @@ function parseOperations(source, file) {
     if (id === null) continue;
     found.push({
       id,
+      // Carried through so attribution can be asked of the prose that belongs to
+      // THIS declaration rather than of the whole file.
+      preceding: chunk.preceding,
+      header: chunk.header,
       module: scalar('module'),
       method: scalar('method'),
       path: scalar('path'),
@@ -261,10 +276,29 @@ function publishedEvents() {
 const operations = [];
 for (const file of walk(API_ROOT)) {
   const source = readFileSync(file, 'utf8');
-  const notes = annotations(source);
-  const owners = successorOwners(source);
+  // No file-wide scan any more: attribution is per operation, below.
   for (const op of parseOperations(source, file)) {
-    operations.push({ ...op, tasks: notes, successorOwners: owners });
+    /*
+     * Attribution is PER OPERATION, not per file, and BR-06 is why.
+     *
+     * Next.js gives a path exactly one route file, so `GET /jobs/{jobId}`
+     * (PRE-P1-29-BR-06) and `PATCH /jobs/{jobId}` (P1-19-BE-010) are FORCED to
+     * share one module. Scanning the whole file made both operations claim both
+     * owners and tripped the "names BOTH" refusal — on a file whose two
+     * declarations are each correctly and separately annotated.
+     *
+     * So each operation is attributed from the prose immediately preceding its own
+     * declaration, falling back to the file header when that prose names no owner.
+     * The property being protected is unchanged and still enforced: an operation
+     * must name exactly one deliverer, and P1-19 must never absorb a successor's
+     * work. What changed is that the question is now asked of the right text.
+     */
+    const own = { tasks: annotations(op.preceding), owners: successorOwners(op.preceding) };
+    const attributed =
+      own.tasks.length > 0 || own.owners.length > 0
+        ? own
+        : { tasks: annotations(op.header), owners: successorOwners(op.header) };
+    operations.push({ ...op, tasks: attributed.tasks, successorOwners: attributed.owners });
   }
 }
 operations.sort((a, b) => a.id.localeCompare(b.id));
