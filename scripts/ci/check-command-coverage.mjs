@@ -318,6 +318,54 @@ export const REGISTER = Object.freeze([
     why: 'every published P1-28 apt/rec read is mirrored, and any pending Frontend adapter is a fail-closed, task-owned, still-open debt',
   },
   {
+    name: 'validate:p1-29-payload-parity',
+    owner: ROOT,
+    tier: 'required',
+    // `PRE-P1-29-BR-08c`. A SIBLING of the two P1-28 gates above, never a
+    // generalisation of them: those are what P1-28's seal rests on, and widening
+    // one to reach P1-29 would change a gate a sealed phase depends on.
+    //
+    // It compares the hand-written web contract mirror against the REAL zod
+    // schemas, read as values — which is only possible because `BR-08b` exported
+    // them. The extraction runs under vitest, where `@/` resolves; a `.mjs` gate
+    // cannot import a TypeScript route module, and re-implementing zod semantics
+    // by hand is exactly what the export made unnecessary.
+    //
+    // Two things it deliberately does not do, both stated in its own output
+    // rather than left to be inferred from a green run: it does not check
+    // RESPONSES (no machine-readable response source exists in this repository),
+    // and it does not compare length, pattern or array-cardinality facets,
+    // because a TypeScript interface cannot carry them. That second ceiling is
+    // why the mirror declares one type per operation and shares none.
+    //
+    // It pins no counts. The contract's "34 bodies, one bodyless" was measured at
+    // 305 operations and the tree is at 334; a hard-coded number would fail on
+    // its first run, and relaxing the assertion to fix that would delete the
+    // anti-vacuity protection it exists for. It asserts a relationship instead.
+    // Mutation-proved by tests/ci/p1-29-payload-parity.test.ts, C1-C11.
+    why: 'every P1-29 request body is mirrored in apps/web field-for-field, and every omission is declared with a reason',
+  },
+  {
+    name: 'validate:p1-29-access',
+    owner: ROOT,
+    tier: 'required',
+    // `gate-before-read` for P1-29, ARMED BEFORE THE SCREENS EXIST. It examines
+    // zero route pages today, and that is deliberate rather than premature: a
+    // gate written after the screens land does not check them, it ratifies them,
+    // because whatever shape they were built in becomes the shape it accepts.
+    //
+    // A pass over an empty set proves nothing, so the gate says so in its own
+    // output and its teeth are proved by planting ungated pages —
+    // tests/ci/p1-29-access-gate.test.ts, seven cases including the P1-28 gate's
+    // recorded defect: a page whose only `holds` computes a control capability
+    // and denies nothing would read as gated to anything keyed on the first
+    // `holds` of any kind.
+    //
+    // A SIBLING of check-p1-28-access.mjs, which stays byte-identical because
+    // P1-28's seal rests on it.
+    why: 'every P1-29 route page denies and returns on a permission before its first awaited read',
+  },
+  {
     name: 'validate:p1-28-access',
     owner: ROOT,
     tier: 'required',
