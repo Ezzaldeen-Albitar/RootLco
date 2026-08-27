@@ -433,7 +433,7 @@ individual event, and are proved once instead of fifty times:
 | EVT-WOR-001 | `work-order.created`                 | 1   | wo.work_order              | wo              | —     | reserved | 1 file(s)       |
 | EVT-WOR-002 | `work-order.state-changed`           | 1   | wo.work_order              | wo              | P1-19 | yes      | 2 file(s)       |
 | EVT-WOR-003 | `work-order.closed`                  | 1   | wo.work_order              | wo              | P1-19 | yes      | 2 file(s)       |
-| EVT-TEC-001 | `job.assigned`                       | 1   | wo.job                     | wo              | P1-19 | yes      | 3 file(s)       |
+| EVT-TEC-001 | `job.assigned`                       | 2   | wo.job                     | wo              | P1-19 | yes      | 4 file(s)       |
 | EVT-TEC-002 | `job.state-changed`                  | 1   | wo.job                     | wo              | P1-19 | yes      | 3 file(s)       |
 | EVT-TEC-003 | `labor.session-changed`              | 1   | tech.labor_session         | tech            | P1-19 | yes      | 2 file(s)       |
 | EVT-WOR-004 | `additional-work.requested`          | 1   | wo.additional_work_request | wo              | P1-19 | yes      | 2 file(s)       |
