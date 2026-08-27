@@ -435,377 +435,409 @@ describe('P1-28-QA-005 — the evidence SET is pinned by reference, not by size'
   });
 });
 
-describe('P1-28-QA-005 — the candidate is bound, and both halves agree about it', () => {
-  const binding = candidateBinding(ROOT);
+/**
+ * 240 s for every suite that builds a real git repository.
+ *
+ * `withScratchRepository` runs `git init`, commits, refs, a detached checkout
+ * and a synthetic merge PER CASE, and there are 60 such cases across six
+ * suites. Alone the file takes ~970 s and every case passes; inside the unit
+ * tier the same cases average 16 s with wide variance, and on a loaded host
+ * they cross the 30 s default. The hosted Linux runner passes them throughout.
+ *
+ * Budgeting them ONE AT A TIME does not work, and that is not a guess: three
+ * were budgeted individually after failing, and a fourth — measured at 17 s in
+ * an earlier run — failed on the next. The cost driver is shared, so the budget
+ * belongs to the suite.
+ *
+ * Still not `testTimeout` in `vitest.config.ts`, for the reason this file
+ * already records: a global raise would quietly cover a test that has genuinely
+ * regressed. This covers exactly the suites whose cases build repositories.
+ */
+const SCRATCH_REPOSITORY_BUDGET_MS = 240_000;
 
-  it('names a full 40-character candidate commit and tree', () => {
-    expect(binding.sha, 'FINAL_CODE_SHA is not a 40-character commit id').toMatch(/^[0-9a-f]{40}$/);
-    expect(binding.tree, 'FINAL_CODE_TREE is not a 40-character tree id').toMatch(/^[0-9a-f]{40}$/);
-    expect(binding.shaWellFormed && binding.treeWellFormed).toBe(true);
-  });
+describe(
+  'P1-28-QA-005 — the candidate is bound, and both halves agree about it',
+  { timeout: SCRATCH_REPOSITORY_BUDGET_MS },
+  () => {
+    const binding = candidateBinding(ROOT);
 
-  it('states the same candidate in the prose half, in full', () => {
-    /*
-     * In FULL, not as a short prefix. A seven-character prefix can be satisfied
-     * by more than one commit, which is how a superseded head gets to keep
-     * reading like a current one.
-     */
-    expect(binding.shaInProse, `${PACKAGE_PATH} does not state ${binding.sha}`).toBe(true);
-    expect(binding.treeInProse, `${PACKAGE_PATH} does not state ${binding.tree}`).toBe(true);
-  });
-
-  it('carries the candidate into the manifest itself, so the seal names what it seals', () => {
-    expect(manifest.candidate.FINAL_CODE_SHA).toBe(binding.sha);
-    expect(manifest.candidate.FINAL_CODE_TREE).toBe(binding.tree);
-  });
-
-  it('fails when the two halves of the package name different commits', () => {
-    // The half-update: somebody re-freezes, edits the JSON, and leaves the prose
-    // naming the old commit. Both halves then read like evidence and one of them
-    // describes a tree nobody measured.
-    withFixture(phaseFixture({ proseSha: 'c'.repeat(40) }), (root) => {
-      const drifted = candidateBinding(root);
-      expect(drifted.shaWellFormed, 'the fixture candidate is malformed for the wrong reason').toBe(
-        true
-      );
-      expect(drifted.shaInProse).toBe(false);
-      expect(judge(soundInputsOver(root, { candidate: drifted }), () => {}).candidateOk).toBe(
-        false
-      );
-    });
-  });
-
-  it('fails when the candidate names no commit at all', () => {
-    withFixture(phaseFixture({ sha: 'HEAD' }), (root) => {
-      const bad = candidateBinding(root);
-      expect(bad.shaWellFormed).toBe(false);
-      expect(judge(soundInputsOver(root, { candidate: bad }), () => {}).candidateOk).toBe(false);
-    });
-  });
-
-  it('pins each local tier to the head it was measured at, and reconciles it only there', () => {
-    /*
-     * A closing figure is a claim about a command's output at a NAMED head, and
-     * the two heads here are deliberately different.
-     *
-     * The candidate's local figures describe `38afa5c2`. The P1-27 run ledger —
-     * the only file allowed to write an executed total, and only via
-     * `check-p1-27-closing-values.mjs --record` — tracks whatever head it was
-     * last taken at, and it MOVES: the successor commits that package this
-     * evidence add test files of their own, so the ledger legitimately reports a
-     * larger unit tier than the candidate does.
-     *
-     * The first version of this case asserted the two were equal. That was true
-     * when it was written and became false the moment QA-005's own 37 cases
-     * landed — an equality between a frozen figure and a moving one, which is
-     * the very confusion this package exists to prevent. So the rule is the
-     * P1-27 one instead: a measurement is checked against the head it names.
-     * Same head, the figures must agree; different head, the candidate figure is
-     * a pinned historical measurement and must say which head it belongs to.
-     */
-    const candidate = JSON.parse(readRepo(CANDIDATE_PATH)) as {
-      tiers: Record<
-        string,
-        { tests: number; files: number; provenance: string; measuredAtCommit: string }
-      >;
-    };
-    const ledger = JSON.parse(
-      readRepo('docs/phase-1/phase-1-27/evidence/local-run-ledger.json')
-    ) as { tiers: Record<string, { tests: number; files: number; measuredAtCommit: string }> };
-
-    for (const tier of ['unit', 'web']) {
-      const recorded = candidate.tiers[tier];
-      const measured = ledger.tiers[tier];
-      /*
-       * RULE WIDENED, and only on the HOSTED half. A local tier may declare
-       * `LOCAL_AND_HOSTED_AGREE` or `LOCAL_COMPUTED_HOSTED_PENDING`; the second
-       * exists because a re-freeze moves the candidate ahead of the hosted run
-       * that measured the previous one, and a tier may not go on saying the two
-       * halves AGREE when only one of them has been taken here. Every LOCAL
-       * obligation below is unchanged — the figures are still checked against
-       * the run ledger at the head the tier names.
-       */
-      expect(
-        (LOCAL_PROVENANCES as readonly string[]).includes(String(recorded?.provenance)),
-        `${tier} claims a provenance that is not a local one: ${recorded?.provenance}`
-      ).toBe(true);
-      expect(recorded?.measuredAtCommit, `${tier} names no head`).toMatch(/^[0-9a-f]{40}$/);
-      expect(measured?.measuredAtCommit, `the ${tier} run ledger names no head`).toMatch(
+    it('names a full 40-character candidate commit and tree', () => {
+      expect(binding.sha, 'FINAL_CODE_SHA is not a 40-character commit id').toMatch(
         /^[0-9a-f]{40}$/
       );
+      expect(binding.tree, 'FINAL_CODE_TREE is not a 40-character tree id').toMatch(
+        /^[0-9a-f]{40}$/
+      );
+      expect(binding.shaWellFormed && binding.treeWellFormed).toBe(true);
+    });
 
-      if (recorded?.measuredAtCommit === measured?.measuredAtCommit) {
-        expect(recorded?.tests, `the ${tier} total disagrees with the run ledger at one head`).toBe(
-          measured?.tests
-        );
-        expect(recorded?.files, `the ${tier} file count disagrees at one head`).toBe(
-          measured?.files
-        );
-      } else {
-        // Different heads. The candidate figure is frozen, so the only thing to
-        // check is that it is not silently drifting toward the moving one.
-        expect(
-          typeof recorded?.tests,
-          `the ${tier} candidate figure is pinned to ${recorded?.measuredAtCommit} and must still be a number`
-        ).toBe('number');
-        expect(
-          (recorded as unknown as { note?: string }).note ?? '',
-          `the ${tier} figure names a head the ledger has moved past and does not explain it`
-        ).toMatch(/ancestor|candidate|head/i);
-      }
-    }
-  });
-
-  it('does not claim a local measurement for a tier this workstation cannot run', () => {
-    /*
-     * The backend and database tiers need a running PostgreSQL. Claiming a local
-     * figure for either would be the exact dishonesty this package exists to
-     * prevent, so their provenance must say hosted and nothing else — and a
-     * hosted figure must be FETCHABLE, because this repository cannot compute it.
-     */
-    const candidate = JSON.parse(readRepo(CANDIDATE_PATH)) as {
-      candidate: { FINAL_CODE_SHA: string };
-      tiers: Record<
-        string,
-        {
-          provenance: string;
-          hostedAttestation?: {
-            runId: number;
-            jobId: number;
-            headSha: string;
-            artefact: string;
-            describesSupersededHead?: boolean;
-            describesProductIdenticalSuccessor?: boolean;
-          };
-        }
-      >;
-    };
-    /*
-     * Which bindings this REPOSITORY says are bound to the candidate's product.
-     * Computed, not read off the document: `pendingBinding` is the one place
-     * that asks git whether a cited head is contained, whether it descends from
-     * the candidate, and whether `git diff -- apps supabase` across it is empty —
-     * and it treats a diff git REFUSED to take as UNKNOWN rather than as empty.
-     * Deferring to it is what makes the rule below exactly as strict as the gate
-     * and not one condition looser.
-     */
-    const bound = new Set(
-      (pendingBinding(candidate as never, gitReader(ROOT)) as unknown as { bound: string[] }).bound
-    );
-    for (const tier of ['backend', 'database', 'browser']) {
-      expect(
-        [PROVENANCE_HOSTED, PROVENANCE_HOSTED_PENDING].includes(
-          candidate.tiers[tier]?.provenance as string
-        ),
-        `${tier} overclaims its provenance: ${candidate.tiers[tier]?.provenance}`
-      ).toBe(true);
-    }
-    for (const [tier, row] of Object.entries(candidate.tiers)) {
-      const attestation = row.hostedAttestation;
-      expect(attestation, `${tier} carries no hosted attestation`).toBeDefined();
-      expect(Number.isInteger(attestation?.runId), `${tier} runId`).toBe(true);
-      expect(Number.isInteger(attestation?.jobId), `${tier} jobId`).toBe(true);
+    it('states the same candidate in the prose half, in full', () => {
       /*
-       * RULE WIDENED, in exactly one direction and with a stricter obligation
-       * attached. A tier that CLAIMS a hosted observation of this candidate must
-       * still be attested at the candidate and nothing else. A tier whose
-       * provenance says PENDING must instead declare, in the attestation itself,
-       * that the head it names is one the candidate supersedes — and
-       * `pendingBinding` then requires that head to be a commit this repository
-       * contains and an ancestor of the candidate, and requires the binding to
-       * appear in `pendingHostedBindings`. Silence is not an option in either
-       * branch; what changed is that "not measured here yet" became sayable.
+       * In FULL, not as a short prefix. A seven-character prefix can be satisfied
+       * by more than one commit, which is how a superseded head gets to keep
+       * reading like a current one.
        */
-      if ((PENDING_PROVENANCES as readonly string[]).includes(row.provenance)) {
+      expect(binding.shaInProse, `${PACKAGE_PATH} does not state ${binding.sha}`).toBe(true);
+      expect(binding.treeInProse, `${PACKAGE_PATH} does not state ${binding.tree}`).toBe(true);
+    });
+
+    it('carries the candidate into the manifest itself, so the seal names what it seals', () => {
+      expect(manifest.candidate.FINAL_CODE_SHA).toBe(binding.sha);
+      expect(manifest.candidate.FINAL_CODE_TREE).toBe(binding.tree);
+    });
+
+    it('fails when the two halves of the package name different commits', () => {
+      // The half-update: somebody re-freezes, edits the JSON, and leaves the prose
+      // naming the old commit. Both halves then read like evidence and one of them
+      // describes a tree nobody measured.
+      withFixture(phaseFixture({ proseSha: 'c'.repeat(40) }), (root) => {
+        const drifted = candidateBinding(root);
         expect(
-          attestation?.describesSupersededHead,
-          `${tier} is PENDING and does not say which head its figures belong to`
+          drifted.shaWellFormed,
+          'the fixture candidate is malformed for the wrong reason'
         ).toBe(true);
-        expect(
-          attestation?.headSha,
-          `${tier} is PENDING and names the candidate as the head it describes`
-        ).not.toBe(candidate.candidate.FINAL_CODE_SHA);
-      } else if (attestation?.headSha === candidate.candidate.FINAL_CODE_SHA) {
-        // Attested at the candidate itself. Nothing to declare, and declaring
-        // a successor over the candidate's own id is refused by the gate.
-        expect(
-          attestation?.[SUCCESSOR_MARKER as 'describesProductIdenticalSuccessor'],
-          `${tier} names the candidate and declares a successor over it`
-        ).not.toBe(true);
-      } else {
+        expect(drifted.shaInProse).toBe(false);
+        expect(judge(soundInputsOver(root, { candidate: drifted }), () => {}).candidateOk).toBe(
+          false
+        );
+      });
+    });
+
+    it('fails when the candidate names no commit at all', () => {
+      withFixture(phaseFixture({ sha: 'HEAD' }), (root) => {
+        const bad = candidateBinding(root);
+        expect(bad.shaWellFormed).toBe(false);
+        expect(judge(soundInputsOver(root, { candidate: bad }), () => {}).candidateOk).toBe(false);
+      });
+    });
+
+    it('pins each local tier to the head it was measured at, and reconciles it only there', () => {
+      /*
+       * A closing figure is a claim about a command's output at a NAMED head, and
+       * the two heads here are deliberately different.
+       *
+       * The candidate's local figures describe `38afa5c2`. The P1-27 run ledger —
+       * the only file allowed to write an executed total, and only via
+       * `check-p1-27-closing-values.mjs --record` — tracks whatever head it was
+       * last taken at, and it MOVES: the successor commits that package this
+       * evidence add test files of their own, so the ledger legitimately reports a
+       * larger unit tier than the candidate does.
+       *
+       * The first version of this case asserted the two were equal. That was true
+       * when it was written and became false the moment QA-005's own 37 cases
+       * landed — an equality between a frozen figure and a moving one, which is
+       * the very confusion this package exists to prevent. So the rule is the
+       * P1-27 one instead: a measurement is checked against the head it names.
+       * Same head, the figures must agree; different head, the candidate figure is
+       * a pinned historical measurement and must say which head it belongs to.
+       */
+      const candidate = JSON.parse(readRepo(CANDIDATE_PATH)) as {
+        tiers: Record<
+          string,
+          { tests: number; files: number; provenance: string; measuredAtCommit: string }
+        >;
+      };
+      const ledger = JSON.parse(
+        readRepo('docs/phase-1/phase-1-27/evidence/local-run-ledger.json')
+      ) as { tiers: Record<string, { tests: number; files: number; measuredAtCommit: string }> };
+
+      for (const tier of ['unit', 'web']) {
+        const recorded = candidate.tiers[tier];
+        const measured = ledger.tiers[tier];
         /*
-         * RULE WIDENED A SECOND TIME, and to EXACTLY the gate's conditions.
-         *
-         * The first widening let a tier say "not measured here yet". This one
-         * lets a tier say "measured at a later head whose product is provably
-         * this one" — the escape the gate has implemented since the forward
-         * citation landed, and which this case predated. Without it the seal
-         * could never be bound at all: its own machinery cannot live inside the
-         * commit it seals, so hosted CI necessarily runs at a later head, and a
-         * test demanding the candidate EXACTLY made every hosted run force
-         * another re-freeze whose seal commit moved the head again.
-         *
-         * What is NOT widened is the evidence. The head must be declared, and
-         * `pendingBinding` must have COMPUTED it into the bound set — which it
-         * does only when the head is a commit this repository contains, DESCENDS
-         * from the candidate, and differs from it by no path under `apps/**` or
-         * `supabase/**`, with a refused diff counted as UNKNOWN. A head failing
-         * any one of those is absent from the set and fails here, which the
-         * mutations in the next case prove one condition at a time.
+         * RULE WIDENED, and only on the HOSTED half. A local tier may declare
+         * `LOCAL_AND_HOSTED_AGREE` or `LOCAL_COMPUTED_HOSTED_PENDING`; the second
+         * exists because a re-freeze moves the candidate ahead of the hosted run
+         * that measured the previous one, and a tier may not go on saying the two
+         * halves AGREE when only one of them has been taken here. Every LOCAL
+         * obligation below is unchanged — the figures are still checked against
+         * the run ledger at the head the tier names.
          */
         expect(
-          attestation?.describesProductIdenticalSuccessor,
-          `${tier} is attested at ${attestation?.headSha}, which is not the candidate, and does not declare ${SUCCESSOR_MARKER}`
+          (LOCAL_PROVENANCES as readonly string[]).includes(String(recorded?.provenance)),
+          `${tier} claims a provenance that is not a local one: ${recorded?.provenance}`
         ).toBe(true);
+        expect(recorded?.measuredAtCommit, `${tier} names no head`).toMatch(/^[0-9a-f]{40}$/);
+        expect(measured?.measuredAtCommit, `the ${tier} run ledger names no head`).toMatch(
+          /^[0-9a-f]{40}$/
+        );
+
+        if (recorded?.measuredAtCommit === measured?.measuredAtCommit) {
+          expect(
+            recorded?.tests,
+            `the ${tier} total disagrees with the run ledger at one head`
+          ).toBe(measured?.tests);
+          expect(recorded?.files, `the ${tier} file count disagrees at one head`).toBe(
+            measured?.files
+          );
+        } else {
+          // Different heads. The candidate figure is frozen, so the only thing to
+          // check is that it is not silently drifting toward the moving one.
+          expect(
+            typeof recorded?.tests,
+            `the ${tier} candidate figure is pinned to ${recorded?.measuredAtCommit} and must still be a number`
+          ).toBe('number');
+          expect(
+            (recorded as unknown as { note?: string }).note ?? '',
+            `the ${tier} figure names a head the ledger has moved past and does not explain it`
+          ).toMatch(/ancestor|candidate|head/i);
+        }
+      }
+    });
+
+    it('does not claim a local measurement for a tier this workstation cannot run', () => {
+      /*
+       * The backend and database tiers need a running PostgreSQL. Claiming a local
+       * figure for either would be the exact dishonesty this package exists to
+       * prevent, so their provenance must say hosted and nothing else — and a
+       * hosted figure must be FETCHABLE, because this repository cannot compute it.
+       */
+      const candidate = JSON.parse(readRepo(CANDIDATE_PATH)) as {
+        candidate: { FINAL_CODE_SHA: string };
+        tiers: Record<
+          string,
+          {
+            provenance: string;
+            hostedAttestation?: {
+              runId: number;
+              jobId: number;
+              headSha: string;
+              artefact: string;
+              describesSupersededHead?: boolean;
+              describesProductIdenticalSuccessor?: boolean;
+            };
+          }
+        >;
+      };
+      /*
+       * Which bindings this REPOSITORY says are bound to the candidate's product.
+       * Computed, not read off the document: `pendingBinding` is the one place
+       * that asks git whether a cited head is contained, whether it descends from
+       * the candidate, and whether `git diff -- apps supabase` across it is empty —
+       * and it treats a diff git REFUSED to take as UNKNOWN rather than as empty.
+       * Deferring to it is what makes the rule below exactly as strict as the gate
+       * and not one condition looser.
+       */
+      const bound = new Set(
+        (pendingBinding(candidate as never, gitReader(ROOT)) as unknown as { bound: string[] })
+          .bound
+      );
+      for (const tier of ['backend', 'database', 'browser']) {
         expect(
-          bound.has(`tiers.${tier}.hostedAttestation`),
-          `${tier} declares a product-identical successor at ${attestation?.headSha} that this repository does not bear out`
+          [PROVENANCE_HOSTED, PROVENANCE_HOSTED_PENDING].includes(
+            candidate.tiers[tier]?.provenance as string
+          ),
+          `${tier} overclaims its provenance: ${candidate.tiers[tier]?.provenance}`
         ).toBe(true);
       }
-      expect(
-        String(attestation?.artefact ?? '').length,
-        `${tier} names no artefact`
-      ).toBeGreaterThan(0);
-    }
-  });
+      for (const [tier, row] of Object.entries(candidate.tiers)) {
+        const attestation = row.hostedAttestation;
+        expect(attestation, `${tier} carries no hosted attestation`).toBeDefined();
+        expect(Number.isInteger(attestation?.runId), `${tier} runId`).toBe(true);
+        expect(Number.isInteger(attestation?.jobId), `${tier} jobId`).toBe(true);
+        /*
+         * RULE WIDENED, in exactly one direction and with a stricter obligation
+         * attached. A tier that CLAIMS a hosted observation of this candidate must
+         * still be attested at the candidate and nothing else. A tier whose
+         * provenance says PENDING must instead declare, in the attestation itself,
+         * that the head it names is one the candidate supersedes — and
+         * `pendingBinding` then requires that head to be a commit this repository
+         * contains and an ancestor of the candidate, and requires the binding to
+         * appear in `pendingHostedBindings`. Silence is not an option in either
+         * branch; what changed is that "not measured here yet" became sayable.
+         */
+        if ((PENDING_PROVENANCES as readonly string[]).includes(row.provenance)) {
+          expect(
+            attestation?.describesSupersededHead,
+            `${tier} is PENDING and does not say which head its figures belong to`
+          ).toBe(true);
+          expect(
+            attestation?.headSha,
+            `${tier} is PENDING and names the candidate as the head it describes`
+          ).not.toBe(candidate.candidate.FINAL_CODE_SHA);
+        } else if (attestation?.headSha === candidate.candidate.FINAL_CODE_SHA) {
+          // Attested at the candidate itself. Nothing to declare, and declaring
+          // a successor over the candidate's own id is refused by the gate.
+          expect(
+            attestation?.[SUCCESSOR_MARKER as 'describesProductIdenticalSuccessor'],
+            `${tier} names the candidate and declares a successor over it`
+          ).not.toBe(true);
+        } else {
+          /*
+           * RULE WIDENED A SECOND TIME, and to EXACTLY the gate's conditions.
+           *
+           * The first widening let a tier say "not measured here yet". This one
+           * lets a tier say "measured at a later head whose product is provably
+           * this one" — the escape the gate has implemented since the forward
+           * citation landed, and which this case predated. Without it the seal
+           * could never be bound at all: its own machinery cannot live inside the
+           * commit it seals, so hosted CI necessarily runs at a later head, and a
+           * test demanding the candidate EXACTLY made every hosted run force
+           * another re-freeze whose seal commit moved the head again.
+           *
+           * What is NOT widened is the evidence. The head must be declared, and
+           * `pendingBinding` must have COMPUTED it into the bound set — which it
+           * does only when the head is a commit this repository contains, DESCENDS
+           * from the candidate, and differs from it by no path under `apps/**` or
+           * `supabase/**`, with a refused diff counted as UNKNOWN. A head failing
+           * any one of those is absent from the set and fails here, which the
+           * mutations in the next case prove one condition at a time.
+           */
+          expect(
+            attestation?.describesProductIdenticalSuccessor,
+            `${tier} is attested at ${attestation?.headSha}, which is not the candidate, and does not declare ${SUCCESSOR_MARKER}`
+          ).toBe(true);
+          expect(
+            bound.has(`tiers.${tier}.hostedAttestation`),
+            `${tier} declares a product-identical successor at ${attestation?.headSha} that this repository does not bear out`
+          ).toBe(true);
+        }
+        expect(
+          String(attestation?.artefact ?? '').length,
+          `${tier} names no artefact`
+        ).toBeGreaterThan(0);
+      }
+    });
 
-  it('accepts a forward citation on the gate’s four conditions and on no fewer', () => {
-    /*
-     * THE MUTATIONS THAT PROVE THE WIDENING ABOVE IS NOT A RELAXATION.
-     *
-     * Four conditions make a forward citation admissible, and the case above
-     * defers all four to `pendingBinding` rather than restating them. Each is
-     * removed here on its own, and each must take THE SAME PREDICATE red. A case
-     * that only showed a sound package passing would be satisfied by a rule that
-     * always returns true — which is exactly how the previous exact-head
-     * assertion survived being wrong about the gate for a whole revision.
-     *
-     * These run on a repository built for the purpose rather than on the
-     * committed package, for two reasons. The freeze GUARANTEES no descendant of
-     * the real candidate carries product drift, so condition (4) has no witness
-     * here at all; and the committed package is legitimately PENDING between the
-     * push that carries this code and the run that binds it, so a case anchored
-     * on a bound package would fail on the very head that produces the binding.
-     */
-    withScratchRepository((repo) => {
-      /** The predicate the case above judges a non-pending tier by. */
-      const admissible = (
-        doc: Record<string, unknown>
-      ): { declared: boolean; computed: boolean } => {
-        const attestation = ((
-          doc.tiers as Record<string, { hostedAttestation?: Record<string, unknown> } | undefined>
-        ).unit?.hostedAttestation ?? {}) as Record<string, unknown>;
-        const analysis = pendingBinding(doc as never, repo.git) as unknown as { bound: string[] };
-        return {
-          declared: attestation[SUCCESSOR_MARKER] === true,
-          computed: new Set(analysis.bound).has('tiers.unit.hostedAttestation'),
+    it('accepts a forward citation on the gate’s four conditions and on no fewer', () => {
+      /*
+       * THE MUTATIONS THAT PROVE THE WIDENING ABOVE IS NOT A RELAXATION.
+       *
+       * Four conditions make a forward citation admissible, and the case above
+       * defers all four to `pendingBinding` rather than restating them. Each is
+       * removed here on its own, and each must take THE SAME PREDICATE red. A case
+       * that only showed a sound package passing would be satisfied by a rule that
+       * always returns true — which is exactly how the previous exact-head
+       * assertion survived being wrong about the gate for a whole revision.
+       *
+       * These run on a repository built for the purpose rather than on the
+       * committed package, for two reasons. The freeze GUARANTEES no descendant of
+       * the real candidate carries product drift, so condition (4) has no witness
+       * here at all; and the committed package is legitimately PENDING between the
+       * push that carries this code and the run that binds it, so a case anchored
+       * on a bound package would fail on the very head that produces the binding.
+       */
+      withScratchRepository((repo) => {
+        /** The predicate the case above judges a non-pending tier by. */
+        const admissible = (
+          doc: Record<string, unknown>
+        ): { declared: boolean; computed: boolean } => {
+          const attestation = ((
+            doc.tiers as Record<string, { hostedAttestation?: Record<string, unknown> } | undefined>
+          ).unit?.hostedAttestation ?? {}) as Record<string, unknown>;
+          const analysis = pendingBinding(doc as never, repo.git) as unknown as { bound: string[] };
+          return {
+            declared: attestation[SUCCESSOR_MARKER] === true,
+            computed: new Set(analysis.bound).has('tiers.unit.hostedAttestation'),
+          };
         };
-      };
-      const world = (
-        candidateSha: string,
-        runHead: string,
-        over: Record<string, unknown> = {}
-      ): Record<string, unknown> => ({
-        candidate: {
-          FINAL_CODE_SHA: candidateSha,
-          FINAL_CODE_TREE: repo.candidateTree,
-          baseBranch: 'develop',
-        },
-        tiers: {
-          unit: {
-            planned: 1,
-            passed: 1,
-            failed: 0,
-            skipped: 0,
-            provenance: PROVENANCE_HOSTED,
-            hostedAttestation: {
-              runId: 11,
-              jobId: 22,
-              headSha: runHead,
-              artefact: 'totals-unit.json',
-              [SUCCESSOR_MARKER]: true,
-              ...over,
+        const world = (
+          candidateSha: string,
+          runHead: string,
+          over: Record<string, unknown> = {}
+        ): Record<string, unknown> => ({
+          candidate: {
+            FINAL_CODE_SHA: candidateSha,
+            FINAL_CODE_TREE: repo.candidateTree,
+            baseBranch: 'develop',
+          },
+          tiers: {
+            unit: {
+              planned: 1,
+              passed: 1,
+              failed: 0,
+              skipped: 0,
+              provenance: PROVENANCE_HOSTED,
+              hostedAttestation: {
+                runId: 11,
+                jobId: 22,
+                headSha: runHead,
+                artefact: 'totals-unit.json',
+                [SUCCESSOR_MARKER]: true,
+                ...over,
+              },
             },
           },
-        },
+        });
+
+        // SOUND FIRST, or every mutation below removes something that was never
+        // there and four failing predicates would prove nothing.
+        const sound = admissible(world(repo.candidate, repo.branchHead));
+        expect(sound.declared, 'the sound world declares no forward citation').toBe(true);
+        expect(sound.computed, 'a product-identical successor run was refused').toBe(true);
+
+        // (1) THE DECLARATION. Without the marker the head is merely foreign, and
+        // the rule above refuses it before the repository is consulted at all.
+        const undeclared = world(repo.candidate, repo.branchHead, {
+          [SUCCESSOR_MARKER]: undefined,
+        });
+        expect(
+          admissible(undeclared).declared,
+          'an undeclared foreign head passed as a forward citation'
+        ).toBe(false);
+
+        // (2) CONTAINMENT. A head nobody can fetch is not a citation.
+        const absent = 'deadbeef'.repeat(5);
+        expect(
+          repo.git(['cat-file', '-e', `${absent}^{commit}`]),
+          'the head exists after all'
+        ).toBe(null);
+        expect(
+          admissible(world(repo.candidate, absent)).computed,
+          'a run at a head nobody can fetch was counted as bound'
+        ).toBe(false);
+
+        // (3) DESCENT. A run taken before this code existed cannot describe it.
+        expect(
+          admissible(world(repo.candidate, repo.previous)).computed,
+          'a run predating the candidate was counted as bound'
+        ).toBe(false);
+
+        // (4) PRODUCT IDENTITY — the condition the coordinator named, and the one
+        // the real repository cannot witness. Same run head, same descent, same
+        // declaration; only the candidate moves back one commit, so `apps/**` now
+        // differs across the range.
+        expect(
+          repo.run('diff', '--name-only', `${repo.previous}..${repo.branchHead}`, '--', 'apps'),
+          'the drifting world carries no product drift, so this case measures nothing'
+        ).not.toBe('');
+        const drifting = admissible(world(repo.previous, repo.branchHead));
+        expect(drifting.declared, 'the drifting world stopped declaring a forward citation').toBe(
+          true
+        );
+        expect(drifting.computed, 'a run measuring different software was counted as bound').toBe(
+          false
+        );
+        expect(
+          (
+            pendingBinding(world(repo.previous, repo.branchHead) as never, repo.git) as unknown as {
+              problems: string[];
+            }
+          ).problems.join(' ')
+        ).toContain('PRODUCT path(s) differ');
       });
-
-      // SOUND FIRST, or every mutation below removes something that was never
-      // there and four failing predicates would prove nothing.
-      const sound = admissible(world(repo.candidate, repo.branchHead));
-      expect(sound.declared, 'the sound world declares no forward citation').toBe(true);
-      expect(sound.computed, 'a product-identical successor run was refused').toBe(true);
-
-      // (1) THE DECLARATION. Without the marker the head is merely foreign, and
-      // the rule above refuses it before the repository is consulted at all.
-      const undeclared = world(repo.candidate, repo.branchHead, {
-        [SUCCESSOR_MARKER]: undefined,
-      });
-      expect(
-        admissible(undeclared).declared,
-        'an undeclared foreign head passed as a forward citation'
-      ).toBe(false);
-
-      // (2) CONTAINMENT. A head nobody can fetch is not a citation.
-      const absent = 'deadbeef'.repeat(5);
-      expect(repo.git(['cat-file', '-e', `${absent}^{commit}`]), 'the head exists after all').toBe(
-        null
-      );
-      expect(
-        admissible(world(repo.candidate, absent)).computed,
-        'a run at a head nobody can fetch was counted as bound'
-      ).toBe(false);
-
-      // (3) DESCENT. A run taken before this code existed cannot describe it.
-      expect(
-        admissible(world(repo.candidate, repo.previous)).computed,
-        'a run predating the candidate was counted as bound'
-      ).toBe(false);
-
-      // (4) PRODUCT IDENTITY — the condition the coordinator named, and the one
-      // the real repository cannot witness. Same run head, same descent, same
-      // declaration; only the candidate moves back one commit, so `apps/**` now
-      // differs across the range.
-      expect(
-        repo.run('diff', '--name-only', `${repo.previous}..${repo.branchHead}`, '--', 'apps'),
-        'the drifting world carries no product drift, so this case measures nothing'
-      ).not.toBe('');
-      const drifting = admissible(world(repo.previous, repo.branchHead));
-      expect(drifting.declared, 'the drifting world stopped declaring a forward citation').toBe(
-        true
-      );
-      expect(drifting.computed, 'a run measuring different software was counted as bound').toBe(
-        false
-      );
-      expect(
-        (
-          pendingBinding(world(repo.previous, repo.branchHead) as never, repo.git) as unknown as {
-            problems: string[];
-          }
-        ).problems.join(' ')
-      ).toContain('PRODUCT path(s) differ');
     });
-  });
 
-  it('carries no LOCAL figure the run ledger cannot carry', () => {
-    /*
-     * `suites: 549` stood in this package for a whole revision. The P1-27 run
-     * ledger records no suite count, so there was nothing to check it against
-     * and nothing that would have noticed it change — a number in an evidence
-     * package that no artefact carries is a number nobody measured.
-     */
-    const candidate = JSON.parse(readRepo(CANDIDATE_PATH)) as {
-      tiers: Record<string, Record<string, unknown>>;
-    };
-    for (const [name, tier] of Object.entries(candidate.tiers)) {
-      if (tier.provenance !== 'LOCAL_AND_HOSTED_AGREE') continue;
-      const numeric = Object.keys(tier).filter((key) => typeof tier[key] === 'number');
-      expect(numeric.sort(), `${name} carries a figure the ledger does not write`).toEqual(
-        [...LEDGER_FIGURES].sort()
-      );
-    }
-  });
-});
+    it('carries no LOCAL figure the run ledger cannot carry', () => {
+      /*
+       * `suites: 549` stood in this package for a whole revision. The P1-27 run
+       * ledger records no suite count, so there was nothing to check it against
+       * and nothing that would have noticed it change — a number in an evidence
+       * package that no artefact carries is a number nobody measured.
+       */
+      const candidate = JSON.parse(readRepo(CANDIDATE_PATH)) as {
+        tiers: Record<string, Record<string, unknown>>;
+      };
+      for (const [name, tier] of Object.entries(candidate.tiers)) {
+        if (tier.provenance !== 'LOCAL_AND_HOSTED_AGREE') continue;
+        const numeric = Object.keys(tier).filter((key) => typeof tier[key] === 'number');
+        expect(numeric.sort(), `${name} carries a figure the ledger does not write`).toEqual(
+          [...LEDGER_FIGURES].sort()
+        );
+      }
+    });
+  }
+);
 
 describe('P1-28-QA-005 — the seal is bound to the REPOSITORY, not to its own prose', () => {
   /*
@@ -1086,602 +1118,609 @@ describe('P1-28-QA-005 — the seal is bound to the REPOSITORY, not to its own p
   });
 });
 
-describe('P1-28-QA-005 — the seal lifecycle: ACTIVE while it is built, ARCHIVED once it lands', () => {
-  /*
-   * The seal held every future product tree to the Owner-accepted candidate,
-   * forever. That made all later product work impossible unless the candidate
-   * were re-frozen onto it — and re-freezing after acceptance is the one act
-   * that would genuinely destroy the record: the Owner accepted a tree, and
-   * re-freezing replaces it with a tree they never saw.
-   *
-   * So these cases are about a PRESERVATION, not a relaxation. They build real
-   * repositories with real commits, trees and ancestry, because every archival
-   * condition is a Git question and a case that inspected a string would prove
-   * nothing about any of them.
-   */
-  const CLOSED_RECORD =
-    '# Phase 1-28 — Closure Record\n\n**Status: CLOSED — `OWNER ACCEPTANCE: PASS`, 2026-08-20**\n';
-  const ACCEPTED = { ownerAcceptance: { verdict: 'OWNER ACCEPTANCE: PASS' } };
+describe(
+  'P1-28-QA-005 — the seal lifecycle: ACTIVE while it is built, ARCHIVED once it lands',
+  { timeout: SCRATCH_REPOSITORY_BUDGET_MS },
+  () => {
+    /*
+     * The seal held every future product tree to the Owner-accepted candidate,
+     * forever. That made all later product work impossible unless the candidate
+     * were re-frozen onto it — and re-freezing after acceptance is the one act
+     * that would genuinely destroy the record: the Owner accepted a tree, and
+     * re-freezing replaces it with a tree they never saw.
+     *
+     * So these cases are about a PRESERVATION, not a relaxation. They build real
+     * repositories with real commits, trees and ancestry, because every archival
+     * condition is a Git question and a case that inspected a string would prove
+     * nothing about any of them.
+     */
+    const CLOSED_RECORD =
+      '# Phase 1-28 — Closure Record\n\n**Status: CLOSED — `OWNER ACCEPTANCE: PASS`, 2026-08-20**\n';
+    const ACCEPTED = { ownerAcceptance: { verdict: 'OWNER ACCEPTANCE: PASS' } };
 
-  /** A document and a world that satisfy every archival condition. */
-  const archivedWorld = (repo: Scratch, over: Record<string, unknown> = {}) => {
-    repo.run('update-ref', 'refs/remotes/origin/main', repo.candidate);
-    return repo.document({ ...ACCEPTED, ...over });
-  };
-
-  /** Commit a file on top of the current checkout, and return the commit. */
-  const commitFile = (repo: Scratch, relative: string, body: string, message: string): string => {
-    const target = join(repo.root, relative);
-    mkdirSync(dirname(target), { recursive: true });
-    writeFileSync(target, body, 'utf8');
-    repo.run('add', '-A');
-    repo.run('commit', '--quiet', '-m', message);
-    return repo.run('rev-parse', 'HEAD');
-  };
-
-  const bind = (repo: Scratch, doc: unknown, record: string | null = CLOSED_RECORD) =>
-    repositoryBinding(doc as never, repo.git, () => record) as unknown as Binding & {
-      lifecycle: {
-        state: string;
-        archived: boolean;
-        conditions: Record<string, boolean>;
-        refusals: string[];
-        unknowns: string[];
-      };
-      archivedHistory: string[];
+    /** A document and a world that satisfy every archival condition. */
+    const archivedWorld = (repo: Scratch, over: Record<string, unknown> = {}) => {
+      repo.run('update-ref', 'refs/remotes/origin/main', repo.candidate);
+      return repo.document({ ...ACCEPTED, ...over });
     };
 
-  const speak = (binding: unknown): { sound: boolean; said: string[] } => {
-    const said: string[] = [];
-    const sound = reportRepository(binding as never, (line: string) => said.push(line));
-    return { sound, said };
-  };
-  const refusedProductDrift = (said: string[]): boolean =>
-    said.some((line) => line.includes('product file(s) differ'));
+    /** Commit a file on top of the current checkout, and return the commit. */
+    const commitFile = (repo: Scratch, relative: string, body: string, message: string): string => {
+      const target = join(repo.root, relative);
+      mkdirSync(dirname(target), { recursive: true });
+      writeFileSync(target, body, 'utf8');
+      repo.run('add', '-A');
+      repo.run('commit', '--quiet', '-m', message);
+      return repo.run('rev-parse', 'HEAD');
+    };
 
-  /* ------------------------------------------------------------ ACTIVE ---- */
+    const bind = (repo: Scratch, doc: unknown, record: string | null = CLOSED_RECORD) =>
+      repositoryBinding(doc as never, repo.git, () => record) as unknown as Binding & {
+        lifecycle: {
+          state: string;
+          archived: boolean;
+          conditions: Record<string, boolean>;
+          refusals: string[];
+          unknowns: string[];
+        };
+        archivedHistory: string[];
+      };
 
-  it('ACTIVE — a product change invalidates the candidate, exactly as before', () =>
-    withScratchRepository((repo) => {
-      repo.checkout(repo.productChanged);
-      const binding = bind(repo, repo.document(), null);
-      expect(binding.lifecycle.state, 'an unaccepted phase archived itself').toBe('ACTIVE');
+    const speak = (binding: unknown): { sound: boolean; said: string[] } => {
+      const said: string[] = [];
+      const sound = reportRepository(binding as never, (line: string) => said.push(line));
+      return { sound, said };
+    };
+    const refusedProductDrift = (said: string[]): boolean =>
+      said.some((line) => line.includes('product file(s) differ'));
 
-      const { sound, said } = speak(binding);
-      expect(sound, 'a product change was accepted while the phase is ACTIVE').toBe(false);
-      expect(refusedProductDrift(said), 'the product rule stopped biting on an ACTIVE phase').toBe(
-        true
-      );
-    }));
+    /* ------------------------------------------------------------ ACTIVE ---- */
 
-  it('ACTIVE — an unnamed executable successor still fails', () =>
-    withScratchRepository((repo) => {
-      repo.checkout(repo.branchHead);
-      // The document names no successor at all, and one of them is executable.
-      const binding = bind(repo, { ...repo.document(), successors: [] }, null);
-      expect(binding.lifecycle.state).toBe('ACTIVE');
+    it('ACTIVE — a product change invalidates the candidate, exactly as before', () =>
+      withScratchRepository((repo) => {
+        repo.checkout(repo.productChanged);
+        const binding = bind(repo, repo.document(), null);
+        expect(binding.lifecycle.state, 'an unaccepted phase archived itself').toBe('ACTIVE');
 
-      const { sound, said } = speak(binding);
-      expect(sound).toBe(false);
-      expect(
-        said.some((line) => line.includes('is not named in')),
-        'the successor rule stopped biting on an ACTIVE phase'
-      ).toBe(true);
-    }));
-
-  /* ---------------------------------------------------------- ARCHIVED ---- */
-
-  it('ARCHIVED — every condition computed from Git and the closure record', () =>
-    withScratchRepository((repo) => {
-      repo.checkout(repo.branchHead);
-      const binding = bind(repo, archivedWorld(repo));
-
-      expect(binding.lifecycle.refusals, 'archival was refused').toEqual([]);
-      expect(binding.lifecycle.unknowns, 'a condition could not be measured').toEqual([]);
-      expect(binding.lifecycle.conditions).toEqual({
-        ownerAccepted: true,
-        candidateExists: true,
-        treeMatches: true,
-        containedInPromoted: true,
-        closureClosed: true,
-      });
-      expect(binding.lifecycle.state).toBe('ARCHIVED');
-    }));
-
-  it('ARCHIVED — a later apps/web change no longer invalidates the accepted candidate', () =>
-    withScratchRepository((repo) => {
-      repo.checkout(repo.branchHead);
-      const doc = archivedWorld(repo);
-      const after = commitFile(
-        repo,
-        'apps/web/src/features/admin/employees.tsx',
-        'export const Employees = () => null;\n',
-        'feat: an administration screen, long after P1-28 closed'
-      );
-      expect(
-        repo.run('diff', '--name-only', `${repo.candidate}..${after}`, '--', 'apps', 'supabase'),
-        'the world does not actually contain a product change, so this proves nothing'
-      ).not.toBe('');
-
-      const binding = bind(repo, doc);
-      expect(binding.lifecycle.state).toBe('ARCHIVED');
-      const { sound, said } = speak(binding);
-      expect(
-        refusedProductDrift(said),
-        'an archived phase still refused a later product change'
-      ).toBe(false);
-      expect(sound, 'an archived phase refused a later product change').toBe(true);
-    }));
-
-  it('ARCHIVED — a later migration is equally allowed', () =>
-    withScratchRepository((repo) => {
-      repo.checkout(repo.branchHead);
-      const doc = archivedWorld(repo);
-      const after = commitFile(
-        repo,
-        'supabase/migrations/20260901090000_multi_tenant_membership.sql',
-        'select 1;\n',
-        'feat(db): membership, long after P1-28 closed'
-      );
-      expect(
-        repo.run('diff', '--name-only', `${repo.candidate}..${after}`, '--', 'apps', 'supabase')
-      ).not.toBe('');
-
-      const { sound, said } = speak(bind(repo, doc));
-      expect(refusedProductDrift(said)).toBe(false);
-      expect(sound, 'an archived phase refused a later migration').toBe(true);
-    }));
-
-  it('ARCHIVED — later executable commits are not accumulated as successors', () =>
-    withScratchRepository((repo) => {
-      repo.checkout(repo.branchHead);
-      const doc = archivedWorld(repo, { successors: [] });
-      commitFile(repo, 'apps/api/src/routes/platform.ts', 'export const x = 1;\n', 'feat: later');
-
-      const { sound, said } = speak(bind(repo, doc));
-      expect(
-        said.some((line) => line.includes('is not named in')),
-        'an archived phase demanded that later work be named as its successor'
-      ).toBe(false);
-      expect(sound).toBe(true);
-    }));
-
-  /* -------------------------------------------- archival is not a bypass -- */
-
-  it('refuses archival when the Owner verdict is absent or is not PASS', () =>
-    withScratchRepository((repo) => {
-      repo.checkout(repo.branchHead);
-      repo.run('update-ref', 'refs/remotes/origin/main', repo.candidate);
-
-      for (const [label, over] of [
-        ['absent', {}],
-        ['not PASS', { ownerAcceptance: { verdict: 'RETURNED — OWNER ACCEPTANCE: FAIL' } }],
-      ] as const) {
-        const binding = bind(repo, repo.document(over));
-        expect(binding.lifecycle.state, `${label} acceptance archived the phase`).toBe('ACTIVE');
-        expect(binding.lifecycle.conditions.ownerAccepted).toBe(false);
-      }
-    }));
-
-  it('refuses archival when the accepted candidate has not reached the promotion branch', () =>
-    withScratchRepository((repo) => {
-      repo.checkout(repo.branchHead);
-      // `main` exists and is real — it simply does not contain the candidate.
-      repo.run('update-ref', 'refs/remotes/origin/main', repo.origin);
-      const binding = bind(repo, repo.document(ACCEPTED));
-
-      expect(binding.lifecycle.state, 'a verdict alone archived the phase').toBe('ACTIVE');
-      expect(binding.lifecycle.conditions.containedInPromoted).toBe(false);
-      expect(binding.lifecycle.refusals.join(' ')).toContain('has not been promoted');
-    }));
-
-  it('fails CLOSED when the promotion branch cannot be resolved at all', () =>
-    withScratchRepository((repo) => {
-      repo.checkout(repo.branchHead);
-      // No main ref of any form — the shape a shallow clone has.
-      const binding = bind(repo, repo.document(ACCEPTED));
-
-      expect(binding.lifecycle.state, 'an unresolvable promotion branch archived the phase').toBe(
-        'ACTIVE'
-      );
-      expect(binding.lifecycle.unknowns.join(' ')).toContain('could not be resolved');
-      expect(
-        binding.lifecycle.conditions.containedInPromoted,
-        'an unknown was read as a satisfied condition'
-      ).toBe(false);
-    }));
-
-  it('refuses archival when the closure record is missing or has been reopened', () =>
-    withScratchRepository((repo) => {
-      repo.checkout(repo.branchHead);
-      const doc = archivedWorld(repo);
-
-      expect(bind(repo, doc, null).lifecycle.state, 'no closure record archived the phase').toBe(
-        'ACTIVE'
-      );
-      const reopened = CLOSED_RECORD.replace('**Status: CLOSED', '**Status: REOPENED');
-      expect(bind(repo, doc, reopened).lifecycle.state, 'a reopened phase archived itself').toBe(
-        'ACTIVE'
-      );
-    }));
-
-  it('refuses archival when the candidate no longer names its recorded tree', () =>
-    withScratchRepository((repo) => {
-      repo.checkout(repo.branchHead);
-      repo.run('update-ref', 'refs/remotes/origin/main', repo.candidate);
-      const tampered = repo.document({
-        ...ACCEPTED,
-        candidate: {
-          FINAL_CODE_SHA: repo.candidate,
-          FINAL_CODE_TREE: 'f'.repeat(40),
-          baseBranch: 'develop',
-        },
-      });
-
-      const binding = bind(repo, tampered);
-      expect(binding.lifecycle.state, 'a rewritten tree archived the phase').toBe('ACTIVE');
-      expect(binding.lifecycle.conditions.treeMatches).toBe(false);
-      expect(binding.lifecycle.refusals.join(' ')).toContain('names tree');
-    }));
-
-  it('refuses archival when the candidate names no commit this repository has', () =>
-    withScratchRepository((repo) => {
-      repo.checkout(repo.branchHead);
-      repo.run('update-ref', 'refs/remotes/origin/main', repo.candidate);
-      const missing = repo.document({
-        ...ACCEPTED,
-        candidate: {
-          FINAL_CODE_SHA: 'a'.repeat(40),
-          FINAL_CODE_TREE: repo.candidateTree,
-          baseBranch: 'develop',
-        },
-      });
-
-      const binding = bind(repo, missing);
-      expect(binding.lifecycle.state).toBe('ACTIVE');
-      expect(binding.lifecycle.conditions.candidateExists).toBe(false);
-    }));
-
-  /* ------------------------------------- the record stays tamper-evident -- */
-
-  it('ARCHIVED — the recorded successor history is still judged as data', () =>
-    withScratchRepository((repo) => {
-      repo.checkout(repo.branchHead);
-
-      const malformed = bind(
-        repo,
-        archivedWorld(repo, { successors: [{ commit: 'not-a-commit', kind: 'x' }] })
-      );
-      expect(malformed.lifecycle.state).toBe('ARCHIVED');
-      expect(speak(malformed).sound, 'an archived phase accepted a malformed successor id').toBe(
-        false
-      );
-
-      const invented = bind(
-        repo,
-        archivedWorld(repo, { successors: [{ commit: 'b'.repeat(40), kind: 'x' }] })
-      );
-      expect(speak(invented).sound, 'an archived phase accepted a successor naming no commit').toBe(
-        false
-      );
-      expect(invented.archivedHistory.join(' ')).toContain('names no commit');
-
-      const notADescendant = bind(
-        repo,
-        archivedWorld(repo, { successors: [{ commit: repo.origin, kind: 'x' }] })
-      );
-      expect(
-        speak(notADescendant).sound,
-        'an archived phase accepted a successor that precedes the candidate'
-      ).toBe(false);
-      expect(notADescendant.archivedHistory.join(' ')).toContain('does not follow the candidate');
-
-      const bothLists = bind(
-        repo,
-        archivedWorld(repo, {
-          successors: [{ commit: repo.successor, kind: 'x' }],
-          absorbedSuccessors: [{ commit: repo.successor, kind: 'x' }],
-        })
-      );
-      expect(
-        speak(bothLists).sound,
-        'an archived phase accepted one commit in both successor lists'
-      ).toBe(false);
-    }));
-
-  it('ARCHIVED — the genuine history it already carries stays sound', () =>
-    withScratchRepository((repo) => {
-      repo.checkout(repo.branchHead);
-      const doc = archivedWorld(repo, {
-        successors: [{ commit: repo.successor, kind: 'evidence machinery' }],
-        absorbedSuccessors: [{ commit: repo.branchHead, kind: 'absorbed' }],
-      });
-      const binding = bind(repo, doc);
-      expect(binding.archivedHistory, 'a real history was reported as tampered').toEqual([]);
-      expect(speak(binding).sound).toBe(true);
-    }));
-
-  /* ----------------------------------------------------- the anti-escape -- */
-
-  it('reads the record’s CURRENT status, not a closed row somewhere in the record', () =>
-    withScratchRepository((repo) => {
-      /*
-       * Found by attacking the gate, and it worked before this case existed.
-       *
-       * Condition E used to test the WHOLE file, so a record whose status reads
-       * REOPENED on `OWNER ACCEPTANCE: FAIL` still satisfied it as long as it kept
-       * its own closure history — which is exactly how such a record gets written.
-       * This repository has reopened two phases on that verdict already.
-       *
-       * The consequence was not cosmetic. `ownerAcceptance.verdict` is a field the
-       * package writes about itself, so the closure record is the gate’s only
-       * INDEPENDENT reading of a reopening. A phase reopened for remediation, still
-       * naming its promoted candidate, would have stayed ARCHIVED — and the
-       * product-drift and successor rules would have gone quiet over precisely the
-       * remediation work the reopening exists to govern.
-       */
-      repo.checkout(repo.productChanged);
-      const doc = archivedWorld(repo);
-
-      const reopened = [
-        '# Phase — Closure Record',
-        '',
-        '**Status: REOPENED — `OWNER ACCEPTANCE: FAIL`, four defects found on the running app.**',
-        '',
-        '## History',
-        '',
-        '| Date | Status |',
-        '| --- | --- |',
-        `| 2026-08-20 | ${CLOSED_RECORD.trim().split('\n').at(-1)} |`,
-      ].join('\n');
-
-      const binding = bind(repo, doc, reopened);
-      expect(
-        binding.lifecycle.state,
-        'a reopened phase stayed archived on the strength of its own closure history'
-      ).toBe('ACTIVE');
-      expect(binding.lifecycle.conditions.closureClosed).toBe(false);
-      expect(binding.lifecycle.refusals.join(' ')).toContain('REOPENED');
-
-      // And the strict rules really do bite again on that world.
-      const { sound, said } = speak(binding);
-      expect(sound, 'the reopened phase was still judged sound').toBe(false);
-      expect(
-        refusedProductDrift(said),
-        'the reopening did not restore the product rule it exists to restore'
-      ).toBe(true);
-    }));
-
-  it('cannot be told the phase is closed by text parked in a comment or a fence', () =>
-    withScratchRepository((repo) => {
-      repo.checkout(repo.branchHead);
-      const doc = archivedWorld(repo);
-      const closed = CLOSED_RECORD.trim().split('\n').at(-1) as string;
-
-      for (const [label, record] of [
-        [
-          'an HTML comment',
-          [
-            '**Status: OPEN — the Owner has not walked the running app yet.**',
-            `<!-- ${closed} -->`,
-          ].join('\n'),
-        ],
-        [
-          /*
-           * The ORDER that makes the blanking load-bearing: a template or an
-           * example ABOVE the status the record actually states. Taking the first
-           * status line is enough when the decoy sits below it; when the decoy is
-           * first, only blanking keeps it from speaking for a record that says the
-           * opposite. Both orders are here because the first one alone passed with
-           * the blanking deleted.
-           */
-          'an HTML comment ABOVE the real status',
-          // Multi-line, so the decoy genuinely begins a line with `**Status:`.
-          // Written on one line it starts with `<!--` and the first-match rule
-          // alone would refuse it, leaving the blanking untested.
-          ['<!--', closed, '-->', '**Status: OPEN — not closed.**'].join('\n'),
-        ],
-        [
-          'a fenced template ABOVE the real status',
-          ['```markdown', closed, '```', '**Status: OPEN — not closed.**'].join('\n'),
-        ],
-        [
-          'a fenced template',
-          [
-            '**Status: OPEN — the Owner has not walked the running app yet.**',
-            '```markdown',
-            closed,
-            '```',
-          ].join('\n'),
-        ],
-      ] as const) {
+        const { sound, said } = speak(binding);
+        expect(sound, 'a product change was accepted while the phase is ACTIVE').toBe(false);
         expect(
-          bind(repo, doc, record).lifecycle.state,
-          `a closed line inside ${label} archived the phase`
-        ).toBe('ACTIVE');
-      }
+          refusedProductDrift(said),
+          'the product rule stopped biting on an ACTIVE phase'
+        ).toBe(true);
+      }));
 
-      // The control: the same line, actually stated, does archive it.
-      expect(bind(repo, doc, CLOSED_RECORD).lifecycle.state).toBe('ARCHIVED');
-    }));
+    it('ACTIVE — an unnamed executable successor still fails', () =>
+      withScratchRepository((repo) => {
+        repo.checkout(repo.branchHead);
+        // The document names no successor at all, and one of them is executable.
+        const binding = bind(repo, { ...repo.document(), successors: [] }, null);
+        expect(binding.lifecycle.state).toBe('ACTIVE');
 
-  it('an archived phase whose candidate was repointed is caught by its own history', () =>
-    withScratchRepository((repo) => {
-      /*
-       * The other escape the adversarial pass reported, and the reason it is a
-       * finding about ONE reporter rather than about the gate.
-       *
-       * Repointing FINAL_CODE_SHA at any already-promoted commit satisfies
-       * conditions B, C and D — the new pairing is self-consistent and the old
-       * commit really is in `main`. Read through `reportRepository` alone, a
-       * drifting ACTIVE phase becomes ARCHIVED and sound.
-       *
-       * It does not survive the package it would have to live in. The recorded
-       * successors no longer descend from the repointed candidate, which is
-       * exactly what `archivedHistoryProblems` is for — and on the real package
-       * four other reporters refuse it as well, starting with the prose half
-       * naming a different commit. This case pins the half that belongs here.
-       */
-      repo.checkout(repo.branchHead);
-      // A promoted commit on a DIVERGENT line — which is what an already-promoted
-      // commit looks like from a phase branch, and what makes the recorded
-      // successors stop descending from it.
-      repo.run('update-ref', 'refs/remotes/origin/main', repo.baseTip);
-      const repointed = repo.document({
-        ...ACCEPTED,
-        candidate: {
-          FINAL_CODE_SHA: repo.baseTip,
-          FINAL_CODE_TREE: repo.run('rev-parse', `${repo.baseTip}^{tree}`),
-          baseBranch: 'develop',
-        },
-        successors: [{ commit: repo.successor, kind: 'evidence machinery' }],
-      });
+        const { sound, said } = speak(binding);
+        expect(sound).toBe(false);
+        expect(
+          said.some((line) => line.includes('is not named in')),
+          'the successor rule stopped biting on an ACTIVE phase'
+        ).toBe(true);
+      }));
 
-      const binding = bind(repo, repointed);
-      expect(binding.lifecycle.state, 'the premise is wrong').toBe('ARCHIVED');
-      expect(
-        speak(binding).sound,
-        'a repointed candidate was accepted by the archived reporter'
-      ).toBe(false);
-    }));
-  it(
-    'refuses a promotion branch proved by a ref the local machine controls',
-    () =>
+    /* ---------------------------------------------------------- ARCHIVED ---- */
+
+    it('ARCHIVED — every condition computed from Git and the closure record', () =>
+      withScratchRepository((repo) => {
+        repo.checkout(repo.branchHead);
+        const binding = bind(repo, archivedWorld(repo));
+
+        expect(binding.lifecycle.refusals, 'archival was refused').toEqual([]);
+        expect(binding.lifecycle.unknowns, 'a condition could not be measured').toEqual([]);
+        expect(binding.lifecycle.conditions).toEqual({
+          ownerAccepted: true,
+          candidateExists: true,
+          treeMatches: true,
+          containedInPromoted: true,
+          closureClosed: true,
+        });
+        expect(binding.lifecycle.state).toBe('ARCHIVED');
+      }));
+
+    it('ARCHIVED — a later apps/web change no longer invalidates the accepted candidate', () =>
+      withScratchRepository((repo) => {
+        repo.checkout(repo.branchHead);
+        const doc = archivedWorld(repo);
+        const after = commitFile(
+          repo,
+          'apps/web/src/features/admin/employees.tsx',
+          'export const Employees = () => null;\n',
+          'feat: an administration screen, long after P1-28 closed'
+        );
+        expect(
+          repo.run('diff', '--name-only', `${repo.candidate}..${after}`, '--', 'apps', 'supabase'),
+          'the world does not actually contain a product change, so this proves nothing'
+        ).not.toBe('');
+
+        const binding = bind(repo, doc);
+        expect(binding.lifecycle.state).toBe('ARCHIVED');
+        const { sound, said } = speak(binding);
+        expect(
+          refusedProductDrift(said),
+          'an archived phase still refused a later product change'
+        ).toBe(false);
+        expect(sound, 'an archived phase refused a later product change').toBe(true);
+      }));
+
+    it('ARCHIVED — a later migration is equally allowed', () =>
+      withScratchRepository((repo) => {
+        repo.checkout(repo.branchHead);
+        const doc = archivedWorld(repo);
+        const after = commitFile(
+          repo,
+          'supabase/migrations/20260901090000_multi_tenant_membership.sql',
+          'select 1;\n',
+          'feat(db): membership, long after P1-28 closed'
+        );
+        expect(
+          repo.run('diff', '--name-only', `${repo.candidate}..${after}`, '--', 'apps', 'supabase')
+        ).not.toBe('');
+
+        const { sound, said } = speak(bind(repo, doc));
+        expect(refusedProductDrift(said)).toBe(false);
+        expect(sound, 'an archived phase refused a later migration').toBe(true);
+      }));
+
+    it('ARCHIVED — later executable commits are not accumulated as successors', () =>
+      withScratchRepository((repo) => {
+        repo.checkout(repo.branchHead);
+        const doc = archivedWorld(repo, { successors: [] });
+        commitFile(repo, 'apps/api/src/routes/platform.ts', 'export const x = 1;\n', 'feat: later');
+
+        const { sound, said } = speak(bind(repo, doc));
+        expect(
+          said.some((line) => line.includes('is not named in')),
+          'an archived phase demanded that later work be named as its successor'
+        ).toBe(false);
+        expect(sound).toBe(true);
+      }));
+
+    /* -------------------------------------------- archival is not a bypass -- */
+
+    it('refuses archival when the Owner verdict is absent or is not PASS', () =>
+      withScratchRepository((repo) => {
+        repo.checkout(repo.branchHead);
+        repo.run('update-ref', 'refs/remotes/origin/main', repo.candidate);
+
+        for (const [label, over] of [
+          ['absent', {}],
+          ['not PASS', { ownerAcceptance: { verdict: 'RETURNED — OWNER ACCEPTANCE: FAIL' } }],
+        ] as const) {
+          const binding = bind(repo, repo.document(over));
+          expect(binding.lifecycle.state, `${label} acceptance archived the phase`).toBe('ACTIVE');
+          expect(binding.lifecycle.conditions.ownerAccepted).toBe(false);
+        }
+      }));
+
+    it('refuses archival when the accepted candidate has not reached the promotion branch', () =>
+      withScratchRepository((repo) => {
+        repo.checkout(repo.branchHead);
+        // `main` exists and is real — it simply does not contain the candidate.
+        repo.run('update-ref', 'refs/remotes/origin/main', repo.origin);
+        const binding = bind(repo, repo.document(ACCEPTED));
+
+        expect(binding.lifecycle.state, 'a verdict alone archived the phase').toBe('ACTIVE');
+        expect(binding.lifecycle.conditions.containedInPromoted).toBe(false);
+        expect(binding.lifecycle.refusals.join(' ')).toContain('has not been promoted');
+      }));
+
+    it('fails CLOSED when the promotion branch cannot be resolved at all', () =>
+      withScratchRepository((repo) => {
+        repo.checkout(repo.branchHead);
+        // No main ref of any form — the shape a shallow clone has.
+        const binding = bind(repo, repo.document(ACCEPTED));
+
+        expect(binding.lifecycle.state, 'an unresolvable promotion branch archived the phase').toBe(
+          'ACTIVE'
+        );
+        expect(binding.lifecycle.unknowns.join(' ')).toContain('could not be resolved');
+        expect(
+          binding.lifecycle.conditions.containedInPromoted,
+          'an unknown was read as a satisfied condition'
+        ).toBe(false);
+      }));
+
+    it('refuses archival when the closure record is missing or has been reopened', () =>
+      withScratchRepository((repo) => {
+        repo.checkout(repo.branchHead);
+        const doc = archivedWorld(repo);
+
+        expect(bind(repo, doc, null).lifecycle.state, 'no closure record archived the phase').toBe(
+          'ACTIVE'
+        );
+        const reopened = CLOSED_RECORD.replace('**Status: CLOSED', '**Status: REOPENED');
+        expect(bind(repo, doc, reopened).lifecycle.state, 'a reopened phase archived itself').toBe(
+          'ACTIVE'
+        );
+      }));
+
+    it('refuses archival when the candidate no longer names its recorded tree', () =>
+      withScratchRepository((repo) => {
+        repo.checkout(repo.branchHead);
+        repo.run('update-ref', 'refs/remotes/origin/main', repo.candidate);
+        const tampered = repo.document({
+          ...ACCEPTED,
+          candidate: {
+            FINAL_CODE_SHA: repo.candidate,
+            FINAL_CODE_TREE: 'f'.repeat(40),
+            baseBranch: 'develop',
+          },
+        });
+
+        const binding = bind(repo, tampered);
+        expect(binding.lifecycle.state, 'a rewritten tree archived the phase').toBe('ACTIVE');
+        expect(binding.lifecycle.conditions.treeMatches).toBe(false);
+        expect(binding.lifecycle.refusals.join(' ')).toContain('names tree');
+      }));
+
+    it('refuses archival when the candidate names no commit this repository has', () =>
+      withScratchRepository((repo) => {
+        repo.checkout(repo.branchHead);
+        repo.run('update-ref', 'refs/remotes/origin/main', repo.candidate);
+        const missing = repo.document({
+          ...ACCEPTED,
+          candidate: {
+            FINAL_CODE_SHA: 'a'.repeat(40),
+            FINAL_CODE_TREE: repo.candidateTree,
+            baseBranch: 'develop',
+          },
+        });
+
+        const binding = bind(repo, missing);
+        expect(binding.lifecycle.state).toBe('ACTIVE');
+        expect(binding.lifecycle.conditions.candidateExists).toBe(false);
+      }));
+
+    /* ------------------------------------- the record stays tamper-evident -- */
+
+    it('ARCHIVED — the recorded successor history is still judged as data', () =>
+      withScratchRepository((repo) => {
+        repo.checkout(repo.branchHead);
+
+        const malformed = bind(
+          repo,
+          archivedWorld(repo, { successors: [{ commit: 'not-a-commit', kind: 'x' }] })
+        );
+        expect(malformed.lifecycle.state).toBe('ARCHIVED');
+        expect(speak(malformed).sound, 'an archived phase accepted a malformed successor id').toBe(
+          false
+        );
+
+        const invented = bind(
+          repo,
+          archivedWorld(repo, { successors: [{ commit: 'b'.repeat(40), kind: 'x' }] })
+        );
+        expect(
+          speak(invented).sound,
+          'an archived phase accepted a successor naming no commit'
+        ).toBe(false);
+        expect(invented.archivedHistory.join(' ')).toContain('names no commit');
+
+        const notADescendant = bind(
+          repo,
+          archivedWorld(repo, { successors: [{ commit: repo.origin, kind: 'x' }] })
+        );
+        expect(
+          speak(notADescendant).sound,
+          'an archived phase accepted a successor that precedes the candidate'
+        ).toBe(false);
+        expect(notADescendant.archivedHistory.join(' ')).toContain('does not follow the candidate');
+
+        const bothLists = bind(
+          repo,
+          archivedWorld(repo, {
+            successors: [{ commit: repo.successor, kind: 'x' }],
+            absorbedSuccessors: [{ commit: repo.successor, kind: 'x' }],
+          })
+        );
+        expect(
+          speak(bothLists).sound,
+          'an archived phase accepted one commit in both successor lists'
+        ).toBe(false);
+      }));
+
+    it('ARCHIVED — the genuine history it already carries stays sound', () =>
+      withScratchRepository((repo) => {
+        repo.checkout(repo.branchHead);
+        const doc = archivedWorld(repo, {
+          successors: [{ commit: repo.successor, kind: 'evidence machinery' }],
+          absorbedSuccessors: [{ commit: repo.branchHead, kind: 'absorbed' }],
+        });
+        const binding = bind(repo, doc);
+        expect(binding.archivedHistory, 'a real history was reported as tampered').toEqual([]);
+        expect(speak(binding).sound).toBe(true);
+      }));
+
+    /* ----------------------------------------------------- the anti-escape -- */
+
+    it('reads the record’s CURRENT status, not a closed row somewhere in the record', () =>
       withScratchRepository((repo) => {
         /*
          * Found by attacking the gate, and it worked before this case existed.
          *
-         * Condition D is the one an unfinished phase cannot satisfy by editing its
-         * own package — but it can be satisfied by editing the CHECKOUT, if the
-         * promotion branch is resolved the way a base branch is. `resolveBaseRef`
-         * falls back from the remote-tracking ref to `refs/heads/<branch>` and then
-         * to the bare name, which is right for a base (a shallow clone may carry
-         * only a local ref) and wrong here: the whole value of D is that the machine
-         * running the gate cannot supply it.
+         * Condition E used to test the WHOLE file, so a record whose status reads
+         * REOPENED on `OWNER ACCEPTANCE: FAIL` still satisfied it as long as it kept
+         * its own closure history — which is exactly how such a record gets written.
+         * This repository has reopened two phases on that verdict already.
          *
-         * This repository already carries a stale local `main` eleven promotions
-         * behind the protected branch, so the fallback was never hypothetical.
+         * The consequence was not cosmetic. `ownerAcceptance.verdict` is a field the
+         * package writes about itself, so the closure record is the gate’s only
+         * INDEPENDENT reading of a reopening. A phase reopened for remediation, still
+         * naming its promoted candidate, would have stayed ARCHIVED — and the
+         * product-drift and successor rules would have gone quiet over precisely the
+         * remediation work the reopening exists to govern.
          */
         repo.checkout(repo.productChanged);
-        const doc = repo.document(ACCEPTED);
+        const doc = archivedWorld(repo);
 
-        // The protected branch does not contain the candidate. Correctly ACTIVE.
-        repo.run('update-ref', 'refs/remotes/origin/main', repo.origin);
-        expect(bind(repo, doc).lifecycle.state, 'the premise is wrong').toBe('ACTIVE');
+        const reopened = [
+          '# Phase — Closure Record',
+          '',
+          '**Status: REOPENED — `OWNER ACCEPTANCE: FAIL`, four defects found on the running app.**',
+          '',
+          '## History',
+          '',
+          '| Date | Status |',
+          '| --- | --- |',
+          `| 2026-08-20 | ${CLOSED_RECORD.trim().split('\n').at(-1)} |`,
+        ].join('\n');
 
-        // A local branch of the same name that DOES contain it, and no remote ref.
-        repo.run('update-ref', 'refs/heads/main', repo.candidate);
-        repo.run('update-ref', '-d', 'refs/remotes/origin/main');
-        const forged = bind(repo, doc);
-
+        const binding = bind(repo, doc, reopened);
         expect(
-          forged.lifecycle.state,
-          'a ref the local machine controls proved the candidate was promoted'
+          binding.lifecycle.state,
+          'a reopened phase stayed archived on the strength of its own closure history'
         ).toBe('ACTIVE');
-        expect(
-          forged.lifecycle.conditions.containedInPromoted,
-          'containment was satisfied by a local branch'
-        ).toBe(false);
-        expect(forged.lifecycle.unknowns.join(' ')).toContain('remote-tracking ref');
+        expect(binding.lifecycle.conditions.closureClosed).toBe(false);
+        expect(binding.lifecycle.refusals.join(' ')).toContain('REOPENED');
 
-        // And the strict rules really do still bite on that world.
-        const { sound, said } = speak(forged);
-        expect(sound, 'the escape succeeded').toBe(false);
-        expect(refusedProductDrift(said), 'the product rule was escaped through the checkout').toBe(
-          true
-        );
-        // 240 s, not the default 30 s — the same budget, for the same reason, as the
-        // one already stated further up this file.
-        //
-        // `withScratchRepository` builds a real git repository per case: init,
-        // commits, refs, a detached checkout and a synthetic merge. Alone the file
-        // takes 1,116 s and all 123 cases pass; inside the unit tier it takes 974 s
-        // and these three exceed 30 s, while the hosted Linux runner passes them
-        // throughout. That is a host-speed verdict, not a defect, and the file
-        // already records the remedy: state the budget HERE, so it cannot quietly
-        // cover a different test that has genuinely regressed — which is exactly
-        // what raising `testTimeout` in `vitest.config.ts` would have done.
-      }),
-    240_000
-  );
-  it(
-    'an unfinished phase cannot archive itself to escape the product rule',
-    () =>
-      withScratchRepository((repo) => {
-        /*
-         * The case the whole computation exists for. Everything an unfinished
-         * phase could write into its own package is present — and none of it is
-         * enough, because the two conditions that matter are taken from Git and
-         * from the closure record rather than from the package.
-         */
-        repo.checkout(repo.productChanged);
-        const claimsEverything = repo.document({
-          ...ACCEPTED,
-          // A field asserting the state outright. It decides nothing.
-          archived: true,
-          sealLifecycle: 'ARCHIVED',
-        });
-
-        const binding = bind(repo, claimsEverything, null);
-        expect(binding.lifecycle.state, 'a package archived itself by saying so').toBe('ACTIVE');
-        expect(binding.lifecycle.conditions.containedInPromoted, 'never promoted').toBe(false);
-        expect(binding.lifecycle.conditions.closureClosed, 'never closed').toBe(false);
-
+        // And the strict rules really do bite again on that world.
         const { sound, said } = speak(binding);
-        expect(sound, 'the escape succeeded').toBe(false);
+        expect(sound, 'the reopened phase was still judged sound').toBe(false);
         expect(
           refusedProductDrift(said),
-          'the product rule was escaped by a package asserting its own state'
+          'the reopening did not restore the product rule it exists to restore'
         ).toBe(true);
-        // 240 s, not the default 30 s — the same budget, for the same reason, as the
-        // one already stated further up this file.
-        //
-        // `withScratchRepository` builds a real git repository per case: init,
-        // commits, refs, a detached checkout and a synthetic merge. Alone the file
-        // takes 1,116 s and all 123 cases pass; inside the unit tier it takes 974 s
-        // and these three exceed 30 s, while the hosted Linux runner passes them
-        // throughout. That is a host-speed verdict, not a defect, and the file
-        // already records the remedy: state the budget HERE, so it cannot quietly
-        // cover a different test that has genuinely regressed — which is exactly
-        // what raising `testTimeout` in `vitest.config.ts` would have done.
-      }),
-    240_000
-  );
+      }));
 
-  it(
-    'and the same package archives the moment the facts are true, not before',
-    () =>
+    it('cannot be told the phase is closed by text parked in a comment or a fence', () =>
+      withScratchRepository((repo) => {
+        repo.checkout(repo.branchHead);
+        const doc = archivedWorld(repo);
+        const closed = CLOSED_RECORD.trim().split('\n').at(-1) as string;
+
+        for (const [label, record] of [
+          [
+            'an HTML comment',
+            [
+              '**Status: OPEN — the Owner has not walked the running app yet.**',
+              `<!-- ${closed} -->`,
+            ].join('\n'),
+          ],
+          [
+            /*
+             * The ORDER that makes the blanking load-bearing: a template or an
+             * example ABOVE the status the record actually states. Taking the first
+             * status line is enough when the decoy sits below it; when the decoy is
+             * first, only blanking keeps it from speaking for a record that says the
+             * opposite. Both orders are here because the first one alone passed with
+             * the blanking deleted.
+             */
+            'an HTML comment ABOVE the real status',
+            // Multi-line, so the decoy genuinely begins a line with `**Status:`.
+            // Written on one line it starts with `<!--` and the first-match rule
+            // alone would refuse it, leaving the blanking untested.
+            ['<!--', closed, '-->', '**Status: OPEN — not closed.**'].join('\n'),
+          ],
+          [
+            'a fenced template ABOVE the real status',
+            ['```markdown', closed, '```', '**Status: OPEN — not closed.**'].join('\n'),
+          ],
+          [
+            'a fenced template',
+            [
+              '**Status: OPEN — the Owner has not walked the running app yet.**',
+              '```markdown',
+              closed,
+              '```',
+            ].join('\n'),
+          ],
+        ] as const) {
+          expect(
+            bind(repo, doc, record).lifecycle.state,
+            `a closed line inside ${label} archived the phase`
+          ).toBe('ACTIVE');
+        }
+
+        // The control: the same line, actually stated, does archive it.
+        expect(bind(repo, doc, CLOSED_RECORD).lifecycle.state).toBe('ARCHIVED');
+      }));
+
+    it('an archived phase whose candidate was repointed is caught by its own history', () =>
       withScratchRepository((repo) => {
         /*
-         * The other half: the refusal above is about the FACTS, not about the
-         * package. Promote the candidate and supply the closure record, change
-         * nothing else, and the same document archives.
+         * The other escape the adversarial pass reported, and the reason it is a
+         * finding about ONE reporter rather than about the gate.
+         *
+         * Repointing FINAL_CODE_SHA at any already-promoted commit satisfies
+         * conditions B, C and D — the new pairing is self-consistent and the old
+         * commit really is in `main`. Read through `reportRepository` alone, a
+         * drifting ACTIVE phase becomes ARCHIVED and sound.
+         *
+         * It does not survive the package it would have to live in. The recorded
+         * successors no longer descend from the repointed candidate, which is
+         * exactly what `archivedHistoryProblems` is for — and on the real package
+         * four other reporters refuse it as well, starting with the prose half
+         * naming a different commit. This case pins the half that belongs here.
          */
-        repo.checkout(repo.productChanged);
-        const doc = repo.document(ACCEPTED);
+        repo.checkout(repo.branchHead);
+        // A promoted commit on a DIVERGENT line — which is what an already-promoted
+        // commit looks like from a phase branch, and what makes the recorded
+        // successors stop descending from it.
+        repo.run('update-ref', 'refs/remotes/origin/main', repo.baseTip);
+        const repointed = repo.document({
+          ...ACCEPTED,
+          candidate: {
+            FINAL_CODE_SHA: repo.baseTip,
+            FINAL_CODE_TREE: repo.run('rev-parse', `${repo.baseTip}^{tree}`),
+            baseBranch: 'develop',
+          },
+          successors: [{ commit: repo.successor, kind: 'evidence machinery' }],
+        });
 
-        expect(bind(repo, doc, null).lifecycle.state).toBe('ACTIVE');
-        repo.run('update-ref', 'refs/remotes/origin/main', repo.candidate);
-        const now = bind(repo, doc, CLOSED_RECORD);
-        expect(now.lifecycle.state, 'the facts became true and the state did not follow').toBe(
-          'ARCHIVED'
-        );
-        expect(refusedProductDrift(speak(now).said)).toBe(false);
-        // 240 s, not the default 30 s — the same budget, for the same reason, as the
-        // one already stated further up this file.
-        //
-        // `withScratchRepository` builds a real git repository per case: init,
-        // commits, refs, a detached checkout and a synthetic merge. Alone the file
-        // takes 1,116 s and all 123 cases pass; inside the unit tier it takes 974 s
-        // and these three exceed 30 s, while the hosted Linux runner passes them
-        // throughout. That is a host-speed verdict, not a defect, and the file
-        // already records the remedy: state the budget HERE, so it cannot quietly
-        // cover a different test that has genuinely regressed — which is exactly
-        // what raising `testTimeout` in `vitest.config.ts` would have done.
-      }),
-    240_000
-  );
-});
+        const binding = bind(repo, repointed);
+        expect(binding.lifecycle.state, 'the premise is wrong').toBe('ARCHIVED');
+        expect(
+          speak(binding).sound,
+          'a repointed candidate was accepted by the archived reporter'
+        ).toBe(false);
+      }));
+    it(
+      'refuses a promotion branch proved by a ref the local machine controls',
+      () =>
+        withScratchRepository((repo) => {
+          /*
+           * Found by attacking the gate, and it worked before this case existed.
+           *
+           * Condition D is the one an unfinished phase cannot satisfy by editing its
+           * own package — but it can be satisfied by editing the CHECKOUT, if the
+           * promotion branch is resolved the way a base branch is. `resolveBaseRef`
+           * falls back from the remote-tracking ref to `refs/heads/<branch>` and then
+           * to the bare name, which is right for a base (a shallow clone may carry
+           * only a local ref) and wrong here: the whole value of D is that the machine
+           * running the gate cannot supply it.
+           *
+           * This repository already carries a stale local `main` eleven promotions
+           * behind the protected branch, so the fallback was never hypothetical.
+           */
+          repo.checkout(repo.productChanged);
+          const doc = repo.document(ACCEPTED);
+
+          // The protected branch does not contain the candidate. Correctly ACTIVE.
+          repo.run('update-ref', 'refs/remotes/origin/main', repo.origin);
+          expect(bind(repo, doc).lifecycle.state, 'the premise is wrong').toBe('ACTIVE');
+
+          // A local branch of the same name that DOES contain it, and no remote ref.
+          repo.run('update-ref', 'refs/heads/main', repo.candidate);
+          repo.run('update-ref', '-d', 'refs/remotes/origin/main');
+          const forged = bind(repo, doc);
+
+          expect(
+            forged.lifecycle.state,
+            'a ref the local machine controls proved the candidate was promoted'
+          ).toBe('ACTIVE');
+          expect(
+            forged.lifecycle.conditions.containedInPromoted,
+            'containment was satisfied by a local branch'
+          ).toBe(false);
+          expect(forged.lifecycle.unknowns.join(' ')).toContain('remote-tracking ref');
+
+          // And the strict rules really do still bite on that world.
+          const { sound, said } = speak(forged);
+          expect(sound, 'the escape succeeded').toBe(false);
+          expect(
+            refusedProductDrift(said),
+            'the product rule was escaped through the checkout'
+          ).toBe(true);
+          // 240 s, not the default 30 s — the same budget, for the same reason, as the
+          // one already stated further up this file.
+          //
+          // `withScratchRepository` builds a real git repository per case: init,
+          // commits, refs, a detached checkout and a synthetic merge. Alone the file
+          // takes 1,116 s and all 123 cases pass; inside the unit tier it takes 974 s
+          // and these three exceed 30 s, while the hosted Linux runner passes them
+          // throughout. That is a host-speed verdict, not a defect, and the file
+          // already records the remedy: state the budget HERE, so it cannot quietly
+          // cover a different test that has genuinely regressed — which is exactly
+          // what raising `testTimeout` in `vitest.config.ts` would have done.
+        }),
+      240_000
+    );
+    it(
+      'an unfinished phase cannot archive itself to escape the product rule',
+      () =>
+        withScratchRepository((repo) => {
+          /*
+           * The case the whole computation exists for. Everything an unfinished
+           * phase could write into its own package is present — and none of it is
+           * enough, because the two conditions that matter are taken from Git and
+           * from the closure record rather than from the package.
+           */
+          repo.checkout(repo.productChanged);
+          const claimsEverything = repo.document({
+            ...ACCEPTED,
+            // A field asserting the state outright. It decides nothing.
+            archived: true,
+            sealLifecycle: 'ARCHIVED',
+          });
+
+          const binding = bind(repo, claimsEverything, null);
+          expect(binding.lifecycle.state, 'a package archived itself by saying so').toBe('ACTIVE');
+          expect(binding.lifecycle.conditions.containedInPromoted, 'never promoted').toBe(false);
+          expect(binding.lifecycle.conditions.closureClosed, 'never closed').toBe(false);
+
+          const { sound, said } = speak(binding);
+          expect(sound, 'the escape succeeded').toBe(false);
+          expect(
+            refusedProductDrift(said),
+            'the product rule was escaped by a package asserting its own state'
+          ).toBe(true);
+          // 240 s, not the default 30 s — the same budget, for the same reason, as the
+          // one already stated further up this file.
+          //
+          // `withScratchRepository` builds a real git repository per case: init,
+          // commits, refs, a detached checkout and a synthetic merge. Alone the file
+          // takes 1,116 s and all 123 cases pass; inside the unit tier it takes 974 s
+          // and these three exceed 30 s, while the hosted Linux runner passes them
+          // throughout. That is a host-speed verdict, not a defect, and the file
+          // already records the remedy: state the budget HERE, so it cannot quietly
+          // cover a different test that has genuinely regressed — which is exactly
+          // what raising `testTimeout` in `vitest.config.ts` would have done.
+        }),
+      240_000
+    );
+
+    it(
+      'and the same package archives the moment the facts are true, not before',
+      () =>
+        withScratchRepository((repo) => {
+          /*
+           * The other half: the refusal above is about the FACTS, not about the
+           * package. Promote the candidate and supply the closure record, change
+           * nothing else, and the same document archives.
+           */
+          repo.checkout(repo.productChanged);
+          const doc = repo.document(ACCEPTED);
+
+          expect(bind(repo, doc, null).lifecycle.state).toBe('ACTIVE');
+          repo.run('update-ref', 'refs/remotes/origin/main', repo.candidate);
+          const now = bind(repo, doc, CLOSED_RECORD);
+          expect(now.lifecycle.state, 'the facts became true and the state did not follow').toBe(
+            'ARCHIVED'
+          );
+          expect(refusedProductDrift(speak(now).said)).toBe(false);
+          // 240 s, not the default 30 s — the same budget, for the same reason, as the
+          // one already stated further up this file.
+          //
+          // `withScratchRepository` builds a real git repository per case: init,
+          // commits, refs, a detached checkout and a synthetic merge. Alone the file
+          // takes 1,116 s and all 123 cases pass; inside the unit tier it takes 974 s
+          // and these three exceed 30 s, while the hosted Linux runner passes them
+          // throughout. That is a host-speed verdict, not a defect, and the file
+          // already records the remedy: state the budget HERE, so it cannot quietly
+          // cover a different test that has genuinely regressed — which is exactly
+          // what raising `testTimeout` in `vitest.config.ts` would have done.
+        }),
+      240_000
+    );
+  }
+);
 
 describe('P1-28-QA-005 — a re-freeze may not carry the old head’s numbers forward', () => {
   /*
@@ -2554,894 +2593,947 @@ const expectNonEmptySuccessorRange = (binding: Pick<Binding, 'commits'>, message
   expect(binding.commits.length, message).toBeGreaterThan(0);
 };
 
-describe('P1-28-QA-005 — a hosted run may be cited at a later head, and only at an identical one', () => {
-  /*
-   * THE CIRCULARITY THIS CLOSES.
-   *
-   * The seal cleared a hosted binding only when the run's head WAS the
-   * candidate. But the seal's own machinery cannot live inside the commit it
-   * seals — writing it there changes that commit — so the machinery lands after
-   * the candidate and hosted CI necessarily runs at a later head. Under the
-   * exact-head rule every hosted run forced another re-freeze, whose seal commit
-   * moved the head again: an unbounded loop, and one this package walked into.
-   *
-   * The local half already had the answer. A tier may be measured at a named
-   * executable successor while `git diff` COMPUTES that no product path differs,
-   * because the claim is about the PRODUCT and the product is provably the same.
-   * The hosted half is allowed the same escape on the same evidence, and the
-   * cases below are the mutations that prove it is not a relaxation.
-   */
+describe(
+  'P1-28-QA-005 — a hosted run may be cited at a later head, and only at an identical one',
+  { timeout: SCRATCH_REPOSITORY_BUDGET_MS },
+  () => {
+    /*
+     * THE CIRCULARITY THIS CLOSES.
+     *
+     * The seal cleared a hosted binding only when the run's head WAS the
+     * candidate. But the seal's own machinery cannot live inside the commit it
+     * seals — writing it there changes that commit — so the machinery lands after
+     * the candidate and hosted CI necessarily runs at a later head. Under the
+     * exact-head rule every hosted run forced another re-freeze, whose seal commit
+     * moved the head again: an unbounded loop, and one this package walked into.
+     *
+     * The local half already had the answer. A tier may be measured at a named
+     * executable successor while `git diff` COMPUTES that no product path differs,
+     * because the claim is about the PRODUCT and the product is provably the same.
+     * The hosted half is allowed the same escape on the same evidence, and the
+     * cases below are the mutations that prove it is not a relaxation.
+     */
 
-  /** A package citing every hosted binding at `runHead`, against `candidate`. */
-  const cited = (runHead: string, candidateSha: string, tree: string): Record<string, unknown> => ({
-    candidate: { FINAL_CODE_SHA: candidateSha, FINAL_CODE_TREE: tree, baseBranch: 'develop' },
-    tiers: {
-      unit: {
-        planned: 3,
-        passed: 3,
-        failed: 0,
-        skipped: 0,
-        provenance: PROVENANCE_HOSTED,
-        hostedAttestation: {
-          runId: 11,
-          jobId: 22,
-          headSha: runHead,
-          artefact: 'totals-unit.json',
-          describesProductIdenticalSuccessor: true,
+    /** A package citing every hosted binding at `runHead`, against `candidate`. */
+    const cited = (
+      runHead: string,
+      candidateSha: string,
+      tree: string
+    ): Record<string, unknown> => ({
+      candidate: { FINAL_CODE_SHA: candidateSha, FINAL_CODE_TREE: tree, baseBranch: 'develop' },
+      tiers: {
+        unit: {
+          planned: 3,
+          passed: 3,
+          failed: 0,
+          skipped: 0,
+          provenance: PROVENANCE_HOSTED,
+          hostedAttestation: {
+            runId: 11,
+            jobId: 22,
+            headSha: runHead,
+            artefact: 'totals-unit.json',
+            describesProductIdenticalSuccessor: true,
+          },
         },
       },
-    },
-    hostedCi: {
-      runId: 11,
-      headSha: runHead,
-      describesProductIdenticalSuccessor: true,
-      checksTotal: 1,
-      checksSuccess: 1,
-      checksFailure: 0,
-      checks: [{ name: 'ci-gate', conclusion: 'success' }],
-    },
-  });
+      hostedCi: {
+        runId: 11,
+        headSha: runHead,
+        describesProductIdenticalSuccessor: true,
+        checksTotal: 1,
+        checksSuccess: 1,
+        checksFailure: 0,
+        checks: [{ name: 'ci-gate', conclusion: 'success' }],
+      },
+    });
 
-  const hostedProblems = (doc: unknown, git: (args: string[]) => string | null): string[] =>
-    (tierBinding(doc as never, git) as unknown as { hostedProblems: string[] }).hostedProblems;
+    const hostedProblems = (doc: unknown, git: (args: string[]) => string | null): string[] =>
+      (tierBinding(doc as never, git) as unknown as { hostedProblems: string[] }).hostedProblems;
 
-  it('is a hostile world: the repository disagrees with the naive reading', () =>
-    withScratchRepository((repo) => {
-      // Anti-vacuity, computed rather than assumed. If the later head were the
-      // candidate, or the earlier head were product-identical to it, every case
-      // below would be proving nothing.
-      expect(repo.branchHead).not.toBe(repo.candidate);
-      expect(repo.run('merge-base', '--is-ancestor', repo.candidate, repo.branchHead)).toBe('');
-      expect(
-        repo.run('diff', '--name-only', `${repo.candidate}..${repo.branchHead}`, '--', 'apps'),
-        'the later head is not product-identical to the candidate'
-      ).toBe('');
-      expect(
-        repo.run('diff', '--name-only', `${repo.previous}..${repo.branchHead}`, '--', 'apps'),
-        'the earlier head is product-identical, so the product mutation is vacuous'
-      ).not.toBe('');
-      expect(repo.run('merge-base', '--is-ancestor', repo.previous, repo.candidate)).toBe('');
-    }));
-
-  it('ACCEPTS a run at a descendant head whose product diff is empty', () =>
-    withScratchRepository((repo) => {
-      const doc = cited(repo.branchHead, repo.candidate, repo.candidateTree);
-      expect(
-        hostedProblems(doc, repo.git),
-        'a product-identical successor run was refused'
-      ).toEqual([]);
-
-      const analysis = pendingBinding(doc as never, repo.git) as unknown as {
-        problems: string[];
-        bound: string[];
-        superseded: string[];
-        boundAtSuccessor: string[];
-      };
-      expect(analysis.problems).toEqual([]);
-      expect(analysis.superseded, 'a bound successor was filed as pending').toEqual([]);
-      expect(analysis.bound, 'nothing was bound, so nothing was proved').toEqual([
-        'hostedCi',
-        'tiers.unit.hostedAttestation',
-      ]);
-      expect(analysis.boundAtSuccessor.join(' ')).toContain(repo.branchHead.slice(0, 8));
-
-      // And the record may then say so: the claim world reads the same set.
-      const world = worldFrom(doc as never, null, new Set(analysis.bound)) as unknown as {
-        hostedCiRecorded: boolean;
-      };
-      expect(world.hostedCiRecorded, 'a bound run is still reported as no result').toBe(true);
-    }));
-
-  it('REFUSES the same head when a product file differs from the candidate', () =>
-    withScratchRepository((repo) => {
-      // The identical citation against the head the candidate superseded. The
-      // run head still exists and still descends from it; only the product
-      // identity changed, and only it is being tested.
-      const doc = cited(repo.branchHead, repo.previous, repo.candidateTree);
-      const problems = hostedProblems(doc, repo.git);
-      expect(problems.length, 'a run measuring different software was accepted').toBeGreaterThan(0);
-      expect(problems.join(' ')).toContain('PRODUCT path(s) differ');
-    }));
-
-  it('REFUSES a run head this repository does not contain', () =>
-    withScratchRepository((repo) => {
-      const absent = 'deadbeef'.repeat(5);
-      expect(repo.git(['cat-file', '-e', `${absent}^{commit}`]), 'the head exists after all').toBe(
-        null
-      );
-      const problems = hostedProblems(cited(absent, repo.candidate, repo.candidateTree), repo.git);
-      expect(problems.length, 'a run at a head nobody can fetch was accepted').toBeGreaterThan(0);
-      expect(problems.join(' ')).toContain('names no commit in this repository');
-    }));
-
-  it('REFUSES a run head that is an ANCESTOR of the candidate', () =>
-    withScratchRepository((repo) => {
-      // A run taken before this code existed cannot describe it. The backward
-      // citation is not forbidden — it is `describesSupersededHead` — but it may
-      // not wear the forward marker.
-      const problems = hostedProblems(
-        cited(repo.previous, repo.candidate, repo.candidateTree),
-        repo.git
-      );
-      expect(problems.length, 'a run that predates the candidate was accepted').toBeGreaterThan(0);
-      expect(problems.join(' ')).toContain('does not descend from the candidate');
-    }));
-
-  it('leaves the backward citation exactly as it was — and the committed package binds', () => {
-    /*
-     * The one case here that is legitimately about THIS repository, and its
-     * subject has moved once.
-     *
-     * It used to assert that the committed package was PENDING and that every
-     * pending binding still bound, guarding itself with
-     * `supersededBindings.length > 0` so it could not pass on an empty set. That
-     * guard was correct and its subject became unreachable: binding the package
-     * is the point of this task, and a bound package supersedes nothing.
-     *
-     * BOTH HALVES ARE KEPT. What the committed package exercises — whatever that
-     * is on the head this runs at — must bind with no problems and must not be
-     * an empty set; and the BACKWARD path, which a bound package no longer
-     * exercises, is proved on a constructed world rather than dropped.
-     */
-    const git = gitReader(ROOT);
-    const committed = JSON.parse(readRepo(CANDIDATE_PATH)) as Record<string, never>;
-    const sound = tierBinding(committed, git) as unknown as {
-      hostedProblems: string[];
-      supersededBindings: string[];
-      boundBindings: string[];
-    };
-    expect(sound.hostedProblems, 'the committed package stopped binding').toEqual([]);
-    expect(
-      sound.supersededBindings.length + sound.boundBindings.length,
-      'the committed package exercises no hosted binding at all, so nothing is proved'
-    ).toBeGreaterThan(0);
-
-    // THE BACKWARD CITATION, constructed. `hostedCi` is pushed back onto the
-    // candidate's own parent — a head this repository contains and can prove is
-    // an ancestor — and must still bind, and must still be REPORTED as pending.
-    const backward = JSON.parse(readRepo(CANDIDATE_PATH)) as {
-      candidate: { FINAL_CODE_SHA: string };
-      hostedCi: Record<string, unknown>;
-      pendingHostedBindings?: Record<string, unknown>;
-    };
-    const ancestor = String(
-      git(['rev-parse', `${backward.candidate.FINAL_CODE_SHA}^`]) ?? ''
-    ).trim();
-    expect(ancestor, 'the candidate has no parent, so the backward path has no witness').toMatch(
-      /^[0-9a-f]{40}$/
-    );
-    delete backward.hostedCi[SUCCESSOR_MARKER];
-    backward.hostedCi.headSha = ancestor;
-    backward.hostedCi.describesSupersededHead = true;
-    backward.hostedCi.supersededBy = 'a run at the candidate';
-    const computed = (pendingBinding(backward as never, git) as unknown as { superseded: string[] })
-      .superseded;
-    backward.pendingHostedBindings = {
-      ...(backward.pendingHostedBindings ?? {}),
-      awaits: 'a run at the candidate',
-      bindings: computed,
-    };
-    const back = tierBinding(backward as never, git) as unknown as {
-      hostedProblems: string[];
-      supersededBindings: string[];
-    };
-    expect(back.hostedProblems, 'the backward citation stopped binding').toEqual([]);
-    expect(
-      back.supersededBindings,
-      'the backward citation was not reported as superseded'
-    ).toContain('hostedCi');
-  });
-});
-
-describe('P1-28-QA-005 — a merge-ref checkout does not make the base branch a successor', () => {
-  /*
-   * THE FALSE POSITIVE THIS CLOSES, reported by hosted CI against this branch.
-   *
-   * `actions/checkout` defaults, for a `pull_request` event, to the pull
-   * request's MERGE REF. Under it `git log <candidate>..HEAD` sweeps in the BASE
-   * BRANCH's history, and a `develop` commit authored by another session and
-   * absent from this branch was reported as an executable successor this package
-   * had failed to name. The same ref would have made
-   * `git diff <candidate>..HEAD -- apps supabase` report the base's product
-   * changes as a broken freeze.
-   *
-   * The successor set is what THIS BRANCH added after the freeze, so it is
-   * computed that way: the base is subtracted from the range, and a checkout
-   * that is a clean synthetic merge of this branch with its base is judged as
-   * the branch side of that merge.
-   */
-
-  it('is a hostile world: the naive range and diff both take the base branch in', () =>
-    withScratchRepository((repo) => {
-      repo.checkout(repo.mergeRef);
-      const swept = repo
-        .run('log', '--format=%H', `${repo.candidate}..${repo.mergeRef}`)
-        .split('\n');
-      expect(swept, 'the merge-ref range does not contain the base commit').toContain(repo.baseTip);
-      expect(
-        repo.run('diff', '--name-only', `${repo.candidate}..${repo.mergeRef}`, '--', 'apps'),
-        'the merge-ref product diff is empty, so it demonstrates no hazard'
-      ).not.toBe('');
-    }));
-
-  it('judges the branch, not the merge: no base commit is a successor of this phase', () =>
-    withScratchRepository((repo) => {
-      repo.checkout(repo.mergeRef);
-      const bound = bindingOf(repo.document(), repo.git);
-      expect(bound.checkoutHead, 'the checkout is not the merge ref').toBe(repo.mergeRef);
-      expect(bound.unwrappedMergeRef, 'the merge ref was not recognised').toBe(repo.mergeRef);
-      expect(bound.phaseHead, 'the head under test is not this branch').toBe(repo.branchHead);
-      expect(bound.mergeRefBaseSide).toBe(repo.baseTip);
-      expect(
-        bound.commits.map((c) => c.sha),
-        'the range is not exactly what this branch added after the freeze'
-      ).toEqual([repo.branchHead, repo.successor]);
-      expect(bound.productDiff, 'the base’s product changes were read as a broken freeze').toEqual(
-        []
-      );
-      expect(bound.unrecordedExecutable, 'an unnamed executable successor was invented').toEqual(
-        []
-      );
-      expect(judge(soundInputsOver(ROOT, { repository: bound }), () => {}).repositoryOk).toBe(true);
-    }));
-
-  it('still FAILS when this branch’s own executable successor is unnamed', () =>
-    withScratchRepository((repo) => {
-      // The correction must not have bought its silence by silencing the rule.
-      repo.checkout(repo.mergeRef);
-      const bad = bindingOf(repo.document({ successors: [] }), repo.git);
-      expect(bad.unrecordedExecutable, 'the branch’s own successor stopped being reported').toEqual(
-        [repo.successor]
-      );
-      expect(judge(soundInputsOver(ROOT, { repository: bad }), () => {}).repositoryOk).toBe(false);
-    }));
-
-  it('recovers the base from the merge ref when NO base ref resolves', () =>
-    withScratchRepository((repo) => {
-      /*
-       * The shallow-clone case. A filtered clone may carry no
-       * `refs/remotes/origin/develop` at all — and the first revision of this
-       * correction could not run without one, because it classified the merge's
-       * parents by asking which was contained in the base. The question is asked
-       * by the CANDIDATE now, so the base side falls out of the merge itself.
-       */
-      repo.checkout(repo.mergeRef);
-      repo.dropBaseRefs();
-      expect(
-        repo.git(['rev-parse', '--verify', '--quiet', 'refs/remotes/origin/develop^{commit}'])
-      ).toBe(null);
-      expect(repo.git(['rev-parse', '--verify', '--quiet', 'refs/heads/develop^{commit}'])).toBe(
-        null
-      );
-
-      const bound = bindingOf(repo.document(), repo.git);
-      expect(bound.baseResolved, 'the base could not be recovered').toBe(true);
-      expect(bound.baseRef, 'a ref resolved after all, so recovery is not what is tested').toBe(
-        null
-      );
-      expect(bound.baseSha).toBe(repo.baseTip);
-      expect(bound.baseFrom).toContain('base as it stood');
-      expect(bound.phaseHead).toBe(repo.branchHead);
-      expect(
-        bound.commits.map((c) => c.sha),
-        'the base was recovered and then not subtracted'
-      ).toEqual([repo.branchHead, repo.successor]);
-      expect(bound.unrecordedExecutable).toEqual([]);
-      expect(judge(soundInputsOver(ROOT, { repository: bound }), () => {}).repositoryOk).toBe(true);
-    }));
-
-  it('fails CLOSED when there is no base ref AND no merge ref to recover one from', () =>
-    withScratchRepository((repo) => {
-      // "I could not tell" is not "there are none". This is the shape the
-      // coordinator asked to be certain of: a checkout with neither source of a
-      // base must stop, and say which refs it tried.
-      repo.checkout(repo.branchHead);
-      repo.dropBaseRefs();
-      const blind = bindingOf(repo.document(), repo.git);
-      expect(blind.baseResolved, 'an unresolvable base was treated as resolved').toBe(false);
-      expect(blind.commits, 'a successor set was computed with no base to subtract').toEqual([]);
-      expect(blind.baseAttempted).toEqual([
-        'refs/remotes/origin/develop',
-        'refs/heads/develop',
-        'develop',
-      ]);
-      const said: string[] = [];
-      expect(
-        judge(soundInputsOver(ROOT, { repository: blind }), (l: string) => said.push(l))
-          .repositoryOk
-      ).toBe(false);
-      expect(said.join(' '), 'the refusal does not name what it tried').toContain(
-        'refs/remotes/origin/develop'
-      );
-    }));
-
-  it('does NOT unwrap a merge that carries content of its own', () =>
-    withScratchRepository((repo) => {
-      /*
-       * The one thing the unwrap must never do. A merge ref previews a merge and
-       * introduces nothing; a merge that resolved a conflict carries content
-       * neither parent has, and stepping past it would step past that content.
-       */
-      repo.checkout(repo.evilMerge);
-      const evil = bindingOf(repo.document(), repo.git);
-      expect(evil.unwrappedMergeRef, 'an evil merge was unwrapped past').toBe(null);
-      expect(evil.phaseHead, 'the head under test is not the checkout').toBe(repo.evilMerge);
-      expect(evil.evilMergePaths.length, 'the merge carries no content of its own').toBeGreaterThan(
-        0
-      );
-      // And the base is STILL subtracted, which is the second, independent half.
-      expect(
-        evil.commits.map((c) => c.sha),
-        'a base-branch commit survived into this phase’s range'
-      ).not.toContain(repo.baseTip);
-      expect(
-        evil.unrecordedExecutable,
-        'the un-unwrapped merge is executable and unnamed, and must be reported as such'
-      ).toEqual([repo.evilMerge]);
-    }));
-
-  it('fails CLOSED when the base ref is STALE behind the merge’s alleged base side', () =>
-    withScratchRepository((repo) => {
-      /*
-       * THE CASE A PROBE AGAINST THIS REPOSITORY FOUND, and the reason the
-       * cross-check asks about a RELATION rather than containment in one
-       * direction.
-       *
-       * A stale ref cannot distinguish the real base continuation from a sibling
-       * forked from the same observed commit. Treating comparability as identity
-       * was a fail-open: both shapes are descendants of the stale ref. UNKNOWN
-       * must stop rather than bless whichever parent happened to be first.
-       */
-      repo.checkout(repo.mergeRef);
-      repo.setBaseRef(repo.origin);
-      expect(
-        repo.git(['merge-base', '--is-ancestor', repo.baseTip, repo.origin]),
-        'the base side is contained in the stale ref, so this proves nothing'
-      ).toBe(null);
-      expect(
-        repo.git(['merge-base', '--is-ancestor', repo.origin, repo.baseTip]),
-        'the two are unrelated, so this is not a stale ref at all'
-      ).toBe('');
-
-      const bound = bindingOf(repo.document(), repo.git);
-      expect(bound.unwrappedMergeRef, 'a stale observation was treated as proof').toBe(null);
-      expect(bound.topologyUnknown).toContain('stale behind');
-      expect(judge(soundInputsOver(ROOT, { repository: bound }), () => {}).repositoryOk).toBe(
-        false
-      );
-    }));
-
-  it('fails CLOSED for a foreign sibling descended from that same stale base', () =>
-    withScratchRepository((repo) => {
-      repo.checkout(repo.foreignMerge);
-      repo.setBaseRef(repo.origin);
-      const bound = bindingOf(repo.document(), repo.git);
-      expect(bound.unwrappedMergeRef, 'the foreign sibling was mistaken for develop').toBe(null);
-      expect(bound.topologyUnknown).toContain('sibling branch');
-      expect(judge(soundInputsOver(ROOT, { repository: bound }), () => {}).repositoryOk).toBe(
-        false
-      );
-    }));
-
-  it('fails CLOSED when candidate ancestry cannot be computed', () =>
-    withScratchRepository((repo) => {
-      repo.checkout(repo.mergeRef);
-      const broken = Object.assign((args: string[]) => repo.git(args), {
-        probe: (args: string[]) =>
-          args[0] === 'merge-base' && args[1] === '--is-ancestor'
-            ? { status: 2, stdout: '' }
-            : (repo.git.probe?.(args) ?? { status: 2, stdout: '' }),
-      }) as GitRead;
-      const bound = bindingOf(repo.document(), broken);
-      expect(bound.topologyUnknown).toContain('candidate is an ancestor');
-      expect(judge(soundInputsOver(ROOT, { repository: bound }), () => {}).repositoryOk).toBe(
-        false
-      );
-    }));
-
-  it('fails CLOSED when Git cannot inspect merge-owned content', () =>
-    withScratchRepository((repo) => {
-      repo.checkout(repo.mergeRef);
-      const broken = Object.assign(
-        (args: string[]) => (args[0] === 'diff-tree' ? null : repo.git(args)),
-        { probe: repo.git.probe }
-      ) as GitRead;
-      const bound = bindingOf(repo.document(), broken);
-      expect(bound.unwrappedMergeRef, 'a refused diff-tree was interpreted as an empty one').toBe(
-        null
-      );
-      expect(bound.topologyUnknown).toContain('could not inspect');
-      expect(judge(soundInputsOver(ROOT, { repository: bound }), () => {}).repositoryOk).toBe(
-        false
-      );
-    }));
-
-  it('declines the unwrap when the merge’s base side is not in the base branch', () =>
-    withScratchRepository((repo) => {
-      /*
-       * A merge of this branch with something that is NOT its base is not a
-       * preview of this pull request. The cross-check can only be made when a
-       * base ref resolves, and when it can be made it may only make the rule
-       * stricter.
-       *
-       * The merge carries a tree of its OWN, and that is now load-bearing: a
-       * merge that adds no content to its candidate-carrying parent is read as
-       * that parent whatever its other side is, which is the case immediately
-       * below. This one has content that came from neither parent, so there is
-       * something here to judge and the foreign base side is what judges it.
-       */
-      const stranger = repo.run(
-        'commit-tree',
-        repo.candidateTree,
-        '-p',
-        repo.previous,
-        '-m',
-        'a commit on no branch'
-      );
-      const foreign = repo.run(
-        'commit-tree',
-        repo.candidateTree,
-        '-p',
-        stranger,
-        '-p',
-        repo.branchHead,
-        '-m',
-        'Merge of something that is not the base'
-      );
-      expect(
-        repo.run('rev-parse', `${foreign}^{tree}`),
-        'the merge carries its branch parent’s tree, so it adds nothing and this case measures the other rule'
-      ).not.toBe(repo.run('rev-parse', `${repo.branchHead}^{tree}`));
-      repo.checkout(foreign);
-      const bound = bindingOf(repo.document(), repo.git);
-      expect(bound.unwrappedMergeRef, 'a merge with a foreign base side was unwrapped').toBe(null);
-      expect(bound.declinedUnwrap, 'the decline was not explained').toContain(stranger.slice(0, 8));
-      expect(bound.phaseHead).toBe(foreign);
-    }));
-
-  it('reads a merge that adds NOTHING as its parent, foreign base side and all', () =>
-    withScratchRepository((repo) => {
-      /*
-       * The same foreign base side, and the opposite verdict — because this is
-       * the shape a PROMOTION has, and declining it inverts the measurement.
-       *
-       * A promotion's merge ref is parented on the protected branch and on the
-       * branch being promoted. In a repository that promotes by merge commit the
-       * protected branch has accumulated topology the base branch has never
-       * seen, so neither parent contains the other and the case above would
-       * decline it. Declined, the merge ref becomes the head under test, and
-       * subtracting the base leaves the PROTECTED branch's history: the phase's
-       * own recorded successors read as fabricated and the promotion target's
-       * commits read as this phase's unnamed successors. That is not a
-       * hypothetical — it is what hosted CI reported, 4 and 24 of them.
-       *
-       * What makes reading the parent safe is the tree. A checkout identical in
-       * content to a parent can smuggle nothing in through the other one, so
-       * "adds nothing" is decided by bytes rather than by branch names, and the
-       * case above still declines the merge that does add something.
-       */
-      const stranger = repo.run(
-        'commit-tree',
-        repo.candidateTree,
-        '-p',
-        repo.previous,
-        '-m',
-        'a protected branch this base does not contain'
-      );
-      const branchTree = repo.run('rev-parse', `${repo.branchHead}^{tree}`);
-      const promotion = repo.run(
-        'commit-tree',
-        branchTree,
-        '-p',
-        stranger,
-        '-p',
-        repo.branchHead,
-        '-m',
-        'Merge branch into the protected branch'
-      );
-      expect(
-        repo.run('rev-parse', `${promotion}^{tree}`),
-        'the merge does not carry its parent’s tree, so it is not the shape under test'
-      ).toBe(branchTree);
-
-      repo.checkout(promotion);
-      const bound = bindingOf(repo.document(), repo.git);
-      expect(bound.declinedUnwrap, 'the promotion was declined as an unrelated merge').toBe(null);
-      expect(bound.topologyUnknown, 'the promotion made the Git world unknown').toBe(null);
-      expect(bound.unwrappedMergeRef, 'the merge that was unwrapped went unnamed').toBe(promotion);
-      expect(bound.mergeAddsNothingTo, 'the parent it was read as went unnamed').toBe(
-        repo.branchHead
-      );
-      expect(bound.phaseHead, 'the head under test is not this branch').toBe(repo.branchHead);
-      expect(bound.fabricatedSuccessors, 'the branch’s own successors read as fabricated').toEqual(
-        []
-      );
-      expect(
-        bound.unrecordedExecutable,
-        'the protected branch’s commits read as this branch’s successors'
-      ).toEqual([]);
-    }));
-
-  it('refuses an UNKNOWN successor range rather than reading it as “none”', () =>
-    withScratchRepository((repo) => {
-      // `lines(null)` is `[]`, and `[]` reads as "this branch added nothing".
-      // A command that refused to run has not answered the question.
-      repo.checkout(repo.branchHead);
-      const blind = bindingOf(repo.document(), (args: string[]) =>
-        args[0] === 'log' ? null : repo.git(args)
-      );
-      expect(blind.rangeUnknown, 'a refused range was read as an answer').toBe(true);
-      expect(blind.commits).toEqual([]);
-      expect(blind.unrecordedExecutable).toEqual([]);
-      const said: string[] = [];
-      expect(
-        judge(soundInputsOver(ROOT, { repository: blind }), (l: string) => said.push(l))
-          .repositoryOk
-      ).toBe(false);
-      expect(said.join(' ')).toContain('UNKNOWN');
-    }));
-
-  it('refuses an UNKNOWN product diff rather than reading it as “identical”', () =>
-    withScratchRepository((repo) => {
-      repo.checkout(repo.branchHead);
-      const blind = bindingOf(repo.document(), (args: string[]) =>
-        args[0] === 'diff' && args.includes('apps') ? null : repo.git(args)
-      );
-      expect(blind.productDiffUnknown, 'a refused diff was read as an answer').toBe(true);
-      expect(blind.productDiff).toEqual([]);
-      const said: string[] = [];
-      expect(
-        judge(soundInputsOver(ROOT, { repository: blind }), (l: string) => said.push(l))
-          .repositoryOk
-      ).toBe(false);
-      expect(said.join(' ')).toContain('UNKNOWN');
-    }));
-
-  it('fails when a REAL product path changes after the candidate', () =>
-    withScratchRepository((repo) => {
-      repo.checkout(repo.productChanged);
-      const changed = bindingOf(repo.document(), repo.git);
-      expect(changed.productDiff, 'the scratch product mutation was not observed').toEqual([
-        'apps/web/screen.ts',
-      ]);
-      expect(judge(soundInputsOver(ROOT, { repository: changed }), () => {}).repositoryOk).toBe(
-        false
-      );
-    }));
-
-  it('resolves the base from a ref when the checkout has one, and does not unwrap', () =>
-    withScratchRepository((repo) => {
-      repo.checkout(repo.branchHead);
-      const honest = bindingOf(repo.document(), repo.git);
-      expect(honest.baseResolved).toBe(true);
-      expect(honest.baseRef).toBe('refs/remotes/origin/develop');
-      expect(honest.baseSha).toBe(repo.baseTip);
-      expect(honest.unwrappedMergeRef, 'an ordinary checkout was treated as a merge ref').toBe(
-        null
-      );
-      expect(honest.phaseHead).toBe(repo.branchHead);
-      expect(honest.commits.map((c) => c.sha)).toEqual([repo.branchHead, repo.successor]);
-    }));
-});
-
-describe('P1-28-QA-005 — the base subtraction survives this branch MERGING into its base', () => {
-  /*
-   * THE FAILURE THIS CLOSES, reported by the protected-branch reproof.
-   *
-   * The base subtraction exists so a checkout does not count the base branch's
-   * own commits as successors of the candidate. It presumes the base does not
-   * CONTAIN the candidate. The moment the branch merges, that presumption
-   * inverts: `origin/develop` then contains the whole branch, so subtracting it
-   * removes every genuine successor and the range collapses to empty. Two jobs
-   * went red on exactly that, and both failures were anti-vacuity guards
-   * refusing to pass on an empty set — the guards working, over a rule that had
-   * stopped being true.
-   *
-   * A merge names its own base in its FIRST parent: the base as it stood before
-   * this branch landed. Every world below is built from objects the case creates.
-   */
-  const bindingOfRepo = (repo: Scratch, doc?: Record<string, unknown>): Binding =>
-    bindingOf(doc ?? repo.document(), repo.git);
-
-  it('is a hostile world: subtracting the base as it IS now empties the range', () =>
-    withScratchRepository((repo) => {
-      repo.checkout(repo.landed);
-      repo.setBaseRef(repo.landed);
-      // The base now contains the candidate — the inversion, computed.
-      expect(
-        repo.git(['merge-base', '--is-ancestor', repo.candidate, repo.landed]),
-        'the base has not absorbed the candidate, so this world is not the one that failed'
-      ).toBe('');
-      // Subtracting it removes every successor.
-      expect(
-        repo.run('log', '--format=%H', repo.branchHead, '--not', repo.candidate, repo.landed),
-        'the naive subtraction does not empty the range, so it demonstrates no hazard'
-      ).toBe('');
-      // Subtracting the base AS IT STOOD does not.
-      expect(
-        repo
-          .run('log', '--format=%H', repo.branchHead, '--not', repo.candidate, repo.baseTip)
-          .split('\n'),
-        'the base as it stood also empties the range'
-      ).toEqual([repo.branchHead, repo.successor]);
-    }));
-
-  it('judges the merge commit against the base as it STOOD, not as it is', () =>
-    withScratchRepository((repo) => {
-      repo.checkout(repo.landed);
-      repo.setBaseRef(repo.landed);
-      const bound = bindingOfRepo(repo);
-      expect(bound.checkoutHead).toBe(repo.landed);
-      expect(bound.unwrappedMergeRef, 'the merge was not recognised').toBe(repo.landed);
-      expect(bound.phaseHead, 'the head under test is not this branch').toBe(repo.branchHead);
-      expect(bound.baseSha, 'the base subtracted is not the one the merge names').toBe(
-        repo.baseTip
-      );
-      expect(bound.baseFrom).toContain('base as it stood');
-      expect(
-        bound.commits.map((c) => c.sha),
-        'the range is not this branch’s own successors'
-      ).toEqual([repo.branchHead, repo.successor]);
-      expect(bound.productDiff).toEqual([]);
-      expect(bound.unrecordedExecutable).toEqual([]);
-      expect(judge(soundInputsOver(ROOT, { repository: bound }), () => {}).repositoryOk).toBe(true);
-    }));
-
-  it('reads the base from the FIRST parent when both parents carry the candidate', () =>
-    withScratchRepository((repo) => {
-      /*
-       * The next merge after this one: a branch cut from the merged base and
-       * merged back. The candidate can no longer discriminate the parents —
-       * both contain it — so the forge convention does, and only then.
-       */
-      repo.checkout(repo.reMerge);
-      repo.setBaseRef(repo.reMerge);
-      for (const parent of [repo.landed, repo.remediation]) {
+    it('is a hostile world: the repository disagrees with the naive reading', () =>
+      withScratchRepository((repo) => {
+        // Anti-vacuity, computed rather than assumed. If the later head were the
+        // candidate, or the earlier head were product-identical to it, every case
+        // below would be proving nothing.
+        expect(repo.branchHead).not.toBe(repo.candidate);
+        expect(repo.run('merge-base', '--is-ancestor', repo.candidate, repo.branchHead)).toBe('');
         expect(
-          repo.git(['merge-base', '--is-ancestor', repo.candidate, parent]),
-          'a parent does not carry the candidate, so the ambiguity is not exercised'
+          repo.run('diff', '--name-only', `${repo.candidate}..${repo.branchHead}`, '--', 'apps'),
+          'the later head is not product-identical to the candidate'
         ).toBe('');
-      }
-      const bound = bindingOfRepo(repo);
-      expect(bound.unwrappedMergeRef, 'the re-merge was not recognised').toBe(repo.reMerge);
-      expect(bound.phaseHead, 'the branch side is not the second parent').toBe(repo.remediation);
-      expect(bound.baseSha, 'the base side is not the first parent').toBe(repo.landed);
-      expect(
-        bound.commits.map((c) => c.sha),
-        'the range is not the remediation’s own commits'
-      ).toEqual([repo.remediation]);
-    }));
+        expect(
+          repo.run('diff', '--name-only', `${repo.previous}..${repo.branchHead}`, '--', 'apps'),
+          'the earlier head is product-identical, so the product mutation is vacuous'
+        ).not.toBe('');
+        expect(repo.run('merge-base', '--is-ancestor', repo.previous, repo.candidate)).toBe('');
+      }));
 
-  it('still finds that protected merge after the base first-parent line advances', () =>
-    withScratchRepository((repo) => {
-      repo.checkout(repo.reMerge);
-      repo.setBaseRef(repo.protectedAdvance);
-      const bound = bindingOfRepo(repo, {
-        ...repo.document(),
-        successors: [{ commit: repo.remediation, kind: 'remediation' }],
-      });
-      expect(bound.unwrappedMergeRef).toBe(repo.reMerge);
-      expect(bound.phaseHead).toBe(repo.remediation);
-      expect(bound.baseSha).toBe(repo.landed);
-    }));
+    it('ACCEPTS a run at a descendant head whose product diff is empty', () =>
+      withScratchRepository((repo) => {
+        const doc = cited(repo.branchHead, repo.candidate, repo.candidateTree);
+        expect(
+          hostedProblems(doc, repo.git),
+          'a product-identical successor run was refused'
+        ).toEqual([]);
 
-  it('reads the base from the SECOND parent for a local merge into the remediation branch', () =>
-    withScratchRepository((repo) => {
-      repo.checkout(repo.reverseMerge);
-      repo.setBaseRef(repo.landed);
-      const bound = bindingOfRepo(repo, {
-        ...repo.document(),
-        successors: [{ commit: repo.remediation, kind: 'remediation' }],
-      });
-      expect(bound.unwrappedMergeRef).toBe(repo.reverseMerge);
-      expect(bound.phaseHead, 'parent order was mistaken for branch identity').toBe(
-        repo.remediation
-      );
-      expect(bound.baseSha).toBe(repo.landed);
-      expect(bound.commits.map((c) => c.sha)).toEqual([repo.remediation]);
-      expect(judge(soundInputsOver(ROOT, { repository: bound }), () => {}).repositoryOk).toBe(true);
-    }));
+        const analysis = pendingBinding(doc as never, repo.git) as unknown as {
+          problems: string[];
+          bound: string[];
+          superseded: string[];
+          boundAtSuccessor: string[];
+        };
+        expect(analysis.problems).toEqual([]);
+        expect(analysis.superseded, 'a bound successor was filed as pending').toEqual([]);
+        expect(analysis.bound, 'nothing was bound, so nothing was proved').toEqual([
+          'hostedCi',
+          'tiers.unit.hostedAttestation',
+        ]);
+        expect(analysis.boundAtSuccessor.join(' ')).toContain(repo.branchHead.slice(0, 8));
 
-  it('fails CLOSED when both parents carry the candidate and the base is ambiguous', () =>
-    withScratchRepository((repo) => {
-      repo.checkout(repo.reverseMerge);
-      repo.setBaseRef(repo.origin);
-      const ambiguous = bindingOfRepo(repo);
-      expect(ambiguous.unwrappedMergeRef, 'ambiguous ancestry was resolved by parent order').toBe(
-        null
-      );
-      expect(ambiguous.topologyUnknown).toContain('both merge parents contain the candidate');
-      expect(judge(soundInputsOver(ROOT, { repository: ambiguous }), () => {}).repositoryOk).toBe(
-        false
-      );
-    }));
+        // And the record may then say so: the claim world reads the same set.
+        const world = worldFrom(doc as never, null, new Set(analysis.bound)) as unknown as {
+          hostedCiRecorded: boolean;
+        };
+        expect(world.hostedCiRecorded, 'a bound run is still reported as no result').toBe(true);
+      }));
 
-  it('does not mistake second-parent reachability for the protected first-parent line', () =>
-    withScratchRepository((repo) => {
-      repo.checkout(repo.reverseMerge);
-      repo.setBaseRef(repo.reverseLanded);
-      const ambiguous = bindingOfRepo(repo);
-      expect(
-        ambiguous.unwrappedMergeRef,
-        'an ordinary branch merge was reclassified only because develop later contained it'
-      ).toBe(null);
-      expect(ambiguous.topologyUnknown).toContain('does not uniquely identify');
-      expect(judge(soundInputsOver(ROOT, { repository: ambiguous }), () => {}).repositoryOk).toBe(
-        false
-      );
-    }));
+    it('REFUSES the same head when a product file differs from the candidate', () =>
+      withScratchRepository((repo) => {
+        // The identical citation against the head the candidate superseded. The
+        // run head still exists and still descends from it; only the product
+        // identity changed, and only it is being tested.
+        const doc = cited(repo.branchHead, repo.previous, repo.candidateTree);
+        const problems = hostedProblems(doc, repo.git);
+        expect(problems.length, 'a run measuring different software was accepted').toBeGreaterThan(
+          0
+        );
+        expect(problems.join(' ')).toContain('PRODUCT path(s) differ');
+      }));
 
-  it('does NOT step past a merge on the protected branch that carries its own content', () =>
-    withScratchRepository((repo) => {
-      repo.checkout(repo.evilMerge);
-      repo.setBaseRef(repo.evilMerge);
-      const evil = bindingOfRepo(repo);
-      expect(evil.unwrappedMergeRef, 'an evil merge was unwrapped past').toBe(null);
-      expect(evil.evilMergePaths.length).toBeGreaterThan(0);
-      expect(evil.phaseHead).toBe(repo.evilMerge);
-    }));
+    it('REFUSES a run head this repository does not contain', () =>
+      withScratchRepository((repo) => {
+        const absent = 'deadbeef'.repeat(5);
+        expect(
+          repo.git(['cat-file', '-e', `${absent}^{commit}`]),
+          'the head exists after all'
+        ).toBe(null);
+        const problems = hostedProblems(
+          cited(absent, repo.candidate, repo.candidateTree),
+          repo.git
+        );
+        expect(problems.length, 'a run at a head nobody can fetch was accepted').toBeGreaterThan(0);
+        expect(problems.join(' ')).toContain('names no commit in this repository');
+      }));
 
-  it('subtracts an ABSORBED base to this branch’s own additions, and says that is what it did', () =>
-    withScratchRepository((repo) => {
+    it('REFUSES a run head that is an ANCESTOR of the candidate', () =>
+      withScratchRepository((repo) => {
+        // A run taken before this code existed cannot describe it. The backward
+        // citation is not forbidden — it is `describesSupersededHead` — but it may
+        // not wear the forward marker.
+        const problems = hostedProblems(
+          cited(repo.previous, repo.candidate, repo.candidateTree),
+          repo.git
+        );
+        expect(problems.length, 'a run that predates the candidate was accepted').toBeGreaterThan(
+          0
+        );
+        expect(problems.join(' ')).toContain('does not descend from the candidate');
+      }));
+
+    it('leaves the backward citation exactly as it was — and the committed package binds', () => {
       /*
-       * A branch cut AFTER the merge — which is what a remediation branch is.
-       * The base already contains the candidate, and subtracting it answers the
-       * only question the subtrahend ever answers: what did this line of work
-       * add on top of the base it sits on? Here, the remediation commit.
+       * The one case here that is legitimately about THIS repository, and its
+       * subject has moved once.
+       *
+       * It used to assert that the committed package was PENDING and that every
+       * pending binding still bound, guarding itself with
+       * `supersededBindings.length > 0` so it could not pass on an empty set. That
+       * guard was correct and its subject became unreachable: binding the package
+       * is the point of this task, and a bound package supersedes nothing.
+       *
+       * BOTH HALVES ARE KEPT. What the committed package exercises — whatever that
+       * is on the head this runs at — must bind with no problems and must not be
+       * an empty set; and the BACKWARD path, which a bound package no longer
+       * exercises, is proved on a constructed world rather than dropped.
        */
-      repo.checkout(repo.remediation);
-      repo.setBaseRef(repo.landed);
-
-      // Unnamed, the remediation commit is an unnamed EXECUTABLE successor and
-      // the gate says so — the rule is not softened by the base being absorbed.
-      const unnamed = bindingOfRepo(repo);
-      expect(unnamed.baseAbsorbedCandidate, 'the absorption was not detected').toBe(true);
-      expect(unnamed.baseSha).toBe(repo.landed);
+      const git = gitReader(ROOT);
+      const committed = JSON.parse(readRepo(CANDIDATE_PATH)) as Record<string, never>;
+      const sound = tierBinding(committed, git) as unknown as {
+        hostedProblems: string[];
+        supersededBindings: string[];
+        boundBindings: string[];
+      };
+      expect(sound.hostedProblems, 'the committed package stopped binding').toEqual([]);
       expect(
-        unnamed.commits.map((c) => c.sha),
-        'the range is not this branch’s own additions'
-      ).toEqual([repo.remediation]);
-      expect(unnamed.unrecordedExecutable).toEqual([repo.remediation]);
-      expect(judge(soundInputsOver(ROOT, { repository: unnamed }), () => {}).repositoryOk).toBe(
-        false
+        sound.supersededBindings.length + sound.boundBindings.length,
+        'the committed package exercises no hosted binding at all, so nothing is proved'
+      ).toBeGreaterThan(0);
+
+      // THE BACKWARD CITATION, constructed. `hostedCi` is pushed back onto the
+      // candidate's own parent — a head this repository contains and can prove is
+      // an ancestor — and must still bind, and must still be REPORTED as pending.
+      const backward = JSON.parse(readRepo(CANDIDATE_PATH)) as {
+        candidate: { FINAL_CODE_SHA: string };
+        hostedCi: Record<string, unknown>;
+        pendingHostedBindings?: Record<string, unknown>;
+      };
+      const ancestor = String(
+        git(['rev-parse', `${backward.candidate.FINAL_CODE_SHA}^`]) ?? ''
+      ).trim();
+      expect(ancestor, 'the candidate has no parent, so the backward path has no witness').toMatch(
+        /^[0-9a-f]{40}$/
       );
-
-      // Named, it binds — and product identity is taken over the WHOLE span from
-      // the candidate to the head, not over this range, so nothing hides in the
-      // absorbed history either.
-      const named = bindingOfRepo(repo, {
-        ...repo.document(),
-        successors: [{ commit: repo.remediation, kind: 'remediation' }],
-      });
-      expect(named.unrecordedExecutable).toEqual([]);
-      expect(named.productDiff).toEqual([]);
-      expect(judge(soundInputsOver(ROOT, { repository: named }), () => {}).repositoryOk).toBe(true);
-    }));
-
-  it('keeps base-absorbed measurement heads without letting them cover current successors', () =>
-    withScratchRepository((repo) => {
-      repo.checkout(repo.remediation);
-      repo.setBaseRef(repo.landed);
-      const bound = bindingOfRepo(repo, {
-        ...repo.document(),
-        successors: [{ commit: repo.remediation, kind: 'current remediation' }],
-        absorbedSuccessors: [{ commit: repo.successor, kind: 'prior measurement head' }],
-      });
-
-      expect(bound.commits.map((commit) => commit.sha)).toEqual([repo.remediation]);
-      expect(bound.absorbed).toEqual([repo.successor]);
-      expect(bound.absorbedProblems).toEqual([]);
-      expect(bound.unrecordedExecutable).toEqual([]);
-      expect(judge(soundInputsOver(ROOT, { repository: bound }), () => {}).repositoryOk).toBe(true);
-
-      const currentUnnamed = bindingOfRepo(repo, {
-        ...repo.document(),
-        successors: [],
-        absorbedSuccessors: [
-          { commit: repo.successor, kind: 'prior measurement head' },
-          { commit: repo.remediation, kind: 'misclassified current work' },
-        ],
-      });
-      expect(currentUnnamed.unrecordedExecutable).toEqual([repo.remediation]);
-      expect(currentUnnamed.absorbedProblems.join('\n')).toContain('current branch range');
+      delete backward.hostedCi[SUCCESSOR_MARKER];
+      backward.hostedCi.headSha = ancestor;
+      backward.hostedCi.describesSupersededHead = true;
+      backward.hostedCi.supersededBy = 'a run at the candidate';
+      const computed = (
+        pendingBinding(backward as never, git) as unknown as { superseded: string[] }
+      ).superseded;
+      backward.pendingHostedBindings = {
+        ...(backward.pendingHostedBindings ?? {}),
+        awaits: 'a run at the candidate',
+        bindings: computed,
+      };
+      const back = tierBinding(backward as never, git) as unknown as {
+        hostedProblems: string[];
+        supersededBindings: string[];
+      };
+      expect(back.hostedProblems, 'the backward citation stopped binding').toEqual([]);
       expect(
-        judge(soundInputsOver(ROOT, { repository: currentUnnamed }), () => {}).repositoryOk
-      ).toBe(false);
-    }));
+        back.supersededBindings,
+        'the backward citation was not reported as superseded'
+      ).toContain('hostedCi');
+    });
+  }
+);
 
-  it('fails closed when an absorbed successor is not actually inside base ancestry', () =>
-    withScratchRepository((repo) => {
-      repo.checkout(repo.remediation);
-      repo.setBaseRef(repo.landed);
-      const bad = bindingOfRepo(repo, {
-        ...repo.document(),
-        successors: [{ commit: repo.remediation, kind: 'current remediation' }],
-        absorbedSuccessors: [{ commit: repo.reMerge, kind: 'not in the resolved base' }],
-      });
+describe(
+  'P1-28-QA-005 — a merge-ref checkout does not make the base branch a successor',
+  { timeout: SCRATCH_REPOSITORY_BUDGET_MS },
+  () => {
+    /*
+     * THE FALSE POSITIVE THIS CLOSES, reported by hosted CI against this branch.
+     *
+     * `actions/checkout` defaults, for a `pull_request` event, to the pull
+     * request's MERGE REF. Under it `git log <candidate>..HEAD` sweeps in the BASE
+     * BRANCH's history, and a `develop` commit authored by another session and
+     * absent from this branch was reported as an executable successor this package
+     * had failed to name. The same ref would have made
+     * `git diff <candidate>..HEAD -- apps supabase` report the base's product
+     * changes as a broken freeze.
+     *
+     * The successor set is what THIS BRANCH added after the freeze, so it is
+     * computed that way: the base is subtracted from the range, and a checkout
+     * that is a clean synthetic merge of this branch with its base is judged as
+     * the branch side of that merge.
+     */
 
-      expect(bad.absorbedProblems.join('\n')).toContain('not contained between candidate');
-      expect(judge(soundInputsOver(ROOT, { repository: bad }), () => {}).repositoryOk).toBe(false);
-    }));
+    it('is a hostile world: the naive range and diff both take the base branch in', () =>
+      withScratchRepository((repo) => {
+        repo.checkout(repo.mergeRef);
+        const swept = repo
+          .run('log', '--format=%H', `${repo.candidate}..${repo.mergeRef}`)
+          .split('\n');
+        expect(swept, 'the merge-ref range does not contain the base commit').toContain(
+          repo.baseTip
+        );
+        expect(
+          repo.run('diff', '--name-only', `${repo.candidate}..${repo.mergeRef}`, '--', 'apps'),
+          'the merge-ref product diff is empty, so it demonstrates no hazard'
+        ).not.toBe('');
+      }));
 
-  it('makes BOTH anti-vacuity guards fire on a sound, genuinely empty range', () =>
-    withScratchRepository((repo) => {
-      /*
-       * The guards are what reported the post-merge failure, and they must not
-       * have been quieted by fixing it. A candidate that IS the head has no
-       * successors at all, and the binding says so — which is the condition each
-       * guard tests, on the two candidates they read.
-       */
-      repo.checkout(repo.branchHead);
-      repo.setBaseRef(repo.baseTip);
-      const asCandidate = (sha: string): Binding =>
-        bindingOfRepo(repo, {
+    it('judges the branch, not the merge: no base commit is a successor of this phase', () =>
+      withScratchRepository((repo) => {
+        repo.checkout(repo.mergeRef);
+        const bound = bindingOf(repo.document(), repo.git);
+        expect(bound.checkoutHead, 'the checkout is not the merge ref').toBe(repo.mergeRef);
+        expect(bound.unwrappedMergeRef, 'the merge ref was not recognised').toBe(repo.mergeRef);
+        expect(bound.phaseHead, 'the head under test is not this branch').toBe(repo.branchHead);
+        expect(bound.mergeRefBaseSide).toBe(repo.baseTip);
+        expect(
+          bound.commits.map((c) => c.sha),
+          'the range is not exactly what this branch added after the freeze'
+        ).toEqual([repo.branchHead, repo.successor]);
+        expect(
+          bound.productDiff,
+          'the base’s product changes were read as a broken freeze'
+        ).toEqual([]);
+        expect(bound.unrecordedExecutable, 'an unnamed executable successor was invented').toEqual(
+          []
+        );
+        expect(judge(soundInputsOver(ROOT, { repository: bound }), () => {}).repositoryOk).toBe(
+          true
+        );
+      }));
+
+    it('still FAILS when this branch’s own executable successor is unnamed', () =>
+      withScratchRepository((repo) => {
+        // The correction must not have bought its silence by silencing the rule.
+        repo.checkout(repo.mergeRef);
+        const bad = bindingOf(repo.document({ successors: [] }), repo.git);
+        expect(
+          bad.unrecordedExecutable,
+          'the branch’s own successor stopped being reported'
+        ).toEqual([repo.successor]);
+        expect(judge(soundInputsOver(ROOT, { repository: bad }), () => {}).repositoryOk).toBe(
+          false
+        );
+      }));
+
+    it('recovers the base from the merge ref when NO base ref resolves', () =>
+      withScratchRepository((repo) => {
+        /*
+         * The shallow-clone case. A filtered clone may carry no
+         * `refs/remotes/origin/develop` at all — and the first revision of this
+         * correction could not run without one, because it classified the merge's
+         * parents by asking which was contained in the base. The question is asked
+         * by the CANDIDATE now, so the base side falls out of the merge itself.
+         */
+        repo.checkout(repo.mergeRef);
+        repo.dropBaseRefs();
+        expect(
+          repo.git(['rev-parse', '--verify', '--quiet', 'refs/remotes/origin/develop^{commit}'])
+        ).toBe(null);
+        expect(repo.git(['rev-parse', '--verify', '--quiet', 'refs/heads/develop^{commit}'])).toBe(
+          null
+        );
+
+        const bound = bindingOf(repo.document(), repo.git);
+        expect(bound.baseResolved, 'the base could not be recovered').toBe(true);
+        expect(bound.baseRef, 'a ref resolved after all, so recovery is not what is tested').toBe(
+          null
+        );
+        expect(bound.baseSha).toBe(repo.baseTip);
+        expect(bound.baseFrom).toContain('base as it stood');
+        expect(bound.phaseHead).toBe(repo.branchHead);
+        expect(
+          bound.commits.map((c) => c.sha),
+          'the base was recovered and then not subtracted'
+        ).toEqual([repo.branchHead, repo.successor]);
+        expect(bound.unrecordedExecutable).toEqual([]);
+        expect(judge(soundInputsOver(ROOT, { repository: bound }), () => {}).repositoryOk).toBe(
+          true
+        );
+      }));
+
+    it('fails CLOSED when there is no base ref AND no merge ref to recover one from', () =>
+      withScratchRepository((repo) => {
+        // "I could not tell" is not "there are none". This is the shape the
+        // coordinator asked to be certain of: a checkout with neither source of a
+        // base must stop, and say which refs it tried.
+        repo.checkout(repo.branchHead);
+        repo.dropBaseRefs();
+        const blind = bindingOf(repo.document(), repo.git);
+        expect(blind.baseResolved, 'an unresolvable base was treated as resolved').toBe(false);
+        expect(blind.commits, 'a successor set was computed with no base to subtract').toEqual([]);
+        expect(blind.baseAttempted).toEqual([
+          'refs/remotes/origin/develop',
+          'refs/heads/develop',
+          'develop',
+        ]);
+        const said: string[] = [];
+        expect(
+          judge(soundInputsOver(ROOT, { repository: blind }), (l: string) => said.push(l))
+            .repositoryOk
+        ).toBe(false);
+        expect(said.join(' '), 'the refusal does not name what it tried').toContain(
+          'refs/remotes/origin/develop'
+        );
+      }));
+
+    it('does NOT unwrap a merge that carries content of its own', () =>
+      withScratchRepository((repo) => {
+        /*
+         * The one thing the unwrap must never do. A merge ref previews a merge and
+         * introduces nothing; a merge that resolved a conflict carries content
+         * neither parent has, and stepping past it would step past that content.
+         */
+        repo.checkout(repo.evilMerge);
+        const evil = bindingOf(repo.document(), repo.git);
+        expect(evil.unwrappedMergeRef, 'an evil merge was unwrapped past').toBe(null);
+        expect(evil.phaseHead, 'the head under test is not the checkout').toBe(repo.evilMerge);
+        expect(
+          evil.evilMergePaths.length,
+          'the merge carries no content of its own'
+        ).toBeGreaterThan(0);
+        // And the base is STILL subtracted, which is the second, independent half.
+        expect(
+          evil.commits.map((c) => c.sha),
+          'a base-branch commit survived into this phase’s range'
+        ).not.toContain(repo.baseTip);
+        expect(
+          evil.unrecordedExecutable,
+          'the un-unwrapped merge is executable and unnamed, and must be reported as such'
+        ).toEqual([repo.evilMerge]);
+      }));
+
+    it('fails CLOSED when the base ref is STALE behind the merge’s alleged base side', () =>
+      withScratchRepository((repo) => {
+        /*
+         * THE CASE A PROBE AGAINST THIS REPOSITORY FOUND, and the reason the
+         * cross-check asks about a RELATION rather than containment in one
+         * direction.
+         *
+         * A stale ref cannot distinguish the real base continuation from a sibling
+         * forked from the same observed commit. Treating comparability as identity
+         * was a fail-open: both shapes are descendants of the stale ref. UNKNOWN
+         * must stop rather than bless whichever parent happened to be first.
+         */
+        repo.checkout(repo.mergeRef);
+        repo.setBaseRef(repo.origin);
+        expect(
+          repo.git(['merge-base', '--is-ancestor', repo.baseTip, repo.origin]),
+          'the base side is contained in the stale ref, so this proves nothing'
+        ).toBe(null);
+        expect(
+          repo.git(['merge-base', '--is-ancestor', repo.origin, repo.baseTip]),
+          'the two are unrelated, so this is not a stale ref at all'
+        ).toBe('');
+
+        const bound = bindingOf(repo.document(), repo.git);
+        expect(bound.unwrappedMergeRef, 'a stale observation was treated as proof').toBe(null);
+        expect(bound.topologyUnknown).toContain('stale behind');
+        expect(judge(soundInputsOver(ROOT, { repository: bound }), () => {}).repositoryOk).toBe(
+          false
+        );
+      }));
+
+    it('fails CLOSED for a foreign sibling descended from that same stale base', () =>
+      withScratchRepository((repo) => {
+        repo.checkout(repo.foreignMerge);
+        repo.setBaseRef(repo.origin);
+        const bound = bindingOf(repo.document(), repo.git);
+        expect(bound.unwrappedMergeRef, 'the foreign sibling was mistaken for develop').toBe(null);
+        expect(bound.topologyUnknown).toContain('sibling branch');
+        expect(judge(soundInputsOver(ROOT, { repository: bound }), () => {}).repositoryOk).toBe(
+          false
+        );
+      }));
+
+    it('fails CLOSED when candidate ancestry cannot be computed', () =>
+      withScratchRepository((repo) => {
+        repo.checkout(repo.mergeRef);
+        const broken = Object.assign((args: string[]) => repo.git(args), {
+          probe: (args: string[]) =>
+            args[0] === 'merge-base' && args[1] === '--is-ancestor'
+              ? { status: 2, stdout: '' }
+              : (repo.git.probe?.(args) ?? { status: 2, stdout: '' }),
+        }) as GitRead;
+        const bound = bindingOf(repo.document(), broken);
+        expect(bound.topologyUnknown).toContain('candidate is an ancestor');
+        expect(judge(soundInputsOver(ROOT, { repository: bound }), () => {}).repositoryOk).toBe(
+          false
+        );
+      }));
+
+    it('fails CLOSED when Git cannot inspect merge-owned content', () =>
+      withScratchRepository((repo) => {
+        repo.checkout(repo.mergeRef);
+        const broken = Object.assign(
+          (args: string[]) => (args[0] === 'diff-tree' ? null : repo.git(args)),
+          { probe: repo.git.probe }
+        ) as GitRead;
+        const bound = bindingOf(repo.document(), broken);
+        expect(bound.unwrappedMergeRef, 'a refused diff-tree was interpreted as an empty one').toBe(
+          null
+        );
+        expect(bound.topologyUnknown).toContain('could not inspect');
+        expect(judge(soundInputsOver(ROOT, { repository: bound }), () => {}).repositoryOk).toBe(
+          false
+        );
+      }));
+
+    it('declines the unwrap when the merge’s base side is not in the base branch', () =>
+      withScratchRepository((repo) => {
+        /*
+         * A merge of this branch with something that is NOT its base is not a
+         * preview of this pull request. The cross-check can only be made when a
+         * base ref resolves, and when it can be made it may only make the rule
+         * stricter.
+         *
+         * The merge carries a tree of its OWN, and that is now load-bearing: a
+         * merge that adds no content to its candidate-carrying parent is read as
+         * that parent whatever its other side is, which is the case immediately
+         * below. This one has content that came from neither parent, so there is
+         * something here to judge and the foreign base side is what judges it.
+         */
+        const stranger = repo.run(
+          'commit-tree',
+          repo.candidateTree,
+          '-p',
+          repo.previous,
+          '-m',
+          'a commit on no branch'
+        );
+        const foreign = repo.run(
+          'commit-tree',
+          repo.candidateTree,
+          '-p',
+          stranger,
+          '-p',
+          repo.branchHead,
+          '-m',
+          'Merge of something that is not the base'
+        );
+        expect(
+          repo.run('rev-parse', `${foreign}^{tree}`),
+          'the merge carries its branch parent’s tree, so it adds nothing and this case measures the other rule'
+        ).not.toBe(repo.run('rev-parse', `${repo.branchHead}^{tree}`));
+        repo.checkout(foreign);
+        const bound = bindingOf(repo.document(), repo.git);
+        expect(bound.unwrappedMergeRef, 'a merge with a foreign base side was unwrapped').toBe(
+          null
+        );
+        expect(bound.declinedUnwrap, 'the decline was not explained').toContain(
+          stranger.slice(0, 8)
+        );
+        expect(bound.phaseHead).toBe(foreign);
+      }));
+
+    it('reads a merge that adds NOTHING as its parent, foreign base side and all', () =>
+      withScratchRepository((repo) => {
+        /*
+         * The same foreign base side, and the opposite verdict — because this is
+         * the shape a PROMOTION has, and declining it inverts the measurement.
+         *
+         * A promotion's merge ref is parented on the protected branch and on the
+         * branch being promoted. In a repository that promotes by merge commit the
+         * protected branch has accumulated topology the base branch has never
+         * seen, so neither parent contains the other and the case above would
+         * decline it. Declined, the merge ref becomes the head under test, and
+         * subtracting the base leaves the PROTECTED branch's history: the phase's
+         * own recorded successors read as fabricated and the promotion target's
+         * commits read as this phase's unnamed successors. That is not a
+         * hypothetical — it is what hosted CI reported, 4 and 24 of them.
+         *
+         * What makes reading the parent safe is the tree. A checkout identical in
+         * content to a parent can smuggle nothing in through the other one, so
+         * "adds nothing" is decided by bytes rather than by branch names, and the
+         * case above still declines the merge that does add something.
+         */
+        const stranger = repo.run(
+          'commit-tree',
+          repo.candidateTree,
+          '-p',
+          repo.previous,
+          '-m',
+          'a protected branch this base does not contain'
+        );
+        const branchTree = repo.run('rev-parse', `${repo.branchHead}^{tree}`);
+        const promotion = repo.run(
+          'commit-tree',
+          branchTree,
+          '-p',
+          stranger,
+          '-p',
+          repo.branchHead,
+          '-m',
+          'Merge branch into the protected branch'
+        );
+        expect(
+          repo.run('rev-parse', `${promotion}^{tree}`),
+          'the merge does not carry its parent’s tree, so it is not the shape under test'
+        ).toBe(branchTree);
+
+        repo.checkout(promotion);
+        const bound = bindingOf(repo.document(), repo.git);
+        expect(bound.declinedUnwrap, 'the promotion was declined as an unrelated merge').toBe(null);
+        expect(bound.topologyUnknown, 'the promotion made the Git world unknown').toBe(null);
+        expect(bound.unwrappedMergeRef, 'the merge that was unwrapped went unnamed').toBe(
+          promotion
+        );
+        expect(bound.mergeAddsNothingTo, 'the parent it was read as went unnamed').toBe(
+          repo.branchHead
+        );
+        expect(bound.phaseHead, 'the head under test is not this branch').toBe(repo.branchHead);
+        expect(
+          bound.fabricatedSuccessors,
+          'the branch’s own successors read as fabricated'
+        ).toEqual([]);
+        expect(
+          bound.unrecordedExecutable,
+          'the protected branch’s commits read as this branch’s successors'
+        ).toEqual([]);
+      }));
+
+    it('refuses an UNKNOWN successor range rather than reading it as “none”', () =>
+      withScratchRepository((repo) => {
+        // `lines(null)` is `[]`, and `[]` reads as "this branch added nothing".
+        // A command that refused to run has not answered the question.
+        repo.checkout(repo.branchHead);
+        const blind = bindingOf(repo.document(), (args: string[]) =>
+          args[0] === 'log' ? null : repo.git(args)
+        );
+        expect(blind.rangeUnknown, 'a refused range was read as an answer').toBe(true);
+        expect(blind.commits).toEqual([]);
+        expect(blind.unrecordedExecutable).toEqual([]);
+        const said: string[] = [];
+        expect(
+          judge(soundInputsOver(ROOT, { repository: blind }), (l: string) => said.push(l))
+            .repositoryOk
+        ).toBe(false);
+        expect(said.join(' ')).toContain('UNKNOWN');
+      }));
+
+    it('refuses an UNKNOWN product diff rather than reading it as “identical”', () =>
+      withScratchRepository((repo) => {
+        repo.checkout(repo.branchHead);
+        const blind = bindingOf(repo.document(), (args: string[]) =>
+          args[0] === 'diff' && args.includes('apps') ? null : repo.git(args)
+        );
+        expect(blind.productDiffUnknown, 'a refused diff was read as an answer').toBe(true);
+        expect(blind.productDiff).toEqual([]);
+        const said: string[] = [];
+        expect(
+          judge(soundInputsOver(ROOT, { repository: blind }), (l: string) => said.push(l))
+            .repositoryOk
+        ).toBe(false);
+        expect(said.join(' ')).toContain('UNKNOWN');
+      }));
+
+    it('fails when a REAL product path changes after the candidate', () =>
+      withScratchRepository((repo) => {
+        repo.checkout(repo.productChanged);
+        const changed = bindingOf(repo.document(), repo.git);
+        expect(changed.productDiff, 'the scratch product mutation was not observed').toEqual([
+          'apps/web/screen.ts',
+        ]);
+        expect(judge(soundInputsOver(ROOT, { repository: changed }), () => {}).repositoryOk).toBe(
+          false
+        );
+      }));
+
+    it('resolves the base from a ref when the checkout has one, and does not unwrap', () =>
+      withScratchRepository((repo) => {
+        repo.checkout(repo.branchHead);
+        const honest = bindingOf(repo.document(), repo.git);
+        expect(honest.baseResolved).toBe(true);
+        expect(honest.baseRef).toBe('refs/remotes/origin/develop');
+        expect(honest.baseSha).toBe(repo.baseTip);
+        expect(honest.unwrappedMergeRef, 'an ordinary checkout was treated as a merge ref').toBe(
+          null
+        );
+        expect(honest.phaseHead).toBe(repo.branchHead);
+        expect(honest.commits.map((c) => c.sha)).toEqual([repo.branchHead, repo.successor]);
+      }));
+  }
+);
+
+describe(
+  'P1-28-QA-005 — the base subtraction survives this branch MERGING into its base',
+  { timeout: SCRATCH_REPOSITORY_BUDGET_MS },
+  () => {
+    /*
+     * THE FAILURE THIS CLOSES, reported by the protected-branch reproof.
+     *
+     * The base subtraction exists so a checkout does not count the base branch's
+     * own commits as successors of the candidate. It presumes the base does not
+     * CONTAIN the candidate. The moment the branch merges, that presumption
+     * inverts: `origin/develop` then contains the whole branch, so subtracting it
+     * removes every genuine successor and the range collapses to empty. Two jobs
+     * went red on exactly that, and both failures were anti-vacuity guards
+     * refusing to pass on an empty set — the guards working, over a rule that had
+     * stopped being true.
+     *
+     * A merge names its own base in its FIRST parent: the base as it stood before
+     * this branch landed. Every world below is built from objects the case creates.
+     */
+    const bindingOfRepo = (repo: Scratch, doc?: Record<string, unknown>): Binding =>
+      bindingOf(doc ?? repo.document(), repo.git);
+
+    it('is a hostile world: subtracting the base as it IS now empties the range', () =>
+      withScratchRepository((repo) => {
+        repo.checkout(repo.landed);
+        repo.setBaseRef(repo.landed);
+        // The base now contains the candidate — the inversion, computed.
+        expect(
+          repo.git(['merge-base', '--is-ancestor', repo.candidate, repo.landed]),
+          'the base has not absorbed the candidate, so this world is not the one that failed'
+        ).toBe('');
+        // Subtracting it removes every successor.
+        expect(
+          repo.run('log', '--format=%H', repo.branchHead, '--not', repo.candidate, repo.landed),
+          'the naive subtraction does not empty the range, so it demonstrates no hazard'
+        ).toBe('');
+        // Subtracting the base AS IT STOOD does not.
+        expect(
+          repo
+            .run('log', '--format=%H', repo.branchHead, '--not', repo.candidate, repo.baseTip)
+            .split('\n'),
+          'the base as it stood also empties the range'
+        ).toEqual([repo.branchHead, repo.successor]);
+      }));
+
+    it('judges the merge commit against the base as it STOOD, not as it is', () =>
+      withScratchRepository((repo) => {
+        repo.checkout(repo.landed);
+        repo.setBaseRef(repo.landed);
+        const bound = bindingOfRepo(repo);
+        expect(bound.checkoutHead).toBe(repo.landed);
+        expect(bound.unwrappedMergeRef, 'the merge was not recognised').toBe(repo.landed);
+        expect(bound.phaseHead, 'the head under test is not this branch').toBe(repo.branchHead);
+        expect(bound.baseSha, 'the base subtracted is not the one the merge names').toBe(
+          repo.baseTip
+        );
+        expect(bound.baseFrom).toContain('base as it stood');
+        expect(
+          bound.commits.map((c) => c.sha),
+          'the range is not this branch’s own successors'
+        ).toEqual([repo.branchHead, repo.successor]);
+        expect(bound.productDiff).toEqual([]);
+        expect(bound.unrecordedExecutable).toEqual([]);
+        expect(judge(soundInputsOver(ROOT, { repository: bound }), () => {}).repositoryOk).toBe(
+          true
+        );
+      }));
+
+    it('reads the base from the FIRST parent when both parents carry the candidate', () =>
+      withScratchRepository((repo) => {
+        /*
+         * The next merge after this one: a branch cut from the merged base and
+         * merged back. The candidate can no longer discriminate the parents —
+         * both contain it — so the forge convention does, and only then.
+         */
+        repo.checkout(repo.reMerge);
+        repo.setBaseRef(repo.reMerge);
+        for (const parent of [repo.landed, repo.remediation]) {
+          expect(
+            repo.git(['merge-base', '--is-ancestor', repo.candidate, parent]),
+            'a parent does not carry the candidate, so the ambiguity is not exercised'
+          ).toBe('');
+        }
+        const bound = bindingOfRepo(repo);
+        expect(bound.unwrappedMergeRef, 'the re-merge was not recognised').toBe(repo.reMerge);
+        expect(bound.phaseHead, 'the branch side is not the second parent').toBe(repo.remediation);
+        expect(bound.baseSha, 'the base side is not the first parent').toBe(repo.landed);
+        expect(
+          bound.commits.map((c) => c.sha),
+          'the range is not the remediation’s own commits'
+        ).toEqual([repo.remediation]);
+      }));
+
+    it('still finds that protected merge after the base first-parent line advances', () =>
+      withScratchRepository((repo) => {
+        repo.checkout(repo.reMerge);
+        repo.setBaseRef(repo.protectedAdvance);
+        const bound = bindingOfRepo(repo, {
           ...repo.document(),
-          candidate: {
-            FINAL_CODE_SHA: sha,
-            FINAL_CODE_TREE: repo.run('rev-parse', `${sha}^{tree}`),
-            baseBranch: 'develop',
-          },
-          successors: [],
+          successors: [{ commit: repo.remediation, kind: 'remediation' }],
+        });
+        expect(bound.unwrappedMergeRef).toBe(repo.reMerge);
+        expect(bound.phaseHead).toBe(repo.remediation);
+        expect(bound.baseSha).toBe(repo.landed);
+      }));
+
+    it('reads the base from the SECOND parent for a local merge into the remediation branch', () =>
+      withScratchRepository((repo) => {
+        repo.checkout(repo.reverseMerge);
+        repo.setBaseRef(repo.landed);
+        const bound = bindingOfRepo(repo, {
+          ...repo.document(),
+          successors: [{ commit: repo.remediation, kind: 'remediation' }],
+        });
+        expect(bound.unwrappedMergeRef).toBe(repo.reverseMerge);
+        expect(bound.phaseHead, 'parent order was mistaken for branch identity').toBe(
+          repo.remediation
+        );
+        expect(bound.baseSha).toBe(repo.landed);
+        expect(bound.commits.map((c) => c.sha)).toEqual([repo.remediation]);
+        expect(judge(soundInputsOver(ROOT, { repository: bound }), () => {}).repositoryOk).toBe(
+          true
+        );
+      }));
+
+    it('fails CLOSED when both parents carry the candidate and the base is ambiguous', () =>
+      withScratchRepository((repo) => {
+        repo.checkout(repo.reverseMerge);
+        repo.setBaseRef(repo.origin);
+        const ambiguous = bindingOfRepo(repo);
+        expect(ambiguous.unwrappedMergeRef, 'ambiguous ancestry was resolved by parent order').toBe(
+          null
+        );
+        expect(ambiguous.topologyUnknown).toContain('both merge parents contain the candidate');
+        expect(judge(soundInputsOver(ROOT, { repository: ambiguous }), () => {}).repositoryOk).toBe(
+          false
+        );
+      }));
+
+    it('does not mistake second-parent reachability for the protected first-parent line', () =>
+      withScratchRepository((repo) => {
+        repo.checkout(repo.reverseMerge);
+        repo.setBaseRef(repo.reverseLanded);
+        const ambiguous = bindingOfRepo(repo);
+        expect(
+          ambiguous.unwrappedMergeRef,
+          'an ordinary branch merge was reclassified only because develop later contained it'
+        ).toBe(null);
+        expect(ambiguous.topologyUnknown).toContain('does not uniquely identify');
+        expect(judge(soundInputsOver(ROOT, { repository: ambiguous }), () => {}).repositoryOk).toBe(
+          false
+        );
+      }));
+
+    it('does NOT step past a merge on the protected branch that carries its own content', () =>
+      withScratchRepository((repo) => {
+        repo.checkout(repo.evilMerge);
+        repo.setBaseRef(repo.evilMerge);
+        const evil = bindingOfRepo(repo);
+        expect(evil.unwrappedMergeRef, 'an evil merge was unwrapped past').toBe(null);
+        expect(evil.evilMergePaths.length).toBeGreaterThan(0);
+        expect(evil.phaseHead).toBe(repo.evilMerge);
+      }));
+
+    it('subtracts an ABSORBED base to this branch’s own additions, and says that is what it did', () =>
+      withScratchRepository((repo) => {
+        /*
+         * A branch cut AFTER the merge — which is what a remediation branch is.
+         * The base already contains the candidate, and subtracting it answers the
+         * only question the subtrahend ever answers: what did this line of work
+         * add on top of the base it sits on? Here, the remediation commit.
+         */
+        repo.checkout(repo.remediation);
+        repo.setBaseRef(repo.landed);
+
+        // Unnamed, the remediation commit is an unnamed EXECUTABLE successor and
+        // the gate says so — the rule is not softened by the base being absorbed.
+        const unnamed = bindingOfRepo(repo);
+        expect(unnamed.baseAbsorbedCandidate, 'the absorption was not detected').toBe(true);
+        expect(unnamed.baseSha).toBe(repo.landed);
+        expect(
+          unnamed.commits.map((c) => c.sha),
+          'the range is not this branch’s own additions'
+        ).toEqual([repo.remediation]);
+        expect(unnamed.unrecordedExecutable).toEqual([repo.remediation]);
+        expect(judge(soundInputsOver(ROOT, { repository: unnamed }), () => {}).repositoryOk).toBe(
+          false
+        );
+
+        // Named, it binds — and product identity is taken over the WHOLE span from
+        // the candidate to the head, not over this range, so nothing hides in the
+        // absorbed history either.
+        const named = bindingOfRepo(repo, {
+          ...repo.document(),
+          successors: [{ commit: repo.remediation, kind: 'remediation' }],
+        });
+        expect(named.unrecordedExecutable).toEqual([]);
+        expect(named.productDiff).toEqual([]);
+        expect(judge(soundInputsOver(ROOT, { repository: named }), () => {}).repositoryOk).toBe(
+          true
+        );
+      }));
+
+    it('keeps base-absorbed measurement heads without letting them cover current successors', () =>
+      withScratchRepository((repo) => {
+        repo.checkout(repo.remediation);
+        repo.setBaseRef(repo.landed);
+        const bound = bindingOfRepo(repo, {
+          ...repo.document(),
+          successors: [{ commit: repo.remediation, kind: 'current remediation' }],
+          absorbedSuccessors: [{ commit: repo.successor, kind: 'prior measurement head' }],
         });
 
-      const empty = asCandidate(repo.branchHead);
-      expect(empty.treeMatches, 'the empty world has a false candidate/tree binding').toBe(true);
-      expect(empty.commits, 'an empty range was not reported empty').toEqual([]);
-      expect(empty.unrecordedExecutable, 'an empty range invented a successor').toEqual([]);
-      expect(
-        judge(soundInputsOver(ROOT, { repository: empty }), () => {}).repositoryOk,
-        'the topology itself is unsound, so an anti-vacuity failure would prove nothing'
-      ).toBe(true);
+        expect(bound.commits.map((commit) => commit.sha)).toEqual([repo.remediation]);
+        expect(bound.absorbed).toEqual([repo.successor]);
+        expect(bound.absorbedProblems).toEqual([]);
+        expect(bound.unrecordedExecutable).toEqual([]);
+        expect(judge(soundInputsOver(ROOT, { repository: bound }), () => {}).repositoryOk).toBe(
+          true
+        );
 
-      for (const message of [
-        'the successor range is empty, so this measures nothing',
-        'the superseded candidate has no successors, so this measures nothing',
-      ]) {
+        const currentUnnamed = bindingOfRepo(repo, {
+          ...repo.document(),
+          successors: [],
+          absorbedSuccessors: [
+            { commit: repo.successor, kind: 'prior measurement head' },
+            { commit: repo.remediation, kind: 'misclassified current work' },
+          ],
+        });
+        expect(currentUnnamed.unrecordedExecutable).toEqual([repo.remediation]);
+        expect(currentUnnamed.absorbedProblems.join('\n')).toContain('current branch range');
         expect(
-          () => expectNonEmptySuccessorRange(empty, message),
-          `anti-vacuity guard did not fire: ${message}`
-        ).toThrow();
-      }
+          judge(soundInputsOver(ROOT, { repository: currentUnnamed }), () => {}).repositoryOk
+        ).toBe(false);
+      }));
 
-      // The same guard accepts the non-empty baseline, so it is not always red.
-      expectNonEmptySuccessorRange(
-        asCandidate(repo.candidate),
-        'the real candidate unexpectedly has no successors'
-      );
-    }));
+    it('fails closed when an absorbed successor is not actually inside base ancestry', () =>
+      withScratchRepository((repo) => {
+        repo.checkout(repo.remediation);
+        repo.setBaseRef(repo.landed);
+        const bad = bindingOfRepo(repo, {
+          ...repo.document(),
+          successors: [{ commit: repo.remediation, kind: 'current remediation' }],
+          absorbedSuccessors: [{ commit: repo.reMerge, kind: 'not in the resolved base' }],
+        });
 
-  it('changes nothing before the merge: the PR checkout still subtracts its own base', () =>
-    withScratchRepository((repo) => {
-      repo.checkout(repo.mergeRef);
-      const bound = bindingOfRepo(repo);
-      expect(bound.phaseHead).toBe(repo.branchHead);
-      expect(bound.baseSha, 'the pre-merge base is no longer the merge’s own parent').toBe(
-        repo.baseTip
-      );
-      expect(bound.commits.map((c) => c.sha)).toEqual([repo.branchHead, repo.successor]);
-      expect(bound.unrecordedExecutable).toEqual([]);
-    }));
-});
+        expect(bad.absorbedProblems.join('\n')).toContain('not contained between candidate');
+        expect(judge(soundInputsOver(ROOT, { repository: bad }), () => {}).repositoryOk).toBe(
+          false
+        );
+      }));
+
+    it('makes BOTH anti-vacuity guards fire on a sound, genuinely empty range', () =>
+      withScratchRepository((repo) => {
+        /*
+         * The guards are what reported the post-merge failure, and they must not
+         * have been quieted by fixing it. A candidate that IS the head has no
+         * successors at all, and the binding says so — which is the condition each
+         * guard tests, on the two candidates they read.
+         */
+        repo.checkout(repo.branchHead);
+        repo.setBaseRef(repo.baseTip);
+        const asCandidate = (sha: string): Binding =>
+          bindingOfRepo(repo, {
+            ...repo.document(),
+            candidate: {
+              FINAL_CODE_SHA: sha,
+              FINAL_CODE_TREE: repo.run('rev-parse', `${sha}^{tree}`),
+              baseBranch: 'develop',
+            },
+            successors: [],
+          });
+
+        const empty = asCandidate(repo.branchHead);
+        expect(empty.treeMatches, 'the empty world has a false candidate/tree binding').toBe(true);
+        expect(empty.commits, 'an empty range was not reported empty').toEqual([]);
+        expect(empty.unrecordedExecutable, 'an empty range invented a successor').toEqual([]);
+        expect(
+          judge(soundInputsOver(ROOT, { repository: empty }), () => {}).repositoryOk,
+          'the topology itself is unsound, so an anti-vacuity failure would prove nothing'
+        ).toBe(true);
+
+        for (const message of [
+          'the successor range is empty, so this measures nothing',
+          'the superseded candidate has no successors, so this measures nothing',
+        ]) {
+          expect(
+            () => expectNonEmptySuccessorRange(empty, message),
+            `anti-vacuity guard did not fire: ${message}`
+          ).toThrow();
+        }
+
+        // The same guard accepts the non-empty baseline, so it is not always red.
+        expectNonEmptySuccessorRange(
+          asCandidate(repo.candidate),
+          'the real candidate unexpectedly has no successors'
+        );
+      }));
+
+    it('changes nothing before the merge: the PR checkout still subtracts its own base', () =>
+      withScratchRepository((repo) => {
+        repo.checkout(repo.mergeRef);
+        const bound = bindingOfRepo(repo);
+        expect(bound.phaseHead).toBe(repo.branchHead);
+        expect(bound.baseSha, 'the pre-merge base is no longer the merge’s own parent').toBe(
+          repo.baseTip
+        );
+        expect(bound.commits.map((c) => c.sha)).toEqual([repo.branchHead, repo.successor]);
+        expect(bound.unrecordedExecutable).toEqual([]);
+      }));
+  }
+);
 
 describe('P1-28-QA-005 — a record may not state what the candidate refutes', () => {
   const candidateFile = JSON.parse(readRepo(CANDIDATE_PATH)) as Record<string, never>;
@@ -4091,233 +4183,242 @@ describe('P1-28-QA-005 — the validator can be made to fail, so its passing mea
   });
 });
 
-describe('P1-28-QA-005 — the summary may not assert a comparison the gate did not make', () => {
-  /*
-   * THE DEFECT THIS SUITE EXISTS FOR.
-   *
-   * The success summary carried the clause "apps/** and supabase/** are
-   * byte-identical to it" as PROSE inside a template literal. No branch of the
-   * gate ever set it, no field derived it, and on an ARCHIVED phase it was
-   * reliably FALSE — `reportRepository` returns at the ARCHIVED branch BEFORE
-   * the product-diff refusal, on purpose, because a landed phase is a record
-   * and the live tree is not held to it.
-   *
-   * So the gate printed the notice "the current product tree is not held to it"
-   * and then claimed, one line later, that the current product tree was
-   * identical to it. Reproduced on 2026-08-26: `npm run validate:p1-28-evidence`
-   * exited 0 with that clause over a head whose `apps/**` differed by 227 files.
-   *
-   * The verdict was RIGHT — nothing requires a branch head to be product-
-   * identical to a sealed, archived candidate. Only the sentence was wrong, and
-   * a gate whose job is to refuse unbacked claims may not make one itself.
-   *
-   * These cases pin the sentence to the fields, in a repository they build.
-   */
-  const CLOSED =
-    '# Phase 1-28 — Closure Record\n\n**Status: CLOSED — `OWNER ACCEPTANCE: PASS`, 2026-08-20**\n';
-  const ACCEPTED = { ownerAcceptance: { verdict: 'OWNER ACCEPTANCE: PASS' } };
-
-  /** An ARCHIVED world: promoted candidate, accepting document, closure record. */
-  const archivedBinding = (repo: Scratch, head: string) => {
-    repo.checkout(head);
-    repo.run('update-ref', 'refs/remotes/origin/main', repo.candidate);
-    return repositoryBinding(repo.document(ACCEPTED) as never, repo.git, () => CLOSED) as never;
-  };
-
-  const claimsIdentity = (line: string): boolean => line.includes('byte-identical');
-
-  it('does not claim byte-identity at an ARCHIVED head whose product tree really moved', () => {
-    withScratchRepository((repo) => {
-      const binding = archivedBinding(repo, repo.productChanged) as unknown as {
-        lifecycle: { state: string };
-        productDiff: string[];
-        isAncestorOfHead: boolean;
-      };
-
-      // The premise, computed — not assumed. Without real drift this proves nothing.
-      expect(binding.lifecycle.state, 'the world is not ARCHIVED, so the premise is wrong').toBe(
-        'ARCHIVED'
-      );
-      expect(binding.isAncestorOfHead, 'the candidate is not contained in the head').toBe(true);
-      expect(
-        binding.productDiff.length,
-        'no product file actually differs, so this case cannot catch the claim'
-      ).toBeGreaterThan(0);
-
-      const line = repositoryVerifiedLine(binding as never);
-
-      expect(
-        claimsIdentity(line),
-        'the summary claims apps/** and supabase/** are byte-identical over a tree that differs'
-      ).toBe(false);
-      // And it says what IS true, rather than falling silent: the defect was a
-      // sentence that did not name its evidence, and silence is that defect again.
-      expect(line).toContain(`${binding.productDiff.length} product file(s)`);
-      expect(line).toMatch(/ARCHIVED does not hold the live tree/);
-    });
-  });
-
-  it('still claims byte-identity when the diff ran and really found nothing', () => {
+describe(
+  'P1-28-QA-005 — the summary may not assert a comparison the gate did not make',
+  { timeout: SCRATCH_REPOSITORY_BUDGET_MS },
+  () => {
     /*
-     * The case above is satisfied by deleting the clause outright. This one is
-     * not: it fails if the fix were "never say identical", which would trade a
-     * false claim for a useless summary and leave the ACTIVE path — where
-     * identity IS refused, so the claim IS backed — with nothing to report.
+     * THE DEFECT THIS SUITE EXISTS FOR.
+     *
+     * The success summary carried the clause "apps/** and supabase/** are
+     * byte-identical to it" as PROSE inside a template literal. No branch of the
+     * gate ever set it, no field derived it, and on an ARCHIVED phase it was
+     * reliably FALSE — `reportRepository` returns at the ARCHIVED branch BEFORE
+     * the product-diff refusal, on purpose, because a landed phase is a record
+     * and the live tree is not held to it.
+     *
+     * So the gate printed the notice "the current product tree is not held to it"
+     * and then claimed, one line later, that the current product tree was
+     * identical to it. Reproduced on 2026-08-26: `npm run validate:p1-28-evidence`
+     * exited 0 with that clause over a head whose `apps/**` differed by 227 files.
+     *
+     * The verdict was RIGHT — nothing requires a branch head to be product-
+     * identical to a sealed, archived candidate. Only the sentence was wrong, and
+     * a gate whose job is to refuse unbacked claims may not make one itself.
+     *
+     * These cases pin the sentence to the fields, in a repository they build.
      */
-    withScratchRepository((repo) => {
-      const binding = archivedBinding(repo, repo.branchHead) as unknown as {
-        productDiff: string[];
-        isAncestorOfHead: boolean;
-      };
-      expect(binding.isAncestorOfHead).toBe(true);
-      expect(
-        binding.productDiff,
-        'the documentation-only head moved a product file, so the premise is wrong'
-      ).toEqual([]);
+    const CLOSED =
+      '# Phase 1-28 — Closure Record\n\n**Status: CLOSED — `OWNER ACCEPTANCE: PASS`, 2026-08-20**\n';
+    const ACCEPTED = { ownerAcceptance: { verdict: 'OWNER ACCEPTANCE: PASS' } };
 
-      expect(claimsIdentity(repositoryVerifiedLine(binding as never))).toBe(true);
-    });
-  });
-
-  it('does not read an un-taken diff as identity when the candidate is not an ancestor', () => {
-    /*
-     * `repositoryBinding` guards `git diff` behind `isAncestorOfHead` and leaves
-     * `productDiff` as `[]` when it never ran. ACTIVE returns before the summary
-     * on that condition; ARCHIVED does not, so an empty array here means "not
-     * asked", not "identical". Reading it as identity is the same fail-open in a
-     * new place — and the first draft of this fix did exactly that.
-     */
-    withScratchRepository((repo) => {
-      const binding = archivedBinding(repo, repo.origin) as unknown as {
-        isAncestorOfHead: boolean;
-        headAncestry: boolean | null;
-        productDiff: string[];
-      };
-      expect(binding.isAncestorOfHead, 'the head still contains the candidate').toBe(false);
-      expect(binding.productDiff, 'the diff ran after all, so this case proves nothing').toEqual(
-        []
-      );
-
-      // Git was ASKED here and said no, which is what entitles the sentence to
-      // say so. The case beside this one covers the worlds where it was never
-      // asked, and there the answer may not be asserted at all.
-      expect(binding.headAncestry, 'Git did not actually answer, so the premise is wrong').toBe(
-        false
-      );
-
-      const line = repositoryVerifiedLine(binding as never);
-      expect(claimsIdentity(line), 'an un-taken diff was reported as byte-identity').toBe(false);
-      expect(line).toContain('NOT COMPUTED');
-      expect(line, 'a genuine negative must still be stated plainly').toContain(
-        'it is NOT an ancestor of'
-      );
-    });
-  });
-
-  it('does not assert a NEGATIVE ancestry when it was the BASE ref that would not resolve', () => {
-    /*
-     * THE DEFECT THIS CASE EXISTS FOR — found by attacking the fix above, not
-     * the code it fixed.
-     *
-     * The first revision of `repositoryVerifiedLine` printed `it is NOT an
-     * ancestor of X` whenever `isAncestorOfHead` was false. That field is
-     * fail-CLOSED by design and must stay so, but it is a FOUR-way collapse:
-     *
-     *   exists && baseResolved && Boolean(head.head) && git([...]) !== null
-     *
-     * so `false` also means "the candidate is absent", "the base would not
-     * resolve", "the head would not resolve" and "Git refused" — none of which
-     * is Git saying no. Four falses that mean *nobody asked*, printed as a
-     * confident negative.
-     *
-     * This is the shallow-clone world the gate's own base-refusal message
-     * explicitly anticipates. The ACTIVE path fails closed on `!baseResolved`;
-     * the ARCHIVED path returns before it, so the sentence printed the negative
-     * in a run that exits 0 — while `git merge-base --is-ancestor` exited 0 and
-     * the candidate WAS an ancestor. The same fail-open the whole function
-     * exists to remove, one clause to the left of where it was found.
-     */
-    withScratchRepository((repo) => {
-      repo.checkout(repo.branchHead);
+    /** An ARCHIVED world: promoted candidate, accepting document, closure record. */
+    const archivedBinding = (repo: Scratch, head: string) => {
+      repo.checkout(head);
       repo.run('update-ref', 'refs/remotes/origin/main', repo.candidate);
-      repo.dropBaseRefs();
-      const binding = repositoryBinding(
-        repo.document(ACCEPTED) as never,
-        repo.git,
-        () => CLOSED
-      ) as unknown as {
-        lifecycle: { state: string };
-        baseResolved: boolean;
-        isAncestorOfHead: boolean;
-        headAncestry: boolean | null;
-      };
+      return repositoryBinding(repo.document(ACCEPTED) as never, repo.git, () => CLOSED) as never;
+    };
 
-      // The premises, every one computed. This world is only interesting if the
-      // gate still PASSES in it, and if the candidate really is an ancestor.
-      expect(binding.lifecycle.state, 'the premise is wrong: not ARCHIVED').toBe('ARCHIVED');
-      expect(binding.baseResolved, 'the base resolved after all').toBe(false);
-      expect(binding.isAncestorOfHead, 'the fail-closed field did not collapse').toBe(false);
-      expect(binding.headAncestry, 'the candidate really is NOT an ancestor here').toBe(true);
-      expect(
-        reportRepository(binding as never, () => {}),
-        'the gate refuses this world, so the summary would never print'
-      ).toBe(true);
+    const claimsIdentity = (line: string): boolean => line.includes('byte-identical');
 
-      const line = repositoryVerifiedLine(binding as never);
+    it('does not claim byte-identity at an ARCHIVED head whose product tree really moved', () => {
+      withScratchRepository((repo) => {
+        const binding = archivedBinding(repo, repo.productChanged) as unknown as {
+          lifecycle: { state: string };
+          productDiff: string[];
+          isAncestorOfHead: boolean;
+        };
+
+        // The premise, computed — not assumed. Without real drift this proves nothing.
+        expect(binding.lifecycle.state, 'the world is not ARCHIVED, so the premise is wrong').toBe(
+          'ARCHIVED'
+        );
+        expect(binding.isAncestorOfHead, 'the candidate is not contained in the head').toBe(true);
+        expect(
+          binding.productDiff.length,
+          'no product file actually differs, so this case cannot catch the claim'
+        ).toBeGreaterThan(0);
+
+        const line = repositoryVerifiedLine(binding as never);
+
+        expect(
+          claimsIdentity(line),
+          'the summary claims apps/** and supabase/** are byte-identical over a tree that differs'
+        ).toBe(false);
+        // And it says what IS true, rather than falling silent: the defect was a
+        // sentence that did not name its evidence, and silence is that defect again.
+        expect(line).toContain(`${binding.productDiff.length} product file(s)`);
+        expect(line).toMatch(/ARCHIVED does not hold the live tree/);
+      });
+    });
+
+    it('still claims byte-identity when the diff ran and really found nothing', () => {
+      /*
+       * The case above is satisfied by deleting the clause outright. This one is
+       * not: it fails if the fix were "never say identical", which would trade a
+       * false claim for a useless summary and leave the ACTIVE path — where
+       * identity IS refused, so the claim IS backed — with nothing to report.
+       */
+      withScratchRepository((repo) => {
+        const binding = archivedBinding(repo, repo.branchHead) as unknown as {
+          productDiff: string[];
+          isAncestorOfHead: boolean;
+        };
+        expect(binding.isAncestorOfHead).toBe(true);
+        expect(
+          binding.productDiff,
+          'the documentation-only head moved a product file, so the premise is wrong'
+        ).toEqual([]);
+
+        expect(claimsIdentity(repositoryVerifiedLine(binding as never))).toBe(true);
+      });
+    });
+
+    it('does not read an un-taken diff as identity when the candidate is not an ancestor', () => {
+      /*
+       * `repositoryBinding` guards `git diff` behind `isAncestorOfHead` and leaves
+       * `productDiff` as `[]` when it never ran. ACTIVE returns before the summary
+       * on that condition; ARCHIVED does not, so an empty array here means "not
+       * asked", not "identical". Reading it as identity is the same fail-open in a
+       * new place — and the first draft of this fix did exactly that.
+       */
+      withScratchRepository((repo) => {
+        const binding = archivedBinding(repo, repo.origin) as unknown as {
+          isAncestorOfHead: boolean;
+          headAncestry: boolean | null;
+          productDiff: string[];
+        };
+        expect(binding.isAncestorOfHead, 'the head still contains the candidate').toBe(false);
+        expect(binding.productDiff, 'the diff ran after all, so this case proves nothing').toEqual(
+          []
+        );
+
+        // Git was ASKED here and said no, which is what entitles the sentence to
+        // say so. The case beside this one covers the worlds where it was never
+        // asked, and there the answer may not be asserted at all.
+        expect(binding.headAncestry, 'Git did not actually answer, so the premise is wrong').toBe(
+          false
+        );
+
+        const line = repositoryVerifiedLine(binding as never);
+        expect(claimsIdentity(line), 'an un-taken diff was reported as byte-identity').toBe(false);
+        expect(line).toContain('NOT COMPUTED');
+        expect(line, 'a genuine negative must still be stated plainly').toContain(
+          'it is NOT an ancestor of'
+        );
+      });
+    });
+
+    it('does not assert a NEGATIVE ancestry when it was the BASE ref that would not resolve', () => {
+      /*
+       * THE DEFECT THIS CASE EXISTS FOR — found by attacking the fix above, not
+       * the code it fixed.
+       *
+       * The first revision of `repositoryVerifiedLine` printed `it is NOT an
+       * ancestor of X` whenever `isAncestorOfHead` was false. That field is
+       * fail-CLOSED by design and must stay so, but it is a FOUR-way collapse:
+       *
+       *   exists && baseResolved && Boolean(head.head) && git([...]) !== null
+       *
+       * so `false` also means "the candidate is absent", "the base would not
+       * resolve", "the head would not resolve" and "Git refused" — none of which
+       * is Git saying no. Four falses that mean *nobody asked*, printed as a
+       * confident negative.
+       *
+       * This is the shallow-clone world the gate's own base-refusal message
+       * explicitly anticipates. The ACTIVE path fails closed on `!baseResolved`;
+       * the ARCHIVED path returns before it, so the sentence printed the negative
+       * in a run that exits 0 — while `git merge-base --is-ancestor` exited 0 and
+       * the candidate WAS an ancestor. The same fail-open the whole function
+       * exists to remove, one clause to the left of where it was found.
+       */
+      withScratchRepository((repo) => {
+        repo.checkout(repo.branchHead);
+        repo.run('update-ref', 'refs/remotes/origin/main', repo.candidate);
+        repo.dropBaseRefs();
+        const binding = repositoryBinding(
+          repo.document(ACCEPTED) as never,
+          repo.git,
+          () => CLOSED
+        ) as unknown as {
+          lifecycle: { state: string };
+          baseResolved: boolean;
+          isAncestorOfHead: boolean;
+          headAncestry: boolean | null;
+        };
+
+        // The premises, every one computed. This world is only interesting if the
+        // gate still PASSES in it, and if the candidate really is an ancestor.
+        expect(binding.lifecycle.state, 'the premise is wrong: not ARCHIVED').toBe('ARCHIVED');
+        expect(binding.baseResolved, 'the base resolved after all').toBe(false);
+        expect(binding.isAncestorOfHead, 'the fail-closed field did not collapse').toBe(false);
+        expect(binding.headAncestry, 'the candidate really is NOT an ancestor here').toBe(true);
+        expect(
+          reportRepository(binding as never, () => {}),
+          'the gate refuses this world, so the summary would never print'
+        ).toBe(true);
+
+        const line = repositoryVerifiedLine(binding as never);
+        expect(
+          line.includes('NOT an ancestor'),
+          'the summary asserts a negative ancestry that Git never gave'
+        ).toBe(false);
+        expect(line).toContain('it is an ancestor of');
+        // And the un-taken diff names the REASON the gate recorded, not a guess.
+        expect(line).toMatch(/could not be resolved/);
+      });
+    });
+
+    it('reports a refused diff as UNKNOWN rather than as identity', () => {
+      withScratchRepository((repo) => {
+        const real = archivedBinding(repo, repo.productChanged) as unknown as Record<
+          string,
+          unknown
+        >;
+        // Git declining to answer: `productDiff` is empty for the second reason.
+        const refused = { ...real, productDiffUnknown: true, productDiff: [] };
+
+        const line = repositoryVerifiedLine(refused as never);
+        expect(claimsIdentity(line), 'a refusal was reported as byte-identity').toBe(false);
+        expect(line).toContain('UNKNOWN');
+      });
+    });
+
+    it('leaves the identity claim nowhere to be typed by hand', () => {
+      /*
+       * Every case above calls `repositoryVerifiedLine` directly, so all of them
+       * would still pass if someone re-typed the clause into the template in
+       * `main()` — which is precisely how the defect arrived, and the one path
+       * a unit test of a pure function cannot see.
+       *
+       * So the summary block itself is pinned: it must DELEGATE, and it must not
+       * spell out a comparison. The window is the success arm of `--check`, from
+       * the in-sync branch to its `return 0` — the only place this gate prints a
+       * verdict a reader will quote.
+       */
+      const source = readRepo('scripts/ci/build-p1-28-evidence-manifest.mjs');
+      const open = source.indexOf('  if (committed === rendered) {');
+      const close = source.indexOf('    return 0;', open);
+      expect(open, 'the success arm moved; this guard is now pointed at nothing').toBeGreaterThan(
+        0
+      );
       expect(
-        line.includes('NOT an ancestor'),
-        'the summary asserts a negative ancestry that Git never gave'
+        close,
+        'the success arm has no return; this guard is now pointed at nothing'
+      ).toBeGreaterThan(open);
+      const summaryBlock = source.slice(open, close);
+
+      expect(summaryBlock, 'the summary no longer delegates to the derived sentence').toContain(
+        'process.stdout.write(repositoryVerifiedLine(repository));'
+      );
+      expect(
+        summaryBlock.includes('byte-identical'),
+        'the identity wording is typed into the summary block, where no field derives it'
       ).toBe(false);
-      expect(line).toContain('it is an ancestor of');
-      // And the un-taken diff names the REASON the gate recorded, not a guess.
-      expect(line).toMatch(/could not be resolved/);
+      expect(
+        summaryBlock.includes('identical to it'),
+        'an identity comparison is spelled out in the summary block rather than derived'
+      ).toBe(false);
     });
-  });
-
-  it('reports a refused diff as UNKNOWN rather than as identity', () => {
-    withScratchRepository((repo) => {
-      const real = archivedBinding(repo, repo.productChanged) as unknown as Record<string, unknown>;
-      // Git declining to answer: `productDiff` is empty for the second reason.
-      const refused = { ...real, productDiffUnknown: true, productDiff: [] };
-
-      const line = repositoryVerifiedLine(refused as never);
-      expect(claimsIdentity(line), 'a refusal was reported as byte-identity').toBe(false);
-      expect(line).toContain('UNKNOWN');
-    });
-  });
-
-  it('leaves the identity claim nowhere to be typed by hand', () => {
-    /*
-     * Every case above calls `repositoryVerifiedLine` directly, so all of them
-     * would still pass if someone re-typed the clause into the template in
-     * `main()` — which is precisely how the defect arrived, and the one path
-     * a unit test of a pure function cannot see.
-     *
-     * So the summary block itself is pinned: it must DELEGATE, and it must not
-     * spell out a comparison. The window is the success arm of `--check`, from
-     * the in-sync branch to its `return 0` — the only place this gate prints a
-     * verdict a reader will quote.
-     */
-    const source = readRepo('scripts/ci/build-p1-28-evidence-manifest.mjs');
-    const open = source.indexOf('  if (committed === rendered) {');
-    const close = source.indexOf('    return 0;', open);
-    expect(open, 'the success arm moved; this guard is now pointed at nothing').toBeGreaterThan(0);
-    expect(
-      close,
-      'the success arm has no return; this guard is now pointed at nothing'
-    ).toBeGreaterThan(open);
-    const summaryBlock = source.slice(open, close);
-
-    expect(summaryBlock, 'the summary no longer delegates to the derived sentence').toContain(
-      'process.stdout.write(repositoryVerifiedLine(repository));'
-    );
-    expect(
-      summaryBlock.includes('byte-identical'),
-      'the identity wording is typed into the summary block, where no field derives it'
-    ).toBe(false);
-    expect(
-      summaryBlock.includes('identical to it'),
-      'an identity comparison is spelled out in the summary block rather than derived'
-    ).toBe(false);
-  });
-});
+  }
+);
