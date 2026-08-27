@@ -1,18 +1,20 @@
 # Notification enqueue authority — execution record
 
-**A narrow write path for a caller that has no tenant context.** One migration, one
-function, fifteen security proofs, and no privilege widened anywhere else.
+**A narrow write path for a caller that has no tenant context.** One migration —
+one column-level grant and one RESTRICTIVE policy — ten security proofs taken as
+restricted roles, and no privilege widened anywhere else.
 
-|                      |                                                                    |
-| -------------------- | ------------------------------------------------------------------ |
-| Branch               | `remediation/p1-29-backend-notification-enqueue-authority`         |
-| Base                 | `c9c516f1` — `origin/develop` at the truthfulness merge            |
-| Ownership profile    | `p1-29-backend` — resolved before the branch was created           |
-| New migrations       | **1** — `20260827090000_shared_notification_enqueue_authority.sql` |
-| New permission codes | **0**                                                              |
-| New operations       | **0**                                                              |
-| Table grants changed | **0**                                                              |
-| Policies changed     | **0**                                                              |
+|                      |                                                                     |
+| -------------------- | ------------------------------------------------------------------- |
+| Branch               | `remediation/p1-29-backend-notification-enqueue-authority`          |
+| Base                 | `c9c516f1` — `origin/develop` at the truthfulness merge             |
+| Ownership profile    | `p1-29-backend` — resolved before the branch was created            |
+| New migrations       | **1** — `20260827090000_shared_notification_enqueue_authority.sql`  |
+| New permission codes | **0**                                                               |
+| New operations       | **0**                                                               |
+| Table grants changed | **1** — column-level `INSERT` on `shared.outbound_messages`         |
+| Policies changed     | **+1** — `wkr_outbound_messages_enqueue_scope`, RESTRICTIVE, INSERT |
+| Functions added      | **0** — and `security_definer` stays **0**, which is load-bearing   |
 
 ---
 
@@ -80,7 +82,9 @@ scripts/ci/rls-matrix.mjs:291
 This record previously called such a function "the first of its kind, therefore a
 precedent". That was too generous to itself. It is not unprecedented — it is
 **prohibited**, and the prohibition is correct: bypassing RLS is the one thing
-this schema's security model may never do.
+this schema's security model may never do. Those fifteen cases proved a design
+that does not ship; they are named here so the count is not mistaken for evidence
+of anything now in the tree.
 
 The failure was found by hosted CI, not locally, because the database security
 gates were never run before pushing a migration — `verify:policies` does not
@@ -90,19 +94,22 @@ cover them. That is a process defect, and it is recorded rather than tidied away
 
 The function existed to answer one question the worker cannot: does the claimed
 tenant OWN the claimed recipient? Under the Owner's payload-carries-the-facts
-decision that question is answered EARLIER, by a role that already holds the
-authority to answer it.
+decision that question is to be answered EARLIER, by a role that already holds
+the authority to answer it — the `job.assigned` publisher, which runs as
+`app_runtime` inside the tenant's own context.
 
-The `job.assigned` publisher runs as `app_runtime`, inside the tenant's own
-context, and resolves the recipient from `tech.technician_profiles` at publish
-time. The outbox row is therefore authored by a tenant-scoped role under its own
-RLS. The worker does not ASSERT a tenant; it forwards one already verified by the
-only party that could verify it.
+**That publisher change is NOT in this slice and does not yet exist.** As shipped
+today `job.assigned` carries exactly three fields — `jobId`, `assignmentId`,
+`assignmentRole` — and resolves no recipient. Stating it in the present tense
+would be the same class of error as §1. This migration therefore delivers the
+database authority only; the fact carriage is a separate, published-schema change
+tracked as the `job.assigned` schemaVersion 2 slice, and `BR-09`'s consumer
+cannot be completed until that lands.
 
-That is a deliberate trade and it is stated plainly: the database cannot verify a
-payload's lineage, so the control lives at publish time. The alternative was to
-grant the worker `tech` reads so a policy could re-derive a fact the publisher
-already knew — widening exactly the privilege the decision forbids.
+What this slice does settle is that the database layer only has to pin what a
+worker may WRITE, because the lineage question is not answerable at the row layer
+without granting the worker `tech` reads — widening exactly the privilege the
+Owner's decision forbids.
 
 ### 3.2 Why the policy is RESTRICTIVE
 
@@ -112,54 +119,77 @@ policy would OR with it and constrain nothing; a RESTRICTIVE one ANDs, narrowing
 the worker's INSERT without altering shipped behaviour for any other statement
 or role.
 
+### 3.3 Why `status` is outside the grant AND inside the policy
+
+Two mechanisms pin the same fact deliberately. `status` is excluded from the
+column grant, so `'pending'` — the column default — is the only status this path
+can produce, and an attempt to name another is refused at the privilege layer
+with `permission denied for table` before RLS is consulted. The RESTRICTIVE
+policy also requires `status = 'pending'`. Either alone would hold; the grant is
+the stronger of the two because it cannot be satisfied by any value at all, and
+the policy states the invariant where a reader of the table's policies will find
+it.
+
+## 4. What the migration contains
+
+No table, no function, no trigger. One `GRANT INSERT (…)` naming thirteen columns
+and excluding `status`, and one `CREATE POLICY`. Classified **REVERSIBLE**:
+dropping the policy and revoking the grant returns the database to its prior
+state, and no data is written or transformed by it.
+
+Structurally that is `policies` 653 → 654 with `tables`, `functions`, `triggers`
+and `security_definer` all unchanged, recorded in
+`.github/ci-baselines/schema-baseline.json` in this same commit. The grant moves
+no structural figure at all — **neither replay script counts privileges** — which
+is the same blind spot that produced the false report in §1, and the reason the
+grant is proved behaviourally below rather than by a digest.
+
 ## 5. Proofs — ten, every one as a restricted role
 
 A security proof taken as `postgres` proves nothing about the role the worker
-connects as.
+connects as. Every case below runs on `workerAppPool` or `runtimeAppPool`.
 
-| proof                                                        | result                              |
-| ------------------------------------------------------------ | ----------------------------------- |
-| worker enqueues for a live technician of the named tenant    | succeeds, `status = 'pending'`      |
-| a replayed dedupe key returns the SAME message, one row      | ✅                                  |
-| recipient is a technician of ANOTHER tenant                  | refused                             |
-| recipient is no technician at all                            | refused                             |
-| null tenant, recipient or author                             | refused                             |
-| `EXECUTE` for `public` / `app_runtime` / `app_readonly`      | **false**                           |
-| `EXECUTE` for `app_worker`                                   | true                                |
-| worker direct `INSERT` / `DELETE` on the table               | `permission denied`                 |
-| worker reading `tech` — the schema the function reads FOR it | `permission denied for schema tech` |
-| request path untouched: `app_runtime` still meets RLS        | ✅                                  |
-| `search_path` pinned and excluding `public`                  | ✅                                  |
-| no dynamic SQL in the body                                   | ✅                                  |
+| proof                                                           | result                              |
+| --------------------------------------------------------------- | ----------------------------------- |
+| worker enqueues; row lands `status = 'pending'`, correct tenant | ✅                                  |
+| worker naming `status` explicitly                               | `permission denied for table`       |
+| replayed dedupe key under the EXISTING conflict target          | one row, not two                    |
+| worker `UPDATE` of a column outside its dispatch grant          | `permission denied`                 |
+| worker `DELETE`                                                 | `permission denied`                 |
+| worker reading `tech.technician_profiles`                       | `permission denied for schema tech` |
+| worker reading `shared.message_templates`                       | `permission denied`                 |
+| worker reading `shared.template_versions`                       | `permission denied`                 |
+| request path untouched: `app_runtime` still meets **RLS**       | `row-level security policy`         |
+| `SECURITY DEFINER` count across all 13 app schemas              | **0**                               |
+| `wkr_…_enqueue_scope` RESTRICTIVE/INSERT; dispatch still ALL    | ✅                                  |
 
-### 5.1 The last proof failed first, by matching its own comment
+The two refusal messages are not interchangeable and the suite asserts each by
+its own text. `permission denied for table` means the grant layer refused;
+`row-level security policy` means the grant was satisfied and a policy decided.
+Reading either as "it was refused, therefore it is safe" is how §1 happened.
 
-`expect(src).not.toMatch(/\bEXECUTE\b/i)` failed against a body whose comment
-reads _"No dynamic SQL, no `EXECUTE`"_. Prose describing a rule contains the rule
-— **the same defect `check-p1-29-access.mjs` was corrected for days earlier**,
-reproduced here in a test written to prevent it. Comments are stripped first now,
-with a non-vacuity assertion that the stripped body is still the function.
+### 5.1 The suite cleans the shared database at BOTH ends
+
+`afterAll` calls `cleanBackendFixtures`, not only `beforeAll`. `no-fake-data`
+asserts every business table is empty and runs in a LATER tier against the same
+shared container, so a suite that seeds and does not clean up fails a file it
+never mentions. It did exactly that once here before the `afterAll` was added.
 
 ## 6. What this does NOT close, and why it stops here
 
-`BR-09` has **two** worker authority gaps. This slice closes one.
+`BR-09` has **two** worker authority gaps. This slice closes one — the INSERT.
 
-`app_worker` cannot read `shared.message_templates` or `shared.template_versions`
-— both `false`. The notification service resolves a template, validates its
-usability and renders the body **before** enqueueing, and `body_sha256` is
-`NOT NULL`. So the worker cannot produce this function's arguments, and `BR-09`'s
-preserved consumer — which calls `resolveTemplates(db, tenantId)` against
-`shared.message_templates` — would fail there for the same reason its INSERT did.
+The second is that `app_worker` cannot read `shared.message_templates` or
+`shared.template_versions`, and must not: `message-dispatch-repository.ts:17`
+already records that the worker gets "nothing at all" on `template_versions`, and
+`message-dispatcher.ts:13` records that `outbound_messages` stores no body, so
+rendering happens at enqueue and the rendered content is "never persisted, never
+logged". `body_sha256` is `NOT NULL` and is the integrity binding between the two.
 
-Closing that is a **decision**, not an implementation:
-
-| option                             | cost                                                                                                                     |
-| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| grant the worker template reads    | needs an RLS policy, and with no tenant context it must be `USING true` — a cross-tenant read of tenant-authored content |
-| publisher resolves at publish time | adds no privilege anywhere, but changes what `job.assigned` carries — a published contract                               |
-
-The second matches the standing payload-carries-the-facts decision and costs no
-privilege. It is left open here rather than chosen, because a published event
-schema is not an implementation detail, and because `BR-09`'s contract already
-declares "no migration, no policy, no grant" while needing all three — which is
-how it came to be blocked in the first place.
+So the worker cannot produce an enqueue's arguments from its own reads **by
+design**, not by oversight — and `BR-09`'s preserved consumer, which calls
+`resolveTemplates(db, tenantId)`, would fail there for the same reason its INSERT
+did. The Owner has since decided that gap's resolution — payload-carries-the-facts
+— and it is a **published event-schema change**, not an implementation detail of
+this migration. It is executed as its own slice against `job.assigned`
+schemaVersion 2, and `BR-09` resumes only once that contract is merged.
