@@ -248,8 +248,32 @@ export class MessageDispatchRepository {
    * produces no second message even before `shared.processed_events` is consulted,
    * so the two idempotency mechanisms agree instead of competing.
    *
-   * Returns `null` when the key was already present — the caller reports that as
-   * a deduplicated enqueue, never as a new message.
+   * Returns the inserted row, or `null` when the key was already present — the
+   * caller then reads the existing id and reports a DEDUPLICATED enqueue.
+   *
+   * ## `template_version_id` is NOT written, and cannot be
+   *
+   * `shared.outbound_messages` carries a BEFORE INSERT trigger,
+   * `shared.guard_outbound_message_scope()`, which is SECURITY INVOKER and — when
+   * `NEW.template_version_id IS NOT NULL` — runs
+   * `SELECT tenant_id, status FROM shared.template_versions ... FOR SHARE`.
+   * `app_worker` holds no privilege on that table, so naming the column makes the
+   * INSERT fail with `permission denied for table template_versions` before any
+   * policy is consulted. Measured, not inferred: the probe is pinned by
+   * `tests/backend/notification-enqueue-authority.test.ts`.
+   *
+   * Granting the worker even a column-level SELECT on `template_versions` is
+   * exactly what the payload-carries-the-facts decision forbids, and making the
+   * guard SECURITY DEFINER is prohibited outright. So the column stays NULL on
+   * worker-enqueued rows and the template reference survives on the EVENT
+   * instead, where it is durable and auditable.
+   *
+   * **The consequence is stated rather than hidden:** a worker-enqueued
+   * `outbound_messages` row does not name the template version it was rendered
+   * from. `body_sha256` remains the integrity binding, which is what the
+   * dispatcher actually verifies, and the dispatcher could not read a template
+   * anyway. Whether to relax the guard for this role is an OWNER decision and is
+   * not taken here.
    */
   async enqueuePrepared(
     db: WorkerDb,
@@ -258,7 +282,6 @@ export class MessageDispatchRepository {
       readonly tenantId: string;
       readonly companyId: string | null;
       readonly branchId: string | null;
-      readonly templateVersionId: string;
       readonly channel: string;
       readonly purpose: string;
       readonly recipientUserId: string;
@@ -270,9 +293,9 @@ export class MessageDispatchRepository {
   ): Promise<{ id: string } | null> {
     const result = await db.query<{ id: string }>(
       `INSERT INTO shared.outbound_messages
-         (id, tenant_id, company_id, branch_id, template_version_id, channel, purpose,
+         (id, tenant_id, company_id, branch_id, channel, purpose,
           recipient_user_id, body_sha256, dedupe_key, consent_ref, created_by)
-       VALUES ($1, $2, $3::uuid, $4::uuid, $5, $6, $7, $8::uuid, $9, $10, $11, $12)
+       VALUES ($1, $2, $3::uuid, $4::uuid, $5, $6, $7::uuid, $8, $9, $10, $11)
        ON CONFLICT (tenant_id, dedupe_key) DO NOTHING
        RETURNING id`,
       [
@@ -280,7 +303,6 @@ export class MessageDispatchRepository {
         input.tenantId,
         input.companyId,
         input.branchId,
-        input.templateVersionId,
         input.channel,
         input.purpose,
         input.recipientUserId,

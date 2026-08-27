@@ -294,7 +294,7 @@ export class TemplateRepository extends Repository {
   async findActiveVersionByCode(
     db: DbHandle,
     templateCode: string,
-    channels: readonly string[]
+    channel: string
   ): Promise<TemplateVersionRow | null> {
     const context = this.assertContext(db);
     return this.runOne<TemplateVersionRow>(
@@ -310,12 +310,12 @@ export class TemplateRepository extends Repository {
          FROM shared.message_templates t
          JOIN shared.template_versions v ON v.id = t.active_version_id
         WHERE t.template_code = $1
-          AND t.channel = ANY($2::text[])
+          AND t.channel = $2
           AND t.deleted_at IS NULL
           AND (t.scope = 'platform' OR t.tenant_id = $3)
-        ORDER BY array_position($2::text[], t.channel), (t.scope = 'tenant') DESC
+        ORDER BY (t.scope = 'tenant') DESC, t.locale_code, t.id
         LIMIT 1`,
-      [templateCode, [...channels], context.principal.tenantId]
+      [templateCode, channel, context.principal.tenantId]
     );
   }
 

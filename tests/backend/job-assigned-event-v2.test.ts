@@ -115,6 +115,7 @@ async function seedTemplate(input: {
   readonly tenantId: string;
   readonly approver: string;
   readonly channel: 'in_app' | 'email';
+  readonly body?: string;
 }): Promise<void> {
   await admin.query(
     `INSERT INTO shared.message_templates
@@ -128,7 +129,7 @@ async function seedTemplate(input: {
        (id, tenant_id, template_id, version_number, subject, body, content_hash, created_by)
      VALUES ($1, $2, $3, 1, $4, $5, decode(repeat('ab', 32), 'hex'), $6)
      ON CONFLICT (id) DO NOTHING`,
-    [input.versionId, input.tenantId, input.templateId, SUBJECT, BODY, input.approver]
+    [input.versionId, input.tenantId, input.templateId, SUBJECT, input.body ?? BODY, input.approver]
   );
   await admin.query(
     `UPDATE shared.template_versions SET status = 'approved', approved_by = $2
@@ -367,14 +368,67 @@ describe('with an approved, active template', () => {
     const firstFacts = (await eventFor(job.id, first.id)).payload.notification;
     const secondFacts = (await eventFor(job.id, opened.id)).payload.notification;
 
+    // The premise FIRST, computed rather than assumed: without two distinct users
+    // the two assertions below would pass for the wrong reason.
+    expect(byProfile.get(TECH_A1)).not.toBe(byProfile.get(TECH_A1_ALT));
     expect(firstFacts?.recipientUserId).toBe(byProfile.get(TECH_A1));
     expect(secondFacts?.recipientUserId).toBe(byProfile.get(TECH_A1_ALT));
-    // The premise, computed rather than assumed: without two distinct users the
-    // assertion above would pass for the wrong reason.
-    expect(byProfile.get(TECH_A1)).not.toBe(byProfile.get(TECH_A1_ALT));
     // Keyed per ASSIGNMENT, so the handover does not collide with the first.
     expect(secondFacts?.dedupeKey).toBe(`job-assigned:${opened.id}`);
     expect(firstFacts?.dedupeKey).not.toBe(secondFacts?.dedupeKey);
+  });
+});
+
+describe('a template this publisher cannot render must not fail the assignment', () => {
+  it('publishes v2 without a notification block when the body uses an unsupplied placeholder', async () => {
+    await dropTemplates();
+    // AUTHORED THROUGH THE SAME SHAPE A TENANT WOULD USE. `renderTemplate` is
+    // strict in both directions and nothing binds a variable contract to a
+    // template code, so a tenant may author a body naming a variable this
+    // publisher never supplies. Before this was caught, that threw ERR-VAL-001
+    // out of prepareNotification, POST /assignments answered 422, and the
+    // assignment row rolled back -- a tenant could switch off technician
+    // assignment by editing a notification template.
+    await seedTemplate({
+      templateId: TEMPLATE_A,
+      versionId: TPLVER_A,
+      tenantId: TENANT_A,
+      approver: USER_A,
+      channel: 'in_app',
+      body: 'Hello {{technicianName}}, you have work.',
+    });
+
+    const job = await seedJob();
+    // The assertion is that this does NOT throw: `assign` rejects on any non-201.
+    const assignment = await assign(job.id, TECH_A1);
+
+    const event = await eventFor(job.id, assignment.id);
+    expect(event.schema_version).toBe(2);
+    expect(event.payload.notification).toBeUndefined();
+
+    // And the assignment really is durable -- not rolled back.
+    const row = await admin.query<{ n: string }>(
+      `SELECT count(*)::text AS n FROM wo.job_assignments WHERE id = $1`,
+      [assignment.id]
+    );
+    expect(row.rows[0]?.n).toBe('1');
+  });
+
+  it('also declines a body that uses NO placeholder at all', async () => {
+    await dropTemplates();
+    await seedTemplate({
+      templateId: TEMPLATE_A,
+      versionId: TPLVER_A,
+      tenantId: TENANT_A,
+      approver: USER_A,
+      channel: 'in_app',
+      // `unknown_variable`: the publisher supplies two the template never uses.
+      body: 'You have a new job.',
+    });
+
+    const job = await seedJob();
+    const assignment = await assign(job.id, TECH_A1);
+    expect((await eventFor(job.id, assignment.id)).payload.notification).toBeUndefined();
   });
 });
 

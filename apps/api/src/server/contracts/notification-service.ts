@@ -88,6 +88,19 @@ export interface PreparedNotification {
   readonly consentRef: string | null;
 }
 
+/**
+ * What a publisher knows: WHAT to say and WHO to say it to.
+ *
+ * There is no `locale` member, deliberately. `shared.outbound_messages` has no
+ * locale column — the locale is a property of the TEMPLATE VERSION, so the
+ * resolved `templateVersionId` already carries it exactly. A caller choosing one
+ * would have to know the tenant's `org.tenants.default_locale`, which belongs to
+ * the `iam` module, so every caller outside `iam` would need a new cross-module
+ * port to name a value the resolved row already determines. When a tenant has
+ * authored several locales for one `(template_code, channel)` the choice is made
+ * deterministically by the repository's ORDER BY rather than by this input, and
+ * that is a known limitation rather than a selection feature.
+ */
 export interface PrepareNotificationInput {
   /** Stable identifier of the content. `purpose` classifies, it cannot identify. */
   readonly templateCode: string;
@@ -99,16 +112,6 @@ export interface PrepareNotificationInput {
    * list keeps the choice data-driven rather than hard-coded at the call site.
    */
   readonly channels: readonly NotificationChannel[];
-  /**
-   * No `locale` — deliberately, and this is not an omission.
-   *
-   * `shared.outbound_messages` has no locale column: the locale is a property of
-   * the TEMPLATE VERSION, so `templateVersionId` already carries it exactly. A
-   * caller choosing a locale here would have to know the tenant's
-   * `org.tenants.default_locale`, which belongs to the `iam` module — so every
-   * caller outside `iam` would need a new cross-module port to name a value that
-   * the resolved row already determines. The tenant's authored content decides.
-   */
   readonly recipientUserId: string;
   readonly variables: Record<string, string>;
   readonly dedupeKey: string;
@@ -141,11 +144,21 @@ export interface NotificationService {
    * rendered content is "never persisted, never logged", and an event payload is
    * persistence.
    *
-   * Returns `null` when no usable template exists for any offered channel. That
-   * is a DATA STATE, not a failure: no message template ships with this platform
-   * (zero seeds, zero migration inserts) and `assertTemplateUsable` requires an
-   * approved version of an active template, so a fresh tenant has none. A caller
-   * must not fail its own operation because a tenant has not authored content.
+   * Returns `null` when no offered channel yields a usable, RENDERABLE template.
+   * Every one of those is a DATA STATE rather than a failure, and a caller must
+   * not fail its own operation because of any of them:
+   *
+   *  - no template authored at all — the state of every tenant today, since no
+   *    message template ships (zero seeds, zero migration inserts);
+   *  - the template is disabled, or its version is not approved;
+   *  - the authored body cannot be rendered from the variables this caller
+   *    supplies. Template bodies are TENANT-AUTHORED and nothing binds a variable
+   *    contract to a template code, so a tenant can author a body no publisher
+   *    can render. That must never become the publisher's failure.
+   *
+   * `queueMessage` still THROWS on a render failure, and must: a caller there
+   * asked to send one specific message and is entitled to be told it could not be
+   * rendered. A publisher only asked whether a message was due.
    *
    * `consentRef` is carried as a durable POINTER to a consent record. It is not a
    * freshness guarantee: `assertConsent` refuses an evaluation older than five
@@ -166,8 +179,16 @@ export interface NotificationService {
    * policy `wkr_outbound_messages_enqueue_scope`, so the only row it can produce
    * is a `pending` one carrying a tenant, an author and a dedupe key.
    *
-   * Returns `null` when the existing `(tenant_id, dedupe_key)` conflict target
-   * already held a row — the platform's idempotency, reused rather than reinvented.
+   * A replay is DEDUPLICATED, not null: when the existing `(tenant_id,
+   * dedupe_key)` conflict target already holds a row the implementation reads
+   * that row's id back and returns `{ messageId, deduplicated: true }`. `null`
+   * means neither an insert nor a lookup produced a row — the conflict fired and
+   * the existing row then could not be read — which is a fault, not a replay.
+   * The conflict target is the platform's own, reused rather than reinvented.
+   *
+   * `templateVersionId` is accepted and deliberately NOT persisted: the table's
+   * BEFORE INSERT guard reads `shared.template_versions` as the invoker, and the
+   * worker holds nothing there. See `message-dispatch-repository.ts`.
    *
    * Takes a `WorkerDb`, NOT a `DbHandle`. That is the type system stating the
    * boundary: a `DbHandle` carries a `RequestContext`, and the worker has none —

@@ -53,6 +53,7 @@ import {
   assertSupportedChannel,
   bodyDigest,
   isSupportedChannel,
+  MESSAGE_PURPOSES,
   NotificationPolicyError,
   recipientDigest,
   assertTemplateUsable,
@@ -119,69 +120,105 @@ export class SharedNotificationService extends ApplicationService implements Not
     const supported = input.channels.filter((c) => isSupportedChannel(c));
     if (supported.length === 0) return null;
 
-    const version = await this.templates.findActiveVersionByCode(
-      db,
-      input.templateCode,
-      supported as readonly string[]
-    );
-    // NOT an error. No message template ships with this platform, so an unseeded
-    // tenant reaches here on the ordinary path; a caller must not fail its own
-    // operation because content was never authored.
-    if (version === null) return null;
-
-    const channel = assertSupportedChannel(version.template_channel as never);
-    try {
-      assertTemplateUsable(
-        {
-          versionId: version.id,
-          versionStatus: version.status,
-          templateStatus: version.template_status,
-          templateTenantId: version.template_tenant_id,
-          channel: version.template_channel,
-          localeCode: version.template_locale,
-          purpose: version.template_purpose,
-        },
-        // `locale` is the row's own, so that comparison is a tautology here and is
-        // not evidence of anything — said plainly rather than left to look like a
-        // check. What actually constrains the choice is the query: the channel is
-        // one the caller offered, the template code is exact, and the row is the
-        // tenant's own or the platform default it shadows. The status, tenant and
-        // channel comparisons below are the load-bearing ones.
-        { channel, locale: version.template_locale, tenantId: context.principal.tenantId }
+    // Each channel is tried IN TURN, and this is not a refinement — it is what
+    // makes "no usable template for any offered channel" true. Resolving once
+    // with a channel list and judging the single row afterwards would stop at the
+    // first row found: a tenant holding a DISABLED `in_app` template and a
+    // perfectly good `email` one would be told it had nothing, because the
+    // in_app row won the ORDER BY and then failed the usability check.
+    for (const candidate of supported) {
+      const version = await this.templates.findActiveVersionByCode(
+        db,
+        input.templateCode,
+        candidate
       );
-    } catch {
-      // A disabled template or an unapproved version is a DATA STATE too. The
-      // request path throws here because a caller asked to send this exact
-      // message; a publisher only asked whether one was due.
-      return null;
+      if (version === null) continue;
+
+      const channel = assertSupportedChannel(version.template_channel as never);
+      try {
+        assertTemplateUsable(
+          {
+            versionId: version.id,
+            versionStatus: version.status,
+            templateStatus: version.template_status,
+            templateTenantId: version.template_tenant_id,
+            channel: version.template_channel,
+            localeCode: version.template_locale,
+            purpose: version.template_purpose,
+          },
+          // Every field of `request` here is the ROW'S OWN, so all three
+          // comparisons inside `assertTemplateUsable` — channel, locale and
+          // tenant — are tautologies on this path and none of them is evidence
+          // of anything. Said plainly rather than left looking like a check.
+          // What actually constrains the choice is the query: an exact template
+          // code, a channel the caller offered, and a row that is the tenant's
+          // own or the platform default it shadows. The load-bearing assertions
+          // are the two STATUS checks — version `approved` and template
+          // `active` — which the query does not make.
+          { channel, locale: version.template_locale, tenantId: context.principal.tenantId }
+        );
+      } catch {
+        // A disabled template or an unapproved version is a DATA state. Try the
+        // next channel rather than concluding the tenant has nothing.
+        continue;
+      }
+
+      let rendered: RenderedMessage;
+      try {
+        rendered = renderTemplate({ subject: version.subject, body: version.body }, input.variables, {
+          channel,
+          maxRenderedChars: config.NOTIFICATION_MAX_RENDERED_CHARS,
+        });
+      } catch (error) {
+        metrics().increment(METRICS.templateRenderFailureCount, {
+          channel,
+          rule: error instanceof TemplateRenderError ? error.rule : 'unknown',
+        });
+        // A RENDER FAILURE IS A DATA STATE ON THIS PATH, AND MUST NOT THROW.
+        //
+        // `renderTemplate` is strict in both directions: a placeholder with no
+        // supplied value raises `missing_variable`, and a supplied variable the
+        // template does not use raises `unknown_variable`. Template bodies are
+        // TENANT-AUTHORED through shipped operations, and nothing binds a
+        // variable contract to a template code — so a tenant that writes
+        // "You have a new job." (no placeholders) authors a body this publisher
+        // can never render.
+        //
+        // Rethrowing turned that into an `ERR-VAL-001`/422 out of
+        // `POST /jobs/{jobId}/assignments`, rolling back an assignment that had
+        // already been written. A tenant could disable technician assignment by
+        // editing a notification template. That is what this catch prevents.
+        //
+        // `queueMessage` still throws for the same failure, and must: a caller
+        // there asked to send THIS message and is entitled to be told it could
+        // not be rendered. A publisher only asked whether one was due.
+        if (error instanceof TemplateRenderError) {
+          log.warn('notification template could not be rendered; nothing will be enqueued', {
+            module: 'shared-services',
+            context: { templateCode: input.templateCode, channel, rule: error.rule },
+          });
+          continue;
+        }
+        throw this.translateRender(error);
+      }
+
+      return {
+        templateVersionId: version.id,
+        channel,
+        purpose: version.template_purpose,
+        recipientUserId: recipientRef,
+        // Hex, not a Buffer: this crosses into a `jsonb` payload, and a Buffer
+        // would come back as an object. The digest is computed from the rendered
+        // content, and the content is discarded with this scope.
+        bodySha256: bodyDigest(canonicalRenderedForm(rendered)).toString('hex'),
+        dedupeKey,
+        consentRef: input.consentEvaluation.consentRecordId,
+      };
     }
 
-    let rendered: RenderedMessage;
-    try {
-      rendered = renderTemplate({ subject: version.subject, body: version.body }, input.variables, {
-        channel,
-        maxRenderedChars: config.NOTIFICATION_MAX_RENDERED_CHARS,
-      });
-    } catch (error) {
-      metrics().increment(METRICS.templateRenderFailureCount, {
-        channel,
-        rule: error instanceof TemplateRenderError ? error.rule : 'unknown',
-      });
-      throw this.translateRender(error);
-    }
-
-    return {
-      templateVersionId: version.id,
-      channel,
-      purpose: version.template_purpose,
-      recipientUserId: recipientRef,
-      // Hex, not a Buffer: this crosses into a `jsonb` payload, and a Buffer would
-      // come back as an object. The digest is computed from the rendered content
-      // and the content is discarded with this scope.
-      bodySha256: bodyDigest(canonicalRenderedForm(rendered)).toString('hex'),
-      dedupeKey,
-      consentRef: input.consentEvaluation.consentRecordId,
-    };
+    // Every offered channel was tried and none yielded a usable, renderable
+    // template. The ordinary case, since no template ships at all.
+    return null;
   }
 
   /**
@@ -194,23 +231,44 @@ export class SharedNotificationService extends ApplicationService implements Not
     db: WorkerDb,
     input: EnqueuePreparedInput
   ): Promise<QueuedMessage | null> {
+    // VALIDATED, because these values were lifted out of a `jsonb` event payload
+    // and this method holds no RequestContext to fall back on. `Buffer.from(x,
+    // 'hex')` silently truncates a malformed string to a shorter or empty buffer
+    // rather than refusing it, so an unchecked digest would be written as a
+    // shorter `bytea` and the dispatcher's integrity comparison would fail much
+    // later, against a row that looks well-formed.
+    const channel = assertSupportedChannel(input.channel);
+    const dedupeKey = assertDedupeKey(input.dedupeKey);
+    const recipientUserId = assertRecipientReference(input.recipientUserId);
+    if (!/^[0-9a-f]{64}$/i.test(input.bodySha256)) {
+      throw new AppFailure('ERR-VAL-001', {
+        message: 'bodySha256 must be 64 hex characters',
+        safeDetails: { violations: [{ path: 'bodySha256', rule: 'digest_format' }] },
+      });
+    }
+    if (!MESSAGE_PURPOSES.includes(input.purpose as (typeof MESSAGE_PURPOSES)[number])) {
+      throw new AppFailure('ERR-VAL-001', {
+        message: 'purpose is outside the accepted vocabulary',
+        safeDetails: { violations: [{ path: 'purpose', rule: 'unknown_purpose' }] },
+      });
+    }
+
     const inserted = await this.dispatch.enqueuePrepared(db, {
       id: crypto.randomUUID(),
       tenantId: input.tenantId,
       companyId: input.companyId,
       branchId: input.branchId,
-      templateVersionId: input.templateVersionId,
-      channel: input.channel,
+      channel,
       purpose: input.purpose,
-      recipientUserId: input.recipientUserId,
+      recipientUserId,
       bodySha256: Buffer.from(input.bodySha256, 'hex'),
-      dedupeKey: input.dedupeKey,
+      dedupeKey,
       consentRef: input.consentRef,
       createdBy: input.createdBy,
     });
     if (inserted) return { messageId: inserted.id, deduplicated: false };
 
-    const existing = await this.dispatch.findIdByDedupeKey(db, input.tenantId, input.dedupeKey);
+    const existing = await this.dispatch.findIdByDedupeKey(db, input.tenantId, dedupeKey);
     return existing === null ? null : { messageId: existing, deduplicated: true };
   }
 

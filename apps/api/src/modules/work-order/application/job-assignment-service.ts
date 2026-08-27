@@ -503,14 +503,23 @@ export class JobAssignmentService extends ApplicationService {
    * answered HERE, by the only party that can, and the worker forwards a verified
    * fact instead of asserting an unverified one.
    *
-   * ## Nothing here may fail an assignment
+   * ## Nothing here may fail an assignment, and that is enforced rather than hoped
    *
    * A technician was assigned; that is the operation, and it has already
-   * succeeded by the time this runs. No message template ships with this platform
-   * (zero seeds, zero migration inserts), so on a tenant that has authored none —
-   * which is every tenant today — `prepareNotification` returns `null` and the
-   * event is published WITHOUT the notification block. That is the ordinary path,
-   * not a degraded one, and the consumer treats it as a legitimate no-op.
+   * succeeded by the time this runs. `prepareNotification` therefore returns
+   * `null` — and the event is published WITHOUT the notification block — for
+   * every data state it can meet: no template authored (the state of every tenant
+   * today, since none ships), a disabled template, an unapproved version, and a
+   * tenant-authored body this publisher cannot render.
+   *
+   * That last one is not hypothetical and is why the guarantee is written down.
+   * `renderTemplate` is strict in both directions, template bodies are authored
+   * through shipped tenant operations, and nothing binds a variable contract to a
+   * template code — so before it was caught, a tenant that authored
+   * `job_assigned_notification` as "You have a new job." (no placeholders) made
+   * this method throw `ERR-VAL-001`, and `POST /jobs/{jobId}/assignments` answered
+   * 422 and rolled the assignment row back. A tenant could switch off technician
+   * assignment by editing a notification template.
    */
   private async publishAssigned(
     db: DbHandle,
@@ -551,8 +560,9 @@ export class JobAssignmentService extends ApplicationService {
    * The notification facts for one assignment, or `null` when none is due.
    *
    * Returns `null` rather than throwing on every DATA state — no technician
-   * profile, no authored template — because an assignment that succeeded must not
-   * be undone by the absence of optional content.
+   * profile here, and no usable or renderable template inside
+   * `prepareNotification` — because an assignment that succeeded must not be
+   * undone by the absence, or the misconfiguration, of optional content.
    */
   private async resolveAssignmentNotification(
     db: DbHandle,
@@ -561,7 +571,7 @@ export class JobAssignmentService extends ApplicationService {
   ): Promise<PreparedNotification | null> {
     // Through the technician module's public surface, never by reading `tech.`
     // from a work-order repository: the module-boundary gate refuses that, and
-    // this is the same call `available()` already makes in this file.
+    // this is the same call `queue()` already makes in this file.
     const profile = await technicianModule().eligibility.profile(db, opened.technicianProfileId);
     if (profile === null) return null;
 
@@ -591,7 +601,6 @@ export class JobAssignmentService extends ApplicationService {
   }
 }
 
-/** Re-exported so a route can validate the role without importing the domain file. */
 /**
  * The content this notification is sent from.
  *
@@ -603,4 +612,5 @@ export class JobAssignmentService extends ApplicationService {
  */
 export const ASSIGNMENT_TEMPLATE_CODE = 'job_assigned_notification';
 
+/** Re-exported so a route can validate the role without importing the domain file. */
 export { ASSIGNMENT_ROLES };

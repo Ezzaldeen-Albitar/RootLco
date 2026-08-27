@@ -99,6 +99,38 @@ describe('the worker may enqueue, and only a pending message', () => {
     ).rejects.toThrow(/permission denied for table outbound_messages/);
   });
 
+  it('cannot name a template_version_id, because the BEFORE INSERT guard reads a table it may not', async () => {
+    /*
+     * THE CONSTRAINT THAT SHAPES THE WHOLE WORKER ENQUEUE PATH, pinned here so it
+     * is never rediscovered.
+     *
+     * `shared.outbound_messages` carries `tg_outbound_messages_guard_scope` ->
+     * `shared.guard_outbound_message_scope()`, which is SECURITY INVOKER. When
+     * `NEW.template_version_id IS NOT NULL` it runs
+     * `SELECT tenant_id, status FROM shared.template_versions ... FOR SHARE`, and
+     * `app_worker` holds no privilege on that table at all.
+     *
+     * So the grant and the RESTRICTIVE policy are not sufficient by themselves:
+     * a worker-enqueued row must leave `template_version_id` NULL. The earlier
+     * version of this suite missed it because its column list simply never named
+     * the column, which is exactly the kind of blind spot a passing test can hide.
+     *
+     * Granting the worker a SELECT here — even column-level — is what the
+     * payload-carries-the-facts decision forbids, and a SECURITY DEFINER guard is
+     * prohibited outright, so the refusal below is the design and not a defect.
+     */
+    await expect(
+      worker.query(
+        `INSERT INTO shared.outbound_messages
+           (tenant_id, channel, purpose, dedupe_key, body_sha256, recipient_user_id,
+            created_by, template_version_id)
+         VALUES ($1, 'in_app', 'transactional', $2, sha256('b'::bytea), $3, $4,
+                 '00000000-0000-4000-8000-00000000ffff')`,
+        args(`tvid:${Date.now()}`)
+      )
+    ).rejects.toThrow(/permission denied for table template_versions/);
+  });
+
   it('honours the existing (tenant_id, dedupe_key) conflict rather than a new mechanism', async () => {
     const key = `dedupe:${Date.now()}`;
     await worker.query(

@@ -99,12 +99,27 @@ canonical rendered form, and **discards the rendered content**. Nothing rendered
 reaches the payload, because an outbox payload is persistence and the platform's
 rule is that rendered content is never persisted.
 
-**It cannot fail an assignment.** The technician was assigned; that operation has
-already succeeded when this runs. `prepareNotification` returns `null` — and the
-event is published without the `notification` block — when there is no technician
-profile, or no active template with an approved version. **No message template
-ships with this platform** (zero seed references, zero migration inserts), so on
-every tenant today that is the ORDINARY path, not a degraded one.
+**It cannot fail an assignment — now enforced, and it was not at first.**
+
+The technician was assigned; that operation has already succeeded when this runs.
+`prepareNotification` returns `null` — and the event is published without the
+`notification` block — for every data state: a disabled template, an unapproved
+version, no template at all (the state of every tenant today, since none ships),
+and a tenant-authored body this publisher cannot render. The missing technician
+profile is handled one level up, in `resolveAssignmentNotification`, which returns
+before `prepareNotification` is ever called.
+
+**The render case was a real defect, found by adversarial review of this slice and
+fixed here.** `renderTemplate` is strict in BOTH directions — `missing_variable`
+for a placeholder with no value, `unknown_variable` for a supplied variable the
+body does not use — template bodies are authored through shipped tenant
+operations, and nothing binds a variable contract to a template code. So a tenant
+that authored `job_assigned_notification` as _"You have a new job."_ made
+`prepareNotification` throw `ERR-VAL-001`; `POST /jobs/{jobId}/assignments`
+answered 422 and rolled the assignment row back. **A tenant could switch off
+technician assignment by editing a notification template.** A render failure is
+now caught, logged, and treated as the data state it is; `queueMessage` still
+throws, because a caller there asked to send one specific message.
 
 The block is **absent**, not null-filled, so a consumer can tell "nothing to send"
 from "something to send whose fields happen to be empty".
@@ -142,7 +157,39 @@ Two things are stated rather than implied:
    CUSTOMERS. An internal staff recipient has no consent record to consult.
    Recording null says none was consulted; inventing an id would say one was.
 
-## 7. Proofs — eight, behavioural
+## 6a. The worker cannot write `template_version_id`, and that is not a defect
+
+`shared.outbound_messages` carries a BEFORE INSERT trigger,
+`shared.guard_outbound_message_scope()`, which is **SECURITY INVOKER** and — when
+`NEW.template_version_id IS NOT NULL` — runs
+`SELECT tenant_id, status FROM shared.template_versions … FOR SHARE`.
+`app_worker` holds nothing on that table. Measured on the live database:
+
+```
+INSERT naming template_version_id  -> permission denied for table template_versions
+has_table_privilege('app_worker','shared.template_versions','SELECT') -> false
+```
+
+So the column GRANT and the RESTRICTIVE policy that shipped with the enqueue
+authority are **not sufficient by themselves**: a worker-enqueued row must leave
+`template_version_id` NULL, and `enqueuePrepared` does not write it.
+
+That slice's own suite missed this because its INSERT column list never named the
+column — a passing test hiding a blind spot — which is why the refusal is now
+asserted explicitly in `notification-enqueue-authority.test.ts`.
+
+Both ways out are closed by standing decisions: granting `app_worker` any SELECT
+on `shared.template_versions` — even column-level on `(id, tenant_id, status)` —
+is what payload-carries-the-facts forbids, and a `SECURITY DEFINER` guard is
+prohibited outright by two CI gates.
+
+**The consequence is stated rather than hidden:** a worker-enqueued row does not
+name the template version it was rendered from. `body_sha256` remains the
+integrity binding the dispatcher actually verifies, the dispatcher could not read
+a template anyway, and the version id survives durably on the EVENT. Whether to
+relax the guard for this one role is an **Owner decision** and is not taken here.
+
+## 7. Proofs — eleven, behavioural
 
 | proof                                                              | result |
 | ------------------------------------------------------------------ | ------ |
@@ -153,6 +200,9 @@ Two things are stated rather than implied:
 | no rendered content and no `@` anywhere in the payload             | ✅     |
 | reassignment re-resolves to the NEW technician's user              | ✅     |
 | a v1-only consumer is refused BEFORE its handler runs              | ✅     |
+| an unrenderable body (`missing_variable`) → assignment still 201   | ✅     |
+| a body with no placeholders (`unknown_variable`) → same            | ✅     |
+| the assignment row is durable, not rolled back                     | ✅     |
 | cross-tenant: tenant B gets B's version and B's user, never A's    | ✅     |
 
 The digest proof assembles `subject + NUL + renderedBody` **by hand** with
@@ -163,8 +213,8 @@ would keep passing if all three changed together.
 The cross-tenant proof seeds the SAME template code in both tenants, so a leak in
 resolution has something to leak, and checks the recipient's tenant against
 `iam.user_accounts` rather than inferring it from the profile the test asked for.
-The reassignment proof asserts the two technicians have DIFFERENT users before
-relying on that difference.
+The reassignment proof asserts the two technicians have DIFFERENT users first, and
+only then relies on that difference.
 
 ## 8. What this does not do
 
