@@ -59,6 +59,11 @@ beforeAll(async () => {
 }, 120_000);
 
 afterAll(async () => {
+  // Cleaned AFTER, not only before. `no-fake-data` asserts every business table
+  // is empty once fixtures are torn down, and it runs in a later tier against
+  // the same shared database — so a suite that seeds and does not clean up fails
+  // a file it never mentions.
+  if (admin) await cleanBackendFixtures(admin);
   await Promise.all([worker?.end(), runtime?.end(), admin?.end()]);
 });
 

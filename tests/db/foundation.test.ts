@@ -1870,6 +1870,7 @@ describe('database foundation', () => {
       'wkr_error_records_all',
       'wkr_event_outbox_all',
       'wkr_outbound_messages_dispatch',
+      'wkr_outbound_messages_enqueue_scope',
       'wkr_processed_events_all',
       'wkr_search_metadata_all',
     ]);

@@ -379,14 +379,32 @@ describe('producing an event is not the same power as draining the queue', () =>
     // The worker's queue policy is deliberately all-tenant, which is exactly why
     // it must never serve a request. It also holds no business-table access, so
     // a request executed as the worker could not read its own tenant's data.
-    const workerPolicies = await admin.query(
-      `SELECT policyname, qual FROM pg_policies
+    const workerPolicies = await admin.query<{
+      policyname: string;
+      qual: string | null;
+      permissive: string;
+    }>(
+      `SELECT policyname, qual, permissive FROM pg_policies
         WHERE 'app_worker' = ANY(roles) AND schemaname = 'shared' ORDER BY 1`
     );
     expect(workerPolicies.rows.length).toBeGreaterThanOrEqual(3);
-    for (const row of workerPolicies.rows) {
+
+    // PERMISSIVE policies are what GRANT the worker its reach, and every one of
+    // them must be the all-tenant dispatch surface — that is the property this
+    // case exists for.
+    const permissive = workerPolicies.rows.filter((r) => r.permissive === 'PERMISSIVE');
+    expect(permissive.length).toBeGreaterThanOrEqual(3);
+    for (const row of permissive) {
       expect(row.qual, `${row.policyname} is the all-tenant dispatch surface`).toBe('true');
     }
+
+    // RESTRICTIVE policies can only ever NARROW that reach — they AND with the
+    // permissive ones and can grant nothing. Holding them to `qual = 'true'`
+    // would be asserting the opposite of what they are for, and an INSERT policy
+    // has no USING clause to hold at all. They are listed rather than ignored,
+    // so a new one still has to be looked at by whoever changes this file.
+    const restrictive = workerPolicies.rows.filter((r) => r.permissive === 'RESTRICTIVE');
+    expect(restrictive.map((r) => r.policyname)).toEqual(['wkr_outbound_messages_enqueue_scope']);
 
     await expectSqlState(worker.query('SELECT count(*) FROM crm.business_partners'), '42501');
     await expectSqlState(
