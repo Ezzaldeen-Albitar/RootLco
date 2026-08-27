@@ -112,9 +112,28 @@ RUN npm run build
 # -----------------------------------------------------------------------------
 FROM node:${NODE_VERSION} AS runner
 WORKDIR /app
-# Same recorded reason as the first `apk add` in this file.
+# Take the OS patch level the base image has not been rebuilt onto yet.
+#
+# `node:22-alpine` is a floating tag, but upstream rebuilds it on its own
+# schedule, so the image lags Alpine's package repository whenever a patch lands
+# in between. On 2026-08-27 that gap was CVE-2026-14456 (HIGH) in
+# `libcrypto3`/`libssl3` 3.5.7-r0, fixed in 3.5.8-r0 and already published — the
+# same commit's image scanned clean fifteen hours earlier, so nothing in this
+# repository introduced it and nothing in this repository could have avoided it
+# by waiting.
+#
+# `apk upgrade` rather than `pkg=version`, for the reason the first `apk add` in
+# this file already records: an exact Alpine version disappears from the
+# repository on the next patch, which turns every base-image update into a build
+# failure and pressures whoever hits it into an unreviewed bump. Upgrading takes
+# the patch without asserting a number, and what was ACTUALLY built stays known
+# from the SBOM, the Trivy scan and the recorded image digest.
+#
+# This is the RUNNER stage only. `deps` and `build` do not ship — the final image
+# carries this stage's base plus what is copied into it — so upgrading here is
+# the whole of the shipped surface, not a sample of it.
 # hadolint ignore=DL3018
-RUN apk add --no-cache curl
+RUN apk upgrade --no-cache && apk add --no-cache curl
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV PORT=3000
