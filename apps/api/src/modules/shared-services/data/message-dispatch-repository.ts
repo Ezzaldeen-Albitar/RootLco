@@ -251,29 +251,42 @@ export class MessageDispatchRepository {
    * Returns the inserted row, or `null` when the key was already present — the
    * caller then reads the existing id and reports a DEDUPLICATED enqueue.
    *
-   * ## `template_version_id` is NOT written, and cannot be
+   * ## `template_version_id` is NOT written, and a declarative fix was tried
    *
-   * `shared.outbound_messages` carries a BEFORE INSERT trigger,
-   * `shared.guard_outbound_message_scope()`, which is SECURITY INVOKER and — when
-   * `NEW.template_version_id IS NOT NULL` — runs
-   * `SELECT tenant_id, status FROM shared.template_versions ... FOR SHARE`.
-   * `app_worker` holds no privilege on that table, so naming the column makes the
-   * INSERT fail with `permission denied for table template_versions` before any
-   * policy is consulted. Measured, not inferred: the probe is pinned by
-   * `tests/backend/notification-enqueue-authority.test.ts`.
+   * The BEFORE INSERT guard `shared.guard_outbound_message_scope()` is SECURITY
+   * INVOKER and reads `shared.template_versions` whenever the column is set, so a
+   * role with no SELECT there cannot name a template version. Measured:
+   * `permission denied for table template_versions`.
    *
-   * Granting the worker even a column-level SELECT on `template_versions` is
-   * exactly what the payload-carries-the-facts decision forbids, and making the
-   * guard SECURITY DEFINER is prohibited outright. So the column stays NULL on
-   * worker-enqueued rows and the template reference survives on the EVENT
-   * instead, where it is durable and auditable.
+   * A tenant-qualified composite foreign key — the shape this table's company,
+   * branch and recipient keys already use — was built and measured against the
+   * live database, because referential-integrity checks run with the CONSTRAINT's
+   * rights rather than the caller's and would therefore need no grant. It was
+   * withdrawn, for two reasons that are worth recording so it is not retried
+   * blindly:
    *
-   * **The consequence is stated rather than hidden:** a worker-enqueued
-   * `outbound_messages` row does not name the template version it was rendered
-   * from. `body_sha256` remains the integrity binding, which is what the
-   * dispatcher actually verifies, and the dispatcher could not read a template
-   * anyway. Whether to relax the guard for this role is an OWNER decision and is
-   * not taken here.
+   *  1. It does not remove the read. The guard draws THREE conclusions from one
+   *     lookup, and only two of them — existence and tenancy — are expressible as
+   *     a key. The third is `status = 'approved'`, and `status` is MUTABLE: a
+   *     partial unique index cannot be a foreign-key target, and folding the
+   *     status into the referenced key would make the FK refuse the UPDATE that
+   *     retires any version a message was ever sent from. After the migration was
+   *     applied, all four worker cases still failed with the same permission
+   *     error.
+   *  2. `template_versions.tenant_id` is NULLABLE — that is how a PLATFORM version
+   *     is represented — so the key has to be built on a folded
+   *     `COALESCE(tenant_id, sentinel)`, and the referencing row must then DECLARE
+   *     which owner it means. That makes a new column mandatory on every writer of
+   *     `template_version_id`: applying it failed all 62 cases of
+   *     `tests/db/p1-15-notifications.test.ts` on the pairing CHECK alone.
+   *
+   * So the column stays NULL on worker-enqueued rows. The remaining escapes are
+   * closed by standing decisions — a worker SELECT on the template tables is what
+   * payload-carries-the-facts forbids, and a SECURITY DEFINER guard is prohibited
+   * by two CI gates — which leaves ONE open question for the Owner: whether the
+   * `approved` check may move to the publisher, which already enforces it through
+   * `assertTemplateUsable`. That is a security-posture decision, not an
+   * implementation detail, and it is not taken here.
    */
   async enqueuePrepared(
     db: WorkerDb,
