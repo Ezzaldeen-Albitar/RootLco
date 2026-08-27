@@ -32,7 +32,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const Params = z.object({ appointmentTypeId: schemas.uuid });
-const Body = z.object({ name: z.string().trim().min(1).max(MAX_CATALOGUE_NAME) }).strict();
+export const Body = z.object({ name: z.string().trim().min(1).max(MAX_CATALOGUE_NAME) }).strict();
 
 export const APPOINTMENT_TYPE_UPDATE_OPERATION = defineOperation({
   id: 'apt.catalogue-appointment-type-update',

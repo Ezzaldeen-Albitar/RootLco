@@ -35,7 +35,7 @@ const Params = z.object({ customerId: schemas.uuid });
 const Query = z
   .object({ cursor: schemas.cursor.optional(), limit: schemas.limit.optional() })
   .strict();
-const Body = z
+export const Body = z
   .object({
     segmentCode: z.string().min(2).max(MAX_SEGMENT_CODE),
     /** Display name used only when the segment is being created. */

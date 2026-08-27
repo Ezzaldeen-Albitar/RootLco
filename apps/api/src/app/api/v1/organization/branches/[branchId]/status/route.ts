@@ -23,7 +23,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const Params = z.object({ branchId: schemas.uuid });
-const Body = z
+export const Body = z
   .object({
     to: z.enum(['active', 'inactive']),
     reason: z.string().min(1).max(MAX_TRANSITION_REASON),

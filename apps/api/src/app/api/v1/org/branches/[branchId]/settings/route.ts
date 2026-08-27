@@ -20,7 +20,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const Params = z.object({ branchId: schemas.uuid });
-const SettingBody = z
+export const SettingBody = z
   .object({
     settingKey: z.string().regex(/^[a-z][a-z0-9_.]{1,126}$/),
     settingValue: z.unknown(),

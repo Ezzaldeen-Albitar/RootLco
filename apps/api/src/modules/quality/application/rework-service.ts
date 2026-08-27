@@ -110,6 +110,30 @@ const toAttemptView = (row: ReopenAttemptRow): ReopenAttemptView => ({
   requestedAt: row.requestedAt.toISOString(),
 });
 
+/**
+ * The wire shape of `qms.rework-create` (PRE-P1-29-BR-08b).
+ *
+ * The new work order and the link that ties it to the original travel together
+ * because the id alone would not say what it is rework OF.
+ */
+export interface ReworkCreationResult {
+  readonly reworkWorkOrderId: string;
+  readonly link: ReworkLinkView;
+}
+
+/**
+ * The wire shape of `qms.reopen-attempt` (PRE-P1-29-BR-08b).
+ *
+ * `refusal` is DATA, not an error, and the pairing is why this envelope exists:
+ * the attempt was recorded and the reopen was declined, and a 4xx carrying only
+ * a message would have rolled the ledger row back with it — leaving no trace
+ * that anyone tried.
+ */
+export interface ReopenAttemptResult {
+  readonly attempt: ReopenAttemptView;
+  readonly refusal: string;
+}
+
 export class ReworkService extends ApplicationService {
   protected readonly module = 'quality';
 
@@ -144,7 +168,7 @@ export class ReworkService extends ApplicationService {
     workOrderId: string,
     reason: string,
     authorizeScope?: ScopeAuthorizer
-  ): Promise<{ readonly attempt: ReopenAttemptView; readonly refusal: string }> {
+  ): Promise<ReopenAttemptResult> {
     const workOrder = await workOrderModule().workOrders.requireWorkOrder(
       db,
       workOrderId,
@@ -226,7 +250,7 @@ export class ReworkService extends ApplicationService {
     originalWorkOrderId: string,
     input: CreateReworkInput,
     authorizeScope?: ScopeAuthorizer
-  ): Promise<{ readonly reworkWorkOrderId: string; readonly link: ReworkLinkView }> {
+  ): Promise<ReworkCreationResult> {
     const original = await workOrderModule().workOrders.requireWorkOrder(
       db,
       originalWorkOrderId,

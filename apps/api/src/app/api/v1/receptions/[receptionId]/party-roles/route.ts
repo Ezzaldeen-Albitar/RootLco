@@ -34,7 +34,7 @@ export const dynamic = 'force-dynamic';
 const MAX_ASSIGNMENT_SOURCE = 120;
 
 const Params = z.object({ receptionId: schemas.uuid });
-const Body = z
+export const Body = z
   .object({
     partnerId: schemas.uuid,
     relationshipRole: z.enum(RECEPTION_PARTY_ROLES),

@@ -51,7 +51,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const Params = z.object({ userId: schemas.uuid });
-const RevokeBody = z.object({ reason: z.string().min(1).max(500) }).strict();
+export const RevokeBody = z.object({ reason: z.string().min(1).max(500) }).strict();
 
 export const USER_SESSION_LIST_OPERATION = defineOperation({
   id: 'iam.user-session-list',

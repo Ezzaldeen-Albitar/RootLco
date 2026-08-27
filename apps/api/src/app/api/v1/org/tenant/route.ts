@@ -24,7 +24,7 @@ import { iamModule } from '@/modules/iam';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const PatchBody = z
+export const PatchBody = z
   .object({
     displayName: z.string().min(1).max(200).optional(),
     defaultLocale: z.string().min(2).max(35).optional(),

@@ -40,7 +40,7 @@ export type {
   PageInput,
   ReachableState,
   TransitionInput,
-  TransitionResult,
+  WorkOrderTransitionResult,
   WorkOrderDetail,
   WorkOrderHistoryEntry,
   WorkOrderHistoryView,
@@ -54,9 +54,16 @@ import { AdditionalWorkService } from './application/additional-work-service';
 import { JobBoardService } from './application/job-board-service';
 import { JobBoardRepository } from './data/job-board-repository';
 
-export type { AssignInput, AssignmentView, QueueEntry } from './application/job-assignment-service';
+export type {
+  AssignInput,
+  AssignmentView,
+  JobReassignmentResult,
+  QueueEntry,
+  TechnicianQueueResult,
+} from './application/job-assignment-service';
 export type { AssignmentRow, LineRow, TechnicianQueueRow } from './data/work-order-repository';
 export type {
+  AdditionalWorkDecisionResult,
   AdditionalWorkDetailView,
   AdditionalWorkRequestView,
   ApprovalEvidenceInput,

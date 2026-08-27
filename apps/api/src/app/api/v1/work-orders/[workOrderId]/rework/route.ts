@@ -53,7 +53,7 @@ export const dynamic = 'force-dynamic';
 
 const Params = z.object({ workOrderId: schemas.uuid });
 
-const Body = z
+export const Body = z
   .object({
     rootCause: z.string().trim().min(1).max(MAX_ROOT_CAUSE),
     correctiveAction: z.string().trim().min(1).max(MAX_CORRECTIVE_ACTION),

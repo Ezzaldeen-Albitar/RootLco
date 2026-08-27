@@ -57,7 +57,7 @@ const MoneyAmount = z
     'must be an unsigned decimal string of at most 14 integer digits and 4 decimal places'
   );
 
-const RequestBody = z
+export const RequestBody = z
   .object({
     amount: MoneyAmount,
     reason: z.string().min(1).max(MAX_REASON),

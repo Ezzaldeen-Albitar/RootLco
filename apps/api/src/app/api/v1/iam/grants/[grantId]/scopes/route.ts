@@ -16,7 +16,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const Params = z.object({ grantId: schemas.uuid });
-const ScopeBody = z
+export const ScopeBody = z
   .object({
     scopeType: z.enum(['company', 'branch', 'department']),
     companyId: schemas.uuid,

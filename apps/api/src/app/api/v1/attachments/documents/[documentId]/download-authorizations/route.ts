@@ -16,7 +16,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const Params = z.object({ documentId: z.string().uuid() });
-const Body = z.object({ versionId: z.string().uuid().nullable().optional() }).strict();
+export const Body = z.object({ versionId: z.string().uuid().nullable().optional() }).strict();
 
 export const ATTACHMENT_DOWNLOAD_AUTHORIZE_OPERATION = defineOperation({
   id: 'shared.attachment-download-authorize',

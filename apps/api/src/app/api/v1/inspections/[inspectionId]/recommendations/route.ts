@@ -35,7 +35,7 @@ export const dynamic = 'force-dynamic';
 
 const Params = z.object({ inspectionId: schemas.uuid });
 
-const Body = z
+export const Body = z
   .object({
     recommendation: z.string().trim().min(1).max(MAX_RECOMMENDATION),
     priority: z.enum(RECOMMENDATION_PRIORITIES).optional(),

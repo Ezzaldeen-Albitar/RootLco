@@ -38,7 +38,9 @@ export type { QualityGateStatus } from './application/quality-gate-service';
 export type { QcRecordDetail, QcRecordView } from './application/quality-control-service';
 export type {
   CreateReworkInput,
+  ReopenAttemptResult,
   ReopenAttemptView,
+  ReworkCreationResult,
   ReworkLinkView,
 } from './application/rework-service';
 

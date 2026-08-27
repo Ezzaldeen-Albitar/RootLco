@@ -21,7 +21,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const Params = z.object({ roleId: schemas.uuid });
-const AddBody = z
+export const AddBody = z
   .object({
     permissionCode: z.string().regex(/^[a-z][a-z0-9_]*(\.[a-z0-9_]+)+$/),
     effect: z.enum(['allow', 'deny']),

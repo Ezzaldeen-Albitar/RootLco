@@ -36,7 +36,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const Params = z.object({ fuelLevelId: schemas.uuid });
-const Body = z.object({ status: z.enum(CATALOGUE_STATUSES) }).strict();
+export const Body = z.object({ status: z.enum(CATALOGUE_STATUSES) }).strict();
 
 export const FUEL_LEVEL_STATUS_OPERATION = defineOperation({
   id: 'rec.catalogue-fuel-level-status-set',

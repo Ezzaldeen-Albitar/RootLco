@@ -27,7 +27,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const Params = z.object({ sessionId: schemas.uuid });
-const Body = z
+export const Body = z
   .object({
     startedAt: z.string().datetime({ offset: true }),
     endedAt: z.string().datetime({ offset: true }),

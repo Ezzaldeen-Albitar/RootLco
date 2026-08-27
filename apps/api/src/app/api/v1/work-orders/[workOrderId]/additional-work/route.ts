@@ -39,7 +39,7 @@ export const dynamic = 'force-dynamic';
 
 const Params = z.object({ workOrderId: schemas.uuid });
 
-const Body = z
+export const Body = z
   .object({
     originatingJobId: schemas.uuid.optional(),
     originatingFindingId: schemas.uuid.optional(),

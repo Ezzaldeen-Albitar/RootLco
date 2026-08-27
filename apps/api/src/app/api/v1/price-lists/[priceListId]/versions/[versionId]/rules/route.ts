@@ -37,7 +37,7 @@ export const dynamic = 'force-dynamic';
 
 const Params = z.object({ priceListId: schemas.uuid, versionId: schemas.uuid });
 
-const Body = z
+export const Body = z
   .object({
     serviceId: schemas.uuid,
     // A plain decimal literal only. Exponential notation is rejected by `Decimal`

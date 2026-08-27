@@ -35,7 +35,7 @@ const Params = z.object({ customerId: schemas.uuid });
 const Query = z
   .object({ cursor: schemas.cursor.optional(), limit: schemas.limit.optional() })
   .strict();
-const Body = z
+export const Body = z
   .object({
     alertType: z.enum(ALERT_TYPES),
     severity: z.enum(ALERT_SEVERITIES),

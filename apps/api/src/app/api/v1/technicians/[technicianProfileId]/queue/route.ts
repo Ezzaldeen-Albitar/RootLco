@@ -20,7 +20,7 @@ import { z } from 'zod';
 import { defineOperation } from '@/server/auth/operation-registry';
 import { handleOperation } from '@/server/http/route-handler';
 import { parseOrFail, schemas } from '@/server/http/validation';
-import { workOrderModule } from '@/modules/work-order';
+import { workOrderModule, type TechnicianQueueResult } from '@/modules/work-order';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -50,16 +50,19 @@ export async function GET(
     request,
     async ({ db, authorizeScope }) => {
       const params = parseOrFail(Params, raw, 'path');
-      return {
-        body: {
-          technicianProfileId: params.technicianProfileId,
-          items: await workOrderModule().jobAssignments.queue(
-            db,
-            params.technicianProfileId,
-            authorizeScope
-          ),
-        },
+      // Annotated, not merely inferred (PRE-P1-29-BR-08b). This envelope is built
+      // here and nowhere else — the service returns a bare array — so without the
+      // annotation `TechnicianQueueResult` would describe the response without ever
+      // being checked against it, and a drifting field would go unnoticed.
+      const body: TechnicianQueueResult = {
+        technicianProfileId: params.technicianProfileId,
+        items: await workOrderModule().jobAssignments.queue(
+          db,
+          params.technicianProfileId,
+          authorizeScope
+        ),
       };
+      return { body };
     },
     { params: raw }
   );

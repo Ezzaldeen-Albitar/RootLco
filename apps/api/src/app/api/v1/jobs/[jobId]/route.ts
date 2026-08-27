@@ -41,7 +41,7 @@ const Params = z.object({ jobId: schemas.uuid });
  * is the exception — it drives closure blocker B4, so omitting it keeps the current
  * value rather than silently resetting a diagnostic requirement to false.
  */
-const Body = z
+export const Body = z
   .object({
     title: z.string().trim().min(1).max(MAX_JOB_TITLE),
     jobType: z.string().trim().min(1).max(MAX_JOB_TYPE).nullable().optional(),

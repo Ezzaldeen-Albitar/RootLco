@@ -37,7 +37,7 @@ export const dynamic = 'force-dynamic';
 
 const Params = z.object({ recordId: schemas.uuid });
 
-const Body = z
+export const Body = z
   .object({
     // `pending` is in the CHECK vocabulary and is deliberately not settable: it is
     // where a record starts, and moving back to it would un-finalize a judgement the

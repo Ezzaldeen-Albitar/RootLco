@@ -60,7 +60,7 @@ const OdometerValue = z
   .string()
   .regex(/^\d{1,12}(\.\d{1,2})?$/, 'must be an unsigned decimal string with at most 2 decimals');
 
-const CompleteBody = z
+export const CompleteBody = z
   .object({
     finalOdometerValue: OdometerValue,
     odometerUnit: z.enum(ODOMETER_UNITS).optional(),

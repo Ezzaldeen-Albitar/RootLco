@@ -36,7 +36,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const Params = z.object({ sourceChannelId: schemas.uuid });
-const Body = z.object({ status: z.enum(CATALOGUE_STATUSES) }).strict();
+export const Body = z.object({ status: z.enum(CATALOGUE_STATUSES) }).strict();
 
 export const SOURCE_CHANNEL_STATUS_OPERATION = defineOperation({
   id: 'apt.catalogue-source-channel-status-set',

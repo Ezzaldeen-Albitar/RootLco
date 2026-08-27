@@ -17,7 +17,9 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const Params = z.object({ vehicleId: schemas.uuid, relationshipId: schemas.uuid });
-const Body = z.object({ effectiveDate: z.string().min(10).max(10).nullable().optional() }).strict();
+export const Body = z
+  .object({ effectiveDate: z.string().min(10).max(10).nullable().optional() })
+  .strict();
 
 export const VEHICLE_AUTHORIZED_PARTY_RETIRE_OPERATION = defineOperation({
   id: 'veh.vehicle-authorized-party-retire',

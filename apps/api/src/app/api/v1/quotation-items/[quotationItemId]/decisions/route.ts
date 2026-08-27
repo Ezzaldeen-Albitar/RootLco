@@ -56,7 +56,7 @@ const Evidence = z
   })
   .strict();
 
-const Body = z
+export const Body = z
   .object({
     // `rejected`, not `declined` — the real vocabulary from
     // `ck_approval_decisions_decision`.

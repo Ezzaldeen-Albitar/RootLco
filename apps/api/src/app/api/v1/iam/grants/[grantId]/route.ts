@@ -26,7 +26,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const Params = z.object({ grantId: schemas.uuid });
-const RevokeBody = z.object({ reason: z.string().min(1).max(500) }).strict();
+export const RevokeBody = z.object({ reason: z.string().min(1).max(500) }).strict();
 
 export const GRANT_REVOKE_OPERATION = defineOperation({
   id: 'iam.grant-revoke',

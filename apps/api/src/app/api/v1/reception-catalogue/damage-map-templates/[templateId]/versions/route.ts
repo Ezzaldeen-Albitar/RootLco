@@ -35,7 +35,9 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const Params = z.object({ templateId: schemas.uuid });
-const Body = z.object({ documentId: schemas.uuid, documentVersionId: schemas.uuid }).strict();
+export const Body = z
+  .object({ documentId: schemas.uuid, documentVersionId: schemas.uuid })
+  .strict();
 
 export const DAMAGE_MAP_TEMPLATE_VERSION_OPERATION = defineOperation({
   id: 'rec.catalogue-damage-map-template-version-create',

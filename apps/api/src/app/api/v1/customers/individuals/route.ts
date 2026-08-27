@@ -15,7 +15,7 @@ import { crmModule, CREATABLE_LIFECYCLE_STATUSES, MAX_PERSON_NAME } from '@/modu
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const Body = z
+export const Body = z
   .object({
     givenName: z.string().min(1).max(MAX_PERSON_NAME),
     familyName: z.string().min(1).max(MAX_PERSON_NAME),

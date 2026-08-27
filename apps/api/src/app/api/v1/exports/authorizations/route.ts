@@ -25,7 +25,7 @@ const FilterValue = z.union([
   z.array(z.union([z.string().max(200), z.number()])).max(50),
 ]);
 
-const Body = z
+export const Body = z
   .object({
     resource: z.string().regex(/^[a-z][a-z0-9_]{1,62}$/),
     fields: z.array(z.string().max(64)).max(64).default([]),

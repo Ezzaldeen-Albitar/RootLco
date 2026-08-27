@@ -39,7 +39,7 @@ export const dynamic = 'force-dynamic';
 
 const Params = z.object({ invoiceId: schemas.uuid }).strict();
 
-const CancelBody = z.object({ reason: z.string().min(1).max(MAX_REASON) }).strict();
+export const CancelBody = z.object({ reason: z.string().min(1).max(MAX_REASON) }).strict();
 
 export const INVOICE_CANCEL_OPERATION = defineOperation({
   id: 'sal.invoice-cancel',

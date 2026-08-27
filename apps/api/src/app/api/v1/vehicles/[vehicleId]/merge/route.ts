@@ -22,7 +22,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const Params = z.object({ vehicleId: schemas.uuid });
-const Body = z
+export const Body = z
   .object({
     /** The vehicle that survives. The path vehicle is redirected into it. */
     survivorId: schemas.uuid,

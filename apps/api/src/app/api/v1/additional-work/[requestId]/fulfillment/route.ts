@@ -41,7 +41,7 @@ export const dynamic = 'force-dynamic';
 
 const Params = z.object({ requestId: schemas.uuid });
 
-const Body = z
+export const Body = z
   .object({
     fulfillmentState: z.enum(SETTABLE_FULFILLMENT_STATES),
     reason: z.string().trim().min(1).max(MAX_REASON).optional(),

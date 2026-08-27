@@ -58,7 +58,7 @@ const Line = z
   })
   .strict();
 
-const Body = z
+export const Body = z
   .object({
     lines: z.array(Line).min(1).max(MAX_ITEMS_PER_REVISION),
     customerClass: z.string().regex(INTERNAL_CODE, 'must be a lower-snake class code').optional(),

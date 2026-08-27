@@ -44,6 +44,7 @@ export type {
 export type {
   EligibilityRequirement,
   EligibilityVerdict,
+  TechnicianCandidateResult,
 } from './application/technician-eligibility-service';
 export type { LaborSessionView, SessionPageInput } from './application/labor-session-service';
 export type {

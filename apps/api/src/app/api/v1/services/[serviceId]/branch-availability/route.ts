@@ -49,7 +49,7 @@ const Params = z.object({ serviceId: schemas.uuid });
  * both, `isSellableAt` requires `is_available AND status = 'active'`, and collapsing
  * them here would make one of the two unreachable through the API.
  */
-const Body = z
+export const Body = z
   .object({
     companyId: schemas.uuid,
     branchId: schemas.uuid,

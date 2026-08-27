@@ -41,7 +41,7 @@ import { billingModule } from '@/modules/billing';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const CreateBody = z
+export const CreateBody = z
   .object({
     workOrderId: schemas.uuid,
     /**

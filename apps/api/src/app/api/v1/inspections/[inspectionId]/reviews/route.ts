@@ -41,7 +41,7 @@ export const dynamic = 'force-dynamic';
 
 const Params = z.object({ inspectionId: schemas.uuid });
 
-const Body = z
+export const Body = z
   .object({
     reviewResult: z.enum(REVIEW_RESULTS),
     notes: z.string().trim().min(1).max(MAX_REVIEW_NOTES).optional(),

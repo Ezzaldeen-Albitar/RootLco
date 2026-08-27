@@ -26,7 +26,7 @@ import { deliveryModule } from '@/modules/delivery';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const CreateBody = z
+export const CreateBody = z
   .object({
     workOrderId: schemas.uuid,
     // Who is handing the vehicle over. `sal.delivery_records.delivering_employee_id`
