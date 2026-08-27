@@ -1,24 +1,30 @@
 /**
- * `shared.enqueue_notification` — the worker's enqueue authority.
+ * The worker's enqueue authority on `shared.outbound_messages`.
  *
- * Every case here runs as a RESTRICTED APPLICATION ROLE, never as the admin
+ * Every case runs as a RESTRICTED APPLICATION ROLE, never as the admin
  * connection. A security proof taken as `postgres` proves nothing about the role
- * the worker actually connects as, and this repository has recorded that lesson
- * before.
+ * the worker actually connects as.
  *
- * ## What the function is for, in one sentence
+ * ## Why this is a grant and a RESTRICTIVE policy, not a function
  *
- * `app_worker` may not read `tech`, has no `app.tenant_id`, and must still be
- * unable to address a notification into a tenant that does not own the
- * recipient — so the one check no RLS policy can make for it is made here, by a
- * definer function that can see what the caller may not.
+ * A `SECURITY DEFINER` function was written first and this repository refuses
+ * it — `migration-replay-checks.mjs` fails on a non-zero count and
+ * `rls-matrix.mjs` fails each one with "runs with the owner's rights and
+ * bypasses RLS". The prohibition is right: bypassing RLS is the one thing this
+ * schema's model may never do.
+ *
+ * The check that function was going to make — does the claimed tenant OWN the
+ * claimed recipient — is answered EARLIER instead, by the publisher, which runs
+ * as `app_runtime` inside the tenant's own context and resolves the recipient
+ * from `tech.technician_profiles` at publish time. The worker forwards a
+ * verified fact rather than asserting an unverified one, so the database layer
+ * only has to pin what a worker may WRITE.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Pool } from 'pg';
 
 import {
   TENANT_A,
-  TENANT_B,
   USER_A,
   adminPool,
   cleanBackendFixtures,
@@ -27,208 +33,162 @@ import {
   runtimeAppPool,
   workerAppPool,
 } from './helpers';
-import { establishP1_19Fixtures, establishTechnicianFixtures } from './p1-19-helpers';
-
-const SIGNATURE = 'uuid,uuid,uuid,uuid,text,text,uuid,bytea,text,text,uuid';
-const FN = `shared.enqueue_notification(${SIGNATURE})`;
 
 let admin: Pool;
 let worker: Pool;
 let runtime: Pool;
 
-/** A live technician of TENANT_A, and the user account it resolves to. */
-let technicianUserId = '';
+const COLUMNS =
+  '(tenant_id, channel, purpose, dedupe_key, body_sha256, recipient_user_id, created_by)';
+const VALUES = `($1, 'in_app', 'transactional', $2, sha256('body'::bytea), $3, $4)`;
 
-async function enqueueAsWorker(
-  tenantId: string,
-  recipientUserId: string,
-  dedupeKey: string
-): Promise<string | null> {
-  const result = await worker.query<{ id: string | null }>(
-    `SELECT shared.enqueue_notification(
-       $1::uuid, NULL, NULL, NULL, 'in_app', 'transactional',
-       $2::uuid, sha256('body'::bytea), $3, NULL, $4::uuid
-     ) AS id`,
-    [tenantId, recipientUserId, dedupeKey, USER_A]
-  );
-  return result.rows[0]?.id ?? null;
+function args(dedupeKey: string): unknown[] {
+  return [TENANT_A, dedupeKey, USER_A, USER_A];
 }
 
 beforeAll(async () => {
   admin = adminPool();
   await ensureTestLogins(admin);
-  // Cleaned BEFORE seeding, as every sibling suite does. The fixtures are not
-  // idempotent — a second run without this fails on `pk_role_grants` — and the
-  // Supabase container is shared across worktrees, so "it passed once" is not
-  // the same as "it can run again".
+  // Cleaned BEFORE seeding, as every sibling suite does: the fixtures are not
+  // idempotent, and the Supabase container is shared across worktrees, so "it
+  // passed once" is not the same as "it can run again".
   await cleanBackendFixtures(admin);
   await ensureBackendFixtures(admin);
-  // `establishP1_19Fixtures` is what assigns the module-level pool that
-  // `establishTechnicianFixtures` connects with; calling the second alone fails
-  // with `Cannot read properties of undefined (reading 'connect')`.
-  await establishP1_19Fixtures(admin);
-  await establishTechnicianFixtures();
   worker = workerAppPool(2);
   runtime = runtimeAppPool(2);
-
-  const found = await admin.query<{ user_id: string }>(
-    `SELECT user_id FROM tech.technician_profiles
-      WHERE tenant_id = $1 AND deleted_at IS NULL
-      ORDER BY created_at ASC LIMIT 1`,
-    [TENANT_A]
-  );
-  technicianUserId = found.rows[0]?.user_id ?? '';
-  expect(technicianUserId, 'the fixtures must establish a live technician').not.toBe('');
-}, 180_000);
+}, 120_000);
 
 afterAll(async () => {
   await Promise.all([worker?.end(), runtime?.end(), admin?.end()]);
 });
 
-describe('the allowed caller can enqueue, and only through this path', () => {
-  it('the worker enqueues for a live technician of the named tenant', async () => {
-    const id = await enqueueAsWorker(TENANT_A, technicianUserId, `ok:${Date.now()}`);
+describe('the worker may enqueue, and only a pending message', () => {
+  it('enqueues a pending message', async () => {
+    const key = `ok:${Date.now()}`;
+    const inserted = await worker.query<{ id: string }>(
+      `INSERT INTO shared.outbound_messages ${COLUMNS} VALUES ${VALUES} RETURNING id`,
+      args(key)
+    );
+    const id = inserted.rows[0]?.id;
     expect(id).toMatch(/^[0-9a-f-]{36}$/);
 
-    const row = await admin.query<{ status: string; tenant_id: string; recipient_user_id: string }>(
-      `SELECT status, tenant_id, recipient_user_id FROM shared.outbound_messages WHERE id = $1`,
+    const row = await admin.query<{ status: string; tenant_id: string }>(
+      `SELECT status, tenant_id FROM shared.outbound_messages WHERE id = $1`,
       [id]
     );
-    // `status` is not a parameter of the function, so 'pending' is the only
-    // status any caller of it can produce.
+    // `status` is outside the column grant, so the default is the only status a
+    // worker can produce — and the RESTRICTIVE policy pins it a second time.
     expect(row.rows[0]?.status).toBe('pending');
     expect(row.rows[0]?.tenant_id).toBe(TENANT_A);
-    expect(row.rows[0]?.recipient_user_id).toBe(technicianUserId);
   });
 
-  it('a replayed dedupe key returns the SAME message rather than a second one', async () => {
-    const key = `replay:${Date.now()}`;
-    const first = await enqueueAsWorker(TENANT_A, technicianUserId, key);
-    const second = await enqueueAsWorker(TENANT_A, technicianUserId, key);
-    expect(second).toBe(first);
+  it('cannot set a status of its own choosing', async () => {
+    await expect(
+      worker.query(
+        `INSERT INTO shared.outbound_messages
+           (tenant_id, channel, purpose, dedupe_key, body_sha256, recipient_user_id,
+            created_by, status)
+         VALUES ($1, 'in_app', 'transactional', $2, sha256('b'::bytea), $3, $4, 'sent')`,
+        args(`status:${Date.now()}`)
+      )
+    ).rejects.toThrow(/permission denied for table outbound_messages/);
+  });
 
+  it('honours the existing (tenant_id, dedupe_key) conflict rather than a new mechanism', async () => {
+    const key = `dedupe:${Date.now()}`;
+    await worker.query(
+      `INSERT INTO shared.outbound_messages ${COLUMNS} VALUES ${VALUES}
+       ON CONFLICT (tenant_id, dedupe_key) DO NOTHING`,
+      args(key)
+    );
+    await worker.query(
+      `INSERT INTO shared.outbound_messages ${COLUMNS} VALUES ${VALUES}
+       ON CONFLICT (tenant_id, dedupe_key) DO NOTHING`,
+      args(key)
+    );
     const count = await admin.query<{ n: string }>(
       `SELECT count(*)::text AS n FROM shared.outbound_messages
         WHERE tenant_id = $1 AND dedupe_key = $2`,
       [TENANT_A, key]
     );
-    // Idempotency stays where the platform already put it — the existing
-    // (tenant_id, dedupe_key) conflict — rather than in a second mechanism.
+    // Idempotency stays where the platform already put it.
     expect(count.rows[0]?.n).toBe('1');
   });
 });
 
-describe('the enqueue cannot be aimed at another tenant', () => {
-  it('refuses a recipient who is not a technician of the named tenant', async () => {
+describe('the worker gains nothing else', () => {
+  it('still cannot UPDATE a column outside its dispatch grant', async () => {
     await expect(
-      enqueueAsWorker(TENANT_B, technicianUserId, `crosstenant:${Date.now()}`)
-    ).rejects.toThrow(/is not a live technician of tenant/);
+      worker.query(`UPDATE shared.outbound_messages SET purpose = 'system' WHERE false`)
+    ).rejects.toThrow(/permission denied/);
   });
 
-  it('refuses a recipient who is no technician at all', async () => {
-    await expect(enqueueAsWorker(TENANT_A, USER_A, `nontech:${Date.now()}`)).rejects.toThrow(
-      /is not a live technician of tenant/
-    );
-  });
-
-  it('refuses a null tenant, recipient or author', async () => {
-    await expect(
-      worker.query(
-        `SELECT shared.enqueue_notification(NULL::uuid, NULL, NULL, NULL, 'in_app',
-           'transactional', $1::uuid, sha256('b'::bytea), 'k', NULL, $2::uuid)`,
-        [technicianUserId, USER_A]
-      )
-    ).rejects.toThrow(/requires tenant, recipient and author/);
-  });
-});
-
-describe('no role gains anything but EXECUTE, and only the worker gains that', () => {
-  it.each([
-    ['public', false],
-    ['app_runtime', false],
-    ['app_readonly', false],
-    ['app_worker', true],
-  ])('EXECUTE for %s is %s', async (role, allowed) => {
-    const r = await admin.query<{ ok: boolean }>(
-      `SELECT has_function_privilege($1, $2, 'EXECUTE') AS ok`,
-      [role, FN]
-    );
-    expect(r.rows[0]?.ok).toBe(allowed);
-  });
-
-  it('the worker still cannot INSERT the table directly', async () => {
-    await expect(
-      worker.query(
-        `INSERT INTO shared.outbound_messages
-           (tenant_id, channel, purpose, dedupe_key, body_sha256, recipient_user_id, created_by)
-         VALUES ($1, 'in_app', 'transactional', $2, sha256('b'::bytea), $3, $4)`,
-        [TENANT_A, `direct:${Date.now()}`, technicianUserId, USER_A]
-      )
-    ).rejects.toThrow(/permission denied for table outbound_messages/);
-  });
-
-  it('the worker still cannot DELETE the table', async () => {
+  it('still cannot DELETE', async () => {
     await expect(worker.query(`DELETE FROM shared.outbound_messages WHERE false`)).rejects.toThrow(
       /permission denied/
     );
   });
 
-  it('the worker still cannot read `tech` — the schema the function reads FOR it', async () => {
+  it('still cannot read `tech` — the schema the publisher resolves the recipient from', async () => {
     await expect(worker.query(`SELECT 1 FROM tech.technician_profiles LIMIT 1`)).rejects.toThrow(
       /permission denied for schema tech/
     );
   });
 
-  it('the request path is untouched: app_runtime keeps its own INSERT and policy', async () => {
-    // Not `permission denied` — the runtime's grant is intact and RLS is what
-    // answers. Proving this here is what stops a future "simplification" from
-    // routing the request path through the definer function and silently
-    // discarding `ins_outbound_messages_enqueue`.
+  it('still cannot read the template tables', async () => {
+    await expect(worker.query(`SELECT 1 FROM shared.message_templates LIMIT 1`)).rejects.toThrow(
+      /permission denied/
+    );
+    await expect(worker.query(`SELECT 1 FROM shared.template_versions LIMIT 1`)).rejects.toThrow(
+      /permission denied/
+    );
+  });
+});
+
+describe('the request path is untouched', () => {
+  it('app_runtime still meets RLS, not a permission error', async () => {
+    // The distinction is the whole point. `permission denied` would mean this
+    // migration had disturbed the runtime's grant; an RLS refusal means the
+    // grant is intact and `ins_outbound_messages_enqueue` is still what decides.
     await expect(
       runtime.query(
-        `INSERT INTO shared.outbound_messages
-           (tenant_id, channel, purpose, dedupe_key, body_sha256, recipient_user_id, created_by)
-         VALUES ($1, 'in_app', 'transactional', $2, sha256('b'::bytea), $3, $4)`,
-        [TENANT_A, `runtime:${Date.now()}`, technicianUserId, USER_A]
+        `INSERT INTO shared.outbound_messages ${COLUMNS} VALUES ${VALUES}`,
+        args(`runtime:${Date.now()}`)
       )
     ).rejects.toThrow(/row-level security policy/);
   });
 });
 
-describe('the definer function cannot be redirected', () => {
-  it('pins a search_path that excludes `public`', async () => {
-    const r = await admin.query<{ cfg: string[] }>(
-      `SELECT proconfig AS cfg FROM pg_proc p
-         JOIN pg_namespace n ON n.oid = p.pronamespace
-        WHERE n.nspname = 'shared' AND p.proname = 'enqueue_notification'`
+describe('the platform prohibition this design exists to respect', () => {
+  it('introduces no SECURITY DEFINER function anywhere in the application schemas', async () => {
+    // `migration-replay-checks.mjs` fails on any non-zero count and
+    // `rls-matrix.mjs` fails each one by name. Asserted here too so a future
+    // change cannot reintroduce one and discover the prohibition in CI.
+    const r = await admin.query<{ n: string }>(
+      `SELECT count(*)::text AS n
+         FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+        WHERE p.prosecdef
+          AND n.nspname IN ('shared','iam','wo','tech','crm','org','inv','sal','quo','dia','qms','rec','apt')`
     );
-    const cfg = (r.rows[0]?.cfg ?? []).join(',');
-    expect(cfg).toContain('search_path=');
-    // `public` is where an attacker plants a shadowing object; `pg_catalog`
-    // first is what stops a planted `sha256` or `EXISTS` target resolving.
-    expect(cfg).not.toMatch(/(^|[=, ])public([, ]|$)/);
-    expect(cfg).toMatch(/search_path=pg_catalog/);
+    expect(r.rows[0]?.n).toBe('0');
   });
 
-  it('carries no dynamic SQL for a caller to steer', async () => {
-    const r = await admin.query<{ src: string }>(
-      `SELECT prosrc AS src FROM pg_proc p
-         JOIN pg_namespace n ON n.oid = p.pronamespace
-        WHERE n.nspname = 'shared' AND p.proname = 'enqueue_notification'`
+  it('narrows the worker by a RESTRICTIVE policy, leaving the dispatch policy intact', async () => {
+    const r = await admin.query<{ policyname: string; permissive: string; cmd: string }>(
+      `SELECT policyname, permissive, cmd FROM pg_policies
+        WHERE schemaname = 'shared' AND tablename = 'outbound_messages'
+        ORDER BY policyname`
     );
+    const byName = new Map(r.rows.map((p) => [p.policyname, p]));
 
-    // Comments are stripped FIRST, and the reason is that this assertion failed
-    // on its first run against a body whose comment reads "No dynamic SQL, no
-    // `EXECUTE`". Prose describing a rule contains the rule, so a check that
-    // searches raw source cannot tell the two apart — the same defect this
-    // slice's sibling gate (`check-p1-29-access.mjs`) was corrected for, here
-    // reproduced by a test written to prevent it.
-    const code = (r.rows[0]?.src ?? '').replace(/--[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
+    const scope = byName.get('wkr_outbound_messages_enqueue_scope');
+    expect(scope?.permissive).toBe('RESTRICTIVE');
+    expect(scope?.cmd).toBe('INSERT');
 
-    expect(code).not.toMatch(/\bEXECUTE\b/i);
-    expect(code).not.toMatch(/\bformat\s*\(/i);
-    expect(code).not.toMatch(/\bquote_ident\b/i);
-    // Non-vacuity: the stripped body must still be the function, not nothing.
-    expect(code).toMatch(/INSERT INTO shared\.outbound_messages/);
+    // Untouched: the worker's SELECT depends on this one, so narrowing it would
+    // have broken dispatch reads.
+    const dispatch = byName.get('wkr_outbound_messages_dispatch');
+    expect(dispatch?.permissive).toBe('PERMISSIVE');
+    expect(dispatch?.cmd).toBe('ALL');
   });
 });

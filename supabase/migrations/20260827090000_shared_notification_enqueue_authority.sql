@@ -1,190 +1,118 @@
 -- ============================================================================
--- PRE-P1-29 — shared.enqueue_notification, the worker's enqueue authority.
+-- PRE-P1-29 — the worker's enqueue authority on shared.outbound_messages.
 --
--- Rollback classification: REVERSIBLE. `DROP FUNCTION` plus the REVOKE is clean
--- and lossless: this migration writes no row, creates no table and changes no
--- existing grant or policy. Messages already enqueued through the function are
--- ordinary `shared.outbound_messages` rows with their own lifecycle, and they
--- survive the drop exactly as rows enqueued through the request path do.
+-- Rollback classification: REVERSIBLE. The REVOKE and DROP POLICY below are
+-- clean and lossless: this migration writes no row, creates no table, and
+-- changes no existing grant or policy. Messages already enqueued by the worker
+-- are ordinary rows with their own lifecycle and survive the rollback exactly as
+-- rows enqueued through the request path do.
 --
 -- ## The defect, stated precisely, because it has been stated wrongly before
 --
 -- It is NOT that "no application role can enqueue a notification". `app_runtime`
--- can, and does, and its path is correctly scoped:
+-- can, and its path is correctly scoped:
 --
---   * a column-level `GRANT INSERT` on thirteen columns, from
+--   * a COLUMN-level `GRANT INSERT` on thirteen columns, from
 --     `20260728090000_shared_services_runtime_write_capabilities.sql:140`, which
---     deliberately EXCLUDES `status` so the default `'pending'` is the only
---     status a caller can produce; and
---   * `ins_outbound_messages_enqueue`, which requires
+--     deliberately EXCLUDES `status` so the `'pending'` default is the only
+--     status that path can produce; and
+--   * `ins_outbound_messages_enqueue`, requiring
 --     `tenant_id = iam.current_tenant_id()`, `created_by = iam.current_user_id()`,
---     `status = 'pending'` and `iam.has_permission_in_scope('shared.notification.send', …)`.
+--     `status = 'pending'` and
+--     `iam.has_permission_in_scope('shared.notification.send', …)`.
 --
--- Two separate instruments reported that grant as absent, and both were wrong in
--- the same direction: `information_schema.role_table_grants` cannot see a
--- COLUMN-level grant, and a single-line `grep 'GRANT.*outbound_messages'` cannot
--- see a statement whose target sits on the next line. Probing the live database
--- as `app_runtime` settles it by error class — the enqueue is refused with
--- `new row violates row-level security policy`, which only a statement that
--- PASSED the privilege check can produce.
+-- Two instruments reported that grant as absent and both failed the same way:
+-- `information_schema.role_table_grants` cannot see a COLUMN-level grant, and a
+-- single-line `grep 'GRANT.*outbound_messages'` cannot see a statement whose
+-- target sits on the next line. The live database settles it by ERROR CLASS —
+-- `app_runtime` is refused with `new row violates row-level security policy`,
+-- which only a statement that PASSED the privilege check can produce, while
+-- `app_worker` gets `permission denied for table`.
 --
--- The real defect is narrower: that path belongs to the REQUEST runtime, and it
--- is unusable by the worker for two independent reasons.
+-- The real gap is narrower: that path belongs to the REQUEST runtime, and the
+-- `job.assigned` consumer runs on the worker, which holds no INSERT at any
+-- granularity and — draining a cross-tenant queue — has no `app.tenant_id`.
 --
---   1. `app_worker` holds no INSERT on `shared.outbound_messages` at any
---      granularity, and probing it yields `permission denied for table`.
---   2. Even with a grant it could not satisfy the policy. The worker has no
---      `app.tenant_id` and no `app.user_id` — it drains a cross-tenant queue —
---      so `iam.current_tenant_id()` is NULL for it by design.
+-- ## Why a grant and a RESTRICTIVE policy, and NOT a SECURITY DEFINER function
 --
--- ## Why a function, and not a grant plus a policy
+-- A definer function was written first, and this repository refuses it. Two
+-- independent gates enforce that, and they are right to:
 --
--- Grant + RLS is this repository's established model, and it was the first thing
--- tried. It cannot express this constraint for this caller.
+--   `scripts/ci/migration-replay-checks.mjs:221`
+--     "N SECURITY DEFINER function(s) exist; the approved count is 0."
+--   `scripts/ci/rls-matrix.mjs:291`
+--     "…is SECURITY DEFINER, which runs with the owner's rights and bypasses RLS."
 --
--- A permissive INSERT policy for `app_worker` would OR with the existing
--- `wkr_outbound_messages_dispatch`, which is `FOR ALL … USING true WITH CHECK
--- true`, so it would constrain nothing. A RESTRICTIVE policy could AND with it
--- and pin `status = 'pending'` — and then stop, because the only tenant fact
--- available inside a policy is `iam.current_tenant_id()`, which the worker does
--- not have. Nothing in the policy layer can check that a claimed tenant OWNS the
--- claimed recipient, because the worker may not read `tech` and must not be
--- granted it.
+-- So the platform's position is not that definer functions are unprecedented
+-- here; it is that they are PROHIBITED, because bypassing RLS is the one thing
+-- this schema's security model may never do. A function was the wrong answer.
 --
--- A `SECURITY DEFINER` function can, and that single check is its whole reason
--- for existing. It runs as the owner, reads `tech.technician_profiles`, and
--- refuses a recipient who is not a live technician of the tenant named in the
--- argument — validating precisely what the caller is forbidden to see, which is
--- the only thing a definer function should ever be used for.
+-- ## What replaces the check the function was going to make
 --
--- This is the FIRST application-owned `SECURITY DEFINER` function in this
--- repository; the six that exist belong to Supabase infrastructure. That is
--- stated rather than glossed, because a precedent gets cited later as though it
--- had always been the pattern.
+-- The definer function existed to answer one question the worker cannot: does
+-- the claimed tenant OWN the claimed recipient? Under the Owner's
+-- payload-carries-the-facts decision that question is answered EARLIER and by a
+-- role that already has the authority to answer it.
 --
--- ## What it deliberately does NOT do
+-- The `job.assigned` publisher runs as `app_runtime`, inside the tenant's own
+-- context, and resolves the recipient from `tech.technician_profiles` at publish
+-- time. The resulting outbox row is therefore authored by a tenant-scoped role
+-- under its own RLS. The worker does not ASSERT a tenant; it forwards one that
+-- was already verified by the only party that could verify it.
 --
--- It does not replace the request path. `app_runtime` keeps its direct INSERT
--- and its policy, and gains nothing here. Routing both callers through one
--- definer function would have BYPASSED `ins_outbound_messages_enqueue` for the
--- request path — losing the tenant, actor, status and permission checks — which
--- is a security regression wearing the costume of a simplification.
+-- That is a deliberate trade, and it is stated rather than hidden: the database
+-- cannot verify the lineage of a payload, so the control lives at publish time.
+-- The alternative was to grant the worker `tech` reads so a policy could check
+-- it — which widens exactly the privilege the decision forbids, to re-derive a
+-- fact the publisher already knew.
 --
--- It does not own idempotency. `ON CONFLICT (tenant_id, dedupe_key) DO NOTHING`
--- is the same clause the runtime repository already uses, so a replayed event
--- deduplicates where the platform already deduplicates rather than in a second
--- mechanism the consumer would have to keep correct.
+-- ## Why the new policy is RESTRICTIVE
 --
--- It does not widen the worker anywhere else. `app_worker` gains EXECUTE on this
--- one function: no `wo` USAGE, no `tech` USAGE, no table INSERT, no policy
--- change.
+-- `wkr_outbound_messages_dispatch` is `FOR ALL … USING true WITH CHECK true`, and
+-- the worker's SELECT depends on it, so it is left untouched. A PERMISSIVE
+-- INSERT policy would OR with it and constrain nothing. A RESTRICTIVE policy
+-- ANDs, so it narrows the worker's INSERT without altering shipped behaviour for
+-- any other statement or role.
 -- ============================================================================
 
-CREATE OR REPLACE FUNCTION shared.enqueue_notification(
-  p_tenant_id            uuid,
-  p_company_id           uuid,
-  p_branch_id            uuid,
-  p_template_version_id  uuid,
-  p_channel              text,
-  p_purpose              text,
-  p_recipient_user_id    uuid,
-  p_body_sha256          bytea,
-  p_dedupe_key           text,
-  p_consent_ref          text,
-  p_created_by           uuid
-)
-RETURNS uuid
-LANGUAGE plpgsql
-SECURITY DEFINER
--- `pg_catalog` first and `public` absent: nothing in this body may resolve to an
--- object a caller planted on a schema it controls. `pg_temp` is last by
--- convention and holds nothing this function names.
-SET search_path = pg_catalog, shared, tech, pg_temp
-AS $$
-DECLARE
-  v_id uuid;
-BEGIN
-  -- Every identifier below is a literal in this file. No dynamic SQL, no
-  -- `EXECUTE`, no caller-supplied schema, table or column name anywhere.
-  IF p_tenant_id IS NULL OR p_recipient_user_id IS NULL OR p_created_by IS NULL THEN
-    RAISE EXCEPTION 'enqueue_notification requires tenant, recipient and author'
-      USING ERRCODE = 'null_value_not_allowed';
-  END IF;
+-- The same column set the request path holds, minus the columns a worker has no
+-- business supplying. `status` is excluded for the same reason it is excluded
+-- there: the default is 'pending', so no caller of this grant can enqueue a
+-- message in any other state.
+GRANT INSERT (id, tenant_id, company_id, branch_id, template_version_id, channel,
+              purpose, recipient_digest, recipient_user_id, body_sha256,
+              dedupe_key, consent_ref, created_by)
+  ON shared.outbound_messages            TO app_worker;
 
-  -- THE CHECK THIS FUNCTION EXISTS FOR.
-  --
-  -- The worker names a tenant and a recipient taken from an event payload. That
-  -- payload is trustworthy — `shared.event_outbox` rows are written by the
-  -- request runtime under its own RLS — but trustworthy is not the same as
-  -- verified, and a consumer defect must not be able to address a notification
-  -- into another tenant. `uq_technician_profiles_active_user` is unique on
-  -- (tenant_id, user_id), so this resolves at most one row and answers exactly
-  -- the question the caller cannot ask for itself.
-  IF NOT EXISTS (
-    SELECT 1
-      FROM tech.technician_profiles p
-     WHERE p.tenant_id = p_tenant_id
-       AND p.user_id   = p_recipient_user_id
-       AND p.deleted_at IS NULL
-  ) THEN
-    RAISE EXCEPTION 'recipient % is not a live technician of tenant %',
-      p_recipient_user_id, p_tenant_id
-      USING ERRCODE = 'insufficient_privilege';
-  END IF;
+-- Belt AND braces, deliberately. `status` is already unreachable through the
+-- column grant above; pinning it here means a future widening of that grant
+-- cannot silently also widen the states a worker can produce.
+CREATE POLICY wkr_outbound_messages_enqueue_scope
+  ON shared.outbound_messages
+  AS RESTRICTIVE
+  FOR INSERT
+  TO app_worker
+  WITH CHECK (
+    status = 'pending'
+    AND tenant_id IS NOT NULL
+    AND created_by IS NOT NULL
+    AND dedupe_key IS NOT NULL
+  );
 
-  -- `status` is omitted, exactly as the request path omits it: the column
-  -- default is 'pending', and leaving it to the default means no caller of this
-  -- function can enqueue a message in any other state.
-  INSERT INTO shared.outbound_messages
-    (tenant_id, company_id, branch_id, template_version_id, channel, purpose,
-     recipient_user_id, body_sha256, dedupe_key, consent_ref, created_by)
-  VALUES
-    (p_tenant_id, p_company_id, p_branch_id, p_template_version_id, p_channel,
-     p_purpose, p_recipient_user_id, p_body_sha256, p_dedupe_key, p_consent_ref,
-     p_created_by)
-  ON CONFLICT (tenant_id, dedupe_key) DO NOTHING
-  RETURNING id INTO v_id;
-
-  IF v_id IS NULL THEN
-    -- Deduplicated. Return the existing row so the caller can report the same
-    -- message id it would have reported on the first delivery of this event.
-    SELECT m.id INTO v_id
-      FROM shared.outbound_messages m
-     WHERE m.tenant_id = p_tenant_id
-       AND m.dedupe_key = p_dedupe_key;
-  END IF;
-
-  RETURN v_id;
-END;
-$$;
-
-COMMENT ON FUNCTION shared.enqueue_notification(
-  uuid, uuid, uuid, uuid, text, text, uuid, bytea, text, text, uuid
-) IS
-  'Enqueue one outbound notification on behalf of a caller that has no tenant '
-  'context. Verifies the recipient is a live technician of the named tenant — '
-  'the check a policy cannot make for `app_worker`, which may not read `tech`. '
-  'Status is left to its ''pending'' default; idempotency is the existing '
-  '(tenant_id, dedupe_key) conflict. The request path does NOT use this: '
-  '`app_runtime` keeps its direct INSERT and `ins_outbound_messages_enqueue`.';
-
--- PostgreSQL grants EXECUTE to PUBLIC on a new function. Revoke first, then
--- grant to exactly one role — the convention every function in this schema
--- already follows.
-REVOKE EXECUTE ON FUNCTION shared.enqueue_notification(
-  uuid, uuid, uuid, uuid, text, text, uuid, bytea, text, text, uuid
-) FROM PUBLIC;
-
-GRANT EXECUTE ON FUNCTION shared.enqueue_notification(
-  uuid, uuid, uuid, uuid, text, text, uuid, bytea, text, text, uuid
-) TO app_worker;
+COMMENT ON POLICY wkr_outbound_messages_enqueue_scope ON shared.outbound_messages IS
+  'RESTRICTIVE so it ANDs with wkr_outbound_messages_dispatch rather than ORing '
+  'with it: that policy is FOR ALL/USING true and the worker''s SELECT depends on '
+  'it, so it is not narrowed. The worker may enqueue only a pending, tenant- and '
+  'author-bearing, deduplicable message. Tenant OWNERSHIP of the recipient is '
+  'established at publish time by app_runtime, which resolves it under the '
+  'tenant''s own RLS; the worker forwards a verified fact rather than asserting '
+  'an unverified one.';
 
 -- ----------------------------------------------------------------------------
 -- Rollback
 -- ----------------------------------------------------------------------------
--- REVOKE EXECUTE ON FUNCTION shared.enqueue_notification(
---   uuid, uuid, uuid, uuid, text, text, uuid, bytea, text, text, uuid
--- ) FROM app_worker;
--- DROP FUNCTION shared.enqueue_notification(
---   uuid, uuid, uuid, uuid, text, text, uuid, bytea, text, text, uuid
--- );
+-- DROP POLICY wkr_outbound_messages_enqueue_scope ON shared.outbound_messages;
+-- REVOKE INSERT (id, tenant_id, company_id, branch_id, template_version_id,
+--                channel, purpose, recipient_digest, recipient_user_id,
+--                body_sha256, dedupe_key, consent_ref, created_by)
+--   ON shared.outbound_messages FROM app_worker;

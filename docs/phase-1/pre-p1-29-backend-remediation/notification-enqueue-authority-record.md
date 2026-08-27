@@ -64,53 +64,55 @@ runtime**, and `BR-09`'s consumer runs on the worker, which holds no INSERT at a
 granularity and — because it drains a cross-tenant queue — has no `app.tenant_id`
 for the policy to key on.
 
-## 3. Why a function, after trying the established model first
+## 3. Why a grant and a RESTRICTIVE policy — and why a function was WRONG
 
-Grant + RLS is this repository's model, proven by `event_outbox`,
-`processed_events` and `error_records`. It cannot express this constraint for this
-caller:
+A `SECURITY DEFINER` function was written first, proved with fifteen cases, and
+**refused by the repository**. Two independent gates enforce the prohibition:
 
-| attempt                                     | outcome                                                                                                 |
-| ------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| permissive `INSERT` policy for `app_worker` | ORs with `wkr_outbound_messages_dispatch` (`FOR ALL … USING true WITH CHECK true`) — constrains nothing |
-| `AS RESTRICTIVE` policy                     | ANDs correctly, can pin `status = 'pending'` — and then stops                                           |
-| …checking the tenant inside that policy     | impossible: the only tenant fact available is `iam.current_tenant_id()`, which the worker does not have |
+```
+scripts/ci/migration-replay-checks.mjs:221
+  "N SECURITY DEFINER function(s) exist; the approved count is 0."
 
-A policy cannot ask whether a claimed tenant **owns** a claimed recipient, because
-answering needs `tech`, which the worker may not read and must not be granted.
+scripts/ci/rls-matrix.mjs:291
+  "…is SECURITY DEFINER, which runs with the owner's rights and bypasses RLS."
+```
 
-A `SECURITY DEFINER` function can, and that single check is its entire reason to
-exist — seeing what the caller may not, which is the only defensible use of one.
+This record previously called such a function "the first of its kind, therefore a
+precedent". That was too generous to itself. It is not unprecedented — it is
+**prohibited**, and the prohibition is correct: bypassing RLS is the one thing
+this schema's security model may never do.
 
-### 3.1 This is the first application-owned definer function here
+The failure was found by hosted CI, not locally, because the database security
+gates were never run before pushing a migration — `verify:policies` does not
+cover them. That is a process defect, and it is recorded rather than tidied away.
 
-All six `SECURITY DEFINER` functions in the database belong to Supabase
-infrastructure (`net`, `pgbouncer`, `vault`, `supabase_functions`); the clean-room
-RLS evidence reports `securityDefinerFunctions: 0` for the application schemas.
+### 3.1 What replaces the check the function was going to make
 
-Stated plainly rather than glossed, because a precedent gets cited later as though
-it had always been the pattern. It follows every convention the repository already
-has for functions: pinned `search_path`, `REVOKE EXECUTE … FROM PUBLIC`, and a
-single grantee — the shape `shared.claim_outbox_events` already uses for this same
-role.
+The function existed to answer one question the worker cannot: does the claimed
+tenant OWN the claimed recipient? Under the Owner's payload-carries-the-facts
+decision that question is answered EARLIER, by a role that already holds the
+authority to answer it.
 
-## 4. What it deliberately does not do
+The `job.assigned` publisher runs as `app_runtime`, inside the tenant's own
+context, and resolves the recipient from `tech.technician_profiles` at publish
+time. The outbox row is therefore authored by a tenant-scoped role under its own
+RLS. The worker does not ASSERT a tenant; it forwards one already verified by the
+only party that could verify it.
 
-**It does not replace the request path.** `app_runtime` keeps its direct INSERT and
-its policy and gains nothing here. Routing both callers through one definer
-function would have **bypassed `ins_outbound_messages_enqueue`** for the request
-path, discarding all four of its checks — a security regression wearing the costume
-of a simplification. A test asserts `app_runtime` still meets RLS rather than
-`permission denied`, so that regression cannot land quietly.
+That is a deliberate trade and it is stated plainly: the database cannot verify a
+payload's lineage, so the control lives at publish time. The alternative was to
+grant the worker `tech` reads so a policy could re-derive a fact the publisher
+already knew — widening exactly the privilege the decision forbids.
 
-**It does not own idempotency.** `ON CONFLICT (tenant_id, dedupe_key) DO NOTHING`
-is the clause the runtime repository already uses, so a replayed event
-deduplicates where the platform already deduplicates.
+### 3.2 Why the policy is RESTRICTIVE
 
-**It does not widen the worker anywhere else.** `app_worker` gains `EXECUTE` on one
-function: no `wo` USAGE, no `tech` USAGE, no table INSERT, no policy change.
+`wkr_outbound_messages_dispatch` is `FOR ALL … USING true WITH CHECK true`, and
+the worker's SELECT depends on it, so it is left untouched. A PERMISSIVE INSERT
+policy would OR with it and constrain nothing; a RESTRICTIVE one ANDs, narrowing
+the worker's INSERT without altering shipped behaviour for any other statement
+or role.
 
-## 5. Proofs — fifteen, every one as a restricted role
+## 5. Proofs — ten, every one as a restricted role
 
 A security proof taken as `postgres` proves nothing about the role the worker
 connects as.
