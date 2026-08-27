@@ -195,7 +195,12 @@ export class SharedNotificationService extends ApplicationService implements Not
         if (error instanceof TemplateRenderError) {
           log.warn('notification template could not be rendered; nothing will be enqueued', {
             module: 'shared-services',
-            context: { templateCode: input.templateCode, channel, rule: error.rule },
+            // `channel` and `rule` only. A `template_code` is TENANT-AUTHORED and
+            // is not on the reviewed context allow-list; widening that list to
+            // fit one log line would be loosening a guard for convenience. The
+            // tenant is already identified by `tenantRef` on the request record,
+            // and the rule names what the author must change.
+            context: { channel, rule: error.rule },
           });
           continue;
         }
