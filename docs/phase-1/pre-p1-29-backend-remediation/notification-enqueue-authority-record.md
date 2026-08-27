@@ -3,16 +3,16 @@
 **A narrow write path for a caller that has no tenant context.** One migration, one
 function, fifteen security proofs, and no privilege widened anywhere else.
 
-|                             |                                                            |
-| --------------------------- | ---------------------------------------------------------- |
-| Branch                      | `remediation/p1-29-backend-notification-enqueue-authority` |
-| Base                        | `c9c516f1` — `origin/develop` at the truthfulness merge    |
-| Ownership profile           | `p1-29-backend` — resolved before the branch was created   |
-| New migrations              | **1** — `20260827090000_shared_notification_enqueue_authority.sql` |
-| New permission codes        | **0**                                                      |
-| New operations              | **0**                                                      |
-| Table grants changed        | **0**                                                      |
-| Policies changed            | **0**                                                      |
+|                      |                                                                    |
+| -------------------- | ------------------------------------------------------------------ |
+| Branch               | `remediation/p1-29-backend-notification-enqueue-authority`         |
+| Base                 | `c9c516f1` — `origin/develop` at the truthfulness merge            |
+| Ownership profile    | `p1-29-backend` — resolved before the branch was created           |
+| New migrations       | **1** — `20260827090000_shared_notification_enqueue_authority.sql` |
+| New permission codes | **0**                                                              |
+| New operations       | **0**                                                              |
+| Table grants changed | **0**                                                              |
+| Policies changed     | **0**                                                              |
 
 ---
 
@@ -36,10 +36,10 @@ GRANT INSERT (id, tenant_id, company_id, branch_id, template_version_id, channel
 Two independent instruments reported it absent, and both failed in the same
 direction:
 
-| instrument                                     | why it missed the grant                                        |
-| ---------------------------------------------- | -------------------------------------------------------------- |
-| `information_schema.role_table_grants`         | reports TABLE-level grants only; this one is COLUMN-level      |
-| `grep 'GRANT.*outbound_messages'`              | the statement's target is on line **143**, three lines below   |
+| instrument                             | why it missed the grant                                      |
+| -------------------------------------- | ------------------------------------------------------------ |
+| `information_schema.role_table_grants` | reports TABLE-level grants only; this one is COLUMN-level    |
+| `grep 'GRANT.*outbound_messages'`      | the statement's target is on line **143**, three lines below |
 
 Two wrong answers that agreed made the conclusion look corroborated. The live
 database settles it by **error class**: `app_runtime` attempting the enqueue is
@@ -70,11 +70,11 @@ Grant + RLS is this repository's model, proven by `event_outbox`,
 `processed_events` and `error_records`. It cannot express this constraint for this
 caller:
 
-| attempt                                          | outcome                                                                                 |
-| ------------------------------------------------ | --------------------------------------------------------------------------------------- |
-| permissive `INSERT` policy for `app_worker`      | ORs with `wkr_outbound_messages_dispatch` (`FOR ALL … USING true WITH CHECK true`) — constrains nothing |
-| `AS RESTRICTIVE` policy                          | ANDs correctly, can pin `status = 'pending'` — and then stops                            |
-| …checking the tenant inside that policy          | impossible: the only tenant fact available is `iam.current_tenant_id()`, which the worker does not have |
+| attempt                                     | outcome                                                                                                 |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| permissive `INSERT` policy for `app_worker` | ORs with `wkr_outbound_messages_dispatch` (`FOR ALL … USING true WITH CHECK true`) — constrains nothing |
+| `AS RESTRICTIVE` policy                     | ANDs correctly, can pin `status = 'pending'` — and then stops                                           |
+| …checking the tenant inside that policy     | impossible: the only tenant fact available is `iam.current_tenant_id()`, which the worker does not have |
 
 A policy cannot ask whether a claimed tenant **owns** a claimed recipient, because
 answering needs `tech`, which the worker may not read and must not be granted.
@@ -115,20 +115,20 @@ function: no `wo` USAGE, no `tech` USAGE, no table INSERT, no policy change.
 A security proof taken as `postgres` proves nothing about the role the worker
 connects as.
 
-| proof                                                          | result                                   |
-| -------------------------------------------------------------- | ---------------------------------------- |
-| worker enqueues for a live technician of the named tenant      | succeeds, `status = 'pending'`           |
-| a replayed dedupe key returns the SAME message, one row        | ✅                                        |
-| recipient is a technician of ANOTHER tenant                    | refused                                  |
-| recipient is no technician at all                              | refused                                  |
-| null tenant, recipient or author                               | refused                                  |
-| `EXECUTE` for `public` / `app_runtime` / `app_readonly`        | **false**                                |
-| `EXECUTE` for `app_worker`                                     | true                                     |
-| worker direct `INSERT` / `DELETE` on the table                 | `permission denied`                      |
-| worker reading `tech` — the schema the function reads FOR it   | `permission denied for schema tech`      |
-| request path untouched: `app_runtime` still meets RLS          | ✅                                        |
-| `search_path` pinned and excluding `public`                    | ✅                                        |
-| no dynamic SQL in the body                                     | ✅                                        |
+| proof                                                        | result                              |
+| ------------------------------------------------------------ | ----------------------------------- |
+| worker enqueues for a live technician of the named tenant    | succeeds, `status = 'pending'`      |
+| a replayed dedupe key returns the SAME message, one row      | ✅                                  |
+| recipient is a technician of ANOTHER tenant                  | refused                             |
+| recipient is no technician at all                            | refused                             |
+| null tenant, recipient or author                             | refused                             |
+| `EXECUTE` for `public` / `app_runtime` / `app_readonly`      | **false**                           |
+| `EXECUTE` for `app_worker`                                   | true                                |
+| worker direct `INSERT` / `DELETE` on the table               | `permission denied`                 |
+| worker reading `tech` — the schema the function reads FOR it | `permission denied for schema tech` |
+| request path untouched: `app_runtime` still meets RLS        | ✅                                  |
+| `search_path` pinned and excluding `public`                  | ✅                                  |
+| no dynamic SQL in the body                                   | ✅                                  |
 
 ### 5.1 The last proof failed first, by matching its own comment
 
@@ -151,10 +151,10 @@ preserved consumer — which calls `resolveTemplates(db, tenantId)` against
 
 Closing that is a **decision**, not an implementation:
 
-| option                                        | cost                                                                                      |
-| --------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| grant the worker template reads               | needs an RLS policy, and with no tenant context it must be `USING true` — a cross-tenant read of tenant-authored content |
-| publisher resolves at publish time            | adds no privilege anywhere, but changes what `job.assigned` carries — a published contract |
+| option                             | cost                                                                                                                     |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| grant the worker template reads    | needs an RLS policy, and with no tenant context it must be `USING true` — a cross-tenant read of tenant-authored content |
+| publisher resolves at publish time | adds no privilege anywhere, but changes what `job.assigned` carries — a published contract                               |
 
 The second matches the standing payload-carries-the-facts decision and costs no
 privilege. It is left open here rather than chosen, because a published event
