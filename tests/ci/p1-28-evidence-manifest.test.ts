@@ -1543,98 +1543,143 @@ describe('P1-28-QA-005 — the seal lifecycle: ACTIVE while it is built, ARCHIVE
         'a repointed candidate was accepted by the archived reporter'
       ).toBe(false);
     }));
-  it('refuses a promotion branch proved by a ref the local machine controls', () =>
-    withScratchRepository((repo) => {
-      /*
-       * Found by attacking the gate, and it worked before this case existed.
-       *
-       * Condition D is the one an unfinished phase cannot satisfy by editing its
-       * own package — but it can be satisfied by editing the CHECKOUT, if the
-       * promotion branch is resolved the way a base branch is. `resolveBaseRef`
-       * falls back from the remote-tracking ref to `refs/heads/<branch>` and then
-       * to the bare name, which is right for a base (a shallow clone may carry
-       * only a local ref) and wrong here: the whole value of D is that the machine
-       * running the gate cannot supply it.
-       *
-       * This repository already carries a stale local `main` eleven promotions
-       * behind the protected branch, so the fallback was never hypothetical.
-       */
-      repo.checkout(repo.productChanged);
-      const doc = repo.document(ACCEPTED);
+  it(
+    'refuses a promotion branch proved by a ref the local machine controls',
+    () =>
+      withScratchRepository((repo) => {
+        /*
+         * Found by attacking the gate, and it worked before this case existed.
+         *
+         * Condition D is the one an unfinished phase cannot satisfy by editing its
+         * own package — but it can be satisfied by editing the CHECKOUT, if the
+         * promotion branch is resolved the way a base branch is. `resolveBaseRef`
+         * falls back from the remote-tracking ref to `refs/heads/<branch>` and then
+         * to the bare name, which is right for a base (a shallow clone may carry
+         * only a local ref) and wrong here: the whole value of D is that the machine
+         * running the gate cannot supply it.
+         *
+         * This repository already carries a stale local `main` eleven promotions
+         * behind the protected branch, so the fallback was never hypothetical.
+         */
+        repo.checkout(repo.productChanged);
+        const doc = repo.document(ACCEPTED);
 
-      // The protected branch does not contain the candidate. Correctly ACTIVE.
-      repo.run('update-ref', 'refs/remotes/origin/main', repo.origin);
-      expect(bind(repo, doc).lifecycle.state, 'the premise is wrong').toBe('ACTIVE');
+        // The protected branch does not contain the candidate. Correctly ACTIVE.
+        repo.run('update-ref', 'refs/remotes/origin/main', repo.origin);
+        expect(bind(repo, doc).lifecycle.state, 'the premise is wrong').toBe('ACTIVE');
 
-      // A local branch of the same name that DOES contain it, and no remote ref.
-      repo.run('update-ref', 'refs/heads/main', repo.candidate);
-      repo.run('update-ref', '-d', 'refs/remotes/origin/main');
-      const forged = bind(repo, doc);
+        // A local branch of the same name that DOES contain it, and no remote ref.
+        repo.run('update-ref', 'refs/heads/main', repo.candidate);
+        repo.run('update-ref', '-d', 'refs/remotes/origin/main');
+        const forged = bind(repo, doc);
 
-      expect(
-        forged.lifecycle.state,
-        'a ref the local machine controls proved the candidate was promoted'
-      ).toBe('ACTIVE');
-      expect(
-        forged.lifecycle.conditions.containedInPromoted,
-        'containment was satisfied by a local branch'
-      ).toBe(false);
-      expect(forged.lifecycle.unknowns.join(' ')).toContain('remote-tracking ref');
+        expect(
+          forged.lifecycle.state,
+          'a ref the local machine controls proved the candidate was promoted'
+        ).toBe('ACTIVE');
+        expect(
+          forged.lifecycle.conditions.containedInPromoted,
+          'containment was satisfied by a local branch'
+        ).toBe(false);
+        expect(forged.lifecycle.unknowns.join(' ')).toContain('remote-tracking ref');
 
-      // And the strict rules really do still bite on that world.
-      const { sound, said } = speak(forged);
-      expect(sound, 'the escape succeeded').toBe(false);
-      expect(refusedProductDrift(said), 'the product rule was escaped through the checkout').toBe(
-        true
-      );
-    }));
-  it('an unfinished phase cannot archive itself to escape the product rule', () =>
-    withScratchRepository((repo) => {
-      /*
-       * The case the whole computation exists for. Everything an unfinished
-       * phase could write into its own package is present — and none of it is
-       * enough, because the two conditions that matter are taken from Git and
-       * from the closure record rather than from the package.
-       */
-      repo.checkout(repo.productChanged);
-      const claimsEverything = repo.document({
-        ...ACCEPTED,
-        // A field asserting the state outright. It decides nothing.
-        archived: true,
-        sealLifecycle: 'ARCHIVED',
-      });
+        // And the strict rules really do still bite on that world.
+        const { sound, said } = speak(forged);
+        expect(sound, 'the escape succeeded').toBe(false);
+        expect(refusedProductDrift(said), 'the product rule was escaped through the checkout').toBe(
+          true
+        );
+        // 240 s, not the default 30 s — the same budget, for the same reason, as the
+        // one already stated further up this file.
+        //
+        // `withScratchRepository` builds a real git repository per case: init,
+        // commits, refs, a detached checkout and a synthetic merge. Alone the file
+        // takes 1,116 s and all 123 cases pass; inside the unit tier it takes 974 s
+        // and these three exceed 30 s, while the hosted Linux runner passes them
+        // throughout. That is a host-speed verdict, not a defect, and the file
+        // already records the remedy: state the budget HERE, so it cannot quietly
+        // cover a different test that has genuinely regressed — which is exactly
+        // what raising `testTimeout` in `vitest.config.ts` would have done.
+      }),
+    240_000
+  );
+  it(
+    'an unfinished phase cannot archive itself to escape the product rule',
+    () =>
+      withScratchRepository((repo) => {
+        /*
+         * The case the whole computation exists for. Everything an unfinished
+         * phase could write into its own package is present — and none of it is
+         * enough, because the two conditions that matter are taken from Git and
+         * from the closure record rather than from the package.
+         */
+        repo.checkout(repo.productChanged);
+        const claimsEverything = repo.document({
+          ...ACCEPTED,
+          // A field asserting the state outright. It decides nothing.
+          archived: true,
+          sealLifecycle: 'ARCHIVED',
+        });
 
-      const binding = bind(repo, claimsEverything, null);
-      expect(binding.lifecycle.state, 'a package archived itself by saying so').toBe('ACTIVE');
-      expect(binding.lifecycle.conditions.containedInPromoted, 'never promoted').toBe(false);
-      expect(binding.lifecycle.conditions.closureClosed, 'never closed').toBe(false);
+        const binding = bind(repo, claimsEverything, null);
+        expect(binding.lifecycle.state, 'a package archived itself by saying so').toBe('ACTIVE');
+        expect(binding.lifecycle.conditions.containedInPromoted, 'never promoted').toBe(false);
+        expect(binding.lifecycle.conditions.closureClosed, 'never closed').toBe(false);
 
-      const { sound, said } = speak(binding);
-      expect(sound, 'the escape succeeded').toBe(false);
-      expect(
-        refusedProductDrift(said),
-        'the product rule was escaped by a package asserting its own state'
-      ).toBe(true);
-    }));
+        const { sound, said } = speak(binding);
+        expect(sound, 'the escape succeeded').toBe(false);
+        expect(
+          refusedProductDrift(said),
+          'the product rule was escaped by a package asserting its own state'
+        ).toBe(true);
+        // 240 s, not the default 30 s — the same budget, for the same reason, as the
+        // one already stated further up this file.
+        //
+        // `withScratchRepository` builds a real git repository per case: init,
+        // commits, refs, a detached checkout and a synthetic merge. Alone the file
+        // takes 1,116 s and all 123 cases pass; inside the unit tier it takes 974 s
+        // and these three exceed 30 s, while the hosted Linux runner passes them
+        // throughout. That is a host-speed verdict, not a defect, and the file
+        // already records the remedy: state the budget HERE, so it cannot quietly
+        // cover a different test that has genuinely regressed — which is exactly
+        // what raising `testTimeout` in `vitest.config.ts` would have done.
+      }),
+    240_000
+  );
 
-  it('and the same package archives the moment the facts are true, not before', () =>
-    withScratchRepository((repo) => {
-      /*
-       * The other half: the refusal above is about the FACTS, not about the
-       * package. Promote the candidate and supply the closure record, change
-       * nothing else, and the same document archives.
-       */
-      repo.checkout(repo.productChanged);
-      const doc = repo.document(ACCEPTED);
+  it(
+    'and the same package archives the moment the facts are true, not before',
+    () =>
+      withScratchRepository((repo) => {
+        /*
+         * The other half: the refusal above is about the FACTS, not about the
+         * package. Promote the candidate and supply the closure record, change
+         * nothing else, and the same document archives.
+         */
+        repo.checkout(repo.productChanged);
+        const doc = repo.document(ACCEPTED);
 
-      expect(bind(repo, doc, null).lifecycle.state).toBe('ACTIVE');
-      repo.run('update-ref', 'refs/remotes/origin/main', repo.candidate);
-      const now = bind(repo, doc, CLOSED_RECORD);
-      expect(now.lifecycle.state, 'the facts became true and the state did not follow').toBe(
-        'ARCHIVED'
-      );
-      expect(refusedProductDrift(speak(now).said)).toBe(false);
-    }));
+        expect(bind(repo, doc, null).lifecycle.state).toBe('ACTIVE');
+        repo.run('update-ref', 'refs/remotes/origin/main', repo.candidate);
+        const now = bind(repo, doc, CLOSED_RECORD);
+        expect(now.lifecycle.state, 'the facts became true and the state did not follow').toBe(
+          'ARCHIVED'
+        );
+        expect(refusedProductDrift(speak(now).said)).toBe(false);
+        // 240 s, not the default 30 s — the same budget, for the same reason, as the
+        // one already stated further up this file.
+        //
+        // `withScratchRepository` builds a real git repository per case: init,
+        // commits, refs, a detached checkout and a synthetic merge. Alone the file
+        // takes 1,116 s and all 123 cases pass; inside the unit tier it takes 974 s
+        // and these three exceed 30 s, while the hosted Linux runner passes them
+        // throughout. That is a host-speed verdict, not a defect, and the file
+        // already records the remedy: state the budget HERE, so it cannot quietly
+        // cover a different test that has genuinely regressed — which is exactly
+        // what raising `testTimeout` in `vitest.config.ts` would have done.
+      }),
+    240_000
+  );
 });
 
 describe('P1-28-QA-005 — a re-freeze may not carry the old head’s numbers forward', () => {
