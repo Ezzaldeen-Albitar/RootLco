@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import stylelint from 'stylelint';
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 
 /**
  * The Stylelint policy tests itself.
@@ -50,6 +50,33 @@ async function lint(code: string) {
  * failure through.
  */
 const COLD_START_TIMEOUT_MS = 20_000;
+
+/**
+ * The rule-set load is paid HERE, once, and not by whichever case happens to run
+ * first.
+ *
+ * Raising the budget above bought time; it did not stop the first case from
+ * carrying a cost that has nothing to do with what it asserts. Measured on one
+ * machine, one commit, four runs of the same unchanged test:
+ *
+ *     alone                                    864 ms
+ *     inside a healthy web tier              3,334 ms
+ *     tier + six review agents              21,596 ms   FAILED at 20 s
+ *     tier + two Next dev servers rebuilding 44,425 ms   FAILED at 20 s
+ *
+ * Nine cases in this file call `lint()`; eight of them were always fast, because
+ * the first one had already paid. So the budget was never guarding the check —
+ * it was guarding the loader, and the loader's cost scales with how busy the host
+ * is, which is the exact property the docblock above says disqualifies a test.
+ *
+ * Warming here restores what that docblock asks for: the timed cases now measure
+ * their own assertion, and a slow host cannot change their verdict. This is not a
+ * raised timeout, a skip, or a retry — the work still happens, it is simply not
+ * charged to a case that is about something else.
+ */
+beforeAll(async () => {
+  await lint('.stylelint-warmup { color: red; }');
+}, 120_000);
 
 describe('the web Stylelint configuration is valid', () => {
   it(
