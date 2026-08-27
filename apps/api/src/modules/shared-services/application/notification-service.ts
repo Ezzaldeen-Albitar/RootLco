@@ -35,18 +35,24 @@ import { log } from '@/server/observability/logger';
 import { metrics, METRICS } from '@/server/observability/metrics';
 import { backendConfig } from '@/server/config/backend-config';
 import type {
+  EnqueuePreparedInput,
   NotificationService,
+  PrepareNotificationInput,
+  PreparedNotification,
   QueuedMessage,
   QueueMessageInput,
 } from '@/server/contracts/notification-service';
+import type { WorkerDb } from '@/server/worker/worker-db';
 import { NotificationRepository } from '../data/notification-repository';
 import { TemplateRepository } from '../data/template-repository';
+import { MessageDispatchRepository } from '../data/message-dispatch-repository';
 import {
   assertConsent,
   assertDedupeKey,
   assertRecipientReference,
   assertSupportedChannel,
   bodyDigest,
+  isSupportedChannel,
   NotificationPolicyError,
   recipientDigest,
   assertTemplateUsable,
@@ -72,13 +78,140 @@ export class SharedNotificationService extends ApplicationService implements Not
 
   constructor(
     private readonly messages: NotificationRepository,
-    private readonly templates: TemplateRepository
+    private readonly templates: TemplateRepository,
+    private readonly dispatch: MessageDispatchRepository
   ) {
     super();
   }
 
   async queueMessage(db: DbHandle, input: QueueMessageInput): Promise<QueuedMessage> {
     return (await this.queueMessageWithRendering(db, input)).queued;
+  }
+
+  /**
+   * Resolves a notification to immutable facts without enqueueing it.
+   *
+   * The whole point is WHERE this runs: on `app_runtime`, inside the tenant's own
+   * RLS, where reading a template and rendering it are legal. It renders only to
+   * compute the digest and then lets the rendered content fall out of scope — the
+   * platform's rule is that rendered content is never persisted, and an event
+   * payload is persistence.
+   */
+  async prepareNotification(
+    db: DbHandle,
+    input: PrepareNotificationInput
+  ): Promise<PreparedNotification | null> {
+    const config = backendConfig();
+    const context = this.contextOf(db);
+
+    let dedupeKey;
+    let recipientRef;
+    try {
+      dedupeKey = assertDedupeKey(input.dedupeKey);
+      recipientRef = assertRecipientReference(input.recipientUserId);
+      // Applied HERE, not at the worker. The worker inserts directly and never
+      // calls `assertConsent`, so if this is not the gate then there is none.
+      assertConsent(input.consentEvaluation, new Date());
+    } catch (error) {
+      throw this.translatePolicy(error);
+    }
+
+    const supported = input.channels.filter((c) => isSupportedChannel(c));
+    if (supported.length === 0) return null;
+
+    const version = await this.templates.findActiveVersionByCode(
+      db,
+      input.templateCode,
+      supported as readonly string[]
+    );
+    // NOT an error. No message template ships with this platform, so an unseeded
+    // tenant reaches here on the ordinary path; a caller must not fail its own
+    // operation because content was never authored.
+    if (version === null) return null;
+
+    const channel = assertSupportedChannel(version.template_channel as never);
+    try {
+      assertTemplateUsable(
+        {
+          versionId: version.id,
+          versionStatus: version.status,
+          templateStatus: version.template_status,
+          templateTenantId: version.template_tenant_id,
+          channel: version.template_channel,
+          localeCode: version.template_locale,
+          purpose: version.template_purpose,
+        },
+        // `locale` is the row's own, so that comparison is a tautology here and is
+        // not evidence of anything — said plainly rather than left to look like a
+        // check. What actually constrains the choice is the query: the channel is
+        // one the caller offered, the template code is exact, and the row is the
+        // tenant's own or the platform default it shadows. The status, tenant and
+        // channel comparisons below are the load-bearing ones.
+        { channel, locale: version.template_locale, tenantId: context.principal.tenantId }
+      );
+    } catch {
+      // A disabled template or an unapproved version is a DATA STATE too. The
+      // request path throws here because a caller asked to send this exact
+      // message; a publisher only asked whether one was due.
+      return null;
+    }
+
+    let rendered: RenderedMessage;
+    try {
+      rendered = renderTemplate({ subject: version.subject, body: version.body }, input.variables, {
+        channel,
+        maxRenderedChars: config.NOTIFICATION_MAX_RENDERED_CHARS,
+      });
+    } catch (error) {
+      metrics().increment(METRICS.templateRenderFailureCount, {
+        channel,
+        rule: error instanceof TemplateRenderError ? error.rule : 'unknown',
+      });
+      throw this.translateRender(error);
+    }
+
+    return {
+      templateVersionId: version.id,
+      channel,
+      purpose: version.template_purpose,
+      recipientUserId: recipientRef,
+      // Hex, not a Buffer: this crosses into a `jsonb` payload, and a Buffer would
+      // come back as an object. The digest is computed from the rendered content
+      // and the content is discarded with this scope.
+      bodySha256: bodyDigest(canonicalRenderedForm(rendered)).toString('hex'),
+      dedupeKey,
+      consentRef: input.consentEvaluation.consentRecordId,
+    };
+  }
+
+  /**
+   * Enqueues already-resolved facts as the worker. Reads no template.
+   *
+   * Note the handle type: `WorkerDb`, so there is no `RequestContext` to read a
+   * tenant from and every scoping value must be named by the caller.
+   */
+  async enqueuePrepared(
+    db: WorkerDb,
+    input: EnqueuePreparedInput
+  ): Promise<QueuedMessage | null> {
+    const inserted = await this.dispatch.enqueuePrepared(db, {
+      id: crypto.randomUUID(),
+      tenantId: input.tenantId,
+      companyId: input.companyId,
+      branchId: input.branchId,
+      templateVersionId: input.templateVersionId,
+      channel: input.channel,
+      purpose: input.purpose,
+      recipientUserId: input.recipientUserId,
+      bodySha256: Buffer.from(input.bodySha256, 'hex'),
+      dedupeKey: input.dedupeKey,
+      consentRef: input.consentRef,
+      createdBy: input.createdBy,
+    });
+    if (inserted) return { messageId: inserted.id, deduplicated: false };
+
+    const existing = await this.dispatch.findIdByDedupeKey(db, input.tenantId, input.dedupeKey);
+    return existing === null ? null : { messageId: existing, deduplicated: true };
   }
 
   async queueMessageWithRendering(

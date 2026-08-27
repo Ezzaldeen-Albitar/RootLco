@@ -12,9 +12,18 @@
  *
  * | Relation                     | `app_worker` may                          |
  * | ---------------------------- | ----------------------------------------- |
- * | `shared.outbound_messages`   | SELECT · UPDATE(status, failure_class)    |
+ * | `shared.outbound_messages`   | SELECT · UPDATE(status, failure_class) · INSERT(13 cols, NOT `status`) |
  * | `shared.delivery_attempts`   | SELECT · INSERT(…)                        |
+ * | `shared.message_templates`   | **nothing at all**                        |
  * | `shared.template_versions`   | **nothing at all**                        |
+ *
+ * The INSERT is new (migration `20260827090000`) and is narrower than it looks:
+ * it is a COLUMN-level grant that excludes `status`, so `'pending'` — the column
+ * default — is the only state this role can produce, and the RESTRICTIVE policy
+ * `wkr_outbound_messages_enqueue_scope` pins that a second time along with a
+ * non-null tenant, author and dedupe key. It exists so an event consumer can
+ * enqueue; it does not let the worker author a message of its own devising,
+ * because every fact it writes must be carried to it.
  *
  * That last row is not an oversight to work around — it is the design, and it
  * settles how content flows. The worker **cannot read a template body**, and
@@ -220,6 +229,81 @@ export class MessageDispatchRepository {
       [tenantId, messageId]
     );
     return result.rows;
+  }
+
+  /**
+   * Enqueues an already-resolved notification, as the worker.
+   *
+   * Every scoping value is a PARAMETER, not a session GUC: this role drains a
+   * cross-tenant queue and has no `iam.current_tenant_id()` to read, so the
+   * tenant of the row comes from the event that caused it.
+   *
+   * `status` is not named, and could not be: it is outside the column grant, so
+   * the default `'pending'` is the only state this statement can produce. Naming
+   * it — even as `'pending'` — would be refused at the privilege layer with
+   * `permission denied for table`, which is asserted in the backend suite.
+   *
+   * `ON CONFLICT (tenant_id, dedupe_key) DO NOTHING` is the platform's EXISTING
+   * conflict target, reused rather than reinvented. A redelivered event therefore
+   * produces no second message even before `shared.processed_events` is consulted,
+   * so the two idempotency mechanisms agree instead of competing.
+   *
+   * Returns `null` when the key was already present — the caller reports that as
+   * a deduplicated enqueue, never as a new message.
+   */
+  async enqueuePrepared(
+    db: WorkerDb,
+    input: {
+      readonly id: string;
+      readonly tenantId: string;
+      readonly companyId: string | null;
+      readonly branchId: string | null;
+      readonly templateVersionId: string;
+      readonly channel: string;
+      readonly purpose: string;
+      readonly recipientUserId: string;
+      readonly bodySha256: Buffer;
+      readonly dedupeKey: string;
+      readonly consentRef: string | null;
+      readonly createdBy: string;
+    }
+  ): Promise<{ id: string } | null> {
+    const result = await db.query<{ id: string }>(
+      `INSERT INTO shared.outbound_messages
+         (id, tenant_id, company_id, branch_id, template_version_id, channel, purpose,
+          recipient_user_id, body_sha256, dedupe_key, consent_ref, created_by)
+       VALUES ($1, $2, $3::uuid, $4::uuid, $5, $6, $7, $8::uuid, $9, $10, $11, $12)
+       ON CONFLICT (tenant_id, dedupe_key) DO NOTHING
+       RETURNING id`,
+      [
+        input.id,
+        input.tenantId,
+        input.companyId,
+        input.branchId,
+        input.templateVersionId,
+        input.channel,
+        input.purpose,
+        input.recipientUserId,
+        input.bodySha256,
+        input.dedupeKey,
+        input.consentRef,
+        input.createdBy,
+      ]
+    );
+    return result.rows[0] ?? null;
+  }
+
+  /** The id an existing dedupe key already holds, so a replay can name the row. */
+  async findIdByDedupeKey(
+    db: WorkerDb,
+    tenantId: string,
+    dedupeKey: string
+  ): Promise<string | null> {
+    const result = await db.query<{ id: string }>(
+      `SELECT id FROM shared.outbound_messages WHERE tenant_id = $1 AND dedupe_key = $2`,
+      [tenantId, dedupeKey]
+    );
+    return result.rows[0]?.id ?? null;
   }
 }
 

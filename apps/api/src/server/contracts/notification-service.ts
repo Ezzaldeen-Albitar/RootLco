@@ -22,6 +22,7 @@
  */
 import { AppFailure } from '../errors/app-failure';
 import type { DbHandle } from '../db/transaction';
+import type { WorkerDb } from '../worker/worker-db';
 
 export type NotificationChannel = 'email' | 'sms' | 'whatsapp' | 'in_app';
 
@@ -58,8 +59,122 @@ export interface QueuedMessage {
   readonly deduplicated: boolean;
 }
 
+/**
+ * The immutable facts an already-resolved notification consists of.
+ *
+ * This is what a PUBLISHER computes under `app_runtime` inside the tenant's own
+ * context, and what an event may carry to a worker that can resolve none of it.
+ * Every field is either an opaque identifier or a digest: there is no rendered
+ * body here and no recipient address, because `outbound_messages` stores no body
+ * (`message-dispatcher.ts`) and a recipient is an opaque UUID reference, never an
+ * address (`assertRecipientReference`).
+ *
+ * `bodySha256` is hex rather than a Buffer so the shape survives JSON — an event
+ * payload is persisted as `jsonb`, and a Buffer would arrive back as an object.
+ */
+export interface PreparedNotification {
+  /** Immutable approved version from `shared.template_versions`. */
+  readonly templateVersionId: string;
+  /** The channel whose template resolved. Never assumed by the consumer. */
+  readonly channel: NotificationChannel;
+  /** `transactional | marketing | system` — a TEMPLATE fact, not a caller choice. */
+  readonly purpose: string;
+  /** The recipient, as a tenant user id. */
+  readonly recipientUserId: string;
+  /** Hex SHA-256 of the canonical rendered form, computed BEFORE publication. */
+  readonly bodySha256: string;
+  readonly dedupeKey: string;
+  /** Consent RECORD reference. Not a freshness claim — see `prepareNotification`. */
+  readonly consentRef: string | null;
+}
+
+export interface PrepareNotificationInput {
+  /** Stable identifier of the content. `purpose` classifies, it cannot identify. */
+  readonly templateCode: string;
+  /**
+   * Channels to try, in preference order.
+   *
+   * The channel is an INPUT to template resolution, not an output of it: the
+   * natural key is `(template_code, channel, locale_code)`. Passing an ordered
+   * list keeps the choice data-driven rather than hard-coded at the call site.
+   */
+  readonly channels: readonly NotificationChannel[];
+  /**
+   * No `locale` — deliberately, and this is not an omission.
+   *
+   * `shared.outbound_messages` has no locale column: the locale is a property of
+   * the TEMPLATE VERSION, so `templateVersionId` already carries it exactly. A
+   * caller choosing a locale here would have to know the tenant's
+   * `org.tenants.default_locale`, which belongs to the `iam` module — so every
+   * caller outside `iam` would need a new cross-module port to name a value that
+   * the resolved row already determines. The tenant's authored content decides.
+   */
+  readonly recipientUserId: string;
+  readonly variables: Record<string, string>;
+  readonly dedupeKey: string;
+  readonly consentEvaluation: ConsentEvaluation;
+}
+
+/**
+ * A prepared notification plus the scope and authorship a worker cannot supply.
+ *
+ * The worker holds no tenant context — it drains a cross-tenant queue — so every
+ * scoping value is named explicitly rather than read from a session GUC.
+ */
+export interface EnqueuePreparedInput extends PreparedNotification {
+  readonly tenantId: string;
+  readonly companyId: string | null;
+  readonly branchId: string | null;
+  /** `outbound_messages.created_by` is NOT NULL and the worker policy requires it. */
+  readonly createdBy: string;
+}
+
 export interface NotificationService {
   queueMessage(db: DbHandle, input: QueueMessageInput): Promise<QueuedMessage>;
+
+  /**
+   * Resolves a notification to immutable facts WITHOUT enqueueing it.
+   *
+   * Runs on the REQUEST side, under `app_runtime` and the tenant's own RLS, so it
+   * may read templates and render. It renders only to compute `bodySha256` and
+   * then DISCARDS the rendered content — `message-dispatcher.ts` records that
+   * rendered content is "never persisted, never logged", and an event payload is
+   * persistence.
+   *
+   * Returns `null` when no usable template exists for any offered channel. That
+   * is a DATA STATE, not a failure: no message template ships with this platform
+   * (zero seeds, zero migration inserts) and `assertTemplateUsable` requires an
+   * approved version of an active template, so a fresh tenant has none. A caller
+   * must not fail its own operation because a tenant has not authored content.
+   *
+   * `consentRef` is carried as a durable POINTER to a consent record. It is not a
+   * freshness guarantee: `assertConsent` refuses an evaluation older than five
+   * minutes on the request path, and queue lag can exceed that, so nothing
+   * downstream may read this field as "consent was fresh when the row was
+   * written".
+   */
+  prepareNotification(
+    db: DbHandle,
+    input: PrepareNotificationInput
+  ): Promise<PreparedNotification | null>;
+
+  /**
+   * Enqueues an ALREADY-RESOLVED notification. Reads no template, renders nothing.
+   *
+   * This is the worker's entry point. `app_worker` holds a column-level INSERT on
+   * `shared.outbound_messages` that excludes `status`, narrowed by the RESTRICTIVE
+   * policy `wkr_outbound_messages_enqueue_scope`, so the only row it can produce
+   * is a `pending` one carrying a tenant, an author and a dedupe key.
+   *
+   * Returns `null` when the existing `(tenant_id, dedupe_key)` conflict target
+   * already held a row — the platform's idempotency, reused rather than reinvented.
+   *
+   * Takes a `WorkerDb`, NOT a `DbHandle`. That is the type system stating the
+   * boundary: a `DbHandle` carries a `RequestContext`, and the worker has none —
+   * so a signature that accepted one would suggest this path could read a tenant
+   * from the session, which is exactly the assumption that must not be made here.
+   */
+  enqueuePrepared(db: WorkerDb, input: EnqueuePreparedInput): Promise<QueuedMessage | null>;
 }
 
 /** Contract-only stub. */
@@ -68,6 +183,24 @@ export class NotImplementedNotificationService implements NotificationService {
     throw new AppFailure('ERR-STB-001', {
       message:
         'NotificationService.queueMessage is a P1-13 contract stub; implementation lands in Phase 1-15/1-23',
+      safeDetails: { contract: 'NotificationService' },
+    });
+  }
+
+  async prepareNotification(): Promise<PreparedNotification | null> {
+    // Throws rather than returning null. `null` is the contract's way of saying
+    // "no usable template", a legitimate data state a caller proceeds past — so a
+    // stub returning it would make an unbound service indistinguishable from an
+    // unseeded tenant, and the composition-root omission would never surface.
+    throw new AppFailure('ERR-STB-001', {
+      message: 'NotificationService.prepareNotification has no implementation bound',
+      safeDetails: { contract: 'NotificationService' },
+    });
+  }
+
+  async enqueuePrepared(): Promise<QueuedMessage | null> {
+    throw new AppFailure('ERR-STB-001', {
+      message: 'NotificationService.enqueuePrepared has no implementation bound',
       safeDetails: { contract: 'NotificationService' },
     });
   }

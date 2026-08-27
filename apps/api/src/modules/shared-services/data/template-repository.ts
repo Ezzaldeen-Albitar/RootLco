@@ -272,6 +272,53 @@ export class TemplateRepository extends Repository {
     );
   }
 
+  /**
+   * The ACTIVE version of a template code, across a channel preference order.
+   *
+   * Exists because a caller that knows only WHAT to say cannot supply the natural
+   * key: that key is `(template_code, channel, locale_code)`, so `findTemplateByCode`
+   * requires the caller to have already chosen a channel AND a locale. A publisher
+   * resolving a notification knows neither — the channel is whatever the tenant
+   * authored content for, and the locale is a property of the row rather than an
+   * input, since `shared.outbound_messages` has no locale column.
+   *
+   * `array_position` over the caller's own channel list makes the preference
+   * ORDER data rather than a hard-coded `ORDER BY channel = 'email' DESC`, and a
+   * tenant row shadows a platform row of the same channel — the override
+   * precedence every catalogue in this platform uses.
+   *
+   * Joins `active_version_id`, so a template whose administrator never approved a
+   * version simply does not match. Usability is still asserted by the caller:
+   * this returns the row, it does not judge it.
+   */
+  async findActiveVersionByCode(
+    db: DbHandle,
+    templateCode: string,
+    channels: readonly string[]
+  ): Promise<TemplateVersionRow | null> {
+    const context = this.assertContext(db);
+    return this.runOne<TemplateVersionRow>(
+      db,
+      `SELECT v.id, v.template_id, v.tenant_id, v.version_number, v.subject, v.body,
+              v.status, v.record_version,
+              t.scope       AS template_scope,
+              t.tenant_id   AS template_tenant_id,
+              t.channel     AS template_channel,
+              t.locale_code AS template_locale,
+              t.purpose     AS template_purpose,
+              t.status      AS template_status
+         FROM shared.message_templates t
+         JOIN shared.template_versions v ON v.id = t.active_version_id
+        WHERE t.template_code = $1
+          AND t.channel = ANY($2::text[])
+          AND t.deleted_at IS NULL
+          AND (t.scope = 'platform' OR t.tenant_id = $3)
+        ORDER BY array_position($2::text[], t.channel), (t.scope = 'tenant') DESC
+        LIMIT 1`,
+      [templateCode, [...channels], context.principal.tenantId]
+    );
+  }
+
   /** Revises draft content. The lifecycle guard refuses this once approved. */
   async updateDraftContent(
     db: DbHandle,
