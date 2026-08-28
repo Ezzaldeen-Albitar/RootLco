@@ -168,6 +168,42 @@ describe('the worker may enqueue, and only a pending message', () => {
     ).rejects.toThrow(/permission denied for table outbound_messages/);
   });
 
+  it('cannot name a template_version_id WITHOUT the witness that proves it', async () => {
+    /*
+     * THE CONSTRAINT THAT SHAPES THE WHOLE WORKER ENQUEUE PATH, and it has moved
+     * once already — so what it asserts now is worth stating precisely.
+     *
+     * `shared.outbound_messages` carries `tg_outbound_messages_guard_scope` ->
+     * `shared.guard_outbound_message_scope()`, which is SECURITY INVOKER. When
+     * `NEW.template_version_id IS NOT NULL` and there is no approval witness, it
+     * runs `SELECT tenant_id, status FROM shared.template_versions ... FOR SHARE`,
+     * and `app_worker` holds no privilege on that table at all.
+     *
+     * Until migration 128 that made naming a version impossible for this role, and
+     * an earlier version of this case asserted exactly that — "a worker-enqueued
+     * row must leave `template_version_id` NULL". **That is no longer true**, and
+     * carrying the sentence forward through the merge would have been a false
+     * claim in a passing test: with a witness the worker names a real version, and
+     * the first case in this suite proves it.
+     *
+     * What survives is the half that is still true. Without a witness the row is
+     * refused — by the RESTRICTIVE policy, which now requires one, before the
+     * guard's forbidden read is ever reached. Granting the worker a SELECT on the
+     * template tables is what the payload-carries-the-facts decision forbids, and
+     * a SECURITY DEFINER guard is prohibited outright, so the refusal is the
+     * design and not a defect.
+     */
+    await expect(
+      worker.query(
+        `INSERT INTO shared.outbound_messages
+           (tenant_id, channel, purpose, dedupe_key, body_sha256, recipient_user_id,
+            created_by, template_version_id, template_owner_tenant_id)
+         VALUES ($1, 'in_app', 'transactional', $2, sha256('b'::bytea), $3, $4, $5, $1)`,
+        args(`tvid:${Date.now()}`).slice(0, 5)
+      )
+    ).rejects.toThrow(/row-level security policy|permission denied/);
+  });
+
   it('honours the existing (tenant_id, dedupe_key) conflict rather than a new mechanism', async () => {
     const key = `dedupe:${Date.now()}`;
     await worker.query(

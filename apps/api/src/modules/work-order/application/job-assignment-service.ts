@@ -38,6 +38,8 @@ import { SQLSTATE, isSqlState } from '@/server/db/repository';
 import { appendAudit } from '@/server/audit/audit';
 import { publishEvent } from '@/server/events/publisher';
 import { technicianModule } from '@/modules/technician';
+import { notificationService } from '@/server/contracts/notification-service';
+import type { PreparedNotification } from '@/server/contracts/notification-service';
 import type {
   AssignmentRow,
   TechnicianQueueRow,
@@ -410,7 +412,7 @@ export class JobAssignmentService extends ApplicationService {
     db: DbHandle,
     jobId: string,
     authorizeScope?: ScopeAuthorizer
-  ): Promise<{ readonly companyId: string; readonly branchId: string }> {
+  ): Promise<{ readonly companyId: string; readonly branchId: string; readonly title: string }> {
     const locked = await this.repository.lockJob(db, jobId);
     if (locked === null) {
       throw new AppFailure('ERR-RES-001', { message: `Job ${jobId} is not visible` });
@@ -433,7 +435,10 @@ export class JobAssignmentService extends ApplicationService {
         message: `Work order state "${workOrder?.state ?? 'unknown'}" does not accept assignments`,
       });
     }
-    return { companyId: locked.companyId, branchId: locked.branchId };
+    // `title` is carried out with the scope because `job.assigned` v2 renders it
+    // into the notification. Read off the SAME locked row as the scope, so the
+    // title on the event is the title the assignment was made against.
+    return { companyId: locked.companyId, branchId: locked.branchId, title: locked.title };
   }
 
   private async auditAssigned(
@@ -481,11 +486,48 @@ export class JobAssignmentService extends ApplicationService {
     });
   }
 
+  /**
+   * Publishes `job.assigned` **schemaVersion 2** — the payload carries the facts.
+   *
+   * ## Why the publisher resolves what a consumer used to
+   *
+   * The consumer of this event runs on `app_worker`, which has USAGE on neither
+   * `wo` nor `tech` and no privilege at all on `shared.message_templates`. Those
+   * facts are therefore not merely awkward to resolve there — they are
+   * unreachable BY DESIGN, and widening the worker to reach them is exactly the
+   * privilege the Owner's payload-carries-the-facts decision forbids.
+   *
+   * This method runs on `app_runtime`, inside the tenant's own RLS, where every
+   * one of those reads is legal and already scoped. So the lineage question a
+   * database policy cannot answer — does this tenant own this recipient — is
+   * answered HERE, by the only party that can, and the worker forwards a verified
+   * fact instead of asserting an unverified one.
+   *
+   * ## Nothing here may fail an assignment, and that is enforced rather than hoped
+   *
+   * A technician was assigned; that is the operation, and it has already
+   * succeeded by the time this runs. `prepareNotification` therefore returns
+   * `null` — and the event is published WITHOUT the notification block — for
+   * every data state it can meet: no template authored (the state of every tenant
+   * today, since none ships), a disabled template, an unapproved version, and a
+   * tenant-authored body this publisher cannot render.
+   *
+   * That last one is not hypothetical and is why the guarantee is written down.
+   * `renderTemplate` is strict in both directions, template bodies are authored
+   * through shipped tenant operations, and nothing binds a variable contract to a
+   * template code — so before it was caught, a tenant that authored
+   * `job_assigned_notification` as "You have a new job." (no placeholders) made
+   * this method throw `ERR-VAL-001`, and `POST /jobs/{jobId}/assignments` answered
+   * 422 and rolled the assignment row back. A tenant could switch off technician
+   * assignment by editing a notification template.
+   */
   private async publishAssigned(
     db: DbHandle,
-    job: { readonly companyId: string; readonly branchId: string },
+    job: { readonly companyId: string; readonly branchId: string; readonly title: string },
     opened: AssignmentRow
   ): Promise<void> {
+    const notification = await this.resolveAssignmentNotification(db, job, opened);
+
     await publishEvent(db, {
       eventType: 'job.assigned',
       // The aggregate is the JOB, not the assignment row: the catalog declares
@@ -500,6 +542,12 @@ export class JobAssignmentService extends ApplicationService {
         jobId: opened.jobId,
         assignmentId: opened.id,
         assignmentRole: opened.assignmentRole,
+        // v2. Absent — not null-filled — when no usable template exists, so a
+        // consumer distinguishes "nothing to send" from "something to send whose
+        // fields happen to be empty". `company_id`/`branch_id`/`created_by` are
+        // NOT repeated here: they are envelope columns the worker already reads
+        // off the outbox row, and a second copy would be free to disagree.
+        ...(notification === null ? {} : { notification }),
       },
       // Keyed by the ASSIGNMENT id, not the job: a job is legitimately assigned
       // more than once over its life, and keying by the job would make the second
@@ -507,7 +555,62 @@ export class JobAssignmentService extends ApplicationService {
       eventKey: `job.assigned:${opened.id}`,
     });
   }
+
+  /**
+   * The notification facts for one assignment, or `null` when none is due.
+   *
+   * Returns `null` rather than throwing on every DATA state — no technician
+   * profile here, and no usable or renderable template inside
+   * `prepareNotification` — because an assignment that succeeded must not be
+   * undone by the absence, or the misconfiguration, of optional content.
+   */
+  private async resolveAssignmentNotification(
+    db: DbHandle,
+    job: { readonly title: string },
+    opened: AssignmentRow
+  ): Promise<PreparedNotification | null> {
+    // Through the technician module's public surface, never by reading `tech.`
+    // from a work-order repository: the module-boundary gate refuses that, and
+    // this is the same call `queue()` already makes in this file.
+    const profile = await technicianModule().eligibility.profile(db, opened.technicianProfileId);
+    if (profile === null) return null;
+
+    return notificationService().prepareNotification(db, {
+      templateCode: ASSIGNMENT_TEMPLATE_CODE,
+      // An ORDER, not a hard-coded channel. A work assignment reaches a
+      // technician first in the tool they are already working in; email is the
+      // fallback when a tenant has authored only that. Which one is used is
+      // decided by the content the tenant actually authored, and the channel that
+      // won is carried on the event rather than assumed downstream.
+      channels: ['in_app', 'email'],
+      recipientUserId: profile.userId,
+      variables: {
+        jobTitle: job.title,
+        assignmentRole: opened.assignmentRole,
+      },
+      // Stable across redeliveries and unique per assignment, which is what makes
+      // the enqueue idempotent against the EXISTING `(tenant_id, dedupe_key)`
+      // conflict target rather than a mechanism invented for this slice.
+      dedupeKey: `job-assigned:${opened.id}`,
+      // An internal staff recipient, so there is no consent record to consult and
+      // `consentRecordId` is null rather than fabricated: the platform's consent
+      // model is `crm.consent_history`, which covers CUSTOMERS. Recording a null
+      // says "no record was consulted"; inventing an id would say a record was.
+      consentEvaluation: { granted: true, consentRecordId: null, evaluatedAt: new Date() },
+    });
+  }
 }
+
+/**
+ * The content this notification is sent from.
+ *
+ * A `template_code`, not a template id and not a `purpose`: `purpose` is a CLOSED
+ * vocabulary (`transactional | marketing | system`) that CLASSIFIES a template and
+ * cannot identify one. The code is the stable identifier, which is what lets this
+ * file name the content it needs without naming a row no Owner has written yet —
+ * and none has: zero message templates ship.
+ */
+export const ASSIGNMENT_TEMPLATE_CODE = 'job_assigned_notification';
 
 /** Re-exported so a route can validate the role without importing the domain file. */
 export { ASSIGNMENT_ROLES };

@@ -90,15 +90,41 @@ describe('NotImplementedNotificationService', () => {
   const stub = new NotImplementedNotificationService();
 
   it('exposes exactly the frozen interface surface', () => {
-    expect(methodNames(NotImplementedNotificationService.prototype)).toEqual(['queueMessage']);
+    /*
+     * THREE methods since PRE-P1-29, and the growth is deliberate rather than
+     * drift. `queueMessage`'s signature is what P1-13 froze so Phases 1-15/1-23
+     * could implement against it, and it is untouched: the two additions are new
+     * methods beside it, because the enqueue path had to split in two.
+     *
+     * `prepareNotification` runs on the REQUEST side, where reading a template
+     * and rendering it are legal. `enqueuePrepared` runs on the WORKER, which
+     * holds nothing at all on the template tables — so it reads none and takes a
+     * `WorkerDb` rather than a `DbHandle`, since it has no `RequestContext` to
+     * read a tenant from.
+     *
+     * Adding to this list is not free and should not be routine: every
+     * implementer of `NotificationService` must satisfy the whole surface, so a
+     * fourth entry here means a real decision was taken somewhere.
+     */
+    expect(methodNames(NotImplementedNotificationService.prototype)).toEqual([
+      'enqueuePrepared',
+      'prepareNotification',
+      'queueMessage',
+    ]);
   });
 
-  it.each([{ name: 'queueMessage', invoke: (): Promise<unknown> => stub.queueMessage() }])(
-    'rejects $name with ERR-STB-001 naming the contract',
-    async ({ invoke }) => {
-      await expectNotImplemented(invoke, 'NotificationService');
-    }
-  );
+  it.each([
+    { name: 'queueMessage', invoke: (): Promise<unknown> => stub.queueMessage() },
+    // Both stubs THROW rather than returning null. `null` is how the real
+    // `prepareNotification` says "no usable template", a state a caller
+    // legitimately proceeds past — so a stub returning it would make an unbound
+    // service indistinguishable from an unseeded tenant, and a composition-root
+    // omission would never surface.
+    { name: 'prepareNotification', invoke: (): Promise<unknown> => stub.prepareNotification() },
+    { name: 'enqueuePrepared', invoke: (): Promise<unknown> => stub.enqueuePrepared() },
+  ])('rejects $name with ERR-STB-001 naming the contract', async ({ invoke }) => {
+    await expectNotImplemented(invoke, 'NotificationService');
+  });
 
   it('is the installed default and can be replaced by composition', () => {
     expect(notificationService()).toBeInstanceOf(NotImplementedNotificationService);

@@ -272,6 +272,80 @@ export class TemplateRepository extends Repository {
     );
   }
 
+  /**
+   * The ACTIVE version of a template code, across a channel preference order.
+   *
+   * Exists because a caller that knows only WHAT to say cannot supply the natural
+   * key: that key is `(template_code, channel, locale_code)`, so `findTemplateByCode`
+   * requires the caller to have already chosen a channel AND a locale. A publisher
+   * resolving a notification knows neither — the channel is whatever the tenant
+   * authored content for, and the locale is a property of the row rather than an
+   * input, since `shared.outbound_messages` has no locale column.
+   *
+   * `array_position` over the caller's own channel list makes the preference
+   * ORDER data rather than a hard-coded `ORDER BY channel = 'email' DESC`, and a
+   * tenant row shadows a platform row of the same channel — the override
+   * precedence every catalogue in this platform uses.
+   *
+   * Joins `active_version_id`, so a template whose administrator never approved a
+   * version simply does not match. Usability is still asserted by the caller:
+   * this returns the row, it does not judge it.
+   */
+  async findActiveVersionByCode(
+    db: DbHandle,
+    templateCode: string,
+    channel: string
+  ): Promise<TemplateVersionRow | null> {
+    const context = this.assertContext(db);
+    return this.runOne<TemplateVersionRow>(
+      db,
+      `SELECT v.id, v.template_id, v.tenant_id, v.version_number, v.subject, v.body,
+              v.status, v.record_version,
+              t.scope       AS template_scope,
+              t.tenant_id   AS template_tenant_id,
+              t.channel     AS template_channel,
+              t.locale_code AS template_locale,
+              t.purpose     AS template_purpose,
+              t.status      AS template_status
+         FROM shared.message_templates t
+         JOIN shared.template_versions v ON v.id = t.active_version_id
+        WHERE t.template_code = $1
+          AND t.channel = $2
+          AND t.deleted_at IS NULL
+          AND (t.scope = 'platform' OR t.tenant_id = $3)
+        ORDER BY (t.scope = 'tenant') DESC, t.locale_code, t.id
+        LIMIT 1`,
+      [templateCode, channel, context.principal.tenantId]
+    );
+  }
+
+  /**
+   * The canonical approval witness for a version, or null if it has none.
+   *
+   * Read HERE, on the request side, because the worker cannot: `app_worker` holds
+   * no privilege on `shared.template_version_approvals` at any level, which is the
+   * whole reason the witness id travels on the event instead.
+   *
+   * A null result means the version was approved BEFORE migration 128 and no
+   * witness was derived for it. That is a real state on an upgraded database until
+   * `scripts/db/backfill-template-approval-witnesses.mjs` is run, and the caller
+   * treats it as "not usable" rather than inventing a witness — a publisher that
+   * could mint one would defeat the point of an immutable approval record.
+   */
+  async findApprovalWitness(
+    db: DbHandle,
+    templateVersionId: string
+  ): Promise<{ readonly id: string; readonly owner_tenant_id: string } | null> {
+    this.assertContext(db);
+    return this.runOne<{ id: string; owner_tenant_id: string }>(
+      db,
+      `SELECT id, owner_tenant_id
+         FROM shared.template_version_approvals
+        WHERE template_version_id = $1`,
+      [templateVersionId]
+    );
+  }
+
   /** Revises draft content. The lifecycle guard refuses this once approved. */
   async updateDraftContent(
     db: DbHandle,

@@ -1,12 +1,12 @@
 {
-  "task": "P1-27-QA-005 \u2014 the authority behind every closing value",
+  "task": "P1-27-QA-005 — the authority behind every closing value",
   "what": "Every numeric or string closing value on clean-room-evidence.md and ci-evidence.md, classified as exactly one of six classes, with the authority that decides it. scripts/ci/check-p1-27-closing-values.mjs reads this file, resolves each authority against the tree, and refuses a value that disagrees, a value nothing claims, and a value whose class does not match the region it sits in.",
   "why": "An adversarial pass falsified six hosted-CI figures on these two pages with every gate green, and measured that fewer than half the values they state were read by anything. A number on a closing page that no check consults is a decoration standing where evidence is supposed to be, and the checked numbers beside it lend it credibility it has not earned. Correcting six figures produces six figures that will be wrong again; the durable fix is the rule that no value may appear without naming its authority.",
   "howToCheck": "npm run validate:p1-27-closing-values",
-  "whatThisIsNot": "This file does not make a hosted observation true. For HOSTED_ARTIFACT_ATTESTED the gate proves INTERNAL CONSISTENCY only \u2014 that the record names a run, a job or artefact and the exact head it describes, that nothing hosted claims local provenance, and that nothing describing another head is presented as current. The observation itself is collected externally, from the GitHub API during exact-head CI, by a reader of the run. A local validator that claimed to reproduce it would be lying about what it did.",
+  "whatThisIsNot": "This file does not make a hosted observation true. For HOSTED_ARTIFACT_ATTESTED the gate proves INTERNAL CONSISTENCY only — that the record names a run, a job or artefact and the exact head it describes, that nothing hosted claims local provenance, and that nothing describing another head is presented as current. The observation itself is collected externally, from the GitHub API during exact-head CI, by a reader of the run. A local validator that claimed to reproduce it would be lying about what it did.",
   "classes": {
     "DERIVABLE_LOCAL": "A command in this repository answers it. The gate runs the derivation and refuses a disagreement. Executed test totals resolve against evidence/local-run-ledger.json, which is written only by `--record` from a vitest JSON report and expires when an executable path changes; committed FLOORS resolve against the baseline that defines them, which is a definition rather than a circle.",
-    "DERIVABLE_GIT": "The git object database answers it \u2014 a ref, a tree listing, a diff, an ancestry. Separated from DERIVABLE_LOCAL because git answers questions about commits that are not checked out, which no filesystem walk can.",
+    "DERIVABLE_GIT": "The git object database answers it — a ref, a tree listing, a diff, an ancestry. Separated from DERIVABLE_LOCAL because git answers questions about commits that are not checked out, which no filesystem walk can.",
     "HOSTED_ARTIFACT_ATTESTED": "A fact about a GitHub-hosted runner. Every record names SOURCE=HOSTED_ARTIFACT, a run id, a job or artefact, the 40-character head it describes, the field and the value. A record with standing PENDING_CANDIDATE_OBSERVATION carries no value and names where the observation will come from.",
     "PROTECTED_POST_MERGE_ONLY": "Produced only by a push to a protected branch. It cannot exist before the merge, so the value is null and the page states the pending status. A figure here while the merge has not been taken is refused.",
     "HISTORICAL_SUPERSEDED": "True of a head this record no longer describes. Kept rather than deleted, banner-marked in the rendered page, and excluded from the current seal. Each one names the check that binds it or says why none can.",
@@ -14,7 +14,7 @@
   },
   "candidate": {
     "CODE_CANDIDATE_SHA": "501f5f0d48d7b8cafc12dad51f6c501534b66a18",
-    "note": "FROZEN at 501f5f0d48d7b8cafc12dad51f6c501534b66a18 \u2014 the lifecycle ledger beside this file is the authority for that fact and this gate reads it rather than restating it. The hosted observations at this seal were taken at the documentation-only successor f0804b2c7ad31e08f033f76096d49c5394d69c81 (run 31587707846); each CURRENT hosted entry names the candidate as the head its observation describes, records the run head beside it in runTakenAtHead, and the equivalence is not asserted by either field: it is the derived executable-diff value on the pages, recomputed on every gate run."
+    "note": "FROZEN at 501f5f0d48d7b8cafc12dad51f6c501534b66a18 — the lifecycle ledger beside this file is the authority for that fact and this gate reads it rather than restating it. The hosted observations at this seal were taken at the documentation-only successor f0804b2c7ad31e08f033f76096d49c5394d69c81 (run 31587707846); each CURRENT hosted entry names the candidate as the head its observation describes, records the run head beside it in runTakenAtHead, and the equivalence is not asserted by either field: it is the derived executable-diff value on the pages, recomputed on every gate run."
   },
   "values": [
     {
@@ -77,7 +77,7 @@
       "class": "DERIVABLE_LOCAL",
       "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
-      "locator": "| Web tier \u2014 tests executed                   | 2889  | `--record web`, from the `vitest` JSON report                      |",
+      "locator": "| Web tier — tests executed                   | 2889  | `--record web`, from the `vitest` JSON report                      |",
       "value": "2889",
       "binding": {
         "kind": "run",
@@ -90,7 +90,7 @@
       "class": "DERIVABLE_LOCAL",
       "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
-      "locator": "| Web tier \u2014 files the run reported           | 102    | the same report, cross-checked against the walk above              |",
+      "locator": "| Web tier — files the run reported           | 102    | the same report, cross-checked against the walk above              |",
       "value": "102",
       "binding": {
         "kind": "run",
@@ -104,8 +104,8 @@
       "class": "DERIVABLE_LOCAL",
       "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
-      "locator": "| Root unit tier \u2014 tests executed             | 3025  | `--record unit`, from the `vitest` JSON report                     |",
-      "value": "3025",
+      "locator": "| Root unit tier — tests executed             | 3027  | `--record unit`, from the `vitest` JSON report                     |",
+      "value": "3027",
       "binding": {
         "kind": "run",
         "tier": "unit",
@@ -118,7 +118,7 @@
       "class": "DERIVABLE_LOCAL",
       "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
-      "locator": "| Root unit tier \u2014 files the run reported     | 110   | the same report, cross-checked against the tier's include rule      |",
+      "locator": "| Root unit tier — files the run reported     | 110   | the same report, cross-checked against the tier's include rule      |",
       "value": "110",
       "binding": {
         "kind": "run",
@@ -244,7 +244,7 @@
       "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
       "value": "Go",
       "why": "protected-gate runs only on a push to a protected branch. The lifecycle ledger records the merge as not taken, and while that is so this entry may not carry a figure.",
-      "locator": "| `PROTECTED_GATE_GO` | **Go** | taken on the protected merge push itself \u2014 the run, both job ids and the merge head are recorded and validated in `evidence/lifecycle-ledger.json`, whose gate refuses a GREEN without them |",
+      "locator": "| `PROTECTED_GATE_GO` | **Go** | taken on the protected merge push itself — the run, both job ids and the merge head are recorded and validated in `evidence/lifecycle-ledger.json`, whose gate refuses a GREEN without them |",
       "provenance": {
         "source": "HOSTED_ARTIFACT",
         "runId": "31590615278",
@@ -261,8 +261,8 @@
       "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
       "value": "0",
-      "why": "Both pages used to state the CodeQL figure as `repository-wide`. It came from a pull-request analysis, which is diff-informed and cannot establish a repository ceiling \u2014 the phase's own CodeQL remediation record says so in those words. The figure is kept as what the analysed refs carried; the ceiling is pending.",
-      "locator": "| `CODEQL_REPOSITORY_CEILING` | **0** | open alerts repository-wide, read from the code-scanning API after the merge \u2014 the only reader that can state a repository ceiling; a pull-request analysis is diff-informed and never could |",
+      "why": "Both pages used to state the CodeQL figure as `repository-wide`. It came from a pull-request analysis, which is diff-informed and cannot establish a repository ceiling — the phase's own CodeQL remediation record says so in those words. The figure is kept as what the analysed refs carried; the ceiling is pending.",
+      "locator": "| `CODEQL_REPOSITORY_CEILING` | **0** | open alerts repository-wide, read from the code-scanning API after the merge — the only reader that can state a repository ceiling; a pull-request analysis is diff-informed and never could |",
       "provenance": {
         "source": "HOSTED_ARTIFACT",
         "runId": "31590615278",
@@ -279,7 +279,7 @@
       "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/ci-evidence.md",
       "value": "Go",
-      "locator": "| `PROTECTED_GATE_GO`         | **Go**  | taken on the protected merge push itself \u2014 the run, both job ids and the merge head are recorded and validated in `evidence/lifecycle-ledger.json`, whose gate refuses a GREEN without them  |",
+      "locator": "| `PROTECTED_GATE_GO`         | **Go**  | taken on the protected merge push itself — the run, both job ids and the merge head are recorded and validated in `evidence/lifecycle-ledger.json`, whose gate refuses a GREEN without them  |",
       "provenance": {
         "source": "HOSTED_ARTIFACT",
         "runId": "31590615278",
@@ -296,7 +296,7 @@
       "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/ci-evidence.md",
       "value": "0",
-      "locator": "| `CODEQL_REPOSITORY_CEILING` | **0**   | open alerts repository-wide, read from the code-scanning API after the merge \u2014 the only reader that can state a repository ceiling; a pull-request analysis is diff-informed and never could |",
+      "locator": "| `CODEQL_REPOSITORY_CEILING` | **0**   | open alerts repository-wide, read from the code-scanning API after the merge — the only reader that can state a repository ceiling; a pull-request analysis is diff-informed and never could |",
       "provenance": {
         "source": "HOSTED_ARTIFACT",
         "runId": "31590615278",
@@ -312,7 +312,7 @@
       "class": "HOSTED_ARTIFACT_ATTESTED",
       "standing": "HISTORICAL",
       "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
-      "locator": "| Workflow run               | `31312531302` \u2014 PR #214                                    |",
+      "locator": "| Workflow run               | `31312531302` — PR #214                                    |",
       "value": "31312531302",
       "provenance": {
         "source": "HOSTED_ARTIFACT",
@@ -364,7 +364,7 @@
       "class": "HOSTED_ARTIFACT_ATTESTED",
       "standing": "HISTORICAL",
       "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
-      "locator": "| Coverage \u2014 lines / branches | 95.53% / 93.89%                                           |",
+      "locator": "| Coverage — lines / branches | 95.53% / 93.89%                                           |",
       "value": "95.53%",
       "provenance": {
         "source": "HOSTED_ARTIFACT",
@@ -459,7 +459,7 @@
         "headSha": "78c458723671ac1c7d7c8721a09d4fd156283054",
         "artifact": "authenticated-browser job",
         "field": "run id",
-        "collectedBy": "Read from the GitHub run records, which are not in this tree \u2014 which is why the dispute about this tier survived a full wave here. The head is taken from .github/ci-baselines/unrun-test-tiers.json, which records the three executions run by run. It was WRONG here for one revision: the abbreviated sha on the page was expanded by hand into forty characters that named no commit, and every shape check passed it. HOSTED_VALUE_HEAD_NOT_A_COMMIT exists because of that."
+        "collectedBy": "Read from the GitHub run records, which are not in this tree — which is why the dispute about this tier survived a full wave here. The head is taken from .github/ci-baselines/unrun-test-tiers.json, which records the three executions run by run. It was WRONG here for one revision: the abbreviated sha on the page was expanded by hand into forty characters that named no commit, and every shape check passed it. HOSTED_VALUE_HEAD_NOT_A_COMMIT exists because of that."
       },
       "why": "Bound further by tests/ci/p1-27-doc-counts.test.ts, which compares this citation against the run recorded in .github/ci-baselines/unrun-test-tiers.json."
     },
@@ -474,7 +474,7 @@
         "file": "tests/ci/p1-27-doc-counts.test.ts",
         "contains": "the superseded web tier row"
       },
-      "why": "The FILE half of a superseded row is not a runner's opinion \u2014 it is a property of a tree still in the object database, and it is derived from that head."
+      "why": "The FILE half of a superseded row is not a runner's opinion — it is a property of a tree still in the object database, and it is derived from that head."
     },
     {
       "id": "CR-E-SUPERSEDED-UNIT-TIER",
@@ -520,7 +520,7 @@
         "file": "tests/ci/p1-27-doc-counts.test.ts",
         "contains": "the historical hash is not the current baseline"
       },
-      "why": "A superseded measurement. It looked like the least checkable figure on the page, and the temptation is to refresh it when the baseline moves \u2014 which would turn a record of a past head into a claim about today. It is bound to a case that asserts it is NOT the current baseline hash."
+      "why": "A superseded measurement. It looked like the least checkable figure on the page, and the temptation is to refresh it when the baseline moves — which would turn a record of a past head into a claim about today. It is bound to a case that asserts it is NOT the current baseline hash."
     },
     {
       "id": "CR-E-STALE-TOTAL",
@@ -549,7 +549,7 @@
       "class": "HISTORICAL_SUPERSEDED",
       "standing": "HISTORICAL",
       "document": "docs/phase-1/phase-1-27/ci-evidence.md",
-      "locator": "**Go** \u2014 13 governed jobs",
+      "locator": "**Go** — 13 governed jobs",
       "value": "13",
       "boundBy": {
         "file": "tests/ci/p1-27-doc-counts.test.ts",
@@ -605,7 +605,7 @@
         "since": "501f5f0d48d7b8cafc12dad51f6c501534b66a18",
         "until": "aa78a6627bff0400621ec13d10777e44ff2cf9a3"
       },
-      "why": "The documentation-only claim as a NUMBER a command produces \u2014 the rule this page states in its own superseded section after asserting the sentence once and being wrong. Zero is the only value at which DOCUMENTATION_ONLY_RECORDING may be claimed, and the binding recomputes it on every gate run. Both ends are pinned since the closure: a one-sided candidate..HEAD span answers a different question on every post-closure commit \u2014 the first being the acceptance wave, whose guard lifts are executable by design \u2014 while candidate..accepted-develop is the equivalence the Owner acceptance actually relied on, and its answer cannot move."
+      "why": "The documentation-only claim as a NUMBER a command produces — the rule this page states in its own superseded section after asserting the sentence once and being wrong. Zero is the only value at which DOCUMENTATION_ONLY_RECORDING may be claimed, and the binding recomputes it on every gate run. Both ends are pinned since the closure: a one-sided candidate..HEAD span answers a different question on every post-closure commit — the first being the acceptance wave, whose guard lifts are executable by design — while candidate..accepted-develop is the equivalence the Owner acceptance actually relied on, and its answer cannot move."
     },
     {
       "id": "CI-B-CODE-CANDIDATE",
@@ -626,21 +626,21 @@
       "class": "DERIVABLE_GIT",
       "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/ci-evidence.md",
-      "locator": "| Run head \u2014 a documentation-only successor                 | `f0804b2c7ad31e08f033f76096d49c5394d69c81`                                                                                  |",
+      "locator": "| Run head — a documentation-only successor                 | `f0804b2c7ad31e08f033f76096d49c5394d69c81`                                                                                  |",
       "value": "f0804b2c7ad31e08f033f76096d49c5394d69c81",
       "binding": {
         "kind": "git",
         "op": "revParse",
         "ref": "f0804b2c7ad31e08f033f76096d49c5394d69c81^{commit}"
       },
-      "why": "The head the hosted run actually executed at, proved to exist as a commit in this repository. That it is a DOCUMENTATION-ONLY successor of the candidate is not this entry\u2019s claim \u2014 it is the derived executable-diff value in the row beneath, recomputed on every gate run."
+      "why": "The head the hosted run actually executed at, proved to exist as a commit in this repository. That it is a DOCUMENTATION-ONLY successor of the candidate is not this entry’s claim — it is the derived executable-diff value in the row beneath, recomputed on every gate run."
     },
     {
       "id": "CI-B-EXEC-DIFF",
       "class": "DERIVABLE_GIT",
       "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/ci-evidence.md",
-      "locator": "| Executable paths changed, candidate to accepted `develop` | **0** \u2014 derived on every gate run; both ends pinned, so the span covers the run head and cannot move with post-closure work |",
+      "locator": "| Executable paths changed, candidate to accepted `develop` | **0** — derived on every gate run; both ends pinned, so the span covers the run head and cannot move with post-closure work |",
       "value": "0",
       "binding": {
         "kind": "git",
@@ -665,7 +665,7 @@
         "artifact": "workflow run",
         "field": "run id",
         "runTakenAtHead": "f0804b2c7ad31e08f033f76096d49c5394d69c81",
-        "collectedBy": "Read from the GitHub run records during exact-head CI by a reader of the run. headSha names the code candidate this observation describes; the run itself executed at the documentation-only successor named in runTakenAtHead, and the equivalence is the derived executable-diff value on the page, recomputed on every gate run \u2014 not a claim either sha field could carry alone."
+        "collectedBy": "Read from the GitHub run records during exact-head CI by a reader of the run. headSha names the code candidate this observation describes; the run itself executed at the documentation-only successor named in runTakenAtHead, and the equivalence is the derived executable-diff value on the page, recomputed on every gate run — not a claim either sha field could carry alone."
       }
     },
     {
@@ -673,7 +673,7 @@
       "class": "HOSTED_ARTIFACT_ATTESTED",
       "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/ci-evidence.md",
-      "locator": "| Required checks                                           | **21 completed \u00b7 0 failed \u00b7 0 pending**                                                                                     |",
+      "locator": "| Required checks                                           | **21 completed · 0 failed · 0 pending**                                                                                     |",
       "value": "21",
       "provenance": {
         "source": "HOSTED_ARTIFACT",
@@ -683,7 +683,7 @@
         "artifact": "/commits/{sha}/check-runs for the run head",
         "field": "completed check count",
         "runTakenAtHead": "f0804b2c7ad31e08f033f76096d49c5394d69c81",
-        "collectedBy": "Read from the GitHub run records during exact-head CI by a reader of the run. headSha names the code candidate this observation describes; the run itself executed at the documentation-only successor named in runTakenAtHead, and the equivalence is the derived executable-diff value on the page, recomputed on every gate run \u2014 not a claim either sha field could carry alone."
+        "collectedBy": "Read from the GitHub run records during exact-head CI by a reader of the run. headSha names the code candidate this observation describes; the run itself executed at the documentation-only successor named in runTakenAtHead, and the equivalence is the derived executable-diff value on the page, recomputed on every gate run — not a claim either sha field could carry alone."
       }
     },
     {
@@ -691,7 +691,7 @@
       "class": "HOSTED_ARTIFACT_ATTESTED",
       "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/ci-evidence.md",
-      "locator": "| Required checks                                           | **21 completed \u00b7 0 failed \u00b7 0 pending**                                                                                     |",
+      "locator": "| Required checks                                           | **21 completed · 0 failed · 0 pending**                                                                                     |",
       "value": "0",
       "occurrences": 2,
       "provenance": {
@@ -702,7 +702,7 @@
         "artifact": "/commits/{sha}/check-runs for the run head",
         "field": "failed and pending counts",
         "runTakenAtHead": "f0804b2c7ad31e08f033f76096d49c5394d69c81",
-        "collectedBy": "Read from the GitHub run records during exact-head CI by a reader of the run. headSha names the code candidate this observation describes; the run itself executed at the documentation-only successor named in runTakenAtHead, and the equivalence is the derived executable-diff value on the page, recomputed on every gate run \u2014 not a claim either sha field could carry alone."
+        "collectedBy": "Read from the GitHub run records during exact-head CI by a reader of the run. headSha names the code candidate this observation describes; the run itself executed at the documentation-only successor named in runTakenAtHead, and the equivalence is the derived executable-diff value on the page, recomputed on every gate run — not a claim either sha field could carry alone."
       }
     },
     {
@@ -720,7 +720,7 @@
         "artifact": "ci-gate job summary",
         "field": "decision",
         "runTakenAtHead": "f0804b2c7ad31e08f033f76096d49c5394d69c81",
-        "collectedBy": "Read from the GitHub run records during exact-head CI by a reader of the run. headSha names the code candidate this observation describes; the run itself executed at the documentation-only successor named in runTakenAtHead, and the equivalence is the derived executable-diff value on the page, recomputed on every gate run \u2014 not a claim either sha field could carry alone."
+        "collectedBy": "Read from the GitHub run records during exact-head CI by a reader of the run. headSha names the code candidate this observation describes; the run itself executed at the documentation-only successor named in runTakenAtHead, and the equivalence is the derived executable-diff value on the page, recomputed on every gate run — not a claim either sha field could carry alone."
       }
     },
     {
@@ -738,7 +738,7 @@
         "artifact": "ci-gate job",
         "field": "job id",
         "runTakenAtHead": "f0804b2c7ad31e08f033f76096d49c5394d69c81",
-        "collectedBy": "Read from the GitHub run records during exact-head CI by a reader of the run. headSha names the code candidate this observation describes; the run itself executed at the documentation-only successor named in runTakenAtHead, and the equivalence is the derived executable-diff value on the page, recomputed on every gate run \u2014 not a claim either sha field could carry alone."
+        "collectedBy": "Read from the GitHub run records during exact-head CI by a reader of the run. headSha names the code candidate this observation describes; the run itself executed at the documentation-only successor named in runTakenAtHead, and the equivalence is the derived executable-diff value on the page, recomputed on every gate run — not a claim either sha field could carry alone."
       }
     },
     {
@@ -746,7 +746,7 @@
       "class": "HOSTED_ARTIFACT_ATTESTED",
       "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/ci-evidence.md",
-      "locator": "| `hosted-clean-room` job                                   | `94085356719` \u2014 success, on its own per-job conclusion                                                                      |",
+      "locator": "| `hosted-clean-room` job                                   | `94085356719` — success, on its own per-job conclusion                                                                      |",
       "value": "94085356719",
       "provenance": {
         "source": "HOSTED_ARTIFACT",
@@ -756,7 +756,7 @@
         "artifact": "hosted-clean-room job",
         "field": "job id and conclusion",
         "runTakenAtHead": "f0804b2c7ad31e08f033f76096d49c5394d69c81",
-        "collectedBy": "Read from the GitHub run records during exact-head CI by a reader of the run. headSha names the code candidate this observation describes; the run itself executed at the documentation-only successor named in runTakenAtHead, and the equivalence is the derived executable-diff value on the page, recomputed on every gate run \u2014 not a claim either sha field could carry alone."
+        "collectedBy": "Read from the GitHub run records during exact-head CI by a reader of the run. headSha names the code candidate this observation describes; the run itself executed at the documentation-only successor named in runTakenAtHead, and the equivalence is the derived executable-diff value on the page, recomputed on every gate run — not a claim either sha field could carry alone."
       }
     },
     {
@@ -764,7 +764,7 @@
       "class": "HOSTED_ARTIFACT_ATTESTED",
       "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/ci-evidence.md",
-      "locator": "| `Web quality` job                                         | `94085356574` \u2014 success                                                                                                     |",
+      "locator": "| `Web quality` job                                         | `94085356574` — success                                                                                                     |",
       "value": "94085356574",
       "provenance": {
         "source": "HOSTED_ARTIFACT",
@@ -774,7 +774,7 @@
         "artifact": "Web quality job",
         "field": "job id and conclusion",
         "runTakenAtHead": "f0804b2c7ad31e08f033f76096d49c5394d69c81",
-        "collectedBy": "Read from the GitHub run records during exact-head CI by a reader of the run. headSha names the code candidate this observation describes; the run itself executed at the documentation-only successor named in runTakenAtHead, and the equivalence is the derived executable-diff value on the page, recomputed on every gate run \u2014 not a claim either sha field could carry alone."
+        "collectedBy": "Read from the GitHub run records during exact-head CI by a reader of the run. headSha names the code candidate this observation describes; the run itself executed at the documentation-only successor named in runTakenAtHead, and the equivalence is the derived executable-diff value on the page, recomputed on every gate run — not a claim either sha field could carry alone."
       }
     },
     {
@@ -782,7 +782,7 @@
       "class": "HOSTED_ARTIFACT_ATTESTED",
       "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/ci-evidence.md",
-      "locator": "| `authenticated-browser` job                               | `94085356606` \u2014 success                                                                                                     |",
+      "locator": "| `authenticated-browser` job                               | `94085356606` — success                                                                                                     |",
       "value": "94085356606",
       "provenance": {
         "source": "HOSTED_ARTIFACT",
@@ -792,7 +792,7 @@
         "artifact": "authenticated-browser job",
         "field": "job id and conclusion",
         "runTakenAtHead": "f0804b2c7ad31e08f033f76096d49c5394d69c81",
-        "collectedBy": "Read from the GitHub run records during exact-head CI by a reader of the run. headSha names the code candidate this observation describes; the run itself executed at the documentation-only successor named in runTakenAtHead, and the equivalence is the derived executable-diff value on the page, recomputed on every gate run \u2014 not a claim either sha field could carry alone."
+        "collectedBy": "Read from the GitHub run records during exact-head CI by a reader of the run. headSha names the code candidate this observation describes; the run itself executed at the documentation-only successor named in runTakenAtHead, and the equivalence is the derived executable-diff value on the page, recomputed on every gate run — not a claim either sha field could carry alone."
       }
     },
     {
@@ -800,7 +800,7 @@
       "class": "HOSTED_ARTIFACT_ATTESTED",
       "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/ci-evidence.md",
-      "locator": "| Authenticated tier                                        | 229 planned \u00b7 225 passed \u00b7 0 failed \u00b7 4 skipped \u00b7 224 executed \u00b7 6 spec files                                               |",
+      "locator": "| Authenticated tier                                        | 229 planned · 225 passed · 0 failed · 4 skipped · 224 executed · 6 spec files                                               |",
       "value": "229",
       "provenance": {
         "source": "HOSTED_ARTIFACT",
@@ -810,7 +810,7 @@
         "artifact": "authenticated-browser job output",
         "field": "tests planned",
         "runTakenAtHead": "f0804b2c7ad31e08f033f76096d49c5394d69c81",
-        "collectedBy": "Read from the GitHub run records during exact-head CI by a reader of the run. headSha names the code candidate this observation describes; the run itself executed at the documentation-only successor named in runTakenAtHead, and the equivalence is the derived executable-diff value on the page, recomputed on every gate run \u2014 not a claim either sha field could carry alone."
+        "collectedBy": "Read from the GitHub run records during exact-head CI by a reader of the run. headSha names the code candidate this observation describes; the run itself executed at the documentation-only successor named in runTakenAtHead, and the equivalence is the derived executable-diff value on the page, recomputed on every gate run — not a claim either sha field could carry alone."
       }
     },
     {
@@ -818,7 +818,7 @@
       "class": "HOSTED_ARTIFACT_ATTESTED",
       "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/ci-evidence.md",
-      "locator": "| Authenticated tier                                        | 229 planned \u00b7 225 passed \u00b7 0 failed \u00b7 4 skipped \u00b7 224 executed \u00b7 6 spec files                                               |",
+      "locator": "| Authenticated tier                                        | 229 planned · 225 passed · 0 failed · 4 skipped · 224 executed · 6 spec files                                               |",
       "value": "225",
       "provenance": {
         "source": "HOSTED_ARTIFACT",
@@ -828,7 +828,7 @@
         "artifact": "authenticated-browser job output",
         "field": "tests passed",
         "runTakenAtHead": "f0804b2c7ad31e08f033f76096d49c5394d69c81",
-        "collectedBy": "Read from the GitHub run records during exact-head CI by a reader of the run. headSha names the code candidate this observation describes; the run itself executed at the documentation-only successor named in runTakenAtHead, and the equivalence is the derived executable-diff value on the page, recomputed on every gate run \u2014 not a claim either sha field could carry alone."
+        "collectedBy": "Read from the GitHub run records during exact-head CI by a reader of the run. headSha names the code candidate this observation describes; the run itself executed at the documentation-only successor named in runTakenAtHead, and the equivalence is the derived executable-diff value on the page, recomputed on every gate run — not a claim either sha field could carry alone."
       }
     },
     {
@@ -836,7 +836,7 @@
       "class": "HOSTED_ARTIFACT_ATTESTED",
       "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/ci-evidence.md",
-      "locator": "| Authenticated tier                                        | 229 planned \u00b7 225 passed \u00b7 0 failed \u00b7 4 skipped \u00b7 224 executed \u00b7 6 spec files                                               |",
+      "locator": "| Authenticated tier                                        | 229 planned · 225 passed · 0 failed · 4 skipped · 224 executed · 6 spec files                                               |",
       "value": "0",
       "provenance": {
         "source": "HOSTED_ARTIFACT",
@@ -846,7 +846,7 @@
         "artifact": "authenticated-browser job output",
         "field": "tests failed",
         "runTakenAtHead": "f0804b2c7ad31e08f033f76096d49c5394d69c81",
-        "collectedBy": "Read from the GitHub run records during exact-head CI by a reader of the run. headSha names the code candidate this observation describes; the run itself executed at the documentation-only successor named in runTakenAtHead, and the equivalence is the derived executable-diff value on the page, recomputed on every gate run \u2014 not a claim either sha field could carry alone."
+        "collectedBy": "Read from the GitHub run records during exact-head CI by a reader of the run. headSha names the code candidate this observation describes; the run itself executed at the documentation-only successor named in runTakenAtHead, and the equivalence is the derived executable-diff value on the page, recomputed on every gate run — not a claim either sha field could carry alone."
       }
     },
     {
@@ -854,7 +854,7 @@
       "class": "HOSTED_ARTIFACT_ATTESTED",
       "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/ci-evidence.md",
-      "locator": "| Authenticated tier                                        | 229 planned \u00b7 225 passed \u00b7 0 failed \u00b7 4 skipped \u00b7 224 executed \u00b7 6 spec files                                               |",
+      "locator": "| Authenticated tier                                        | 229 planned · 225 passed · 0 failed · 4 skipped · 224 executed · 6 spec files                                               |",
       "value": "4",
       "provenance": {
         "source": "HOSTED_ARTIFACT",
@@ -864,7 +864,7 @@
         "artifact": "authenticated-browser job output",
         "field": "tests skipped (runtime-guarded no-data cases)",
         "runTakenAtHead": "f0804b2c7ad31e08f033f76096d49c5394d69c81",
-        "collectedBy": "Read from the GitHub run records during exact-head CI by a reader of the run. headSha names the code candidate this observation describes; the run itself executed at the documentation-only successor named in runTakenAtHead, and the equivalence is the derived executable-diff value on the page, recomputed on every gate run \u2014 not a claim either sha field could carry alone."
+        "collectedBy": "Read from the GitHub run records during exact-head CI by a reader of the run. headSha names the code candidate this observation describes; the run itself executed at the documentation-only successor named in runTakenAtHead, and the equivalence is the derived executable-diff value on the page, recomputed on every gate run — not a claim either sha field could carry alone."
       }
     },
     {
@@ -872,7 +872,7 @@
       "class": "HOSTED_ARTIFACT_ATTESTED",
       "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/ci-evidence.md",
-      "locator": "| Authenticated tier                                        | 229 planned \u00b7 225 passed \u00b7 0 failed \u00b7 4 skipped \u00b7 224 executed \u00b7 6 spec files                                               |",
+      "locator": "| Authenticated tier                                        | 229 planned · 225 passed · 0 failed · 4 skipped · 224 executed · 6 spec files                                               |",
       "value": "224",
       "provenance": {
         "source": "HOSTED_ARTIFACT",
@@ -882,7 +882,7 @@
         "artifact": "authenticated-browser job output",
         "field": "tests executed",
         "runTakenAtHead": "f0804b2c7ad31e08f033f76096d49c5394d69c81",
-        "collectedBy": "Read from the GitHub run records during exact-head CI by a reader of the run. headSha names the code candidate this observation describes; the run itself executed at the documentation-only successor named in runTakenAtHead, and the equivalence is the derived executable-diff value on the page, recomputed on every gate run \u2014 not a claim either sha field could carry alone."
+        "collectedBy": "Read from the GitHub run records during exact-head CI by a reader of the run. headSha names the code candidate this observation describes; the run itself executed at the documentation-only successor named in runTakenAtHead, and the equivalence is the derived executable-diff value on the page, recomputed on every gate run — not a claim either sha field could carry alone."
       }
     },
     {
@@ -890,7 +890,7 @@
       "class": "HOSTED_ARTIFACT_ATTESTED",
       "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/ci-evidence.md",
-      "locator": "| Authenticated tier                                        | 229 planned \u00b7 225 passed \u00b7 0 failed \u00b7 4 skipped \u00b7 224 executed \u00b7 6 spec files                                               |",
+      "locator": "| Authenticated tier                                        | 229 planned · 225 passed · 0 failed · 4 skipped · 224 executed · 6 spec files                                               |",
       "value": "6",
       "provenance": {
         "source": "HOSTED_ARTIFACT",
@@ -900,7 +900,7 @@
         "artifact": "authenticated-browser job output",
         "field": "spec files contributing executed tests",
         "runTakenAtHead": "f0804b2c7ad31e08f033f76096d49c5394d69c81",
-        "collectedBy": "Read from the GitHub run records during exact-head CI by a reader of the run. headSha names the code candidate this observation describes; the run itself executed at the documentation-only successor named in runTakenAtHead, and the equivalence is the derived executable-diff value on the page, recomputed on every gate run \u2014 not a claim either sha field could carry alone."
+        "collectedBy": "Read from the GitHub run records during exact-head CI by a reader of the run. headSha names the code candidate this observation describes; the run itself executed at the documentation-only successor named in runTakenAtHead, and the equivalence is the derived executable-diff value on the page, recomputed on every gate run — not a claim either sha field could carry alone."
       }
     }
   ]

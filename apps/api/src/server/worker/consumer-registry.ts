@@ -26,6 +26,17 @@ export type ConsumerOutcome = 'applied' | 'skipped' | 'failed';
 export interface ConsumedEvent {
   readonly id: string;
   readonly tenantId: string;
+  /**
+   * Envelope scope and authorship, from the outbox row itself.
+   *
+   * Not payload fields, deliberately. The claim already returns them
+   * (`SELECT * FROM shared.claim_outbox_events(...)`, `RETURNS SETOF
+   * shared.event_outbox`), so carrying them in a payload as well would create a
+   * second copy of a fact that is free to drift from the first.
+   */
+  readonly companyId: string | null;
+  readonly branchId: string | null;
+  readonly createdBy: string;
   readonly eventType: string;
   readonly schemaVersion: number;
   readonly aggregateType: string;

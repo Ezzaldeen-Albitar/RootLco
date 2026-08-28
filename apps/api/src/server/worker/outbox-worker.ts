@@ -47,12 +47,27 @@ interface OutboxRow {
   payload: Record<string, unknown>;
   headers: Record<string, unknown>;
   attempt_count: number;
+  // Already returned: the claim is `SELECT * FROM shared.claim_outbox_events(...)`
+  // and that function is `RETURNS SETOF shared.event_outbox`, so every column of
+  // the row has always arrived here. `created_by` was simply never named.
+  created_by: string;
 }
 
 function toEvent(row: OutboxRow): ConsumedEvent {
   return {
     id: row.id,
     tenantId: row.tenant_id,
+    // Envelope scope, forwarded rather than duplicated into payloads.
+    //
+    // These three were fetched by every claim and then DROPPED here, so a
+    // consumer needing them had no way to get them but to have the publisher
+    // repeat them in the payload — two copies of one fact, free to disagree.
+    // `created_by` matters most: `shared.outbound_messages.created_by` is NOT
+    // NULL and the worker's INSERT policy requires it, and the honest author of
+    // a message caused by an event is the actor who caused the event.
+    companyId: row.company_id,
+    branchId: row.branch_id,
+    createdBy: row.created_by,
     eventType: row.event_type,
     schemaVersion: row.schema_version,
     aggregateType: row.aggregate_type,

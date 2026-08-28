@@ -200,6 +200,13 @@ function toConsumedEvent(published: PublishedEvent): ConsumedEvent {
   return {
     id: published.id,
     tenantId: TENANT_A,
+    // Envelope scope and authorship. The claim already returned these — the
+    // outbox function is `RETURNS SETOF shared.event_outbox` — and `toEvent` now
+    // forwards them instead of dropping them, so a consumer no longer needs the
+    // publisher to repeat them in a payload.
+    companyId: null,
+    branchId: null,
+    createdBy: USER_A,
     eventType: EVENT_TYPE,
     schemaVersion: 1,
     aggregateType: 'shared.document',
