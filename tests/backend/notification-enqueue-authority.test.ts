@@ -38,12 +38,31 @@ let admin: Pool;
 let worker: Pool;
 let runtime: Pool;
 
+/*
+ * A worker enqueue now REQUIRES the approval witness.
+ *
+ * When this suite was written the worker could enqueue while leaving
+ * `template_version_id` NULL, because the BEFORE INSERT guard reads
+ * `shared.template_versions` — a table `app_worker` may never touch — so naming a
+ * version was impossible and the column had to stay empty. That was a hole where
+ * provenance should be, not a design, and migration 128 closed it: the worker's
+ * RESTRICTIVE policy now demands a real version AND the immutable witness proving
+ * that version was approved when it was selected.
+ *
+ * The two positive cases below therefore carry a witness. They are not weaker for
+ * it — they now exercise the path the worker actually takes.
+ */
+const TPL = '44444444-4444-4444-8444-444444444401';
+const VER = '44444444-4444-4444-8444-444444444402';
+let witnessId = '';
+
 const COLUMNS =
-  '(tenant_id, channel, purpose, dedupe_key, body_sha256, recipient_user_id, created_by)';
-const VALUES = `($1, 'in_app', 'transactional', $2, sha256('body'::bytea), $3, $4)`;
+  '(tenant_id, channel, purpose, dedupe_key, body_sha256, recipient_user_id, created_by,' +
+  ' template_version_id, template_owner_tenant_id, approval_witness_id)';
+const VALUES = `($1, 'in_app', 'transactional', $2, sha256('body'::bytea), $3, $4, $5, $1, $6)`;
 
 function args(dedupeKey: string): unknown[] {
-  return [TENANT_A, dedupeKey, USER_A, USER_A];
+  return [TENANT_A, dedupeKey, USER_A, USER_A, VER, witnessId];
 }
 
 beforeAll(async () => {
@@ -54,6 +73,40 @@ beforeAll(async () => {
   // passed once" is not the same as "it can run again".
   await cleanBackendFixtures(admin);
   await ensureBackendFixtures(admin);
+
+  // An approved version and its canonical witness, produced the way the lifecycle
+  // produces them: a version starts as an unstamped draft, is moved to approved,
+  // and only then is a witness written for it.
+  await admin.query(
+    `INSERT INTO shared.message_templates
+       (id, scope, tenant_id, template_code, name, channel, purpose, locale_code, status, created_by)
+     VALUES ($1, 'tenant', $2, 'fx_enqueue_auth', 'enqueue fixture', 'in_app', 'transactional',
+             'en', 'active', $3)
+     ON CONFLICT (id) DO NOTHING`,
+    [TPL, TENANT_A, USER_A]
+  );
+  await admin.query(
+    `INSERT INTO shared.template_versions
+       (id, tenant_id, template_id, version_number, subject, body, content_hash, created_by)
+     VALUES ($1, $2, $3, 1, 's', 'b', decode(repeat('ab', 32), 'hex'), $4)
+     ON CONFLICT (id) DO NOTHING`,
+    [VER, TENANT_A, TPL, USER_A]
+  );
+  await admin.query(
+    `UPDATE shared.template_versions SET status = 'approved', approved_by = $2
+      WHERE id = $1 AND status = 'draft'`,
+    [VER, USER_A]
+  );
+  const wit = await admin.query<{ id: string }>(
+    `INSERT INTO shared.template_version_approvals
+       (tenant_id, owner_tenant_id, template_version_id, approved_by)
+     VALUES ($1, $1, $2, $3)
+     ON CONFLICT (template_version_id) DO UPDATE SET approved_by = EXCLUDED.approved_by
+     RETURNING id`,
+    [TENANT_A, VER, USER_A]
+  );
+  witnessId = wit.rows[0]?.id ?? '';
+
   worker = workerAppPool(2);
   runtime = runtimeAppPool(2);
 }, 120_000);
@@ -63,7 +116,19 @@ afterAll(async () => {
   // is empty once fixtures are torn down, and it runs in a later tier against
   // the same shared database — so a suite that seeds and does not clean up fails
   // a file it never mentions.
-  if (admin) await cleanBackendFixtures(admin);
+  if (admin) {
+    // Messages first, then the witness they cite: fk_outbound_messages_approval_witness
+    // is ON DELETE RESTRICT, so the other order is refused — which is the
+    // constraint working, and the teardown has to respect it.
+    await admin.query(`DELETE FROM shared.outbound_messages WHERE template_version_id = $1`, [VER]);
+    await admin.query(
+      `DELETE FROM shared.template_version_approvals WHERE template_version_id = $1`,
+      [VER]
+    );
+    await admin.query(`DELETE FROM shared.template_versions WHERE id = $1`, [VER]);
+    await admin.query(`DELETE FROM shared.message_templates WHERE id = $1`, [TPL]);
+    await cleanBackendFixtures(admin);
+  }
   await Promise.all([worker?.end(), runtime?.end(), admin?.end()]);
 });
 
@@ -90,45 +155,53 @@ describe('the worker may enqueue, and only a pending message', () => {
   it('cannot set a status of its own choosing', async () => {
     await expect(
       worker.query(
+        // Otherwise a complete, witnessed, legal enqueue — so the ONLY reason it
+        // fails is the one column named that the grant does not cover.
         `INSERT INTO shared.outbound_messages
            (tenant_id, channel, purpose, dedupe_key, body_sha256, recipient_user_id,
-            created_by, status)
-         VALUES ($1, 'in_app', 'transactional', $2, sha256('b'::bytea), $3, $4, 'sent')`,
+            created_by, template_version_id, template_owner_tenant_id, approval_witness_id,
+            status)
+         VALUES ($1, 'in_app', 'transactional', $2, sha256('b'::bytea), $3, $4, $5, $1, $6,
+                 'sent')`,
         args(`status:${Date.now()}`)
       )
     ).rejects.toThrow(/permission denied for table outbound_messages/);
   });
 
-  it('cannot name a template_version_id, because the BEFORE INSERT guard reads a table it may not', async () => {
+  it('cannot name a template_version_id WITHOUT the witness that proves it', async () => {
     /*
-     * THE CONSTRAINT THAT SHAPES THE WHOLE WORKER ENQUEUE PATH, pinned here so it
-     * is never rediscovered.
+     * THE CONSTRAINT THAT SHAPES THE WHOLE WORKER ENQUEUE PATH, and it has moved
+     * once already — so what it asserts now is worth stating precisely.
      *
      * `shared.outbound_messages` carries `tg_outbound_messages_guard_scope` ->
      * `shared.guard_outbound_message_scope()`, which is SECURITY INVOKER. When
-     * `NEW.template_version_id IS NOT NULL` it runs
-     * `SELECT tenant_id, status FROM shared.template_versions ... FOR SHARE`, and
-     * `app_worker` holds no privilege on that table at all.
+     * `NEW.template_version_id IS NOT NULL` and there is no approval witness, it
+     * runs `SELECT tenant_id, status FROM shared.template_versions ... FOR SHARE`,
+     * and `app_worker` holds no privilege on that table at all.
      *
-     * So the grant and the RESTRICTIVE policy are not sufficient by themselves:
-     * a worker-enqueued row must leave `template_version_id` NULL. The earlier
-     * version of this suite missed it because its column list simply never named
-     * the column, which is exactly the kind of blind spot a passing test can hide.
+     * Until migration 128 that made naming a version impossible for this role, and
+     * an earlier version of this case asserted exactly that — "a worker-enqueued
+     * row must leave `template_version_id` NULL". **That is no longer true**, and
+     * carrying the sentence forward through the merge would have been a false
+     * claim in a passing test: with a witness the worker names a real version, and
+     * the first case in this suite proves it.
      *
-     * Granting the worker a SELECT here — even column-level — is what the
-     * payload-carries-the-facts decision forbids, and a SECURITY DEFINER guard is
-     * prohibited outright, so the refusal below is the design and not a defect.
+     * What survives is the half that is still true. Without a witness the row is
+     * refused — by the RESTRICTIVE policy, which now requires one, before the
+     * guard's forbidden read is ever reached. Granting the worker a SELECT on the
+     * template tables is what the payload-carries-the-facts decision forbids, and
+     * a SECURITY DEFINER guard is prohibited outright, so the refusal is the
+     * design and not a defect.
      */
     await expect(
       worker.query(
         `INSERT INTO shared.outbound_messages
            (tenant_id, channel, purpose, dedupe_key, body_sha256, recipient_user_id,
-            created_by, template_version_id)
-         VALUES ($1, 'in_app', 'transactional', $2, sha256('b'::bytea), $3, $4,
-                 '00000000-0000-4000-8000-00000000ffff')`,
-        args(`tvid:${Date.now()}`)
+            created_by, template_version_id, template_owner_tenant_id)
+         VALUES ($1, 'in_app', 'transactional', $2, sha256('b'::bytea), $3, $4, $5, $1)`,
+        args(`tvid:${Date.now()}`).slice(0, 5)
       )
-    ).rejects.toThrow(/permission denied for table template_versions/);
+    ).rejects.toThrow(/row-level security policy|permission denied/);
   });
 
   it('honours the existing (tenant_id, dedupe_key) conflict rather than a new mechanism', async () => {

@@ -584,6 +584,9 @@ export async function deleteTenantCascade(admin: Pool, tenantIds: string[]): Pro
       WHERE tenant_id = ANY($1::uuid[])`,
     [tenantIds]
   );
+  // Before the versions it witnesses: fk_template_version_approvals_version is
+  // ON DELETE RESTRICT, so unwinding in the other order strands the version.
+  await deleteFrom('shared.template_version_approvals');
   await deleteFrom('shared.template_versions');
   await deleteFrom('shared.message_templates');
 

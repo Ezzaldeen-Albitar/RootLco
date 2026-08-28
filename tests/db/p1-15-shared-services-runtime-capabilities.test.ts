@@ -270,7 +270,7 @@ beforeEach(async () => {
 // ---------------------------------------------------------------------------
 
 describe('P1-15 / global security posture', () => {
-  it('the repository declares exactly 121 migrations, with 120 and 121 last', () => {
+  it('the repository declares exactly 128 migrations, with the newest four named', () => {
     // Counted from the repository, not from `supabase_migrations.schema_migrations`:
     // that bookkeeping table is created by the Supabase CLI and does not exist in
     // CI, where the database is built by `npm run db:apply-migrations` against a
@@ -328,20 +328,22 @@ describe('P1-15 / global security posture', () => {
     // The tail is asserted FOUR deep, one per branch that contributed. A shorter
     // tail would go on passing with any one of them missing — the shape that
     // lets a migration vanish in a merge and take its grants with it.
-    expect(files).toHaveLength(127);
-    expect(files.at(-4)).toBe('20260819090000_rec_damage_map_revision_required.sql');
-    expect(files.at(-3)).toBe('20260826090000_wo_job_work_logs.sql');
-    expect(files.at(-2)).toBe('20260826093000_wo_job_evidence.sql');
+    expect(files).toHaveLength(128);
+    expect(files.at(-4)).toBe('20260826090000_wo_job_work_logs.sql');
+    expect(files.at(-3)).toBe('20260826093000_wo_job_evidence.sql');
+    expect(files.at(-2)).toBe('20260827090000_shared_notification_enqueue_authority.sql');
     // The tail SHIFTS by one rather than growing: it is four deep on purpose, so
     // that any one migration vanishing in a merge — and taking its grants with
     // it — fails here rather than somewhere confusing.
     //
-    // The newest is the worker's enqueue authority: a column-level INSERT grant
-    // on `shared.outbound_messages` for `app_worker`, plus the RESTRICTIVE
-    // policy asserted in the inventory below. It adds no role, no permission
-    // code and no SECURITY DEFINER function — the last of those being forbidden
-    // outright by `migration-replay-checks.mjs` and `rls-matrix.mjs`.
-    expect(files.at(-1)).toBe('20260827090000_shared_notification_enqueue_authority.sql');
+    // The newest is the immutable approval witness. It exists because the worker's
+    // enqueue authority (now -2) was not sufficient on its own: the BEFORE INSERT
+    // guard reads `shared.template_versions`, which `app_worker` may never do, so a
+    // worker could not name a template version at all. The witness lets it prove
+    // approval-at-selection-time declaratively, and — deliberately — WITHOUT
+    // re-reading mutable status, so a version retired after publication does not
+    // retroactively invalidate an event already emitted.
+    expect(files.at(-1)).toBe('20260828090000_shared_template_approval_witness.sql');
   });
 
   it('migration 121 changes the shared surface DELIBERATELY, and the change is bounded', () => {
@@ -599,6 +601,7 @@ describe('P1-15 / global security posture', () => {
       'ins_notes_crm_customer',
       // --- added by migration 117 ---
       'ins_outbound_messages_enqueue',
+      'ins_template_version_approvals_scope',
       'ins_template_versions_tenant',
       'lck_template_versions_reference',
       'upd_document_links_unlink',

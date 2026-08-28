@@ -356,6 +356,24 @@ export class TemplateRepository extends Repository {
    * name the approver would make the approval record unfalsifiable in the wrong
    * direction. `approved_at` is stamped by the lifecycle guard.
    */
+  /**
+   * Approves a draft version AND records the immutable witness of that approval.
+   *
+   * Both statements, one transaction. The witness is the only durable record that
+   * this version was ever approved — `status` is mutable and retirement erases the
+   * evidence — and an asynchronous consumer proves approval-at-selection-time from
+   * it without reading this table at all.
+   *
+   * Written HERE, in the authoritative lifecycle path, because that is the only
+   * place the transition actually happens: a notification publisher must never be
+   * able to manufacture one, and `app_worker` is granted nothing on the witness
+   * table at any privilege level.
+   *
+   * The INSERT is conditional on the UPDATE having matched. A guard already refuses
+   * anything but `draft -> approved`, so a second witness for one version is not
+   * reachable through this path; `ON CONFLICT DO NOTHING` states that rather than
+   * relying on it, and keeps the operation idempotent under retry.
+   */
   async approveVersion(db: DbHandle, versionId: string, expectedVersion: number): Promise<number> {
     const context = this.assertContext(db);
     const result = await this.run(
@@ -365,7 +383,18 @@ export class TemplateRepository extends Repository {
         WHERE tenant_id = $1 AND id = $2 AND record_version = $3 AND status = 'draft'`,
       [context.principal.tenantId, versionId, expectedVersion, context.principal.userId]
     );
-    return result.rowCount ?? 0;
+    const approved = result.rowCount ?? 0;
+    if (approved === 0) return 0;
+
+    await this.run(
+      db,
+      `INSERT INTO shared.template_version_approvals
+         (tenant_id, owner_tenant_id, template_version_id, approved_by)
+       VALUES ($1, $1, $2, $3)
+       ON CONFLICT (template_version_id) DO NOTHING`,
+      [context.principal.tenantId, versionId, context.principal.userId]
+    );
+    return approved;
   }
 
   /** Retires an approved version. The guard refuses while it is still active. */
