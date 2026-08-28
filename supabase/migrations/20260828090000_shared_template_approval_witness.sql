@@ -180,26 +180,33 @@ GRANT SELECT, INSERT ON shared.template_version_approvals TO app_runtime;
 GRANT SELECT ON shared.template_version_approvals TO app_readonly;
 
 -- ----------------------------------------------------------------------------
--- 3. Backfill: every version already approved gets its witness
+-- 3. Backfill lives OUTSIDE this migration, deliberately
 -- ----------------------------------------------------------------------------
 --
--- Deterministic, and it invents nothing. `approved_by` is the version's own
--- recorded approver where the lifecycle captured one, and falls back to its
--- creator where it did not — both are real actors already on the row. No template
--- is fabricated and no lifecycle state is mutated. Current environments hold zero
--- authored templates, but a database that already contains valid approved versions
--- must come out of this migration correct, not merely unbroken.
-
-INSERT INTO shared.template_version_approvals
-  (tenant_id, owner_tenant_id, template_version_id, approved_at, approved_by)
-SELECT v.tenant_id,
-       v.owner_tenant_id,
-       v.id,
-       COALESCE(v.approved_at, v.created_at),
-       COALESCE(v.approved_by, v.created_by)
-  FROM shared.template_versions AS v
- WHERE v.status = 'approved'
-ON CONFLICT (template_version_id) DO NOTHING;
+-- An earlier draft of this file carried
+-- `INSERT INTO shared.template_version_approvals … SELECT … WHERE status = 'approved'`,
+-- and `migration-replay-checks.mjs` refused it:
+--
+--   "INSERTs into shared.template_version_approvals at the top level. Migrations
+--    create structure; business rows are the tenant's."
+--
+-- The rule is right and it is absolute: a census of every shipped migration finds
+-- ZERO top-level business INSERTs, and the one existing backfill precedent
+-- (20260819090000, the damage-map revision) is an UPDATE of rows that already
+-- exist. Writing the same statement inside a `DO $$ … $$` block would have slipped
+-- past the scanner — it strips dollar-quoted bodies so that history triggers do not
+-- trip it — and that would be hiding from a guard rather than satisfying it.
+--
+-- So the derivation moved to `scripts/db/backfill-template-approval-witnesses.mjs`,
+-- which is idempotent and safe to run repeatedly.
+--
+-- The consequence, stated rather than left to be discovered: on a database that
+-- ALREADY holds approved template versions, those versions have no witness until
+-- that script is run, and a publisher therefore treats them as not usable and sends
+-- nothing. That is a visible no-notification state, not a corruption, and it heals
+-- for any version approved after this migration because `approveVersion` writes the
+-- witness in the same transaction. Every current environment holds zero authored
+-- templates, so the set is empty today.
 
 -- ----------------------------------------------------------------------------
 -- 4. The referencing side, WITHOUT disturbing any existing writer
