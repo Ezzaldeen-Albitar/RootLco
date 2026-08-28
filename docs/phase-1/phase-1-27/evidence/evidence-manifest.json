@@ -48,7 +48,7 @@
       "bytes": 24145
     },
     "docs/phase-1/phase-1-27/deliverable-manifest.md": {
-      "sha256": "d6fe8cfba61ad93690fc18fa2079c4c4e23d5d5d6b274c66635ad7f0de43e8c0",
+      "sha256": "d302b0f2731a876d7d581cce0caecae5ab47d6582fb26fbfc621b61574380038",
       "bytes": 148838
     },
     "docs/phase-1/phase-1-27/developer-guide.md": {
@@ -68,7 +68,7 @@
       "bytes": 9208
     },
     "docs/phase-1/phase-1-27/evidence/local-run-ledger.json": {
-      "sha256": "fb69cf5b4e3ac10b8bb4f702c1a8b530e50c0227390387a207475fd59a939fe5",
+      "sha256": "e8540cb9ed571aeceba9bf692b3615eadc8c87299f22866ed25ea36c79b99f7e",
       "bytes": 1202
     },
     "docs/phase-1/phase-1-27/evidence/task-traceability.md": {
