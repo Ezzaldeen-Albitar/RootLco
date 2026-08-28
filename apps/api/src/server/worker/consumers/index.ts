@@ -14,7 +14,11 @@
 import type { Consumer } from '../consumer-registry';
 import { registerJobAssignedNotifier } from './job-assigned-notifier';
 
-export { JOB_ASSIGNED_NOTIFIER, CONSUMED_PAYLOAD_FIELDS, PoisonPayloadError } from './job-assigned-notifier';
+export {
+  JOB_ASSIGNED_NOTIFIER,
+  CONSUMED_PAYLOAD_FIELDS,
+  PoisonPayloadError,
+} from './job-assigned-notifier';
 
 /** Registers every consumer this worker runs. Returns them for assertion. */
 export function registerWorkerConsumers(): readonly Consumer[] {

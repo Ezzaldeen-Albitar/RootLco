@@ -86,13 +86,13 @@ the database validates the carried witness through
 
 ## 3. What the consumer may and may not touch
 
-| may                                  | may NOT                        |
-| ------------------------------------ | ------------------------------ |
-| the event envelope                   | `wo`                           |
-| the v2 immutable payload             | `tech`                         |
-| `shared.processed_events` (existing) | `shared.message_templates`     |
-| the existing retry / dead-letter STATUS machinery | `shared.template_versions` |
-| the proven worker enqueue path       | `shared.template_version_approvals` |
+| may                                               | may NOT                             |
+| ------------------------------------------------- | ----------------------------------- |
+| the event envelope                                | `wo`                                |
+| the v2 immutable payload                          | `tech`                              |
+| `shared.processed_events` (existing)              | `shared.message_templates`          |
+| the existing retry / dead-letter STATUS machinery | `shared.template_versions`          |
+| the proven worker enqueue path                    | `shared.template_version_approvals` |
 
 No consumer-local dedupe. No new delivery platform.
 
