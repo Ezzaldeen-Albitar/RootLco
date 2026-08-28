@@ -140,8 +140,12 @@ COMMENT ON TABLE shared.template_version_approvals IS
 COMMENT ON COLUMN shared.template_version_approvals.owner_tenant_id IS
   'Folded scope: the owning tenant, or the all-zero sentinel for a platform version. NOT NULL so a composite foreign key stays ACTIVE for both scopes instead of being skipped under MATCH SIMPLE.';
 
-CREATE INDEX ix_template_version_approvals_version
-  ON shared.template_version_approvals (template_version_id);
+-- One index per foreign key, and no index that merely restates a constraint.
+-- `template_version_id` alone is NOT indexed here: uq_template_version_approvals_version
+-- already is exactly that index, and a second one would be an exact duplicate —
+-- which the module-schema index audit refuses, correctly.
+CREATE INDEX ix_template_version_approvals_owner_version
+  ON shared.template_version_approvals (owner_tenant_id, template_version_id);
 CREATE INDEX ix_template_version_approvals_tenant
   ON shared.template_version_approvals (tenant_id);
 
@@ -233,6 +237,11 @@ ALTER TABLE shared.outbound_messages
     OR template_owner_tenant_id = tenant_id
     OR template_owner_tenant_id = '00000000-0000-0000-0000-000000000000'::uuid
   );
+
+-- Covers fk_outbound_messages_approval_witness by its leading columns. Zero
+-- unindexed foreign keys is a MEASURED property of these schemas, not an aim.
+CREATE INDEX ix_outbound_messages_approval_witness
+  ON shared.outbound_messages (approval_witness_id, template_version_id, template_owner_tenant_id);
 
 GRANT INSERT (approval_witness_id, template_owner_tenant_id)
   ON shared.outbound_messages TO app_runtime;
