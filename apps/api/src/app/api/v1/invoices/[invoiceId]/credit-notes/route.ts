@@ -73,6 +73,7 @@ export const RequestBody = z
 
 export const CREDIT_NOTE_CREATE_OPERATION = defineOperation({
   id: 'sal.credit-note-create',
+  successStatus: 201,
   module: 'billing',
   method: 'POST',
   path: '/invoices/{invoiceId}/credit-notes',

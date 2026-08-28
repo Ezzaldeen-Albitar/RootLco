@@ -119,9 +119,16 @@ for (const [path, item] of Object.entries(document.paths ?? {})) {
     if (!operation.responses || Object.keys(operation.responses).length === 0) {
       errors.push(`${label}: at least one response is required`);
     }
+    // 202 was missing until the contract started publishing the status each
+    // operation actually returns. `POST /auth/password-reset` has always answered
+    // `202 Accepted` -- deliberately, so a caller cannot learn whether an account
+    // exists -- but the generator advertised a fixed `200` for every operation, so
+    // this check never saw the real code and passed. A checker is only as honest
+    // as the document it reads.
     if (
       !operation.responses?.['200'] &&
       !operation.responses?.['201'] &&
+      !operation.responses?.['202'] &&
       !operation.responses?.['204']
     ) {
       errors.push(`${label}: no success response declared`);

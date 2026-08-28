@@ -56,6 +56,7 @@ export const GenerateBody = z.object({ policyId: schemas.uuid.optional() }).stri
 
 export const WARRANTY_GENERATE_OPERATION = defineOperation({
   id: 'wty.warranty-generate',
+  successStatus: 201,
   module: 'warranty',
   method: 'POST',
   path: '/deliveries/{deliveryId}/warranties',

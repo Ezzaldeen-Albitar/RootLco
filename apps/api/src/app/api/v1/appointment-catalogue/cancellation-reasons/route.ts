@@ -83,6 +83,7 @@ export async function GET(request: Request): Promise<Response> {
 
 export const CANCELLATION_REASON_CREATE_OPERATION = defineOperation({
   id: 'apt.catalogue-cancellation-reason-create',
+  successStatus: 201,
   module: 'reception',
   method: 'POST',
   path: '/appointment-catalogue/cancellation-reasons',

@@ -54,6 +54,7 @@ export const Body = z
 
 export const APPOINTMENT_CREATE_OPERATION = defineOperation({
   id: 'apt.appointment-create',
+  successStatus: 201,
   module: 'reception',
   method: 'POST',
   path: '/appointments',

@@ -48,6 +48,7 @@ export const COMPANY_SETTINGS_READ_OPERATION = defineOperation({
 
 export const COMPANY_SETTINGS_WRITE_OPERATION = defineOperation({
   id: 'iam.company-settings-write',
+  successStatus: 201,
   module: 'iam',
   method: 'POST',
   path: '/org/companies/{companyId}/settings',

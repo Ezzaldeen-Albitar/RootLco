@@ -140,6 +140,7 @@ export const CreateBody = z
 
 export const SERVICE_CREATE_OPERATION = defineOperation({
   id: 'svc.service-create',
+  successStatus: 201,
   module: 'service-catalog',
   method: 'POST',
   path: '/services',

@@ -61,6 +61,7 @@ export const RESTRICTION_LIST_OPERATION = defineOperation({
 
 export const RESTRICTION_IMPOSE_OPERATION = defineOperation({
   id: 'crm.restriction-impose',
+  successStatus: 201,
   module: 'crm',
   method: 'POST',
   path: '/customers/{customerId}/restrictions',

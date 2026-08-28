@@ -57,6 +57,7 @@ export const CreateBody = z
 
 export const STOCK_ISSUE_CREATE_OPERATION = defineOperation({
   id: 'inv.stock-issue-create',
+  successStatus: 201,
   module: 'inventory',
   method: 'POST',
   path: '/stock-issues',

@@ -81,6 +81,7 @@ export const CreateBody = z
 
 export const EXTERNAL_PURCHASE_PART_CREATE_OPERATION = defineOperation({
   id: 'inv.external-purchase-part-create',
+  successStatus: 201,
   module: 'inventory',
   method: 'POST',
   path: '/external-purchase-parts',

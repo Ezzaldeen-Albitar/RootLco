@@ -115,6 +115,7 @@ export async function GET(request: Request): Promise<Response> {
 
 export const TECHNICIAN_CREATE_OPERATION = defineOperation({
   id: 'tech.technician-create',
+  successStatus: 201,
   module: 'technician',
   method: 'POST',
   path: '/technicians',

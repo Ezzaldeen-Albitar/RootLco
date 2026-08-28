@@ -89,6 +89,7 @@ export const JobEvidenceCreateBody = z
 
 export const JOB_EVIDENCE_RECORD_OPERATION = defineOperation({
   id: 'wo.job-evidence-record',
+  successStatus: 201,
   module: 'work-order',
   method: 'POST',
   path: '/jobs/{jobId}/evidence',

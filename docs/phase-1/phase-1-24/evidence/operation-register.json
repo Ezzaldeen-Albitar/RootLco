@@ -81,7 +81,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/appointments",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -298,7 +298,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/appointment-catalogue/appointment-types",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -482,7 +482,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/appointment-catalogue/cancellation-reasons",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -666,7 +666,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/appointment-catalogue/source-channels",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -850,7 +850,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/customers/{customerId}/addresses",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -962,7 +962,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/customers/{customerId}/alerts",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -1002,7 +1002,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/customers/companies",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -1080,7 +1080,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/customers/{customerId}/consents",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -1124,7 +1124,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/customers/{customerId}/contacts",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -1589,7 +1589,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/customers/individuals",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -1633,7 +1633,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/customers/{customerId}/notes",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -1785,7 +1785,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/customers/{customerId}/restrictions",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -1939,7 +1939,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/customers/{customerId}/vehicles",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -2030,7 +2030,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/jobs/{jobId}/inspections",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -2113,7 +2113,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/inspections/{inspectionId}/dtcs",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -2155,7 +2155,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/inspections/{inspectionId}/evidence",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -2197,7 +2197,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/inspections/{inspectionId}/findings",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -2357,7 +2357,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/inspections/{inspectionId}/measurements",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -2399,7 +2399,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/inspections/{inspectionId}/recommendations",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -2441,7 +2441,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/inspections/{inspectionId}/reviews",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -2527,7 +2527,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/inspection-templates",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -2606,7 +2606,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/template-versions/{versionId}/items",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -2727,7 +2727,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/inspection-templates/{templateId}/versions",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -2851,7 +2851,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/iam/approval-limits",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -3082,7 +3082,7 @@
       "idempotent": false,
       "versionGuarded": false,
       "openapi": "POST /api/v1/auth/password-reset",
-      "documentedResponses": ["200", "422", "429", "500"],
+      "documentedResponses": ["202", "422", "429", "500"],
       "requiredEvidence": ["route", "service", "success", "unauthenticated", "denial"],
       "providedEvidence": ["denial", "route", "service", "success", "unauthenticated"],
       "missingEvidence": [],
@@ -3217,7 +3217,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/org/branches/{branchId}/settings",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -3301,7 +3301,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/org/companies/{companyId}/settings",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -3345,7 +3345,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/iam/grants",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -3432,7 +3432,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/iam/grants/{grantId}/scopes",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -3617,7 +3617,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/iam/invitations",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -3688,7 +3688,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/iam/roles",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": ["route", "service", "success", "authorization", "idempotency", "audit"],
       "providedEvidence": ["audit", "authorization", "idempotency", "route", "service", "success"],
       "missingEvidence": [],
@@ -3740,7 +3740,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/iam/roles/{roleId}/permissions",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -4215,7 +4215,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/customer-supplied-parts",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -4255,7 +4255,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/damaged-stock",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -4295,7 +4295,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/external-purchase-parts",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -4453,7 +4453,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/opening-inventory-batches",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -4493,7 +4493,7 @@
       "idempotent": false,
       "versionGuarded": false,
       "openapi": "POST /api/v1/opening-inventory-batches/{batchId}/lines",
-      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -4569,7 +4569,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/stock-issues",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -4735,7 +4735,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/stock-returns",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -5003,7 +5003,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/work-orders/{workOrderId}/quality-controls",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -5045,7 +5045,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/work-orders/{workOrderId}/reopen-attempts",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -5207,7 +5207,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/work-orders/{workOrderId}/rework",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -5376,7 +5376,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/quotations",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -5509,7 +5509,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/quotation-items/{quotationItemId}/decisions",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -5555,7 +5555,7 @@
       "idempotent": true,
       "versionGuarded": true,
       "openapi": "POST /api/v1/quotations/{quotationId}/revisions",
-      "documentedResponses": ["200", "401", "403", "409", "422", "428", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "428", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -5601,7 +5601,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/quotation-revisions/{revisionId}/decisions",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -5669,7 +5669,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/reception-catalogue/capture-policies",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -5707,7 +5707,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/reception-catalogue/damage-map-templates",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -5851,7 +5851,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/reception-catalogue/damage-map-templates/{templateId}/versions",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -5894,7 +5894,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/reception-catalogue/fuel-levels",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -6078,7 +6078,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/reception-catalogue/refusal-reasons",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -6262,7 +6262,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/reception-catalogue/visit-reasons",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -6446,7 +6446,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/reception-catalogue/warning-light-codes",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -6717,7 +6717,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/receptions/{receptionId}/authorizations",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -6806,7 +6806,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/receptions/{receptionId}/capture-overrides",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -6898,7 +6898,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/receptions/{receptionId}/condition-evidence",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -7041,7 +7041,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/receptions",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -7135,7 +7135,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/receptions/{receptionId}/evidence-bindings",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -7329,7 +7329,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/receptions/{receptionId}/party-roles",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -7417,7 +7417,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/receptions/{receptionId}/refusals",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -7510,7 +7510,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/receptions/{receptionId}/signatures",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -7558,7 +7558,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/receptions/{receptionId}/signatures/{signatureId}/events",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -7769,7 +7769,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/invoices/{invoiceId}/credit-notes",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -7814,7 +7814,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/deliveries/{deliveryId}/checklist-results",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -7906,7 +7906,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/deliveries",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -7986,7 +7986,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/deliveries/{deliveryId}/authorized-receiver",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -8028,7 +8028,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/deliveries/{deliveryId}/signatures",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -8116,7 +8116,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/invoices",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -8339,7 +8339,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/payments/{paymentId}/allocations",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -8409,7 +8409,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/payments",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -8544,7 +8544,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/attachments/documents/{documentId}/links",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -8634,7 +8634,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/attachments/upload-authorizations",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -8677,7 +8677,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/attachments/versions",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -9325,7 +9325,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/message-templates",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -9459,7 +9459,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/message-templates/{templateId}/versions",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -9677,7 +9677,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/price-lists",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -9753,7 +9753,7 @@
       "idempotent": true,
       "versionGuarded": true,
       "openapi": "POST /api/v1/price-lists/{priceListId}/versions",
-      "documentedResponses": ["200", "401", "403", "409", "422", "428", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "428", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -9879,7 +9879,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/price-lists/{priceListId}/versions/{versionId}/rules",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -9921,7 +9921,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/services",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -10085,7 +10085,7 @@
       "idempotent": false,
       "versionGuarded": true,
       "openapi": "POST /api/v1/labor-sessions/{sessionId}/corrections",
-      "documentedResponses": ["200", "401", "403", "409", "422", "428", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "428", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -10167,7 +10167,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/jobs/{jobId}/labor-sessions",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -10257,7 +10257,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/technicians/{technicianProfileId}/availability",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -10403,7 +10403,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/technicians/{technicianProfileId}/certifications",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -10487,7 +10487,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/technicians",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -10923,7 +10923,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/vehicles/{vehicleId}/authorized-parties",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -11005,7 +11005,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/vehicles",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -11391,7 +11391,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/vehicles/{vehicleId}/odometer-readings",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -11469,7 +11469,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/vehicles/{vehicleId}/ownerships",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -11513,7 +11513,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/vehicles/{vehicleId}/plates",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -11783,7 +11783,7 @@
       "idempotent": true,
       "versionGuarded": true,
       "openapi": "POST /api/v1/additional-work/{requestId}/approval",
-      "documentedResponses": ["200", "401", "403", "409", "422", "428", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "428", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -12039,7 +12039,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/work-orders/{workOrderId}/additional-work",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -12127,7 +12127,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/jobs/{jobId}/assignments",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -12253,7 +12253,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/work-orders/{workOrderId}/jobs",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -12374,7 +12374,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/jobs/{jobId}/evidence",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -12484,7 +12484,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/jobs/{jobId}/reassignments",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -12661,7 +12661,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/jobs/{jobId}/work-logs",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -12741,7 +12741,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/work-orders/{workOrderId}/required-parts",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -12821,7 +12821,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/work-orders/{workOrderId}/service-lines",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",
@@ -13223,7 +13223,7 @@
       "idempotent": true,
       "versionGuarded": false,
       "openapi": "POST /api/v1/deliveries/{deliveryId}/warranties",
-      "documentedResponses": ["200", "401", "403", "409", "422", "429", "500"],
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
       "requiredEvidence": [
         "route",
         "service",

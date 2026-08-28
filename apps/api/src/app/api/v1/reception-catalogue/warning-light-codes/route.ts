@@ -83,6 +83,7 @@ export async function GET(request: Request): Promise<Response> {
 
 export const WARNING_LIGHT_CODE_CREATE_OPERATION = defineOperation({
   id: 'rec.catalogue-warning-light-code-create',
+  successStatus: 201,
   module: 'reception',
   method: 'POST',
   path: '/reception-catalogue/warning-light-codes',

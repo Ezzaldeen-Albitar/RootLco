@@ -41,6 +41,7 @@ export const Body = z
 
 export const DAMAGE_MAP_TEMPLATE_VERSION_OPERATION = defineOperation({
   id: 'rec.catalogue-damage-map-template-version-create',
+  successStatus: 201,
   module: 'reception',
   method: 'POST',
   path: '/reception-catalogue/damage-map-templates/{templateId}/versions',

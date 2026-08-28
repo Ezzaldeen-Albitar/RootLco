@@ -34,6 +34,7 @@ export const Body = z
 
 export const ATTACHMENT_UPLOAD_AUTHORIZE_OPERATION = defineOperation({
   id: 'shared.attachment-upload-authorize',
+  successStatus: 201,
   module: 'shared-services',
   method: 'POST',
   path: '/attachments/upload-authorizations',

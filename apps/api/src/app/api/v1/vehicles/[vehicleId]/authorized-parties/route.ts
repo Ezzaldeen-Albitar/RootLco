@@ -28,6 +28,7 @@ export const Body = z
 
 export const VEHICLE_AUTHORIZED_PARTY_ADD_OPERATION = defineOperation({
   id: 'veh.vehicle-authorized-party-add',
+  successStatus: 201,
   module: 'vehicle',
   method: 'POST',
   path: '/vehicles/{vehicleId}/authorized-parties',

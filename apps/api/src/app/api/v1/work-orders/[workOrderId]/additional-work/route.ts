@@ -55,6 +55,7 @@ export const Body = z
 
 export const ADDITIONAL_WORK_REQUEST_OPERATION = defineOperation({
   id: 'wo.additional-work-request',
+  successStatus: 201,
   module: 'work-order',
   method: 'POST',
   path: '/work-orders/{workOrderId}/additional-work',

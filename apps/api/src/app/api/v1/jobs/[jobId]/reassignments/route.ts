@@ -54,6 +54,7 @@ export const Body = z
 
 export const JOB_REASSIGNMENT_OPERATION = defineOperation({
   id: 'wo.job-reassignment',
+  successStatus: 201,
   module: 'work-order',
   method: 'POST',
   path: '/jobs/{jobId}/reassignments',

@@ -70,6 +70,7 @@ export const Body = z
 
 export const QUOTATION_ITEM_DECIDE_OPERATION = defineOperation({
   id: 'quo.quotation-item-decide',
+  successStatus: 201,
   module: 'quotation',
   method: 'POST',
   path: '/quotation-items/{quotationItemId}/decisions',

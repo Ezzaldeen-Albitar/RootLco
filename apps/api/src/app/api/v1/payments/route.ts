@@ -66,6 +66,7 @@ export const CreateBody = z
 
 export const PAYMENT_RECORD_OPERATION = defineOperation({
   id: 'sal.payment-record',
+  successStatus: 201,
   module: 'payments',
   method: 'POST',
   path: '/payments',

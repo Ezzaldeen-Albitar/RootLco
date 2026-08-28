@@ -41,6 +41,7 @@ export const TemplateVersionCreateBody = z
 
 export const TEMPLATE_VERSION_CREATE_OPERATION = defineOperation({
   id: 'dia.template-version-create',
+  successStatus: 201,
   module: 'diagnostics',
   method: 'POST',
   path: '/inspection-templates/{templateId}/versions',

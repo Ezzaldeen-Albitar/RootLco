@@ -47,6 +47,7 @@ export const Body = z
 
 export const RECEPTION_CAPTURE_OVERRIDE_OPERATION = defineOperation({
   id: 'rec.reception-capture-override',
+  successStatus: 201,
   module: 'reception',
   method: 'POST',
   path: '/receptions/{receptionId}/capture-overrides',

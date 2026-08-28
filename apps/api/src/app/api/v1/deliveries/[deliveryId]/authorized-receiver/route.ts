@@ -45,6 +45,7 @@ export const VerifyBody = z
 
 export const DELIVERY_RECEIVER_VERIFY_OPERATION = defineOperation({
   id: 'sal.delivery-receiver-verify',
+  successStatus: 201,
   module: 'delivery',
   method: 'POST',
   path: '/deliveries/{deliveryId}/authorized-receiver',

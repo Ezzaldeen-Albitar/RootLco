@@ -27,6 +27,7 @@ export const Body = z
 
 export const INDIVIDUAL_CREATE_OPERATION = defineOperation({
   id: 'crm.individual-create',
+  successStatus: 201,
   module: 'crm',
   method: 'POST',
   path: '/customers/individuals',

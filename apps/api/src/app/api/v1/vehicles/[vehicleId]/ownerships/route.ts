@@ -51,6 +51,7 @@ export const VEHICLE_OWNERSHIP_LIST_OPERATION = defineOperation({
 
 export const VEHICLE_OWNERSHIP_TRANSFER_OPERATION = defineOperation({
   id: 'veh.vehicle-ownership-transfer',
+  successStatus: 201,
   module: 'vehicle',
   method: 'POST',
   path: '/vehicles/{vehicleId}/ownerships',

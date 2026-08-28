@@ -68,6 +68,7 @@ export const WorkLogListQuery = z
 
 export const JOB_WORK_LOG_RECORD_OPERATION = defineOperation({
   id: 'wo.job-work-log-record',
+  successStatus: 201,
   module: 'work-order',
   method: 'POST',
   path: '/jobs/{jobId}/work-logs',

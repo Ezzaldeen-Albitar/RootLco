@@ -57,6 +57,7 @@ export const CreateBody = z
 
 export const INVOICE_CREATE_OPERATION = defineOperation({
   id: 'sal.invoice-create',
+  successStatus: 201,
   module: 'billing',
   method: 'POST',
   path: '/invoices',

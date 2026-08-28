@@ -52,6 +52,7 @@ export const CONTACT_LIST_OPERATION = defineOperation({
 
 export const CONTACT_ADD_OPERATION = defineOperation({
   id: 'crm.contact-add',
+  successStatus: 201,
   module: 'crm',
   method: 'POST',
   path: '/customers/{customerId}/contacts',

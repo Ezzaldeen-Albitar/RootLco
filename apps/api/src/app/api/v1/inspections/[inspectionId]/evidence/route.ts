@@ -41,6 +41,7 @@ export const Body = z
 
 export const DIAGNOSTIC_EVIDENCE_OPERATION = defineOperation({
   id: 'dia.diagnostic-evidence-record',
+  successStatus: 201,
   module: 'diagnostics',
   method: 'POST',
   path: '/inspections/{inspectionId}/evidence',

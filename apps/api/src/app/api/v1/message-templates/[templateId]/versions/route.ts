@@ -24,6 +24,7 @@ export const Body = z
 
 export const TEMPLATE_VERSION_CREATE_OPERATION = defineOperation({
   id: 'shared.template-version-create',
+  successStatus: 201,
   module: 'shared-services',
   method: 'POST',
   path: '/message-templates/{templateId}/versions',

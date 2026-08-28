@@ -120,6 +120,7 @@ export const Body = z
 
 export const ADDITIONAL_WORK_APPROVAL_OPERATION = defineOperation({
   id: 'wo.additional-work-approval',
+  successStatus: 201,
   module: 'work-order',
   method: 'POST',
   path: '/additional-work/{requestId}/approval',

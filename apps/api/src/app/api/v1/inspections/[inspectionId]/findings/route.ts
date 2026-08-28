@@ -53,6 +53,7 @@ export const Body = z
 
 export const DIAGNOSTIC_FINDING_OPERATION = defineOperation({
   id: 'dia.diagnostic-finding-record',
+  successStatus: 201,
   module: 'diagnostics',
   method: 'POST',
   path: '/inspections/{inspectionId}/findings',

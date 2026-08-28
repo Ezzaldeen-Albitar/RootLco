@@ -71,6 +71,7 @@ export const CONSENT_LIST_OPERATION = defineOperation({
 
 export const CONSENT_RECORD_OPERATION = defineOperation({
   id: 'crm.consent-record',
+  successStatus: 201,
   module: 'crm',
   method: 'POST',
   path: '/customers/{customerId}/consents',

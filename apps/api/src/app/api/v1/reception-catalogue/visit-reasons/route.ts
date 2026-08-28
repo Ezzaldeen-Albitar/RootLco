@@ -79,6 +79,7 @@ export async function GET(request: Request): Promise<Response> {
 
 export const VISIT_REASON_CREATE_OPERATION = defineOperation({
   id: 'rec.catalogue-visit-reason-create',
+  successStatus: 201,
   module: 'reception',
   method: 'POST',
   path: '/reception-catalogue/visit-reasons',

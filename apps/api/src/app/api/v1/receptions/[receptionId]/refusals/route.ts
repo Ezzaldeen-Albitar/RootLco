@@ -38,6 +38,7 @@ export const Body = z
 
 export const RECEPTION_REFUSAL_OPERATION = defineOperation({
   id: 'rec.reception-refusal',
+  successStatus: 201,
   module: 'reception',
   method: 'POST',
   path: '/receptions/{receptionId}/refusals',

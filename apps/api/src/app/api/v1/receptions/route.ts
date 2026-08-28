@@ -83,6 +83,7 @@ export const Body = z
 
 export const RECEPTION_CREATE_OPERATION = defineOperation({
   id: 'rec.reception-create',
+  successStatus: 201,
   module: 'reception',
   method: 'POST',
   path: '/receptions',

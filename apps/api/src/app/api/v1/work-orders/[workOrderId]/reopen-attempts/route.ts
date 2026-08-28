@@ -48,6 +48,7 @@ export const Body = z.object({ reason: z.string().trim().min(1).max(MAX_REOPEN_R
 
 export const REOPEN_ATTEMPT_OPERATION = defineOperation({
   id: 'qms.reopen-attempt',
+  successStatus: 201,
   module: 'quality',
   method: 'POST',
   path: '/work-orders/{workOrderId}/reopen-attempts',

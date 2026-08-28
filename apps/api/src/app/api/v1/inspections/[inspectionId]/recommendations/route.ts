@@ -44,6 +44,7 @@ export const Body = z
 
 export const DIAGNOSTIC_RECOMMENDATION_OPERATION = defineOperation({
   id: 'dia.diagnostic-recommendation-record',
+  successStatus: 201,
   module: 'diagnostics',
   method: 'POST',
   path: '/inspections/{inspectionId}/recommendations',

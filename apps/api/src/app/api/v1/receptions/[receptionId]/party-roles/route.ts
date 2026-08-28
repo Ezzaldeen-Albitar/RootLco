@@ -45,6 +45,7 @@ export const Body = z
 
 export const RECEPTION_PARTY_ROLE_OPERATION = defineOperation({
   id: 'rec.reception-party-role',
+  successStatus: 201,
   module: 'reception',
   method: 'POST',
   path: '/receptions/{receptionId}/party-roles',

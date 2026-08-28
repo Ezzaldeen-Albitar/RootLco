@@ -58,6 +58,7 @@ export const Body = z
 
 export const PRICE_RULE_RECORD_OPERATION = defineOperation({
   id: 'svc.price-rule-record',
+  successStatus: 201,
   module: 'pricing',
   method: 'POST',
   path: '/price-lists/{priceListId}/versions/{versionId}/rules',

@@ -62,6 +62,7 @@ export const NOTE_LIST_OPERATION = defineOperation({
 
 export const NOTE_ADD_OPERATION = defineOperation({
   id: 'crm.note-add',
+  successStatus: 201,
   module: 'crm',
   method: 'POST',
   path: '/customers/{customerId}/notes',

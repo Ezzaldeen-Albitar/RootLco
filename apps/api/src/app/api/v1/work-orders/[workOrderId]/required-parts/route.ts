@@ -50,6 +50,7 @@ export const Body = z
 
 export const REQUIRED_PART_RECORD_OPERATION = defineOperation({
   id: 'wo.required-part-record',
+  successStatus: 201,
   module: 'work-order',
   method: 'POST',
   path: '/work-orders/{workOrderId}/required-parts',

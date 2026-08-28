@@ -27,6 +27,7 @@ export const Body = z
 
 export const COMPANY_CREATE_OPERATION = defineOperation({
   id: 'crm.company-create',
+  successStatus: 201,
   module: 'crm',
   method: 'POST',
   path: '/customers/companies',

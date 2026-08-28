@@ -57,6 +57,7 @@ export const InspectionTemplateListQuery = z
 
 export const TEMPLATE_CREATE_OPERATION = defineOperation({
   id: 'dia.template-create',
+  successStatus: 201,
   module: 'diagnostics',
   method: 'POST',
   path: '/inspection-templates',

@@ -34,6 +34,7 @@ export const Body = z
 
 export const QC_RECORD_OPEN_OPERATION = defineOperation({
   id: 'qms.qc-record-open',
+  successStatus: 201,
   module: 'quality',
   method: 'POST',
   path: '/work-orders/{workOrderId}/quality-controls',

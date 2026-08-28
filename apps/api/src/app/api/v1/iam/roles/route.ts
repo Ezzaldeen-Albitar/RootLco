@@ -50,6 +50,7 @@ export const ROLE_LIST_OPERATION = defineOperation({
 
 export const ROLE_CREATE_OPERATION = defineOperation({
   id: 'iam.role-create',
+  successStatus: 201,
   module: 'iam',
   method: 'POST',
   path: '/iam/roles',

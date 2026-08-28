@@ -79,6 +79,7 @@ export const Body = z
 
 export const JOB_ASSIGNMENT_CREATE_OPERATION = defineOperation({
   id: 'wo.job-assignment-create',
+  successStatus: 201,
   module: 'work-order',
   method: 'POST',
   path: '/jobs/{jobId}/assignments',
