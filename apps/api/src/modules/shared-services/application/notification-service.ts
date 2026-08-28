@@ -165,10 +165,14 @@ export class SharedNotificationService extends ApplicationService implements Not
 
       let rendered: RenderedMessage;
       try {
-        rendered = renderTemplate({ subject: version.subject, body: version.body }, input.variables, {
-          channel,
-          maxRenderedChars: config.NOTIFICATION_MAX_RENDERED_CHARS,
-        });
+        rendered = renderTemplate(
+          { subject: version.subject, body: version.body },
+          input.variables,
+          {
+            channel,
+            maxRenderedChars: config.NOTIFICATION_MAX_RENDERED_CHARS,
+          }
+        );
       } catch (error) {
         metrics().increment(METRICS.templateRenderFailureCount, {
           channel,
@@ -247,10 +251,7 @@ export class SharedNotificationService extends ApplicationService implements Not
    * Note the handle type: `WorkerDb`, so there is no `RequestContext` to read a
    * tenant from and every scoping value must be named by the caller.
    */
-  async enqueuePrepared(
-    db: WorkerDb,
-    input: EnqueuePreparedInput
-  ): Promise<QueuedMessage | null> {
+  async enqueuePrepared(db: WorkerDb, input: EnqueuePreparedInput): Promise<QueuedMessage | null> {
     // VALIDATED, because these values were lifted out of a `jsonb` event payload
     // and this method holds no RequestContext to fall back on. `Buffer.from(x,
     // 'hex')` silently truncates a malformed string to a shorter or empty buffer
