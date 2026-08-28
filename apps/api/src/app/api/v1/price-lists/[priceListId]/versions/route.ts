@@ -38,6 +38,7 @@ export const Body = z
 
 export const PRICE_LIST_VERSION_CREATE_OPERATION = defineOperation({
   id: 'svc.price-list-version-create',
+  successStatus: 201,
   module: 'pricing',
   method: 'POST',
   path: '/price-lists/{priceListId}/versions',

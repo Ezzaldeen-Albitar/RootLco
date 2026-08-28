@@ -109,6 +109,7 @@ export async function GET(
 
 export const RECEPTION_SIGNATURE_OPERATION = defineOperation({
   id: 'rec.reception-signature',
+  successStatus: 201,
   module: 'reception',
   method: 'POST',
   path: '/receptions/{receptionId}/signatures',

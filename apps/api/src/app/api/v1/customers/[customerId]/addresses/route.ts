@@ -58,6 +58,7 @@ export const ADDRESS_LIST_OPERATION = defineOperation({
 
 export const ADDRESS_ADD_OPERATION = defineOperation({
   id: 'crm.address-add',
+  successStatus: 201,
   module: 'crm',
   method: 'POST',
   path: '/customers/{customerId}/addresses',

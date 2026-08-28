@@ -50,6 +50,7 @@ export const Body = z
 
 export const DIAGNOSTIC_REVIEW_OPERATION = defineOperation({
   id: 'dia.diagnostic-review',
+  successStatus: 201,
   module: 'diagnostics',
   method: 'POST',
   path: '/inspections/{inspectionId}/reviews',

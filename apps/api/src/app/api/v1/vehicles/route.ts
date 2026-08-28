@@ -110,6 +110,7 @@ export const CreateBody = z
 
 export const VEHICLE_CREATE_OPERATION = defineOperation({
   id: 'veh.vehicle-create',
+  successStatus: 201,
   module: 'vehicle',
   method: 'POST',
   path: '/vehicles',

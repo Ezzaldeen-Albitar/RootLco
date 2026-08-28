@@ -43,6 +43,7 @@ export const ROLE_PERMISSION_LIST_OPERATION = defineOperation({
 
 export const ROLE_PERMISSION_ADD_OPERATION = defineOperation({
   id: 'iam.role-permission-add',
+  successStatus: 201,
   module: 'iam',
   method: 'POST',
   path: '/iam/roles/{roleId}/permissions',

@@ -47,6 +47,7 @@ export const Body = z
 
 export const SERVICE_LINE_RECORD_OPERATION = defineOperation({
   id: 'wo.service-line-record',
+  successStatus: 201,
   module: 'work-order',
   method: 'POST',
   path: '/work-orders/{workOrderId}/service-lines',

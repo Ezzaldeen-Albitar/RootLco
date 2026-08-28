@@ -68,6 +68,7 @@ export const Body = z
 
 export const REWORK_CREATE_OPERATION = defineOperation({
   id: 'qms.rework-create',
+  successStatus: 201,
   module: 'quality',
   method: 'POST',
   path: '/work-orders/{workOrderId}/rework',

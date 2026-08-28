@@ -38,6 +38,7 @@ export const CreateBody = z
 
 export const DELIVERY_CREATE_OPERATION = defineOperation({
   id: 'sal.delivery-create',
+  successStatus: 201,
   module: 'delivery',
   method: 'POST',
   path: '/deliveries',

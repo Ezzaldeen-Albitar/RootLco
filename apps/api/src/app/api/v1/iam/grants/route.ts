@@ -48,6 +48,7 @@ export const GrantBody = z
 
 export const GRANT_ISSUE_OPERATION = defineOperation({
   id: 'iam.grant-issue',
+  successStatus: 201,
   module: 'iam',
   method: 'POST',
   path: '/iam/grants',

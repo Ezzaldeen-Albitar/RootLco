@@ -33,6 +33,7 @@ export const InviteBody = z.object({
 
 export const INVITE_OPERATION = defineOperation({
   id: 'iam.invitation-create',
+  successStatus: 201,
   module: 'iam',
   method: 'POST',
   path: '/iam/invitations',

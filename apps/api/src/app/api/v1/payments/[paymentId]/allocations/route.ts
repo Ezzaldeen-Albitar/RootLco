@@ -58,6 +58,7 @@ export const AllocateBody = z
 
 export const PAYMENT_ALLOCATE_OPERATION = defineOperation({
   id: 'sal.payment-allocate',
+  successStatus: 201,
   module: 'payments',
   method: 'POST',
   path: '/payments/{paymentId}/allocations',

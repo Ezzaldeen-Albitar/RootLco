@@ -28,6 +28,7 @@ export const Body = z
 
 export const ATTACHMENT_VERSION_REGISTER_OPERATION = defineOperation({
   id: 'shared.attachment-version-register',
+  successStatus: 201,
   module: 'shared-services',
   method: 'POST',
   path: '/attachments/versions',

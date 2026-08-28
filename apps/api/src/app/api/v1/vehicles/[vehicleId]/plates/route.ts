@@ -49,6 +49,7 @@ export const VEHICLE_PLATE_LIST_OPERATION = defineOperation({
 
 export const VEHICLE_PLATE_ASSIGN_OPERATION = defineOperation({
   id: 'veh.vehicle-plate-assign',
+  successStatus: 201,
   module: 'vehicle',
   method: 'POST',
   path: '/vehicles/{vehicleId}/plates',

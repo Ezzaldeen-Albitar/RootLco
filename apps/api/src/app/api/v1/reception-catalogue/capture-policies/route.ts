@@ -77,6 +77,7 @@ export async function GET(request: Request): Promise<Response> {
 
 export const CAPTURE_POLICY_SET_OPERATION = defineOperation({
   id: 'rec.catalogue-capture-policy-set',
+  successStatus: 201,
   module: 'reception',
   method: 'POST',
   path: '/reception-catalogue/capture-policies',

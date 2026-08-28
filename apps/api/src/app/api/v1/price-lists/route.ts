@@ -80,6 +80,7 @@ export const CreateBody = z
 
 export const PRICE_LIST_CREATE_OPERATION = defineOperation({
   id: 'svc.price-list-create',
+  successStatus: 201,
   module: 'pricing',
   method: 'POST',
   path: '/price-lists',

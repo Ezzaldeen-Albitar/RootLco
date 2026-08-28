@@ -58,6 +58,7 @@ export const VEHICLE_ODOMETER_LIST_OPERATION = defineOperation({
 
 export const VEHICLE_ODOMETER_RECORD_OPERATION = defineOperation({
   id: 'veh.vehicle-odometer-record',
+  successStatus: 201,
   module: 'vehicle',
   method: 'POST',
   path: '/vehicles/{vehicleId}/odometer-readings',

@@ -39,6 +39,7 @@ export const RecordBody = z
 
 export const DELIVERY_CHECKLIST_RECORD_OPERATION = defineOperation({
   id: 'sal.delivery-checklist-record',
+  successStatus: 201,
   module: 'delivery',
   method: 'POST',
   path: '/deliveries/{deliveryId}/checklist-results',

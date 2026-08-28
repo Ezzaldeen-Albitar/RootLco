@@ -46,6 +46,7 @@ export const CreateBody = z
 
 export const STOCK_RETURN_CREATE_OPERATION = defineOperation({
   id: 'inv.stock-return-create',
+  successStatus: 201,
   module: 'inventory',
   method: 'POST',
   path: '/stock-returns',

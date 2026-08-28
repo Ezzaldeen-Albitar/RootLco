@@ -92,6 +92,7 @@ export async function GET(
 
 export const RECEPTION_EVIDENCE_BINDING_OPERATION = defineOperation({
   id: 'rec.reception-evidence-binding',
+  successStatus: 201,
   module: 'reception',
   method: 'POST',
   path: '/receptions/{receptionId}/evidence-bindings',

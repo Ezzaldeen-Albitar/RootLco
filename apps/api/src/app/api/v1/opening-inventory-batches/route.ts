@@ -49,6 +49,7 @@ export const CreateBody = z
 
 export const OPENING_BATCH_CREATE_OPERATION = defineOperation({
   id: 'inv.opening-batch-create',
+  successStatus: 201,
   module: 'inventory',
   method: 'POST',
   path: '/opening-inventory-batches',

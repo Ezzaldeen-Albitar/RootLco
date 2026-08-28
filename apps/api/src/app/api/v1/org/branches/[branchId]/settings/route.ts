@@ -44,6 +44,7 @@ export const BRANCH_SETTINGS_READ_OPERATION = defineOperation({
 
 export const BRANCH_SETTINGS_WRITE_OPERATION = defineOperation({
   id: 'iam.branch-settings-write',
+  successStatus: 201,
   module: 'iam',
   method: 'POST',
   path: '/org/branches/{branchId}/settings',

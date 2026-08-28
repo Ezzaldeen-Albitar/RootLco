@@ -38,6 +38,7 @@ const Query = z
 
 export const LABOR_SESSION_START_OPERATION = defineOperation({
   id: 'tech.labor-session-start',
+  successStatus: 201,
   module: 'technician',
   method: 'POST',
   path: '/jobs/{jobId}/labor-sessions',

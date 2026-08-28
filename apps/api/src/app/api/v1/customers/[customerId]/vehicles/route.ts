@@ -39,6 +39,7 @@ export const Body = z
 
 export const VEHICLE_LINK_OPERATION = defineOperation({
   id: 'crm.vehicle-link',
+  successStatus: 201,
   module: 'crm',
   method: 'POST',
   path: '/customers/{customerId}/vehicles',

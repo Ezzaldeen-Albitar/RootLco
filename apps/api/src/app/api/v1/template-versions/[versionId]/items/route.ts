@@ -71,6 +71,7 @@ export const TemplateItemCreateBody = z
 
 export const TEMPLATE_ITEM_CREATE_OPERATION = defineOperation({
   id: 'dia.template-item-create',
+  successStatus: 201,
   module: 'diagnostics',
   method: 'POST',
   path: '/template-versions/{versionId}/items',

@@ -37,6 +37,7 @@ export const Body = z
 
 export const LABOR_SESSION_CORRECT_OPERATION = defineOperation({
   id: 'tech.labor-session-correct',
+  successStatus: 201,
   module: 'technician',
   method: 'POST',
   path: '/labor-sessions/{sessionId}/corrections',

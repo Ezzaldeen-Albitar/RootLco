@@ -112,6 +112,12 @@ export const REGISTER = Object.freeze([
   },
   { name: 'validate:operation-coverage', owner: ROOT, tier: 'required', why: 'operation evidence' },
   { name: 'validate:openapi', owner: ROOT, tier: 'required', why: 'published contract' },
+  {
+    name: 'validate:openapi-success-status',
+    owner: ROOT,
+    tier: 'required',
+    why: 'the published success status is the one the handler returns',
+  },
   { name: 'validate:exact-money', owner: ROOT, tier: 'required', why: 'decimal money surface' },
   { name: 'validate:p1-19-inventory', owner: ROOT, tier: 'required', why: 'phase inventory' },
   { name: 'validate:p1-20-inventory', owner: ROOT, tier: 'required', why: 'phase inventory' },

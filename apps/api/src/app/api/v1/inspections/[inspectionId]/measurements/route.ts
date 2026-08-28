@@ -62,6 +62,7 @@ export const Body = z
 
 export const DIAGNOSTIC_MEASUREMENT_OPERATION = defineOperation({
   id: 'dia.diagnostic-measurement-record',
+  successStatus: 201,
   module: 'diagnostics',
   method: 'POST',
   path: '/inspections/{inspectionId}/measurements',

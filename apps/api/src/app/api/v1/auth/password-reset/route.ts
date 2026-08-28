@@ -32,6 +32,7 @@ export const ResetBody = z.object({
 
 export const PASSWORD_RESET_OPERATION = defineOperation({
   id: 'iam.auth-password-reset',
+  successStatus: 202,
   module: 'iam',
   method: 'POST',
   path: '/auth/password-reset',

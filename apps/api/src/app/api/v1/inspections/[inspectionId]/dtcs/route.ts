@@ -43,6 +43,7 @@ export const Body = z
 
 export const DIAGNOSTIC_DTC_OPERATION = defineOperation({
   id: 'dia.diagnostic-dtc-record',
+  successStatus: 201,
   module: 'diagnostics',
   method: 'POST',
   path: '/inspections/{inspectionId}/dtcs',

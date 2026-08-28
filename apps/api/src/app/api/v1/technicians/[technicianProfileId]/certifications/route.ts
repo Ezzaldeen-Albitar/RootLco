@@ -48,6 +48,7 @@ export const Body = z
 
 export const TECHNICIAN_CERTIFICATION_RECORD_OPERATION = defineOperation({
   id: 'tech.technician-certification-record',
+  successStatus: 201,
   module: 'technician',
   method: 'POST',
   path: '/technicians/{technicianProfileId}/certifications',

@@ -196,6 +196,7 @@ export const Body = z.discriminatedUnion('kind', [
 
 export const RECEPTION_CONDITION_EVIDENCE_OPERATION = defineOperation({
   id: 'rec.reception-condition-evidence',
+  successStatus: 201,
   module: 'reception',
   method: 'POST',
   path: '/receptions/{receptionId}/condition-evidence',

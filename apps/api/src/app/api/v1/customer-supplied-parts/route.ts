@@ -61,6 +61,7 @@ export const CreateBody = z
 
 export const CUSTOMER_SUPPLIED_PART_CREATE_OPERATION = defineOperation({
   id: 'inv.customer-supplied-part-create',
+  successStatus: 201,
   module: 'inventory',
   method: 'POST',
   path: '/customer-supplied-parts',

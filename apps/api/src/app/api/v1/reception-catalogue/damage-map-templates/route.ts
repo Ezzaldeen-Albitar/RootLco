@@ -79,6 +79,7 @@ export async function GET(request: Request): Promise<Response> {
 
 export const DAMAGE_MAP_TEMPLATE_CREATE_OPERATION = defineOperation({
   id: 'rec.catalogue-damage-map-template-create',
+  successStatus: 201,
   module: 'reception',
   method: 'POST',
   path: '/reception-catalogue/damage-map-templates',

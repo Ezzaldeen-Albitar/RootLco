@@ -66,6 +66,7 @@ export const CreateBody = z
 
 export const DAMAGED_STOCK_CREATE_OPERATION = defineOperation({
   id: 'inv.damaged-stock-create',
+  successStatus: 201,
   module: 'inventory',
   method: 'POST',
   path: '/damaged-stock',

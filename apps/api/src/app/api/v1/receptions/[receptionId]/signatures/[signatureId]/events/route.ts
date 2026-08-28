@@ -55,6 +55,7 @@ export const Body = z
 
 export const RECEPTION_SIGNATURE_EVENT_OPERATION = defineOperation({
   id: 'rec.reception-signature-event',
+  successStatus: 201,
   module: 'reception',
   method: 'POST',
   path: '/receptions/{receptionId}/signatures/{signatureId}/events',

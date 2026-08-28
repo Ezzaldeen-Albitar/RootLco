@@ -79,6 +79,7 @@ export async function GET(request: Request): Promise<Response> {
 
 export const SOURCE_CHANNEL_CREATE_OPERATION = defineOperation({
   id: 'apt.catalogue-source-channel-create',
+  successStatus: 201,
   module: 'reception',
   method: 'POST',
   path: '/appointment-catalogue/source-channels',

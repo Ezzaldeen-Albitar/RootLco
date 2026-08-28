@@ -58,6 +58,7 @@ export const ALERT_LIST_OPERATION = defineOperation({
 
 export const ALERT_RAISE_OPERATION = defineOperation({
   id: 'crm.alert-raise',
+  successStatus: 201,
   module: 'crm',
   method: 'POST',
   path: '/customers/{customerId}/alerts',

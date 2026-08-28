@@ -47,6 +47,7 @@ export const Body = z
 
 export const RECEPTION_AUTHORIZATION_OPERATION = defineOperation({
   id: 'rec.reception-authorization',
+  successStatus: 201,
   module: 'reception',
   method: 'POST',
   path: '/receptions/{receptionId}/authorizations',

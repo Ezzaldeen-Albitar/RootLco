@@ -40,6 +40,7 @@ export const GRANT_SCOPE_LIST_OPERATION = defineOperation({
 
 export const GRANT_SCOPE_ADD_OPERATION = defineOperation({
   id: 'iam.grant-scope-add',
+  successStatus: 201,
   module: 'iam',
   method: 'POST',
   path: '/iam/grants/{grantId}/scopes',

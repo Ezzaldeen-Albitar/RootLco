@@ -54,6 +54,7 @@ export const SignBody = z
 
 export const DELIVERY_SIGNATURE_ATTACH_OPERATION = defineOperation({
   id: 'sal.delivery-signature-attach',
+  successStatus: 201,
   module: 'delivery',
   method: 'POST',
   path: '/deliveries/{deliveryId}/signatures',

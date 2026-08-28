@@ -73,6 +73,7 @@ export const APPOINTMENT_TYPE_LIST_OPERATION = defineOperation({
 
 export const APPOINTMENT_TYPE_CREATE_OPERATION = defineOperation({
   id: 'apt.catalogue-appointment-type-create',
+  successStatus: 201,
   module: 'reception',
   method: 'POST',
   path: '/appointment-catalogue/appointment-types',

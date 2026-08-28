@@ -79,6 +79,7 @@ export async function GET(request: Request): Promise<Response> {
 
 export const FUEL_LEVEL_CREATE_OPERATION = defineOperation({
   id: 'rec.catalogue-fuel-level-create',
+  successStatus: 201,
   module: 'reception',
   method: 'POST',
   path: '/reception-catalogue/fuel-levels',

@@ -25,6 +25,7 @@ export const Body = z
 
 export const ATTACHMENT_LINK_CREATE_OPERATION = defineOperation({
   id: 'shared.attachment-link-create',
+  successStatus: 201,
   module: 'shared-services',
   method: 'POST',
   path: '/attachments/documents/{documentId}/links',

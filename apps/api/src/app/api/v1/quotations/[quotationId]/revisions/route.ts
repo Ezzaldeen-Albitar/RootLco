@@ -68,6 +68,7 @@ export const Body = z
 
 export const QUOTATION_REVISION_CREATE_OPERATION = defineOperation({
   id: 'quo.quotation-revision-create',
+  successStatus: 201,
   module: 'quotation',
   method: 'POST',
   path: '/quotations/{quotationId}/revisions',
