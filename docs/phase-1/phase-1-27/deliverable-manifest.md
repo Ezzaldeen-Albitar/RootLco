@@ -987,10 +987,10 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
 <!-- derived: tracked docs/phase-1/phase-1-27 = 41 -->
 <!-- derived: tracked docs/phase-1/phase-1-27:md = 31 -->
 <!-- derived: tracked docs/product = 13 -->
-<!-- derived: commands registered = 169 -->
-<!-- derived: commands required = 88 -->
-<!-- derived: commands reachable = 88 -->
-<!-- derived: commands hosted-ci = 88 -->
+<!-- derived: commands registered = 170 -->
+<!-- derived: commands required = 89 -->
+<!-- derived: commands reachable = 89 -->
+<!-- derived: commands hosted-ci = 89 -->
 <!-- derived: cases vehicle-screens.dom.test.tsx = 43 -->
 <!-- derived: cases tailwind-theme-gate.test.ts = 8 -->
 <!-- derived: cases navigation.test.ts = 22 -->
