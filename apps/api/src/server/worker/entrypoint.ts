@@ -19,6 +19,7 @@
  * safer than forcing a completion whose consumers may not have finished.
  */
 import { OutboxWorker } from './outbox-worker';
+import { registerWorkerConsumers } from './consumers';
 import { closeWorkerPool } from './worker-db';
 import { workerReadiness, type ReadinessReport } from '../health/readiness';
 import { log } from '../observability/logger';
@@ -37,6 +38,13 @@ export interface WorkerProcess {
  * (a supervisor, a test) decides when to stop.
  */
 export function startOutboxWorker(): WorkerProcess {
+  // EXPLICIT registration, at boot, before the loop can claim anything.
+  //
+  // Not an import side effect: a consumer registered by being imported depends on
+  // import order and cannot be restored after `__resetConsumersForTests()`, so a
+  // suite that resets the registry would silently unregister production behaviour.
+  registerWorkerConsumers();
+
   const worker = new OutboxWorker();
   let draining = false;
 
