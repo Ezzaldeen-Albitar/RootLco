@@ -319,6 +319,33 @@ export class TemplateRepository extends Repository {
     );
   }
 
+  /**
+   * The canonical approval witness for a version, or null if it has none.
+   *
+   * Read HERE, on the request side, because the worker cannot: `app_worker` holds
+   * no privilege on `shared.template_version_approvals` at any level, which is the
+   * whole reason the witness id travels on the event instead.
+   *
+   * A null result means the version was approved BEFORE migration 128 and no
+   * witness was derived for it. That is a real state on an upgraded database until
+   * `scripts/db/backfill-template-approval-witnesses.mjs` is run, and the caller
+   * treats it as "not usable" rather than inventing a witness — a publisher that
+   * could mint one would defeat the point of an immutable approval record.
+   */
+  async findApprovalWitness(
+    db: DbHandle,
+    templateVersionId: string
+  ): Promise<{ readonly id: string; readonly owner_tenant_id: string } | null> {
+    this.assertContext(db);
+    return this.runOne<{ id: string; owner_tenant_id: string }>(
+      db,
+      `SELECT id, owner_tenant_id
+         FROM shared.template_version_approvals
+        WHERE template_version_id = $1`,
+      [templateVersionId]
+    );
+  }
+
   /** Revises draft content. The lifecycle guard refuses this once approved. */
   async updateDraftContent(
     db: DbHandle,

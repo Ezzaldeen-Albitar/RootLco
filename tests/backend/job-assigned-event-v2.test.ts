@@ -29,6 +29,7 @@ import {
   ensureBackendFixtures,
   ensureTestLogins,
   runtimeAppPool,
+  workerAppPool,
 } from './helpers';
 import {
   BRANCH_B1,
@@ -73,6 +74,8 @@ const JOB_TITLE = 'Replace front pads';
 
 interface NotificationFacts {
   readonly templateVersionId: string;
+  readonly approvalWitnessId: string;
+  readonly templateOwnerTenantId: string;
   readonly channel: string;
   readonly purpose: string;
   readonly recipientUserId: string;
@@ -141,9 +144,35 @@ async function seedTemplate(input: {
     input.templateId,
     input.versionId,
   ]);
+  // And an approved version is only USABLE with its immutable witness. The
+  // publisher resolves one and treats its absence as a not-usable data state, so
+  // a fixture that skips this seeds a template that correctly produces nothing.
+  await admin.query(
+    `INSERT INTO shared.template_version_approvals
+       (tenant_id, owner_tenant_id, template_version_id, approved_by)
+     VALUES ($1, $1, $2, $3)
+     ON CONFLICT (template_version_id) DO NOTHING`,
+    [input.tenantId, input.versionId, input.approver]
+  );
 }
 
 async function dropTemplates(): Promise<void> {
+  // Witnesses first: fk_outbound_messages_approval_witness and
+  // fk_template_version_approvals_version are both ON DELETE RESTRICT.
+  await admin.query(
+    `DELETE FROM shared.outbound_messages
+      WHERE template_version_id IN (SELECT v.id FROM shared.template_versions v
+                                      JOIN shared.message_templates t ON t.id = v.template_id
+                                     WHERE t.template_code = $1)`,
+    [ASSIGNMENT_TEMPLATE_CODE]
+  );
+  await admin.query(
+    `DELETE FROM shared.template_version_approvals
+      WHERE template_version_id IN (SELECT v.id FROM shared.template_versions v
+                                      JOIN shared.message_templates t ON t.id = v.template_id
+                                     WHERE t.template_code = $1)`,
+    [ASSIGNMENT_TEMPLATE_CODE]
+  );
   await admin.query(
     `UPDATE shared.message_templates SET active_version_id = NULL
                       WHERE template_code = $1`,
@@ -292,6 +321,61 @@ describe('with an approved, active template', () => {
     // consent model is `crm.consent_history`, which covers customers. Null says
     // none was consulted; an id would claim one was.
     expect(facts?.consentRef).toBeNull();
+  });
+
+  it('carries the approval witness, and it is the canonical one for that version', async () => {
+    const job = await seedJob();
+    const assignment = await assign(job.id, TECH_A1);
+    const facts = (await eventFor(job.id, assignment.id)).payload.notification;
+
+    // Read from the database rather than from a constant the publisher could also
+    // have got wrong: the carried witness must BE the row that certifies this
+    // version, in this scope.
+    const witness = await admin.query<{ id: string; owner_tenant_id: string }>(
+      `SELECT id, owner_tenant_id FROM shared.template_version_approvals
+        WHERE template_version_id = $1`,
+      [TPLVER_A]
+    );
+    expect(witness.rows).toHaveLength(1);
+    expect(facts?.approvalWitnessId).toBe(witness.rows[0]?.id);
+    expect(facts?.templateOwnerTenantId).toBe(witness.rows[0]?.owner_tenant_id);
+    expect(facts?.templateOwnerTenantId).toBe(TENANT_A);
+  });
+
+  it('carries a witness the DATABASE will accept for that exact version', async () => {
+    const job = await seedJob();
+    const assignment = await assign(job.id, TECH_A1);
+    const facts = (await eventFor(job.id, assignment.id)).payload.notification;
+
+    // The decisive check: the three carried values must satisfy
+    // fk_outbound_messages_approval_witness together. A payload that merely LOOKS
+    // right but pairs a witness with the wrong version would be refused here, and
+    // this is the only place that pairing is exercised end to end.
+    const worker = workerAppPool(1);
+    try {
+      const inserted = await worker.query<{ template_version_id: string; status: string }>(
+        `INSERT INTO shared.outbound_messages
+           (tenant_id, channel, purpose, dedupe_key, body_sha256, recipient_user_id, created_by,
+            template_version_id, template_owner_tenant_id, approval_witness_id)
+         VALUES ($1, $2, $3, $4, decode($5, 'hex'), $6, $6, $7, $8, $9)
+         RETURNING template_version_id, status`,
+        [
+          TENANT_A,
+          facts?.channel,
+          facts?.purpose,
+          facts?.dedupeKey,
+          facts?.bodySha256,
+          facts?.recipientUserId,
+          facts?.templateVersionId,
+          facts?.templateOwnerTenantId,
+          facts?.approvalWitnessId,
+        ]
+      );
+      expect(inserted.rows[0]?.template_version_id).toBe(TPLVER_A);
+      expect(inserted.rows[0]?.status).toBe('pending');
+    } finally {
+      await worker.end();
+    }
   });
 
   it('resolves the recipient to the ASSIGNED technician own user account', async () => {

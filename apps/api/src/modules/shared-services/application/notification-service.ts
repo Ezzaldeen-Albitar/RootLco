@@ -207,8 +207,23 @@ export class SharedNotificationService extends ApplicationService implements Not
         throw this.translateRender(error);
       }
 
+      // The immutable proof, resolved on the request side because the worker
+      // cannot read it. A version approved before migration 128 has none until the
+      // backfill script is run; that is a data state, so it joins the other
+      // not-usable outcomes rather than throwing or being invented here.
+      const witness = await this.templates.findApprovalWitness(db, version.id);
+      if (witness === null) {
+        log.warn('template version has no approval witness; nothing will be enqueued', {
+          module: 'shared-services',
+          context: { channel, rule: 'no_approval_witness' },
+        });
+        continue;
+      }
+
       return {
         templateVersionId: version.id,
+        approvalWitnessId: witness.id,
+        templateOwnerTenantId: witness.owner_tenant_id,
         channel,
         purpose: version.template_purpose,
         recipientUserId: recipientRef,
@@ -263,6 +278,9 @@ export class SharedNotificationService extends ApplicationService implements Not
       tenantId: input.tenantId,
       companyId: input.companyId,
       branchId: input.branchId,
+      templateVersionId: input.templateVersionId,
+      approvalWitnessId: input.approvalWitnessId,
+      templateOwnerTenantId: input.templateOwnerTenantId,
       channel,
       purpose: input.purpose,
       recipientUserId,

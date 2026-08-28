@@ -295,6 +295,9 @@ export class MessageDispatchRepository {
       readonly tenantId: string;
       readonly companyId: string | null;
       readonly branchId: string | null;
+      readonly templateVersionId: string;
+      readonly approvalWitnessId: string;
+      readonly templateOwnerTenantId: string;
       readonly channel: string;
       readonly purpose: string;
       readonly recipientUserId: string;
@@ -306,9 +309,10 @@ export class MessageDispatchRepository {
   ): Promise<{ id: string } | null> {
     const result = await db.query<{ id: string }>(
       `INSERT INTO shared.outbound_messages
-         (id, tenant_id, company_id, branch_id, channel, purpose,
+         (id, tenant_id, company_id, branch_id, template_version_id,
+          approval_witness_id, template_owner_tenant_id, channel, purpose,
           recipient_user_id, body_sha256, dedupe_key, consent_ref, created_by)
-       VALUES ($1, $2, $3::uuid, $4::uuid, $5, $6, $7::uuid, $8, $9, $10, $11)
+       VALUES ($1, $2, $3::uuid, $4::uuid, $5, $6, $7, $8, $9, $10::uuid, $11, $12, $13, $14)
        ON CONFLICT (tenant_id, dedupe_key) DO NOTHING
        RETURNING id`,
       [
@@ -316,6 +320,9 @@ export class MessageDispatchRepository {
         input.tenantId,
         input.companyId,
         input.branchId,
+        input.templateVersionId,
+        input.approvalWitnessId,
+        input.templateOwnerTenantId,
         input.channel,
         input.purpose,
         input.recipientUserId,

@@ -86,6 +86,25 @@ export interface PreparedNotification {
   readonly dedupeKey: string;
   /** Consent RECORD reference. Not a freshness claim — see `prepareNotification`. */
   readonly consentRef: string | null;
+  /**
+   * The immutable proof that `templateVersionId` was approved when it was chosen.
+   *
+   * Carried because the worker cannot obtain it: `app_worker` holds nothing on
+   * `shared.template_version_approvals`, by design. The database validates the
+   * pairing on INSERT through a single foreign key over
+   * `(approval_witness_id, template_version_id, template_owner_tenant_id)`, so a
+   * witness cannot be presented for a version it does not certify.
+   */
+  readonly approvalWitnessId: string;
+  /**
+   * The version's owning scope: its tenant, or the platform sentinel.
+   *
+   * Also carried rather than derived. A worker knows the MESSAGE's tenant from the
+   * envelope, but cannot tell a tenant-owned template from a platform one without
+   * reading the template — which it may not do. Nothing else about the version is
+   * carried: the foreign key proves the rest.
+   */
+  readonly templateOwnerTenantId: string;
 }
 
 /**
