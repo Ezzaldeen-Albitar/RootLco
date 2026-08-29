@@ -137,7 +137,7 @@ sit in the tree looking like coverage while running nowhere.
 
 ## Current tree
 
-The live web suite holds **102 web test files**, every one matched by a `vitest`
+The live web suite holds **103 web test files**, every one matched by a `vitest`
 project, and the current tree executes **2889** tests. Both are derived on every
 run of `npm run validate:p1-27-closing-values` rather than recorded by hand.
 
@@ -160,7 +160,7 @@ different tree is not evidence about this one.
 
 | measure                                    | value | the command that decides it                                       |
 | ------------------------------------------ | ----- | ------------------------------------------------------------------ |
-| Web test files under `apps/web/tests`       | 102    | a walk of the tree                                                 |
+| Web test files under `apps/web/tests`       | 103    | a walk of the tree                                                 |
 | Web tier — tests executed                   | 2889  | `--record web`, from the `vitest` JSON report                      |
 | Web tier — files the run reported           | 102    | the same report, cross-checked against the walk above              |
 | Root unit tier — tests executed             | 3044  | `--record unit`, from the `vitest` JSON report                     |
