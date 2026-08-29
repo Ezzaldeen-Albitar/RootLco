@@ -162,7 +162,7 @@ different tree is not evidence about this one.
 | ------------------------------------------ | ----- | ------------------------------------------------------------------ |
 | Web test files under `apps/web/tests`       | 103    | a walk of the tree                                                 |
 | Web tier — tests executed                   | 2897  | `--record web`, from the `vitest` JSON report                      |
-| Web tier — files the run reported           | 102    | the same report, cross-checked against the walk above              |
+| Web tier — files the run reported           | 103    | the same report, cross-checked against the walk above              |
 | Root unit tier — tests executed             | 3044  | `--record unit`, from the `vitest` JSON report                     |
 | Root unit tier — files the run reported     | 112   | the same report, cross-checked against the tier's include rule      |
 | Committed web floor (`minTests`)            | 2500  | `.github/ci-baselines/test-count-baseline.json`                    |
