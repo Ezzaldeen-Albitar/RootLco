@@ -17,14 +17,14 @@
     },
     "web": {
       "command": "npm run test --workspace @rootlco/web -- --reporter=json",
-      "tests": 2889,
-      "passed": 2889,
-      "failed": 0,
+      "tests": 2897,
+      "passed": 2896,
+      "failed": 1,
       "skipped": 0,
-      "files": 102,
-      "measuredAtCommit": "052fe676a505960594ce7034d5e141db2a250490",
+      "files": 103,
+      "measuredAtCommit": "44e54b0dfcd62d62115693f437dec12bdfe2a791",
       "dirtyExecutablePaths": [],
-      "measuredAt": "2026-08-29T01:49:21.987Z"
+      "measuredAt": "2026-08-29T02:56:58.165Z"
     }
   }
 }

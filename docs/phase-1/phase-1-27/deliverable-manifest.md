@@ -162,7 +162,7 @@ fact in words did not, which is the gap this revision closes.
 | Source files under the P1-27 ownership gate                            | **111** (43 feature source + 34 route + 34 adopted reception)      | derived from the gate's own scan roots                                     |
 | Router pages (CRM and Vehicle)                                         | **8**                                                              | command 1                                                                  |
 | Shared-foundation source files changed by the phase or its remediation | **13** named in §5.5                                               | command 1, cross-read against the task register and the remediation record |
-| Web unit and component test files                                      | **102**                                                            | derived                                                                    |
+| Web unit and component test files                                      | **103**                                                            | derived                                                                    |
 | Playwright specification files                                         | **9** (2 anonymous, 7 authenticated)                               | commands 11 and 12 — **not re-measured**, §1.1.1                           |
 | Root CI-contract test files                                            | **46**                                                             | derived                                                                    |
 | CI gate scripts under `scripts/ci`                                     | **59** in the directory, **8** introduced or changed by this phase | derived; the eight are the `scripts/ci` rows of §7.1                       |
@@ -407,7 +407,7 @@ records.
 
 ## 6. Test files
 
-### 6.1 Web unit and component — `apps/web/tests` (102 files, and no case total — `E-03`)
+### 6.1 Web unit and component — `apps/web/tests` (103 files, and no case total — `E-03`)
 
 **`E-03` is closed by DELETING the number, not by correcting it.** The heading
 used to read `(70 files, 1493 cases, 0 failed)`, and before that `(66 files, 1231
