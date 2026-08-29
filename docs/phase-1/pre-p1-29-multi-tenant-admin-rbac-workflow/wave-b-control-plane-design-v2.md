@@ -998,7 +998,13 @@ CONFIRMED HIGH     = 0
 
 Implementation may begin only when a pass over **revision 4** returns that result, with every
 other confirmed item either fixed here or recorded as a non-blocking dependency wave B does not rely
-on. Revision 2 has been written; it has not yet been attacked.
+on.
+
+**Round 4 has now run over revision 4, and the gate DOES NOT PASS:** 0 confirmed
+critical, **2 confirmed high** from 85 findings across seven lanes. Both are recorded
+in §9 of the refutation register. Revision 5 is required. The trailing sentence that
+stood here — "Revision 2 has been written; it has not yet been attacked" — was stale
+from two revisions earlier and is removed.
 
 ---
 
