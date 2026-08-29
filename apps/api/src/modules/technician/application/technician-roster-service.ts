@@ -119,6 +119,16 @@ const invalid = (path: string, rule: string, message: string): AppFailure =>
     safeDetails: { violations: [{ path, rule }] },
   });
 
+/**
+ * Acknowledgement that a technician holding was withdrawn.
+ *
+ * Withdrawal is a soft close: the row survives with an end date, so the response
+ * carries no identifier and the literal `true` is the whole contract.
+ */
+export interface HoldingWithdrawn {
+  readonly withdrawn: true;
+}
+
 export class TechnicianRosterService extends ApplicationService {
   protected readonly module = 'technician';
 
@@ -446,7 +456,7 @@ export class TechnicianRosterService extends ApplicationService {
     technicianProfileId: string,
     skillId: string,
     authorizeScope?: ScopeAuthorizer
-  ): Promise<{ readonly withdrawn: true }> {
+  ): Promise<HoldingWithdrawn> {
     const profile = await this.requireProfile(db, technicianProfileId, authorizeScope, false);
     const existing = await this.roster.liveSkill(db, profile.id, skillId);
     if (existing === null) {
@@ -710,7 +720,7 @@ export class TechnicianRosterService extends ApplicationService {
     availabilityId: string,
     expectedVersion: number,
     authorizeScope?: ScopeAuthorizer
-  ): Promise<{ readonly withdrawn: true }> {
+  ): Promise<HoldingWithdrawn> {
     const profile = await this.requireProfile(db, technicianProfileId, authorizeScope, false);
     const window = await this.roster.lockAvailability(db, profile.id, availabilityId);
     if (window === null) {

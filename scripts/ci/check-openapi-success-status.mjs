@@ -23,10 +23,16 @@
  * call, and takes the literal success status found inside. The constant is then
  * resolved to the `defineOperation({ id: … })` that produced it, in the same file.
  *
- * This is deliberately syntactic. A type-aware pass would need `ts.createProgram`,
- * which `br-08c-design-decisions.md` records as absent from this repository — and
- * a syntactic scanner that REFUSES what it cannot resolve is honest, whereas one
- * that guesses is the thing being fixed.
+ * This is syntactic, and the original justification given here was too broad: it
+ * said a pass needing `ts.createProgram` was impossible, which is true of TYPE
+ * AWARENESS and false of PARSING. TypeScript is a dependency, three sibling gates
+ * parse with `scripts/lib/typescript-source.mjs`, and this gate could too.
+ *
+ * What keeps it defensible meanwhile is the next paragraph rather than that
+ * claim: it REFUSES what it cannot resolve. A sibling gate that made the same
+ * argument and then silently DROPPED what it could not read shipped a live
+ * anonymous shape behind a green tick — see `named-wire-shapes-record.md`.
+ * Converting this one to the AST is recorded as follow-up, not done here.
  *
  * Anything unresolvable is reported as a failure, never skipped: an operation
  * whose status cannot be determined is exactly the case where a silent default

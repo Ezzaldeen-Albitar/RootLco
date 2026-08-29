@@ -118,6 +118,12 @@ export const REGISTER = Object.freeze([
     tier: 'required',
     why: 'the published success status is the one the handler returns',
   },
+  {
+    name: 'validate:named-wire-shapes',
+    owner: ROOT,
+    tier: 'required',
+    why: 'no route serialises an anonymous type to the wire',
+  },
   { name: 'validate:exact-money', owner: ROOT, tier: 'required', why: 'decimal money surface' },
   { name: 'validate:p1-19-inventory', owner: ROOT, tier: 'required', why: 'phase inventory' },
   { name: 'validate:p1-20-inventory', owner: ROOT, tier: 'required', why: 'phase inventory' },
