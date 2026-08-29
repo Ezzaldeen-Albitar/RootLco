@@ -34,12 +34,12 @@ reporting `0 anonymous, 0 unresolved` while a live anonymous shape shipped on
 
 The text scanner was wrong four separate ways:
 
-| what it could not read                          | consequence                                       |
-| ----------------------------------------------- | ------------------------------------------------- |
-| a signature short enough to fit on one line     | the bulk of the 47, and 1 hidden shape            |
+| what it could not read                          | consequence                                          |
+| ----------------------------------------------- | ---------------------------------------------------- |
+| a signature short enough to fit on one line     | the bulk of the 47, and 1 hidden shape               |
 | a barrel binding a service to a `const` first   | 7 call sites, 5 of them attachments, 3 hidden shapes |
-| a `body:` that is not the first token on a line | **11 call sites silently dropped**, 1 hidden shape |
-| a wrapped `): Promise<{`                        | parsed as the string `"Promise<"` and filed NAMED |
+| a `body:` that is not the first token on a line | **11 call sites silently dropped**, 1 hidden shape   |
+| a wrapped `): Promise<{`                        | parsed as the string `"Promise<"` and filed NAMED    |
 
 Each figure above is reproducible against this tree: the original census is
 `git show cf67d15e:scripts/p1-29-anonymous-wire-census.mjs` and reports 47
