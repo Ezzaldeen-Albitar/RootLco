@@ -467,3 +467,113 @@ identity tables that are the entry point to everything else.
 
 **The exact figure for row-level-security coverage after the change.** It cannot be measured until
 the change exists, and per C11 no figure appears until it is measured.
+
+## 9. Round 4 — the bounded adversarial pass over revision 4
+
+**Verdict: the gate does NOT pass.**
+
+```
+CONFIRMED CRITICAL = 0
+CONFIRMED HIGH     = 2
+```
+
+§21 of the design admits implementation only on `CRITICAL = 0` and `HIGH = 0`.
+Revision 5 is required.
+
+Measured against `origin/develop` = `eb910194`, **128 migrations**, 334 operations,
+114 permission codes. The design and this register were written against `fe81f3eb`
+at 124 migrations, so a staleness lane was added that earlier rounds did not have.
+
+Seven lanes raised **85** findings — 4 critical, 29 high, 44 medium, 8 low. The 33
+at critical or high each went to an independent refuter instructed to default to
+refuted. **Two survived.** The pattern of the previous rounds holds: strictly fewer
+each time, and the survivor is the same defect class every round has found.
+
+### R4-1 — `org.tenant_status_history` is granted INSERT with nothing binding the actor (HIGH)
+
+**Where:** §6.4, §6.2, §8.
+
+Wave B is the first change to grant `INSERT ON org.tenant_status_history` to any
+application role. That table is the **only** one of the tree's 22 append-only
+history tables carrying no `BEFORE INSERT` server-stamp trigger: `actor_id` is
+`NOT NULL` with **no foreign key**, `occurred_at` defaults to `now()` but is
+caller-supplied, and neither policy the design writes constrains either column.
+
+`iam.has_platform_authority` "never consults a tenant" (§5.2), so §6.4's
+`WITH CHECK` carries no tenant term. A lifecycle-holding operator can therefore
+append a history row **for any tenant, attributed to any UUID, backdated to any
+instant**, decoupled from that tenant's real status. §6.2's provisioning-path
+policy is weaker still — it constrains only that the parent is in `provisioning`,
+so during bootstrap an operator holding just `platform.organization.provision` can
+write any `from_state`/`to_state`/`actor_id`.
+
+**The design's own text refutes its justification.** §6.4 defends the predicate as
+"so a history row can never record a transition the parent's own check would have
+refused". §16 P-26b says of the identical clause on the parent: "Refused **by M4's
+trigger**, which is the only thing that catches it: the `WITH CHECK` is a
+destination whitelist, not the graph." M4 is `BEFORE UPDATE` on `org.tenants`
+only. So the parent refuses `closed → active` while the child policy admits
+`INSERT (from_state='closed', to_state='active')`. Revision 4 diagnosed that a
+destination list is not a graph, added M4 for the parent, and then made the same
+insufficient list the sole control on the child it opens.
+
+**Why the omission existed and why it no longer holds.** `org.tenant_status_history`
+is the only history table granting INSERT to no application role — the absence of
+the trigger and the absence of the grant were one decision. §6.2 and §6.4 remove
+the reason and keep the omission. §12.3 models the new company history table
+"column-for-column on the branch history table" without carrying the trigger half
+of that model across.
+
+**Required in revision 5.** Attach the existing primitive —
+`shared.stamp_status_history()`, `20260718096000_shared_status_history.sql:69-93`,
+whose header states the rule: "actor_id and occurred_at are server-stamped … so
+attribution cannot be forged or backdated" — and add the coherence half the six
+`*_coherence` guards already model. §6.4 itself establishes the precondition for
+that predicate: "plpgsql advances the command counter between them, so the child
+policy's subquery reads the **already-updated** parent." The design proved the
+parent is readable at INSERT time and then did not read it.
+
+**Precedent, not novelty.** `org.stamp_branch_history()` was added as Phase 1-3
+adversarial-review hardening for this exact residual, and `iam.stamp_user_status_history()`
+repeats it. The refuter tested the `iam.audit_records` counter-argument and
+rejected it: that table has no stamp either, but carries a named compensating
+control — seq/prev_hash chaining under an advisory lock plus `audit_verify_chain`.
+`org.tenant_status_history` gets no chain, no coherence guard, and now no stamp.
+
+### R4-2 — M2 grants EXECUTE on a function M3 creates (HIGH)
+
+**Where:** §15, §7.2, §12.3.
+
+Two defects in one row.
+
+**Order.** §15 lists M2 (the privilege graph) before M3 (which creates
+`org.change_company_status`), and reasons about ordering only for M4 ("its own
+migration, ordered before M2"). On that sequence,
+`GRANT EXECUTE ON FUNCTION org.change_company_status(…) TO app_platform` aborts
+with `42883 function does not exist` and fails `database-migration-replay` on the
+first run. §19 implies the opposite order — M3 is slice B2 while the privilege
+graph spreads across B4–B7 — so two normative sections specify contradictory
+sequences and only one can apply.
+
+**Role.** §12.3 says "the tenant-side operation that calls this function is wave
+C's", and §12.2 places it in "wave C, identity module". A tenant-side operation
+runs as `app_runtime`, not `app_platform`. The consolidated execute surface grants
+the privilege to a role no stated caller uses and withholds it from the role that
+will. `app_platform` also receives no SELECT on `org.companies` and no INSERT on
+`org.company_status_history`, so it could not execute the body even if it called
+it — the grant is inert as well as misdirected. §14 then turns that unused
+privilege into a permanently asserted presence in the B1 gate.
+
+**Required in revision 5.** Fix the migration order explicitly rather than by
+implication, reconcile §15 with §19, and grant the EXECUTE to the role that will
+actually call it — or state plainly that no caller exists yet and withhold it.
+
+### What this round does not change
+
+`B1-PGNET-BLOCKER` is untouched and remains **OPEN**. Even a passing gate would
+leave Wave B slice B1 held by it: this pass judges the design, not the provider
+escalation.
+
+The 4 critical and 27 high findings that were refuted are not recorded here
+individually. They were refuted against the design as written, and a refuted
+finding is not evidence of anything except that the pass looked.
