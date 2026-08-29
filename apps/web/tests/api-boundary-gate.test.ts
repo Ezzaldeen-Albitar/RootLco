@@ -91,9 +91,9 @@ describe('the API boundary gate reads imports, not text', () => {
   });
 
   it('catches supabase by package and by path', () => {
-    expect(rulesOf(`import { createClient } from '@supabase/supabase-js'; export {createClient};`)).toContain(
-      'supabase-import'
-    );
+    expect(
+      rulesOf(`import { createClient } from '@supabase/supabase-js'; export {createClient};`)
+    ).toContain('supabase-import');
     expect(rulesOf(`export { x } from '../../../../supabase/functions/x';`)).toContain(
       'supabase-import'
     );

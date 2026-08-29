@@ -1,7 +1,7 @@
 /**
  * The web application's boundary with everything it must not touch.
  *
- * Four rules, each of which has a failure mode that is invisible in review:
+ * Five rules, each of which has a failure mode that is invisible in review:
  *
  *   1. **No `fetch` outside the API layer.** A component that calls `fetch`
  *      directly bypasses the correlation ID, the timeout, the problem-details
@@ -13,7 +13,11 @@
  *      succeed on the server and leak server-only code into a client bundle.
  *   3. **No import of `supabase` or database code.** The web tier has no
  *      database credentials and must never acquire the habit of expecting any.
- *   4. **No `dangerouslySetInnerHTML`.** Not without a reviewed sanitiser and an
+ *   4. **No server-only Node module.** `fs`, `child_process`, `net`, `pg` and
+ *      their siblings, under either spelling — `node:fs` and `fs` are the same
+ *      module, and naming only the prefixed form forbids a habit rather than a
+ *      capability. This rule was enforced but undocumented until now.
+ *   5. **No `dangerouslySetInnerHTML`.** Not without a reviewed sanitiser and an
  *      approved use case, and there is neither in P1-25.
  *
  * Usage: node scripts/check-api-boundary.mjs [--json]
@@ -86,7 +90,13 @@ export const STORE_UPLOAD_OWNER = join('src', 'features', 'attachments', 'api.ts
  * not an approximation of the answer; a regex over source text is.
  */
 export function moduleSpecifiers(source) {
-  const file = ts.createSourceFile('probe.tsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const file = ts.createSourceFile(
+    'probe.tsx',
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TSX
+  );
   const out = [];
   const visit = (node) => {
     // `import … from 'x'` and `export … from 'x'`
