@@ -5,14 +5,14 @@ close it, not by how urgent it feels, because "blocker" applied to six different
 kinds of thing is what let the notification program look closed while a worker
 could not name a template version.
 
-|                     |                                                             |
-| ------------------- | ----------------------------------------------------------- |
-| Protected `develop` | `345b9208` (audited against `a19709c4`; three merges since) |
-| `main`              | `25705d84` — untouched by every PRE-P1-29 slice             |
-| Migrations          | **128**                                                     |
-| Operations          | **334**                                                     |
-| Permission codes    | **114**                                                     |
-| `SECURITY DEFINER`  | **0** in all application schemas                            |
+|                     |                                                            |
+| ------------------- | ---------------------------------------------------------- |
+| Protected `develop` | `73043e78` (audited against `a19709c4`; four merges since) |
+| `main`              | `25705d84` — untouched by every PRE-P1-29 slice            |
+| Migrations          | **128**                                                    |
+| Operations          | **334**                                                    |
+| Permission codes    | **114**                                                    |
+| `SECURITY DEFINER`  | **0** in all application schemas                           |
 
 ## Classification
 
@@ -41,6 +41,7 @@ evidence from the protected tree.
 | BR-09 assignment notification (#277)  | `a19709c4`                | 19/19     |
 | Published success statuses (#278)     | `cf67d15e`                | 19/19     |
 | Named wire shapes (#279)              | `345b9208`                | 21/21     |
+| API boundary spellings (#280)         | `73043e78`                | 19/19     |
 
 Also closed by evidence rather than by assertion:
 
@@ -97,10 +98,10 @@ plan mentioning it.
 | id                 | residual                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **OPS-01**         | Template approval witness backfill. **Applicable set is empty** in every environment this repository can reach: `shared.template_versions` holds 0 approved rows, so 0 lack a witness. `scripts/db/backfill-template-approval-witnesses.mjs` is idempotent with `--dry-run`; it was **not** run merely to say it ran. A deploy-time check for any environment that already holds approved versions predating migration 128. |
-| **RES-16 / WC-13** | Five BR contracts and `governance-remediation.md` are cited by merged execution records but do not exist on develop — the nine BR slices were executed against documents that never landed.                                                                                                                                                                                                                                 |
-| **RES-17**         | BR-01 merged with no execution record. **PR #278 then did the same** — 116 files and the creation of this register, but no record — so the programme has two. One is now closed: `openapi-success-status-record.md` is written retrospectively from the protected tree. **BR-01 remains outstanding.**                                                                                                                      |
-| **REQ-10-C**       | BR-04's merged record header claims it closes Owner requirements 9, **10** and 11, while its own §8 records that requirement 10's DoD item is **not met**. Both sentences are in the protected tree. A documentation correction, not code.                                                                                                                                                                                  |
-| **OPS-05**         | The three most recent merged execution records dropped the `B1-PGNET-BLOCKER` status row.                                                                                                                                                                                                                                                                                                                                   |
+| **RES-16 / WC-13** | The five BR contracts and `governance-remediation.md` cited by merged records are **not missing — they are UNMERGED.** All sixteen exist intact at `eb726210` on `planning/pre-p1-29-remaining-waves-and-p1-29-a0`, pushed, zero deletions in history.                                                                                                                                                                      | **Still open, and the fix is NOT to annotate the records.** `br-03-execution-record.md` §9 already ruled: _"the fix is landing the planning documents, not editing the record that cites them."_ But a plain merge is unsafe — see the note below.                                                                                                               |
+| ~~RES-17~~         | ~~BR-01 merged with no execution record, and PR #278 then did the same.~~                                                                                                                                                                                                                                                                                                                                                   | **Closing in the current slice.** `br-01-execution-record.md` is written retrospectively from the protected tree — one operation `tech.technician-me-queue` (316 → 317), zero migrations, zero new permission codes, 14 cases. With `openapi-success-status-record.md` already landed, the programme has no merged slice without a record.                       |
+| ~~REQ-10-C~~       | ~~BR-04 claims it closes requirements 9, 10 and 11 while §8 says requirement 10 is unmet.~~ **This row was itself wrong.** §8 names a BR-04 DoD item, not a requirement-10 one, and it gates all three requirements equally.                                                                                                                                                                                                | **Closing in the current slice.** BR-04's header now says it _unblocks_ 9/10/11 and closes none: `dia.diagnostic_reports` needs a `diagnostic_type_id NOT NULL` and no vocabulary is seeded. Requirement 10 is separately deferred (`REQ-10`). The requirements are now NAMED, because the P1-29 requirement table is unnumbered and every citation counts rows. |
+| **OPS-05**         | Recorded as "the three most recent merged execution records dropped the `B1-PGNET-BLOCKER` row". **No figure here is currently defensible:** this repository has never defined "execution record" — no schema, no gate, no index — so the denominator is 9, 14 or 15 depending on the reading, and only four documents carry the row.                                                                                       | **Blocked on a definition, not on work.** Settle what counts as an execution record first; a number quoted before that is invented. Duplicating a status row into every record also risks the mutually-confirming-documents pattern this register warns about, since the register is meant to be the one place that says what is left.                           |
 | **WC-12**          | `org.department.read` is unseeded and two contracts disagree on which code guards a department picker.                                                                                                                                                                                                                                                                                                                      |
 
 ## E — local environment
@@ -112,6 +113,37 @@ plan mentioning it.
 | **RES-06**         | `GOV-P1-29-001` — the positional profile default in `check-phase-ownership.mjs` is untouched.                                                                                                                                                                                                                                                                                                                                                                                                               |
 
 ---
+
+## Why the planning package cannot simply be merged (RES-16)
+
+The sixteen documents are real, complete and pushed. Landing them is the recorded
+fix. **Landing them unmodified is not**, and this was measured rather than assumed:
+a pass over all 52 documents in that package raised 114 candidate contradictions
+and **12 survived independent refutation**. Three examples, all of which a merged
+record on develop refutes BY NAME:
+
+| the planning document asserts                                                                             | develop already records                                                                                                   |
+| --------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `br-08-api-contract-closure-and-parity.md`: operations returning an undocumented `201` = **19**           | `openapi-success-status-record.md`: _"that figure is not reproducible from the protected tree and the real number is 99"_ |
+| `contract-mirror-plan.md`: "19 of the 58 return an undocumented 201 … publishes only `200` for every one" | closed by #278; `openapi.v1.json` publishes 98 × `201`, 235 × `200`, 1 × `202`                                            |
+| `exception-and-concurrency-model.md`: "Four history surfaces exist"                                       | `REQ-16`: _"BR-06/BR-07 grew the sources from four to seven"_                                                             |
+
+These documents were written before the nine slices executed, so this is expected
+— a plan is allowed to be superseded. What is not allowed is merging it in a form
+where a superseded figure reads as a current fact, which is this repository's most
+frequently recorded defect: _a number that was once measured, carried as a
+measurement_.
+
+**The prerequisite, stated exactly.** Before promotion each affected document needs
+either a banner-marked `historical` region naming the head it describes — the
+mechanism `check-p1-27-closing-values.mjs` already implements and counts — or a
+per-claim correction. 40 of the 52 documents carry at least one non-harmless
+candidate, so this is a phase-scale documentation task, not a residual fix, and it
+is recorded here rather than attempted inside a slice that cannot carry it.
+
+A merge was prepared and verified as far as it could be: clean, 52 additions, zero
+modifications, zero deletions, nine documentation gates green, 212 link targets
+resolving with **0** dangling. It was then discarded on the evidence above.
 
 ## Why PC-02 and PC-04 are not this programme's to close
 
@@ -138,13 +170,21 @@ programme does not close them.
 
 1. ~~**RES-03**~~ — merged as #278, reproven 19/19 at `cf67d15e`.
 2. ~~**RES-04**~~ — merged as #279 (`345b9208`), 21/21 hosted.
-3. ~~**RES-12**~~ — in flight in the current slice.
-4. **REQ-10-C**, **RES-16**, **RES-17**, **OPS-05** — the **D** rows, closeable
-   without touching the product. With RES-12 closed these are the only **A**/**D**
-   work left that this programme both owns and can reach.
-5. **WAVE-B → WAVE-C → BR-02** — blocked; needs the Wave B design gate to run and
+3. ~~**RES-12**~~ — merged as #280 (`73043e78`), reproven 19/19.
+4. ~~**REQ-10-C**~~, ~~**RES-17**~~ — closing in the current slice.
+5. **RES-16** — open, and **not** closeable by a plain merge; see the note above.
+   The next step on it is banner-marking or correcting the package, which is a
+   phase-scale documentation task rather than a residual fix.
+6. **OPS-05** — blocked on a definition of "execution record" this repository has
+   never written down. No number should be quoted until it is settled.
+7. **WAVE-B → WAVE-C → BR-02** — blocked; needs the Wave B design gate to run and
    the B1 escalation to clear.
-6. **PC-02**, **PC-04**, **PC-05** — referred to their owning phase, per above.
+8. **PC-02**, **PC-04**, **PC-05** — referred to their owning phase, per above.
+
+With RES-12 merged, **every unblocked A row this programme owns and can reach is
+closed.** What remains in A is the Wave B → Wave C → BR-02 chain, which is held by
+an unbuilt Wave B and, at its first slice, by the provider-owned `B1-PGNET`
+escalation.
 
 ## The closure rule this register serves
 

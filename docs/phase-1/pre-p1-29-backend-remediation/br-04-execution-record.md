@@ -1,8 +1,29 @@
 # BR-04 — execution record
 
-Inspection and Diagnostic Template Authoring. Closes `BE-4`, finding `INS-09`
-(**CRITICAL**), Owner requirements 9, 10 and 11, and makes closure blocker `B4`
-satisfiable for the first time.
+Inspection and Diagnostic Template Authoring. Closes `BE-4` and finding `INS-09`
+(**CRITICAL**), and mints the mechanism closure blocker `B4` needs.
+
+It **unblocks** Owner requirements 9 (Diagnostic findings), 10 (Computer scan) and
+11 (Technician diagnosis) at the mechanism level, and **closes none of them**.
+`dia.diagnostic_reports` requires both a published `template_version_id` and a
+`diagnostic_type_id`, both NOT NULL, and every artefact of those three requirements
+hangs off a report by `diagnostic_report_id NOT NULL`. No `dia.diagnostic_types`
+vocabulary is seeded (§8), so no diagnostic report is creatable by a real tenant
+and the three are unreachable in equal measure. Requirement 10 is additionally
+deferred on its own terms — manual DTC entry is the whole mechanism and no scan or
+OBD ingestion surface exists (residual `REQ-10`).
+
+> **Correction.** This header previously read "Closes … Owner requirements 9, 10
+> and 11", which its own §8 contradicts. The residual register recorded the
+> contradiction as `REQ-10-C` and attributed it to requirement 10 alone; that
+> attribution was wrong too. §8's open item is a **BR-04 Definition-of-Done item**
+> — the register files the same fact correctly as `RES-01` — and it gates all
+> three requirements identically, not requirement 10 specially.
+>
+> The requirements are named here rather than cited by number alone because the
+> P1-29 table in `docs/product/owner-workflow-requirements.md` is **unnumbered**:
+> every "Owner requirement N" citation in this programme depends on counting rows,
+> and inserting one row silently renumbers all of them.
 
 |                      |                                                                                                        |
 | -------------------- | ------------------------------------------------------------------------------------------------------ |
