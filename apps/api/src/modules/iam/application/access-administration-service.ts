@@ -88,6 +88,17 @@ function normalizeScopes(scopes: readonly IncomingScope[] | null | undefined): S
   return out;
 }
 
+/**
+ * The identifier of a newly created access-administration record.
+ *
+ * Four methods on this service create a row and return only its id. Naming the
+ * shape once keeps the wire contract of all four legible and greppable, in place
+ * of four structurally identical anonymous types.
+ */
+export interface AccessRecordCreated {
+  readonly id: string;
+}
+
 export class AccessAdministrationService extends ApplicationService {
   protected readonly module = 'iam';
 
@@ -217,7 +228,7 @@ export class AccessAdministrationService extends ApplicationService {
     db: DbHandle,
     roleId: string,
     input: { permissionCode: string; effect: 'allow' | 'deny' }
-  ): Promise<{ id: string }> {
+  ): Promise<AccessRecordCreated> {
     const role = await this.requireRole(db, roleId);
     this.delegationPolicy.assertNotSystemRole(role.isSystem);
 
@@ -364,7 +375,7 @@ export class AccessAdministrationService extends ApplicationService {
           }[]
         | undefined;
     }
-  ): Promise<{ id: string }> {
+  ): Promise<AccessRecordCreated> {
     const facts = await this.delegationFacts(db);
     this.delegationPolicy.assertNotSelf(facts, input.userId, 'grant');
 
@@ -523,7 +534,7 @@ export class AccessAdministrationService extends ApplicationService {
       branchId?: string | null | undefined;
       departmentId?: string | null | undefined;
     }
-  ): Promise<{ id: string }> {
+  ): Promise<AccessRecordCreated> {
     const grant = await this.authorization.findGrantById(db, grantId);
     if (!grant) throw new AppFailure('ERR-RES-001', { message: 'Grant not found in this tenant' });
     if (grant.status !== 'active') {
@@ -646,7 +657,7 @@ export class AccessAdministrationService extends ApplicationService {
       effectiveFrom: string;
       effectiveTo?: string | null | undefined;
     }
-  ): Promise<{ id: string }> {
+  ): Promise<AccessRecordCreated> {
     const facts = await this.delegationFacts(db);
     const subjects = [input.roleId, input.userId].filter((value) => value != null);
     if (subjects.length !== 1) {

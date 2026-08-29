@@ -103,6 +103,18 @@ const toAttemptView = (row: DeliveryAttemptRow): DeliveryAttemptView => ({
   completedAt: iso(row.completed_at),
 });
 
+/**
+ * One notification with every delivery attempt made for it.
+ *
+ * The pairing is the point: a `failed` notification with no attempts is a
+ * different problem from a `sent` one with none, so the two are read together
+ * and travel together.
+ */
+export interface DeliveryHistory {
+  readonly notification: NotificationView;
+  readonly attempts: readonly DeliveryAttemptView[];
+}
+
 export class NotificationReadService extends ApplicationService {
   protected readonly module = 'shared-services';
 
@@ -159,13 +171,7 @@ export class NotificationReadService extends ApplicationService {
    * and the evidence together — a `failed` message with three `errored` attempts
    * is a different problem from a `sent` message with none.
    */
-  async readDeliveries(
-    db: DbHandle,
-    notificationId: string
-  ): Promise<{
-    readonly notification: NotificationView;
-    readonly attempts: readonly DeliveryAttemptView[];
-  }> {
+  async readDeliveries(db: DbHandle, notificationId: string): Promise<DeliveryHistory> {
     const row = await this.repository.findForInspection(db, notificationId);
     if (row === null) {
       throw new AppFailure('ERR-RES-001', {

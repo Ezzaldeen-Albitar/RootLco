@@ -176,7 +176,7 @@ widening beyond them would have been an unreviewed refactor riding along with a 
 **The first draft justified that scope with a false claim** — that the other anonymous
 `Promise<{…}>` return types in the tree "are not response envelopes; nothing serialises them to the
 wire". Several do. It is now measured rather than asserted, by
-`scripts/p1-29-anonymous-wire-census.mjs`, which resolves each route's `body:` receiver chain back
+`scripts/ci/check-named-wire-shapes.mjs`, which resolves each route's `body:` receiver chain back
 through the module barrel to the class and reads that method's declared return type. Resolving the
 receiver is the whole design: a name-keyed count attributes every `.create()` in the tree to
 whichever `create` it found first, which is the same false-attribution defect the P1-19 endpoint
@@ -209,7 +209,7 @@ outside its scope:
 **`BR-08b-OPEN-01`.** None of the eight is in P1-29's operation set, which is why the contract did
 not enumerate them and why they are not fixed here. They are recorded because the response surface
 is the half `BR-08c` cannot statically gate, and a phase that later believes "every wire shape has a
-name" would be wrong by at least eight. **Settled by:** `node scripts/p1-29-anonymous-wire-census.mjs`
+name" would be wrong by at least eight. **Settled by:** `node scripts/ci/check-named-wire-shapes.mjs`
 against the tree, then naming each shape in its owning module, in the slice that owns the
 response-documentation surface. Four of the eight are the same `{id: string}` on one service, so the
 fix is smaller than the count suggests.
