@@ -20,8 +20,10 @@
  * Exit codes: 0 clean · 1 a violation · 2 the check could not run.
  */
 import { readFileSync, readdirSync } from 'node:fs';
-import { join, relative, sep } from 'node:path';
+import { join, posix, relative, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
+
+import ts from 'typescript';
 
 const ROOT = process.cwd();
 
@@ -60,6 +62,63 @@ export const NETWORK_OWNERS = [join('src', 'lib', 'api')];
  */
 export const STORE_UPLOAD_OWNER = join('src', 'features', 'attachments', 'api.ts');
 
+/**
+ * Every module specifier the file imports, however it spells the import.
+ *
+ * ## Why this is parsed rather than matched
+ *
+ * The import rules below used to read `from\s+['"]…apps/api/…['"]`, and that
+ * sentence is wrong in four independent ways at once. A file could reach API
+ * server source through ALL of these while the gate reported zero violations:
+ *
+ *     import { x } from '@rootlco/api';              // the workspace spelling
+ *     await import('@rootlco/api/src/server/db');    // dynamic, package
+ *     await import('../../../api/src/server/db');    // dynamic, relative
+ *     import { x } from '../../../api/src/server/db' // static, relative
+ *
+ * The last two never contain the literal `apps/api/`, and the first two are not
+ * `from` clauses at all. `@rootlco/api` is a workspace package symlinked into the
+ * root `node_modules`, so it RESOLVES from here whether or not `apps/web` declares
+ * a dependency on it — the spelling the rule could not see is the one that needs
+ * no setup to use.
+ *
+ * A specifier is a thing the language has a node for. Asking the parser for it is
+ * not an approximation of the answer; a regex over source text is.
+ */
+export function moduleSpecifiers(source) {
+  const file = ts.createSourceFile('probe.tsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const out = [];
+  const visit = (node) => {
+    // `import … from 'x'` and `export … from 'x'`
+    if (
+      (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) &&
+      node.moduleSpecifier &&
+      ts.isStringLiteral(node.moduleSpecifier)
+    ) {
+      out.push(node.moduleSpecifier.text);
+    }
+    // `import 'x'` type-only and side-effect forms are the same node above.
+    // `await import('x')` and `require('x')`
+    if (ts.isCallExpression(node)) {
+      const callee = node.expression;
+      const dynamic = callee.kind === ts.SyntaxKind.ImportKeyword;
+      const required = ts.isIdentifier(callee) && callee.text === 'require';
+      const first = node.arguments[0];
+      if ((dynamic || required) && first && ts.isStringLiteral(first)) out.push(first.text);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(file);
+  return out;
+}
+
+/** A specifier resolved to a repository-relative path, or null if it is a package. */
+function resolveSpecifier(relPath, specifier) {
+  if (!specifier.startsWith('.')) return null;
+  const fromDir = posix.dirname(posix.join('apps/web', relPath.split(sep).join('/')));
+  return posix.normalize(posix.join(fromDir, specifier));
+}
+
 export const RULES = [
   {
     id: 'direct-fetch',
@@ -74,21 +133,33 @@ export const RULES = [
   },
   {
     id: 'api-source-import',
-    pattern: /from\s+['"][^'"]*apps\/api\//,
     what: 'imports API server source',
     allow: [],
+    specifier: (spec, resolved) =>
+      spec === '@rootlco/api' ||
+      spec.startsWith('@rootlco/api/') ||
+      (resolved !== null && resolved.startsWith('apps/api/')),
   },
   {
     id: 'supabase-import',
-    pattern: /from\s+['"]@supabase\/|from\s+['"][^'"]*\/supabase\//,
     what: 'imports Supabase or database code',
     allow: [],
+    specifier: (spec, resolved) =>
+      spec === '@supabase/supabase-js' ||
+      spec.startsWith('@supabase/') ||
+      (resolved !== null && resolved.startsWith('supabase/')),
   },
   {
     id: 'server-only-import',
-    pattern: /from\s+['"](?:pg|node:fs|node:child_process|node:net)['"]/,
     what: 'imports a server-only Node module',
     allow: [],
+    // Both spellings of every one of them: `node:fs` and `fs` are the same
+    // module, and a rule that names only the prefixed form forbids a habit
+    // rather than a capability.
+    specifier: (spec) =>
+      /^(?:node:)?(?:fs|child_process|net|dns|tls|cluster|worker_threads)(?:\/|$)/.test(spec) ||
+      spec === 'pg' ||
+      spec.startsWith('pg/'),
   },
   {
     id: 'unsafe-html',
@@ -113,10 +184,14 @@ function allowed(relPath, allow, allowFiles = []) {
 
 export function inspect(relPath, source) {
   const body = stripComments(source);
+  const specifiers = moduleSpecifiers(source);
   const findings = [];
   for (const rule of RULES) {
     if (allowed(relPath, rule.allow, rule.allowFiles ?? [])) continue;
-    if (rule.pattern.test(body)) findings.push({ path: relPath, rule: rule.id, what: rule.what });
+    const hit = rule.specifier
+      ? specifiers.some((spec) => rule.specifier(spec, resolveSpecifier(relPath, spec)))
+      : rule.pattern.test(body);
+    if (hit) findings.push({ path: relPath, rule: rule.id, what: rule.what });
   }
   return findings;
 }

@@ -971,7 +971,7 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
      an earlier revision put them in the label column and broke two other gates
      whose regexes read the label and the number as adjacent cells. -->
 
-<!-- derived: files apps/web/tests = 102 -->
+<!-- derived: files apps/web/tests = 103 -->
 <!-- derived: files tests/ci = 60 -->
 <!-- derived: files scripts/ci = 59 -->
 <!-- derived: files apps/web/scripts = 4 -->
