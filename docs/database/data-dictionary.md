@@ -727,6 +727,25 @@ credential authority. Contact fields are classified `restricted`.
 | `updated_at`     | timestamp with time zone | YES  | —                 | internal       |
 | `updated_by`     | uuid                     | YES  | —                 | internal       |
 
+### `iam.platform_grants`
+
+**Scope:** platform (no tenant) · **Retention class:** evidence-audit · Holds an account's authority over a `platform.*` permission code, outside every tenant. Read by `iam.has_platform_authority`, which is what a `platform.` code resolves through instead of `iam.has_permission`: the tenant-bound resolver requires an active account in the CURRENT tenant, which a platform operator creating a tenant does not have. Deliberately carries NO `tenant_id` — the authority to create and suspend tenants is not a tenant's to hold — which is why it is a documented exception to the tenant-column rule. Append-and-revoke rather than update: `tg_platform_grants_immutable` fixes the account, the code and the granting identity, so withdrawal is a revocation stamped in place and never a rewrite of who was granted what.
+
+| Column            | Type                     | Null | Default           | Classification |
+| ----------------- | ------------------------ | ---- | ----------------- | -------------- |
+| `id`              | uuid                     | NO   | gen_random_uuid() | internal       |
+| `account_id`      | uuid                     | NO   | —                 | internal       |
+| `permission_code` | text                     | NO   | —                 | internal       |
+| `granted_by`      | uuid                     | NO   | —                 | internal       |
+| `granted_at`      | timestamp with time zone | NO   | now()             | internal       |
+| `revoked_by`      | uuid                     | YES  | —                 | internal       |
+| `revoked_at`      | timestamp with time zone | YES  | —                 | internal       |
+| `record_version`  | integer                  | NO   | 1                 | internal       |
+| `created_at`      | timestamp with time zone | NO   | now()             | internal       |
+| `created_by`      | uuid                     | NO   | —                 | internal       |
+| `updated_at`      | timestamp with time zone | YES  | —                 | internal       |
+| `updated_by`      | uuid                     | YES  | —                 | internal       |
+
 ### `iam.grant_scopes`
 
 **Scope:** tenant · **Retention class:** evidence-audit · Company/branch/department scope rows for a scoped grant; parent chain carried via composite FKs; append-only.

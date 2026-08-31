@@ -270,7 +270,7 @@ beforeEach(async () => {
 // ---------------------------------------------------------------------------
 
 describe('P1-15 / global security posture', () => {
-  it('the repository declares exactly 128 migrations, with the newest four named', () => {
+  it('the repository declares exactly 132 migrations, with the newest four named', () => {
     // Counted from the repository, not from `supabase_migrations.schema_migrations`:
     // that bookkeeping table is created by the Supabase CLI and does not exist in
     // CI, where the database is built by `npm run db:apply-migrations` against a
@@ -328,10 +328,18 @@ describe('P1-15 / global security posture', () => {
     // The tail is asserted FOUR deep, one per branch that contributed. A shorter
     // tail would go on passing with any one of them missing — the shape that
     // lets a migration vanish in a merge and take its grants with it.
-    expect(files).toHaveLength(128);
-    expect(files.at(-4)).toBe('20260826090000_wo_job_work_logs.sql');
-    expect(files.at(-3)).toBe('20260826093000_wo_job_evidence.sql');
-    expect(files.at(-2)).toBe('20260827090000_shared_notification_enqueue_authority.sql');
+    //
+    // PRE-P1-29 Wave B contributes all four of the current tail, and here the
+    // four-deep tail does more than detect a vanished migration: it PINS THE
+    // ORDER. These four must replay as M1 -> M4 -> M3 -> M2 — authority, then
+    // the graph guard, then the history emitter, then the privilege graph —
+    // because M2 grants against objects the other three create. Filename order
+    // is the only thing that enforces that, so a rename which broke the tie
+    // would replay a grant against a missing object; this is where it fails.
+    expect(files).toHaveLength(132);
+    expect(files.at(-4)).toBe('20260831090000_iam_platform_authority.sql');
+    expect(files.at(-3)).toBe('20260831091000_org_tenant_status_transition_guard.sql');
+    expect(files.at(-2)).toBe('20260831092000_org_tenant_status_history_emission.sql');
     // The tail SHIFTS by one rather than growing: it is four deep on purpose, so
     // that any one migration vanishing in a merge — and taking its grants with
     // it — fails here rather than somewhere confusing.
@@ -343,7 +351,7 @@ describe('P1-15 / global security posture', () => {
     // approval-at-selection-time declaratively, and — deliberately — WITHOUT
     // re-reading mutable status, so a version retired after publication does not
     // retroactively invalidate an event already emitted.
-    expect(files.at(-1)).toBe('20260828090000_shared_template_approval_witness.sql');
+    expect(files.at(-1)).toBe('20260831093000_iam_platform_privilege_graph.sql');
   });
 
   it('migration 121 changes the shared surface DELIBERATELY, and the change is bounded', () => {
@@ -594,11 +602,22 @@ describe('P1-15 / global security posture', () => {
       // Append-only: the role holds INSERT and SELECT on file_scan_results and
       // nothing else, so a verdict can be recorded but never edited or withdrawn.
       'ins_file_scan_results_scanner',
+      // --- added by PRE-P1-29 Wave B (the platform control plane) ---
+      // The control plane cannot use replay protection through the tenant
+      // policy beside it: org.provision_organization writes its record with the
+      // tenant column ABSENT, because the tenant does not exist yet. Two records
+      // exist per provisioning call under two operation names, and this policy
+      // admits both, each narrowly, rather than widening the tenant one.
+      'ins_idempotency_keys_platform',
       'ins_idempotency_keys_tenant',
       // --- added by migration 117 ---
       'ins_message_templates_tenant',
       // --- added by migration 119 (DBCR-P1-16-001) ---
       'ins_notes_crm_customer',
+      // --- added by PRE-P1-29 Wave B (the platform control plane) ---
+      // Provisioning allocates the new tenant's first document sequences, which
+      // is a write into shared on behalf of a tenant that is mid-creation.
+      'ins_number_sequences_platform',
       // --- added by migration 117 ---
       'ins_outbound_messages_enqueue',
       'ins_template_version_approvals_scope',

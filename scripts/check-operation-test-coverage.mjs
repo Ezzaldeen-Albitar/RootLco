@@ -204,6 +204,22 @@ export const P1_23_PREFIXES = ['rpt.'];
  * `derivedRequirements` returning `[]` gave it away.
  */
 export const P1_24_PREFIXES = ['iam.', 'meta.'];
+
+/**
+ * PRE-P1-29 Wave B — the control plane.
+ *
+ * Both hooks, as the P1-23 note insists: the prefix is listed HERE and in the
+ * `parseProvidedFlags` alternation below. Extending one without the other is
+ * exactly how the P1-24 gap stayed invisible — declarations PARSED fine, so a
+ * reader checking the alternation would conclude the namespace was covered,
+ * and only `derivedRequirements` returning `[]` gave it away.
+ *
+ * `platform.` operations are not inside a tenant, so their derived floor is
+ * not the tenant-isolation one every other namespace gets; what they owe is
+ * proof that the platform-authority branch is load-bearing, which is a
+ * FUNCTIONAL obligation their COVERAGE-EVIDENCE blocks carry.
+ */
+export const PRE_P1_29_PREFIXES = ['platform.'];
 const DERIVED_PREFIXES = [
   DERIVED_PREFIX,
   P1_16_PREFIX,
@@ -215,6 +231,7 @@ const DERIVED_PREFIXES = [
   ...P1_22_PREFIXES,
   ...P1_23_PREFIXES,
   ...P1_24_PREFIXES,
+  ...PRE_P1_29_PREFIXES,
 ];
 /** True when an operation id belongs to a derived-evidence namespace. */
 export const isDerivedId = (id) =>
@@ -2516,6 +2533,30 @@ export const MANIFEST = {
     required: ['denial'],
     note: 'reuses wty.warranty.issue because the permission catalogue contains no wty.warranty.read — inventing one needs a seed change outside this phase’s authority, and borrowing wty.policy.manage would be worse, handing coverage administration to a caller who only needs to read a record; carries NO monetary field, and that is not an omission to fill in later: wty has 80 columns and not one is an amount, a currency or a cap in any unit of account, so a covered value here would be a fabricated business fact and the test asserts the response has no key matching /amount|currency|price|cost|value/i; carries no claim history because there is none to carry — status may legally READ claimed_against since it is in ck_warranty_records_status, and nothing in this phase can ever WRITE it (P1-22-L-01), which the test pins structurally so a future edit cannot quietly add a claim route',
   },
+  // ========================================================================
+  // PRE-P1-29 Wave B (platform.) — the control plane. The only operations in
+  // the product that are not inside a tenant, so the derived floor's
+  // cross-tenant obligation means something different here: not "one tenant
+  // cannot read another's rows", but "a tenant-bound principal cannot reach the
+  // control plane at all". Each entry adds `denial` because the 403 path IS the
+  // control — a platform route that answered 403 to everyone would satisfy every
+  // structural gate, which is PC-1.
+  // ========================================================================
+  'platform.organization-read': {
+    files: ['tests/backend/pre-p1-29-platform-control-plane.test.ts'],
+    required: ['denial'],
+    note: 'one operation serves the collection and a single tenant via an optional query parameter, the inv.stock-availability-read shape; reads the tenant root and nothing beneath it, bounded by sel_tenants_platform rather than by a tenant predicate',
+  },
+  'platform.organization-provision': {
+    files: ['tests/backend/pre-p1-29-platform-control-plane.test.ts'],
+    required: ['denial'],
+    note: 'the sanctioned path to org.provision_organization; tenant.activate is never forwarded, because that branch would close the §6.3 bootstrap window inside the transaction that depends on it',
+  },
+  'platform.organization-lifecycle': {
+    files: ['tests/backend/pre-p1-29-platform-control-plane.test.ts'],
+    required: ['denial', 'audit'],
+    note: 'the operation that makes the bootstrap window self-closing rather than permanent; the graph is M4s and the history row is M3s, so the route duplicates neither',
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -2682,7 +2723,7 @@ export function parseProvidedFlags(source) {
     // namespace here makes EVERY declaration for it invisible, so a new phase must
     // extend this alternation in the same commit that registers its operations.
     const m =
-      /^\s*\*?\s*((?:iam|meta|shared|crm|veh|apt|rec|wo|tech|dia|qms|svc|quo|inv|sal|wty|rpt)\.[a-z0-9-]+)\s*:\s*([a-z0-9 \-]+?)\s*$/.exec(
+      /^\s*\*?\s*((?:iam|meta|shared|crm|veh|apt|rec|wo|tech|dia|qms|svc|quo|inv|sal|wty|rpt|platform)\.[a-z0-9-]+)\s*:\s*([a-z0-9 \-]+?)\s*$/.exec(
         line
       );
     if (m) {

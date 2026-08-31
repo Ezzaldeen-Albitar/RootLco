@@ -65,6 +65,28 @@ function requiresScopedEvaluation(scope: ScopeRequirement, target: Authorization
 }
 
 /**
+ * The control-plane prefix (PRE-P1-29 Wave B, §4.3).
+ *
+ * `platform.` codes are the only permissions in the product that are not inside
+ * a tenant, and `iam.has_permission` CANNOT answer them: it returns false unless
+ * the acting principal holds an active account in the CURRENT tenant, which a
+ * platform operator creating that tenant does not have. Routing them through it
+ * would deny every platform operator, permanently, while every structural gate
+ * stayed green — the `platform.meta.ping` / `PC-1` defect this repository has
+ * already shipped once, and the reason `P-74` asserts on the RESPONSE rather
+ * than on a count.
+ *
+ * A prefix test rather than a lookup: the prefix is a closed vocabulary fixed by
+ * `ck_platform_grants_platform_prefix` on `iam.platform_grants`, so a code that
+ * begins `platform.` can only ever be satisfied by a platform grant, and one
+ * that does not can never be. There is no code for which both resolvers are
+ * meaningful, so this is a total partition rather than a fallback.
+ */
+function isPlatformPermission(code: string): boolean {
+  return code.startsWith('platform.');
+}
+
+/**
  * Evaluates every declared permission code. Returns a decision rather than
  * throwing, so callers can log or audit before converting it to a response.
  *
@@ -108,12 +130,16 @@ export async function evaluatePermissions(
   const failed: string[] = [];
 
   for (const code of operation.permissions) {
-    const result = scoped
-      ? await db.query<{ allowed: boolean }>(
-          'SELECT iam.has_permission_in_scope($1, $2, $3, $4) AS allowed',
-          [code, target.companyId ?? null, target.branchId ?? null, target.departmentId ?? null]
-        )
-      : await db.query<{ allowed: boolean }>('SELECT iam.has_permission($1) AS allowed', [code]);
+    const result = isPlatformPermission(code)
+      ? await db.query<{ allowed: boolean }>('SELECT iam.has_platform_authority($1) AS allowed', [
+          code,
+        ])
+      : scoped
+        ? await db.query<{ allowed: boolean }>(
+            'SELECT iam.has_permission_in_scope($1, $2, $3, $4) AS allowed',
+            [code, target.companyId ?? null, target.branchId ?? null, target.departmentId ?? null]
+          )
+        : await db.query<{ allowed: boolean }>('SELECT iam.has_permission($1) AS allowed', [code]);
 
     if (result.rows[0]?.allowed !== true) failed.push(code);
   }

@@ -1,20 +1,20 @@
 {
   "generatedBy": "scripts/p1-24-operation-register.mjs",
   "totals": {
-    "operations": 334,
-    "openapiPaths": 269,
-    "openapiOperations": 334,
+    "operations": 337,
+    "openapiPaths": 271,
+    "openapiOperations": 337,
     "openapiSchemas": 3,
     "events": 50,
     "eventsProduced": 47,
     "eventsDeliveryTested": 50,
     "outboxForeignWriters": 0,
     "errorCodes": 28,
-    "permissionCodes": 114,
-    "auditActions": 201
+    "permissionCodes": 117,
+    "auditActions": 203
   },
   "counts": {
-    "Covered": 334
+    "Covered": 337
   },
   "operations": [
     {
@@ -4785,12 +4785,111 @@
         "tests/backend/context-spoofing.test.ts",
         "tests/backend/helpers.ts",
         "tests/backend/p1-24-iam-route-depth.test.ts",
+        "tests/backend/pre-p1-29-platform-control-plane.test.ts",
         "tests/foundation/operation-registry.test.ts",
         "tests/foundation/rate-limit.test.ts",
         "tests/openapi-contract.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/meta/ping/route.ts"
+    },
+    {
+      "id": "platform.organization-lifecycle",
+      "domain": "platform",
+      "method": "POST",
+      "route": "/api/v1/platform/organizations/{tenantId}/status",
+      "permissions": ["platform.organization.lifecycle"],
+      "public": false,
+      "scope": "tenant",
+      "transaction": "transactional write",
+      "auditClass": "privileged",
+      "auditAction": "org.tenant.status_changed",
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "POST /api/v1/platform/organizations/{tenantId}/status",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "audit",
+        "denial"
+      ],
+      "providedEvidence": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/pre-p1-29-platform-control-plane.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/platform/organizations/[tenantId]/status/route.ts"
+    },
+    {
+      "id": "platform.organization-provision",
+      "domain": "platform",
+      "method": "POST",
+      "route": "/api/v1/platform/organizations",
+      "permissions": ["platform.organization.provision"],
+      "public": false,
+      "scope": "tenant",
+      "transaction": "transactional write",
+      "auditClass": "privileged",
+      "auditAction": "org.tenant.provisioned",
+      "idempotent": true,
+      "versionGuarded": false,
+      "openapi": "POST /api/v1/platform/organizations",
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "idempotency",
+        "audit",
+        "denial"
+      ],
+      "providedEvidence": [
+        "audit",
+        "authorization",
+        "denial",
+        "idempotency",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/pre-p1-29-platform-control-plane.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/platform/organizations/route.ts"
+    },
+    {
+      "id": "platform.organization-read",
+      "domain": "platform",
+      "method": "GET",
+      "route": "/api/v1/platform/organizations",
+      "permissions": ["platform.organization.read"],
+      "public": false,
+      "scope": "tenant",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/platform/organizations",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": ["route", "service", "success", "authorization", "denial"],
+      "providedEvidence": ["authorization", "denial", "route", "service", "success"],
+      "missingEvidence": [],
+      "tests": ["tests/backend/pre-p1-29-platform-control-plane.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/platform/organizations/route.ts"
     },
     {
       "id": "qms.qc-check-result",

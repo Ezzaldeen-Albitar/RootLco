@@ -145,7 +145,14 @@ const POLICIES = Object.freeze({
     securityRelevant: false,
     rationale:
       'Reports and wide searches. Keyed per user within a tenant so one operator cannot ' +
-      'monopolise a tenant, and one tenant cannot monopolise the instance.',
+      'monopolise a tenant, and one tenant cannot monopolise the instance. Also carries ' +
+      'the platform control plane, whose operations are rare, authenticated and expensive: ' +
+      'its key material (operation, tenant, user) is the only one of the five catalogued ' +
+      'policies that a control-plane request can supply, because the operator has a home ' +
+      'tenant and user even while acting outside every tenant. Note this policy is NOT ' +
+      'securityRelevant, and on the control plane that flag would buy nothing anyway — it ' +
+      'is consulted only inside the public-route throttle skip. Control-plane breach ' +
+      'signalling is arranged explicitly in route-handler.ts instead (PRE-P1-29 B9).',
   },
   'standard-command': {
     name: 'standard-command',

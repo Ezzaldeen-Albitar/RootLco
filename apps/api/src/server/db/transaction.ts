@@ -24,7 +24,7 @@
 import type { PoolClient, QueryResult, QueryResultRow } from 'pg';
 import { type RequestContext, contextLogFields } from '../context/request-context';
 import { AppFailure } from '../errors/app-failure';
-import { acquirePrimaryClient } from './pool';
+import { acquirePlatformClient, acquirePrimaryClient } from './pool';
 import { backendConfig } from '../config/backend-config';
 import { log } from '../observability/logger';
 
@@ -44,6 +44,12 @@ export interface DbHandle {
 }
 
 export interface TransactionOptions {
+  /**
+   * Which connection to run on. `platform` selects the control-plane pool
+   * (PRE-P1-29 Wave B, §6.8.3); anything else uses the primary. Defaulting to
+   * the primary keeps every existing caller unchanged.
+   */
+  readonly connection?: 'primary' | 'platform';
   /**
    * Statement timeout for this transaction. Defaults to the configured value.
    * Long analytical work must opt in explicitly rather than inherit silently.
@@ -121,7 +127,14 @@ export async function withTransaction<T>(
   const timeout = options.statementTimeoutMs ?? config.DB_STATEMENT_TIMEOUT_MS;
   const access = options.access ?? 'read write';
 
-  const client = await acquirePrimaryClient();
+  // The control plane runs on its own connection, as `app_platform`. Every
+  // platform policy is written TO that role, so serving a platform operation
+  // from the primary pool would be refused by all of them while every
+  // structural gate stayed green — the PC-1 shape.
+  const client =
+    options.connection === 'platform'
+      ? await acquirePlatformClient()
+      : await acquirePrimaryClient();
   let rolledBackCleanly = true;
   try {
     await client.query(`BEGIN ${access === 'read only' ? 'READ ONLY' : 'READ WRITE'}`);

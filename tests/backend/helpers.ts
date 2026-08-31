@@ -40,6 +40,7 @@ import { Pool, type ClientConfig, type PoolClient } from 'pg';
 import {
   BRANCH_A1,
   COMPANY_A1,
+  PLATFORM_LOGIN,
   READONLY_LOGIN,
   RUNTIME_LOGIN,
   TENANT_A,
@@ -62,6 +63,7 @@ export {
   USER_A,
   WORKER_LOGIN,
   adminPool,
+  deleteTenantCascade,
   ensureTestLogins,
   expectSqlState,
 } from '../db/helpers';
@@ -111,6 +113,17 @@ export function runtimeAppPool(max = 5): Pool {
   return new Pool(poolConfig(RUNTIME_LOGIN, max));
 }
 
+/**
+ * Pool bound to the control-plane archetype (`app_platform`).
+ *
+ * Its login is a member of `app_platform` and of NO other archetype, so a call
+ * through it is admitted only when an `iam.platform_grants` row exists for the
+ * acting principal — the same composition production uses. That is what lets one
+ * pool serve both the authorized case and the without-grant refusal.
+ */
+export function platformAppPool(max = 5): Pool {
+  return new Pool(poolConfig(PLATFORM_LOGIN, max));
+}
 /** Pool bound to the worker archetype (`app_worker`). */
 export function workerAppPool(max = 5): Pool {
   return new Pool(poolConfig(WORKER_LOGIN, max));

@@ -9,14 +9,14 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 
 | Measure                  | Value |
 | ------------------------ | ----- |
-| Public operations        | 334   |
-| Domains (modules)        | 19    |
-| OpenAPI paths            | 269   |
-| OpenAPI operations       | 334   |
+| Public operations        | 337   |
+| Domains (modules)        | 20    |
+| OpenAPI paths            | 271   |
+| OpenAPI operations       | 337   |
 | OpenAPI schemas          | 3     |
 | OpenAPI security schemes | 1     |
-| Permission codes seeded  | 114   |
-| Audit actions catalogued | 201   |
+| Permission codes seeded  | 117   |
+| Audit actions catalogued | 203   |
 | Domain events catalogued | 50    |
 | Structured error codes   | 28    |
 
@@ -24,7 +24,7 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 
 | Classification    | Operations |
 | ----------------- | ---------- |
-| Covered           | 334        |
+| Covered           | 337        |
 | Partially covered | 0          |
 | Uncovered         | 0          |
 | Not applicable    | 0          |
@@ -42,6 +42,7 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 | inventory       | 14         | 14      | 10     | 11      | 8          | 0               |
 | meta            | 1          | 1       | 0      | 0       | 0          | 0               |
 | payments        | 4          | 4       | 2      | 2       | 2          | 0               |
+| platform        | 3          | 3       | 2      | 2       | 1          | 0               |
 | pricing         | 6          | 6       | 4      | 4       | 4          | 2               |
 | quality         | 14         | 14      | 7      | 8       | 7          | 2               |
 | quotation       | 6          | 6       | 5      | 5       | 5          | 2               |
@@ -182,6 +183,9 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 | `inv.stock-reservation-release`                     | POST   | `/api/v1/stock-reservations/{reservationId}/release`                                | branch  | `inv.stock.operate`                                                  | inv.stock.reservation_released               | —    | —   | audit authorization cross-tenant denial isolation outbox route service success                                                | Covered |
 | `inv.stock-return-create`                           | POST   | `/api/v1/stock-returns`                                                             | branch  | `inv.stock.operate`                                                  | inv.part.returned                            | yes  | —   | audit authorization denial idempotency isolation route service success                                                        | Covered |
 | `meta.ping`                                         | GET    | `/api/v1/meta/ping`                                                                 | tenant  | `org.tenant.read`                                                    | —                                            | —    | —   | authorization route service success                                                                                           | Covered |
+| `platform.organization-lifecycle`                   | POST   | `/api/v1/platform/organizations/{tenantId}/status`                                  | tenant  | `platform.organization.lifecycle`                                    | org.tenant.status_changed                    | —    | —   | audit authorization cross-tenant denial route service success                                                                 | Covered |
+| `platform.organization-provision`                   | POST   | `/api/v1/platform/organizations`                                                    | tenant  | `platform.organization.provision`                                    | org.tenant.provisioned                       | yes  | —   | audit authorization denial idempotency route service success                                                                  | Covered |
+| `platform.organization-read`                        | GET    | `/api/v1/platform/organizations`                                                    | tenant  | `platform.organization.read`                                         | —                                            | —    | —   | authorization denial route service success                                                                                    | Covered |
 | `qms.qc-check-result`                               | PUT    | `/api/v1/quality-controls/{recordId}/checks/{qcCheckId}`                            | branch  | `qms.quality_control.record`                                         | qms.quality_control.check_recorded           | yes  | —   | audit authorization cross-tenant denial idempotency isolation route service success                                           | Covered |
 | `qms.qc-record-branch-list`                         | GET    | `/api/v1/quality-controls`                                                          | branch  | `qms.quality_control.read`                                           | —                                            | —    | —   | authorization cross-tenant denial isolation route service success                                                             | Covered |
 | `qms.qc-record-detail`                              | GET    | `/api/v1/quality-controls/{recordId}`                                               | branch  | `qms.quality_control.read`                                           | —                                            | —    | —   | authorization cross-tenant denial isolation route service success                                                             | Covered |

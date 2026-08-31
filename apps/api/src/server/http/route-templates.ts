@@ -184,6 +184,8 @@ export const ROUTE_TEMPLATES = Object.freeze([
   '/payments',
   '/payments/{paymentId}',
   '/payments/{paymentId}/allocations',
+  '/platform/organizations',
+  '/platform/organizations/{tenantId}/status',
   '/price-lists',
   '/price-lists/{priceListId}/versions',
   '/price-lists/{priceListId}/versions/{versionId}/publication',
