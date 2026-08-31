@@ -270,7 +270,7 @@ beforeEach(async () => {
 // ---------------------------------------------------------------------------
 
 describe('P1-15 / global security posture', () => {
-  it('the repository declares exactly 132 migrations, with the newest four named', () => {
+  it('the repository declares exactly 133 migrations, with the newest five named', () => {
     // Counted from the repository, not from `supabase_migrations.schema_migrations`:
     // that bookkeeping table is created by the Supabase CLI and does not exist in
     // CI, where the database is built by `npm run db:apply-migrations` against a
@@ -325,24 +325,30 @@ describe('P1-15 / global security posture', () => {
     // 123 without 121 therefore fails HERE, on a count, rather than deeper in
     // with a confusing guard error.
     //
-    // The tail is asserted FOUR deep, one per branch that contributed. A shorter
-    // tail would go on passing with any one of them missing — the shape that
-    // lets a migration vanish in a merge and take its grants with it.
+    // The tail is asserted one entry per branch that contributed — four when this
+    // paragraph was written, five since Wave C. A shorter tail would go on passing
+    // with any one of them missing — the shape that lets a migration vanish in a
+    // merge and take its grants with it.
     //
-    // PRE-P1-29 Wave B contributes all four of the current tail, and here the
-    // four-deep tail does more than detect a vanished migration: it PINS THE
-    // ORDER. These four must replay as M1 -> M4 -> M3 -> M2 — authority, then
-    // the graph guard, then the history emitter, then the privilege graph —
-    // because M2 grants against objects the other three create. Filename order
-    // is the only thing that enforces that, so a rename which broke the tie
-    // would replay a grant against a missing object; this is where it fails.
-    expect(files).toHaveLength(132);
-    expect(files.at(-4)).toBe('20260831090000_iam_platform_authority.sql');
-    expect(files.at(-3)).toBe('20260831091000_org_tenant_status_transition_guard.sql');
-    expect(files.at(-2)).toBe('20260831092000_org_tenant_status_history_emission.sql');
-    // The tail SHIFTS by one rather than growing: it is four deep on purpose, so
-    // that any one migration vanishing in a merge — and taking its grants with
-    // it — fails here rather than somewhere confusing.
+    // PRE-P1-29 Wave B contributes four of the current five, and for those four
+    // the tail does more than detect a vanished migration: it PINS THE ORDER.
+    // They must replay as M1 -> M4 -> M3 -> M2 — authority, then the graph guard,
+    // then the history emitter, then the privilege graph — because M2 grants
+    // against objects the other three create. Filename order is the only thing
+    // that enforces that, so a rename which broke the tie would replay a grant
+    // against a missing object; this is where it fails.
+    //
+    // The window was WIDENED from four to five when Wave C landed, rather than
+    // being allowed to slide. Sliding it would have dropped M1 out and quietly
+    // falsified the paragraph above — the assertion would no longer touch the
+    // first of the four while the comment still claimed it pinned their order.
+    expect(files).toHaveLength(133);
+    expect(files.at(-5)).toBe('20260831090000_iam_platform_authority.sql');
+    expect(files.at(-4)).toBe('20260831091000_org_tenant_status_transition_guard.sql');
+    expect(files.at(-3)).toBe('20260831092000_org_tenant_status_history_emission.sql');
+    // The tail GROWS by contributing branch rather than sliding, so that any one
+    // migration vanishing in a merge — and taking its grants with it — fails here
+    // rather than somewhere confusing.
     //
     // The newest is the immutable approval witness. It exists because the worker's
     // enqueue authority (now -2) was not sufficient on its own: the BEFORE INSERT
@@ -351,7 +357,11 @@ describe('P1-15 / global security posture', () => {
     // approval-at-selection-time declaratively, and — deliberately — WITHOUT
     // re-reading mutable status, so a version retired after publication does not
     // retroactively invalidate an event already emitted.
-    expect(files.at(-1)).toBe('20260831093000_iam_platform_privilege_graph.sql');
+    expect(files.at(-2)).toBe('20260831093000_iam_platform_privilege_graph.sql');
+    // PRE-P1-29 Wave C: the legal-company status lifecycle. One migration for one
+    // coherent subsystem — the history table, its stamp and coherence guards, the
+    // emitter that makes a raw UPDATE record itself, and the transition function.
+    expect(files.at(-1)).toBe('20260901090000_org_company_status_lifecycle.sql');
   });
 
   it('migration 121 changes the shared surface DELIBERATELY, and the change is bounded', () => {

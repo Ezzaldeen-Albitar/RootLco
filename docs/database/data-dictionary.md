@@ -364,6 +364,22 @@ NOT claimed implemented here.
 | `occurred_at`    | timestamp with time zone | NO   | now()             | internal       |
 | `correlation_id` | uuid                     | YES  | —                 | internal       |
 
+### `org.company_status_history`
+
+**Scope:** tenant · **Retention class:** evidence-audit · Append-only legal-company lifecycle evidence over the two-state vocabulary (`active`/`inactive`), the same shape as `org.branch_status_history` above. Written by the `org.emit_company_status_history` trigger on `org.legal_companies` rather than by any caller, so a direct `UPDATE` of the column records itself and an `UPDATE` that publishes no `app.status_reason` is refused — the one respect in which this differs from the branch precedent, where the transition function owns the `INSERT` and a raw write leaves no trace. Attribution is server-derived by `shared.stamp_status_history()`. Note that company status gates nothing else in the database: `org.guard_parent_company_live()` reads `deleted_at` and `archived_at` only, so an inactive company still receives new branches.
+
+| Column           | Type                     | Null | Default           | Classification |
+| ---------------- | ------------------------ | ---- | ----------------- | -------------- |
+| `id`             | uuid                     | NO   | gen_random_uuid() | internal       |
+| `tenant_id`      | uuid                     | NO   | —                 | internal       |
+| `company_id`     | uuid                     | NO   | —                 | internal       |
+| `from_state`     | text                     | YES  | —                 | internal       |
+| `to_state`       | text                     | NO   | —                 | internal       |
+| `reason`         | text                     | NO   | —                 | internal       |
+| `actor_id`       | uuid                     | NO   | —                 | internal       |
+| `occurred_at`    | timestamp with time zone | NO   | now()             | internal       |
+| `correlation_id` | uuid                     | YES  | —                 | internal       |
+
 ### `org.departments`
 
 **Scope:** tenant/company/branch · **Retention class:** operational · Branch child; live-code uniqueness (archive frees the code).
