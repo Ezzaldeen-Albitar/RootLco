@@ -676,6 +676,10 @@ export async function deleteTenantCascade(admin: Pool, tenantIds: string[]): Pro
   await deleteFrom('org.cost_centers');
   await deleteFrom('org.branch_status_history');
   await deleteFrom('org.branches');
+  // BEFORE org.legal_companies, not after: fk_company_status_history_company is
+  // ON DELETE RESTRICT, so a surviving history row blocks the parent delete —
+  // the same shape as branch_status_history one line above.
+  await deleteFrom('org.company_status_history');
   await deleteFrom('org.legal_companies');
   await deleteFrom('org.tenant_subscriptions');
   await deleteFrom('org.tenant_status_history');
