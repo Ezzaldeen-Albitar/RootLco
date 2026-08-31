@@ -6,7 +6,14 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Pool } from 'pg';
-import { adminPool, cleanFixtures, deleteTenantCascade, ensureTestLogins, USER_A } from './helpers';
+import {
+  adminPool,
+  cleanFixtures,
+  deleteTenantCascade,
+  ensureTestLogins,
+  setContext,
+  USER_A,
+} from './helpers';
 
 const SEEDS_DIR = join(__dirname, '..', '..', 'supabase', 'seeds');
 const SEED_FILES = ['01_reference_data.sql', '04_iam_permission_catalog.sql'];
@@ -120,10 +127,29 @@ beforeAll(async () => {
     branch: { code: 'main', name: 'Ephemeral IAM Branch', timezone: 'UTC' },
     sequences: [{ code: 'org_document', prefix_template: 'DOC-', pad_width: 6 }],
   };
-  const provisioned = await admin.query(
-    `SELECT org.provision_organization($1::jsonb, $2) AS result`,
-    [JSON.stringify(spec), IAM_KEY]
-  );
+  // org.provision_organization writes the tenant's GENESIS status-history row
+  // through the M3 emitter, which is stamped by shared.stamp_status_history()
+  // and RAISES without an actor in the session. The frozen slice-01 contract
+  // requires that explicitly: "genesis via org.provision_organization — the
+  // function must be called from a session carrying an actor". set_config is
+  // transaction-local, so the actor and the call must share one connection AND
+  // one transaction; a pool query would draw a different connection.
+  const client = await admin.connect();
+  let provisioned;
+  try {
+    await client.query('BEGIN');
+    await setContext(client, { userId: USER_A });
+    provisioned = await client.query(`SELECT org.provision_organization($1::jsonb, $2) AS result`, [
+      JSON.stringify(spec),
+      IAM_KEY,
+    ]);
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
   tenantId = provisioned.rows[0].result.tenant_id;
   await insertBaselineRoles();
 });
