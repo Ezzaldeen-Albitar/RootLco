@@ -427,6 +427,21 @@ describe('org.change_company_status — two-state lifecycle, emitter-owned histo
       [companyId]
     );
 
+  /**
+   * Indexing a typed array yields `T | undefined` under noUncheckedIndexedAccess,
+   * so reading a property off `h.rows[0]` does not compile. This throws instead of
+   * asserting non-null: if the row is genuinely absent the failure names that,
+   * rather than surfacing as an unrelated property error three lines later.
+   */
+  const historyRow = (
+    h: { rows: Record<string, unknown>[] },
+    index: number
+  ): Record<string, unknown> => {
+    const row = h.rows[index];
+    if (row === undefined) throw new Error(`no company history row at index ${index}`);
+    return row;
+  };
+
   it('C1 deactivates a company, emitting EXACTLY one server-attributed history row', async () => {
     await withRolledBackTx(runtime, { tenantId: TENANT_A, userId: USER_A }, async (c) => {
       await c.query(`SELECT org.change_company_status($1, 'inactive', 'ceased trading')`, [
@@ -450,7 +465,7 @@ describe('org.change_company_status — two-state lifecycle, emitter-owned histo
         // from an argument — org.change_company_status has no actor parameter at all.
         actor_id: USER_A,
       });
-      expect(h.rows[0].correlation_id).toBeNull();
+      expect(historyRow(h, 0).correlation_id).toBeNull();
     });
 
     // Zero residue: the rollback reverted the status AND the history row.
@@ -482,7 +497,7 @@ describe('org.change_company_status — two-state lifecycle, emitter-owned histo
       // The second reason did not inherit the first: change_company_status clears
       // app.status_reason after its UPDATE, so a later transition in the SAME
       // transaction cannot silently reuse it.
-      expect(h.rows[1].reason).toBe('reopened');
+      expect(historyRow(h, 1).reason).toBe('reopened');
     });
   });
 
@@ -644,8 +659,10 @@ describe('org.change_company_status — two-state lifecycle, emitter-owned histo
       const h = await companyHistory(c, COMPANY_A1);
       expect(h.rows).toHaveLength(1);
       // USER_B was supplied; USER_A is the session. The session wins.
-      expect(h.rows[0].actor_id).toBe(USER_A);
-      expect(new Date(h.rows[0].occurred_at as string).getUTCFullYear()).toBeGreaterThan(2020);
+      expect(historyRow(h, 0).actor_id).toBe(USER_A);
+      expect(new Date(historyRow(h, 0).occurred_at as string).getUTCFullYear()).toBeGreaterThan(
+        2020
+      );
     });
   });
 
