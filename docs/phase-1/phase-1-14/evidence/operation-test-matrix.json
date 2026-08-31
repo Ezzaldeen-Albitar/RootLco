@@ -1,10 +1,10 @@
 {
   "generatedFrom": "scripts/check-operation-test-coverage.mjs",
   "counts": {
-    "registered": 334,
-    "publicApi": 334,
+    "registered": 337,
+    "publicApi": 337,
     "internal": 0,
-    "withRequiredEvidence": 334,
+    "withRequiredEvidence": 337,
     "invocationOnly": 0,
     "p1_15": {
       "registered": 28,
@@ -4264,6 +4264,86 @@
       "declared": [],
       "required": ["route", "service", "success", "authorization"],
       "provided": ["authorization", "route", "service", "success"],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "platform.organization-lifecycle",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/platform/organizations/{tenantId}/status",
+      "public": false,
+      "files": ["tests/backend/pre-p1-29-platform-control-plane.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "cross-tenant", "audit"],
+      "declared": ["denial", "audit"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "audit",
+        "denial"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "platform.organization-provision",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/platform/organizations",
+      "public": false,
+      "files": ["tests/backend/pre-p1-29-platform-control-plane.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "idempotency", "audit"],
+      "declared": ["denial"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "idempotency",
+        "audit",
+        "denial"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "denial",
+        "idempotency",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "platform.organization-read",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/platform/organizations",
+      "public": false,
+      "files": ["tests/backend/pre-p1-29-platform-control-plane.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization"],
+      "declared": ["denial"],
+      "required": ["route", "service", "success", "authorization", "denial"],
+      "provided": ["authorization", "denial", "route", "service", "success"],
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false

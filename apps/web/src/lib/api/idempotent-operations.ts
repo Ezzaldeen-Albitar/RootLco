@@ -10,7 +10,7 @@
  * The backend requires an `Idempotency-Key` header on every operation it
  * registers as idempotent, and answers `400 ERR-INT-002` without one — before
  * authorization is evaluated. That set is NOT "the POST operations": it is
- * currently 153 operations (PATCH 3, POST 144, PUT 6).
+ * currently 154 operations (PATCH 3, POST 145, PUT 6).
  *
  * The client used to infer the answer from the HTTP method, which was wrong for
  * every non-POST member of that set. This table is the contract instead of a
@@ -24,7 +24,7 @@
  * thirteen of them stating which class a write declares, none of them checkable
  * — because the Web tier held no data from which one could be derived.
  *
- * Currently approval 13, export 1, financial 13, none 134, privileged 160, security 13.
+ * Currently approval 13, export 1, financial 13, none 135, privileged 162, security 13.
  *
  * `(absent)` above would mean an operation the document publishes with NO audit
  * class. It is emitted as the empty string rather than defaulted to `none`,
@@ -49,7 +49,7 @@ export interface PublishedOperation {
   readonly auditClass: string;
 }
 
-/** Every operation the contract publishes. 334 of them. */
+/** Every operation the contract publishes. 337 of them. */
 export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze([
   {
     template: '/additional-work/{requestId}/approval',
@@ -1317,6 +1317,27 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     operationId: 'sal.payment-allocate',
     idempotent: true,
     auditClass: 'financial',
+  },
+  {
+    template: '/platform/organizations',
+    method: 'GET',
+    operationId: 'platform.organization-read',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/platform/organizations',
+    method: 'POST',
+    operationId: 'platform.organization-provision',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/platform/organizations/{tenantId}/status',
+    method: 'POST',
+    operationId: 'platform.organization-lifecycle',
+    idempotent: false,
+    auditClass: 'privileged',
   },
   {
     template: '/price-lists',

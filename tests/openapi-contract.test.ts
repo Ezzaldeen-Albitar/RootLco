@@ -355,6 +355,14 @@ import '@/app/api/v1/template-versions/[versionId]/status/route';
 import '@/app/api/v1/template-versions/[versionId]/items/route';
 import '@/app/api/v1/jobs/[jobId]/inspection-templates/route';
 
+// PRE-P1-29 Wave B — the control plane. These two modules are the only ones in
+// the document whose operations are not inside a tenant; they are imported here
+// for the same reason as every line above, which is that the registry is
+// populated by import side effect and an unimported route is simply absent from
+// the generated document rather than reported as missing.
+import '@/app/api/v1/platform/organizations/route';
+import '@/app/api/v1/platform/organizations/[tenantId]/status/route';
+
 const DOCUMENT_PATH = join(process.cwd(), 'docs', 'api', 'openapi.v1.json');
 
 describe('OpenAPI contract', () => {
@@ -401,7 +409,12 @@ describe('OpenAPI contract', () => {
     // `shared` joined the list with DBCR-P1-15-001, which seeded
     // `shared.document.manage` and `shared.notification.send`. `crm` joins with
     // Phase 1-16 (crm.customer.read, crm.customer.note.write, …), and `apt` and
-    // `rec` with Phase 1-18's nine appointment and reception codes. Omitting a
+    // `rec` with Phase 1-18's nine appointment and reception codes. `platform`
+    // joins with PRE-P1-29 Wave B, which seeds the three control-plane codes —
+    // the first domain whose permissions are resolved by
+    // `iam.has_platform_authority` rather than `iam.has_permission`, and so the
+    // first whose absence here would have reproduced PC-1 rather than merely
+    // resembled it. Omitting a
     // domain does not make this assertion stricter, it makes it vacuous: an
     // operation whose route is missing from the import list above declares
     // nothing, so the loop never sees the code the missing domain would have
@@ -413,6 +426,7 @@ describe('OpenAPI contract', () => {
       'iam',
       'inv',
       'org',
+      'platform',
       'qms',
       'quo',
       'rec',
