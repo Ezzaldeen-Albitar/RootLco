@@ -32,6 +32,7 @@ import { AppFailure } from '@/server/errors/app-failure';
 import { IdentityRepository } from './data/identity-repository';
 import { AuthorizationRepository } from './data/authorization-repository';
 import { OrganizationRepository } from './data/organization-repository';
+import { OrganizationAdministrationRepository } from './data/organization-administration-repository';
 import { AuditRepository } from './data/audit-repository';
 
 import { IdentityPolicy } from './domain/identity-policy';
@@ -44,6 +45,7 @@ import { InvitationService } from './application/invitation-service';
 import { UserAdministrationService } from './application/user-administration-service';
 import { AccessAdministrationService } from './application/access-administration-service';
 import { OrganizationSettingsService } from './application/organization-settings-service';
+import { OrganizationAdministrationService } from './application/organization-administration-service';
 import { AuditViewService } from './application/audit-view-service';
 
 import {
@@ -198,6 +200,10 @@ export const iamModule = composeModule({
     const identities = new IdentityRepository();
     const authorization = new AuthorizationRepository();
     const organization = new OrganizationRepository();
+    // A SEPARATE repository from settings: settings are append-only version rows
+    // and administration is an in-place update. One class behind two write models
+    // is how a rule ends up applied to the wrong one.
+    const organizationAdministration = new OrganizationAdministrationRepository();
     const audit = new AuditRepository();
 
     const identityPolicy = new IdentityPolicy();
@@ -238,6 +244,7 @@ export const iamModule = composeModule({
         identityPolicy
       ),
       organization: new OrganizationSettingsService(organization, authorization, delegationPolicy),
+      organizationAdministration: new OrganizationAdministrationService(organizationAdministration),
       auditView: new AuditViewService(audit, authorization),
     };
   },

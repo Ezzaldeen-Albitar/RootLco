@@ -9,14 +9,14 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 
 | Measure                  | Value |
 | ------------------------ | ----- |
-| Public operations        | 337   |
+| Public operations        | 345   |
 | Domains (modules)        | 20    |
-| OpenAPI paths            | 271   |
-| OpenAPI operations       | 337   |
+| OpenAPI paths            | 278   |
+| OpenAPI operations       | 345   |
 | OpenAPI schemas          | 3     |
 | OpenAPI security schemes | 1     |
-| Permission codes seeded  | 117   |
-| Audit actions catalogued | 203   |
+| Permission codes seeded  | 118   |
+| Audit actions catalogued | 208   |
 | Domain events catalogued | 50    |
 | Structured error codes   | 28    |
 
@@ -24,7 +24,7 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 
 | Classification    | Operations |
 | ----------------- | ---------- |
-| Covered           | 337        |
+| Covered           | 345        |
 | Partially covered | 0          |
 | Uncovered         | 0          |
 | Not applicable    | 0          |
@@ -38,7 +38,7 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 | crm             | 29         | 29      | 15     | 15      | 15         | 0               |
 | delivery        | 6          | 6       | 5      | 5       | 5          | 1               |
 | diagnostics     | 21         | 21      | 15     | 15      | 14         | 4               |
-| iam             | 38         | 38      | 24     | 22      | 10         | 6               |
+| iam             | 46         | 46      | 29     | 27      | 12         | 9               |
 | inventory       | 14         | 14      | 10     | 11      | 8          | 0               |
 | meta            | 1          | 1       | 0      | 0       | 0          | 0               |
 | payments        | 4          | 4       | 2      | 2       | 2          | 0               |
@@ -183,6 +183,14 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 | `inv.stock-reservation-release`                     | POST   | `/api/v1/stock-reservations/{reservationId}/release`                                | branch  | `inv.stock.operate`                                                  | inv.stock.reservation_released               | —    | —   | audit authorization cross-tenant denial isolation outbox route service success                                                | Covered |
 | `inv.stock-return-create`                           | POST   | `/api/v1/stock-returns`                                                             | branch  | `inv.stock.operate`                                                  | inv.part.returned                            | yes  | —   | audit authorization denial idempotency isolation route service success                                                        | Covered |
 | `meta.ping`                                         | GET    | `/api/v1/meta/ping`                                                                 | tenant  | `org.tenant.read`                                                    | —                                            | —    | —   | authorization route service success                                                                                           | Covered |
+| `org.branch-list`                                   | GET    | `/api/v1/org/branches`                                                              | tenant  | `org.branch.read`                                                    | —                                            | —    | —   | authorization cross-tenant denial route service success                                                                       | Covered |
+| `org.branch-update`                                 | PATCH  | `/api/v1/org/branches/{branchId}`                                                   | branch  | `org.branch.manage`                                                  | org.branch.updated                           | —    | yes | audit authorization cross-tenant denial isolation route service stale-version success                                         | Covered |
+| `org.company-list`                                  | GET    | `/api/v1/org/companies`                                                             | tenant  | `org.company.read`                                                   | —                                            | —    | —   | authorization cross-tenant denial route service success                                                                       | Covered |
+| `org.company-status-set`                            | POST   | `/api/v1/org/companies/{companyId}/status`                                          | company | `org.company.manage`                                                 | org.company.status_changed                   | yes  | —   | audit authorization cross-tenant denial idempotency isolation route service success                                           | Covered |
+| `org.company-update`                                | PATCH  | `/api/v1/org/companies/{companyId}`                                                 | company | `org.company.manage`                                                 | org.company.updated                          | —    | yes | audit authorization cross-tenant denial isolation route service stale-version success                                         | Covered |
+| `org.department-create`                             | POST   | `/api/v1/org/departments`                                                           | branch  | `org.department.manage`                                              | org.department.created                       | yes  | —   | audit authorization cross-tenant denial idempotency isolation route service success                                           | Covered |
+| `org.department-list`                               | GET    | `/api/v1/org/departments`                                                           | branch  | `org.department.read`                                                | —                                            | —    | —   | authorization cross-tenant denial isolation route service success                                                             | Covered |
+| `org.department-update`                             | PATCH  | `/api/v1/org/departments/{departmentId}`                                            | branch  | `org.department.manage`                                              | org.department.updated                       | —    | yes | audit authorization cross-tenant denial isolation route service stale-version success                                         | Covered |
 | `platform.organization-lifecycle`                   | POST   | `/api/v1/platform/organizations/{tenantId}/status`                                  | tenant  | `platform.organization.lifecycle`                                    | org.tenant.status_changed                    | —    | —   | audit authorization cross-tenant denial route service success                                                                 | Covered |
 | `platform.organization-provision`                   | POST   | `/api/v1/platform/organizations`                                                    | tenant  | `platform.organization.provision`                                    | org.tenant.provisioned                       | yes  | —   | audit authorization denial idempotency route service success                                                                  | Covered |
 | `platform.organization-read`                        | GET    | `/api/v1/platform/organizations`                                                    | tenant  | `platform.organization.read`                                         | —                                            | —    | —   | authorization denial route service success                                                                                    | Covered |

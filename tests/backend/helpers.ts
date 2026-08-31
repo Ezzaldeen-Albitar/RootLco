@@ -61,6 +61,7 @@ export {
   TENANT_A,
   TENANT_B,
   USER_A,
+  USER_B,
   WORKER_LOGIN,
   adminPool,
   deleteTenantCascade,

@@ -2561,6 +2561,61 @@ export const MANIFEST = {
   // control — a platform route that answered 403 to everyone would satisfy every
   // structural gate, which is PC-1.
   // ========================================================================
+  // ========================================================================
+  // PRE-P1-29 Wave C — the Company RBAC Backend (canonical G-4, G-6, P-1/G-5).
+  //
+  // Every entry adds `denial`, and for these eight it is not ceremony. Three of
+  // the permissions involved (org.company.manage, org.branch.manage,
+  // org.department.manage) were seeded with ZERO references anywhere in the
+  // product before this slice, so nothing had ever exercised the path where they
+  // are false. A denial case is the only thing that distinguishes "the
+  // permission is now enforced" from "the permission is still inert".
+  //
+  // `org.department-list` additionally carries the split that org.department.read
+  // exists for: an actor holding only org.department.manage must be REFUSED the
+  // list. Without that case, collapsing the two codes back into one would go
+  // unnoticed.
+  // ========================================================================
+  'org.company-list': {
+    files: ['tests/backend/pre-p1-29-wave-c-company-rbac.test.ts'],
+    required: ['denial'],
+    note: 'half of P-1: the companies an actor MAY REACH, by name; the reach rule is sel_legal_companies_tenant and is deliberately not restated in TypeScript, where the unrestricted case (empty allowed-ids meaning everything) is easy to invert',
+  },
+  'org.branch-list': {
+    files: ['tests/backend/pre-p1-29-wave-c-company-rbac.test.ts'],
+    required: ['denial'],
+    note: 'the other half of P-1; a separate operation from the company list because evaluatePermissions requires EVERY declared code, so one combined read would refuse a branch-only reader',
+  },
+  'org.company-update': {
+    files: ['tests/backend/pre-p1-29-wave-c-company-rbac.test.ts'],
+    required: ['denial', 'audit'],
+    note: 'G-4: org.company.manage guarded nothing before this; status is absent from the body because org.company-status-set owns transitions and this route must not become a second path with no reason and no history',
+  },
+  'org.company-status-set': {
+    files: ['tests/backend/pre-p1-29-wave-c-company-rbac.test.ts'],
+    required: ['denial', 'audit'],
+    note: 'the first caller org.change_company_status has ever had; migration 133 shipped it granted and unreachable, which is the declared-but-never-wired class that dominated P1-27',
+  },
+  'org.branch-update': {
+    files: ['tests/backend/pre-p1-29-wave-c-company-rbac.test.ts'],
+    required: ['denial', 'audit'],
+    note: 'G-4: org.branch.manage guarded nothing; company and branch code are frozen by tg_branches_immutable and status belongs to shared.branch-status-change, so the body carries none of the three',
+  },
+  'org.department-create': {
+    files: ['tests/backend/pre-p1-29-wave-c-company-rbac.test.ts'],
+    required: ['denial', 'audit', 'idempotency'],
+    note: 'G-6: the FIRST insert into org.departments in the product; a grant could be scoped to a department that no path could create',
+  },
+  'org.department-list': {
+    files: ['tests/backend/pre-p1-29-wave-c-company-rbac.test.ts'],
+    required: ['denial'],
+    note: 'G-6, on the NEW least-privilege org.department.read; the suite proves the split by refusing an actor who holds only org.department.manage, so collapsing the two codes goes red',
+  },
+  'org.department-update': {
+    files: ['tests/backend/pre-p1-29-wave-c-company-rbac.test.ts'],
+    required: ['denial', 'audit'],
+    note: 'G-6: rename, retire and reinstate; no archive verb, because archiving frees the code via uq_departments_branch_code_live and no shipped operation has precedent for the un-archive collision',
+  },
   'platform.organization-read': {
     files: ['tests/backend/pre-p1-29-platform-control-plane.test.ts'],
     required: ['denial'],

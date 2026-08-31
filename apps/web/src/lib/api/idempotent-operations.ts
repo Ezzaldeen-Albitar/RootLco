@@ -10,7 +10,7 @@
  * The backend requires an `Idempotency-Key` header on every operation it
  * registers as idempotent, and answers `400 ERR-INT-002` without one — before
  * authorization is evaluated. That set is NOT "the POST operations": it is
- * currently 154 operations (PATCH 3, POST 145, PUT 6).
+ * currently 156 operations (PATCH 3, POST 147, PUT 6).
  *
  * The client used to infer the answer from the HTTP method, which was wrong for
  * every non-POST member of that set. This table is the contract instead of a
@@ -24,7 +24,7 @@
  * thirteen of them stating which class a write declares, none of them checkable
  * — because the Web tier held no data from which one could be derived.
  *
- * Currently approval 13, export 1, financial 13, none 135, privileged 162, security 13.
+ * Currently approval 13, export 1, financial 13, none 138, privileged 167, security 13.
  *
  * `(absent)` above would mean an operation the document publishes with NO audit
  * class. It is emitted as the empty string rather than defaulted to `none`,
@@ -49,7 +49,7 @@ export interface PublishedOperation {
   readonly auditClass: string;
 }
 
-/** Every operation the contract publishes. 337 of them. */
+/** Every operation the contract publishes. 345 of them. */
 export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze([
   {
     template: '/additional-work/{requestId}/approval',
@@ -1235,6 +1235,20 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     auditClass: 'none',
   },
   {
+    template: '/org/branches',
+    method: 'GET',
+    operationId: 'org.branch-list',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/org/branches/{branchId}',
+    method: 'PATCH',
+    operationId: 'org.branch-update',
+    idempotent: false,
+    auditClass: 'privileged',
+  },
+  {
     template: '/org/branches/{branchId}/settings',
     method: 'GET',
     operationId: 'iam.branch-settings-read',
@@ -1249,6 +1263,20 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     auditClass: 'privileged',
   },
   {
+    template: '/org/companies',
+    method: 'GET',
+    operationId: 'org.company-list',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/org/companies/{companyId}',
+    method: 'PATCH',
+    operationId: 'org.company-update',
+    idempotent: false,
+    auditClass: 'privileged',
+  },
+  {
     template: '/org/companies/{companyId}/settings',
     method: 'GET',
     operationId: 'iam.company-settings-read',
@@ -1260,6 +1288,34 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     method: 'POST',
     operationId: 'iam.company-settings-write',
     idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/org/companies/{companyId}/status',
+    method: 'POST',
+    operationId: 'org.company-status-set',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/org/departments',
+    method: 'GET',
+    operationId: 'org.department-list',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/org/departments',
+    method: 'POST',
+    operationId: 'org.department-create',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/org/departments/{departmentId}',
+    method: 'PATCH',
+    operationId: 'org.department-update',
+    idempotent: false,
     auditClass: 'privileged',
   },
   {

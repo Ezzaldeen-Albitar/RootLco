@@ -25,7 +25,7 @@ this document following it. A seed change and a regeneration of this file are on
 
 That gate exists because nothing was watching. This document was reconciled by hand on 2026-07-22
 (Phase 1-14, finding PC-2) against a seed holding 43 codes, and then stood still through six phases
-while the seed grew to 117. It listed no `tech.` code at all — not even `tech.technician.read`,
+while the seed grew to 118. It listed no `tech.` code at all — not even `tech.technician.read`,
 which Phase 1-19 seeded. `tests/db/iam-seeds.test.ts` is the assertion usually credited with
 covering this, and it does not: it asserts a FLOOR — at least 19 codes across `org` and `iam`, valid
 risk levels, no wildcard — which every one of those six phases satisfied while the drift
@@ -41,9 +41,9 @@ each such case in a comment beside the row.
 
 | Measure                               | Value |
 | ------------------------------------- | ----- |
-| Permission codes seeded               | 117   |
+| Permission codes seeded               | 118   |
 | Domains                               | 18    |
-| Risk `low`                            | 21    |
+| Risk `low`                            | 22    |
 | Risk `medium`                         | 50    |
 | Risk `high`                           | 46    |
 | Risk `critical`                       | 0     |
@@ -59,7 +59,7 @@ each such case in a comment beside the row.
 | `dia`      | 5     | 1     | 2        | 2      | 0          |
 | `iam`      | 10    | 2     | 3        | 5      | 0          |
 | `inv`      | 9     | 2     | 4        | 3      | 0          |
-| `org`      | 9     | 3     | 3        | 3      | 0          |
+| `org`      | 10    | 4     | 3        | 3      | 0          |
 | `platform` | 3     | 0     | 1        | 2      | 0          |
 | `qms`      | 5     | 1     | 1        | 3      | 0          |
 | `quo`      | 3     | 1     | 1        | 1      | 0          |
@@ -126,6 +126,7 @@ by" column would be a guess dressed as a derivation. Read the seed for it.
 | `org.company.manage`                          | org      | medium | Create and update companies                                                            |
 | `org.company.read`                            | org      | low    | Read legal companies                                                                   |
 | `org.department.manage`                       | org      | medium | Manage departments/structure                                                           |
+| `org.department.read`                         | org      | low    | Read the department list                                                               |
 | `org.settings.manage`                         | org      | high   | Manage company/branch settings                                                         |
 | `org.subscription.manage`                     | org      | high   | Manage tenant subscriptions                                                            |
 | `org.tax.manage`                              | org      | high   | Manage tax classes and rates                                                           |
