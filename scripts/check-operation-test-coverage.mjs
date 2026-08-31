@@ -219,7 +219,26 @@ export const P1_24_PREFIXES = ['iam.', 'meta.'];
  * proof that the platform-authority branch is load-bearing, which is a
  * FUNCTIONAL obligation their COVERAGE-EVIDENCE blocks carry.
  */
-export const PRE_P1_29_PREFIXES = ['platform.'];
+export const PRE_P1_29_PREFIXES = ['platform.', 'org.'];
+
+/*
+ * `org.` joins in Wave C (the Company RBAC Backend), and it is the FIRST
+ * namespace to have been missing from BOTH hooks at once. That combination is
+ * worse than the P1-24 asymmetry the note above describes, and it fails silently
+ * in a different way:
+ *
+ *   not in the alternation  -> a COVERAGE-EVIDENCE line for the namespace does
+ *                              not parse, so PROVIDED evidence is empty;
+ *   not in DERIVED_PREFIXES -> `derivedRequirements` returns [], so REQUIRED
+ *                              evidence is empty too.
+ *
+ * Empty required against empty provided is a PASS. So an `org.` operation could
+ * have shipped owing nothing and proving nothing, and neither hook read on its
+ * own would have shown it — the P1-24 tell (`derivedRequirements` returning [])
+ * is only a tell when the alternation parses. Both move here, in one commit,
+ * and `tests/foundation/operation-coverage-gate.test.ts` asserts both halves
+ * behaviourally rather than by reading this list.
+ */
 const DERIVED_PREFIXES = [
   DERIVED_PREFIX,
   P1_16_PREFIX,
@@ -2723,7 +2742,7 @@ export function parseProvidedFlags(source) {
     // namespace here makes EVERY declaration for it invisible, so a new phase must
     // extend this alternation in the same commit that registers its operations.
     const m =
-      /^\s*\*?\s*((?:iam|meta|shared|crm|veh|apt|rec|wo|tech|dia|qms|svc|quo|inv|sal|wty|rpt|platform)\.[a-z0-9-]+)\s*:\s*([a-z0-9 \-]+?)\s*$/.exec(
+      /^\s*\*?\s*((?:iam|meta|shared|crm|veh|apt|rec|wo|tech|dia|qms|svc|quo|inv|sal|wty|rpt|platform|org)\.[a-z0-9-]+)\s*:\s*([a-z0-9 \-]+?)\s*$/.exec(
         line
       );
     if (m) {
