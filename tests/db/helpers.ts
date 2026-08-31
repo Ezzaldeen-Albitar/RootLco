@@ -41,6 +41,23 @@ export const READONLY_LOGIN = 'rootlco_test_readonly';
 export const WORKER_LOGIN = 'rootlco_test_worker';
 /** Login role used to demonstrate FORCE RLS against a non-BYPASSRLS owner. */
 export const OWNER_LOGIN = 'rootlco_test_owner';
+
+/**
+ * PRE-P1-29 Wave B — the control-plane identity.
+ *
+ * A member of `app_platform` and of NO other application archetype. That
+ * exclusivity is the point rather than tidiness: PostgreSQL enforces membership
+ * at the LOGIN role, so a login holding both `app_platform` and `app_runtime`
+ * would carry both authorities by inheritance on one connection and make the
+ * `SET ROLE` prohibition of §6.8.3 inert. A test identity that did that would
+ * prove the control plane works while proving nothing about its containment.
+ *
+ * It receives NO product permission directly. Platform authority still comes
+ * only from an `iam.platform_grants` row, so the harness reproduces the real
+ * authority composition instead of bypassing it — which is what lets the same
+ * login serve both the authorized and the unauthorized case.
+ */
+export const PLATFORM_LOGIN = 'rootlco_test_platform';
 /** Deliberately weak, deliberately fake, local test databases only. */
 const TEST_LOGIN_PASSWORD = 'rootlco-local-test-only';
 
@@ -86,6 +103,20 @@ export function runtimeClient(): Client {
 }
 
 /**
+ * Connects as the control-plane identity (PRE-P1-29 Wave B).
+ *
+ * Deliberately NOT a generic "privileged client": it connects as
+ * `rootlco_test_platform` and nothing else, never falls back to the runtime or
+ * owner credentials, and adds no tenant authority of its own. Whether a call
+ * through it is admitted depends entirely on whether an `iam.platform_grants`
+ * row exists for the acting principal — which is what makes the same helper
+ * serve the authorized case and the without-grant refusal.
+ */
+export function platformClient(): Client {
+  return new Client(config(PLATFORM_LOGIN, TEST_LOGIN_PASSWORD));
+}
+
+/**
  * Creates the test login roles (idempotently) and grants them the archetype
  * memberships. Runs as admin. Membership inherits, so grants and RLS policies
  * addressed TO app_runtime / app_readonly apply to the logins.
@@ -110,12 +141,18 @@ export async function ensureTestLogins(admin: Pool): Promise<void> {
         CREATE ROLE ${WORKER_LOGIN} LOGIN PASSWORD '${TEST_LOGIN_PASSWORD}'
           NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
       END IF;
+      IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '${PLATFORM_LOGIN}') THEN
+        CREATE ROLE ${PLATFORM_LOGIN} LOGIN PASSWORD '${TEST_LOGIN_PASSWORD}'
+          NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
+      END IF;
     END;
     $$;
   `);
   await admin.query(`GRANT app_runtime TO ${RUNTIME_LOGIN}`);
   await admin.query(`GRANT app_readonly TO ${READONLY_LOGIN}`);
   await admin.query(`GRANT app_worker TO ${WORKER_LOGIN}`);
+  // Exactly one archetype, and no product permission: see PLATFORM_LOGIN above.
+  await admin.query(`GRANT app_platform TO ${PLATFORM_LOGIN}`);
 }
 
 export interface SessionContext {
@@ -611,6 +648,15 @@ export async function deleteTenantCascade(admin: Pool, tenantIds: string[]): Pro
   await deleteFrom('iam.login_audit');
   await deleteFrom('iam.audit_records');
   await deleteFrom('iam.security_events');
+  // iam.platform_grants carries NO tenant_id — platform authority is not a
+  // tenant's to hold — so deleteFrom(), which filters on tenant_id, cannot
+  // reach it. Its foreign key to user_accounts is ON DELETE RESTRICT, so the
+  // account delete below fails with fk_platform_grants_account without this.
+  await admin.query(
+    `DELETE FROM iam.platform_grants
+      WHERE account_id IN (SELECT id FROM iam.user_accounts WHERE tenant_id = ANY($1::uuid[]))`,
+    [tenantIds]
+  );
   await deleteFrom('iam.user_status_history');
   await deleteFrom('iam.user_employee_links');
   await deleteFrom('iam.user_profiles');

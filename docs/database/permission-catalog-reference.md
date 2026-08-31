@@ -25,7 +25,7 @@ this document following it. A seed change and a regeneration of this file are on
 
 That gate exists because nothing was watching. This document was reconciled by hand on 2026-07-22
 (Phase 1-14, finding PC-2) against a seed holding 43 codes, and then stood still through six phases
-while the seed grew to 114. It listed no `tech.` code at all — not even `tech.technician.read`,
+while the seed grew to 117. It listed no `tech.` code at all — not even `tech.technician.read`,
 which Phase 1-19 seeded. `tests/db/iam-seeds.test.ts` is the assertion usually credited with
 covering this, and it does not: it asserts a FLOOR — at least 19 codes across `org` and `iam`, valid
 risk levels, no wildcard — which every one of those six phases satisfied while the drift
@@ -41,36 +41,37 @@ each such case in a comment beside the row.
 
 | Measure                               | Value |
 | ------------------------------------- | ----- |
-| Permission codes seeded               | 114   |
-| Domains                               | 17    |
+| Permission codes seeded               | 117   |
+| Domains                               | 18    |
 | Risk `low`                            | 21    |
-| Risk `medium`                         | 49    |
-| Risk `high`                           | 44    |
+| Risk `medium`                         | 50    |
+| Risk `high`                           | 46    |
 | Risk `critical`                       | 0     |
 | Baseline roles (fixture-proven)       | 6     |
 | Baseline role grants (fixture-proven) | 23    |
 
 ## Domains
 
-| Domain   | Codes | `low` | `medium` | `high` | `critical` |
-| -------- | ----- | ----- | -------- | ------ | ---------- |
-| `apt`    | 4     | 1     | 2        | 1      | 0          |
-| `crm`    | 10    | 1     | 6        | 3      | 0          |
-| `dia`    | 5     | 1     | 2        | 2      | 0          |
-| `iam`    | 10    | 2     | 3        | 5      | 0          |
-| `inv`    | 9     | 2     | 4        | 3      | 0          |
-| `org`    | 9     | 3     | 3        | 3      | 0          |
-| `qms`    | 5     | 1     | 1        | 3      | 0          |
-| `quo`    | 3     | 1     | 1        | 1      | 0          |
-| `rec`    | 12    | 1     | 3        | 8      | 0          |
-| `rpt`    | 3     | 1     | 1        | 1      | 0          |
-| `sal`    | 10    | 0     | 4        | 6      | 0          |
-| `shared` | 6     | 2     | 3        | 1      | 0          |
-| `svc`    | 5     | 1     | 2        | 2      | 0          |
-| `tech`   | 5     | 2     | 2        | 1      | 0          |
-| `veh`    | 7     | 1     | 5        | 1      | 0          |
-| `wo`     | 9     | 1     | 5        | 3      | 0          |
-| `wty`    | 2     | 0     | 2        | 0      | 0          |
+| Domain     | Codes | `low` | `medium` | `high` | `critical` |
+| ---------- | ----- | ----- | -------- | ------ | ---------- |
+| `apt`      | 4     | 1     | 2        | 1      | 0          |
+| `crm`      | 10    | 1     | 6        | 3      | 0          |
+| `dia`      | 5     | 1     | 2        | 2      | 0          |
+| `iam`      | 10    | 2     | 3        | 5      | 0          |
+| `inv`      | 9     | 2     | 4        | 3      | 0          |
+| `org`      | 9     | 3     | 3        | 3      | 0          |
+| `platform` | 3     | 0     | 1        | 2      | 0          |
+| `qms`      | 5     | 1     | 1        | 3      | 0          |
+| `quo`      | 3     | 1     | 1        | 1      | 0          |
+| `rec`      | 12    | 1     | 3        | 8      | 0          |
+| `rpt`      | 3     | 1     | 1        | 1      | 0          |
+| `sal`      | 10    | 0     | 4        | 6      | 0          |
+| `shared`   | 6     | 2     | 3        | 1      | 0          |
+| `svc`      | 5     | 1     | 2        | 2      | 0          |
+| `tech`     | 5     | 2     | 2        | 1      | 0          |
+| `veh`      | 7     | 1     | 5        | 1      | 0          |
+| `wo`       | 9     | 1     | 5        | 3      | 0          |
+| `wty`      | 2     | 0     | 2        | 0      | 0          |
 
 ## Catalog
 
@@ -80,122 +81,125 @@ That rationale is deliberately not rendered here: the grouping comments are stru
 indistinguishable from the per-code comments that sit between rows of the same group, so a "seeded
 by" column would be a guess dressed as a derivation. Read the seed for it.
 
-| Code                                          | Domain | Risk   | Meaning                                                                                |
-| --------------------------------------------- | ------ | ------ | -------------------------------------------------------------------------------------- |
-| `apt.appointment.lifecycle.manage`            | apt    | medium | Cancel an appointment or record a no-show                                              |
-| `apt.appointment.manage`                      | apt    | medium | Create and reschedule appointments in the caller scope                                 |
-| `apt.appointment.read`                        | apt    | low    | Read appointments, the branch calendar and the appointment catalogues                  |
-| `apt.catalogue.manage`                        | apt    | high   | Manage the tenant appointment configuration catalogues                                 |
-| `crm.customer.consent.write`                  | crm    | high   | Record customer consent decisions                                                      |
-| `crm.customer.create`                         | crm    | medium | Create individual and company customers                                                |
-| `crm.customer.duplicate.review`               | crm    | medium | Scan for and review duplicate customer candidates                                      |
-| `crm.customer.governance.manage`              | crm    | medium | Manage customer alerts, tags, and lifecycle status                                     |
-| `crm.customer.merge`                          | crm    | high   | Merge a duplicate customer into a survivor                                             |
-| `crm.customer.note.write`                     | crm    | medium | Author and edit customer notes                                                         |
-| `crm.customer.profile.write`                  | crm    | medium | Maintain customer contacts, addresses, and preferences                                 |
-| `crm.customer.read`                           | crm    | low    | Search and read customers in the tenant                                                |
-| `crm.customer.restriction.manage`             | crm    | high   | Impose and lift customer restrictions                                                  |
-| `crm.customer.vehicle.manage`                 | crm    | medium | Link customers to vehicles                                                             |
-| `dia.catalogue.manage`                        | dia    | high   | Author inspection templates, versions and items                                        |
-| `dia.diagnostic.complete`                     | dia    | medium | Complete a diagnostic report                                                           |
-| `dia.diagnostic.read`                         | dia    | low    | Read diagnostic reports and their evidence                                             |
-| `dia.diagnostic.record`                       | dia    | medium | Create diagnostic reports and record their entries                                     |
-| `dia.diagnostic.review`                       | dia    | high   | Review a completed diagnostic report                                                   |
-| `iam.approval.manage`                         | iam    | high   | Manage approval limits                                                                 |
-| `iam.audit.view`                              | iam    | medium | Read the audit trail                                                                   |
-| `iam.grant.manage`                            | iam    | high   | Grant and revoke roles                                                                 |
-| `iam.login.view_all`                          | iam    | medium | View all tenant login history                                                          |
-| `iam.role.manage`                             | iam    | high   | Create and update roles                                                                |
-| `iam.role.read`                               | iam    | low    | Read roles and mappings                                                                |
-| `iam.sensitive.view`                          | iam    | high   | View sensitive/restricted data                                                         |
-| `iam.session.view_all`                        | iam    | medium | View all tenant sessions                                                               |
-| `iam.user.manage`                             | iam    | high   | Provision and lifecycle users                                                          |
-| `iam.user.read`                               | iam    | low    | Read user directory                                                                    |
-| `inv.adjustment.approve`                      | inv    | high   | Approve stock adjustments/opening batches                                              |
-| `inv.audit.read`                              | inv    | high   | Read inventory reconciliation evidence                                                 |
-| `inv.cost.view`                               | inv    | high   | View item/purchase/adjustment cost                                                     |
-| `inv.custody.manage`                          | inv    | medium | Record custody of customer-supplied parts                                              |
-| `inv.external_purchase.record`                | inv    | medium | Record ad-hoc external purchase references                                             |
-| `inv.item.manage`                             | inv    | medium | Manage item master, categories, UoM                                                    |
-| `inv.item.read`                               | inv    | low    | Search and read the item catalog                                                       |
-| `inv.stock.operate`                           | inv    | medium | Post movements, reserve, issue, return                                                 |
-| `inv.stock.read`                              | inv    | low    | Read stock balances and movements                                                      |
-| `org.branch.manage`                           | org    | medium | Create and update branches                                                             |
-| `org.branch.read`                             | org    | low    | Read branches                                                                          |
-| `org.company.manage`                          | org    | medium | Create and update companies                                                            |
-| `org.company.read`                            | org    | low    | Read legal companies                                                                   |
-| `org.department.manage`                       | org    | medium | Manage departments/structure                                                           |
-| `org.settings.manage`                         | org    | high   | Manage company/branch settings                                                         |
-| `org.subscription.manage`                     | org    | high   | Manage tenant subscriptions                                                            |
-| `org.tax.manage`                              | org    | high   | Manage tax classes and rates                                                           |
-| `org.tenant.read`                             | org    | low    | Read tenant profile                                                                    |
-| `qms.quality_control.finalize`                | qms    | high   | Finalize a quality-control record as passed or failed                                  |
-| `qms.quality_control.read`                    | qms    | low    | Read quality-control records and rework links                                          |
-| `qms.quality_control.record`                  | qms    | medium | Record individual quality-control check results                                        |
-| `qms.rework.manage`                           | qms    | high   | Create and resolve rework cases                                                        |
-| `qms.rework.sign_off`                         | qms    | high   | Independently sign off safety-critical rework                                          |
-| `quo.decision.record`                         | quo    | high   | Record quotation item approval decisions                                               |
-| `quo.quotation.manage`                        | quo    | medium | Create and manage quotations/revisions                                                 |
-| `quo.quotation.read`                          | quo    | low    | Read quotations, revisions and decisions                                               |
-| `rec.catalogue.manage`                        | rec    | high   | Manage the tenant reception configuration catalogues                                   |
-| `rec.reception.approve`                       | rec    | high   | Approve a reception visit for work                                                     |
-| `rec.reception.authorization.verify`          | rec    | high   | Verify and record reception authorization decisions                                    |
-| `rec.reception.close`                         | rec    | high   | Close a reception visit without work or refuse it                                      |
-| `rec.reception.convert`                       | rec    | high   | Convert an approved reception into a work order                                        |
-| `rec.reception.evidence.manage`               | rec    | medium | Record pre-service condition evidence on a reception                                   |
-| `rec.reception.evidence.override`             | rec    | high   | Override a required reception capture with an attributable reason                      |
-| `rec.reception.manage`                        | rec    | medium | Open a reception visit and accept vehicle custody                                      |
-| `rec.reception.party.manage`                  | rec    | medium | Assign and close dated party roles on a reception                                      |
-| `rec.reception.read`                          | rec    | low    | Read reception visits, parties, authorizations, condition evidence and custody history |
-| `rec.reception.receiving_employee.assign_any` | rec    | high   | Name a receiving employee who is not eligible for the visit branch                     |
-| `rec.reception.signature.manage`              | rec    | high   | Capture reception signatures and refusals                                              |
-| `rpt.export`                                  | rpt    | high   | Export report data (audited downstream)                                                |
-| `rpt.report.configure`                        | rpt    | medium | Manage report configurations                                                           |
-| `rpt.report.read`                             | rpt    | low    | Read published report definitions                                                      |
-| `sal.credit.manage`                           | sal    | high   | Request and manage credit notes                                                        |
-| `sal.delivery.complete`                       | sal    | high   | Complete deliveries and close custody                                                  |
-| `sal.delivery.manage`                         | sal    | medium | Manage deliveries, receivers, signatures                                               |
-| `sal.delivery.view`                           | sal    | high   | View delivery signatures/receiver evidence                                             |
-| `sal.finance.view`                            | sal    | high   | View financial amounts (invoices/receipts/events)                                      |
-| `sal.invoice.issue`                           | sal    | high   | Issue invoices (allocate numbers)                                                      |
-| `sal.invoice.manage`                          | sal    | medium | Create and manage draft invoices                                                       |
-| `sal.payment.allocate`                        | sal    | medium | Allocate receipts to invoices                                                          |
-| `sal.payment.record`                          | sal    | medium | Record receipts                                                                        |
-| `sal.reversal.approve`                        | sal    | high   | Approve receipt reversals (dual control)                                               |
-| `shared.document.archive`                     | shared | high   | Archive documents and evaluate disposal eligibility                                    |
-| `shared.document.manage`                      | shared | medium | Create document metadata, pre-acceptance versions and links                            |
-| `shared.document.read`                        | shared | low    | Read document metadata and accepted evidence                                           |
-| `shared.notification.delivery.read`           | shared | medium | Inspect notification delivery attempts                                                 |
-| `shared.notification.read`                    | shared | low    | Read own notification inbox                                                            |
-| `shared.notification.send`                    | shared | medium | Enqueue outbound notifications                                                         |
-| `svc.price.manage`                            | svc    | high   | Manage price lists, rules, discounts                                                   |
-| `svc.price.publish`                           | svc    | high   | Publish immutable price-list versions                                                  |
-| `svc.price.read`                              | svc    | medium | Read price lists, rules and resolved prices                                            |
-| `svc.service.manage`                          | svc    | medium | Manage service catalog and versions                                                    |
-| `svc.service.read`                            | svc    | low    | Read the service catalog and branch availability                                       |
-| `tech.assignment.manage`                      | tech   | medium | Assign and reassign technicians to jobs                                                |
-| `tech.labor.correct`                          | tech   | high   | Record a linked correction to a labor session                                          |
-| `tech.labor.record`                           | tech   | low    | Start, pause, resume and stop labor sessions                                           |
-| `tech.technician.manage`                      | tech   | medium | Administer technician profiles, skills, certifications and availability                |
-| `tech.technician.read`                        | tech   | low    | Read technician profiles, eligibility and queues                                       |
-| `veh.vehicle.duplicate.review`                | veh    | medium | Scan for and review duplicate vehicle candidates                                       |
-| `veh.vehicle.manage`                          | veh    | medium | Create and edit vehicles in the caller tenant                                          |
-| `veh.vehicle.merge`                           | veh    | high   | Merge a duplicate vehicle into a survivor                                              |
-| `veh.vehicle.odometer.record`                 | veh    | medium | Record vehicle odometer readings and corrections                                       |
-| `veh.vehicle.read`                            | veh    | low    | Search and read vehicles in the caller tenant                                          |
-| `veh.vehicle.relationship.manage`             | veh    | medium | Transfer vehicle ownership and manage authorized parties                               |
-| `veh.vehicle.status.manage`                   | veh    | medium | Change vehicle lifecycle and workshop status                                           |
-| `wo.additional_work.approve`                  | wo     | high   | Record a customer decision on additional work                                          |
-| `wo.additional_work.request`                  | wo     | medium | Raise an additional-work request                                                       |
-| `wo.job.manage`                               | wo     | medium | Create and update jobs on a work order                                                 |
-| `wo.job.transition`                           | wo     | medium | Move a job through its configured states                                               |
-| `wo.work_order.close`                         | wo     | high   | Close a work order once every closure condition is met                                 |
-| `wo.work_order.create`                        | wo     | high   | Convert a reception visit into a work order                                            |
-| `wo.work_order.line.manage`                   | wo     | medium | Record service lines and required-part demand                                          |
-| `wo.work_order.read`                          | wo     | low    | Read work orders, their jobs and their history                                         |
-| `wo.work_order.transition`                    | wo     | medium | Move a work order through its configured states                                        |
-| `wty.policy.manage`                           | wty    | medium | Manage warranty policies and coverage                                                  |
-| `wty.warranty.issue`                          | wty    | medium | Issue warranty records                                                                 |
+| Code                                          | Domain   | Risk   | Meaning                                                                                |
+| --------------------------------------------- | -------- | ------ | -------------------------------------------------------------------------------------- |
+| `apt.appointment.lifecycle.manage`            | apt      | medium | Cancel an appointment or record a no-show                                              |
+| `apt.appointment.manage`                      | apt      | medium | Create and reschedule appointments in the caller scope                                 |
+| `apt.appointment.read`                        | apt      | low    | Read appointments, the branch calendar and the appointment catalogues                  |
+| `apt.catalogue.manage`                        | apt      | high   | Manage the tenant appointment configuration catalogues                                 |
+| `crm.customer.consent.write`                  | crm      | high   | Record customer consent decisions                                                      |
+| `crm.customer.create`                         | crm      | medium | Create individual and company customers                                                |
+| `crm.customer.duplicate.review`               | crm      | medium | Scan for and review duplicate customer candidates                                      |
+| `crm.customer.governance.manage`              | crm      | medium | Manage customer alerts, tags, and lifecycle status                                     |
+| `crm.customer.merge`                          | crm      | high   | Merge a duplicate customer into a survivor                                             |
+| `crm.customer.note.write`                     | crm      | medium | Author and edit customer notes                                                         |
+| `crm.customer.profile.write`                  | crm      | medium | Maintain customer contacts, addresses, and preferences                                 |
+| `crm.customer.read`                           | crm      | low    | Search and read customers in the tenant                                                |
+| `crm.customer.restriction.manage`             | crm      | high   | Impose and lift customer restrictions                                                  |
+| `crm.customer.vehicle.manage`                 | crm      | medium | Link customers to vehicles                                                             |
+| `dia.catalogue.manage`                        | dia      | high   | Author inspection templates, versions and items                                        |
+| `dia.diagnostic.complete`                     | dia      | medium | Complete a diagnostic report                                                           |
+| `dia.diagnostic.read`                         | dia      | low    | Read diagnostic reports and their evidence                                             |
+| `dia.diagnostic.record`                       | dia      | medium | Create diagnostic reports and record their entries                                     |
+| `dia.diagnostic.review`                       | dia      | high   | Review a completed diagnostic report                                                   |
+| `iam.approval.manage`                         | iam      | high   | Manage approval limits                                                                 |
+| `iam.audit.view`                              | iam      | medium | Read the audit trail                                                                   |
+| `iam.grant.manage`                            | iam      | high   | Grant and revoke roles                                                                 |
+| `iam.login.view_all`                          | iam      | medium | View all tenant login history                                                          |
+| `iam.role.manage`                             | iam      | high   | Create and update roles                                                                |
+| `iam.role.read`                               | iam      | low    | Read roles and mappings                                                                |
+| `iam.sensitive.view`                          | iam      | high   | View sensitive/restricted data                                                         |
+| `iam.session.view_all`                        | iam      | medium | View all tenant sessions                                                               |
+| `iam.user.manage`                             | iam      | high   | Provision and lifecycle users                                                          |
+| `iam.user.read`                               | iam      | low    | Read user directory                                                                    |
+| `inv.adjustment.approve`                      | inv      | high   | Approve stock adjustments/opening batches                                              |
+| `inv.audit.read`                              | inv      | high   | Read inventory reconciliation evidence                                                 |
+| `inv.cost.view`                               | inv      | high   | View item/purchase/adjustment cost                                                     |
+| `inv.custody.manage`                          | inv      | medium | Record custody of customer-supplied parts                                              |
+| `inv.external_purchase.record`                | inv      | medium | Record ad-hoc external purchase references                                             |
+| `inv.item.manage`                             | inv      | medium | Manage item master, categories, UoM                                                    |
+| `inv.item.read`                               | inv      | low    | Search and read the item catalog                                                       |
+| `inv.stock.operate`                           | inv      | medium | Post movements, reserve, issue, return                                                 |
+| `inv.stock.read`                              | inv      | low    | Read stock balances and movements                                                      |
+| `org.branch.manage`                           | org      | medium | Create and update branches                                                             |
+| `org.branch.read`                             | org      | low    | Read branches                                                                          |
+| `org.company.manage`                          | org      | medium | Create and update companies                                                            |
+| `org.company.read`                            | org      | low    | Read legal companies                                                                   |
+| `org.department.manage`                       | org      | medium | Manage departments/structure                                                           |
+| `org.settings.manage`                         | org      | high   | Manage company/branch settings                                                         |
+| `org.subscription.manage`                     | org      | high   | Manage tenant subscriptions                                                            |
+| `org.tax.manage`                              | org      | high   | Manage tax classes and rates                                                           |
+| `org.tenant.read`                             | org      | low    | Read tenant profile                                                                    |
+| `platform.organization.lifecycle`             | platform | high   | Transition a tenant lifecycle status                                                   |
+| `platform.organization.provision`             | platform | high   | Create a tenant and its first Owner                                                    |
+| `platform.organization.read`                  | platform | medium | Read any organization from the control plane                                           |
+| `qms.quality_control.finalize`                | qms      | high   | Finalize a quality-control record as passed or failed                                  |
+| `qms.quality_control.read`                    | qms      | low    | Read quality-control records and rework links                                          |
+| `qms.quality_control.record`                  | qms      | medium | Record individual quality-control check results                                        |
+| `qms.rework.manage`                           | qms      | high   | Create and resolve rework cases                                                        |
+| `qms.rework.sign_off`                         | qms      | high   | Independently sign off safety-critical rework                                          |
+| `quo.decision.record`                         | quo      | high   | Record quotation item approval decisions                                               |
+| `quo.quotation.manage`                        | quo      | medium | Create and manage quotations/revisions                                                 |
+| `quo.quotation.read`                          | quo      | low    | Read quotations, revisions and decisions                                               |
+| `rec.catalogue.manage`                        | rec      | high   | Manage the tenant reception configuration catalogues                                   |
+| `rec.reception.approve`                       | rec      | high   | Approve a reception visit for work                                                     |
+| `rec.reception.authorization.verify`          | rec      | high   | Verify and record reception authorization decisions                                    |
+| `rec.reception.close`                         | rec      | high   | Close a reception visit without work or refuse it                                      |
+| `rec.reception.convert`                       | rec      | high   | Convert an approved reception into a work order                                        |
+| `rec.reception.evidence.manage`               | rec      | medium | Record pre-service condition evidence on a reception                                   |
+| `rec.reception.evidence.override`             | rec      | high   | Override a required reception capture with an attributable reason                      |
+| `rec.reception.manage`                        | rec      | medium | Open a reception visit and accept vehicle custody                                      |
+| `rec.reception.party.manage`                  | rec      | medium | Assign and close dated party roles on a reception                                      |
+| `rec.reception.read`                          | rec      | low    | Read reception visits, parties, authorizations, condition evidence and custody history |
+| `rec.reception.receiving_employee.assign_any` | rec      | high   | Name a receiving employee who is not eligible for the visit branch                     |
+| `rec.reception.signature.manage`              | rec      | high   | Capture reception signatures and refusals                                              |
+| `rpt.export`                                  | rpt      | high   | Export report data (audited downstream)                                                |
+| `rpt.report.configure`                        | rpt      | medium | Manage report configurations                                                           |
+| `rpt.report.read`                             | rpt      | low    | Read published report definitions                                                      |
+| `sal.credit.manage`                           | sal      | high   | Request and manage credit notes                                                        |
+| `sal.delivery.complete`                       | sal      | high   | Complete deliveries and close custody                                                  |
+| `sal.delivery.manage`                         | sal      | medium | Manage deliveries, receivers, signatures                                               |
+| `sal.delivery.view`                           | sal      | high   | View delivery signatures/receiver evidence                                             |
+| `sal.finance.view`                            | sal      | high   | View financial amounts (invoices/receipts/events)                                      |
+| `sal.invoice.issue`                           | sal      | high   | Issue invoices (allocate numbers)                                                      |
+| `sal.invoice.manage`                          | sal      | medium | Create and manage draft invoices                                                       |
+| `sal.payment.allocate`                        | sal      | medium | Allocate receipts to invoices                                                          |
+| `sal.payment.record`                          | sal      | medium | Record receipts                                                                        |
+| `sal.reversal.approve`                        | sal      | high   | Approve receipt reversals (dual control)                                               |
+| `shared.document.archive`                     | shared   | high   | Archive documents and evaluate disposal eligibility                                    |
+| `shared.document.manage`                      | shared   | medium | Create document metadata, pre-acceptance versions and links                            |
+| `shared.document.read`                        | shared   | low    | Read document metadata and accepted evidence                                           |
+| `shared.notification.delivery.read`           | shared   | medium | Inspect notification delivery attempts                                                 |
+| `shared.notification.read`                    | shared   | low    | Read own notification inbox                                                            |
+| `shared.notification.send`                    | shared   | medium | Enqueue outbound notifications                                                         |
+| `svc.price.manage`                            | svc      | high   | Manage price lists, rules, discounts                                                   |
+| `svc.price.publish`                           | svc      | high   | Publish immutable price-list versions                                                  |
+| `svc.price.read`                              | svc      | medium | Read price lists, rules and resolved prices                                            |
+| `svc.service.manage`                          | svc      | medium | Manage service catalog and versions                                                    |
+| `svc.service.read`                            | svc      | low    | Read the service catalog and branch availability                                       |
+| `tech.assignment.manage`                      | tech     | medium | Assign and reassign technicians to jobs                                                |
+| `tech.labor.correct`                          | tech     | high   | Record a linked correction to a labor session                                          |
+| `tech.labor.record`                           | tech     | low    | Start, pause, resume and stop labor sessions                                           |
+| `tech.technician.manage`                      | tech     | medium | Administer technician profiles, skills, certifications and availability                |
+| `tech.technician.read`                        | tech     | low    | Read technician profiles, eligibility and queues                                       |
+| `veh.vehicle.duplicate.review`                | veh      | medium | Scan for and review duplicate vehicle candidates                                       |
+| `veh.vehicle.manage`                          | veh      | medium | Create and edit vehicles in the caller tenant                                          |
+| `veh.vehicle.merge`                           | veh      | high   | Merge a duplicate vehicle into a survivor                                              |
+| `veh.vehicle.odometer.record`                 | veh      | medium | Record vehicle odometer readings and corrections                                       |
+| `veh.vehicle.read`                            | veh      | low    | Search and read vehicles in the caller tenant                                          |
+| `veh.vehicle.relationship.manage`             | veh      | medium | Transfer vehicle ownership and manage authorized parties                               |
+| `veh.vehicle.status.manage`                   | veh      | medium | Change vehicle lifecycle and workshop status                                           |
+| `wo.additional_work.approve`                  | wo       | high   | Record a customer decision on additional work                                          |
+| `wo.additional_work.request`                  | wo       | medium | Raise an additional-work request                                                       |
+| `wo.job.manage`                               | wo       | medium | Create and update jobs on a work order                                                 |
+| `wo.job.transition`                           | wo       | medium | Move a job through its configured states                                               |
+| `wo.work_order.close`                         | wo       | high   | Close a work order once every closure condition is met                                 |
+| `wo.work_order.create`                        | wo       | high   | Convert a reception visit into a work order                                            |
+| `wo.work_order.line.manage`                   | wo       | medium | Record service lines and required-part demand                                          |
+| `wo.work_order.read`                          | wo       | low    | Read work orders, their jobs and their history                                         |
+| `wo.work_order.transition`                    | wo       | medium | Move a work order through its configured states                                        |
+| `wty.policy.manage`                           | wty      | medium | Manage warranty policies and coverage                                                  |
+| `wty.warranty.issue`                          | wty      | medium | Issue warranty records                                                                 |
 
 ## Baseline roles (provisioning-time, configuration-led)
 
