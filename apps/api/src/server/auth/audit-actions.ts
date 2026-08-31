@@ -226,6 +226,20 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
 
   // ---- Organization status (P1-15 transition engine) ----------------------
   {
+    code: 'org.tenant.provisioned',
+    class: 'privileged',
+    entityType: 'org.tenant',
+    description:
+      'A tenant was created from the control plane with its first company and branch, through the sanctioned org.provision_organization path.',
+  },
+  {
+    code: 'org.tenant.status_changed',
+    class: 'privileged',
+    entityType: 'org.tenant',
+    description:
+      'A tenant moved along the lifecycle graph through the control plane, with the reason recorded in org.tenant_status_history and the actor server-stamped.',
+  },
+  {
     code: 'org.branch.status_changed',
     class: 'privileged',
     entityType: 'org.branch',

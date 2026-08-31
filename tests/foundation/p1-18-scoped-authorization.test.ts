@@ -539,7 +539,18 @@ describe('F7 · transaction binding', () => {
     // the callback would still satisfy. The property that matters is lexical
     // containment, so it is measured against the callback's own boundaries.
     const source = stripComments(read('src/server/http/route-handler.ts'));
-    const call = source.indexOf('withTransaction(context as RequestContext, async (db)');
+    // Anchored on the `run` binding rather than on a single-line spelling of the
+    // call. PRE-P1-29 gave withTransaction a third argument — the connection the
+    // control plane runs on — and Prettier wrapped the call across lines, at
+    // which point a literal 'withTransaction(context as RequestContext, async (db)'
+    // matched nothing and this test reported -1 instead of a violation. There is
+    // now also a SECOND such call in the file, in the throttle-breach path, so
+    // the anchor must name the one under test rather than the first that
+    // matches. Anchoring on the binding is not circular: `run` is where the
+    // pipeline's transaction is opened, independently of how it is formatted.
+    const runBinding = source.indexOf('const run = async ()');
+    expect(runBinding).toBeGreaterThanOrEqual(0);
+    const call = source.indexOf('withTransaction(', runBinding);
     expect(call).toBeGreaterThanOrEqual(0);
 
     // Walk to the matching close paren of that call, so "inside" is a real span
