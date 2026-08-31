@@ -247,6 +247,50 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
       'A branch moved between active and inactive through the status-transition engine, with the reason recorded in org.branch_status_history.',
   },
 
+  // ---- Organization administration (PRE-P1-29 Wave C) ---------------------
+  //
+  // Five codes for the operations that close G-4 and G-6. Every one of them is
+  // written by an explicit appendAudit call in
+  // organization-administration-service.ts, NOT by the request pipeline:
+  // route-handler.ts writes no audit record at all, and Wave B shipped two
+  // operations declaring `privileged` that appended nothing for exactly that
+  // reason. A declared class with no append call is a silent no-op.
+  {
+    code: 'org.company.updated',
+    class: 'privileged',
+    entityType: 'org.legal_company',
+    description:
+      "A legal company's name, base currency or registration identifiers were changed. Status is NOT changed here — that is org.company.status_changed.",
+  },
+  {
+    code: 'org.company.status_changed',
+    class: 'privileged',
+    entityType: 'org.legal_company',
+    description:
+      'A legal company moved between active and inactive through org.change_company_status, with the reason recorded in org.company_status_history and the actor server-stamped.',
+  },
+  {
+    code: 'org.branch.updated',
+    class: 'privileged',
+    entityType: 'org.branch',
+    description:
+      "A branch's name, timezone or address was changed. Company and branch code are immutable, and status moves through org.branch.status_changed.",
+  },
+  {
+    code: 'org.department.created',
+    class: 'privileged',
+    entityType: 'org.department',
+    description:
+      'A department was created inside a branch. Before PRE-P1-29 Wave C no path in the product could insert one, so a grant could be scoped to a department that could not exist.',
+  },
+  {
+    code: 'org.department.updated',
+    class: 'privileged',
+    entityType: 'org.department',
+    description:
+      'A department was renamed, retired or reinstated. Its company, branch and code are immutable, so this never moves a department between branches.',
+  },
+
   // ---- Attachments (P1-15) ------------------------------------------------
   //
   // Upload and download authorization are recorded as SECURITY actions rather

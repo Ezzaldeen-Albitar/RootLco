@@ -219,7 +219,26 @@ export const P1_24_PREFIXES = ['iam.', 'meta.'];
  * proof that the platform-authority branch is load-bearing, which is a
  * FUNCTIONAL obligation their COVERAGE-EVIDENCE blocks carry.
  */
-export const PRE_P1_29_PREFIXES = ['platform.'];
+export const PRE_P1_29_PREFIXES = ['platform.', 'org.'];
+
+/*
+ * `org.` joins in Wave C (the Company RBAC Backend), and it is the FIRST
+ * namespace to have been missing from BOTH hooks at once. That combination is
+ * worse than the P1-24 asymmetry the note above describes, and it fails silently
+ * in a different way:
+ *
+ *   not in the alternation  -> a COVERAGE-EVIDENCE line for the namespace does
+ *                              not parse, so PROVIDED evidence is empty;
+ *   not in DERIVED_PREFIXES -> `derivedRequirements` returns [], so REQUIRED
+ *                              evidence is empty too.
+ *
+ * Empty required against empty provided is a PASS. So an `org.` operation could
+ * have shipped owing nothing and proving nothing, and neither hook read on its
+ * own would have shown it — the P1-24 tell (`derivedRequirements` returning [])
+ * is only a tell when the alternation parses. Both move here, in one commit,
+ * and `tests/foundation/operation-coverage-gate.test.ts` asserts both halves
+ * behaviourally rather than by reading this list.
+ */
 const DERIVED_PREFIXES = [
   DERIVED_PREFIX,
   P1_16_PREFIX,
@@ -2542,6 +2561,61 @@ export const MANIFEST = {
   // control — a platform route that answered 403 to everyone would satisfy every
   // structural gate, which is PC-1.
   // ========================================================================
+  // ========================================================================
+  // PRE-P1-29 Wave C — the Company RBAC Backend (canonical G-4, G-6, P-1/G-5).
+  //
+  // Every entry adds `denial`, and for these eight it is not ceremony. Three of
+  // the permissions involved (org.company.manage, org.branch.manage,
+  // org.department.manage) were seeded with ZERO references anywhere in the
+  // product before this slice, so nothing had ever exercised the path where they
+  // are false. A denial case is the only thing that distinguishes "the
+  // permission is now enforced" from "the permission is still inert".
+  //
+  // `org.department-list` additionally carries the split that org.department.read
+  // exists for: an actor holding only org.department.manage must be REFUSED the
+  // list. Without that case, collapsing the two codes back into one would go
+  // unnoticed.
+  // ========================================================================
+  'org.company-list': {
+    files: ['tests/backend/pre-p1-29-wave-c-company-rbac.test.ts'],
+    required: ['denial'],
+    note: 'half of P-1: the companies an actor MAY REACH, by name; the reach rule is sel_legal_companies_tenant and is deliberately not restated in TypeScript, where the unrestricted case (empty allowed-ids meaning everything) is easy to invert',
+  },
+  'org.branch-list': {
+    files: ['tests/backend/pre-p1-29-wave-c-company-rbac.test.ts'],
+    required: ['denial'],
+    note: 'the other half of P-1; a separate operation from the company list because evaluatePermissions requires EVERY declared code, so one combined read would refuse a branch-only reader',
+  },
+  'org.company-update': {
+    files: ['tests/backend/pre-p1-29-wave-c-company-rbac.test.ts'],
+    required: ['denial', 'audit'],
+    note: 'G-4: org.company.manage guarded nothing before this; status is absent from the body because org.company-status-set owns transitions and this route must not become a second path with no reason and no history',
+  },
+  'org.company-status-set': {
+    files: ['tests/backend/pre-p1-29-wave-c-company-rbac.test.ts'],
+    required: ['denial', 'audit'],
+    note: 'the first caller org.change_company_status has ever had; migration 133 shipped it granted and unreachable, which is the declared-but-never-wired class that dominated P1-27',
+  },
+  'org.branch-update': {
+    files: ['tests/backend/pre-p1-29-wave-c-company-rbac.test.ts'],
+    required: ['denial', 'audit'],
+    note: 'G-4: org.branch.manage guarded nothing; company and branch code are frozen by tg_branches_immutable and status belongs to shared.branch-status-change, so the body carries none of the three',
+  },
+  'org.department-create': {
+    files: ['tests/backend/pre-p1-29-wave-c-company-rbac.test.ts'],
+    required: ['denial', 'audit', 'idempotency'],
+    note: 'G-6: the FIRST insert into org.departments in the product; a grant could be scoped to a department that no path could create',
+  },
+  'org.department-list': {
+    files: ['tests/backend/pre-p1-29-wave-c-company-rbac.test.ts'],
+    required: ['denial'],
+    note: 'G-6, on the NEW least-privilege org.department.read; the suite proves the split by refusing an actor who holds only org.department.manage, so collapsing the two codes goes red',
+  },
+  'org.department-update': {
+    files: ['tests/backend/pre-p1-29-wave-c-company-rbac.test.ts'],
+    required: ['denial', 'audit'],
+    note: 'G-6: rename, retire and reinstate; no archive verb, because archiving frees the code via uq_departments_branch_code_live and no shipped operation has precedent for the un-archive collision',
+  },
   'platform.organization-read': {
     files: ['tests/backend/pre-p1-29-platform-control-plane.test.ts'],
     required: ['denial'],
@@ -2723,7 +2797,7 @@ export function parseProvidedFlags(source) {
     // namespace here makes EVERY declaration for it invisible, so a new phase must
     // extend this alternation in the same commit that registers its operations.
     const m =
-      /^\s*\*?\s*((?:iam|meta|shared|crm|veh|apt|rec|wo|tech|dia|qms|svc|quo|inv|sal|wty|rpt|platform)\.[a-z0-9-]+)\s*:\s*([a-z0-9 \-]+?)\s*$/.exec(
+      /^\s*\*?\s*((?:iam|meta|shared|crm|veh|apt|rec|wo|tech|dia|qms|svc|quo|inv|sal|wty|rpt|platform|org)\.[a-z0-9-]+)\s*:\s*([a-z0-9 \-]+?)\s*$/.exec(
         line
       );
     if (m) {

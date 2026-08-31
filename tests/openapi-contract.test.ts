@@ -360,6 +360,18 @@ import '@/app/api/v1/jobs/[jobId]/inspection-templates/route';
 // for the same reason as every line above, which is that the registry is
 // populated by import side effect and an unimported route is simply absent from
 // the generated document rather than reported as missing.
+// PRE-P1-29 Wave C — the Company RBAC Backend. Imported for the same reason as
+// every line above: the registry is populated by import side effect, so an
+// unimported route is simply ABSENT from the generated document rather than
+// reported as missing.
+import '@/app/api/v1/org/companies/route';
+import '@/app/api/v1/org/companies/[companyId]/route';
+import '@/app/api/v1/org/companies/[companyId]/status/route';
+import '@/app/api/v1/org/branches/route';
+import '@/app/api/v1/org/branches/[branchId]/route';
+import '@/app/api/v1/org/departments/route';
+import '@/app/api/v1/org/departments/[departmentId]/route';
+
 import '@/app/api/v1/platform/organizations/route';
 import '@/app/api/v1/platform/organizations/[tenantId]/status/route';
 

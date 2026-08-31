@@ -224,6 +224,42 @@ describe('operation coverage gate — the derived floor now covers iam. and meta
     expect(matrix.map((m: { files: readonly string[] }) => m.files)).toEqual([['demo.test.ts']]);
   });
 
+  it('recognises the org namespace on BOTH hooks, which is the only safe state', () => {
+    /*
+     * Wave C is the first namespace that was missing from BOTH the derived-prefix
+     * list AND the parseProvidedFlags alternation at once. That pair fails in a way
+     * neither hook shows alone:
+     *
+     *   alternation blind      -> a COVERAGE-EVIDENCE line does not parse, so
+     *                             PROVIDED is empty;
+     *   derived-prefix blind   -> derivedRequirements returns [], so REQUIRED is
+     *                             empty.
+     *
+     * Empty against empty is a PASS. The P1-24 tell — derivedRequirements returning
+     * [] — is only a tell once the alternation parses, so with both blind there is
+     * no tell at all. These two assertions are the behavioural proof that both hooks
+     * moved, and either one alone would leave the other side of this test red.
+     */
+    expect(isDerivedId('org.department-create')).toBe(true);
+    expect(
+      derivedRequirements({ id: 'org.demo-op', auditClass: 'privileged', scope: 'branch' })
+    ).not.toEqual([]);
+
+    // The parser half: an org evidence line must yield its flags, not nothing.
+    // The header line is required — parseProvidedFlags only reads inside a block
+    // it has entered — and the values are a Set, not an array.
+    const parsed = parseProvidedFlags(
+      [' * COVERAGE-EVIDENCE (proof):', ' *   org.department-create: route service success'].join(
+        '\n'
+      )
+    );
+    expect([...(parsed.get('org.department-create') ?? [])].sort()).toEqual([
+      'route',
+      'service',
+      'success',
+    ]);
+  });
+
   it('derives the full floor for an iam operation, not idempotency alone', () => {
     // Before P1-24 this returned exactly `['idempotency']` — `versionGuarded: true`
     // derived nothing, so no `iam.` operation ever owed stale-version evidence.
