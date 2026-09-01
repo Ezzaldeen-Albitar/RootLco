@@ -358,6 +358,18 @@ export const REGISTER = Object.freeze([
     why: 'every P1-29 request body is mirrored in apps/web field-for-field, and every omission is declared with a reason',
   },
   {
+    name: 'validate:p1-29-canonical-record',
+    owner: ROOT,
+    tier: 'required',
+    // The P1-29 canonical record states counts ABOUT THE TREE — how many Owner
+    // requirement rows, how many surfaces the read-model contract names, how
+    // many `dia.*` operations exist. Round five of P1-27 found thirteen stale
+    // counts in the phase records and they were one defect: a number written by
+    // hand that nothing recomputes. This reads the numbers out of the record and
+    // recomputes each from the tree, so the record cannot outlive what it says.
+    why: 'every count and reference in the P1-29 canonical record is derivable',
+  },
+  {
     name: 'validate:p1-29-access',
     owner: ROOT,
     tier: 'required',
