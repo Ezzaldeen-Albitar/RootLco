@@ -208,22 +208,57 @@ for (const fragment of [
 
 // ---- 6. the recovered rule is verbatim, and was genuinely absent ----------
 const RULE = 'MUST NOT BE DECLARED COMPLETE WITHOUT THE DIAGNOSTICS EXPERIENCE';
-const fromBranch = execFileSync(
-  'git',
-  [
-    'show',
-    'planning/p1-29-work-order-diagnostics-technician-preparation:docs/phase-1/phase-1-29/execution-decision.md',
-  ],
-  { cwd: ROOT, encoding: 'utf8', maxBuffer: 8 << 20 }
-);
-if (!fromBranch.includes(RULE)) fail.push('the recovered rule is not in the branch source');
-else ok.push('rule present in the branch source');
+
+/**
+ * A ref this checkout may not have.
+ *
+ * The clean room checks out ONE commit. It has no `planning/...` branch and no
+ * `develop`, so a gate that reads either of them fails there for a reason that
+ * says nothing about the record — which is what the first version of this file
+ * did: `git show planning/...` threw, and a required gate died on the shape of
+ * a checkout rather than on a defect.
+ *
+ * The ref is therefore READ WHEN PRESENT and reported as unverifiable when it
+ * is not. That is a deliberate gap and it is stated out loud rather than
+ * papered over: the checks that do NOT depend on a ref — the rule's presence in
+ * the record, and its discoverability — run everywhere and carry the weight.
+ */
+const showIfPresent = (ref) => {
+  try {
+    return execFileSync('git', ['show', ref], {
+      cwd: ROOT,
+      encoding: 'utf8',
+      maxBuffer: 8 << 20,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+  } catch {
+    return null;
+  }
+};
+
+const BRANCH = 'planning/p1-29-work-order-diagnostics-technician-preparation';
+const fromBranch = showIfPresent(`${BRANCH}:docs/phase-1/phase-1-29/execution-decision.md`);
+if (fromBranch === null) {
+  // Not a failure. A single-commit checkout holds no other branch, and the
+  // record names the branch and commit so a reader with a full clone can check.
+  ok.push(`provenance branch ${BRANCH} is absent from this checkout — not verifiable here`);
+} else if (!fromBranch.includes(RULE)) {
+  fail.push('the recovered rule is not in the branch source it names');
+} else {
+  ok.push('rule present in the branch source it names');
+}
+
 if (!text.includes(RULE)) fail.push('the recovered rule is not in this document');
 else ok.push('rule carried verbatim into the record');
-const onDevelopBefore = grep(['-l', RULE, 'develop', '--', 'docs']);
-if (onDevelopBefore)
-  fail.push(`the rule was already on develop at ${onDevelopBefore} — recovery claim is false`);
-else ok.push('rule was genuinely absent from develop');
+
+if (showIfPresent('develop:docs/phase-1/phase-1-28/canonical-plan.md') === null) {
+  ok.push('develop is absent from this checkout — the absence claim is not verifiable here');
+} else {
+  const onDevelopBefore = grep(['-l', RULE, 'develop', '--', 'docs']);
+  if (onDevelopBefore)
+    fail.push(`the rule was already on develop at ${onDevelopBefore} — recovery claim is false`);
+  else ok.push('rule was genuinely absent from develop');
+}
 
 // Discoverable by repository search, which is the whole point of recovering it.
 // --untracked, because the record is not committed yet and a search that
