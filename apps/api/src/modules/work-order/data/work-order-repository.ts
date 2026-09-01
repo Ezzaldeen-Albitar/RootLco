@@ -115,6 +115,12 @@ export interface JobRow {
   readonly branchId: string;
   readonly title: string;
   readonly jobType: string | null;
+  /**
+   * The organisational unit working this job, or null when it is unrouted.
+   * PRE-P1-29 BR-02. Bound to the job's own scope by fk_jobs_department, so this
+   * can only ever name a department in the SAME branch.
+   */
+  readonly departmentId: string | null;
   readonly state: string;
   readonly requiresDiagnostic: boolean;
   readonly recordVersion: number;
@@ -394,14 +400,15 @@ interface JobColumns {
   branch_id: string;
   title: string;
   job_type: string | null;
+  department_id: string | null;
   state: string;
   requires_diagnostic: boolean;
   record_version: number;
 }
 
 /** Projection list shared by every job read, and by the insert's RETURNING. */
-const JOB_COLUMNS = `id, work_order_id, company_id, branch_id, title, job_type, state,
-          requires_diagnostic, record_version`;
+const JOB_COLUMNS = `id, work_order_id, company_id, branch_id, title, job_type, department_id,
+          state, requires_diagnostic, record_version`;
 
 const toJobRow = (row: JobColumns): JobRow => ({
   id: row.id,
@@ -410,6 +417,7 @@ const toJobRow = (row: JobColumns): JobRow => ({
   branchId: row.branch_id,
   title: row.title,
   jobType: row.job_type,
+  departmentId: row.department_id,
   state: row.state,
   requiresDiagnostic: row.requires_diagnostic,
   recordVersion: row.record_version,
@@ -923,12 +931,50 @@ export class WorkOrderRepository extends Repository {
    * entirely — which is exactly the shortcut the module-foundation guard exists
    * to prevent.
    */
+  /**
+   * Whether a department is a legitimate routing target for a job in this scope.
+   *
+   * Asks THREE questions the foreign key alone does not: the department must be
+   * in the job's own (tenant, company, branch); it must be `active`; and it must
+   * not be archived. The FK covers only the first, and it answers with SQLSTATE
+   * 23503 — a database error where a field-level 422 belongs. So this is the
+   * control and the FK is the backstop, not the other way round.
+   *
+   * Archived matters more than it looks: `uq_departments_branch_code_live` is
+   * partial on `archived_at IS NULL`, so an archived department's CODE may have
+   * been taken by a live one. Routing to the archived id would attach work to a
+   * unit that no longer exists while a different unit answers to its name.
+   */
+  async routableDepartment(
+    db: DbHandle,
+    scope: { readonly companyId: string; readonly branchId: string },
+    departmentId: string
+  ): Promise<boolean> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<{ ok: boolean }>(
+      db,
+      `SELECT true AS ok FROM org.departments
+        WHERE tenant_id = $1 AND company_id = $2 AND branch_id = $3 AND id = $4
+          AND status = 'active' AND archived_at IS NULL AND deleted_at IS NULL`,
+      [context.principal.tenantId, scope.companyId, scope.branchId, departmentId]
+    );
+    return row?.ok === true;
+  }
+
   async updateJob(
     db: DbHandle,
     jobId: string,
     input: {
       readonly title: string;
       readonly jobType: string | null;
+      /**
+       * Three-way on purpose, and NOT collapsed like `jobType`:
+       * `undefined` leaves the routing alone, `null` clears it, a uuid sets it.
+       * jobType's own contract is a full replacement — absent means clear — and
+       * applying that to routing would silently unroute every job whose caller
+       * only meant to rename it.
+       */
+      readonly departmentId: string | null | undefined;
       readonly requiresDiagnostic: boolean;
       readonly expectedVersion: number;
     }
@@ -937,7 +983,8 @@ export class WorkOrderRepository extends Repository {
     const result = await this.run(
       db,
       `UPDATE wo.jobs
-          SET title = $3, job_type = $4, requires_diagnostic = $5, updated_by = $6
+          SET title = $3, job_type = $4, requires_diagnostic = $5, updated_by = $6,
+              department_id = CASE WHEN $8::boolean THEN $9 ELSE department_id END
         WHERE tenant_id = $1 AND id = $2 AND record_version = $7 AND deleted_at IS NULL`,
       [
         context.principal.tenantId,
@@ -947,6 +994,10 @@ export class WorkOrderRepository extends Repository {
         input.requiresDiagnostic,
         context.principal.userId,
         input.expectedVersion,
+        // A CASE on "was the key present", not COALESCE: the column is legitimately
+        // settable to NULL, and COALESCE cannot tell "clear it" from "leave it".
+        input.departmentId !== undefined,
+        input.departmentId ?? null,
       ]
     );
     return (result.rowCount ?? 0) === 1;

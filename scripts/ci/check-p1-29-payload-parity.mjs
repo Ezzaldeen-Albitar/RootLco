@@ -105,7 +105,30 @@ export const DISPOSITION_STATES = Object.freeze(['PENDING', 'DELIBERATELY_ABSENT
  * field, and §2.4's deliberate-subset trap is why the distinction has to be
  * declared rather than inferred.
  */
-export const DISPOSITIONS = Object.freeze({});
+export const DISPOSITIONS = Object.freeze({
+  /*
+   * PRE-P1-29 BR-02 — the job/department routing relationship.
+   *
+   * The field is on the API and is deliberately NOT yet on the mirror, and the
+   * reason is a lane boundary rather than an oversight. `work-order-contract.ts`
+   * is classified `web`, and the phase-ownership gate says in its own words that
+   * "the PRE-P1-29 Backend lane is Backend-only — the screens are a separate
+   * change under pre-p1-29-web". A Backend branch that edited the mirror to
+   * satisfy THIS gate would be refused by that one, so the two gates disagree
+   * unless the omission is declared — which is exactly what a disposition is for.
+   *
+   * PENDING rather than DELIBERATELY_ABSENT: the mirror SHOULD carry this field.
+   * It is owed by the web lane, not renounced. `DEP-B1`'s standing disposition
+   * already constrains the frontend — "do not add a department picker to any
+   * operational screen" — so the mirror's arrival is a decision that lane makes,
+   * and this entry is what stops the gap being silently forgotten in the meantime.
+   */
+  'wo.job-update.departmentId': {
+    state: 'PENDING',
+    reason:
+      'BR-02 adds departmentId to the API body; the mirror lives in apps/web, which the PRE-P1-29 Backend lane may not change. Owed by pre-p1-29-web, tracked here rather than dropped.',
+  },
+});
 
 const problems = [];
 const note = (message) => problems.push(message);

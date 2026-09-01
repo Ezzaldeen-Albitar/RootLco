@@ -762,3 +762,284 @@ describe('wo.job-update refuses a job whose work order has already closed', () =
     expect(row.rows[0]?.requires_diagnostic).toBe(true);
   });
 });
+
+// ---------------------------------------------------------------------------
+// PRE-P1-29 BR-02 — the job/department routing relationship.
+//
+// Owner requirement 3 is "multiple departments may work on one vehicle". One
+// work order with two jobs in two departments is the only shape this schema
+// offers for it, which is why department_id is on wo.jobs and nowhere else.
+//
+// The department administration surface these cases route to was delivered by
+// PRE-P1-29 Wave C. BR-02 deliberately adds NO department read of its own: its
+// own contract says that if Wave C ships one, a second is redundant and must be
+// dropped rather than duplicated.
+// ---------------------------------------------------------------------------
+describe('BR-02 — job/department routing', () => {
+  /** Creates a department through the Wave C surface, in the given branch. */
+  async function seedDepartment(
+    scope: { readonly companyId: string; readonly branchId: string; readonly tenantId?: string },
+    code: string
+  ): Promise<string> {
+    const row = await admin.query<{ id: string }>(
+      `INSERT INTO org.departments (tenant_id, company_id, branch_id, department_code, name, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
+      [
+        scope.tenantId ?? TENANT_A,
+        scope.companyId,
+        scope.branchId,
+        code,
+        'BR-02 fixture department',
+        USER_A,
+      ]
+    );
+    return row.rows[0]!.id;
+  }
+
+  const jobDepartment = async (jobId: string): Promise<string | null> => {
+    const row = await admin.query<{ department_id: string | null }>(
+      'SELECT department_id FROM wo.jobs WHERE id = $1',
+      [jobId]
+    );
+    return row.rows[0]?.department_id ?? null;
+  };
+
+  it('B2-1 routes a job to a department in its own branch, and persists it', async () => {
+    const { job } = await seedJob();
+    const scope = await admin.query<{ company_id: string; branch_id: string }>(
+      'SELECT company_id, branch_id FROM wo.jobs WHERE id = $1',
+      [job.id]
+    );
+    const department = await seedDepartment(
+      { companyId: scope.rows[0]!.company_id, branchId: scope.rows[0]!.branch_id },
+      `br02_own_${Date.now().toString(36)}`
+    );
+
+    authAs(FULL);
+    const response = await updateJob(
+      job.id,
+      { title: job.title, departmentId: department },
+      { version: job.recordVersion }
+    );
+    expect(response.status).toBe(200);
+    // B2-7: the response carries the relationship accurately...
+    const body = (await response.json()) as JobBody & { departmentId: string | null };
+    expect(body.departmentId).toBe(department);
+    // ...and B2-6: it was actually stored, not merely echoed back. A response
+    // assertion alone would pass against a handler that never wrote the column.
+    expect(await jobDepartment(job.id)).toBe(department);
+  }, 60_000);
+
+  it('B2-2 refuses a department from another branch, before the FK sees it', async () => {
+    const { job } = await seedJob();
+    const scope = await admin.query<{ company_id: string }>(
+      'SELECT company_id FROM wo.jobs WHERE id = $1',
+      [job.id]
+    );
+    // A REAL department, in a real branch of the same tenant — just not the
+    // job's branch. A nonexistent uuid would be refused by the same code path
+    // and would prove nothing about scope.
+    const foreign = await seedDepartment(
+      { companyId: scope.rows[0]!.company_id, branchId: BRANCH_A2 },
+      `br02_other_${Date.now().toString(36)}`
+    );
+
+    authAs(FULL);
+    const response = await updateJob(
+      job.id,
+      { title: job.title, departmentId: foreign },
+      { version: job.recordVersion }
+    );
+    // 422 on the field, NOT a 23503 rendered as a 5xx. fk_jobs_department would
+    // refuse the same row, but as a database error that route-handler sends to
+    // the exception monitor — a caller's mistake reported as a server fault.
+    expect(response.status).toBe(422);
+    expect((await response.json()).code).toBe('ERR-VAL-001');
+    expect(await jobDepartment(job.id)).toBeNull();
+  }, 60_000);
+
+  it('B2-2b refuses a department belonging to another TENANT', async () => {
+    const { job } = await seedJob();
+    const foreign = await seedDepartment(
+      { companyId: COMPANY_B1, branchId: BRANCH_B1, tenantId: TENANT_B },
+      `br02_bravo_${Date.now().toString(36)}`
+    );
+
+    authAs(FULL);
+    const response = await updateJob(
+      job.id,
+      { title: job.title, departmentId: foreign },
+      { version: job.recordVersion }
+    );
+    expect(response.status).toBe(422);
+    expect(await jobDepartment(job.id)).toBeNull();
+  }, 60_000);
+
+  it('B2-3 refuses routing to an actor without wo.job.manage', async () => {
+    const { job } = await seedJob();
+    const scope = await admin.query<{ company_id: string; branch_id: string }>(
+      'SELECT company_id, branch_id FROM wo.jobs WHERE id = $1',
+      [job.id]
+    );
+    const department = await seedDepartment(
+      { companyId: scope.rows[0]!.company_id, branchId: scope.rows[0]!.branch_id },
+      `br02_denied_${Date.now().toString(36)}`
+    );
+
+    // READER holds work-order read and not job management — one permission away
+    // from a caller who succeeds, rather than a caller who holds nothing.
+    authAs(READER);
+    const response = await updateJob(
+      job.id,
+      { title: job.title, departmentId: department },
+      { version: job.recordVersion }
+    );
+    expect(response.status).toBe(403);
+    expect(await jobDepartment(job.id)).toBeNull();
+  }, 60_000);
+
+  it('B2-5 does not let a department-scoped grant widen anything', async () => {
+    // The combination has never been exercised against a table that actually
+    // carries the column. iam.has_permission_in_scope resolves
+    // scope_type = 'department' and the delegation backstop says "branch covers
+    // its departments" — so a department-scoped actor must reach NO MORE than
+    // before, and BR-02 adds no wo policy that reads department_id.
+    const { job } = await seedJob();
+    authAs(SCOPED_ELSEWHERE);
+    const response = await updateJob(
+      job.id,
+      { title: 'Should not land' },
+      { version: job.recordVersion }
+    );
+    // 404, not 403, and that is the stronger answer rather than a weaker one:
+    // the job is not visible under this actor's scope at all, so its existence is
+    // not disclosed. BR-02's own error contract specifies 404/ERR-RES-001 for a
+    // job out of scope, precisely so an out-of-scope id and an absent id are
+    // indistinguishable.
+    expect(response.status).toBe(404);
+    // The department column is untouched — the refusal is not a partial write.
+    expect(await jobDepartment(job.id)).toBeNull();
+  }, 60_000);
+
+  it('B2-6 distinguishes omitting the field from clearing it', async () => {
+    const { job } = await seedJob();
+    const scope = await admin.query<{ company_id: string; branch_id: string }>(
+      'SELECT company_id, branch_id FROM wo.jobs WHERE id = $1',
+      [job.id]
+    );
+    const department = await seedDepartment(
+      { companyId: scope.rows[0]!.company_id, branchId: scope.rows[0]!.branch_id },
+      `br02_threeway_${Date.now().toString(36)}`
+    );
+
+    authAs(FULL);
+    const routed = await updateJob(
+      job.id,
+      { title: job.title, departmentId: department },
+      { version: job.recordVersion }
+    );
+    expect(routed.status).toBe(200);
+    const afterRoute = (await routed.json()) as JobBody;
+
+    // OMITTING the key must LEAVE the routing alone. This is the case that would
+    // go red if departmentId were collapsed the way jobType is — a supervisor
+    // renaming a job has not asked to unroute it.
+    authAs(FULL);
+    const renamed = await updateJob(
+      job.id,
+      { title: 'Renamed, not unrouted' },
+      { version: afterRoute.recordVersion }
+    );
+    expect(renamed.status).toBe(200);
+    expect(await jobDepartment(job.id)).toBe(department);
+    const afterRename = (await renamed.json()) as JobBody;
+
+    // Sending null CLEARS it. Different intention, different outcome.
+    authAs(FULL);
+    const cleared = await updateJob(
+      job.id,
+      { title: 'Unrouted', departmentId: null },
+      { version: afterRename.recordVersion }
+    );
+    expect(cleared.status).toBe(200);
+    expect(await jobDepartment(job.id)).toBeNull();
+  }, 90_000);
+
+  it('B2-4 refuses routing to an INACTIVE or archived department', async () => {
+    const { job } = await seedJob();
+    const scope = await admin.query<{ company_id: string; branch_id: string }>(
+      'SELECT company_id, branch_id FROM wo.jobs WHERE id = $1',
+      [job.id]
+    );
+    const retired = await seedDepartment(
+      { companyId: scope.rows[0]!.company_id, branchId: scope.rows[0]!.branch_id },
+      `br02_retired_${Date.now().toString(36)}`
+    );
+    await admin.query("UPDATE org.departments SET status = 'inactive' WHERE id = $1", [retired]);
+
+    authAs(FULL);
+    const response = await updateJob(
+      job.id,
+      { title: job.title, departmentId: retired },
+      { version: job.recordVersion }
+    );
+    // The FK would ADMIT this row — the department exists in the right scope —
+    // so this refusal is the service rule and nothing else could produce it.
+    expect(response.status).toBe(422);
+    expect(await jobDepartment(job.id)).toBeNull();
+  }, 60_000);
+
+  it('B2-7 audits a re-route, recording both the old and the new unit', async () => {
+    const { job } = await seedJob();
+    const scope = await admin.query<{ company_id: string; branch_id: string }>(
+      'SELECT company_id, branch_id FROM wo.jobs WHERE id = $1',
+      [job.id]
+    );
+    const stamp = Date.now().toString(36);
+    const first = await seedDepartment(
+      { companyId: scope.rows[0]!.company_id, branchId: scope.rows[0]!.branch_id },
+      `br02_audit_a_${stamp}`
+    );
+    const second = await seedDepartment(
+      { companyId: scope.rows[0]!.company_id, branchId: scope.rows[0]!.branch_id },
+      `br02_audit_b_${stamp}`
+    );
+
+    authAs(FULL);
+    const routed = await updateJob(
+      job.id,
+      { title: job.title, departmentId: first },
+      { version: job.recordVersion }
+    );
+    expect(routed.status).toBe(200);
+    const afterFirst = (await routed.json()) as JobBody;
+
+    const before = await auditCount(UPDATED_ACTION, job.id);
+    authAs(FULL);
+    const rerouted = await updateJob(
+      job.id,
+      { title: job.title, departmentId: second },
+      { version: afterFirst.recordVersion }
+    );
+    expect(rerouted.status).toBe(200);
+    expect(await auditCount(UPDATED_ACTION, job.id)).toBe(before + 1);
+
+    // Routing is recorded HERE and nowhere else: wo.job_status_history tracks
+    // state, not the unit doing the work, so without this detail a re-route
+    // leaves no trace at all.
+    const detail = await admin.query<{
+      old_value_masked: string | null;
+      new_value_masked: string | null;
+    }>(
+      `SELECT d.old_value_masked, d.new_value_masked
+         FROM iam.audit_record_details d
+         JOIN iam.audit_records r ON r.id = d.audit_record_id
+        WHERE r.action = 'wo.job.updated' AND r.entity_id = $1 AND d.field_name = 'department_id'
+        ORDER BY r.occurred_at DESC LIMIT 1`,
+      [job.id]
+    );
+    expect(detail.rows).toHaveLength(1);
+    expect(detail.rows[0]!.new_value_masked).toBe(second);
+    expect(detail.rows[0]!.old_value_masked).toBe(first);
+  }, 90_000);
+});

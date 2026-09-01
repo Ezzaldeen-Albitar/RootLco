@@ -3484,7 +3484,7 @@ its columns. Restricted columns (gated by `iam.sensitive.view`): `certificate_nu
 
 ### wo.jobs
 
-`id`, `tenant_id`, `company_id`, `branch_id`, `work_order_id`, `title`, `job_type`, `state`, `requires_diagnostic`, `record_version`, `created_at`, `created_by`, `updated_at`, `updated_by`, `deleted_at`, `deleted_by`
+`id`, `tenant_id`, `company_id`, `branch_id`, `work_order_id`, `title`, `job_type`, `department_id`, `state`, `requires_diagnostic`, `record_version`, `created_at`, `created_by`, `updated_at`, `updated_by`, `deleted_at`, `deleted_by`
 
 ### wo.required_parts
 
