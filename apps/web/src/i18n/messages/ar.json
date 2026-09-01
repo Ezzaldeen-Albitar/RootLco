@@ -1896,5 +1896,6 @@
   "workOrders.queue.column.moreParties": "وآخرون",
   "workOrders.queue.column.opened": "تاريخ الفتح",
   "workOrders.kind.ordinary": "عادي",
-  "workOrders.kind.rework": "إعادة عمل"
+  "workOrders.kind.rework": "إعادة عمل",
+  "nav.workOrdersQueue": "قائمة أوامر العمل"
 }

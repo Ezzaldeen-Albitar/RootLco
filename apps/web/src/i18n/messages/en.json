@@ -1896,5 +1896,6 @@
   "workOrders.queue.column.moreParties": "and others",
   "workOrders.queue.column.opened": "Opened",
   "workOrders.kind.ordinary": "Ordinary",
-  "workOrders.kind.rework": "Rework"
+  "workOrders.kind.rework": "Rework",
+  "nav.workOrdersQueue": "Queue"
 }

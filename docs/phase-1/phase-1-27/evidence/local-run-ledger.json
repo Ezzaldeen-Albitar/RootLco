@@ -34,31 +34,23 @@
     },
     "web": {
       "command": "npm run test --workspace @rootlco/web -- --reporter=json",
-      "tests": 2897,
-      "passed": 2897,
+      "tests": 2908,
+      "passed": 2908,
       "failed": 0,
       "skipped": 0,
-      "files": 103,
+      "files": 104,
       "exitCode": 0,
       "reporterSuccess": true,
       "failedSuites": [],
       "filesWithoutCases": [],
-      "measuredAtCommit": "7435d2ed4c1f456374d75307961bc32c818e3cbb",
-      "dirtyExecutablePaths": [],
-      "measuredAt": "2026-09-01T15:51:38Z",
-      "provenance": {
-        "source": "hosted",
-        "runId": "33527787156",
-        "runUrl": "https://github.com/Ezzaldeen-Albitar/RootLco/actions/runs/33527787156",
-        "workflow": "PR CI",
-        "job": "99923080239",
-        "jobName": "Web quality / web-quality",
-        "step": "Web component tier",
-        "headSha": "7435d2ed4c1f456374d75307961bc32c818e3cbb",
-        "artifact": "evidence-web-quality",
-        "artifactDigest": "sha256:80f95e28dc3ec1799ded2ef6fec534aef431debb1c94164702df85aff89f4551",
-        "field": "apps/web/vitest-web.json"
-      }
+      "measuredAtCommit": "58f60a10ecb2fbd32205fc09913dd40791f5a57c",
+      "dirtyExecutablePaths": [
+        "apps/web/src/config/navigation.ts",
+        "apps/web/src/i18n/messages/ar.json",
+        "apps/web/src/i18n/messages/en.json",
+        "apps/web/tests/navigation.test.ts"
+      ],
+      "measuredAt": "2026-09-01T22:40:35.747Z"
     }
   }
 }
