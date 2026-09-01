@@ -1,3 +1,5 @@
+import { deflateRawSync } from 'node:zlib';
+
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -8,15 +10,22 @@ import {
   CLEAN_ROOM,
   CI_EVIDENCE,
   FAILURES,
+  HOSTED_PROVENANCE_FIELDS,
+  RUN_RECORD_REQUIRED_FIELDS,
   SEALED_DOCUMENTS,
   SELF_CHECK_CASES,
   VALUE_TOKEN,
   evaluate,
   judge,
+  judgeRunCompleteness,
+  judgeRunProvenance,
+  hostedRunRecord,
   parseRegions,
+  runCompleteness,
   selfCheck,
   tokensIn,
 } from '../../scripts/ci/check-p1-27-closing-values.mjs';
+import { readZipEntry } from '../../scripts/lib/hosted-run-report.mjs';
 
 /**
  * The gate that says who decides each value on the two evidence pages, tested
@@ -375,3 +384,418 @@ function minimal(): unknown {
     },
   };
 }
+
+// ---------------------------------------------------------------------------
+// The zero-case false-green class (PRE-P1-29 run-ledger residual).
+//
+// A test file can be COUNTED in a vitest report and contribute zero assertions:
+// a file that fails to collect, a suite whose top-level throw happens before any
+// `it` registers, a `describe` that returns early. vitest reports
+// `numFailedTests: 0` for all of those. A ledger that records only
+// tests/passed/failed/files therefore sees a SMALLER GREEN RUN and nothing else,
+// and the tier total moves on an unchanged tree with no gate objecting.
+//
+// These cases drive the guard with reports shaped like the real thing rather
+// than asserting that the guard exists.
+// ---------------------------------------------------------------------------
+describe('the run ledger cannot report green over a case that vanished', () => {
+  const file = (
+    name: string,
+    cases: number,
+    status: 'passed' | 'failed' = 'passed'
+  ): Record<string, unknown> => ({
+    name,
+    status,
+    assertionResults: Array.from({ length: cases }, () => ({ status: 'passed' })),
+  });
+
+  it('Z1 accepts a run where every counted file contributed a case', () => {
+    const record = runCompleteness(
+      { success: true, testResults: [file('a.test.ts', 3), file('b.test.ts', 7)] },
+      0
+    );
+    expect(record.filesWithoutCases).toEqual([]);
+    expect(record.failedSuites).toEqual([]);
+    expect(judgeRunCompleteness('unit', record)).toEqual([]);
+  });
+
+  it('Z2 refuses a run where a counted file contributed ZERO cases', () => {
+    // The exact historical shape: the report still says success, the failure
+    // count is still zero, and one file simply ran nothing.
+    const record = runCompleteness(
+      { success: true, testResults: [file('a.test.ts', 3), file('silent.test.ts', 0)] },
+      0
+    );
+    expect(record.filesWithoutCases).toEqual(['silent.test.ts']);
+    const ids = judgeRunCompleteness('unit', record).map((p) => p.id);
+    expect(ids).toContain('RUN_RECORD_FILE_RAN_NO_CASES');
+  });
+
+  it('Z3 refuses a record that cannot SEE a vanished file at all', () => {
+    // A ledger written before this guard existed carries none of the four
+    // fields. That is INCOMPLETE, not clean: an absent field is not evidence of
+    // absence, and reading `undefined` as "nothing wrong" is the same false
+    // green one layer up.
+    const legacy = { tests: 3045, passed: 3045, failed: 0, files: 112 };
+    const ids = judgeRunCompleteness('unit', legacy).map((p) => p.id);
+    expect(ids).toContain('RUN_RECORD_INCOMPLETE');
+    for (const field of RUN_RECORD_REQUIRED_FIELDS) {
+      expect(legacy).not.toHaveProperty(field);
+    }
+  });
+
+  it('Z4 refuses a failure that zero failed CASES would otherwise mask', () => {
+    // Two independent maskings, because they arrive by different routes: a
+    // suite that failed before any case ran, and a runner that exited non-zero
+    // while every case it managed to run passed.
+    const suiteFailed = runCompleteness(
+      { success: true, testResults: [file('a.test.ts', 3), file('broken.test.ts', 0, 'failed')] },
+      0
+    );
+    expect(suiteFailed.failedSuites).toEqual(['broken.test.ts']);
+    expect(judgeRunCompleteness('unit', suiteFailed).map((p) => p.id)).toContain(
+      'RUN_RECORD_SUITE_FAILED'
+    );
+
+    const exitedRed = runCompleteness({ success: true, testResults: [file('a.test.ts', 3)] }, 1);
+    expect(judgeRunCompleteness('unit', exitedRed).map((p) => p.id)).toContain(
+      'RUN_RECORD_RUN_NOT_SUCCESSFUL'
+    );
+  });
+
+  it('Z5 never returns green for a malformed or absent record', () => {
+    // Each of these is a way a record can be unreadable rather than bad, and
+    // the answer to all of them must be a problem — never an empty list, which
+    // the caller reads as "this tier is fine".
+    for (const shape of [undefined, null, {}, { exitCode: 0 }, { filesWithoutCases: [] }]) {
+      expect(judgeRunCompleteness('unit', shape as never).length).toBeGreaterThan(0);
+    }
+
+    // And a reporter that contradicts its own counts.
+    const contradicted = runCompleteness(
+      { success: false, testResults: [file('a.test.ts', 3)] },
+      0
+    );
+    expect(contradicted.reporterSuccess).toBe(false);
+    expect(judgeRunCompleteness('unit', contradicted).map((p) => p.id)).toContain(
+      'RUN_RECORD_RUN_NOT_SUCCESSFUL'
+    );
+  });
+
+  it('every problem id it can raise is declared in the failure vocabulary', () => {
+    // The gate declares its failure names in one table; a rule that raises an
+    // undeclared id would report something no reader can look up.
+    const raised = new Set([
+      ...judgeRunCompleteness('unit', {}).map((p) => p.id),
+      ...judgeRunCompleteness(
+        'unit',
+        runCompleteness({ success: false, testResults: [file('x.test.ts', 0, 'failed')] }, 1)
+      ).map((p) => p.id),
+    ]);
+    expect(raised.size).toBeGreaterThan(0);
+    for (const id of raised) expect(FAILURES).toHaveProperty(id);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Recording a tier from the runner whose verdict the repository ships against.
+//
+// The ledger records the RUNNER'S OWN VERDICT, and that verdict is a property of
+// the machine as much as of the tree: this repository's unit tier exits 0 on the
+// hosted runner and 1 on a slower one, all 3051 cases passing, three unhandled
+// `onTaskUpdate` timeouts and nothing in the JSON report able to say so.
+//
+// So a second writer exists, and it takes the record from the GitHub run. That
+// makes the record STRONGER — and makes forging it the thing to refuse. These
+// cases drive the refusals with records shaped like the ones a hand would write.
+// ---------------------------------------------------------------------------
+describe('a run record may not claim a hosted runner it cannot account for', () => {
+  const complete = {
+    source: 'hosted',
+    runId: '33516203274',
+    job: '99883820432',
+    headSha: 'a'.repeat(40),
+    artifact: 'evidence-unit-coverage',
+    field: 'vitest-unit.json',
+  };
+  const hosted = (provenance: unknown, over: Record<string, unknown> = {}) => ({
+    tests: 3051,
+    passed: 3051,
+    failed: 0,
+    files: 112,
+    exitCode: 0,
+    reporterSuccess: true,
+    failedSuites: [],
+    filesWithoutCases: [],
+    measuredAtCommit: 'a'.repeat(40),
+    dirtyExecutablePaths: [],
+    provenance,
+    ...over,
+  });
+
+  it('H1 accepts a record that names the run, the job and the head it describes', () => {
+    expect(judgeRunProvenance('unit', hosted(complete))).toEqual([]);
+    // And says nothing at all about a local record, which the rules above judge.
+    expect(judgeRunProvenance('unit', hosted(undefined))).toEqual([]);
+  });
+
+  it('H2 refuses a hosted claim that names no run', () => {
+    // Each field dropped on its own, because a rule that only fires when ALL of
+    // them are missing would pass the record that names five of six.
+    for (const field of HOSTED_PROVENANCE_FIELDS) {
+      const partial: Record<string, unknown> = { ...complete };
+      delete partial[field];
+      const ids = judgeRunProvenance('unit', hosted(partial)).map((p) => p.id);
+      expect(ids, `dropping ${field} was accepted`).toContain(
+        'RUN_RECORD_HOSTED_PROVENANCE_INCOMPLETE'
+      );
+    }
+    // And the shapes that are not a provenance at all.
+    for (const shape of [null, 'hosted', 42, ['hosted']]) {
+      expect(judgeRunProvenance('unit', hosted(shape)).length).toBeGreaterThan(0);
+    }
+  });
+
+  it('H3 refuses ids that are not ids, and a source nobody wrote', () => {
+    for (const [field, bad] of [
+      ['runId', 'the latest one'],
+      ['job', 'unit-coverage'],
+      ['headSha', 'HEAD'],
+      ['source', 'local'],
+    ] as const) {
+      const ids = judgeRunProvenance('unit', hosted({ ...complete, [field]: bad })).map(
+        (p) => p.id
+      );
+      expect(ids, `${field}=${bad} was accepted`).toContain(
+        'RUN_RECORD_HOSTED_PROVENANCE_INCOMPLETE'
+      );
+    }
+  });
+
+  it('H4 refuses a record assembled out of two runs', () => {
+    // The one way this writer could manufacture a green record: counts from a
+    // green run of one tree, filed against another.
+    const ids = judgeRunProvenance('unit', hosted({ ...complete, headSha: 'b'.repeat(40) })).map(
+      (p) => p.id
+    );
+    expect(ids).toContain('RUN_RECORD_HOSTED_HEAD_MISMATCH');
+  });
+
+  it('H5 refuses a hosted record carrying a dirty tree no hosted checkout has', () => {
+    const ids = judgeRunProvenance(
+      'unit',
+      hosted(complete, { dirtyExecutablePaths: ['apps/api/src/app/route.ts'] })
+    ).map((p) => p.id);
+    expect(ids).toContain('RUN_RECORD_HOSTED_CLAIMS_LOCAL_MEASUREMENT');
+  });
+
+  it('H6 does not let provenance buy a pass on what the run actually did', () => {
+    // The point of the whole slice. A hosted record is stronger evidence, not a
+    // softer rule: the completeness judge runs on it unchanged, and a hosted run
+    // that exited 1 or ran a file with no cases is refused exactly as a local one
+    // is. If this ever returns [], the authority became an exemption.
+    const red = hosted(complete, { exitCode: 1 });
+    expect(judgeRunProvenance('unit', red)).toEqual([]);
+    expect(judgeRunCompleteness('unit', red).map((p) => p.id)).toContain(
+      'RUN_RECORD_RUN_NOT_SUCCESSFUL'
+    );
+    const empty = hosted(complete, { filesWithoutCases: ['tests/ci/silent.test.ts'] });
+    expect(judgeRunCompleteness('unit', empty).map((p) => p.id)).toContain(
+      'RUN_RECORD_FILE_RAN_NO_CASES'
+    );
+  });
+
+  it('every problem id it can raise is declared in the failure vocabulary', () => {
+    const raised = new Set([
+      ...judgeRunProvenance('unit', hosted({ source: 'hosted' })).map((p) => p.id),
+      ...judgeRunProvenance(
+        'unit',
+        hosted(
+          { ...complete, headSha: 'b'.repeat(40) },
+          {
+            dirtyExecutablePaths: ['x.ts'],
+          }
+        )
+      ).map((p) => p.id),
+      ...judgeRunProvenance('unit', hosted(null)).map((p) => p.id),
+    ]);
+    expect(raised.size).toBeGreaterThan(2);
+    for (const id of raised) expect(FAILURES).toHaveProperty(id);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The artifact reader.
+//
+// GitHub serves artifacts as zip and Node ships no reader, so this repository
+// carries one. It is fifty lines of offset arithmetic over a format with two
+// indexes that disagree on purpose, which is exactly the kind of code that works
+// on the file it was written against and on nothing else.
+// ---------------------------------------------------------------------------
+describe('the hosted artifact reader takes one entry out of a real archive', () => {
+  /**
+   * Builds a zip by the specification rather than by mirroring the reader.
+   *
+   * The adversarial part is `localExtra`: the local header and the central
+   * directory each carry their OWN extra field, and real archives give them
+   * different lengths — GitHub's do. A reader that computes the data offset from
+   * the central directory's length lands a few bytes into the payload and
+   * returns garbage that still inflates for small inputs.
+   */
+  const zipOf = (
+    entries: readonly { name: string; body: Buffer; deflate: boolean; localExtra: number }[]
+  ): Buffer => {
+    const locals: Buffer[] = [];
+    const central: Buffer[] = [];
+    let offset = 0;
+    for (const entry of entries) {
+      const payload = entry.deflate ? deflateRawSync(entry.body) : entry.body;
+      const name = Buffer.from(entry.name, 'utf8');
+      const extra = Buffer.alloc(entry.localExtra, 0);
+      const local = Buffer.alloc(30);
+      local.writeUInt32LE(0x04034b50, 0);
+      local.writeUInt16LE(entry.deflate ? 8 : 0, 8);
+      local.writeUInt32LE(payload.length, 18);
+      local.writeUInt32LE(entry.body.length, 22);
+      local.writeUInt16LE(name.length, 26);
+      local.writeUInt16LE(extra.length, 28);
+      locals.push(local, name, extra, payload);
+
+      const dir = Buffer.alloc(46);
+      dir.writeUInt32LE(0x02014b50, 0);
+      dir.writeUInt16LE(entry.deflate ? 8 : 0, 10);
+      dir.writeUInt32LE(payload.length, 20);
+      dir.writeUInt32LE(entry.body.length, 24);
+      dir.writeUInt16LE(name.length, 28);
+      dir.writeUInt16LE(0, 30); // deliberately NOT the local extra length
+      dir.writeUInt16LE(0, 32);
+      dir.writeUInt32LE(offset, 42);
+      central.push(dir, name);
+      offset += 30 + name.length + extra.length + payload.length;
+    }
+    const body = Buffer.concat(locals);
+    const index = Buffer.concat(central);
+    const end = Buffer.alloc(22);
+    end.writeUInt32LE(0x06054b50, 0);
+    end.writeUInt16LE(entries.length, 8);
+    end.writeUInt16LE(entries.length, 10);
+    end.writeUInt32LE(index.length, 12);
+    end.writeUInt32LE(body.length, 16);
+    return Buffer.concat([body, index, end]);
+  };
+
+  const REPORT = Buffer.from(JSON.stringify({ numTotalTests: 3051, success: true }), 'utf8');
+
+  it('reads a deflated entry that is not the first, past an entry that is', () => {
+    const zip = zipOf([
+      { name: 'tests-unit.md', body: Buffer.from('# unrelated\n'), deflate: true, localExtra: 9 },
+      { name: 'vitest-unit.json', body: REPORT, deflate: true, localExtra: 13 },
+    ]);
+    expect(JSON.parse(readZipEntry(zip, 'vitest-unit.json').toString('utf8'))).toEqual({
+      numTotalTests: 3051,
+      success: true,
+    });
+  });
+
+  it('reads a stored entry, which is what a tiny report compresses to', () => {
+    const zip = zipOf([{ name: 'vitest-unit.json', body: REPORT, deflate: false, localExtra: 7 }]);
+    expect(readZipEntry(zip, 'vitest-unit.json').toString('utf8')).toBe(REPORT.toString('utf8'));
+  });
+
+  it('says what the archive holds rather than returning nothing', () => {
+    const zip = zipOf([{ name: 'tests-unit.md', body: REPORT, deflate: true, localExtra: 0 }]);
+    // A reader that answered `null` here would be indistinguishable from a run
+    // that uploaded an empty report, which is the whole class this slice refuses.
+    expect(() => readZipEntry(zip, 'vitest-unit.json')).toThrow(/holds no .*vitest-unit\.json/);
+  });
+
+  it('refuses bytes that are not an archive at all', () => {
+    expect(() => readZipEntry(Buffer.from('<html>404</html>'), 'vitest-unit.json')).toThrow(
+      /not a zip archive/
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The writer and the judge, in the same room.
+//
+// This case exists because it was missing. `judgeRunProvenance` requires
+// `headSha`; `hostedRunRecord` was written without it; and every refusal case
+// above still passed, because they drop fields from a FIXTURE rather than from
+// what the writer actually produces. The gate refused its author's first hosted
+// record — which is the guard working, and also a hole in this file.
+// ---------------------------------------------------------------------------
+describe('the record the writer produces is the record the judge accepts', () => {
+  const observation = {
+    headSha: 'c'.repeat(40),
+    runId: '33525905865',
+    runUrl: 'https://github.com/o/r/actions/runs/33525905865',
+    workflow: 'PR CI',
+    job: '99916670092',
+    jobName: 'unit-tests-coverage / unit-coverage',
+    step: 'Unit tier with coverage',
+    exitCode: 0,
+    artifact: 'evidence-unit-coverage',
+    artifactDigest: `sha256:${'0'.repeat(64)}`,
+    field: 'vitest-unit.json',
+    completedAt: '2026-09-01T13:56:11Z',
+    report: {
+      success: true,
+      numTotalTests: 3062,
+      numPassedTests: 3059,
+      numFailedTests: 0,
+      numPendingTests: 3,
+      testResults: [
+        { name: 'a.test.ts', status: 'passed', assertionResults: [{ status: 'passed' }] },
+      ],
+    },
+  };
+
+  it('H7 a record built from a hosted observation passes every rule that judges it', () => {
+    const record = hostedRunRecord('unit', observation);
+    expect(judgeRunProvenance('unit', record)).toEqual([]);
+    expect(judgeRunCompleteness('unit', record)).toEqual([]);
+  });
+
+  it('H8 carries every field each contract names, from the observation', () => {
+    const record = hostedRunRecord('unit', observation);
+    // Named one by one rather than compared to an object literal: a literal
+    // would be this function written twice, and would agree with it however
+    // wrong both were.
+    for (const field of RUN_RECORD_REQUIRED_FIELDS) {
+      expect(record, `the writer omits ${field}`).toHaveProperty(field);
+    }
+    for (const field of HOSTED_PROVENANCE_FIELDS) {
+      expect(record.provenance, `the writer omits provenance.${field}`).toHaveProperty(field);
+    }
+    expect(record.provenance.headSha).toBe(record.measuredAtCommit);
+    expect(record.exitCode).toBe(0);
+    expect(record.tests).toBe(3062);
+    expect(record.skipped).toBe(3);
+    expect(record.dirtyExecutablePaths).toEqual([]);
+    // The hosted job's own clock, not this machine's.
+    expect(record.measuredAt).toBe('2026-09-01T13:56:11Z');
+  });
+
+  it('H9 does not launder a red hosted run into a green record', () => {
+    // The writer takes the exit code from the step's conclusion. If it ever
+    // starts deciding one instead, this is where it shows.
+    const red = hostedRunRecord('unit', { ...observation, exitCode: 1 });
+    expect(red.exitCode).toBe(1);
+    expect(judgeRunCompleteness('unit', red).map((p) => p.id)).toContain(
+      'RUN_RECORD_RUN_NOT_SUCCESSFUL'
+    );
+
+    const silent = hostedRunRecord('unit', {
+      ...observation,
+      report: {
+        ...observation.report,
+        testResults: [{ name: 'silent.test.ts', status: 'passed', assertionResults: [] }],
+      },
+    });
+    expect(silent.filesWithoutCases).toEqual(['silent.test.ts']);
+    expect(judgeRunCompleteness('unit', silent).map((p) => p.id)).toContain(
+      'RUN_RECORD_FILE_RAN_NO_CASES'
+    );
+  });
+});

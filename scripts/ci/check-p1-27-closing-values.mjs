@@ -84,6 +84,7 @@
  * Usage:
  *   node scripts/ci/check-p1-27-closing-values.mjs [--json out.json]
  *   node scripts/ci/check-p1-27-closing-values.mjs --record <tier>
+ *   node scripts/ci/check-p1-27-closing-values.mjs --record <tier> --hosted-run <runId>
  * Exit: 0 clean · 1 a value is unclassified, unbound or misclassified · 2 IO.
  */
 import { execFileSync } from 'node:child_process';
@@ -478,6 +479,18 @@ export const FAILURES = Object.freeze({
     'a historical region that does not say which head, run or pull request it is history of',
   RUN_RECORD_STALE: 'the local run record predates an executable change',
   RUN_RECORD_FILE_COUNT_DISAGREES: 'the local run record counted a different set of files',
+  RUN_RECORD_INCOMPLETE:
+    'the local run record does not carry the fields that make a vanished case visible',
+  RUN_RECORD_FILE_RAN_NO_CASES: 'the local run reported a test file that contributed no case',
+  RUN_RECORD_SUITE_FAILED: 'the local run failed a suite without failing a case',
+  RUN_RECORD_RUN_NOT_SUCCESSFUL:
+    'the local run did not succeed, whatever its case counts add up to',
+  RUN_RECORD_HOSTED_PROVENANCE_INCOMPLETE:
+    'a run record claiming a hosted runner without naming the run it came from',
+  RUN_RECORD_HOSTED_HEAD_MISMATCH:
+    'a hosted run record whose run describes a different head than the record does',
+  RUN_RECORD_HOSTED_CLAIMS_LOCAL_MEASUREMENT:
+    'a hosted run record carrying a local measurement it could not have taken',
   UNKNOWN_CLASS: 'an entry naming a class this gate does not implement',
   BAD_STANDING: 'a class and standing pair the vocabulary does not allow',
   UNSEALED_DOCUMENT: 'a document whose regions do not tile it',
@@ -879,6 +892,216 @@ export function judge(facts) {
  * files and sat there while it grew to 70, and no check compared either number
  * to the tree.
  */
+/**
+ * The fields `--record` must carry for the rules below to mean anything.
+ *
+ * A record written before this guard existed carries none of them, and that is
+ * treated as INCOMPLETE rather than passing — an absent field is not evidence of
+ * absence, and a gate that reads `undefined` as "nothing wrong" is the same
+ * false green in a different place.
+ */
+export const RUN_RECORD_REQUIRED_FIELDS = Object.freeze([
+  'exitCode',
+  'reporterSuccess',
+  'failedSuites',
+  'filesWithoutCases',
+]);
+
+/**
+ * What a vitest JSON report says about EXECUTION rather than about outcomes.
+ *
+ * The defect this exists for: a test file can be COUNTED in `testResults` and
+ * contribute zero assertions — a file that failed to collect, a suite whose
+ * top-level throw happened before any `it` registered, a `describe` that
+ * returned early. vitest reports `numFailedTests: 0` for all of those, so a
+ * ledger recording tests/passed/failed/files sees a smaller green run and
+ * nothing else. The tier total moves on an unchanged tree and no gate objects.
+ *
+ * So four facts are recorded that outcomes alone cannot express:
+ *   exitCode         what the runner itself returned
+ *   reporterSuccess  the reporter's own verdict
+ *   failedSuites     suites that failed without failing a case
+ *   filesWithoutCases files present in the report that ran nothing
+ */
+export function runCompleteness(report, exitCode) {
+  const files = report?.testResults ?? [];
+  const filesWithoutCases = files
+    .filter((file) => (file?.assertionResults ?? []).length === 0)
+    .map((file) => String(file?.name ?? '(unnamed)'))
+    .sort();
+  const failedSuites = files
+    .filter(
+      (file) =>
+        file?.status === 'failed' &&
+        (file?.assertionResults ?? []).every((a) => a?.status !== 'failed')
+    )
+    .map((file) => String(file?.name ?? '(unnamed)'))
+    .sort();
+  return {
+    exitCode,
+    reporterSuccess: report?.success === true,
+    failedSuites,
+    filesWithoutCases,
+  };
+}
+
+/**
+ * Refuses a run record that cannot see a vanished case.
+ *
+ * Separate from the staleness rules above because it asks a different question:
+ * those ask WHEN the run was taken, this asks whether the run actually ran what
+ * it claims to have run.
+ */
+export function judgeRunCompleteness(tier, record) {
+  const problems = [];
+  const missing = RUN_RECORD_REQUIRED_FIELDS.filter((field) => record?.[field] === undefined);
+  if (missing.length > 0) {
+    problems.push(
+      problem(
+        'RUN_RECORD_INCOMPLETE',
+        `the \`${tier}\` run record carries no ${missing.join(', ')} — it was taken ` +
+          'before the run was asked whether every file contributed a case. Re-record it'
+      )
+    );
+    // Deliberately NOT returning here: an incomplete record may still carry one
+    // of the other fields, and a rule that can fire should fire.
+  }
+  const empty = record?.filesWithoutCases;
+  if (Array.isArray(empty) && empty.length > 0) {
+    problems.push(
+      problem(
+        'RUN_RECORD_FILE_RAN_NO_CASES',
+        `the \`${tier}\` run reported ${empty.length} test file(s) that contributed no case — ` +
+          `${empty.slice(0, 4).join(', ')}${empty.length > 4 ? ', …' : ''}. ` +
+          'A counted file that runs nothing is a silent coverage loss, not a smaller green run'
+      )
+    );
+  }
+  const failedSuites = record?.failedSuites;
+  if (Array.isArray(failedSuites) && failedSuites.length > 0) {
+    problems.push(
+      problem(
+        'RUN_RECORD_SUITE_FAILED',
+        `the \`${tier}\` run failed ${failedSuites.length} suite(s) without failing a case — ` +
+          `${failedSuites.slice(0, 4).join(', ')}${failedSuites.length > 4 ? ', …' : ''}`
+      )
+    );
+  }
+  if (record?.exitCode !== undefined && record.exitCode !== 0) {
+    problems.push(
+      problem(
+        'RUN_RECORD_RUN_NOT_SUCCESSFUL',
+        `the \`${tier}\` run exited ${record.exitCode}; a non-zero runner verdict is not made ` +
+          'green by a zero failure count'
+      )
+    );
+  }
+  if (record?.reporterSuccess === false) {
+    problems.push(
+      problem(
+        'RUN_RECORD_RUN_NOT_SUCCESSFUL',
+        `the \`${tier}\` run's reporter recorded success: false`
+      )
+    );
+  }
+  return problems;
+}
+
+/**
+ * What a run record must name to be believed about a runner nobody here can see.
+ *
+ * The same shape this gate already demands of a HOSTED_ARTIFACT_ATTESTED closing
+ * value, for the same reason: no local command can re-derive a hosted
+ * observation, so what is checkable is INTERNAL CONSISTENCY — that the record
+ * names a run, a job and the exact head it describes.
+ */
+export const HOSTED_PROVENANCE_FIELDS = Object.freeze([
+  'source',
+  'runId',
+  'job',
+  'headSha',
+  'artifact',
+  'field',
+]);
+
+/**
+ * Refuses a run record that claims a hosted runner it cannot account for.
+ *
+ * A local record is judged by the rules above and nothing here applies to it.
+ * What this exists for is the record taken from a GitHub run, which is the
+ * stronger evidence — it is the runner the repository actually ships against —
+ * and which for exactly that reason must not be assertable by hand.
+ *
+ * None of these rules relax the completeness rules. A hosted record with a
+ * non-zero exit code is refused by `judgeRunCompleteness` just as a local one
+ * is; the runner being authoritative is what makes its verdict binding, not what
+ * makes it negotiable.
+ */
+export function judgeRunProvenance(tier, record) {
+  const p = record?.provenance;
+  if (p === undefined) return [];
+  if (p === null || typeof p !== 'object' || Array.isArray(p)) {
+    return [
+      problem(
+        'RUN_RECORD_HOSTED_PROVENANCE_INCOMPLETE',
+        `the \`${tier}\` run record carries a provenance that is not an object`
+      ),
+    ];
+  }
+  const problems = [];
+  const missing = HOSTED_PROVENANCE_FIELDS.filter(
+    (field) => typeof p[field] !== 'string' || p[field].trim() === ''
+  );
+  if (p.source !== undefined && p.source !== 'hosted') {
+    // One source is supported. A record naming another was written by something
+    // this gate does not know, and reading it as hosted would be believing a
+    // claim nobody checked.
+    missing.push(`source \`${String(p.source)}\` is not \`hosted\``);
+  }
+  if (typeof p.runId === 'string' && !/^\d+$/.test(p.runId)) missing.push('runId is not a run id');
+  if (typeof p.job === 'string' && !/^\d+$/.test(p.job)) missing.push('job is not a job id');
+  if (typeof p.headSha === 'string' && !/^[0-9a-f]{40}$/.test(p.headSha)) {
+    missing.push('headSha is not a 40-character commit');
+  }
+  if (missing.length > 0) {
+    problems.push(
+      problem(
+        'RUN_RECORD_HOSTED_PROVENANCE_INCOMPLETE',
+        `the \`${tier}\` run record claims a hosted runner but its provenance is incomplete — ` +
+          `${missing.join(', ')}. A hosted fact that names no run is an assertion`
+      )
+    );
+  }
+  if (
+    typeof p.headSha === 'string' &&
+    typeof record.measuredAtCommit === 'string' &&
+    p.headSha !== record.measuredAtCommit
+  ) {
+    // The one way a record could be assembled out of two runs: counts from a
+    // green run of one tree, filed against another.
+    problems.push(
+      problem(
+        'RUN_RECORD_HOSTED_HEAD_MISMATCH',
+        `the \`${tier}\` run record was taken at ${record.measuredAtCommit.slice(0, 8)} but its ` +
+          `run describes ${p.headSha.slice(0, 8)}`
+      )
+    );
+  }
+  if (Array.isArray(record.dirtyExecutablePaths) && record.dirtyExecutablePaths.length > 0) {
+    // A hosted runner checks a commit out and runs it. It has no working tree to
+    // be dirty, so a hosted record naming dirty paths was assembled somewhere
+    // else and describes a tree the run never saw.
+    problems.push(
+      problem(
+        'RUN_RECORD_HOSTED_CLAIMS_LOCAL_MEASUREMENT',
+        `the \`${tier}\` run record is hosted yet names ${record.dirtyExecutablePaths.length} ` +
+          'dirty executable path(s); a hosted checkout has none'
+      )
+    );
+  }
+  return problems;
+}
+
 export function judgeRunLedger(facts) {
   const problems = [];
   const runs = facts.runs;
@@ -886,6 +1109,11 @@ export function judgeRunLedger(facts) {
     return [problem('RUN_RECORD_STALE', `${RUN_LEDGER_PATH} is absent — run \`--record\``)];
   }
   for (const [tier, record] of Object.entries(runs.tiers ?? {})) {
+    // Completeness FIRST, and outside the staleness short-circuits below: a
+    // record that names no resolvable commit `continue`s, and a run that ran
+    // nothing would then never be judged at all.
+    problems.push(...judgeRunCompleteness(tier, record));
+    problems.push(...judgeRunProvenance(tier, record));
     const at = record.measuredAtCommit;
     if (typeof at !== 'string' || !/^[0-9a-f]{40}$/.test(at)) {
       problems.push(
@@ -970,7 +1198,20 @@ function baselineFacts() {
     baseline: { tiers: { web: { minTests: 1793 } } },
     runs: {
       tiers: {
-        web: { tests: 1867, files: 70, failed: 0, measuredAtCommit: 'a'.repeat(40) },
+        // The four completeness fields are part of the CLEAN baseline, so cases
+        // R1-R4 below mutate a record that starts valid. Without them the baseline
+        // itself is INCOMPLETE and every case would pass for that reason instead
+        // of for its own.
+        web: {
+          tests: 1867,
+          files: 70,
+          failed: 0,
+          exitCode: 0,
+          reporterSuccess: true,
+          failedSuites: [],
+          filesWithoutCases: [],
+          measuredAtCommit: 'a'.repeat(40),
+        },
       },
     },
     tierFiles: { web: 70 },
@@ -1135,6 +1376,80 @@ export const SELF_CHECK_CASES = Object.freeze([
     expect: 'RUN_RECORD_FILE_COUNT_DISAGREES',
     mutate: (f) => {
       f.runs.tiers.web.files = 65;
+    },
+  },
+  // The zero-case false-green class. Each mutation is the SMALLEST change that
+  // produces its failure, so a case cannot pass by accidentally tripping another
+  // rule — which is the whole reason this self-check table exists.
+  {
+    id: 'R1',
+    what: 'a run record that counted a file which contributed no case',
+    expect: 'RUN_RECORD_FILE_RAN_NO_CASES',
+    mutate: (f) => {
+      f.runs.tiers.web.filesWithoutCases = ['apps/web/tests/reception-checkin.dom.test.tsx'];
+    },
+  },
+  {
+    id: 'R2',
+    what: 'a run record taken before the run was asked whether every file ran',
+    expect: 'RUN_RECORD_INCOMPLETE',
+    mutate: (f) => {
+      delete f.runs.tiers.web.filesWithoutCases;
+    },
+  },
+  {
+    id: 'R3',
+    what: 'a suite that failed without failing a case',
+    expect: 'RUN_RECORD_SUITE_FAILED',
+    mutate: (f) => {
+      f.runs.tiers.web.failedSuites = ['apps/web/tests/p1-28-qa.test.tsx'];
+    },
+  },
+  {
+    id: 'R4',
+    what: 'a runner that exited non-zero while every case it ran passed',
+    expect: 'RUN_RECORD_RUN_NOT_SUCCESSFUL',
+    mutate: (f) => {
+      f.runs.tiers.web.exitCode = 1;
+    },
+  },
+  {
+    id: 'R5',
+    what: 'a record claiming a hosted runner without naming the run',
+    expect: 'RUN_RECORD_HOSTED_PROVENANCE_INCOMPLETE',
+    mutate: (f) => {
+      f.runs.tiers.web.provenance = { source: 'hosted' };
+    },
+  },
+  {
+    id: 'R6',
+    what: 'a hosted record whose run describes a different head',
+    expect: 'RUN_RECORD_HOSTED_HEAD_MISMATCH',
+    mutate: (f) => {
+      f.runs.tiers.web.provenance = {
+        source: 'hosted',
+        runId: '1',
+        job: '2',
+        headSha: 'f'.repeat(40),
+        artifact: 'evidence-web-quality',
+        field: 'apps/web/vitest-web.json',
+      };
+    },
+  },
+  {
+    id: 'R7',
+    what: 'a hosted record carrying a dirty working tree no hosted checkout has',
+    expect: 'RUN_RECORD_HOSTED_CLAIMS_LOCAL_MEASUREMENT',
+    mutate: (f) => {
+      f.runs.tiers.web.provenance = {
+        source: 'hosted',
+        runId: '1',
+        job: '2',
+        headSha: f.runs.tiers.web.measuredAtCommit,
+        artifact: 'evidence-web-quality',
+        field: 'apps/web/vitest-web.json',
+      };
+      f.runs.tiers.web.dirtyExecutablePaths = ['apps/web/src/app/page.tsx'];
     },
   },
   {
@@ -1360,14 +1675,19 @@ function record(tier, root = ROOT) {
     .split('\n')
     .map((line) => line.slice(3).trim())
     .filter(Boolean);
+  let exitCode = 0;
   try {
     execFileSync(command[0], args, {
       cwd: root,
       stdio: 'inherit',
       shell: process.platform === 'win32',
     });
-  } catch {
-    /* A red tier still gets recorded; `judgeRunLedger` refuses a record with failures. */
+  } catch (error) {
+    // The runner's own verdict, KEPT rather than discarded. A tier can exit
+    // non-zero while every case it managed to run passed — a file that failed to
+    // COLLECT is the ordinary way — and `numFailedTests` is 0 in exactly that
+    // case. Throwing the exit code away is what made the two indistinguishable.
+    exitCode = typeof error?.status === 'number' ? error.status : 1;
   }
   if (!existsSync(out)) {
     process.stderr.write(`::error::the ${tier} run produced no JSON report at ${out}\n`);
@@ -1388,6 +1708,7 @@ function record(tier, root = ROOT) {
     failed: report.numFailedTests,
     skipped: (report.numPendingTests ?? 0) + (report.numTodoTests ?? 0),
     files: (report.testResults ?? []).length,
+    ...runCompleteness(report, exitCode),
     measuredAtCommit: head,
     dirtyExecutablePaths: dirty.filter((p) => !p.startsWith('docs/') && !p.endsWith('.md')),
     measuredAt: new Date().toISOString(),
@@ -1396,6 +1717,133 @@ function record(tier, root = ROOT) {
   process.stdout.write(
     `recorded ${tier}: ${report.numTotalTests} tests, ${report.numFailedTests} failed, ` +
       `${(report.testResults ?? []).length} files at ${head.slice(0, 8)}\n`
+  );
+  return 0;
+}
+
+/**
+ * The record a hosted observation becomes, separated from the fetching so the
+ * WRITER and the JUDGE can be put in a room together without a network.
+ *
+ * They were not, at first, and the omission that followed is the argument for
+ * this function existing: the provenance was written without `headSha`, every
+ * field-by-field refusal case still passed — they drop fields from a fixture, not
+ * from this — and the gate refused its author's own first hosted record.
+ * `judgeRunProvenance` is a contract, and a contract with no round trip is a
+ * contract only one side has read.
+ */
+export function hostedRunRecord(tier, hosted) {
+  const report = hosted.report;
+  return {
+    command: `${(TIER_COMMANDS[tier] ?? []).join(' ')} --reporter=json`,
+    tests: report.numTotalTests,
+    passed: report.numPassedTests,
+    failed: report.numFailedTests,
+    skipped: (report.numPendingTests ?? 0) + (report.numTodoTests ?? 0),
+    files: (report.testResults ?? []).length,
+    ...runCompleteness(report, hosted.exitCode),
+    measuredAtCommit: hosted.headSha,
+    // A hosted checkout has no working tree to be dirty. Stated as an empty list
+    // rather than omitted, because the gate reads an absent field as unknown.
+    dirtyExecutablePaths: [],
+    measuredAt: hosted.completedAt,
+    provenance: {
+      source: 'hosted',
+      runId: hosted.runId,
+      runUrl: hosted.runUrl,
+      workflow: hosted.workflow,
+      job: hosted.job,
+      jobName: hosted.jobName,
+      step: hosted.step,
+      // The head the RUN describes, kept beside `measuredAtCommit` rather than
+      // folded into it: two fields that must agree are what catches a record
+      // assembled out of two runs, and one field cannot disagree with itself.
+      headSha: hosted.headSha,
+      artifact: hosted.artifact,
+      artifactDigest: hosted.artifactDigest,
+      field: hosted.field,
+    },
+  };
+}
+
+/**
+ * Records a tier from the GitHub run that produced it, rather than from a run of
+ * it here.
+ *
+ * WHY A SECOND WRITER EXISTS. The ledger records the RUNNER'S OWN VERDICT, and
+ * that verdict is a property of the machine as much as of the tree. This
+ * repository's unit tier exits 0 on the hosted runner and 1 on a slower one,
+ * where three test files each hold a worker's event loop past birpc's
+ * sixty-second deadline and vitest raises unhandled `onTaskUpdate` timeouts with
+ * all 3051 cases passing. `judgeRunCompleteness` refuses that record, correctly.
+ * So the record has to be taken from the runner whose verdict this repository
+ * ships against — which is also the stronger evidence, and which the test-count
+ * baseline already says supersedes a local figure.
+ *
+ * NOTHING HERE IS TYPED. Given a run id, the head, the job, the exit code and
+ * the counts are all read from the API or from the artifact the run uploaded,
+ * whose bytes are checked against the digest GitHub publishes for them. A caller
+ * can pass the wrong run; it cannot pass the wrong numbers.
+ *
+ * The run must describe THIS head, and the record is filed against the commit it
+ * was taken at, so the staleness rules expire it exactly as they expire a local
+ * one. A hosted record buys authority, not permanence.
+ */
+export async function recordHosted(tier, runId, root = ROOT) {
+  if (!TIER_COMMANDS[tier]) {
+    process.stderr.write(`::error::unknown tier \`${tier}\` — ${Object.keys(TIER_COMMANDS)}\n`);
+    return 2;
+  }
+  if (!/^\d+$/.test(String(runId ?? ''))) {
+    process.stderr.write('::error::--hosted-run needs a numeric GitHub run id\n');
+    return 2;
+  }
+  const token = process.env.GH_TOKEN ?? process.env.GITHUB_TOKEN;
+  if (!token) {
+    process.stderr.write(
+      '::error::no GH_TOKEN/GITHUB_TOKEN. Reading a hosted run needs an authenticated read, and ' +
+        'refusing is the only honest answer without one\n'
+    );
+    return 2;
+  }
+  const remote = git(['remote', 'get-url', 'origin'], root).trim();
+  const repo =
+    process.env.GITHUB_REPOSITORY ?? remote.match(/github\.com[/:]([^/]+\/[^/.]+)/)?.[1] ?? '';
+  if (!repo) {
+    process.stderr.write('::error::cannot tell which repository this is from `origin`\n');
+    return 2;
+  }
+
+  let hosted;
+  try {
+    const { fetchHostedTierRun } = await import('../lib/hosted-run-report.mjs');
+    hosted = await fetchHostedTierRun({ repo, runId: String(runId), tier, token });
+  } catch (error) {
+    process.stderr.write(`::error::${error.message}\n`);
+    return 2;
+  }
+
+  const head = git(['rev-parse', 'HEAD'], root).trim();
+  if (hosted.headSha !== head) {
+    // Filing a run of one tree against another is the single way this writer
+    // could manufacture a green record, so it is refused here rather than left
+    // for the gate to catch afterwards.
+    process.stderr.write(
+      `::error::run ${runId} describes ${hosted.headSha.slice(0, 8)} but HEAD is ` +
+        `${head.slice(0, 8)}; a record may only be filed against the head its run ran\n`
+    );
+    return 2;
+  }
+
+  const ledger = readJson(root, RUN_LEDGER_PATH) ?? { tiers: {} };
+  ledger.tiers[tier] = hostedRunRecord(tier, hosted);
+  const report = hosted.report;
+  writeFileSync(native(root, RUN_LEDGER_PATH), `${JSON.stringify(ledger, null, 2)}\n`);
+  process.stdout.write(
+    `recorded ${tier} from hosted run ${hosted.runId} job ${hosted.job}: ` +
+      `${report.numTotalTests} tests, ${report.numFailedTests} failed, ` +
+      `${(report.testResults ?? []).length} files, exit ${hosted.exitCode} at ` +
+      `${hosted.headSha.slice(0, 8)}\n`
   );
   return 0;
 }
@@ -1415,7 +1863,12 @@ export function evaluate(root = ROOT) {
 }
 
 function main(argv) {
-  if (argv.includes('--record')) return record(argv[argv.indexOf('--record') + 1], ROOT);
+  if (argv.includes('--record')) {
+    const tier = argv[argv.indexOf('--record') + 1];
+    return argv.includes('--hosted-run')
+      ? recordHosted(tier, argv[argv.indexOf('--hosted-run') + 1], ROOT)
+      : record(tier, ROOT);
+  }
   let result;
   try {
     result = evaluate(ROOT);
@@ -1444,5 +1897,16 @@ function main(argv) {
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
-  process.exit(main(process.argv.slice(2)));
+  // `--record --hosted-run` reads the GitHub API, so main may answer with a
+  // promise. Every other path stays synchronous and exits exactly as before.
+  const answer = main(process.argv.slice(2));
+  if (typeof answer === 'number') process.exit(answer);
+  else
+    answer.then(
+      (code) => process.exit(code),
+      (error) => {
+        process.stderr.write(`::error::${error.message}\n`);
+        process.exit(2);
+      }
+    );
 }

@@ -16,12 +16,13 @@
  *
  * Every case here would have been RED against the tree the verdict described.
  */
-import { describe, it, expect } from 'vitest';
+import { afterAll, describe, it, expect } from 'vitest';
 import {
   readFileSync,
   readdirSync,
   existsSync,
   lstatSync,
+  cpSync,
   mkdtempSync,
   mkdirSync,
   writeFileSync,
@@ -1061,7 +1062,12 @@ describe('P1-28-QA-005 — the seal is bound to the REPOSITORY, not to its own p
     // And the committed package is sound — while the phase is ACTIVE because it
     // names every executable successor, and once ARCHIVED because the question
     // is no longer asked of a phase that has landed.
-    const now = repositoryBinding(candidateFile, git) as unknown as {
+    // The SAME binding the describe already computed, reused rather than rebuilt.
+    // repositoryBinding walks the real repository — `git log <head> --not
+    // <candidate> <base>` and a diff per commit — and computing it twice from
+    // identical inputs made this the single most expensive case in the file at
+    // 34s, which is most of what blocks the worker's event loop.
+    const now = binding as unknown as {
       unrecordedExecutable: string[];
       lifecycle: { state: string };
     };
@@ -2358,198 +2364,301 @@ type GitRead = ((args: string[]) => string | null) & {
   probe?: (args: string[]) => { status: number | null; stdout: string };
 };
 
+/**
+ * The scratch world's immutable facts: every commit id the build computes.
+ *
+ * Data only — no closures — because these are what a COPY of the world can
+ * carry unchanged. The build pins GIT_AUTHOR_DATE, GIT_COMMITTER_DATE, both
+ * identities and every file's content, so the repository it produces is
+ * byte-deterministic and every one of these ids is identical on every build.
+ * That determinism is what makes copying the world sound rather than merely
+ * fast: a copy is the same repository, not an equivalent one.
+ */
+interface ScratchFacts {
+  readonly previous: string;
+  readonly origin: string;
+  readonly candidate: string;
+  readonly candidateTree: string;
+  readonly successor: string;
+  readonly branchHead: string;
+  readonly baseTip: string;
+  readonly mergeRef: string;
+  readonly evilMerge: string;
+  readonly landed: string;
+  readonly remediation: string;
+  readonly reMerge: string;
+  readonly reverseMerge: string;
+  readonly reverseLanded: string;
+  readonly protectedAdvance: string;
+  readonly foreignMerge: string;
+  readonly productChanged: string;
+}
+
+/** A git runner bound to one scratch root, with the identity the build pins. */
+function scratchRunner(root: string): (...args: string[]) => string {
+  return (...args: string[]): string =>
+    execFileSync('git', args, {
+      cwd: root,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: {
+        ...process.env,
+        GIT_AUTHOR_NAME: 'probe',
+        GIT_AUTHOR_EMAIL: 'probe@local',
+        GIT_COMMITTER_NAME: 'probe',
+        GIT_COMMITTER_EMAIL: 'probe@local',
+        GIT_AUTHOR_DATE: '2000-01-01T00:00:00+0000',
+        GIT_COMMITTER_DATE: '2000-01-01T00:00:00+0000',
+      },
+    }).trim();
+}
+
+/**
+ * Builds the hostile world once, in the given root.
+ *
+ * The body below is the original construction, unchanged. What changed is how
+ * often it runs: it makes roughly forty SYNCHRONOUS git spawns, and it used to
+ * run once per case across sixty call sites — about 2,400 processes, measured at
+ * 492 seconds of test time in this one file.
+ *
+ * That cost is not merely slow. It blocks the worker's event loop far past
+ * birpc's 60-second deadline, so `onTaskUpdate` times out; and when the update
+ * a worker loses is a file's LAST one, that file reaches the report with
+ * `status: "passed"` and no cases. It is the mechanism behind the zero-case
+ * false green the run-ledger guard now refuses — so leaving it here would mean
+ * shipping the guard over the very defect that motivated it.
+ */
+function buildScratchWorld(root: string): ScratchFacts {
+  const run = (...args: string[]): string =>
+    execFileSync('git', args, {
+      cwd: root,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: {
+        ...process.env,
+        GIT_AUTHOR_NAME: 'probe',
+        GIT_AUTHOR_EMAIL: 'probe@local',
+        GIT_COMMITTER_NAME: 'probe',
+        GIT_COMMITTER_EMAIL: 'probe@local',
+        GIT_AUTHOR_DATE: '2000-01-01T00:00:00+0000',
+        GIT_COMMITTER_DATE: '2000-01-01T00:00:00+0000',
+      },
+    }).trim();
+
+  const put = (relative: string, content: string): void => {
+    const target = join(root, relative);
+    mkdirSync(dirname(target), { recursive: true });
+    writeFileSync(target, content, 'utf8');
+  };
+  const commit = (message: string): string => {
+    run('add', '-A');
+    run('commit', '--quiet', '-m', message);
+    return run('rev-parse', 'HEAD');
+  };
+
+  run('init', '--quiet', '--initial-branch=develop');
+  run('config', 'user.name', 'probe');
+  run('config', 'user.email', 'probe@local');
+  run('config', 'commit.gpgsign', 'false');
+
+  put('README.md', '# scratch\n');
+  const origin = commit('root');
+
+  run('checkout', '--quiet', '-b', 'feature/phase');
+  put('apps/web/screen.ts', 'export const version = 1;\n');
+  const previous = commit('feat: the product, before the freeze');
+  put('apps/web/screen.ts', 'export const version = 2;\n');
+  put('scripts/ci/tool.mjs', 'export const tool = 1;\n');
+  const candidate = commit('chore: the frozen candidate');
+  put('scripts/ci/seal.mjs', 'export const seal = 1;\n');
+  const successor = commit('fix: the seal machinery, executable');
+  put('docs/record.md', '# record\n');
+  const branchHead = commit('docs: the record that names it');
+
+  run('checkout', '--quiet', 'develop');
+  put('scripts/ci/base-tool.mjs', 'export const base = 1;\n');
+  put('apps/web/base-screen.ts', 'export const base = 1;\n');
+  const baseTip = commit('feat: a base-branch commit this branch does not contain');
+  run('update-ref', 'refs/remotes/origin/develop', baseTip);
+
+  /*
+   * The merge ref carries the BASE's tree, which is what makes the world
+   * hostile: read naively, its product differs from the candidate by the
+   * base's own files. Being identical to its first parent, its combined diff
+   * is empty, so it is a clean preview and may be unwrapped.
+   */
+  const baseTree = run('rev-parse', `${baseTip}^{tree}`);
+  const mergeRef = run('commit-tree', baseTree, '-p', baseTip, '-p', branchHead, '-m', 'Merge');
+  const candidateTree = run('rev-parse', `${candidate}^{tree}`);
+
+  /*
+   * A tree neither parent has, so the merge below carries content of its own.
+   * A merge whose every path matches SOME parent is a clean merge however odd
+   * its tree looks — `--cc` reports only paths that differ from ALL parents —
+   * so the conflicted content has to be a third value, not a borrowed one.
+   */
+  run('checkout', '--quiet', '--detach', branchHead);
+  put('apps/web/screen.ts', 'export const version = 3;\n');
+  const conflicted = commit('a resolution neither side wrote');
+  const conflictedTree = run('rev-parse', `${conflicted}^{tree}`);
+  const branchTree = run('rev-parse', branchHead + '^{tree}');
+  const landed = run(
+    'commit-tree',
+    branchTree,
+    '-p',
+    baseTip,
+    '-p',
+    branchHead,
+    '-m',
+    'Merge the branch into develop'
+  );
+  run('checkout', '--quiet', '--detach', landed);
+  put('scripts/ci/remediation.mjs', 'export const fix = 1;\n');
+  const remediation = commit('fix: a remediation cut from the merged base');
+  const reMerge = run(
+    'commit-tree',
+    run('rev-parse', remediation + '^{tree}'),
+    '-p',
+    landed,
+    '-p',
+    remediation,
+    '-m',
+    'Merge the remediation into develop'
+  );
+  const reverseMerge = run(
+    'commit-tree',
+    run('rev-parse', remediation + '^{tree}'),
+    '-p',
+    remediation,
+    '-p',
+    landed,
+    '-m',
+    'Merge develop into the remediation branch'
+  );
+  const reverseLanded = run(
+    'commit-tree',
+    run('rev-parse', reverseMerge + '^{tree}'),
+    '-p',
+    landed,
+    '-p',
+    reverseMerge,
+    '-m',
+    'Merge the reverse-order branch back into develop'
+  );
+  const protectedAdvance = run(
+    'commit-tree',
+    run('rev-parse', reMerge + '^{tree}'),
+    '-p',
+    reMerge,
+    '-m',
+    'A later commit on the protected first-parent line'
+  );
+  run('checkout', '--quiet', '--detach', origin);
+  put('scripts/ci/foreign.mjs', 'export const foreign = 1;\n');
+  const foreignSibling = commit('fix: a sibling forked from the stale base');
+  const foreignMerge = run(
+    'commit-tree',
+    run('rev-parse', foreignSibling + '^{tree}'),
+    '-p',
+    foreignSibling,
+    '-p',
+    branchHead,
+    '-m',
+    'Merge the candidate branch into a foreign sibling'
+  );
+  run('checkout', '--quiet', '--detach', branchHead);
+  put('apps/web/screen.ts', 'export const version = 4;\n');
+  const productChanged = commit('fix: a real product mutation after the candidate');
+  run('checkout', '--quiet', '--detach', branchHead);
+
+  const evilMerge = run(
+    'commit-tree',
+    conflictedTree,
+    '-p',
+    branchHead,
+    '-p',
+    baseTip,
+    '-m',
+    'Merge carrying a tree neither parent has'
+  );
+
+  run('checkout', '--quiet', '--detach', branchHead);
+
+  return {
+    previous,
+    origin,
+    candidate,
+    candidateTree,
+    successor,
+    branchHead,
+    baseTip,
+    mergeRef,
+    evilMerge,
+    landed,
+    remediation,
+    reMerge,
+    reverseMerge,
+    reverseLanded,
+    protectedAdvance,
+    foreignMerge,
+    productChanged,
+  };
+}
+
+/**
+ * The template, built at most once per process and reused by every case.
+ *
+ * Kept for the lifetime of the run and removed by the `afterAll` below. It is
+ * never handed to a case: each case gets its own COPY, so a case that commits,
+ * checks out or deletes a ref cannot be seen by any other. Negative-proof
+ * isolation is preserved exactly; only the construction is shared.
+ */
+let scratchTemplate: { root: string; facts: ScratchFacts } | null = null;
+
+function scratchWorldTemplate(): { root: string; facts: ScratchFacts } {
+  if (scratchTemplate === null) {
+    const root = mkdtempSync(join(tmpdir(), 'rootlco-seal-template-'));
+    scratchTemplate = { root, facts: buildScratchWorld(root) };
+  }
+  return scratchTemplate;
+}
+
+afterAll(() => {
+  if (scratchTemplate !== null) {
+    rmSync(scratchTemplate.root, { recursive: true, force: true });
+    scratchTemplate = null;
+  }
+});
+
 function withScratchRepository<T>(inspect: (repo: Scratch) => T): T {
+  const template = scratchWorldTemplate();
   const root = mkdtempSync(join(tmpdir(), 'rootlco-seal-world-'));
   try {
-    const run = (...args: string[]): string =>
-      execFileSync('git', args, {
-        cwd: root,
-        encoding: 'utf8',
-        stdio: ['ignore', 'pipe', 'pipe'],
-        env: {
-          ...process.env,
-          GIT_AUTHOR_NAME: 'probe',
-          GIT_AUTHOR_EMAIL: 'probe@local',
-          GIT_COMMITTER_NAME: 'probe',
-          GIT_COMMITTER_EMAIL: 'probe@local',
-          GIT_AUTHOR_DATE: '2000-01-01T00:00:00+0000',
-          GIT_COMMITTER_DATE: '2000-01-01T00:00:00+0000',
-        },
-      }).trim();
-
-    const put = (relative: string, content: string): void => {
-      const target = join(root, relative);
-      mkdirSync(dirname(target), { recursive: true });
-      writeFileSync(target, content, 'utf8');
-    };
-    const commit = (message: string): string => {
-      run('add', '-A');
-      run('commit', '--quiet', '-m', message);
-      return run('rev-parse', 'HEAD');
-    };
-
-    run('init', '--quiet', '--initial-branch=develop');
-    run('config', 'user.name', 'probe');
-    run('config', 'user.email', 'probe@local');
-    run('config', 'commit.gpgsign', 'false');
-
-    put('README.md', '# scratch\n');
-    const origin = commit('root');
-
-    run('checkout', '--quiet', '-b', 'feature/phase');
-    put('apps/web/screen.ts', 'export const version = 1;\n');
-    const previous = commit('feat: the product, before the freeze');
-    put('apps/web/screen.ts', 'export const version = 2;\n');
-    put('scripts/ci/tool.mjs', 'export const tool = 1;\n');
-    const candidate = commit('chore: the frozen candidate');
-    put('scripts/ci/seal.mjs', 'export const seal = 1;\n');
-    const successor = commit('fix: the seal machinery, executable');
-    put('docs/record.md', '# record\n');
-    const branchHead = commit('docs: the record that names it');
-
-    run('checkout', '--quiet', 'develop');
-    put('scripts/ci/base-tool.mjs', 'export const base = 1;\n');
-    put('apps/web/base-screen.ts', 'export const base = 1;\n');
-    const baseTip = commit('feat: a base-branch commit this branch does not contain');
-    run('update-ref', 'refs/remotes/origin/develop', baseTip);
-
-    /*
-     * The merge ref carries the BASE's tree, which is what makes the world
-     * hostile: read naively, its product differs from the candidate by the
-     * base's own files. Being identical to its first parent, its combined diff
-     * is empty, so it is a clean preview and may be unwrapped.
-     */
-    const baseTree = run('rev-parse', `${baseTip}^{tree}`);
-    const mergeRef = run('commit-tree', baseTree, '-p', baseTip, '-p', branchHead, '-m', 'Merge');
-    const candidateTree = run('rev-parse', `${candidate}^{tree}`);
-
-    /*
-     * A tree neither parent has, so the merge below carries content of its own.
-     * A merge whose every path matches SOME parent is a clean merge however odd
-     * its tree looks — `--cc` reports only paths that differ from ALL parents —
-     * so the conflicted content has to be a third value, not a borrowed one.
-     */
-    run('checkout', '--quiet', '--detach', branchHead);
-    put('apps/web/screen.ts', 'export const version = 3;\n');
-    const conflicted = commit('a resolution neither side wrote');
-    const conflictedTree = run('rev-parse', `${conflicted}^{tree}`);
-    const branchTree = run('rev-parse', branchHead + '^{tree}');
-    const landed = run(
-      'commit-tree',
-      branchTree,
-      '-p',
-      baseTip,
-      '-p',
-      branchHead,
-      '-m',
-      'Merge the branch into develop'
-    );
-    run('checkout', '--quiet', '--detach', landed);
-    put('scripts/ci/remediation.mjs', 'export const fix = 1;\n');
-    const remediation = commit('fix: a remediation cut from the merged base');
-    const reMerge = run(
-      'commit-tree',
-      run('rev-parse', remediation + '^{tree}'),
-      '-p',
-      landed,
-      '-p',
-      remediation,
-      '-m',
-      'Merge the remediation into develop'
-    );
-    const reverseMerge = run(
-      'commit-tree',
-      run('rev-parse', remediation + '^{tree}'),
-      '-p',
-      remediation,
-      '-p',
-      landed,
-      '-m',
-      'Merge develop into the remediation branch'
-    );
-    const reverseLanded = run(
-      'commit-tree',
-      run('rev-parse', reverseMerge + '^{tree}'),
-      '-p',
-      landed,
-      '-p',
-      reverseMerge,
-      '-m',
-      'Merge the reverse-order branch back into develop'
-    );
-    const protectedAdvance = run(
-      'commit-tree',
-      run('rev-parse', reMerge + '^{tree}'),
-      '-p',
-      reMerge,
-      '-m',
-      'A later commit on the protected first-parent line'
-    );
-    run('checkout', '--quiet', '--detach', origin);
-    put('scripts/ci/foreign.mjs', 'export const foreign = 1;\n');
-    const foreignSibling = commit('fix: a sibling forked from the stale base');
-    const foreignMerge = run(
-      'commit-tree',
-      run('rev-parse', foreignSibling + '^{tree}'),
-      '-p',
-      foreignSibling,
-      '-p',
-      branchHead,
-      '-m',
-      'Merge the candidate branch into a foreign sibling'
-    );
-    run('checkout', '--quiet', '--detach', branchHead);
-    put('apps/web/screen.ts', 'export const version = 4;\n');
-    const productChanged = commit('fix: a real product mutation after the candidate');
-    run('checkout', '--quiet', '--detach', branchHead);
-
-    const evilMerge = run(
-      'commit-tree',
-      conflictedTree,
-      '-p',
-      branchHead,
-      '-p',
-      baseTip,
-      '-m',
-      'Merge carrying a tree neither parent has'
-    );
-
-    run('checkout', '--quiet', '--detach', branchHead);
-
+    // One filesystem copy in place of ~40 process spawns. The copy includes
+    // .git in full, so every object, ref and reflog the build produced is
+    // present and every id in `facts` still resolves.
+    cpSync(template.root, root, { recursive: true });
+    const run = scratchRunner(root);
     return inspect({
+      ...template.facts,
       root,
       git: gitReader(root) as GitRead,
       run,
-      previous,
-      origin,
-      candidate,
-      candidateTree,
-      successor,
-      branchHead,
-      baseTip,
-      mergeRef,
-      evilMerge,
-      landed,
-      remediation,
-      reMerge,
-      reverseMerge,
-      reverseLanded,
-      protectedAdvance,
-      foreignMerge,
-      productChanged,
       checkout: (sha) => void run('checkout', '--quiet', '--detach', sha),
       setBaseRef: (sha) => void run('update-ref', 'refs/remotes/origin/develop', sha),
       dropBaseRefs: () => {
         run('update-ref', '-d', 'refs/remotes/origin/develop');
         run('branch', '--quiet', '-D', 'develop');
       },
+      // Reads the ids from the shared facts rather than from build-time locals,
+      // which is the only change the hoist forces on this closure.
       document: (over = {}) => ({
         candidate: {
-          FINAL_CODE_SHA: candidate,
-          FINAL_CODE_TREE: candidateTree,
+          FINAL_CODE_SHA: template.facts.candidate,
+          FINAL_CODE_TREE: template.facts.candidateTree,
           baseBranch: 'develop',
         },
-        successors: [{ commit: successor, kind: 'evidence machinery' }],
+        successors: [{ commit: template.facts.successor, kind: 'evidence machinery' }],
         ...over,
       }),
     });
