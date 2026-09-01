@@ -7,17 +7,20 @@
     "unit": {
       "command": "npx vitest run --reporter=json",
       "tests": 3051,
-      "passed": 3051,
-      "failed": 0,
+      "passed": 3050,
+      "failed": 1,
       "skipped": 0,
       "files": 112,
       "exitCode": 1,
-      "reporterSuccess": true,
+      "reporterSuccess": false,
       "failedSuites": [],
       "filesWithoutCases": [],
-      "measuredAtCommit": "19d39f1a7cc69eddc298de3d66755f43d5e9cb51",
-      "dirtyExecutablePaths": [],
-      "measuredAt": "2026-09-01T10:10:03.800Z"
+      "measuredAtCommit": "0533ae52c0a27216024ead71050c926976ab035d",
+      "dirtyExecutablePaths": [
+        "tests/ci/p1-28-access-gate.test.ts",
+        "tests/ci/p1-28-evidence-manifest.test.ts"
+      ],
+      "measuredAt": "2026-09-01T12:26:49.803Z"
     },
     "web": {
       "command": "npm run test --workspace @rootlco/web -- --reporter=json",
