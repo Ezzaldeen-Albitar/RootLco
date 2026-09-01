@@ -85,3 +85,51 @@ floor with ordinary headroom will not see.
 - `skipped` cases are counted as cases. A file whose every case is `it.skip` contributes assertion
   results and is not flagged. That is deliberate: skipping is a visible, reviewable act, and the
   existing skipped-count reporting is where it belongs.
+
+## 7. Recording a tier from the runner whose verdict the repository ships against
+
+`exitCode` records the RUNNER'S OWN VERDICT, and that verdict is a property of the machine
+as much as of the tree. This repository's unit tier exits **0** on the hosted runner and
+**1** on a slower one — all 3051 cases passing, `success: true`, no failed suite, no file
+without cases, and three unhandled `[vitest-worker]: Timeout calling "onTaskUpdate"` errors
+that **the JSON report has no field for**. Three test files each hold a worker's event loop
+past birpc's sixty-second deadline; the hosted runner completes the same tier in 72 seconds
+and raises none.
+
+`judgeRunCompleteness` refuses that local record, and it is right to. So the record may be
+taken from the run that produced it:
+
+```
+node scripts/ci/check-p1-27-closing-values.mjs --record <tier> --hosted-run <runId>
+```
+
+This is the same class of evidence the gate already defines as `HOSTED_ARTIFACT_ATTESTED`:
+no local command can re-derive a hosted observation, and the gate does not pretend
+otherwise. What it checks is INTERNAL CONSISTENCY.
+
+**Nothing is typed.** Given a run id, `scripts/lib/hosted-run-report.mjs` reads:
+
+- the head, from the run — and the recorder refuses unless it is `HEAD`, because filing a
+  run of one tree against another is the only way this writer could manufacture a green
+  record;
+- the job, found by the **step** that runs the tier and **that actually reached a verdict**.
+  One reusable workflow defines every step and each task instantiates all of them, so three
+  jobs carry a `Unit tier with coverage` step and two skip it. A run that ran the tier twice
+  is refused as ambiguous rather than resolved by taking the first;
+- the **exit code, from that step's own conclusion** — the one fact the report cannot carry;
+- the counts, from the uploaded artifact, whose bytes are checked against the digest the
+  API publishes for them.
+
+`judgeRunProvenance` then refuses a record that claims a hosted runner and cannot account
+for it: incomplete provenance (`RUN_RECORD_HOSTED_PROVENANCE_INCOMPLETE`), a run describing
+a different head than the record (`RUN_RECORD_HOSTED_HEAD_MISMATCH`), or a hosted record
+carrying dirty working-tree paths no hosted checkout has
+(`RUN_RECORD_HOSTED_CLAIMS_LOCAL_MEASUREMENT`).
+
+**Authority is not an exemption.** The completeness rules run on a hosted record unchanged:
+a hosted run that exited non-zero, failed a suite or produced a file with no cases is
+refused exactly as a local one is. `H6` in `tests/ci/p1-27-closing-values.test.ts` is the
+case that pins this, and if it ever returns `[]` the authority has become a loophole.
+
+A hosted record buys authority, not permanence. It is filed against the commit its run ran,
+and the staleness rules expire it the moment an executable path changes.
