@@ -8,12 +8,15 @@ import {
   CLEAN_ROOM,
   CI_EVIDENCE,
   FAILURES,
+  RUN_RECORD_REQUIRED_FIELDS,
   SEALED_DOCUMENTS,
   SELF_CHECK_CASES,
   VALUE_TOKEN,
   evaluate,
   judge,
+  judgeRunCompleteness,
   parseRegions,
+  runCompleteness,
   selfCheck,
   tokensIn,
 } from '../../scripts/ci/check-p1-27-closing-values.mjs';
@@ -375,3 +378,115 @@ function minimal(): unknown {
     },
   };
 }
+
+// ---------------------------------------------------------------------------
+// The zero-case false-green class (PRE-P1-29 run-ledger residual).
+//
+// A test file can be COUNTED in a vitest report and contribute zero assertions:
+// a file that fails to collect, a suite whose top-level throw happens before any
+// `it` registers, a `describe` that returns early. vitest reports
+// `numFailedTests: 0` for all of those. A ledger that records only
+// tests/passed/failed/files therefore sees a SMALLER GREEN RUN and nothing else,
+// and the tier total moves on an unchanged tree with no gate objecting.
+//
+// These cases drive the guard with reports shaped like the real thing rather
+// than asserting that the guard exists.
+// ---------------------------------------------------------------------------
+describe('the run ledger cannot report green over a case that vanished', () => {
+  const file = (
+    name: string,
+    cases: number,
+    status: 'passed' | 'failed' = 'passed'
+  ): Record<string, unknown> => ({
+    name,
+    status,
+    assertionResults: Array.from({ length: cases }, () => ({ status: 'passed' })),
+  });
+
+  it('Z1 accepts a run where every counted file contributed a case', () => {
+    const record = runCompleteness(
+      { success: true, testResults: [file('a.test.ts', 3), file('b.test.ts', 7)] },
+      0
+    );
+    expect(record.filesWithoutCases).toEqual([]);
+    expect(record.failedSuites).toEqual([]);
+    expect(judgeRunCompleteness('unit', record)).toEqual([]);
+  });
+
+  it('Z2 refuses a run where a counted file contributed ZERO cases', () => {
+    // The exact historical shape: the report still says success, the failure
+    // count is still zero, and one file simply ran nothing.
+    const record = runCompleteness(
+      { success: true, testResults: [file('a.test.ts', 3), file('silent.test.ts', 0)] },
+      0
+    );
+    expect(record.filesWithoutCases).toEqual(['silent.test.ts']);
+    const ids = judgeRunCompleteness('unit', record).map((p) => p.id);
+    expect(ids).toContain('RUN_RECORD_FILE_RAN_NO_CASES');
+  });
+
+  it('Z3 refuses a record that cannot SEE a vanished file at all', () => {
+    // A ledger written before this guard existed carries none of the four
+    // fields. That is INCOMPLETE, not clean: an absent field is not evidence of
+    // absence, and reading `undefined` as "nothing wrong" is the same false
+    // green one layer up.
+    const legacy = { tests: 3045, passed: 3045, failed: 0, files: 112 };
+    const ids = judgeRunCompleteness('unit', legacy).map((p) => p.id);
+    expect(ids).toContain('RUN_RECORD_INCOMPLETE');
+    for (const field of RUN_RECORD_REQUIRED_FIELDS) {
+      expect(legacy).not.toHaveProperty(field);
+    }
+  });
+
+  it('Z4 refuses a failure that zero failed CASES would otherwise mask', () => {
+    // Two independent maskings, because they arrive by different routes: a
+    // suite that failed before any case ran, and a runner that exited non-zero
+    // while every case it managed to run passed.
+    const suiteFailed = runCompleteness(
+      { success: true, testResults: [file('a.test.ts', 3), file('broken.test.ts', 0, 'failed')] },
+      0
+    );
+    expect(suiteFailed.failedSuites).toEqual(['broken.test.ts']);
+    expect(judgeRunCompleteness('unit', suiteFailed).map((p) => p.id)).toContain(
+      'RUN_RECORD_SUITE_FAILED'
+    );
+
+    const exitedRed = runCompleteness({ success: true, testResults: [file('a.test.ts', 3)] }, 1);
+    expect(judgeRunCompleteness('unit', exitedRed).map((p) => p.id)).toContain(
+      'RUN_RECORD_RUN_NOT_SUCCESSFUL'
+    );
+  });
+
+  it('Z5 never returns green for a malformed or absent record', () => {
+    // Each of these is a way a record can be unreadable rather than bad, and
+    // the answer to all of them must be a problem — never an empty list, which
+    // the caller reads as "this tier is fine".
+    for (const shape of [undefined, null, {}, { exitCode: 0 }, { filesWithoutCases: [] }]) {
+      expect(judgeRunCompleteness('unit', shape as never).length).toBeGreaterThan(0);
+    }
+
+    // And a reporter that contradicts its own counts.
+    const contradicted = runCompleteness(
+      { success: false, testResults: [file('a.test.ts', 3)] },
+      0
+    );
+    expect(contradicted.reporterSuccess).toBe(false);
+    expect(judgeRunCompleteness('unit', contradicted).map((p) => p.id)).toContain(
+      'RUN_RECORD_RUN_NOT_SUCCESSFUL'
+    );
+  });
+
+  it('every problem id it can raise is declared in the failure vocabulary', () => {
+    // The gate declares its failure names in one table; a rule that raises an
+    // undeclared id would report something no reader can look up.
+    const raised = new Set([
+      ...judgeRunCompleteness('unit', {}).map((p) => p.id),
+      ...judgeRunCompleteness(
+        'unit',
+        runCompleteness({ success: false, testResults: [file('x.test.ts', 0, 'failed')] }, 1)
+      ).map((p) => p.id),
+    ]);
+    expect(raised.size).toBeGreaterThan(0);
+    for (const id of raised) expect(FAILURES).toHaveProperty(id);
+  });
+});

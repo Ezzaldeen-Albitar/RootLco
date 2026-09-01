@@ -478,6 +478,12 @@ export const FAILURES = Object.freeze({
     'a historical region that does not say which head, run or pull request it is history of',
   RUN_RECORD_STALE: 'the local run record predates an executable change',
   RUN_RECORD_FILE_COUNT_DISAGREES: 'the local run record counted a different set of files',
+  RUN_RECORD_INCOMPLETE:
+    'the local run record does not carry the fields that make a vanished case visible',
+  RUN_RECORD_FILE_RAN_NO_CASES: 'the local run reported a test file that contributed no case',
+  RUN_RECORD_SUITE_FAILED: 'the local run failed a suite without failing a case',
+  RUN_RECORD_RUN_NOT_SUCCESSFUL:
+    'the local run did not succeed, whatever its case counts add up to',
   UNKNOWN_CLASS: 'an entry naming a class this gate does not implement',
   BAD_STANDING: 'a class and standing pair the vocabulary does not allow',
   UNSEALED_DOCUMENT: 'a document whose regions do not tile it',
@@ -879,6 +885,121 @@ export function judge(facts) {
  * files and sat there while it grew to 70, and no check compared either number
  * to the tree.
  */
+/**
+ * The fields `--record` must carry for the rules below to mean anything.
+ *
+ * A record written before this guard existed carries none of them, and that is
+ * treated as INCOMPLETE rather than passing — an absent field is not evidence of
+ * absence, and a gate that reads `undefined` as "nothing wrong" is the same
+ * false green in a different place.
+ */
+export const RUN_RECORD_REQUIRED_FIELDS = Object.freeze([
+  'exitCode',
+  'reporterSuccess',
+  'failedSuites',
+  'filesWithoutCases',
+]);
+
+/**
+ * What a vitest JSON report says about EXECUTION rather than about outcomes.
+ *
+ * The defect this exists for: a test file can be COUNTED in `testResults` and
+ * contribute zero assertions — a file that failed to collect, a suite whose
+ * top-level throw happened before any `it` registered, a `describe` that
+ * returned early. vitest reports `numFailedTests: 0` for all of those, so a
+ * ledger recording tests/passed/failed/files sees a smaller green run and
+ * nothing else. The tier total moves on an unchanged tree and no gate objects.
+ *
+ * So four facts are recorded that outcomes alone cannot express:
+ *   exitCode         what the runner itself returned
+ *   reporterSuccess  the reporter's own verdict
+ *   failedSuites     suites that failed without failing a case
+ *   filesWithoutCases files present in the report that ran nothing
+ */
+export function runCompleteness(report, exitCode) {
+  const files = report?.testResults ?? [];
+  const filesWithoutCases = files
+    .filter((file) => (file?.assertionResults ?? []).length === 0)
+    .map((file) => String(file?.name ?? '(unnamed)'))
+    .sort();
+  const failedSuites = files
+    .filter(
+      (file) =>
+        file?.status === 'failed' &&
+        (file?.assertionResults ?? []).every((a) => a?.status !== 'failed')
+    )
+    .map((file) => String(file?.name ?? '(unnamed)'))
+    .sort();
+  return {
+    exitCode,
+    reporterSuccess: report?.success === true,
+    failedSuites,
+    filesWithoutCases,
+  };
+}
+
+/**
+ * Refuses a run record that cannot see a vanished case.
+ *
+ * Separate from the staleness rules above because it asks a different question:
+ * those ask WHEN the run was taken, this asks whether the run actually ran what
+ * it claims to have run.
+ */
+export function judgeRunCompleteness(tier, record) {
+  const problems = [];
+  const missing = RUN_RECORD_REQUIRED_FIELDS.filter((field) => record?.[field] === undefined);
+  if (missing.length > 0) {
+    problems.push(
+      problem(
+        'RUN_RECORD_INCOMPLETE',
+        `the \`${tier}\` run record carries no ${missing.join(', ')} — it was taken ` +
+          'before the run was asked whether every file contributed a case. Re-record it'
+      )
+    );
+    // Deliberately NOT returning here: an incomplete record may still carry one
+    // of the other fields, and a rule that can fire should fire.
+  }
+  const empty = record?.filesWithoutCases;
+  if (Array.isArray(empty) && empty.length > 0) {
+    problems.push(
+      problem(
+        'RUN_RECORD_FILE_RAN_NO_CASES',
+        `the \`${tier}\` run reported ${empty.length} test file(s) that contributed no case — ` +
+          `${empty.slice(0, 4).join(', ')}${empty.length > 4 ? ', …' : ''}. ` +
+          'A counted file that runs nothing is a silent coverage loss, not a smaller green run'
+      )
+    );
+  }
+  const failedSuites = record?.failedSuites;
+  if (Array.isArray(failedSuites) && failedSuites.length > 0) {
+    problems.push(
+      problem(
+        'RUN_RECORD_SUITE_FAILED',
+        `the \`${tier}\` run failed ${failedSuites.length} suite(s) without failing a case — ` +
+          `${failedSuites.slice(0, 4).join(', ')}${failedSuites.length > 4 ? ', …' : ''}`
+      )
+    );
+  }
+  if (record?.exitCode !== undefined && record.exitCode !== 0) {
+    problems.push(
+      problem(
+        'RUN_RECORD_RUN_NOT_SUCCESSFUL',
+        `the \`${tier}\` run exited ${record.exitCode}; a non-zero runner verdict is not made ` +
+          'green by a zero failure count'
+      )
+    );
+  }
+  if (record?.reporterSuccess === false) {
+    problems.push(
+      problem(
+        'RUN_RECORD_RUN_NOT_SUCCESSFUL',
+        `the \`${tier}\` run's reporter recorded success: false`
+      )
+    );
+  }
+  return problems;
+}
+
 export function judgeRunLedger(facts) {
   const problems = [];
   const runs = facts.runs;
@@ -886,6 +1007,10 @@ export function judgeRunLedger(facts) {
     return [problem('RUN_RECORD_STALE', `${RUN_LEDGER_PATH} is absent — run \`--record\``)];
   }
   for (const [tier, record] of Object.entries(runs.tiers ?? {})) {
+    // Completeness FIRST, and outside the staleness short-circuits below: a
+    // record that names no resolvable commit `continue`s, and a run that ran
+    // nothing would then never be judged at all.
+    problems.push(...judgeRunCompleteness(tier, record));
     const at = record.measuredAtCommit;
     if (typeof at !== 'string' || !/^[0-9a-f]{40}$/.test(at)) {
       problems.push(
@@ -970,7 +1095,20 @@ function baselineFacts() {
     baseline: { tiers: { web: { minTests: 1793 } } },
     runs: {
       tiers: {
-        web: { tests: 1867, files: 70, failed: 0, measuredAtCommit: 'a'.repeat(40) },
+        // The four completeness fields are part of the CLEAN baseline, so cases
+        // J-M below mutate a record that starts valid. Without them the baseline
+        // itself is INCOMPLETE and every case would pass for that reason instead
+        // of for its own.
+        web: {
+          tests: 1867,
+          files: 70,
+          failed: 0,
+          exitCode: 0,
+          reporterSuccess: true,
+          failedSuites: [],
+          filesWithoutCases: [],
+          measuredAtCommit: 'a'.repeat(40),
+        },
       },
     },
     tierFiles: { web: 70 },
@@ -1135,6 +1273,41 @@ export const SELF_CHECK_CASES = Object.freeze([
     expect: 'RUN_RECORD_FILE_COUNT_DISAGREES',
     mutate: (f) => {
       f.runs.tiers.web.files = 65;
+    },
+  },
+  // The zero-case false-green class. Each mutation is the SMALLEST change that
+  // produces its failure, so a case cannot pass by accidentally tripping another
+  // rule — which is the whole reason this self-check table exists.
+  {
+    id: 'J',
+    what: 'a run record that counted a file which contributed no case',
+    expect: 'RUN_RECORD_FILE_RAN_NO_CASES',
+    mutate: (f) => {
+      f.runs.tiers.web.filesWithoutCases = ['apps/web/tests/reception-checkin.dom.test.tsx'];
+    },
+  },
+  {
+    id: 'K',
+    what: 'a run record taken before the run was asked whether every file ran',
+    expect: 'RUN_RECORD_INCOMPLETE',
+    mutate: (f) => {
+      delete f.runs.tiers.web.filesWithoutCases;
+    },
+  },
+  {
+    id: 'L',
+    what: 'a suite that failed without failing a case',
+    expect: 'RUN_RECORD_SUITE_FAILED',
+    mutate: (f) => {
+      f.runs.tiers.web.failedSuites = ['apps/web/tests/p1-28-qa.test.tsx'];
+    },
+  },
+  {
+    id: 'M',
+    what: 'a runner that exited non-zero while every case it ran passed',
+    expect: 'RUN_RECORD_RUN_NOT_SUCCESSFUL',
+    mutate: (f) => {
+      f.runs.tiers.web.exitCode = 1;
     },
   },
   {
@@ -1360,14 +1533,19 @@ function record(tier, root = ROOT) {
     .split('\n')
     .map((line) => line.slice(3).trim())
     .filter(Boolean);
+  let exitCode = 0;
   try {
     execFileSync(command[0], args, {
       cwd: root,
       stdio: 'inherit',
       shell: process.platform === 'win32',
     });
-  } catch {
-    /* A red tier still gets recorded; `judgeRunLedger` refuses a record with failures. */
+  } catch (error) {
+    // The runner's own verdict, KEPT rather than discarded. A tier can exit
+    // non-zero while every case it managed to run passed — a file that failed to
+    // COLLECT is the ordinary way — and `numFailedTests` is 0 in exactly that
+    // case. Throwing the exit code away is what made the two indistinguishable.
+    exitCode = typeof error?.status === 'number' ? error.status : 1;
   }
   if (!existsSync(out)) {
     process.stderr.write(`::error::the ${tier} run produced no JSON report at ${out}\n`);
@@ -1388,6 +1566,7 @@ function record(tier, root = ROOT) {
     failed: report.numFailedTests,
     skipped: (report.numPendingTests ?? 0) + (report.numTodoTests ?? 0),
     files: (report.testResults ?? []).length,
+    ...runCompleteness(report, exitCode),
     measuredAtCommit: head,
     dirtyExecutablePaths: dirty.filter((p) => !p.startsWith('docs/') && !p.endsWith('.md')),
     measuredAt: new Date().toISOString(),
