@@ -45,6 +45,18 @@ export const Body = z
   .object({
     title: z.string().trim().min(1).max(MAX_JOB_TITLE),
     jobType: z.string().trim().min(1).max(MAX_JOB_TYPE).nullable().optional(),
+    /**
+     * PRE-P1-29 BR-02 — the job/department routing relationship.
+     *
+     * Three-way, and NOT collapsed the way `jobType` is one line above:
+     * omitting it leaves the routing unchanged, `null` clears it, a uuid sets
+     * it. Those are three different intentions and the caller means them
+     * differently — a supervisor renaming a job has not asked to unroute it.
+     *
+     * The department's company and branch are NEVER named by the caller. They
+     * are resolved from the job, so a forged id cannot reach another branch.
+     */
+    departmentId: schemas.uuid.nullable().optional(),
     requiresDiagnostic: z.boolean().optional(),
   })
   .strict();
@@ -90,6 +102,11 @@ export async function PATCH(
         {
           title: parsed.title,
           jobType: parsed.jobType ?? undefined,
+          // Passed through UNCHANGED, without `?? undefined`: that idiom is
+          // right for jobType, whose contract is a full replacement, and would
+          // destroy the three-way distinction here by turning "clear it" into
+          // "leave it".
+          departmentId: parsed.departmentId,
           requiresDiagnostic: parsed.requiresDiagnostic,
           expectedVersion,
         },

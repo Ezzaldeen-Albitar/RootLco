@@ -199,13 +199,27 @@ export interface JobTransitionBody {
 }
 
 /**
- * Editing a job in place. `jobType` is the one nullable field in this domain:
- * omitting it leaves the current value alone, sending `null` CLEARS it. Nothing
- * else here can be cleared, and the job's state cannot be changed at all.
+ * Editing a job in place. `jobType` and `departmentId` are the two nullable
+ * fields in this domain, and they do NOT behave the same way:
+ *
+ *   `jobType`      a full replacement — omitting it CLEARS the value.
+ *   `departmentId` three-way — omitting it LEAVES the routing alone, `null`
+ *                  clears it, a uuid sets it.
+ *
+ * The difference is deliberate. A supervisor renaming a job has not asked to
+ * unroute it, so departmentId cannot inherit jobType's replacement contract.
+ *
+ * The job's state cannot be changed at all through this body.
  */
 export interface JobUpdateBody {
   readonly title: string;
   readonly jobType?: string | null;
+  /**
+   * The organisational unit working this job (PRE-P1-29 BR-02). The department's
+   * company and branch are NEVER sent: the server resolves them from the job, so
+   * a client cannot route work into another branch by naming one.
+   */
+  readonly departmentId?: string | null;
   readonly requiresDiagnostic?: boolean;
 }
 

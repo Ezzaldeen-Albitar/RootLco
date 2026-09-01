@@ -167,6 +167,13 @@ export interface JobView {
   readonly workOrderId: string;
   readonly title: string;
   readonly jobType: string | null;
+  /**
+   * The organisational unit working this job, or null when it is unrouted.
+   * PRE-P1-29 BR-02 — Owner requirement 3, "multiple departments may work on
+   * one vehicle": one work order with two jobs in two departments is the only
+   * shape this schema offers for it.
+   */
+  readonly departmentId: string | null;
   readonly state: string;
   readonly requiresDiagnostic: boolean;
   readonly recordVersion: number;
@@ -362,6 +369,7 @@ const toJobView = (row: JobRow): JobView => ({
   workOrderId: row.workOrderId,
   title: row.title,
   jobType: row.jobType,
+  departmentId: row.departmentId,
   state: row.state,
   requiresDiagnostic: row.requiresDiagnostic,
   recordVersion: row.recordVersion,
@@ -800,6 +808,13 @@ export class WorkOrderService extends ApplicationService {
     input: {
       readonly title: string;
       readonly jobType?: string | undefined;
+      /**
+       * Three-way, and deliberately unlike `jobType`: undefined leaves the
+       * routing alone, null clears it, a uuid sets it. jobType's contract is a
+       * full replacement, and applying that here would unroute every job whose
+       * caller only meant to rename it.
+       */
+      readonly departmentId?: string | null | undefined;
       readonly requiresDiagnostic?: boolean | undefined;
       readonly expectedVersion: number;
     },
@@ -864,9 +879,32 @@ export class WorkOrderService extends ApplicationService {
       });
     }
 
+    // Routing is validated against the JOB'S OWN scope, never against anything
+    // the request named — the caller sends a department id and nothing else, so
+    // there is no company or branch of theirs to trust. Clearing (null) is
+    // always allowed; only setting has a target to check.
+    //
+    // The check runs BEFORE the write so the caller gets ERR-VAL-001 on the
+    // field. fk_jobs_department would refuse the same row, but as SQLSTATE
+    // 23503 — which route-handler renders as a 5xx and sends to the exception
+    // monitor, making a caller's mistake look like a server fault.
+    if (typeof input.departmentId === 'string') {
+      const routable = await this.repository.routableDepartment(
+        db,
+        { companyId: locked.companyId, branchId: locked.branchId },
+        input.departmentId
+      );
+      if (!routable) {
+        throw new AppFailure('ERR-VAL-001', {
+          message: 'The department is not available for routing in this branch',
+        });
+      }
+    }
+
     const applied = await this.repository.updateJob(db, jobId, {
       title: input.title,
       jobType: input.jobType ?? null,
+      departmentId: input.departmentId,
       requiresDiagnostic: input.requiresDiagnostic ?? locked.requiresDiagnostic,
       expectedVersion: input.expectedVersion,
     });
@@ -879,6 +917,7 @@ export class WorkOrderService extends ApplicationService {
       ...locked,
       title: input.title,
       jobType: input.jobType ?? null,
+      departmentId: input.departmentId === undefined ? locked.departmentId : input.departmentId,
       requiresDiagnostic: input.requiresDiagnostic ?? locked.requiresDiagnostic,
       recordVersion: input.expectedVersion + 1,
     };
@@ -895,6 +934,19 @@ export class WorkOrderService extends ApplicationService {
               classification: 'internal' as const,
               previousValue: locked.title,
               value: updated.title,
+            },
+          ]),
+      ...(updated.departmentId === locked.departmentId
+        ? []
+        : [
+            {
+              // PRE-P1-29 BR-02. Routing is recorded here and nowhere else:
+              // wo.job_status_history tracks STATE, not the unit doing the work,
+              // so without this entry a re-route leaves no trace at all.
+              field: 'department_id',
+              classification: 'internal' as const,
+              previousValue: locked.departmentId,
+              value: updated.departmentId,
             },
           ]),
       ...(updated.jobType === locked.jobType

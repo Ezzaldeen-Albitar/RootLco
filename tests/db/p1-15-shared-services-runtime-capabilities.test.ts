@@ -270,7 +270,7 @@ beforeEach(async () => {
 // ---------------------------------------------------------------------------
 
 describe('P1-15 / global security posture', () => {
-  it('the repository declares exactly 133 migrations, with the newest five named', () => {
+  it('the repository declares exactly 134 migrations, with the newest six named', () => {
     // Counted from the repository, not from `supabase_migrations.schema_migrations`:
     // that bookkeeping table is created by the Supabase CLI and does not exist in
     // CI, where the database is built by `npm run db:apply-migrations` against a
@@ -338,14 +338,15 @@ describe('P1-15 / global security posture', () => {
     // that enforces that, so a rename which broke the tie would replay a grant
     // against a missing object; this is where it fails.
     //
-    // The window was WIDENED from four to five when Wave C landed, rather than
-    // being allowed to slide. Sliding it would have dropped M1 out and quietly
-    // falsified the paragraph above — the assertion would no longer touch the
-    // first of the four while the comment still claimed it pinned their order.
-    expect(files).toHaveLength(133);
-    expect(files.at(-5)).toBe('20260831090000_iam_platform_authority.sql');
-    expect(files.at(-4)).toBe('20260831091000_org_tenant_status_transition_guard.sql');
-    expect(files.at(-3)).toBe('20260831092000_org_tenant_status_history_emission.sql');
+    // The window is WIDENED as each slice lands rather than being allowed to
+    // slide — four, then five with Wave C, now six with BR-02. Sliding it would
+    // drop M1 out and quietly falsify the paragraph above: the assertion would
+    // no longer touch the first of the four while the comment still claimed it
+    // pinned their order.
+    expect(files).toHaveLength(134);
+    expect(files.at(-6)).toBe('20260831090000_iam_platform_authority.sql');
+    expect(files.at(-5)).toBe('20260831091000_org_tenant_status_transition_guard.sql');
+    expect(files.at(-4)).toBe('20260831092000_org_tenant_status_history_emission.sql');
     // The tail GROWS by contributing branch rather than sliding, so that any one
     // migration vanishing in a merge — and taking its grants with it — fails here
     // rather than somewhere confusing.
@@ -357,11 +358,15 @@ describe('P1-15 / global security posture', () => {
     // approval-at-selection-time declaratively, and — deliberately — WITHOUT
     // re-reading mutable status, so a version retired after publication does not
     // retroactively invalidate an event already emitted.
-    expect(files.at(-2)).toBe('20260831093000_iam_platform_privilege_graph.sql');
+    expect(files.at(-3)).toBe('20260831093000_iam_platform_privilege_graph.sql');
     // PRE-P1-29 Wave C: the legal-company status lifecycle. One migration for one
     // coherent subsystem — the history table, its stamp and coherence guards, the
     // emitter that makes a raw UPDATE record itself, and the transition function.
-    expect(files.at(-1)).toBe('20260901090000_org_company_status_lifecycle.sql');
+    expect(files.at(-2)).toBe('20260901090000_org_company_status_lifecycle.sql');
+    // PRE-P1-29 BR-02: the job/department routing relationship. One column, one
+    // composite FK, one index — the smallest migration in the tail, and the only
+    // one that moves schemaHash while leaving every structural total alone.
+    expect(files.at(-1)).toBe('20260901100000_wo_jobs_department_routing.sql');
   });
 
   it('migration 121 changes the shared surface DELIBERATELY, and the change is bounded', () => {
