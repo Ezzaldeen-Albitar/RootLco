@@ -1722,6 +1722,51 @@ function record(tier, root = ROOT) {
 }
 
 /**
+ * The record a hosted observation becomes, separated from the fetching so the
+ * WRITER and the JUDGE can be put in a room together without a network.
+ *
+ * They were not, at first, and the omission that followed is the argument for
+ * this function existing: the provenance was written without `headSha`, every
+ * field-by-field refusal case still passed — they drop fields from a fixture, not
+ * from this — and the gate refused its author's own first hosted record.
+ * `judgeRunProvenance` is a contract, and a contract with no round trip is a
+ * contract only one side has read.
+ */
+export function hostedRunRecord(tier, hosted) {
+  const report = hosted.report;
+  return {
+    command: `${(TIER_COMMANDS[tier] ?? []).join(' ')} --reporter=json`,
+    tests: report.numTotalTests,
+    passed: report.numPassedTests,
+    failed: report.numFailedTests,
+    skipped: (report.numPendingTests ?? 0) + (report.numTodoTests ?? 0),
+    files: (report.testResults ?? []).length,
+    ...runCompleteness(report, hosted.exitCode),
+    measuredAtCommit: hosted.headSha,
+    // A hosted checkout has no working tree to be dirty. Stated as an empty list
+    // rather than omitted, because the gate reads an absent field as unknown.
+    dirtyExecutablePaths: [],
+    measuredAt: hosted.completedAt,
+    provenance: {
+      source: 'hosted',
+      runId: hosted.runId,
+      runUrl: hosted.runUrl,
+      workflow: hosted.workflow,
+      job: hosted.job,
+      jobName: hosted.jobName,
+      step: hosted.step,
+      // The head the RUN describes, kept beside `measuredAtCommit` rather than
+      // folded into it: two fields that must agree are what catches a record
+      // assembled out of two runs, and one field cannot disagree with itself.
+      headSha: hosted.headSha,
+      artifact: hosted.artifact,
+      artifactDigest: hosted.artifactDigest,
+      field: hosted.field,
+    },
+  };
+}
+
+/**
  * Records a tier from the GitHub run that produced it, rather than from a run of
  * it here.
  *
@@ -1790,34 +1835,9 @@ export async function recordHosted(tier, runId, root = ROOT) {
     return 2;
   }
 
-  const report = hosted.report;
   const ledger = readJson(root, RUN_LEDGER_PATH) ?? { tiers: {} };
-  ledger.tiers[tier] = {
-    command: `${TIER_COMMANDS[tier].join(' ')} --reporter=json`,
-    tests: report.numTotalTests,
-    passed: report.numPassedTests,
-    failed: report.numFailedTests,
-    skipped: (report.numPendingTests ?? 0) + (report.numTodoTests ?? 0),
-    files: (report.testResults ?? []).length,
-    ...runCompleteness(report, hosted.exitCode),
-    measuredAtCommit: hosted.headSha,
-    // A hosted checkout has no working tree to be dirty. Stated as an empty list
-    // rather than omitted, because the gate reads an absent field as unknown.
-    dirtyExecutablePaths: [],
-    measuredAt: hosted.completedAt,
-    provenance: {
-      source: 'hosted',
-      runId: hosted.runId,
-      runUrl: hosted.runUrl,
-      workflow: hosted.workflow,
-      job: hosted.job,
-      jobName: hosted.jobName,
-      step: hosted.step,
-      artifact: hosted.artifact,
-      artifactDigest: hosted.artifactDigest,
-      field: hosted.field,
-    },
-  };
+  ledger.tiers[tier] = hostedRunRecord(tier, hosted);
+  const report = hosted.report;
   writeFileSync(native(root, RUN_LEDGER_PATH), `${JSON.stringify(ledger, null, 2)}\n`);
   process.stdout.write(
     `recorded ${tier} from hosted run ${hosted.runId} job ${hosted.job}: ` +

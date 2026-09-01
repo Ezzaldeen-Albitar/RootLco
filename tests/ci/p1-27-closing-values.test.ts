@@ -19,6 +19,7 @@ import {
   judge,
   judgeRunCompleteness,
   judgeRunProvenance,
+  hostedRunRecord,
   parseRegions,
   runCompleteness,
   selfCheck,
@@ -711,6 +712,90 @@ describe('the hosted artifact reader takes one entry out of a real archive', () 
   it('refuses bytes that are not an archive at all', () => {
     expect(() => readZipEntry(Buffer.from('<html>404</html>'), 'vitest-unit.json')).toThrow(
       /not a zip archive/
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The writer and the judge, in the same room.
+//
+// This case exists because it was missing. `judgeRunProvenance` requires
+// `headSha`; `hostedRunRecord` was written without it; and every refusal case
+// above still passed, because they drop fields from a FIXTURE rather than from
+// what the writer actually produces. The gate refused its author's first hosted
+// record — which is the guard working, and also a hole in this file.
+// ---------------------------------------------------------------------------
+describe('the record the writer produces is the record the judge accepts', () => {
+  const observation = {
+    headSha: 'c'.repeat(40),
+    runId: '33525905865',
+    runUrl: 'https://github.com/o/r/actions/runs/33525905865',
+    workflow: 'PR CI',
+    job: '99916670092',
+    jobName: 'unit-tests-coverage / unit-coverage',
+    step: 'Unit tier with coverage',
+    exitCode: 0,
+    artifact: 'evidence-unit-coverage',
+    artifactDigest: `sha256:${'0'.repeat(64)}`,
+    field: 'vitest-unit.json',
+    completedAt: '2026-09-01T13:56:11Z',
+    report: {
+      success: true,
+      numTotalTests: 3062,
+      numPassedTests: 3059,
+      numFailedTests: 0,
+      numPendingTests: 3,
+      testResults: [
+        { name: 'a.test.ts', status: 'passed', assertionResults: [{ status: 'passed' }] },
+      ],
+    },
+  };
+
+  it('H7 a record built from a hosted observation passes every rule that judges it', () => {
+    const record = hostedRunRecord('unit', observation);
+    expect(judgeRunProvenance('unit', record)).toEqual([]);
+    expect(judgeRunCompleteness('unit', record)).toEqual([]);
+  });
+
+  it('H8 carries every field each contract names, from the observation', () => {
+    const record = hostedRunRecord('unit', observation);
+    // Named one by one rather than compared to an object literal: a literal
+    // would be this function written twice, and would agree with it however
+    // wrong both were.
+    for (const field of RUN_RECORD_REQUIRED_FIELDS) {
+      expect(record, `the writer omits ${field}`).toHaveProperty(field);
+    }
+    for (const field of HOSTED_PROVENANCE_FIELDS) {
+      expect(record.provenance, `the writer omits provenance.${field}`).toHaveProperty(field);
+    }
+    expect(record.provenance.headSha).toBe(record.measuredAtCommit);
+    expect(record.exitCode).toBe(0);
+    expect(record.tests).toBe(3062);
+    expect(record.skipped).toBe(3);
+    expect(record.dirtyExecutablePaths).toEqual([]);
+    // The hosted job's own clock, not this machine's.
+    expect(record.measuredAt).toBe('2026-09-01T13:56:11Z');
+  });
+
+  it('H9 does not launder a red hosted run into a green record', () => {
+    // The writer takes the exit code from the step's conclusion. If it ever
+    // starts deciding one instead, this is where it shows.
+    const red = hostedRunRecord('unit', { ...observation, exitCode: 1 });
+    expect(red.exitCode).toBe(1);
+    expect(judgeRunCompleteness('unit', red).map((p) => p.id)).toContain(
+      'RUN_RECORD_RUN_NOT_SUCCESSFUL'
+    );
+
+    const silent = hostedRunRecord('unit', {
+      ...observation,
+      report: {
+        ...observation.report,
+        testResults: [{ name: 'silent.test.ts', status: 'passed', assertionResults: [] }],
+      },
+    });
+    expect(silent.filesWithoutCases).toEqual(['silent.test.ts']);
+    expect(judgeRunCompleteness('unit', silent).map((p) => p.id)).toContain(
+      'RUN_RECORD_FILE_RAN_NO_CASES'
     );
   });
 });
