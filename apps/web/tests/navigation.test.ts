@@ -86,6 +86,9 @@ describe('the navigation model', () => {
       // /reception/walk-in, gated on the permission its first operation
       // (customer search) requires.
       'walk-in',
+      // The work-order board landed with P1-29 W1 at /work-orders, gated on
+      // `wo.work_order.read` — the permission its only operation requires.
+      'work-orders',
     ]);
   });
 
@@ -104,7 +107,8 @@ describe('the navigation model', () => {
       'notifications',
       'reports',
       'technicians',
-      'work-orders',
+      // `work-orders` left this list in P1-29 W1. Its two CHILDREN stay: the
+      // diagnostics and quality screens are W7 and W8 and do not exist yet.
       'work-orders.diagnostics',
       'work-orders.quality',
     ]);

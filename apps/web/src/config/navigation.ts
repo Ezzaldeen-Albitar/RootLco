@@ -179,7 +179,7 @@ export const NAVIGATION: readonly NavigationGroup[] = Object.freeze([
         icon: 'work-orders',
         href: '/work-orders',
         permission: 'wo.work_order.read',
-        status: 'planned',
+        status: 'available',
         scope: 'branch',
         children: [
           {
