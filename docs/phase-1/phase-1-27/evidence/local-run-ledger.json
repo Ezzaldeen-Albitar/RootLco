@@ -15,12 +15,9 @@
       "reporterSuccess": false,
       "failedSuites": [],
       "filesWithoutCases": [],
-      "measuredAtCommit": "0533ae52c0a27216024ead71050c926976ab035d",
-      "dirtyExecutablePaths": [
-        "tests/ci/p1-28-access-gate.test.ts",
-        "tests/ci/p1-28-evidence-manifest.test.ts"
-      ],
-      "measuredAt": "2026-09-01T12:26:49.803Z"
+      "measuredAtCommit": "4a45c8b7a6b366efb2e3f318e699dee1c1965c13",
+      "dirtyExecutablePaths": [],
+      "measuredAt": "2026-09-01T12:37:34.629Z"
     },
     "web": {
       "command": "npm run test --workspace @rootlco/web -- --reporter=json",
@@ -33,9 +30,9 @@
       "reporterSuccess": true,
       "failedSuites": [],
       "filesWithoutCases": [],
-      "measuredAtCommit": "19d39f1a7cc69eddc298de3d66755f43d5e9cb51",
+      "measuredAtCommit": "4a45c8b7a6b366efb2e3f318e699dee1c1965c13",
       "dirtyExecutablePaths": [],
-      "measuredAt": "2026-09-01T10:11:28.811Z"
+      "measuredAt": "2026-09-01T12:39:35.738Z"
     }
   }
 }
