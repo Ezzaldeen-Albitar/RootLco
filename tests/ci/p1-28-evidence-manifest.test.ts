@@ -1062,7 +1062,12 @@ describe('P1-28-QA-005 — the seal is bound to the REPOSITORY, not to its own p
     // And the committed package is sound — while the phase is ACTIVE because it
     // names every executable successor, and once ARCHIVED because the question
     // is no longer asked of a phase that has landed.
-    const now = repositoryBinding(candidateFile, git) as unknown as {
+    // The SAME binding the describe already computed, reused rather than rebuilt.
+    // repositoryBinding walks the real repository — `git log <head> --not
+    // <candidate> <base>` and a diff per commit — and computing it twice from
+    // identical inputs made this the single most expensive case in the file at
+    // 34s, which is most of what blocks the worker's event loop.
+    const now = binding as unknown as {
       unrecordedExecutable: string[];
       lifecycle: { state: string };
     };
