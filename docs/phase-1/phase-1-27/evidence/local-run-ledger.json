@@ -43,14 +43,9 @@
       "reporterSuccess": true,
       "failedSuites": [],
       "filesWithoutCases": [],
-      "measuredAtCommit": "58f60a10ecb2fbd32205fc09913dd40791f5a57c",
-      "dirtyExecutablePaths": [
-        "apps/web/src/config/navigation.ts",
-        "apps/web/src/i18n/messages/ar.json",
-        "apps/web/src/i18n/messages/en.json",
-        "apps/web/tests/navigation.test.ts"
-      ],
-      "measuredAt": "2026-09-01T22:40:35.747Z"
+      "measuredAtCommit": "80936fb8ceab932c6a2358a55f2063498a36a255",
+      "dirtyExecutablePaths": [],
+      "measuredAt": "2026-09-01T22:46:23.472Z"
     }
   }
 }
