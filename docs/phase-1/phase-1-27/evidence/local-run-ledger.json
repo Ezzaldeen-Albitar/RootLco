@@ -7,20 +7,17 @@
     "unit": {
       "command": "npx vitest run --reporter=json",
       "tests": 3051,
-      "passed": 3044,
-      "failed": 7,
+      "passed": 3045,
+      "failed": 6,
       "skipped": 0,
       "files": 112,
       "exitCode": 1,
       "reporterSuccess": false,
       "failedSuites": [],
       "filesWithoutCases": [],
-      "measuredAtCommit": "d17c88fb24fb46f384114ee4ad5023fcfcca2b27",
-      "dirtyExecutablePaths": [
-        "scripts/ci/check-p1-27-closing-values.mjs",
-        "tests/ci/p1-27-closing-values.test.ts"
-      ],
-      "measuredAt": "2026-09-01T09:21:42.999Z"
+      "measuredAtCommit": "9337ce4863e9296a7e83c539039a6dba0d13863d",
+      "dirtyExecutablePaths": [],
+      "measuredAt": "2026-09-01T09:37:55.798Z"
     },
     "web": {
       "command": "npm run test --workspace @rootlco/web -- --reporter=json",
@@ -33,12 +30,9 @@
       "reporterSuccess": true,
       "failedSuites": [],
       "filesWithoutCases": [],
-      "measuredAtCommit": "d17c88fb24fb46f384114ee4ad5023fcfcca2b27",
-      "dirtyExecutablePaths": [
-        "scripts/ci/check-p1-27-closing-values.mjs",
-        "tests/ci/p1-27-closing-values.test.ts"
-      ],
-      "measuredAt": "2026-09-01T09:23:04.683Z"
+      "measuredAtCommit": "9337ce4863e9296a7e83c539039a6dba0d13863d",
+      "dirtyExecutablePaths": [],
+      "measuredAt": "2026-09-01T09:39:17.363Z"
     }
   }
 }
