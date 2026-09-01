@@ -7,17 +7,17 @@
     "unit": {
       "command": "npx vitest run --reporter=json",
       "tests": 3051,
-      "passed": 3045,
-      "failed": 6,
+      "passed": 3051,
+      "failed": 0,
       "skipped": 0,
       "files": 112,
       "exitCode": 1,
-      "reporterSuccess": false,
+      "reporterSuccess": true,
       "failedSuites": [],
       "filesWithoutCases": [],
-      "measuredAtCommit": "9337ce4863e9296a7e83c539039a6dba0d13863d",
+      "measuredAtCommit": "19d39f1a7cc69eddc298de3d66755f43d5e9cb51",
       "dirtyExecutablePaths": [],
-      "measuredAt": "2026-09-01T09:37:55.798Z"
+      "measuredAt": "2026-09-01T10:10:03.800Z"
     },
     "web": {
       "command": "npm run test --workspace @rootlco/web -- --reporter=json",
@@ -30,9 +30,9 @@
       "reporterSuccess": true,
       "failedSuites": [],
       "filesWithoutCases": [],
-      "measuredAtCommit": "9337ce4863e9296a7e83c539039a6dba0d13863d",
+      "measuredAtCommit": "19d39f1a7cc69eddc298de3d66755f43d5e9cb51",
       "dirtyExecutablePaths": [],
-      "measuredAt": "2026-09-01T09:39:17.363Z"
+      "measuredAt": "2026-09-01T10:11:28.811Z"
     }
   }
 }
