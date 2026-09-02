@@ -191,8 +191,54 @@ Still open in this item, deliberately and not silently: `wo.work-order-history`,
 published and unconsumed. The unified history is W6; the rest are the write surface a later
 slice adds to this screen.
 
-**W4** — `tech.technician-me-queue`, `tech.labor-session-start` / `-stop` / `-correct` /
-`-list`, `wo.job-work-log-record` / `-list`, `wo.job-evidence-record` / `-list`.
+**W4 — DELIVERED.** `/technicians/me`, on `tech.technician-me-queue`, `wo.job-assignment-list`,
+`tech.labor-session-list` / `-start` / `-stop` / `-correct`, `wo.job-work-log-list` / `-record`,
+`wo.job-evidence-list` / `-record`, and the shipped attachments chain for capture. Zero new
+backend.
+
+**The identity seam closed on existing operations.** `tech.technician-me-queue` withholds the
+caller's own `technicianProfileId` by design; `tech.labor-session-start` requires it and has no
+`me` variant. The queue row carries the caller's own `assignmentId`, and `wo.job-assignment-list`
+— on the same `tech.technician.read` — carries the profile of every assignment on the job, so
+matching the one row whose id equals the caller's assignment yields the caller's own profile
+with no ambiguity, even on a job two technicians share. Proved on real responses in
+`tests/backend/p1-29-w4-technician-workspace.test.ts` (`W4-2`, `W4-2b`, `W4-2c`). The web
+adapters perform that resolution server-side on every write and take the ASSIGNMENT, never a
+technician id: there is no parameter through which one can enter, which
+`apps/web/tests/technicians-workspace-api.test.ts` holds.
+
+Proved on real responses: the personal queue with the mirror held against the row; a persisted
+labour start re-read; a persisted stop re-read, with a stale stop refused and the record left
+alone; a correction as a separate, higher authority; a free-text work-log entry re-read
+verbatim; an evidence binding re-read; no-permission, read-is-not-write, cross-branch and
+cross-tenant refusals.
+
+Three measured facts the screen renders truthfully rather than papering over:
+
+- The queue read parses `limit` and **discards it** — the response is `{ items }` with no
+  cursor. The screen offers no paging control and says the list is not paged.
+- `wo.job_work_logs` is granted `SELECT, INSERT` only and carries no `recordVersion`. The
+  screen offers ADD and nothing else — no edit, no delete, and no action vocabulary, because
+  no column holds one.
+- `wo.jobs` is not a linkable entity type. A captured document is authorised and linked
+  against the **work order** the caller's own queue row named; `wo.job-evidence-record` binds
+  its version to the job. No platform document category exists for work evidence, so the
+  capture form offers the tenant's own categories from the server and invents none.
+
+**One finding, recorded and not endorsed — `W4-F1`.** `tech.labor.record` is a branch-scoped
+recording authority, as P1-19 designed it for a timekeeper: a caller holding it may start a
+session for ANY active technician profile in the branch, and the backend does not refuse a
+same-branch technician naming another technician's profile (`W4-5e`, measured `201`). The
+workspace adapter refuses to build that request, but an adapter is not a boundary. This is not
+a W4 blocker — the composition introduces no ambiguity and the frontend asserts no identity —
+and it is not this lane's to change. The smallest Backend delta, when the Owner wants it: have
+`tech.labor-session-start` refuse a body naming a profile other than the caller's own whenever
+the caller HOLDS a live profile in the target scope, leaving the timekeeper path open to callers
+who do not. `W4-5e` is a tripwire that fails the day that lands.
+
+Still open in this item, deliberately: `wo.job-transition` is not consumed here — the platform
+has no pause operation, stopping the clock is `tech.labor-session-stop`, and moving the job is a
+separate authority a later slice adds beside the W3 screen.
 
 **W5** — Backend, small: publish a diagnostic-type read operation — PLANNED name
 `dia.diagnostic-type-list`, which **does not exist today** — on the existing

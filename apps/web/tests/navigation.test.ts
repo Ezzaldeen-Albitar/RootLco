@@ -80,6 +80,11 @@ describe('the navigation model', () => {
       'settings.organization',
       'settings.systemSettings',
       'settings.taxes',
+      // The technician workspace landed with P1-29 W4 at /technicians/me,
+      // gated on `tech.technician.read` — the permission its queue requires.
+      // The child names the same route as its parent; see navigation.ts.
+      'technicians',
+      'technicians.me',
       'vehicle-duplicates',
       'vehicles',
       // The walk-in intake screen landed with P1-28-FE-006 at
@@ -109,7 +114,7 @@ describe('the navigation model', () => {
       'inventory',
       'notifications',
       'reports',
-      'technicians',
+      // `technicians` left this list in P1-29 W4, when the workspace was built.
       // `work-orders` left this list in P1-29 W1. Its two CHILDREN stay: the
       // diagnostics and quality screens are W7 and W8 and do not exist yet.
       'work-orders.diagnostics',

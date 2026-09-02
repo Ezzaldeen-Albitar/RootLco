@@ -217,10 +217,11 @@ describe('the gate is green on the CURRENT tree', () => {
 
   it('finds one adapter per guarded operation, each demanding a required version', () => {
     // ACCOUNTED FOR, not every guarded adapter in the tree. The walk is the
-    // whole of `apps/web/src` on purpose, and since P1-29 W3 that tree also
-    // holds versioned adapters for `wo` operations — real, correct, and not
-    // this contract's subject. They are declared by name in
-    // `OUT_OF_SUBJECT_ADAPTERS` and still held to every rule below.
+    // whole of `apps/web/src` on purpose, and since P1-29 W3 and W4 that tree
+    // also holds versioned adapters for `wo` and `tech` operations — real,
+    // correct, and not this contract's subject. They are declared by name in
+    // `OUT_OF_SUBJECT_ADAPTERS` and still held to every rule below; the seven
+    // accounted for are the apt/rec adapters this contract is about.
     expect(live.accountedFor).toHaveLength(7);
     expect(live.adapters.length).toBeGreaterThanOrEqual(live.accountedFor.length);
     for (const adapter of live.adapters) {

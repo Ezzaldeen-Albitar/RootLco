@@ -20,11 +20,9 @@
  * invisible to every structural gate in the repository and to every one of those
  * tests, which is the gap this file closes.
  */
-import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import type { Pool } from 'pg';
-import ts from 'typescript';
 import {
   BRANCH_A1,
   COMPANY_A1,
@@ -52,6 +50,7 @@ import {
   establishP1_19Fixtures,
   establishTechnicianFixtures,
 } from './p1-19-helpers';
+import { mirrorFields } from './p1-29-helpers';
 import { __resetBackendConfigForTests } from '@/server/config/backend-config';
 import { FakeIdentityProvider, setIdentityProvider } from '@/modules/iam';
 import { __setPrimaryPoolForTests } from '@/server/db/pool';
@@ -154,37 +153,6 @@ interface DetailBody {
 }
 
 const body = async <T>(response: Response): Promise<T> => (await response.json()) as T;
-
-/**
- * The property names of one interface in a web contract, PARSED.
- *
- * A regular expression would answer for a name inside a comment or a
- * neighbouring interface. This walks the real syntax tree, which is the rule
- * this repository applies to its gate scanners and applies here for the same
- * reason.
- */
-function mirrorFields(file: string, interfaceName: string): readonly string[] {
-  const source = ts.createSourceFile(
-    file,
-    readFileSync(file, 'utf8'),
-    ts.ScriptTarget.Latest,
-    true
-  );
-  const found: string[] = [];
-  const visit = (node: ts.Node): void => {
-    if (ts.isInterfaceDeclaration(node) && node.name.text === interfaceName) {
-      for (const member of node.members) {
-        if (ts.isPropertySignature(member) && member.name && ts.isIdentifier(member.name)) {
-          found.push(member.name.text);
-        }
-      }
-    }
-    ts.forEachChild(node, visit);
-  };
-  visit(source);
-  if (found.length === 0) throw new Error(`no interface ${interfaceName} in ${file}`);
-  return found;
-}
 
 /** A department of one branch, seeded directly — it is test scaffolding, not product data. */
 async function seedDepartment(

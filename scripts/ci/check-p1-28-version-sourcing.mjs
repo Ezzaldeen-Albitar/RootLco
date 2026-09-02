@@ -327,6 +327,8 @@ export function guardedOperations(document) {
 export const OUT_OF_SUBJECT_ADAPTERS = Object.freeze({
   transitionWorkOrder: 'wo.work-order-transition — P1-29 W3, not an apt/rec operation',
   updateJob: 'wo.job-update — P1-29 W3, not an apt/rec operation',
+  stopLaborSession: 'tech.labor-session-stop — P1-29 W4, not an apt/rec operation',
+  correctLaborSession: 'tech.labor-session-correct — P1-29 W4, not an apt/rec operation',
 });
 
 export function expectedAdapterOperations(guarded, manifest, decisions) {

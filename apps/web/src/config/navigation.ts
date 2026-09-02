@@ -228,13 +228,35 @@ export const NAVIGATION: readonly NavigationGroup[] = Object.freeze([
         ],
       },
       {
+        /*
+         * P1-29 W4: the technician's own workspace. The parent names
+         * `/technicians/me` rather than `/technicians` because that is the
+         * screen that exists — the roster (BR-03's administration surface) has
+         * no page yet, and a rail link to it would 404. When the roster lands,
+         * the parent moves to `/technicians` and gains a `technicians.roster`
+         * child; this entry does not change.
+         */
         key: 'technicians',
         labelKey: 'nav.technicians',
         icon: 'technicians',
-        href: '/technicians',
+        href: '/technicians/me',
         permission: 'tech.technician.read',
-        status: 'planned',
+        status: 'available',
         scope: 'branch',
+        children: [
+          {
+            // The workspace itself, naming the SAME route as its parent — the
+            // `work-orders.queue` pattern, for the same reason: a disclosure
+            // button carries no `aria-current`, so the page needs a child link.
+            key: 'technicians.me',
+            labelKey: 'nav.technicianWorkspace',
+            icon: 'technicians',
+            href: '/technicians/me',
+            permission: 'tech.technician.read',
+            status: 'available',
+            scope: 'branch',
+          },
+        ],
       },
     ],
   },
