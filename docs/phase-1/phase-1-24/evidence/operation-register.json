@@ -5366,7 +5366,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-29-w8-qc-check-list.test.ts"],
+      "tests": [
+        "tests/backend/p1-29-w8-qc-check-list.test.ts",
+        "tests/backend/p1-29-w8-quality-and-closure.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/qc-checks/route.ts"
     },
@@ -5408,7 +5411,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-19-quality-rework.test.ts"],
+      "tests": [
+        "tests/backend/p1-19-quality-rework.test.ts",
+        "tests/backend/p1-29-w8-quality-and-closure.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/quality-controls/[recordId]/checks/[qcCheckId]/route.ts"
     },
@@ -5438,7 +5444,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/br-06-work-execution-controls.test.ts"],
+      "tests": [
+        "tests/backend/br-06-work-execution-controls.test.ts",
+        "tests/backend/p1-29-w8-quality-and-closure.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/quality-controls/route.ts"
     },
@@ -5478,7 +5487,8 @@
       "missingEvidence": [],
       "tests": [
         "tests/backend/p1-19-quality-rework.test.ts",
-        "tests/backend/p1-29-w8-qc-check-list.test.ts"
+        "tests/backend/p1-29-w8-qc-check-list.test.ts",
+        "tests/backend/p1-29-w8-quality-and-closure.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/quality-controls/[recordId]/route.ts"
@@ -5527,7 +5537,8 @@
       "missingEvidence": [],
       "tests": [
         "tests/backend/p1-19-concurrency.test.ts",
-        "tests/backend/p1-19-quality-rework.test.ts"
+        "tests/backend/p1-19-quality-rework.test.ts",
+        "tests/backend/p1-29-w8-quality-and-closure.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/quality-controls/[recordId]/finalization/route.ts"
@@ -5566,7 +5577,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-19-quality-rework.test.ts"],
+      "tests": [
+        "tests/backend/p1-19-quality-rework.test.ts",
+        "tests/backend/p1-29-w8-quality-and-closure.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/work-orders/[workOrderId]/quality-controls/route.ts"
     },
@@ -5608,7 +5622,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-19-quality-rework.test.ts"],
+      "tests": [
+        "tests/backend/p1-19-quality-rework.test.ts",
+        "tests/backend/p1-29-w8-quality-and-closure.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/work-orders/[workOrderId]/quality-controls/route.ts"
     },
@@ -5650,7 +5667,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-19-quality-rework.test.ts"],
+      "tests": [
+        "tests/backend/p1-19-quality-rework.test.ts",
+        "tests/backend/p1-29-w8-quality-and-closure.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/work-orders/[workOrderId]/reopen-attempts/route.ts"
     },
@@ -5688,7 +5708,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-19-quality-rework.test.ts"],
+      "tests": [
+        "tests/backend/p1-19-quality-rework.test.ts",
+        "tests/backend/p1-29-w8-quality-and-closure.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/work-orders/[workOrderId]/reopen-attempts/route.ts"
     },
@@ -5728,7 +5751,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-19-quality-rework.test.ts"],
+      "tests": [
+        "tests/backend/p1-19-quality-rework.test.ts",
+        "tests/backend/p1-29-w8-quality-and-closure.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/rework-links/[reworkLinkId]/cost/route.ts"
     },
@@ -5818,7 +5844,8 @@
       "missingEvidence": [],
       "tests": [
         "tests/backend/p1-19-concurrency.test.ts",
-        "tests/backend/p1-19-quality-rework.test.ts"
+        "tests/backend/p1-19-quality-rework.test.ts",
+        "tests/backend/p1-29-w8-quality-and-closure.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/work-orders/[workOrderId]/rework/route.ts"
@@ -5895,7 +5922,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-19-quality-rework.test.ts"],
+      "tests": [
+        "tests/backend/p1-19-quality-rework.test.ts",
+        "tests/backend/p1-29-w8-quality-and-closure.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/work-orders/[workOrderId]/rework/route.ts"
     },
@@ -5939,7 +5969,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-19-quality-rework.test.ts"],
+      "tests": [
+        "tests/backend/p1-19-quality-rework.test.ts",
+        "tests/backend/p1-29-w8-quality-and-closure.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/rework-links/[reworkLinkId]/sign-off/route.ts"
     },
@@ -12405,7 +12438,8 @@
       "tests": [
         "tests/backend/p1-19-customer-approvals.test.ts",
         "tests/backend/p1-20-additional-work-link.test.ts",
-        "tests/backend/p1-20-helpers.ts"
+        "tests/backend/p1-20-helpers.ts",
+        "tests/backend/p1-29-w8-quality-and-closure.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/additional-work/[requestId]/approval/route.ts"
@@ -12444,7 +12478,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-19-customer-approvals.test.ts"],
+      "tests": [
+        "tests/backend/p1-19-customer-approvals.test.ts",
+        "tests/backend/p1-29-w8-quality-and-closure.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/additional-work/[requestId]/approval/route.ts"
     },
@@ -12484,7 +12521,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-19-additional-work.test.ts"],
+      "tests": [
+        "tests/backend/p1-19-additional-work.test.ts",
+        "tests/backend/p1-29-w8-quality-and-closure.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/additional-work/[requestId]/detail/route.ts"
     },
@@ -12526,7 +12566,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-19-additional-work.test.ts"],
+      "tests": [
+        "tests/backend/p1-19-additional-work.test.ts",
+        "tests/backend/p1-29-w8-quality-and-closure.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/additional-work/[requestId]/detail/route.ts"
     },
@@ -12608,7 +12651,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-19-additional-work.test.ts"],
+      "tests": [
+        "tests/backend/p1-19-additional-work.test.ts",
+        "tests/backend/p1-29-w8-quality-and-closure.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/work-orders/[workOrderId]/additional-work/route.ts"
     },
@@ -12652,7 +12698,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-19-additional-work.test.ts"],
+      "tests": [
+        "tests/backend/p1-19-additional-work.test.ts",
+        "tests/backend/p1-29-w8-quality-and-closure.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/work-orders/[workOrderId]/additional-work/route.ts"
     },
@@ -12863,7 +12912,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-29-w6-history-and-blockers.test.ts"],
+      "tests": [
+        "tests/backend/p1-29-w6-history-and-blockers.test.ts",
+        "tests/backend/p1-29-w8-quality-and-closure.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/jobs/[jobId]/blockers/route.ts"
     },
@@ -12907,6 +12959,7 @@
       "missingEvidence": [],
       "tests": [
         "tests/backend/p1-29-w6-history-and-blockers.test.ts",
+        "tests/backend/p1-29-w8-quality-and-closure.test.ts",
         "tests/ci/p1-29-payload-parity.test.ts"
       ],
       "classification": "Covered",
@@ -12950,7 +13003,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-29-w6-history-and-blockers.test.ts"],
+      "tests": [
+        "tests/backend/p1-29-w6-history-and-blockers.test.ts",
+        "tests/backend/p1-29-w8-quality-and-closure.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/blockers/[blockerId]/resolution/route.ts"
     },
@@ -13635,7 +13691,8 @@
       "missingEvidence": [],
       "tests": [
         "tests/backend/p1-19-closure-gate-matrix.test.ts",
-        "tests/backend/p1-19-work-order-core.test.ts"
+        "tests/backend/p1-19-work-order-core.test.ts",
+        "tests/backend/p1-29-w8-quality-and-closure.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/work-orders/[workOrderId]/closure/route.ts"
@@ -13676,7 +13733,8 @@
       "missingEvidence": [],
       "tests": [
         "tests/backend/p1-19-closure-gate-matrix.test.ts",
-        "tests/backend/p1-19-work-order-core.test.ts"
+        "tests/backend/p1-19-work-order-core.test.ts",
+        "tests/backend/p1-29-w8-quality-and-closure.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/work-orders/[workOrderId]/closure-eligibility/route.ts"
@@ -13874,7 +13932,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-29-w6-history-and-blockers.test.ts"],
+      "tests": [
+        "tests/backend/p1-29-w6-history-and-blockers.test.ts",
+        "tests/backend/p1-29-w8-quality-and-closure.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/work-orders/[workOrderId]/timeline/route.ts"
     },
