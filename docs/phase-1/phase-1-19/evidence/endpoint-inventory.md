@@ -5,9 +5,9 @@ registry. Do not hand-edit.** Every column is read out of the
 `defineOperation` literal that guards the route, so this table cannot
 describe a surface the code does not expose, and cannot omit one it does.
 
-Operations in the registry: **346**. In the four P1-19 schemas: **88**. Delivered by P1-19: **58**.
+Operations in the registry: **350**. In the four P1-19 schemas: **92**. Delivered by P1-19: **58**.
 
-**30** operation(s) in these schemas were delivered by a LATER contract and are deliberately absent from the tables below — this document describes P1-19's surface, not the schemas'. They are named here so their absence is a stated fact rather than a gap, and every correctness reconciliation this script performs (seeded permission, catalogued audit action, non-inert branch scope) is applied to them exactly as it is to P1-19’s own.
+**34** operation(s) in these schemas were delivered by a LATER contract and are deliberately absent from the tables below — this document describes P1-19's surface, not the schemas'. They are named here so their absence is a stated fact rather than a gap, and every correctness reconciliation this script performs (seeded permission, catalogued audit action, non-inert branch scope) is applied to them exactly as it is to P1-19’s own.
 
 | Operation                                     | Owner           | Route                                                                                                        |
 | --------------------------------------------- | --------------- | ------------------------------------------------------------------------------------------------------------ |
@@ -33,6 +33,9 @@ Operations in the registry: **346**. In the four P1-19 schemas: **88**. Delivere
 | `tech.technician-skill-set`                   | PRE-P1-29-BR-03 | `apps/api/src/app/api/v1/technicians/[technicianProfileId]/skills/[skillId]/route.ts`                        |
 | `tech.technician-skill-withdraw`              | PRE-P1-29-BR-03 | `apps/api/src/app/api/v1/technicians/[technicianProfileId]/skills/[skillId]/route.ts`                        |
 | `tech.technician-update`                      | PRE-P1-29-BR-03 | `apps/api/src/app/api/v1/technicians/[technicianProfileId]/route.ts`                                         |
+| `wo.job-blocker-list`                         | P1-29-W6        | `apps/api/src/app/api/v1/jobs/[jobId]/blockers/route.ts`                                                     |
+| `wo.job-blocker-raise`                        | P1-29-W6        | `apps/api/src/app/api/v1/jobs/[jobId]/blockers/route.ts`                                                     |
+| `wo.job-blocker-resolve`                      | P1-29-W6        | `apps/api/src/app/api/v1/blockers/[blockerId]/resolution/route.ts`                                           |
 | `wo.job-detail`                               | PRE-P1-29-BR-06 | `apps/api/src/app/api/v1/jobs/[jobId]/route.ts`                                                              |
 | `wo.job-evidence-list`                        | PRE-P1-29-BR-07 | `apps/api/src/app/api/v1/jobs/[jobId]/evidence/route.ts`                                                     |
 | `wo.job-evidence-record`                      | PRE-P1-29-BR-07 | `apps/api/src/app/api/v1/jobs/[jobId]/evidence/route.ts`                                                     |
@@ -41,6 +44,7 @@ Operations in the registry: **346**. In the four P1-19 schemas: **88**. Delivere
 | `wo.job-work-log-record`                      | PRE-P1-29-BR-06 | `apps/api/src/app/api/v1/jobs/[jobId]/work-logs/route.ts`                                                    |
 | `wo.work-order-catalogue`                     | PRE-P1-29-BR-06 | `apps/api/src/app/api/v1/work-order-catalogue/route.ts`                                                      |
 | `wo.work-order-evidence-list`                 | PRE-P1-29-BR-07 | `apps/api/src/app/api/v1/work-orders/[workOrderId]/evidence/route.ts`                                        |
+| `wo.work-order-timeline`                      | P1-29-W6        | `apps/api/src/app/api/v1/work-orders/[workOrderId]/timeline/route.ts`                                        |
 
 ## The surface
 

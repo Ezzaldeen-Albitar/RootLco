@@ -1,8 +1,8 @@
 {
   "$schema": "./classification.schema.json",
-  "description": "P1-09-SEC-003 \u2014 Work Order (wo) + Technician (tech) + Diagnostics (dia) + Quality (qms) personal-data / sensitivity classification registry. Every live column in the four Phase 1-9 module schemas is classified. Restricted columns live in gated 1:1 tables (iam.sensitive.view); none is searchable.",
+  "description": "P1-09-SEC-003 — Work Order (wo) + Technician (tech) + Diagnostics (dia) + Quality (qms) personal-data / sensitivity classification registry. Every live column in the four Phase 1-9 module schemas is classified. Restricted columns live in gated 1:1 tables (iam.sensitive.view); none is searchable.",
   "allowedClassifications": ["public", "internal", "restricted", "secret"],
-  "columnCount": 677,
+  "columnCount": 687,
   "columns": {
     "dia.diagnostic_evidence.id": {
       "classification": "internal",
@@ -3388,6 +3388,56 @@
       "classification": "internal",
       "searchable": false,
       "dataType": "timestamp with time zone"
+    },
+    "wo.job_blocker_events.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.job_blocker_events.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.job_blocker_events.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.job_blocker_events.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.job_blocker_events.job_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.job_blocker_events.event": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "wo.job_blocker_events.resolves_event_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.job_blocker_events.note": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "wo.job_blocker_events.occurred_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "wo.job_blocker_events.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
     }
   }
 }

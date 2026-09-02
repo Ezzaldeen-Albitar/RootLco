@@ -1,9 +1,9 @@
 {
   "generatedFrom": "scripts/check-operation-test-coverage.mjs",
   "counts": {
-    "registered": 88,
-    "publicApi": 88,
-    "operationDepth": 88,
+    "registered": 92,
+    "publicApi": 92,
+    "operationDepth": 92,
     "invocationOnly": 0,
     "pending": 0,
     "unitOnly": 0,
@@ -2731,6 +2731,128 @@
       "unitOnly": false
     },
     {
+      "id": "wo.job-blocker-list",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/jobs/{jobId}/blockers",
+      "public": false,
+      "files": ["tests/backend/p1-29-w6-history-and-blockers.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "cross-tenant", "isolation"],
+      "declared": ["success", "denial", "cross-tenant"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "isolation",
+        "denial"
+      ],
+      "provided": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "wo.job-blocker-raise",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/jobs/{jobId}/blockers",
+      "public": false,
+      "files": ["tests/backend/p1-29-w6-history-and-blockers.test.ts"],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "isolation"
+      ],
+      "declared": ["success", "denial", "cross-tenant", "audit", "idempotency"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "isolation",
+        "denial"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "wo.job-blocker-resolve",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/blockers/{blockerId}/resolution",
+      "public": false,
+      "files": ["tests/backend/p1-29-w6-history-and-blockers.test.ts"],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "isolation"
+      ],
+      "declared": ["success", "denial", "cross-tenant", "audit", "idempotency"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "isolation",
+        "denial"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
       "id": "wo.job-create",
       "surface": "public-api",
       "method": "POST",
@@ -3562,6 +3684,38 @@
         "isolation",
         "denial",
         "cross-tenant"
+      ],
+      "provided": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "wo.work-order-timeline",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/work-orders/{workOrderId}/timeline",
+      "public": false,
+      "files": ["tests/backend/p1-29-w6-history-and-blockers.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "cross-tenant", "isolation"],
+      "declared": ["success", "denial", "cross-tenant", "isolation"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "isolation",
+        "denial"
       ],
       "provided": [
         "authorization",

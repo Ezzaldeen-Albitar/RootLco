@@ -355,6 +355,9 @@ import '@/app/api/v1/template-versions/[versionId]/status/route';
 import '@/app/api/v1/template-versions/[versionId]/items/route';
 import '@/app/api/v1/jobs/[jobId]/inspection-templates/route';
 import '@/app/api/v1/diagnostic-types/route';
+import '@/app/api/v1/jobs/[jobId]/blockers/route';
+import '@/app/api/v1/blockers/[blockerId]/resolution/route';
+import '@/app/api/v1/work-orders/[workOrderId]/timeline/route';
 
 // PRE-P1-29 Wave B — the control plane. These two modules are the only ones in
 // the document whose operations are not inside a tenant; they are imported here

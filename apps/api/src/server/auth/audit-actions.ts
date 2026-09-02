@@ -1247,6 +1247,20 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
       'A progress entry was appended to a job work log (PRE-P1-29-BR-06). Written under tech.labor.record rather than wo.job.manage, because the log is the technician’s narration of the labour they are already recording — requiring a management code would mean a technician cannot describe their own work. wo.job_work_logs is append-only at the GRANT layer (SELECT + INSERT to app_runtime and nothing else), so there is no corresponding updated or deleted action and there cannot be one: a correction is a new entry. The audit row records the entry’s length rather than its text, because the entry is the technician’s own words about the vehicle in front of them and is already stored, attributed, in the log itself.',
   },
   {
+    code: 'wo.job.blocker_raised',
+    class: 'privileged',
+    entityType: 'wo.job',
+    description:
+      'A blocker was raised on a job (P1-29-W6, Owner requirement 13, VHM-16): the worker’s statement that work cannot proceed, and why. Written under tech.labor.record for the reason the work log is — a blocker is the technician’s own account of the work in front of them, and requiring wo.job.manage would mean a technician cannot say why they have stopped. It moves NO state: awaiting_parts and awaiting_customer remain work-order states with their own transition rules. wo.job_blocker_events is append-only at the GRANT layer, so there is no corresponding updated or deleted action; a blocker is closed by a resolution event that references the raise. The audit row records the note’s length rather than its text, which the ledger already holds, attributed.',
+  },
+  {
+    code: 'wo.job.blocker_resolved',
+    class: 'privileged',
+    entityType: 'wo.job',
+    description:
+      'A raised blocker was resolved (P1-29-W6): a second append-only event referencing the raise, stating how the work was freed. The raise is never edited. One resolution per raise is enforced by a partial unique index, and a second is refused as a conflict rather than as invalid input, because the blocker WAS open when the caller looked. Written under tech.labor.record, as the raise. The audit row names both event ids and the note’s length.',
+  },
+  {
     code: 'wo.job.evidence_recorded',
     class: 'privileged',
     entityType: 'wo.job',

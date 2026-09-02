@@ -21,6 +21,11 @@ import {
   type Page,
   type PageRequest,
 } from '@/server/db/pagination';
+import {
+  timelineWindowSql,
+  type TimelineSourceRow,
+  type TimelineWindow,
+} from '@/server/db/timeline';
 
 /** Newest first, matching every other operational queue in the platform. */
 export const QC_BRANCH_ORDER: OrderingContract = Object.freeze({
@@ -185,6 +190,66 @@ const toReworkRow = (row: ReworkColumns): ReworkLinkRow => ({
 
 export class QualityRepository extends Repository {
   protected readonly module = 'quality';
+
+  /**
+   * This module's events for the unified work-order timeline (P1-29 `W6`,
+   * `INT-043`) — a PORT for the work-order module. `qms.quality_control_records`
+   * carries `work_order_id`, so no `wo.` table is read (ADR-001). `reference`
+   * is the QC record id.
+   */
+  async timelineEventsForWorkOrder(
+    db: DbHandle,
+    workOrderId: string,
+    window: TimelineWindow
+  ): Promise<readonly TimelineSourceRow[]> {
+    const context = this.assertContext(db);
+    const values: unknown[] = [context.principal.tenantId, workOrderId];
+    const w = timelineWindowSql(window, 't.occurred_at', 't.kind', 't.id', values.length + 1);
+    const result = await this.run<{
+      kind: string;
+      id: string;
+      job_id: string | null;
+      actor_id: string | null;
+      occurred_at: string;
+      from_state: string | null;
+      to_state: string | null;
+      note: string | null;
+      reference: string | null;
+      detail: string | null;
+      sort_value: string;
+    }>(
+      db,
+      `SELECT t.kind, t.id, t.job_id, t.actor_id, t.occurred_at::text AS occurred_at,
+              t.from_state, t.to_state, t.note, t.reference, t.detail,
+              ${cursorTimestamp('t.occurred_at')} AS sort_value
+         FROM (
+           SELECT h.id, NULL::uuid AS job_id, h.actor_id, h.occurred_at, h.from_state, h.to_state,
+                  h.reason AS note, q.id::text AS reference, NULL::text AS detail, 'qc_status' AS kind
+             FROM qms.qc_status_history h
+             JOIN qms.quality_control_records q
+               ON q.tenant_id = h.tenant_id AND q.company_id = h.company_id
+              AND q.branch_id = h.branch_id AND q.id = h.quality_control_record_id
+            WHERE h.tenant_id = $1 AND q.work_order_id = $2 AND q.deleted_at IS NULL
+         ) t
+        WHERE TRUE ${w.predicate}
+        ${w.order}
+        ${w.limitClause}`,
+      [...values, ...w.values]
+    );
+    return result.rows.map((row) => ({
+      kind: row.kind as TimelineSourceRow['kind'],
+      id: row.id,
+      jobId: row.job_id,
+      actorId: row.actor_id,
+      occurredAt: row.occurred_at,
+      fromState: row.from_state,
+      toState: row.to_state,
+      note: row.note,
+      reference: row.reference,
+      detail: row.detail,
+      sortValue: row.sort_value,
+    }));
+  }
 
   /**
    * The branch QC queue, keyset-paged (PRE-P1-29-BR-06, `INS-13`, `DEP-B4`).

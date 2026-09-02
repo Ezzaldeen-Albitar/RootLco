@@ -78,6 +78,7 @@ export const ROUTE_TEMPLATES = Object.freeze([
   '/auth/password-reset/completion',
   '/auth/session',
   '/credit-notes/{creditNoteId}/approval',
+  '/blockers/{blockerId}/resolution',
   '/customer-duplicates',
   '/customer-duplicates/{candidateId}/review',
   '/customer-supplied-parts',
@@ -156,6 +157,7 @@ export const ROUTE_TEMPLATES = Object.freeze([
   '/jobs',
   '/jobs/{jobId}',
   '/jobs/{jobId}/assignments',
+  '/jobs/{jobId}/blockers',
   '/jobs/{jobId}/evidence',
   '/jobs/{jobId}/history',
   '/jobs/{jobId}/inspection-templates',
@@ -316,6 +318,7 @@ export const ROUTE_TEMPLATES = Object.freeze([
   '/work-orders/{workOrderId}/required-parts',
   '/work-orders/{workOrderId}/rework',
   '/work-orders/{workOrderId}/service-lines',
+  '/work-orders/{workOrderId}/timeline',
   '/work-orders/{workOrderId}/transition',
 ] as const);
 
