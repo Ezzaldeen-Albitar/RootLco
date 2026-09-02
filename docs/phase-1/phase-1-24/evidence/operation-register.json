@@ -12763,7 +12763,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-29-w6-history-and-blockers.test.ts"],
+      "tests": [
+        "tests/backend/p1-29-w6-history-and-blockers.test.ts",
+        "tests/ci/p1-29-payload-parity.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/jobs/[jobId]/blockers/route.ts"
     },
