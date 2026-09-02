@@ -282,6 +282,16 @@ export class FakeIdentityProvider implements IdentityProvider {
     return this.toIdentity(record);
   }
 
+  async bindTenant(subject: string, tenantId: string): Promise<ProviderIdentity> {
+    this.assertUp();
+    const record = this.identities.get(subject);
+    if (!record) {
+      throw new ProviderFailure('identity-unavailable', 'No identity for that subject.');
+    }
+    record.tenantId = tenantId;
+    return this.toIdentity(record);
+  }
+
   async findBySubject(subject: string): Promise<ProviderIdentity | null> {
     this.assertUp();
     const record = this.identities.get(subject);

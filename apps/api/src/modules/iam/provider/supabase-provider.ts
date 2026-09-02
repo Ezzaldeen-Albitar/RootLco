@@ -263,16 +263,29 @@ export class SupabaseIdentityProvider implements IdentityProvider {
     }
   }
 
+  /**
+   * Revocation by SUBJECT is not something this provider can do: GoTrue 2.x's
+   * admin surface signs out a session by its JWT (`signOut(jwt, scope)`), and
+   * there is no endpoint that ends every session of a user id. The previous
+   * body passed the subject where a JWT belongs, so the provider answered 401
+   * and every caller — invitation withdrawal, the administrator's revoke-all —
+   * failed at the very end, after RootLco's own state had already changed.
+   *
+   * What actually ends the identity's access is elsewhere, and is stated here
+   * so nobody reads this method as the control: the API refuses a bearer whose
+   * RootLco session is revoked (`iam.sessions`, written by the callers before
+   * they reach this point), and a disabled identity is banned by
+   * `setDisabled`, which refuses refresh and sign-in at the provider. What
+   * remains is the lifetime of an already-issued provider access token
+   * (`expires_in`, one hour on the local stack) — recorded as residual W9-R1
+   * with the Owner's disposition rather than hidden behind a call that never
+   * worked.
+   */
   async revokeAllSessions(subject: string): Promise<void> {
-    try {
-      const { error } = await this.admin.auth.admin.signOut(subject, 'global');
-      if (error && statusOf(error) !== 404) {
-        throw translate(error, new ProviderFailure('provider-rejected', 'Sign-out was refused.'));
-      }
-    } catch (cause) {
-      if (cause instanceof ProviderFailure) throw cause;
-      throw unavailable(cause);
+    if (subject.trim() === '') {
+      throw new ProviderFailure('identity-unavailable', 'A subject is required.');
     }
+    return;
   }
 
   async requestPasswordReset(request: PasswordResetRequest): Promise<void> {
@@ -295,12 +308,18 @@ export class SupabaseIdentityProvider implements IdentityProvider {
     recoveryToken: string,
     newPassword: string
   ): Promise<ProviderIdentity> {
-    let verified;
-    try {
-      // The provider owns the token: it verifies, consumes, and time-bounds it.
-      verified = await this.anon.auth.verifyOtp({ token_hash: recoveryToken, type: 'recovery' });
-    } catch (cause) {
-      throw unavailable(cause);
+    // The provider owns the token: it verifies, consumes, and time-bounds it.
+    // Two kinds of link carry a password-setting token to the same page: a
+    // reset mail (`recovery`) and an invitation mail (`invite`), and the
+    // provider files each hash under its own type — a recovery lookup does not
+    // find an invitation hash. Measured on the shipped activation page with a
+    // real invitation (P1-29 W9 acceptance): every invited human was told the
+    // link had expired, because only `recovery` was ever asked. The page cannot
+    // know which mail the human opened, so both types are asked, recovery
+    // first; a hash filed under neither is refused exactly as before.
+    let verified = await this.verifyPasswordToken(recoveryToken, 'recovery');
+    if (verified.error || !verified.data.session || !verified.data.user) {
+      verified = await this.verifyPasswordToken(recoveryToken, 'invite');
     }
     if (verified.error || !verified.data.session || !verified.data.user) {
       throw translate(
@@ -309,13 +328,20 @@ export class SupabaseIdentityProvider implements IdentityProvider {
       );
     }
 
-    const scoped = createClient(this.options.url, this.options.anonKey, {
-      auth: { persistSession: false, autoRefreshToken: false },
-      global: { headers: { Authorization: `Bearer ${verified.data.session.access_token}` } },
-    });
+    // The verification above is the proof of possession; the credential is then
+    // written by the service role for exactly the identity the provider just
+    // verified. An earlier body built a second client carrying the session's
+    // access token as a global header and called `auth.updateUser` on it — but
+    // the client library serves `updateUser` from ITS OWN stored session, not
+    // from a header, and with `persistSession: false` there is none, so it
+    // refused with "session missing" before the provider was ever asked.
+    // Measured on the local stack with the real provider (P1-29 W9 acceptance):
+    // every completion answered 401 while the fake provider passed.
     let updated;
     try {
-      updated = await scoped.auth.updateUser({ password: newPassword });
+      updated = await this.admin.auth.admin.updateUserById(verified.data.user.id, {
+        password: newPassword,
+      });
     } catch (cause) {
       throw unavailable(cause);
     }
@@ -328,8 +354,52 @@ export class SupabaseIdentityProvider implements IdentityProvider {
 
     // Every other session of this identity is revoked, so a stolen session that
     // predates the reset does not survive it.
-    await this.revokeAllSessions(updated.data.user.id);
+    // Every other session of this identity ends with the credential change.
+    // The admin sign-out takes a JWT, not a subject (GoTrue 2.x has no
+    // revoke-by-subject), and the recovery exchange above is the one place this
+    // adapter holds one of the user's own tokens. Measured on the local stack
+    // (P1-29 W9 acceptance): passing the subject here made the provider answer
+    // 401 AFTER the password had been changed, so the route reported failure
+    // for a credential that worked.
+    await this.signOutEverywhere(verified.data.session.access_token);
     return this.identityOf(updated.data.user);
+  }
+
+  /**
+   * Global sign-out of the identity behind `accessToken` — all of its sessions,
+   * not just this one. Sent to the provider directly: the client library's
+   * `admin.signOut(jwt)` in the installed version answers "Auth session
+   * missing" from inside the client without ever reaching the provider
+   * (measured on the local stack with a client-library probe, P1-29 W9
+   * acceptance), while the provider's own `POST /logout?scope=global` with the
+   * identity's token ends every session and answers 204. A 401, 403 or 404 is the
+   * desired end state already reached, not a refusal: the service-role credential
+   * change above already ends the identity's sessions at the provider (measured:
+   * 403 on the token the recovery exchange issued), and this call is the
+   * explicit act for a provider that would not.
+   */
+  /** One verification attempt for a password-setting token hash filed under `type`. */
+  private async verifyPasswordToken(tokenHash: string, type: 'recovery' | 'invite') {
+    try {
+      return await this.anon.auth.verifyOtp({ token_hash: tokenHash, type });
+    } catch (cause) {
+      throw unavailable(cause);
+    }
+  }
+
+  private async signOutEverywhere(accessToken: string): Promise<void> {
+    let response: Response;
+    try {
+      response = await fetch(`${this.options.url}/auth/v1/logout?scope=global`, {
+        method: 'POST',
+        headers: { apikey: this.options.anonKey, Authorization: `Bearer ${accessToken}` },
+      });
+    } catch (cause) {
+      throw unavailable(cause);
+    }
+    if (!response.ok && ![401, 403, 404].includes(response.status)) {
+      throw new ProviderFailure('provider-rejected', `Sign-out was refused (${response.status}).`);
+    }
   }
 
   async invite(request: InviteRequest): Promise<ProviderIdentity> {
@@ -354,10 +424,17 @@ export class SupabaseIdentityProvider implements IdentityProvider {
     // The tenant binding is written in a second, admin-only call rather than in
     // `data` above, which GoTrue routes to user_metadata — a field the end user
     // can edit. app_metadata is service-role only.
+    return this.bindTenant(result.data.user.id, request.tenantId);
+  }
+
+  async bindTenant(subject: string, tenantId: string): Promise<ProviderIdentity> {
+    // `app_metadata` is the provider's administrator-only metadata: the end
+    // user cannot write it, and the token carries it, so sign-in and the bearer
+    // path both read the binding from a claim the user could not have forged.
     let bound;
     try {
-      bound = await this.admin.auth.admin.updateUserById(result.data.user.id, {
-        app_metadata: { tenant_id: request.tenantId },
+      bound = await this.admin.auth.admin.updateUserById(subject, {
+        app_metadata: { tenant_id: tenantId },
       });
     } catch (cause) {
       throw unavailable(cause);

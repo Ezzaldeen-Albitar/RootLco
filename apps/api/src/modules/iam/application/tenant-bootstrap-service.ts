@@ -83,7 +83,7 @@ export class TenantBootstrapService {
     db: PlatformTargetHandle,
     input: FirstOwnerInput
   ): Promise<FirstOwnerBootstrap> {
-    const identity = await this.establishIdentity(db.targetTenantId, input);
+    const identity = await this.establishIdentity(db, db.targetTenantId, input);
 
     let ownerAccountId: string;
     try {
@@ -128,6 +128,7 @@ export class TenantBootstrapService {
   }
 
   private async establishIdentity(
+    db: PlatformTargetHandle,
     tenantId: string,
     input: FirstOwnerInput
   ): Promise<{ readonly subject: string }> {
@@ -137,7 +138,34 @@ export class TenantBootstrapService {
     );
     try {
       const existing = await this.provider.findByEmail(input.email);
-      if (existing) return { subject: existing.subject };
+      if (existing) {
+        // The provider binds an identity to ONE tenant, and sign-in resolves
+        // the tenant from that binding. An address bound to a LIVE
+        // organization elsewhere would yield an account this tenant's Owner
+        // could never reach — the provisioning would answer 201 and leave an
+        // organization nobody can enter. Measured during the W9 acceptance
+        // run. It is a conflict, stated as one, and the transaction unwinds
+        // the tenant with it.
+        //
+        // A binding to an organization that does not exist is a different
+        // thing: a provisioning that unwound after the invitation went out
+        // leaves exactly that, and the same request must then succeed. The
+        // identity is re-bound to the organization being created; if this
+        // transaction unwinds too, the binding is stale again and the next
+        // attempt reads it the same way.
+        if (existing.tenantId !== null && existing.tenantId !== tenantId) {
+          if (await this.bootstrap.tenantExists(db, existing.tenantId)) {
+            throw new AppFailure('ERR-RES-002', {
+              message:
+                'An identity already exists for that address and belongs to another organization',
+            });
+          }
+        }
+        if (existing.tenantId !== tenantId) {
+          await this.provider.bindTenant(existing.subject, tenantId);
+        }
+        return { subject: existing.subject };
+      }
       const invited = await this.provider.invite({ email: input.email, tenantId, redirectTo });
       return { subject: invited.subject };
     } catch (error) {

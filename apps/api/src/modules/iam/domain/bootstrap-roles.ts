@@ -48,11 +48,35 @@
  * rows FE-006, FE-007, FE-009, FE-018, FE-020 and FE-022, each declared by the
  * route named there.
  *
+ * `org.company.read` and `org.branch.read` were first excluded on the theory
+ * that every screen takes its target from the session's own scope. The
+ * acceptance run on the production build refuted that for THIS role: its
+ * grants are unrestricted, so its session scope is empty; the Administration
+ * › Organization screen shows the company and branch only to a holder of
+ * those two codes; and scoping anyone else's grant (`iam.grant-scope-add`)
+ * takes a company and branch identifier nobody can learn without them. An
+ * administrator who cannot name a branch cannot scope a grant, and cannot
+ * delegate a code it does not hold. Both are held, and so is `org.tenant.read`
+ * — the same screen's Workspace card (`iam.tenant-settings-read`), which the
+ * production build refused to the first administrator of its own organization.
+ * The settings WRITES (`org.settings.manage`, `org.company.manage`,
+ * `org.branch.manage`) stay out: no walked route on the journey declares them,
+ * and the card renders read-only without them (residual W9-R2, Owner
+ * disposition requested in the derivation record).
+ *
+ * `wo.job.transition` was excluded because no W1–W8 adapter calls it — and
+ * that is exactly why it must be held: a job accepts labour, diagnostics and
+ * quality work only from the states `wo.job-transition` puts it in
+ * (`tech.guard_labor_session`; every W4–W8 proof moves the job to `assigned`,
+ * `in_progress`, `qc_pending` … through that route), and no screen offers
+ * the move. On the production build the technician's clock answered 409 on
+ * a `planned` job and nobody in the organization could change that. The
+ * code is held and delegable; the missing control is a Frontend residual
+ * (W9-R3) recorded in the derivation record.
+ *
  * Excluded on purpose, each with its reason in the W9 derivation record:
  * `platform.*` (never a tenant code), `iam.approval.manage` and
  * `iam.login.view_all` (no walked route on the journey declares them),
- * `org.company.read` / `org.branch.read` (every screen takes its target from
- * the session's own scope), `wo.job.transition` (no W1–W8 adapter calls it),
  * and the reception, CRM and vehicle codes beyond the creation path above
  * (W3's customer context is resolved server-side through the reception port
  * under scope-only policies, and no W1–W8 screen writes them).
@@ -87,6 +111,9 @@ export const TENANT_ADMINISTRATOR_ROLE: BootstrapRoleDefinition = Object.freeze(
     'iam.grant.manage',
     'iam.session.view_all',
     // Organisation prerequisites the journey's screens and personas need (direct).
+    'org.tenant.read',
+    'org.company.read',
+    'org.branch.read',
     'org.department.read',
     'org.department.manage',
     'tech.technician.manage',
@@ -95,6 +122,7 @@ export const TENANT_ADMINISTRATOR_ROLE: BootstrapRoleDefinition = Object.freeze(
     'wo.work_order.transition',
     'wo.work_order.close',
     'wo.job.manage',
+    'wo.job.transition',
     'wo.additional_work.request',
     'wo.additional_work.approve',
     'tech.technician.read',

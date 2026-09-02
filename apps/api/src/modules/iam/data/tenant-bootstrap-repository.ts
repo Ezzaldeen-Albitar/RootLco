@@ -159,6 +159,22 @@ export class TenantBootstrapRepository extends Repository {
   }
 
   /**
+   * Whether an organization exists at all — asked about the tenant an Owner
+   * address is already bound to at the provider. Read under the platform SELECT
+   * policy on `org.tenants`, which is predicated on the operator's authority
+   * and not on the window's tenant, so a row of another organization is
+   * visible here for exactly this question.
+   */
+  async tenantExists(db: PlatformTargetHandle, tenantId: string): Promise<boolean> {
+    const row = await this.runOne<{ found: boolean }>(
+      db,
+      'SELECT true AS found FROM org.tenants WHERE id = $1',
+      [tenantId]
+    );
+    return row !== null && row !== undefined;
+  }
+
+  /**
    * What the window wrote for one account, read back through the SELECT the
    * §6.3 policy set admits on `iam.role_grants` — the same rows the deferred
    * scope trigger reads.

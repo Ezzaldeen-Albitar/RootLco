@@ -154,6 +154,17 @@ export interface IdentityProvider {
   completePasswordReset(recoveryToken: string, newPassword: string): Promise<ProviderIdentity>;
   /** 8. Create and invite a provider identity, bound to a tenant. */
   invite(request: InviteRequest): Promise<ProviderIdentity>;
+  /**
+   * 8a. Bind an existing identity to a tenant, replacing any earlier binding.
+   *
+   * The binding is what sign-in resolves the tenant from. It is written by the
+   * first-owner bootstrap for an identity that already exists at the provider
+   * and is bound nowhere, or to an organization that no longer exists (a
+   * provisioning that unwound after the invitation went out leaves exactly
+   * that). Never called for an address bound to a live organization — the
+   * bootstrap refuses those before it gets here.
+   */
+  bindTenant(subject: string, tenantId: string): Promise<ProviderIdentity>;
   /** 9. Look an identity up by subject. Returns null when it does not exist. */
   findBySubject(subject: string): Promise<ProviderIdentity | null>;
   /** 10. Confirm an identity administratively, where the provider allows it. */
@@ -219,6 +230,9 @@ export class UnconfiguredIdentityProvider implements IdentityProvider {
     this.fail();
   }
   async invite(): Promise<ProviderIdentity> {
+    this.fail();
+  }
+  async bindTenant(): Promise<ProviderIdentity> {
     this.fail();
   }
   async findBySubject(): Promise<ProviderIdentity | null> {
