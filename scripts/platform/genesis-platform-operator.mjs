@@ -405,6 +405,31 @@ function writeEvidence(input, identity, result) {
   return path;
 }
 
+/**
+ * Binds the provider identity to the operator's home tenant, the way the
+ * application's own invitation does (`app_metadata.tenant_id`, service role
+ * only). A lookup key for the login's tenant resolution, never authorization
+ * truth (ADR-019 rule 3): without it the operator must name the home tenant on
+ * every sign-in. Done after the transaction committed, so a rolled-back genesis
+ * leaves no binding behind; repeated on an already-established operator so a
+ * run that once lacked the service key can be completed later.
+ */
+async function bindIdentityToHomeTenant(input, subject, homeTenantId) {
+  if (input.supabase.url === '' || input.supabase.serviceRoleKey === '') return false;
+  const headers = {
+    apikey: input.supabase.serviceRoleKey,
+    Authorization: `Bearer ${input.supabase.serviceRoleKey}`,
+    'Content-Type': 'application/json',
+  };
+  const bound = await fetch(`${input.supabase.url}/auth/v1/admin/users/${subject}`, {
+    method: 'PUT',
+    headers,
+    body: JSON.stringify({ app_metadata: { tenant_id: homeTenantId } }),
+  });
+  if (!bound.ok) fail(`The identity provider refused the tenant binding (${bound.status})`, 3);
+  return true;
+}
+
 async function main() {
   const input = readGenesisInput();
   const identity = await establishProviderIdentity(input);
@@ -415,6 +440,13 @@ async function main() {
     result = await runGenesis(client, input, identity);
   } finally {
     await client.end();
+  }
+  if (result.outcome !== 'dry-run' && result.homeTenantId) {
+    result.identityBoundToHomeTenant = await bindIdentityToHomeTenant(
+      input,
+      identity.subject,
+      result.homeTenantId
+    );
   }
   const path = writeEvidence(input, identity, result);
   console.log(`Platform operator genesis: ${result.outcome}`);

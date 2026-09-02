@@ -112,3 +112,66 @@ written, they admit the two-role shape as they stand.
 
 Proofs W9-B1…B10, the real login and the role-administration proof:
 `tests/backend/p1-29-w9-owner-bootstrap.test.ts`.
+
+## 5. Findings from the acceptance run on the production build (2026-09-02)
+
+The first real-provider exercise of the credential paths — the platform operator setting a
+password through the shipped `forgot-password` → mailbox → completion route → login sequence —
+found one defect and one provider limit. Both are on record with the identity adapter
+(`apps/api/src/modules/iam/provider/supabase-provider.ts`); every earlier proof ran against the
+fake provider, which cannot show either.
+
+- **Defect, fixed:** `iam.auth-password-reset-completion` answered `401` for every completion
+  against the real provider, while the fake provider passed. Two client-library facts the adapter
+  had assumed away, both measured with a probe on the local stack: (1) the second client the
+  adapter built to carry the recovery session's token in a header serves `updateUser` from its
+  own stored session, not from that header, so with `persistSession: false` it refused with
+  "session missing" before the provider was asked; (2) the library's `admin.signOut(jwt)` answers
+  the same "session missing" from inside the client. The adapter now writes the credential
+  through the service role for exactly the identity the recovery token verified, and ends every
+  session of that identity with the provider's own `POST /logout?scope=global` carrying the
+  recovery session's token — and treats the provider's 401, 403 or 404 as the end state already reached, because the service-role credential change itself ends the identity's sessions at the provider (measured: 403 on the token the recovery exchange had issued).
+- **Residual W9-R1, provider limit:** GoTrue 2.x exposes no admin revocation by user id. The
+  adapter's `revokeAllSessions(subject)` could never have worked; it is now honest about it. The
+  controls that actually end access are unchanged and stated in the code: the API refuses a bearer
+  whose RootLco session is revoked (the callers revoke it before reaching the provider), and a
+  disabled identity is banned at the provider, which refuses refresh and sign-in. What remains is
+  the lifetime of an already-issued provider access token — one hour on the local stack. Owner
+  disposition requested: accept the one-hour residual for Phase 1, or shorten the provider's
+  access-token lifetime in the environment configuration. Not a P1-29 release blocker: no
+  operation grants authority through it, and the API's own session ledger is the enforced control.
+
+The run then continued into the first real provisioning — the operator creating the acceptance
+tenant through `POST /platform/organizations` and the invited Owner setting a credential on the
+shipped `activate-account` page — and found three more defects, each fixed on the same branch.
+
+- **Defect, fixed (genesis):** the operator's bearer answered `401 ERR-IAM-002` on every
+  authenticated call although sign-in had answered `200`. The bearer path resolves the tenant
+  from the provider token's `app_metadata.tenant_id` and refuses a token without it; the genesis
+  had created the identity but never bound it to its home tenant, so the operator could sign in
+  and do nothing. `genesis-platform-operator.mjs` now binds the identity to the home tenant it
+  creates, and re-running it reports `identityBoundToHomeTenant`. Sign-in without a caller-supplied
+  tenant, then `GET /platform/organizations`, answers `200` on the production build.
+- **Defect, fixed (invitation):** the Owner's invitation token was refused as expired on the
+  shipped activation page (`iam.auth-password-reset-completion` → `401`). The provider files an
+  invitation's token hash under `invite` and a reset's under `recovery`, and the adapter asked only
+  for `recovery`, so no invited human could ever set a credential — the page that exists for
+  exactly that purpose had never been exercised with a real invitation. The adapter now asks
+  `recovery` first and `invite` second, and refuses exactly as before when neither verifies.
+  Pinned by `tests/foundation/p1-29-w9-supabase-adapter-units.test.ts`, the adapter's first suite.
+- **Defect, fixed (provisioning):** a second provisioning request with a tenant code already in
+  use answered `500 ERR-SYS-001` (`uq_tenants_tenant_code` raw in the log). It answers
+  `409 ERR-RES-002` now, the same conflict a duplicate role or department code answers.
+- **Defect, fixed (bootstrap):** an Owner address that already existed at the provider was reused
+  without regard to which organization it was bound to. Sign-in resolves the tenant from that
+  binding, so a second organization provisioned for an address bound elsewhere answered `201` and
+  could never be entered by its Owner (`no-account` at sign-in). Measured when the acceptance
+  tenant was re-provisioned for an address whose earlier binding survived. The bootstrap now
+  refuses an address bound to a different organization with `409 ERR-RES-002`, and the
+  provisioning transaction unwinds the tenant with it (`W9-B12`).
+- **Environment, not product:** the local identity provider's redirect allow-list holds only the
+  API origin, so the invitation mail's link lands on the API instead of the web app; the token in
+  that link opened the activation page directly, which is the page's documented contract. And a
+  `supabase start` re-issues an asymmetric signing key that the HS256-only verifier refuses
+  (`P1-26-F-045`); the shipped alignment helper reported the stack already aligned. Both are
+  Database-phase configuration (`supabase/config.toml`), outside this Backend slice's ownership.

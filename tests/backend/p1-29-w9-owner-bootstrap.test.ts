@@ -527,9 +527,14 @@ describe('W9 — the bootstrap the provisioning operation now carries', () => {
         `owner_b7_${RUN}@fixture.test`,
       ])
     ).toBe(0);
-    // Recovered: the same request now succeeds.
+    // Recovered: the same request now succeeds. The invitation had gone out
+    // before the unwind, so the provider identity exists and is bound to a
+    // tenant that never came to be; the retry re-binds it to the organization
+    // it actually creates, or its Owner could never sign in (W9 acceptance).
     const retried = await provision('b7');
     expect(retried.status).toBe(201);
+    const identity = await provider.findByEmail(`owner_b7_${RUN}@fixture.test`);
+    expect(identity?.tenantId).toBe(retried.body.tenantId);
   });
 
   it('W9-B8 activate: true activates only after the administrator exists, and needs the lifecycle authority', async () => {
@@ -632,6 +637,52 @@ describe('W9 — the bootstrap the provisioning operation now carries', () => {
     );
     expect([409, 422]).toContain(conflict.status);
     expect(await counts()).toEqual(before);
+  });
+
+  it('W9-B11 a tenant code already in use is a conflict, not an outage, and creates nothing', async () => {
+    asHolder();
+    const first = await provision('b11');
+    expect(first.status).toBe(201);
+    const tenants = (): Promise<number | null> =>
+      scalar<number>('SELECT count(*)::int FROM org.tenants WHERE tenant_code = $1', [
+        `w9b11_${RUN}`,
+      ]);
+    expect(await tenants()).toBe(1);
+
+    // A NEW key and a different Owner: not a replay, a second organization
+    // asking for a code that is taken. Measured on the shipped route during
+    // the W9 acceptance run, this answered 500 with the unique constraint raw
+    // in the log; it is the same 409 a duplicate role code answers.
+    asHolder();
+    const duplicate = await provision('b11', {
+      owner: { email: `owner_b11_second_${RUN}@fixture.test`, displayName: 'Second' },
+    });
+    expect(duplicate.status).toBe(409);
+    expect(duplicate.body).toMatchObject({ code: 'ERR-RES-002' });
+    expect(await tenants()).toBe(1);
+    expect(
+      await scalar<number>('SELECT count(*)::int FROM iam.user_accounts WHERE email = $1', [
+        `owner_b11_second_${RUN}@fixture.test`,
+      ])
+    ).toBe(0);
+  });
+
+  it('W9-B12 an Owner address already bound to another organization is refused, and the tenant unwinds', async () => {
+    // The provider binds an identity to one tenant and sign-in resolves the
+    // tenant from that binding; an address bound elsewhere would leave the new
+    // organization with an Owner who can never enter it. Seeded as the real
+    // provider would hold it: confirmed, bound to a different live tenant.
+    provider.seed({ email: `owner_b12_${RUN}@fixture.test`, tenantId: TENANT_A, confirmed: true });
+    asHolder();
+    const refused = await provision('b12');
+    expect(refused.status).toBe(409);
+    expect(refused.body).toMatchObject({ code: 'ERR-RES-002' });
+    expect(await tenantByCode('b12')).toBeNull();
+    expect(
+      await scalar<number>('SELECT count(*)::int FROM iam.user_accounts WHERE email = $1', [
+        `owner_b12_${RUN}@fixture.test`,
+      ])
+    ).toBe(0);
   });
 });
 

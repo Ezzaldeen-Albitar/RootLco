@@ -10,6 +10,7 @@
  */
 import { appendAudit } from '@/server/audit/audit';
 import { AppFailure } from '@/server/errors/app-failure';
+import { isSqlState, SQLSTATE } from '@/server/db/repository';
 import { type DbHandle, withPlatformTarget } from '@/server/db/transaction';
 import { type FirstOwnerInput, iamModule } from '@/modules/iam';
 import type { OrganizationRow, PlatformRepository } from '../data/platform-repository';
@@ -106,7 +107,7 @@ export class OrganizationService {
       ...command.spec,
       owner: { email: command.owner.email, display_name: command.owner.displayName },
     };
-    const created = await this.repository.provisionOrganization(db, spec, idempotencyKey);
+    const created = await this.provisionOrRefuseDuplicate(db, spec, idempotencyKey);
 
     const tenant = (command.spec.tenant ?? {}) as Record<string, unknown>;
     const bootstrap = await withPlatformTarget(db, created.tenantId, async (target) => {
@@ -167,6 +168,35 @@ export class OrganizationService {
   }
 
   /** The lifecycle predicate, asked of the database before anything is written. */
+  /**
+   * A second organization with a code already in use is a conflict, not an
+   * outage. `org.provision_organization` inserts the tenant, company and branch
+   * under their unique constraints and lets the violation surface raw; measured
+   * on the shipped route (P1-29 W9 acceptance), a repeated tenant code answered
+   * `500 ERR-SYS-001` with `uq_tenants_tenant_code` in the log. The same
+   * collision on a role or department code answers `ERR-RES-002`, and so does
+   * this one now. The constraint name says which code collided.
+   */
+  private async provisionOrRefuseDuplicate(
+    db: DbHandle,
+    spec: Readonly<Record<string, unknown>>,
+    idempotencyKey: string
+  ): Promise<{ readonly tenantId: string }> {
+    try {
+      return await this.repository.provisionOrganization(db, spec, idempotencyKey);
+    } catch (error) {
+      if (isSqlState(error, SQLSTATE.uniqueViolation)) {
+        const constraint = (error as { constraint?: unknown }).constraint;
+        const which =
+          constraint === 'uq_tenants_tenant_code'
+            ? 'An organization with that code already exists'
+            : 'A company or branch code in the request already exists';
+        throw new AppFailure('ERR-RES-002', { message: which });
+      }
+      throw error;
+    }
+  }
+
   private async requireLifecycleAuthority(db: DbHandle): Promise<void> {
     const held = await this.repository.holdsPlatformAuthority(
       db,
