@@ -130,11 +130,21 @@ describe('the gate is clean on the tree it ships with — and really looked', ()
     // Each of these is an anti-vacuity condition the gate enforces on itself.
     // Restated here so a silent collapse fails by name rather than by a clean
     // report over nothing.
-    expect(REAL.routes.length).toBe(8);
+    /*
+     * NINE since P1-29 W4, and the ninth is not a P1-28 screen. The technician
+     * workspace at `/technicians/me` renders P1-28's one approved capture
+     * surface (`features/receptions/components/CaptureFileField.tsx`) for work
+     * evidence, so its import closure reaches a P1-28 feature tree and the
+     * derivation — "every page that LOADS one" — adopts it. That is the
+     * derivation working as designed, and the page is held to every rule here:
+     * it gates before it reads, consults only published codes, requires no
+     * more than its operations require, and asserts no scope in a URL.
+     */
+    expect(REAL.routes.length).toBe(9);
     expect(REAL.treeFiles).toBeGreaterThanOrEqual(40);
     expect(REAL.constants).toBeGreaterThanOrEqual(40);
     expect(REAL.scanned).toBeGreaterThanOrEqual(200);
-    expect(REAL.segments).toEqual(['appointments', 'reception', 'receptions']);
+    expect(REAL.segments).toEqual(['appointments', 'reception', 'receptions', 'technicians']);
     // Rule 5's extended root: the files every route loads out of `components/**`
     // and `lib/**`, which no root covered until this wave.
     expect(REAL.closureFiles).toBeGreaterThanOrEqual(100);
@@ -671,17 +681,20 @@ describe('the route set is DERIVED, not a hand-written list of segments', () => 
     expect(PLAN).not.toContain('(dashboard)/receptions');
   });
 
-  it('finds the eight pages by what they LOAD, including the singular walk-in', () => {
+  it('finds the nine pages by what they LOAD, including the singular walk-in', () => {
     const routes = webRoutes().map((file: string) => posix(file));
-    expect(routes).toHaveLength(8);
+    // Eight P1-28 screens, plus the P1-29 technician workspace, which loads the
+    // shared capture field out of `features/receptions` — see the census above.
+    expect(routes).toHaveLength(9);
     expect(routes.some((route: string) => route.includes('/reception/walk-in/'))).toBe(true);
     expect(routes.some((route: string) => route.endsWith('/appointments/new/page.tsx'))).toBe(true);
     expect(routes.some((route: string) => route.includes('/acknowledgement/'))).toBe(true);
-    expect(segmentsOnce()).toEqual(['appointments', 'reception', 'receptions']);
+    expect(routes.some((route: string) => route.endsWith('/technicians/me/page.tsx'))).toBe(true);
+    expect(segmentsOnce()).toEqual(['appointments', 'reception', 'receptions', 'technicians']);
   });
 
   it('is a strict subset of the dashboard tree, so the derivation discriminates', () => {
-    // Thirty pages exist under `(dashboard)`; eight load a P1-28 feature tree.
+    // Thirty-odd pages exist under `(dashboard)`; nine load a P1-28 feature tree.
     // Without this the derivation could be "every page" and still look right.
     const everyPage = [...webSources().keys()].filter(
       (file: string) =>

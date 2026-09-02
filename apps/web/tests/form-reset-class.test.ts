@@ -136,6 +136,10 @@ const ROOTS = [
   // menu. Text and password boxes today, which is exactly the state in which a
   // tree gets left out and then grows a select.
   join(SRC, 'features', 'authentication'),
+  // P1-29 W4: the technician workspace binds work evidence through a
+  // `<form action={…}>` — a category select, two text boxes and the file input —
+  // so its tree joins the inventory the round-six check demands.
+  join(SRC, 'features', 'technicians'),
   join(SRC, 'components', 'forms'),
   join(SRC, 'components', 'party'),
   join(SRC, 'components', 'duplicates'),
@@ -347,6 +351,16 @@ const OUTSIDE_A_FORM: readonly { file: string; match: string; why: string }[] = 
     file: 'features/receptions/components/CaptureFileField.tsx',
     match: '<input type="file"',
     why: 'A file input CANNOT carry a default. Browsers refuse a programmatic write to `input[type=file].value` — that is the guard against a page selecting a file the operator never chose — so `defaultValue` is not a shape this control can take. What a reset costs here is the file selection, which the operator re-makes deliberately; there is no typed text to strand.',
+  },
+  {
+    file: 'features/technicians/components/TechnicianWorkspaceScreen.tsx',
+    match: "<SelectField label={translate(messages, 'technicians.workspace.company')}",
+    why: 'The branch-target company picker (P1-29 W4). It sits in a `<form onSubmit={…}>` that prevents its own default and sets state — never a Server Action, so React never resets it. The only `<form action={…}>` in this tree is the evidence capture in `JobWorkPanel.tsx`, which this screen renders as a SIBLING of the target form, not inside it — read off the element nesting.',
+  },
+  {
+    file: 'features/technicians/components/TechnicianWorkspaceScreen.tsx',
+    match: "<SelectField label={translate(messages, 'technicians.workspace.branch')}",
+    why: 'The branch-target branch picker, the other half of the same pair, in the same `onSubmit` form for the same reason.',
   },
   {
     file: 'features/vehicles/components/VehicleDuplicateReviewScreen.tsx',

@@ -10597,7 +10597,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-19-labor-sessions.test.ts"],
+      "tests": [
+        "tests/backend/p1-19-labor-sessions.test.ts",
+        "tests/backend/p1-29-w4-technician-workspace.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/jobs/[jobId]/labor-sessions/route.ts"
     },
@@ -11009,7 +11012,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/br-01-technician-identity.test.ts"],
+      "tests": [
+        "tests/backend/br-01-technician-identity.test.ts",
+        "tests/backend/p1-29-w4-technician-workspace.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/technicians/me/queue/route.ts"
     },
@@ -12637,7 +12643,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-19-job-assignments.test.ts"],
+      "tests": [
+        "tests/backend/p1-19-job-assignments.test.ts",
+        "tests/backend/p1-29-w4-technician-workspace.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/jobs/[jobId]/assignments/route.ts"
     },
