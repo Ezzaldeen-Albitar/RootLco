@@ -136,15 +136,36 @@ describe('authoring writes — the request each form builds', () => {
     await api.setVersionStatus(VERSION, { toStatus: 'published' }, 1);
     await api.setVersionStatus(VERSION, { toStatus: 'retired' }, 2);
     expect(send.mock.calls).toEqual([
-      ['POST', `/api/v1/inspection-templates/${TEMPLATE}/versions`, { copyFromVersionId: VERSION }, {}],
+      [
+        'POST',
+        `/api/v1/inspection-templates/${TEMPLATE}/versions`,
+        { copyFromVersionId: VERSION },
+        {},
+      ],
       [
         'POST',
         `/api/v1/template-versions/${VERSION}/items`,
-        { itemCode: 'pad_depth', prompt: 'Pad depth', responseType: 'numeric', unit: 'mm', isMandatory: true },
+        {
+          itemCode: 'pad_depth',
+          prompt: 'Pad depth',
+          responseType: 'numeric',
+          unit: 'mm',
+          isMandatory: true,
+        },
         {},
       ],
-      ['POST', `/api/v1/template-versions/${VERSION}/status`, { toStatus: 'published' }, { ifMatch: 1 }],
-      ['POST', `/api/v1/template-versions/${VERSION}/status`, { toStatus: 'retired' }, { ifMatch: 2 }],
+      [
+        'POST',
+        `/api/v1/template-versions/${VERSION}/status`,
+        { toStatus: 'published' },
+        { ifMatch: 1 },
+      ],
+      [
+        'POST',
+        `/api/v1/template-versions/${VERSION}/status`,
+        { toStatus: 'retired' },
+        { ifMatch: 2 },
+      ],
     ]);
   });
 
@@ -152,9 +173,13 @@ describe('authoring writes — the request each form builds', () => {
     send.mockResolvedValueOnce(failure('conflict'));
     expect((await api.updateTemplate(TEMPLATE, { name: 'x' }, 1)).status).toBe('conflict');
     send.mockResolvedValueOnce(failure('forbidden'));
-    expect((await api.createTemplate({ code: 'a', name: 'b', diagnosticTypeId: TEMPLATE })).status).toBe('denied');
+    expect(
+      (await api.createTemplate({ code: 'a', name: 'b', diagnosticTypeId: TEMPLATE })).status
+    ).toBe('denied');
     send.mockResolvedValueOnce(failure('validation'));
-    expect((await api.createItem(VERSION, { itemCode: 'x', prompt: 'y', responseType: 'text' })).status).toBe('invalid');
+    expect(
+      (await api.createItem(VERSION, { itemCode: 'x', prompt: 'y', responseType: 'text' })).status
+    ).toBe('invalid');
   });
 });
 
@@ -166,16 +191,40 @@ describe('execution writes — every entry is addressed to the report, results t
     await api.writeItemResult(REPORT, ITEM, { notApplicableReason: 'No rear drum' });
     await api.recordMeasurement(REPORT, { label: 'Pad depth', measuredValue: '24.5', unit: 'mm' });
     await api.recordDtc(REPORT, { code: 'P0300', dtcStatus: 'active' });
-    await api.recordFinding(REPORT, { severity: 'high', disposition: 'repair_required', description: 'Pads worn' });
+    await api.recordFinding(REPORT, {
+      severity: 'high',
+      disposition: 'repair_required',
+      description: 'Pads worn',
+    });
     await api.recordRecommendation(REPORT, { recommendation: 'Replace pads', priority: 'high' });
     expect(send.mock.calls).toEqual([
       ['POST', `/api/v1/jobs/${JOB}/inspections`, { templateVersionId: VERSION }, {}],
       ['PUT', `/api/v1/inspections/${REPORT}/items/${ITEM}`, { resultValue: '24.5' }, {}],
-      ['PUT', `/api/v1/inspections/${REPORT}/items/${ITEM}`, { notApplicableReason: 'No rear drum' }, {}],
-      ['POST', `/api/v1/inspections/${REPORT}/measurements`, { label: 'Pad depth', measuredValue: '24.5', unit: 'mm' }, {}],
+      [
+        'PUT',
+        `/api/v1/inspections/${REPORT}/items/${ITEM}`,
+        { notApplicableReason: 'No rear drum' },
+        {},
+      ],
+      [
+        'POST',
+        `/api/v1/inspections/${REPORT}/measurements`,
+        { label: 'Pad depth', measuredValue: '24.5', unit: 'mm' },
+        {},
+      ],
       ['POST', `/api/v1/inspections/${REPORT}/dtcs`, { code: 'P0300', dtcStatus: 'active' }, {}],
-      ['POST', `/api/v1/inspections/${REPORT}/findings`, { severity: 'high', disposition: 'repair_required', description: 'Pads worn' }, {}],
-      ['POST', `/api/v1/inspections/${REPORT}/recommendations`, { recommendation: 'Replace pads', priority: 'high' }, {}],
+      [
+        'POST',
+        `/api/v1/inspections/${REPORT}/findings`,
+        { severity: 'high', disposition: 'repair_required', description: 'Pads worn' },
+        {},
+      ],
+      [
+        'POST',
+        `/api/v1/inspections/${REPORT}/recommendations`,
+        { recommendation: 'Replace pads', priority: 'high' },
+        {},
+      ],
     ]);
   });
 
@@ -186,7 +235,12 @@ describe('execution writes — every entry is addressed to the report, results t
     await api.completeReport(REPORT, {}, 3);
     await api.reviewReport(REPORT, { reviewResult: 'approved' });
     expect(send.mock.calls).toEqual([
-      ['POST', `/api/v1/inspections/${REPORT}/transition`, { toStatus: 'in_progress' }, { ifMatch: 2 }],
+      [
+        'POST',
+        `/api/v1/inspections/${REPORT}/transition`,
+        { toStatus: 'in_progress' },
+        { ifMatch: 2 },
+      ],
       ['POST', `/api/v1/inspections/${REPORT}/completion`, { summary: 'Done' }, { ifMatch: 3 }],
       ['POST', `/api/v1/inspections/${REPORT}/completion`, {}, { ifMatch: 3 }],
       ['POST', `/api/v1/inspections/${REPORT}/reviews`, { reviewResult: 'approved' }, {}],
@@ -214,7 +268,12 @@ describe('evidence — capture, link against the report, bind', () => {
     status: 'success',
     correlationId: 'corr-1',
     attempt: 1,
-    registered: { documentId: 'doc-1', versionId: 'ver-1', status: 'clean', scannerAvailable: true },
+    registered: {
+      documentId: 'doc-1',
+      versionId: 'ver-1',
+      status: 'clean',
+      scannerAvailable: true,
+    },
   };
 
   it('refuses an empty file and a missing category or type before any network call', async () => {
@@ -244,7 +303,11 @@ describe('evidence — capture, link against the report, bind', () => {
     const outcome = await api.captureReportEvidence(REPORT, form({ note: 'left front' }));
 
     expect(captureDocument).toHaveBeenCalledWith(
-      expect.objectContaining({ entityType: 'dia.diagnostic_report', entityId: REPORT, categoryCode: 'evidence_photo' })
+      expect.objectContaining({
+        entityType: 'dia.diagnostic_report',
+        entityId: REPORT,
+        categoryCode: 'evidence_photo',
+      })
     );
     expect(createDocumentLink).toHaveBeenCalledWith('doc-1', {
       entityType: 'dia.diagnostic_report',

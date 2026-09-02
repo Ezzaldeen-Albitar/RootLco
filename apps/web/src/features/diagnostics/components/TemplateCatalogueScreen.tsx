@@ -62,7 +62,11 @@ export function TemplateCatalogueScreen({
   const [failure, setFailure] = useState<ReadState<never> | null>(null);
   const [loading, setLoading] = useState(false);
   const [reloadCount, setReloadCount] = useState(0);
-  const reload = useCallback(() => setReloadCount((n) => n + 1), []);
+  const reload = useCallback(() => {
+    setPages([]);
+    setFailure(null);
+    setReloadCount((n) => n + 1);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -76,12 +80,8 @@ export function TemplateCatalogueScreen({
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
-    setPages([]);
-    setFailure(null);
     void listTemplates(status ? { status } : {}, null).then((next) => {
       if (cancelled) return;
-      setLoading(false);
       if (next.status === 'ok') setPages([next.data]);
       else setFailure(next as ReadState<never>);
     });
@@ -125,7 +125,11 @@ export function TemplateCatalogueScreen({
             name="status"
             label={translate(messages, 'diagnostics.catalogue.filterStatus')}
             value={status}
-            onChange={(event) => setStatus(event.target.value)}
+            onChange={(event) => {
+              setStatus(event.target.value);
+              setPages([]);
+              setFailure(null);
+            }}
             options={TEMPLATE_STATUSES.map((value) => ({
               value,
               label: translate(messages, `diagnostics.templateStatus.${value}` as keyof Messages),

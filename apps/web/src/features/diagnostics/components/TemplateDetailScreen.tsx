@@ -222,8 +222,14 @@ function TemplateSettingsForm({
   const [problem, setProblem] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
 
-  useEffect(() => setNextName(name), [name]);
-  useEffect(() => setNextStatus(status), [status]);
+  // Derived from props during render, not in an effect: when the template the
+  // form edits changes underneath it, the draft follows in the same render.
+  const [seen, setSeen] = useState({ name, status });
+  if (seen.name !== name || seen.status !== status) {
+    setSeen({ name, status });
+    setNextName(name);
+    setNextStatus(status);
+  }
 
   return (
     <form
@@ -358,13 +364,16 @@ function VersionItems({
   readonly onChanged: () => void;
 }) {
   const [items, setItems] = useState<ReadState<ItemsOnly<TemplateItem>> | null>(null);
-  const [reloadCount, reload] = useReload();
+  const [reloadCount, reloadItems] = useReload();
+  const reload = useCallback(() => {
+    setItems(null);
+    reloadItems();
+  }, [reloadItems]);
   const [pending, setPending] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    setItems(null);
     void listVersionItems(version.id).then((next) => {
       if (!cancelled) setItems(next);
     });
