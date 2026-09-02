@@ -94,6 +94,8 @@ describe('the navigation model', () => {
       // The work-order board landed with P1-29 W1 at /work-orders, gated on
       // `wo.work_order.read` — the permission its only operation requires.
       'work-orders',
+      // P1-29 W7: the inspection-template catalogue at `/work-orders/diagnostics`.
+      'work-orders.diagnostics',
       // The board child names the same route as its parent, so the expanded
       // sidebar has a link to mark as the current page. See navigation.ts.
       'work-orders.queue',
@@ -115,9 +117,8 @@ describe('the navigation model', () => {
       'notifications',
       'reports',
       // `technicians` left this list in P1-29 W4, when the workspace was built.
-      // `work-orders` left this list in P1-29 W1. Its two CHILDREN stay: the
-      // diagnostics and quality screens are W7 and W8 and do not exist yet.
-      'work-orders.diagnostics',
+      // `work-orders` left this list in P1-29 W1 and `work-orders.diagnostics`
+      // in W7. The quality screen is W8 and does not exist yet.
       'work-orders.quality',
     ]);
   });

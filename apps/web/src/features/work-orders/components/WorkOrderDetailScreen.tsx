@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useCallback, useEffect, useState, useTransition } from 'react';
 import { SelectField, TextField } from '@/components/forms/Field';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
@@ -54,6 +55,7 @@ export function WorkOrderDetailScreen({
   canReadTechnicians,
   canAssign,
   canReadDepartments,
+  canReadDiagnostics,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
@@ -64,6 +66,8 @@ export function WorkOrderDetailScreen({
   readonly canReadTechnicians: boolean;
   readonly canAssign: boolean;
   readonly canReadDepartments: boolean;
+  /** P1-29 W7: the per-job link into the diagnostics screen. */
+  readonly canReadDiagnostics: boolean;
 }) {
   const [detail, setDetail] = useState<WorkOrderDetail>(initial);
   const [reloadError, setReloadError] = useState<string | null>(null);
@@ -122,6 +126,7 @@ export function WorkOrderDetailScreen({
         canReadTechnicians={canReadTechnicians}
         canAssign={canAssign}
         canReadDepartments={canReadDepartments}
+        canReadDiagnostics={canReadDiagnostics}
         onDone={() => startTransition(() => void refresh())}
       />
     </div>
@@ -405,6 +410,7 @@ function JobsSection({
   canReadTechnicians,
   canAssign,
   canReadDepartments,
+  canReadDiagnostics,
   onDone,
 }: {
   readonly locale: Locale;
@@ -416,6 +422,7 @@ function JobsSection({
   readonly canReadTechnicians: boolean;
   readonly canAssign: boolean;
   readonly canReadDepartments: boolean;
+  readonly canReadDiagnostics: boolean;
   readonly onDone: () => void;
 }) {
   const [openJobId, setOpenJobId] = useState<string | null>(null);
@@ -475,6 +482,14 @@ function JobsSection({
                   <span className="text-caption text-text-muted">
                     {translate(messages, 'workOrders.detail.requiresDiagnostic')}
                   </span>
+                ) : null}
+                {canReadDiagnostics ? (
+                  <Link
+                    href={`/${locale}/work-orders/${job.workOrderId}/jobs/${job.id}/diagnostics`}
+                    className="text-caption text-primary underline-offset-2 hover:underline"
+                  >
+                    {translate(messages, 'workOrders.detail.diagnosticsLink')}
+                  </Link>
                 ) : null}
                 <span className="text-caption text-text-muted">
                   {translate(messages, 'workOrders.detail.department')}:{' '}

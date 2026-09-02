@@ -329,6 +329,10 @@ export const OUT_OF_SUBJECT_ADAPTERS = Object.freeze({
   updateJob: 'wo.job-update — P1-29 W3, not an apt/rec operation',
   stopLaborSession: 'tech.labor-session-stop — P1-29 W4, not an apt/rec operation',
   correctLaborSession: 'tech.labor-session-correct — P1-29 W4, not an apt/rec operation',
+  updateTemplate: 'dia.template-update — P1-29 W7, not an apt/rec operation',
+  transitionReport: 'dia.diagnostic-transition — P1-29 W7, not an apt/rec operation',
+  completeReport: 'dia.diagnostic-complete — P1-29 W7, not an apt/rec operation',
+  setVersionStatus: 'dia.template-version-status-set — P1-29 W7, not an apt/rec operation',
 });
 
 export function expectedAdapterOperations(guarded, manifest, decisions) {

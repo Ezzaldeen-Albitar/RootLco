@@ -125,6 +125,9 @@ const ROOTS = [
   // so its tree joins the inventory rather than repeating the five-round
   // history that built it.
   join(SRC, 'features', 'receptions'),
+  // P1-29 W7: the diagnostics catalogue, template detail and job workbench are
+  // `<form action={…}>` owners with selects and checkboxes of this class.
+  join(SRC, 'features', 'diagnostics'),
   // P1-28, round six: appointment booking, the appointment detail lifecycle
   // commands, and the company/branch authorization target all own or feed a
   // `<form action={…}>` and none of them had ever been opened by this scan.
@@ -361,6 +364,11 @@ const OUTSIDE_A_FORM: readonly { file: string; match: string; why: string }[] = 
     file: 'features/technicians/components/TechnicianWorkspaceScreen.tsx',
     match: "<SelectField label={translate(messages, 'technicians.workspace.branch')}",
     why: 'The branch-target branch picker, the other half of the same pair, in the same `onSubmit` form for the same reason.',
+  },
+  {
+    file: 'features/diagnostics/components/TemplateCatalogueScreen.tsx',
+    match: `<SelectField name="status" label={translate(messages, 'diagnostics.catalogue.filterStatus')}`,
+    why: 'The catalogue status FILTER (P1-29 W7). It sits in the list section, outside every `<form action={…}>` on the screen, and re-reads the list on change; nothing submits it, so no Server Action ever resets it — read off the element nesting.',
   },
   {
     file: 'features/vehicles/components/VehicleDuplicateReviewScreen.tsx',

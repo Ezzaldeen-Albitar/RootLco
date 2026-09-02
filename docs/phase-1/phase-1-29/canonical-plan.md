@@ -279,7 +279,36 @@ at `limit=3` concatenating to the unpaged set with nothing skipped and nothing t
 kinds named for a work-order reader; raise, resolve, the folded status, the conflict, and the job's
 state unchanged by any of it; no-permission, cross-branch and cross-tenant refusals.
 
-**W7** — the diagnostics experience, on the 23 operations above. **Closure depends on it (§3).**
+**W7 — DELIVERED.** The diagnostics experience, on the 23 operations above. **Closure depends
+on it (§3), and it exists.** Three screens, zero new backend beyond the seam read below:
+`/work-orders/diagnostics` (the template catalogue on `dia.template-list` and
+`dia.diagnostic-type-list`, with `dia.template-create` for `dia.catalogue.manage`),
+`/work-orders/diagnostics/{templateId}` (the template, its versions and each version's items on
+`dia.template-detail` + `dia.template-version-item-list`; rename and status with `If-Match`, new
+version, items on a draft, publish and retire) and `/work-orders/{workOrderId}/jobs/{jobId}/diagnostics`
+(the job's reports, a report started from the publishable set, and the workbench: the checklist
+as a JOIN of the version's items with the report's results so every answer is addressed to an
+item id, measurements, fault codes, findings, recommendations, evidence through the shipped
+capture chain against `dia.diagnostic_report`, the report's own `nextStatuses`, completion,
+review, and the paged history). The W3 detail links each job into it on `dia.diagnostic.read`.
+
+PC-1 is proved on real responses per screen in
+`tests/backend/p1-29-w7-diagnostics-experience.test.ts` — an authorized actor sees the data, a
+principal without the code is refused, another tenant's template, job and report are not
+visible — and every interface in `apps/web/src/features/diagnostics/diagnostics-contract.ts` is held
+field-for-field against the row that came back, including the one fact the mirror could not
+guess: a template LIST row carries its keyset `cursor` and the detail's does not. The journey the
+workbench drives is proved end to end through the routes the screen calls, with the two
+version-guarded commands proved to refuse a stale version and a completed report proved to
+refuse a late entry. The request each form builds — every path, body and `If-Match` — is proved
+in `apps/web/tests/diagnostics-api.test.ts`, and the screens in `apps/web/tests/diagnostics.dom.test.tsx`.
+
+What the screens deliberately do NOT offer, because the wire does not: a diagnostic-type
+vocabulary (`dia.diagnostic_types` is unseeded by policy — the catalogue renders an honest empty
+state and closes the create form until the Owner's approved types exist), editing or deleting an
+item, a result or an entry (no such operation exists; a correction is a new entry or a new
+version), paging of items, reports per job or publishable versions (unpaged on the wire), and a
+reviewer's name (`reviewerId` is rendered as the reference it is).
 
 **W7's Backend seam — DELIVERED.** Measuring W7 against the routes found that no operation
 published a template version's **items**: `dia.template-detail` returns the template and its
