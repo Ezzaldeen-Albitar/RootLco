@@ -214,7 +214,10 @@ function WorkOrderFacts({
       aria-labelledby="work-order-facts-heading"
       className="rounded-lg border border-border bg-surface p-4"
     >
-      <h2 id="work-order-facts-heading" className="mb-3 text-heading-3 text-text-primary">
+      <h2
+        id="work-order-facts-heading"
+        className="mb-3 text-section-title font-medium text-text-primary"
+      >
         {translate(messages, 'workOrders.detail.factsHeading')}
       </h2>
       <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -304,7 +307,10 @@ function LifecyclePanel({
       aria-labelledby="work-order-lifecycle-heading"
       className="rounded-lg border border-border bg-surface p-4"
     >
-      <h2 id="work-order-lifecycle-heading" className="mb-1 text-heading-3 text-text-primary">
+      <h2
+        id="work-order-lifecycle-heading"
+        className="mb-1 text-section-title font-medium text-text-primary"
+      >
         {translate(messages, 'workOrders.detail.lifecycleHeading')}
       </h2>
       <p className="mb-3 text-caption text-text-muted">
@@ -358,7 +364,7 @@ function LifecyclePanel({
           </div>
 
           {problem !== null && problem !== 'workOrders.detail.reasonRequired' ? (
-            <p role="alert" className="text-body text-danger">
+            <p role="alert" className="text-body text-error">
               {translateDynamic(messages, problem)}
             </p>
           ) : null}
@@ -438,7 +444,10 @@ function JobsSection({
       aria-labelledby="work-order-jobs-heading"
       className="rounded-lg border border-border bg-surface p-4"
     >
-      <h2 id="work-order-jobs-heading" className="mb-3 text-heading-3 text-text-primary">
+      <h2
+        id="work-order-jobs-heading"
+        className="mb-3 text-section-title font-medium text-text-primary"
+      >
         {translate(messages, 'workOrders.detail.jobsHeading')}
       </h2>
 

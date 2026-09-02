@@ -178,7 +178,7 @@ function RoutingPanel({
       )}
 
       {problem === null ? null : (
-        <p role="alert" className="text-body text-danger">
+        <p role="alert" className="text-body text-error">
           {translateDynamic(messages, problem)}
         </p>
       )}
@@ -371,7 +371,7 @@ function AssignmentPanel({
       )}
 
       {problem === null ? null : (
-        <p role="alert" className="text-body text-danger">
+        <p role="alert" className="text-body text-error">
           {translateDynamic(messages, problem)}
         </p>
       )}
