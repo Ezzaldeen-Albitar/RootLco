@@ -223,7 +223,8 @@ export const NAVIGATION: readonly NavigationGroup[] = Object.freeze([
             icon: 'work-orders',
             href: '/work-orders/quality',
             permission: 'qms.quality_control.read',
-            status: 'planned',
+            // P1-29 W8: the branch QC queue exists at this route.
+            status: 'available',
             scope: 'branch',
           },
         ],

@@ -141,6 +141,7 @@ export default async function WorkOrderDetailPage({
       canAssign={holds(session.permissions, WORK_ORDER_DETAIL_PERMISSIONS.assignmentManage)}
       canReadDepartments={holds(session.permissions, WORK_ORDER_DETAIL_PERMISSIONS.departmentRead)}
       canReadDiagnostics={holds(session.permissions, WORK_ORDER_DETAIL_PERMISSIONS.diagnosticRead)}
+      canRecordLabor={holds(session.permissions, WORK_ORDER_DETAIL_PERMISSIONS.laborRecord)}
     />
   );
 }

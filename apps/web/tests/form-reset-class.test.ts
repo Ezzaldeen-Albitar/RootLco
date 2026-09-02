@@ -128,6 +128,9 @@ const ROOTS = [
   // P1-29 W7: the diagnostics catalogue, template detail and job workbench are
   // `<form action={…}>` owners with selects and checkboxes of this class.
   join(SRC, 'features', 'diagnostics'),
+  // P1-29 W8: the QC queue and the quality-and-closure view own `<form action={…}>`
+  // forms with selects of this class.
+  join(SRC, 'features', 'quality'),
   // P1-28, round six: appointment booking, the appointment detail lifecycle
   // commands, and the company/branch authorization target all own or feed a
   // `<form action={…}>` and none of them had ever been opened by this scan.
@@ -369,6 +372,21 @@ const OUTSIDE_A_FORM: readonly { file: string; match: string; why: string }[] = 
     file: 'features/diagnostics/components/TemplateCatalogueScreen.tsx',
     match: `<SelectField name="status" label={translate(messages, 'diagnostics.catalogue.filterStatus')}`,
     why: 'The catalogue status FILTER (P1-29 W7). It sits in the list section, outside every `<form action={…}>` on the screen, and re-reads the list on change; nothing submits it, so no Server Action ever resets it — read off the element nesting.',
+  },
+  {
+    file: 'features/quality/components/QualityQueueScreen.tsx',
+    match: "<SelectField label={translate(messages, 'quality.queue.company')}",
+    why: 'The branch-target company picker (P1-29 W8), the W4 shape: a `<form onSubmit={…}>` that prevents its own default and sets state — never a Server Action, so React never resets it.',
+  },
+  {
+    file: 'features/quality/components/QualityQueueScreen.tsx',
+    match: "<SelectField label={translate(messages, 'quality.queue.branch')}",
+    why: 'The branch-target branch picker, the other half of the same pair, in the same `onSubmit` form for the same reason.',
+  },
+  {
+    file: 'features/quality/components/QualityQueueScreen.tsx',
+    match: `<SelectField name="overallResult" label={translate(messages, 'quality.queue.filterResult')}`,
+    why: 'The queue result FILTER (P1-29 W8). It sits in the list section outside every `<form action={…}>` and re-reads on change; nothing submits it.',
   },
   {
     file: 'features/vehicles/components/VehicleDuplicateReviewScreen.tsx',

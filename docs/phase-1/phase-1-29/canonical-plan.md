@@ -324,9 +324,37 @@ permission code, no migration.** Both absences and the read are proved on real r
 `tests/backend/p1-29-w7-template-version-item-list.test.ts`. The Frontend W7 slice follows on
 the 23 operations.
 
-**W8** — `wo.work-order-closure`, `wo.work-order-closure-eligibility`, QC records and per-check
-results, the `B1..B6` closure-gate blocker state, rework links, the append-only reopen-attempt
-log, additional-work request and submit-for-QA.
+**W8 — DELIVERED.** The quality and closure view, the branch QC queue, additional work, and the
+two things W6 published for this lane to consume. Zero new backend beyond the seam read below.
+`/work-orders/quality` is the branch QC queue on `qms.qc-record-branch-list`, the branch target
+chosen from the session's own companies and branches. `/work-orders/{workOrderId}/closure` is the
+view: the closure gate on `wo.work-order-closure-eligibility` rendered as the backend states it
+(each `B1..B6` blocker with its own message and the object that enforces it, the deferred
+conditions named); QC records on `qms.qc-record-list` / `-open` / `-detail`, each record's checklist
+a JOIN of the vocabulary (`qms.qc-check-list`) with its results so every answer is addressed to a
+check's id, `qms.qc-check-result` per check and `qms.qc-record-finalize` with the record's
+`If-Match`; rework on `qms.rework-list` / `-create` / `-sign-off` (`If-Match`), the cost only with
+`iam.sensitive.view`; the append-only reopen-attempt log on `qms.reopen-attempt-list` / `-attempt`
+(every attempt is refused and kept, as the schema fixes it); additional work on
+`wo.additional-work-list` / `-request` / `-approval-read` / `-approval` (`If-Match`) / `-fulfillment` /
+`-withdraw`, the description only with `iam.sensitive.view`; and `wo.work-order-closure` with the
+order's `If-Match` to a terminal, non-cancelling state the order's own `nextStates` name, disabled
+while the gate refuses. Submit-for-QA is `wo.work-order-transition` on the W3 detail, to whichever
+state the catalogue permits; no separate operation exists and none was invented. The W3 detail
+gains the unified history (`wo.work-order-timeline`, one keyset page at a time, withheld kinds
+named) and, per job, the blocker record (`wo.job-blocker-list` / `-raise` / `-resolve`); the two
+blocker request mirrors are now in `apps/web/src/lib/contracts/work-order-contract.ts` and
+`check-p1-29-payload-parity` declares zero pending mirrors again.
+
+Proved on real responses in `tests/backend/p1-29-w8-quality-and-closure.test.ts`: the journey
+the view drives end to end through the routes it calls — QC from vocabulary to finalization with
+a stale version refused, the gate naming `B1`, rework opened and signed off by a separate actor,
+additional work requested with its restricted description recorded and read only with the
+sensitive code, a blocker raised and resolved, the history paged, and closure refused by name;
+PC-1 per screen — a work-order reader sees the gate, the additional work and the history and is
+refused QC; no grant is refused everywhere; another tenant's order is 404. The request each panel
+builds is proved in `apps/web/tests/quality-api.test.ts`, the screens in
+`apps/web/tests/quality.dom.test.tsx`.
 
 **W9** — Owner acceptance on a production build. **Known executable dependency:** `iam.roles`
 holds zero rows, so no human actor carries any domain permission code and every operation

@@ -362,7 +362,16 @@ describe('C12 — an operation-level PENDING mirror, the counterpart of a PENDIN
 
   async function compare(operationId: string, pendingMirrors: Record<string, unknown>) {
     const mod = await import('../../scripts/ci/check-p1-29-payload-parity.mjs');
-    const interfaces = mod.readMirror(mirrorCopy(`pending-${Object.keys(pendingMirrors).length}`));
+    // W8 wrote the blocker mirrors, so the copy is put back to the state these
+    // cases describe — an operation the mirror does not declare — by renaming it.
+    const root = mirrorCopy(`pending-${Object.keys(pendingMirrors).length}`);
+    edit(
+      root,
+      'work-order-contract.ts',
+      'export interface JobBlockerRaiseBody {',
+      'export interface JobBlockerRaiseBodyRemoved {'
+    );
+    const interfaces = mod.readMirror(root);
     const schemas = JSON.parse(readFileSync(schemasPath, 'utf8')) as Record<string, unknown>;
     return mod.compareOperation({
       operationId,
