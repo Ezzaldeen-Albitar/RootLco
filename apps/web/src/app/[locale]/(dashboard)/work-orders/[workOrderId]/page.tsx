@@ -74,7 +74,17 @@ export default async function WorkOrderDetailPage({
 
   const detail = await readWorkOrderDetail(workOrderId);
 
-  return (
+  /**
+   * The chrome every outcome shares.
+   *
+   * Each outcome below is its own `if` and its own return rather than a branch
+   * of one ternary chain. That is deliberate: `route-correlation-binding` reads
+   * the nearest enclosing `if` to decide whether a denial came from the BACKEND
+   * or from a client-side gate, and a ternary carries no condition it can see —
+   * so a chain leaves every denial on this page unclassified, which is a rule
+   * declining to judge rather than a rule passing.
+   */
+  const shell = (children: React.ReactNode) => (
     <>
       <PageHeader
         locale={locale}
@@ -83,40 +93,54 @@ export default async function WorkOrderDetailPage({
         descriptionKey="workOrders.detail.description"
         crumbs={crumbs}
       />
-      <PageBody>
-        {detail.status === 'ok' ? (
-          <WorkOrderDetailScreen
-            locale={locale}
-            messages={messages}
-            initial={detail.data}
-            canTransition={holds(session.permissions, WORK_ORDER_DETAIL_PERMISSIONS.transition)}
-            canManageJobs={holds(session.permissions, WORK_ORDER_DETAIL_PERMISSIONS.jobManage)}
-            canReadTechnicians={holds(
-              session.permissions,
-              WORK_ORDER_DETAIL_PERMISSIONS.technicianRead
-            )}
-            canAssign={holds(session.permissions, WORK_ORDER_DETAIL_PERMISSIONS.assignmentManage)}
-            canReadDepartments={holds(
-              session.permissions,
-              WORK_ORDER_DETAIL_PERMISSIONS.departmentRead
-            )}
-          />
-        ) : detail.status === 'not-found' ? (
-          // A work order in another tenant or another branch is NOT FOUND here,
-          // not "denied": the backend deliberately does not confirm that a
-          // record it will not show you exists.
-          <NotFoundState messages={messages} />
-        ) : detail.status === 'denied' ? (
-          <PermissionDeniedState messages={messages} />
-        ) : detail.status === 'expired' ? (
-          <SessionExpiredState messages={messages} />
-        ) : detail.status === 'unavailable' ? (
-          <BackendUnavailableState messages={messages} />
-        ) : (
-          <ErrorState messages={messages} />
-        )}
-      </PageBody>
+      <PageBody>{children}</PageBody>
     </>
+  );
+
+  // The reference the backend logged. `null` becomes `undefined` because the
+  // state components take an optional prop, and an explicit null would render as
+  // a reference that is not there.
+  const reference = detail.correlationId ?? undefined;
+
+  if (detail.status === 'not-found') {
+    // A work order in another tenant or another branch is NOT FOUND here, not
+    // "denied": the backend deliberately does not confirm that a record it will
+    // not show you exists. No reference is printed, because the whole point is
+    // that nothing about this record is being disclosed.
+    return shell(<NotFoundState messages={messages} />);
+  }
+  if (detail.status === 'denied') {
+    /*
+     * The BACKEND refused this read and that refusal is in its logs, so the
+     * correlation id is printed: it is the only diagnostic an operator ever
+     * sees and the only thing support can search for.
+     *
+     * The client-side gate above prints NONE, and the difference is the point —
+     * nothing was logged there, so a reference would lead nowhere.
+     */
+    return shell(<PermissionDeniedState messages={messages} correlationId={reference} />);
+  }
+  if (detail.status === 'expired') {
+    return shell(<SessionExpiredState messages={messages} />);
+  }
+  if (detail.status === 'unavailable') {
+    return shell(<BackendUnavailableState messages={messages} correlationId={reference} />);
+  }
+  if (detail.status !== 'ok') {
+    return shell(<ErrorState messages={messages} correlationId={reference} />);
+  }
+
+  return shell(
+    <WorkOrderDetailScreen
+      locale={locale}
+      messages={messages}
+      initial={detail.data}
+      canTransition={holds(session.permissions, WORK_ORDER_DETAIL_PERMISSIONS.transition)}
+      canManageJobs={holds(session.permissions, WORK_ORDER_DETAIL_PERMISSIONS.jobManage)}
+      canReadTechnicians={holds(session.permissions, WORK_ORDER_DETAIL_PERMISSIONS.technicianRead)}
+      canAssign={holds(session.permissions, WORK_ORDER_DETAIL_PERMISSIONS.assignmentManage)}
+      canReadDepartments={holds(session.permissions, WORK_ORDER_DETAIL_PERMISSIONS.departmentRead)}
+    />
   );
 }
 

@@ -138,7 +138,7 @@ sit in the tree looking like coverage while running nowhere.
 ## Current tree
 
 The live web suite holds **105 web test files**, every one matched by a `vitest`
-project, and the current tree executes **2908** tests. Both are derived on every
+project, and the current tree executes **2921** tests. Both are derived on every
 run of `npm run validate:p1-27-closing-values` rather than recorded by hand.
 
 That executed figure is the one a test reads. It used to read the `Web tier` row
@@ -149,7 +149,7 @@ comparing a live baseline against a record of a head the branch had left behind.
 The superseded figures are left exactly as they were, because they are a true
 account of that head; what moved is which number the check consults.
 
-**The 2908 is local, and it is the binding measurement.** It is the output of
+**The 2921 is local, and it is the binding measurement.** It is the output of
 `node scripts/ci/check-p1-27-closing-values.mjs --record web` against this tree,
 recorded in `evidence/local-run-ledger.json` with the commit it was taken at. A
 hosted run at a superseded head agreed with it, and that agreement is recorded
@@ -161,7 +161,7 @@ different tree is not evidence about this one.
 | measure                                    | value | the command that decides it                                       |
 | ------------------------------------------ | ----- | ------------------------------------------------------------------ |
 | Web test files under `apps/web/tests`       | 105    | a walk of the tree                                                 |
-| Web tier — tests executed                   | 2908  | `--record web`, from the `vitest` JSON report                      |
+| Web tier — tests executed                   | 2921  | `--record web`, from the `vitest` JSON report                      |
 | Web tier — files the run reported           | 105    | the same report, cross-checked against the walk above              |
 | Root unit tier — tests executed             | 3066  | `--record unit`, from the `vitest` JSON report                     |
 | Root unit tier — files the run reported     | 112   | the same report, cross-checked against the tier's include rule      |
