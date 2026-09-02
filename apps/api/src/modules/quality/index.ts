@@ -63,7 +63,7 @@ export {
 } from './domain/quality';
 
 /** Composition root: constructs the module's services once per process. */
-export type { QcRecordRow } from './data/quality-repository';
+export type { QcCheckVocabularyRow, QcRecordRow } from './data/quality-repository';
 
 export const qualityModule = composeModule({
   module: 'quality',

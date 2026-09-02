@@ -9,10 +9,10 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 
 | Measure                  | Value |
 | ------------------------ | ----- |
-| Public operations        | 351   |
+| Public operations        | 352   |
 | Domains (modules)        | 20    |
-| OpenAPI paths            | 282   |
-| OpenAPI operations       | 351   |
+| OpenAPI paths            | 283   |
+| OpenAPI operations       | 352   |
 | OpenAPI schemas          | 3     |
 | OpenAPI security schemes | 1     |
 | Permission codes seeded  | 118   |
@@ -24,7 +24,7 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 
 | Classification    | Operations |
 | ----------------- | ---------- |
-| Covered           | 351        |
+| Covered           | 352        |
 | Partially covered | 0          |
 | Uncovered         | 0          |
 | Not applicable    | 0          |
@@ -44,7 +44,7 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 | payments        | 4          | 4       | 2      | 2       | 2          | 0               |
 | platform        | 3          | 3       | 2      | 2       | 1          | 0               |
 | pricing         | 6          | 6       | 4      | 4       | 4          | 2               |
-| quality         | 14         | 14      | 7      | 8       | 7          | 2               |
+| quality         | 15         | 15      | 7      | 8       | 7          | 2               |
 | quotation       | 6          | 6       | 5      | 5       | 5          | 2               |
 | reception       | 71         | 71      | 43     | 43      | 36         | 22              |
 | reporting       | 2          | 2       | 0      | 0       | 0          | 0               |
@@ -196,6 +196,7 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 | `platform.organization-lifecycle`                   | POST   | `/api/v1/platform/organizations/{tenantId}/status`                                  | tenant  | `platform.organization.lifecycle`                                    | org.tenant.status_changed                    | —    | —   | audit authorization cross-tenant denial route service success                                                                 | Covered |
 | `platform.organization-provision`                   | POST   | `/api/v1/platform/organizations`                                                    | tenant  | `platform.organization.provision`                                    | org.tenant.provisioned                       | yes  | —   | audit authorization denial idempotency route service success                                                                  | Covered |
 | `platform.organization-read`                        | GET    | `/api/v1/platform/organizations`                                                    | tenant  | `platform.organization.read`                                         | —                                            | —    | —   | authorization denial route service success                                                                                    | Covered |
+| `qms.qc-check-list`                                 | GET    | `/api/v1/qc-checks`                                                                 | tenant  | `qms.quality_control.read`                                           | —                                            | —    | —   | authorization cross-tenant denial isolation route service success                                                             | Covered |
 | `qms.qc-check-result`                               | PUT    | `/api/v1/quality-controls/{recordId}/checks/{qcCheckId}`                            | branch  | `qms.quality_control.record`                                         | qms.quality_control.check_recorded           | yes  | —   | audit authorization cross-tenant denial idempotency isolation route service success                                           | Covered |
 | `qms.qc-record-branch-list`                         | GET    | `/api/v1/quality-controls`                                                          | branch  | `qms.quality_control.read`                                           | —                                            | —    | —   | authorization cross-tenant denial isolation route service success                                                             | Covered |
 | `qms.qc-record-detail`                              | GET    | `/api/v1/quality-controls/{recordId}`                                               | branch  | `qms.quality_control.read`                                           | —                                            | —    | —   | authorization cross-tenant denial isolation route service success                                                             | Covered |

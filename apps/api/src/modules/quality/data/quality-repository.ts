@@ -43,6 +43,13 @@ export interface QcRecordRow {
   readonly recordVersion: number;
 }
 
+/** A vocabulary row (P1-29-W8): the check plus its scope, status and version. */
+export interface QcCheckVocabularyRow extends QcCheckRow {
+  readonly scope: 'platform' | 'tenant';
+  readonly status: string;
+  readonly recordVersion: number;
+}
+
 export interface QcCheckRow {
   readonly id: string;
   readonly code: string;
@@ -322,6 +329,50 @@ export class QualityRepository extends Repository {
       cursor: row.created_at_cursor,
     }));
     return buildPage(rows, page, QC_BRANCH_ORDER, (row) => ({ sortValue: row.cursor, id: row.id }));
+  }
+
+  /**
+   * The check vocabulary the tenant resolves, BOTH statuses (P1-29-W8).
+   *
+   * The same resolution `qcChecks` applies — tenant row shadows platform row by
+   * code — without the active-only filter: a record written against a retired
+   * check still needs its name, and each row says which status it carries.
+   * Whether a check may be ANSWERED stays with `qcChecks` on the write path.
+   */
+  async qcCheckVocabulary(db: DbHandle): Promise<readonly QcCheckVocabularyRow[]> {
+    const context = this.assertContext(db);
+    const result = await this.run<{
+      id: string;
+      scope: 'platform' | 'tenant';
+      code: string;
+      name: string;
+      is_mandatory: boolean;
+      is_safety_critical: boolean;
+      status: string;
+      record_version: number;
+    }>(
+      db,
+      `SELECT * FROM (
+                SELECT DISTINCT ON (code) id, scope, code, name, is_mandatory, is_safety_critical,
+                       status, record_version
+                  FROM qms.qc_checks
+                 WHERE (scope = 'platform' OR tenant_id = $1)
+                   AND deleted_at IS NULL
+                 ORDER BY code, (scope = 'tenant') DESC
+              ) resolved
+        ORDER BY code`,
+      [context.principal.tenantId]
+    );
+    return result.rows.map((row) => ({
+      id: row.id,
+      scope: row.scope,
+      code: row.code,
+      name: row.name,
+      isMandatory: row.is_mandatory,
+      isSafetyCritical: row.is_safety_critical,
+      status: row.status,
+      recordVersion: row.record_version,
+    }));
   }
 
   /** Active QC checks visible to the tenant, tenant rows shadowing platform. */

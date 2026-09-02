@@ -201,6 +201,7 @@ export const ROUTE_TEMPLATES = Object.freeze([
   '/price-lists/{priceListId}/versions/{versionId}/publication',
   '/price-lists/{priceListId}/versions/{versionId}/rules',
   '/prices',
+  '/qc-checks',
   '/quality-controls',
   '/quality-controls/{recordId}',
   '/quality-controls/{recordId}/checks/{qcCheckId}',

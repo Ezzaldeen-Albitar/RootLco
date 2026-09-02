@@ -1368,7 +1368,6 @@ function HistoryPanel({
 
   useEffect(() => {
     let cancelled = false;
-    setPages([]);
     void readReportHistory(reportId, null).then((next) => {
       if (cancelled) return;
       setHistory(next);

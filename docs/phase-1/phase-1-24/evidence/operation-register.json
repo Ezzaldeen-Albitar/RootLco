@@ -1,9 +1,9 @@
 {
   "generatedBy": "scripts/p1-24-operation-register.mjs",
   "totals": {
-    "operations": 351,
-    "openapiPaths": 282,
-    "openapiOperations": 351,
+    "operations": 352,
+    "openapiPaths": 283,
+    "openapiOperations": 352,
     "openapiSchemas": 3,
     "events": 50,
     "eventsProduced": 47,
@@ -14,7 +14,7 @@
     "auditActions": 210
   },
   "counts": {
-    "Covered": 351
+    "Covered": 352
   },
   "operations": [
     {
@@ -5334,6 +5334,43 @@
       "file": "apps/api/src/app/api/v1/platform/organizations/route.ts"
     },
     {
+      "id": "qms.qc-check-list",
+      "domain": "quality",
+      "method": "GET",
+      "route": "/api/v1/qc-checks",
+      "permissions": ["qms.quality_control.read"],
+      "public": false,
+      "scope": "tenant",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/qc-checks",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "denial",
+        "cross-tenant"
+      ],
+      "providedEvidence": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/p1-29-w8-qc-check-list.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/qc-checks/route.ts"
+    },
+    {
       "id": "qms.qc-check-result",
       "domain": "quality",
       "method": "PUT",
@@ -5439,7 +5476,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-19-quality-rework.test.ts"],
+      "tests": [
+        "tests/backend/p1-19-quality-rework.test.ts",
+        "tests/backend/p1-29-w8-qc-check-list.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/quality-controls/[recordId]/route.ts"
     },
