@@ -255,7 +255,7 @@ describe('W9 — platform operator genesis', () => {
         operatorAccountId: established.operatorAccountId,
         homeTenantId: established.homeTenantId,
       });
-      expect([...completed.completedGrants].sort()).toEqual([...completed.grants].sort());
+      expect([...(completed.completedGrants ?? [])].sort()).toEqual([...completed.grants].sort());
       // Idempotent again, and the same tenant — no second home tenant.
       const again = await runGenesis(client, input(), { subject: `sub_${RUN}`, created: false });
       expect(again).toMatchObject({
