@@ -114,13 +114,26 @@ export async function preflightPrivileges(db: DbHandle): Promise<PrivilegePrefli
  * Cached per process so request paths do not re-probe on every call. The grant
  * surface changes only by migration, i.e. by a deployment.
  */
-let cached: PrivilegePreflight | undefined;
+/**
+ * One preflight per CONNECTION, not per process. The control-plane pool acts
+ * as `app_platform`, whose capability matrix is narrower than `app_runtime`'s
+ * (no outbox, no runtime idempotency), and both pools live in one process. A
+ * single cached preflight let whichever connection ran first answer for the
+ * other: measured in P1-29 W9, a provisioning request primed the cache with
+ * the platform role and every tenant write that followed was refused for a
+ * capability the runtime role plainly holds.
+ */
+const cached = new Map<'primary' | 'platform', PrivilegePreflight>();
 
 export async function foundationCapabilities(db: DbHandle): Promise<PrivilegePreflight> {
-  if (!cached) cached = await preflightPrivileges(db);
-  return cached;
+  const connection = db.connection ?? 'primary';
+  const known = cached.get(connection);
+  if (known) return known;
+  const preflight = await preflightPrivileges(db);
+  cached.set(connection, preflight);
+  return preflight;
 }
 
 export function __resetCapabilitiesForTests(): void {
-  cached = undefined;
+  cached.clear();
 }

@@ -56,6 +56,8 @@ import {
   __resetAuthenticatorForTests,
   setSessionAuthenticator,
 } from '@/server/context/principal';
+import { FakeIdentityProvider, setIdentityProvider } from '@/modules/iam';
+import { __resetIdentityProviderForTests } from '@/modules/iam/provider/identity-provider';
 
 import {
   ORGANIZATION_PROVISION_OPERATION,
@@ -146,6 +148,9 @@ function spec(code: string): Record<string, unknown> {
     tenant: { code: `${code}_${RUN}`, display_name: 'Wave B Probe', locale: 'en', timezone: 'UTC' },
     company: { code: 'wbc', legal_name: 'Wave B Ltd', base_currency: 'JOD' },
     branch: { code: 'main', name: 'Main', timezone: 'UTC' },
+    // P1-29 W9: provisioning carries the First-Owner bootstrap; the Owner is
+    // identity and profile only, and the tenant stays `provisioning`.
+    owner: { email: `${code}_${RUN}@fixture.test`, displayName: 'Wave B Owner' },
   };
 }
 
@@ -226,7 +231,16 @@ async function scalar<T>(sql: string, values: readonly unknown[] = []): Promise<
 
 beforeAll(async () => {
   process.env.NEXT_PUBLIC_APP_ENV = 'local';
+  // The bootstrap issues the Owner's invitation link, which must be allow-listed.
+  process.env.AUTH_REDIRECT_ALLOWLIST = 'https://app.test/welcome';
   __resetBackendConfigForTests();
+  setIdentityProvider(
+    new FakeIdentityProvider({
+      secret: 'wave-b-control-plane-secret-not-real',
+      issuer: 'https://auth.test.local/auth/v1',
+      audience: 'authenticated',
+    })
+  );
 
   admin = adminPool();
   await ensureTestLogins(admin);
@@ -245,6 +259,7 @@ afterEach(() => {
 });
 
 afterAll(async () => {
+  __resetIdentityProviderForTests();
   __setPrimaryPoolForTests(undefined);
   __setPlatformPoolForTests(undefined);
   await runtime.end();
@@ -639,20 +654,22 @@ describe('control-plane audit trail', () => {
     const { rows } = await admin.query(
       `SELECT actor_id, actor_kind, tenant_id
          FROM iam.audit_records
-        WHERE action = 'org.tenant.provisioned'
-        ORDER BY seq DESC LIMIT 1`
+        WHERE action = 'org.tenant.provisioned' AND entity_id = $1
+        ORDER BY seq DESC LIMIT 1`,
+      [tenantId]
     );
     const row = rows[0] as { actor_id: string; actor_kind: string; tenant_id: string };
     // Server-derived, from the resolved principal — never from the request. The
     // provisioning schema refuses an actor_id key outright (P5), and this is the
     // other half of that rule: what the record actually carries.
     expect(row.actor_id).toBe(USER_PLATFORM_HOLDER);
-    // The operator's HOME tenant, not the tenant just created. Worth asserting
-    // rather than assuming: the audit row is written by the request pipeline
-    // from context.principal, so it answers "who did this, acting from where",
-    // and ins_audit_records_platform admits it only because that tenant IS the
-    // current one. A row bound to the NEW tenant would not satisfy that policy.
-    expect(row.tenant_id).toBe(TENANT_A);
+    // The NEW tenant's own trail, not the operator's home tenant (P1-29 W9,
+    // design §7): the record is written inside the platform-on-target window,
+    // where iam.current_tenant_id() IS the created tenant, so
+    // ins_audit_records_platform admits it there — and the tenant's genesis,
+    // with the Owner and role identifiers the bootstrap produced, is on the
+    // trail of the tenant it belongs to. The actor is still the operator.
+    expect(row.tenant_id).toBe(tenantId);
     expect(tenantId).not.toBe(TENANT_A);
   }, 30_000);
 

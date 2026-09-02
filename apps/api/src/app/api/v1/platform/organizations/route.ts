@@ -51,30 +51,48 @@ const Query = z
 
 /**
  * The provisioning spec, in the shape `org.provision_organization` actually
- * reads — measured from its own `p_spec ->` accessors, not invented.
+ * reads — measured from its own `p_spec ->` accessors, not invented — plus the
+ * two members P1-29 W9 added: the Owner, and whether to activate.
  *
- * `.strict()` at every level is a security control here, not tidiness. Two keys
+ * `.strict()` at every level is a security control here, not tidiness. Keys
  * the function honours are deliberately ABSENT from this schema, and `.strict()`
  * is what makes their absence enforceable rather than conventional:
  *
- *   `actor_id`   — the function derives the actor as
- *                  `COALESCE(iam.current_user_id(), p_spec ->> 'actor_id')`. The
- *                  session always resolves one here, so the fallback is
- *                  unreachable — but accepting the key would publish a
- *                  caller-supplied value into the attribution path, and a caller
- *                  value must never approach an authorization principal.
- *   `activate`   — forwarding it would call org.change_tenant_status INSIDE the
- *                  provisioning transaction, moving the tenant out of
- *                  `provisioning` before the First-Owner bootstrap runs and
- *                  closing the §6.3 window inside the transaction that depends
- *                  on it. Activation is a separate later act under
- *                  `platform.organization.lifecycle`.
+ *   `actor_id`        — the function derives the actor as
+ *                       `COALESCE(iam.current_user_id(), p_spec ->> 'actor_id')`.
+ *                       The session always resolves one here, so the fallback
+ *                       is unreachable — but accepting the key would publish a
+ *                       caller-supplied value into the attribution path, and a
+ *                       caller value must never approach an authorization
+ *                       principal.
+ *   `tenant.activate` — forwarding it would call org.change_tenant_status
+ *                       INSIDE org.provision_organization, moving the tenant
+ *                       out of `provisioning` BEFORE the First-Owner bootstrap
+ *                       runs and closing the §6.3 window inside the transaction
+ *                       that depends on it. The top-level `activate` below is
+ *                       honoured by the service AFTER the bootstrap, through
+ *                       the lifecycle function, in the same transaction.
  *
- * A request carrying either is refused at the boundary rather than silently
+ * `owner` carries identity and profile inputs only — an address, a display
+ * name, an optional allow-listed return destination for the invitation link.
+ * There is no `roleCodes`, no `permissions`, no `tenantId`, no `userId`: the
+ * roles and their sets are server-owned constants, the target tenant is the
+ * one this transaction creates, and attribution is the session's. A request
+ * carrying any of them is refused at the boundary rather than silently
  * ignored, which is the difference between a rule and a habit.
  */
+const OwnerBody = z
+  .object({
+    email: z.string().min(3).max(320),
+    displayName: z.string().min(1).max(200),
+    redirectTo: z.string().url().max(2048).optional(),
+  })
+  .strict();
+
 const ProvisionBody = z
   .object({
+    owner: OwnerBody,
+    activate: z.boolean().optional(),
     tenant: z
       .object({
         code: z.string().min(2).max(63),
@@ -133,7 +151,8 @@ export const ORGANIZATION_PROVISION_OPERATION = defineOperation({
   module: 'platform',
   method: 'POST',
   path: '/platform/organizations',
-  summary: 'Create a tenant with its first company and branch.',
+  summary:
+    'Create a tenant with its first company, branch and First Owner, optionally activating it.',
   permissions: ['platform.organization.provision'],
   scope: 'tenant',
   auditClass: 'privileged',
@@ -160,6 +179,14 @@ export async function GET(request: Request): Promise<Response> {
 }
 
 export async function POST(request: Request): Promise<Response> {
+  // The raw body is handed to the pipeline so the idempotency fingerprint
+  // binds it: the same key with a different document is a conflict, not a
+  // replay. Before P1-29 W9 the body was not bound here, so a reused key
+  // replayed the stored tenant whatever the second request said (measured).
+  const body = await request
+    .clone()
+    .json()
+    .catch(() => null);
   return handleOperation(
     ORGANIZATION_PROVISION_OPERATION,
     request,
@@ -171,16 +198,28 @@ export async function POST(request: Request): Promise<Response> {
       // is read only because org.provision_organization takes it as an argument.
       const idempotencyKey = requireIdempotencyKey(raw.headers);
 
-      // `tenant.activate` is NEVER forwarded. That branch of
-      // org.provision_organization calls org.change_tenant_status inside the
-      // same transaction, moving the tenant out of `provisioning` BEFORE the
-      // First-Owner bootstrap runs — closing the bootstrap window inside the
-      // transaction that depends on it. Activation is a separate later act
-      // under platform.organization.lifecycle.
-      const result = await platformModule().organizations.provision(db, input, idempotencyKey);
+      // `tenant.activate` is NEVER forwarded to org.provision_organization —
+      // that branch would close the bootstrap window inside the transaction
+      // that depends on it. The top-level `activate` is applied by the service
+      // AFTER the First-Owner bootstrap, in the same transaction.
+      const { owner, activate, ...spec } = input;
+      const result = await platformModule().organizations.provision(
+        db,
+        {
+          spec,
+          owner: {
+            email: owner.email,
+            displayName: owner.displayName,
+            ...(owner.redirectTo !== undefined ? { redirectTo: owner.redirectTo } : {}),
+          },
+          activate: activate === true,
+        },
+        idempotencyKey
+      );
       // successStatus is contract metadata that route-handler does not apply; the
       // route returns the status it declares, as every other 201 route does.
       return { status: 201, body: result };
-    }
+    },
+    { body }
   );
 }

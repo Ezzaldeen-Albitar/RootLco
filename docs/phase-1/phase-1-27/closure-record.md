@@ -76,7 +76,7 @@ or against the accepted content.
 | CodeQL, repository-wide                | **0** open alerts                                                                                               |
 | Hosted candidate CI, run `31587707846` | **21 / 21** checks; web 70 files / 1867 tests / 0 failed; authenticated browser 225 / 0                         |
 | Local at the sealed candidate          | root 91 files / 2149 · web 70 / 1867 · backend 80 / 1842 · DB/RLS 139 / 1647 (`evidence/local-run-ledger.json`) |
-| Migrations                             | **135**, schema hash `a4e6c2e71f0ca4d3c9b37c90b5cc82e7d0335925a4bf307728f4922c6f18f29b`                         |
+| Migrations                             | **136**, schema hash `0598d8af8fa015f0ba0b2b46dc7a0861ea94e987376074905eecd877b93c893f`                         |
 | Lifecycle at handoff                   | `POST_MERGE_PROTECTED_REPROOF`, sole blocker `OWNER_ACCEPTANCE_NOT_TAKEN` — the one this verdict discharges     |
 
 ## 4. What this closure does NOT do

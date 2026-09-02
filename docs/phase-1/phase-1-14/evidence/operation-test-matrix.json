@@ -2762,7 +2762,8 @@
       "public": true,
       "files": [
         "tests/backend/iam-auth-provider.test.ts",
-        "tests/backend/p1-24-iam-route-depth.test.ts"
+        "tests/backend/p1-24-iam-route-depth.test.ts",
+        "tests/backend/p1-29-w9-owner-bootstrap.test.ts"
       ],
       "referenced": true,
       "derived": ["route", "service", "success", "unauthenticated"],
@@ -2838,7 +2839,8 @@
       "public": false,
       "files": [
         "tests/backend/iam-auth-provider.test.ts",
-        "tests/backend/p1-24-iam-route-depth.test.ts"
+        "tests/backend/p1-24-iam-route-depth.test.ts",
+        "tests/backend/p1-29-w9-owner-bootstrap.test.ts"
       ],
       "referenced": true,
       "derived": ["route", "service", "success", "authorization"],
@@ -3243,7 +3245,8 @@
       "files": [
         "tests/backend/iam-auth-provider.test.ts",
         "tests/backend/p1-14-idempotency-replay.test.ts",
-        "tests/backend/p1-24-iam-route-depth.test.ts"
+        "tests/backend/p1-24-iam-route-depth.test.ts",
+        "tests/backend/p1-29-w9-owner-bootstrap.test.ts"
       ],
       "referenced": true,
       "derived": ["route", "service", "success", "authorization", "idempotency", "audit"],
@@ -3302,7 +3305,8 @@
       "files": [
         "tests/backend/iam-operations.test.ts",
         "tests/backend/p1-14-idempotency-replay.test.ts",
-        "tests/backend/p1-24-iam-route-depth.test.ts"
+        "tests/backend/p1-24-iam-route-depth.test.ts",
+        "tests/backend/p1-29-w9-owner-bootstrap.test.ts"
       ],
       "referenced": true,
       "derived": ["route", "service", "success", "authorization", "idempotency", "audit"],
@@ -3341,7 +3345,8 @@
       "files": [
         "tests/backend/iam-admin-writes.test.ts",
         "tests/backend/p1-14-idempotency-replay.test.ts",
-        "tests/backend/p1-24-iam-route-depth.test.ts"
+        "tests/backend/p1-24-iam-route-depth.test.ts",
+        "tests/backend/p1-29-w9-owner-bootstrap.test.ts"
       ],
       "referenced": true,
       "derived": [
@@ -4633,7 +4638,10 @@
       "method": "POST",
       "path": "/platform/organizations",
       "public": false,
-      "files": ["tests/backend/pre-p1-29-platform-control-plane.test.ts"],
+      "files": [
+        "tests/backend/pre-p1-29-platform-control-plane.test.ts",
+        "tests/backend/p1-29-w9-owner-bootstrap.test.ts"
+      ],
       "referenced": true,
       "derived": ["route", "service", "success", "authorization", "idempotency", "audit"],
       "declared": ["denial"],

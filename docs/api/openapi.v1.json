@@ -11091,7 +11091,7 @@
     "/api/v1/platform/organizations": {
       "post": {
         "operationId": "platform.organization-provision",
-        "summary": "Create a tenant with its first company and branch.",
+        "summary": "Create a tenant with its first company, branch and First Owner, optionally activating it.",
         "tags": ["platform"],
         "parameters": [
           {

@@ -112,6 +112,20 @@ export class PlatformRepository extends Repository {
   }
 
   /**
+   * Whether the acting principal holds a platform authority — the same
+   * predicate every control-plane policy evaluates, asked directly so a
+   * refusal can come BEFORE a write rather than as a rolled-back one.
+   */
+  async holdsPlatformAuthority(db: DbHandle, code: string): Promise<boolean> {
+    const row = await this.runOne<{ held: boolean }>(
+      db,
+      'SELECT iam.has_platform_authority($1) AS held',
+      [code]
+    );
+    return (row as { held: boolean }).held === true;
+  }
+
+  /**
    * The lifecycle transition (§6.4).
    *
    * The graph is validated by M4's `BEFORE UPDATE` backstop and the history row
