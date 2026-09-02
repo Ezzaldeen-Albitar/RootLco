@@ -1256,6 +1256,26 @@ export const MANIFEST = {
     files: ['tests/backend/br-06-work-execution-controls.test.ts'],
     required: ['success', 'denial'],
   },
+  'wo.job-blocker-raise': {
+    files: ['tests/backend/p1-29-w6-history-and-blockers.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'idempotency'],
+    note: 'P1-29 W6 — the blocker record (Owner requirement 13, VHM-16): an append-only raise event under tech.labor.record that moves no state',
+  },
+  'wo.job-blocker-resolve': {
+    files: ['tests/backend/p1-29-w6-history-and-blockers.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'idempotency'],
+    note: 'P1-29 W6 — a resolution event referencing the raise; a second resolution is a conflict from the partial unique index, and the raise is never edited',
+  },
+  'wo.job-blocker-list': {
+    files: ['tests/backend/p1-29-w6-history-and-blockers.test.ts'],
+    required: ['success', 'denial', 'cross-tenant'],
+    note: 'P1-29 W6 — raises folded with their resolution and a DERIVED status, under wo.work_order.read',
+  },
+  'wo.work-order-timeline': {
+    files: ['tests/backend/p1-29-w6-history-and-blockers.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation'],
+    note: 'P1-29 W6 — INT-043: the unified history as a keyset page merged from four modules through their ports; kinds the caller may not see are omitted and named',
+  },
   'dia.diagnostic-type-list': {
     files: ['tests/backend/p1-29-w5-diagnostic-type-list.test.ts'],
     required: ['success', 'denial', 'cross-tenant'],

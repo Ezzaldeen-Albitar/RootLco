@@ -163,11 +163,11 @@ different tree is not evidence about this one.
 | Web test files under `apps/web/tests`       | 107    | a walk of the tree                                                 |
 | Web tier — tests executed                   | 2957  | `--record web`, from the `vitest` JSON report                      |
 | Web tier — files the run reported           | 107    | the same report, cross-checked against the walk above              |
-| Root unit tier — tests executed             | 3066  | `--record unit`, from the `vitest` JSON report                     |
+| Root unit tier — tests executed             | 3071  | `--record unit`, from the `vitest` JSON report                     |
 | Root unit tier — files the run reported     | 112   | the same report, cross-checked against the tier's include rule      |
 | Committed web floor (`minTests`)            | 2500  | `.github/ci-baselines/test-count-baseline.json`                    |
 | Committed unit floor (`minTests`)           | 1050  | the same baseline                                                  |
-| Migrations on disk                          | 134   | a walk of `supabase/migrations`                                    |
+| Migrations on disk                          | 135   | a walk of `supabase/migrations`                                    |
 
 The floor and the measurement are different questions and they have different
 authorities. The baseline file defines the FLOOR, so binding "the floor is 2500"
@@ -181,7 +181,7 @@ the tree was running.
 | --------------------------------------------------- | ------------------------------------------- |
 | Tracked files under `docs/phase-1/phase-1-27`        | 41                                          |
 | Tracked `.md` files under the same directory         | 31                                          |
-| Migrations tracked by git at `HEAD`                  | 134                                         |
+| Migrations tracked by git at `HEAD`                  | 135                                         |
 | `CODE_CANDIDATE_SHA`                                 | `501f5f0d48d7b8cafc12dad51f6c501534b66a18`  |
 | Executable paths changed, candidate to accepted `develop` | 0                                      |
 

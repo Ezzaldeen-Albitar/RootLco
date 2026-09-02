@@ -347,6 +347,67 @@ describe('two holes an adversarial review found, both of which printed 0 problem
   });
 });
 
+describe('C12 — an operation-level PENDING mirror, the counterpart of a PENDING field', () => {
+  /**
+   * A Backend slice can add an operation and cannot add its mirror interface:
+   * `work-order-contract.ts` is classified `web`, and the phase-ownership gate
+   * refuses a Backend branch that edits it. P1-29 W6 is the first such slice
+   * since this gate existed, so the gate gains the operation-level form of the
+   * PENDING disposition BR-02 needed at field level — with the same discipline:
+   * a reason is required, and an entry whose interface has since appeared is
+   * STALE and fails, so it cannot outlive its reason. Like C8/C9 these vary the
+   * POLICY, not the tree, so they call the comparison directly.
+   */
+  const UNMIRRORED = 'wo.job-blocker-raise';
+
+  async function compare(operationId: string, pendingMirrors: Record<string, unknown>) {
+    const mod = await import('../../scripts/ci/check-p1-29-payload-parity.mjs');
+    const interfaces = mod.readMirror(mirrorCopy(`pending-${Object.keys(pendingMirrors).length}`));
+    const schemas = JSON.parse(readFileSync(schemasPath, 'utf8')) as Record<string, unknown>;
+    return mod.compareOperation({
+      operationId,
+      schema: schemas[operationId],
+      interfaces,
+      pendingMirrors,
+    }) as string[];
+  }
+
+  it('an operation with no mirror and no declaration fails', async () => {
+    const problems = await compare(UNMIRRORED, {});
+    expect(problems.join(' ')).toMatch(/the mirror declares no `JobBlockerRaiseBody`/);
+  });
+
+  it('the SAME operation passes once its mirror is declared PENDING with a reason', async () => {
+    const problems = await compare(UNMIRRORED, {
+      [UNMIRRORED]: 'PENDING: owed by the first web slice that raises a blocker',
+    });
+    expect(problems).toEqual([]);
+  });
+
+  it('a declaration without a PENDING reason is refused', async () => {
+    for (const reason of ['', '  ', 'PENDING:', 'because', 'DELIBERATELY_ABSENT: no', 42]) {
+      const problems = await compare(UNMIRRORED, { [UNMIRRORED]: reason });
+      expect(problems.join(' '), String(reason)).toMatch(/carries no PENDING reason/);
+    }
+  });
+
+  it('a declaration whose interface has since appeared is STALE and refused', async () => {
+    const problems = await compare('wo.job-create', {
+      'wo.job-create': 'PENDING: a reason that has expired',
+    });
+    expect(problems.join(' ')).toMatch(/STALE — the mirror now declares `JobCreateBody`/);
+  });
+
+  it('every entry the tree declares is PENDING, and names an operation the tree has', async () => {
+    const mod = await import('../../scripts/ci/check-p1-29-payload-parity.mjs');
+    const schemas = JSON.parse(readFileSync(schemasPath, 'utf8')) as Record<string, unknown>;
+    for (const [id, reason] of Object.entries(mod.PENDING_MIRRORS)) {
+      expect(reason, id).toMatch(/^PENDING: \S/);
+      expect(schemas[id], `${id} has no extracted schema`).toBeDefined();
+    }
+  });
+});
+
 describe('C10 — a tenant-extensible vocabulary must never be an enum', () => {
   it('fails when the mirror declares a union for a regex-constrained state', () => {
     const root = mirrorCopy('c10');

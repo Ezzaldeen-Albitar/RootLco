@@ -22,6 +22,12 @@
 import { Repository } from '@/server/db/repository';
 import type { DbHandle } from '@/server/db/transaction';
 import { buildPage, keysetFragment, type Page, type PageRequest } from '@/server/db/pagination';
+import { cursorTimestamp } from '@/server/db/pagination';
+import {
+  timelineWindowSql,
+  type TimelineSourceRow,
+  type TimelineWindow,
+} from '@/server/db/timeline';
 
 export interface LaborSessionRow {
   readonly id: string;
@@ -104,6 +110,80 @@ export class LaborSessionRepository extends Repository {
       [context.principal.tenantId, [...jobIds]]
     );
     return result.rows.map((row) => row.job_id);
+  }
+
+  /**
+   * This module's events for the unified work-order timeline (P1-29 `W6`,
+   * `INT-043`) — a PORT, as `jobsWithOpenSession` is.
+   *
+   * Addressed by JOB IDS, because the work-order module knows which jobs an
+   * order has and this module may not read `wo.jobs` (ADR-001). A session is
+   * two events: `labor_session` at `started_at` and, once stopped,
+   * `labor_session_ended` at `ended_at`. Corrections appear as their own
+   * sessions; the original is soft-deleted and excluded. `reference` is the
+   * technician profile — staff data, which is why the caller must hold
+   * `tech.technician.read` before asking.
+   */
+  async timelineEventsForJobs(
+    db: DbHandle,
+    jobIds: readonly string[],
+    window: TimelineWindow
+  ): Promise<readonly TimelineSourceRow[]> {
+    if (jobIds.length === 0) return [];
+    const context = this.assertContext(db);
+    const values: unknown[] = [context.principal.tenantId, [...jobIds]];
+    const w = timelineWindowSql(window, 't.occurred_at', 't.kind', 't.id', values.length + 1);
+    const result = await this.run<{
+      kind: string;
+      id: string;
+      job_id: string | null;
+      actor_id: string | null;
+      occurred_at: string;
+      from_state: string | null;
+      to_state: string | null;
+      note: string | null;
+      reference: string | null;
+      detail: string | null;
+      sort_value: string;
+    }>(
+      db,
+      `SELECT t.kind, t.id, t.job_id, t.actor_id, t.occurred_at::text AS occurred_at,
+              t.from_state, t.to_state, t.note, t.reference, t.detail,
+              ${cursorTimestamp('t.occurred_at')} AS sort_value
+         FROM (
+           SELECT u.*
+             FROM (
+               SELECT 'labor_session' AS kind, s.id, s.job_id, s.created_by AS actor_id,
+                      s.started_at AS occurred_at, NULL::text AS from_state, NULL::text AS to_state,
+                      NULL::text AS note, s.technician_profile_id::text AS reference, s.source AS detail
+                 FROM tech.labor_sessions s
+                WHERE s.tenant_id = $1 AND s.job_id = ANY($2::uuid[]) AND s.deleted_at IS NULL
+               UNION ALL
+               SELECT 'labor_session_ended', s.id, s.job_id, s.updated_by, s.ended_at, NULL::text,
+                      NULL::text, NULL::text, s.technician_profile_id::text, s.source
+                 FROM tech.labor_sessions s
+                WHERE s.tenant_id = $1 AND s.job_id = ANY($2::uuid[]) AND s.deleted_at IS NULL
+                  AND s.ended_at IS NOT NULL
+             ) u
+         ) t
+        WHERE TRUE ${w.predicate}
+        ${w.order}
+        ${w.limitClause}`,
+      [...values, ...w.values]
+    );
+    return result.rows.map((row) => ({
+      kind: row.kind as TimelineSourceRow['kind'],
+      id: row.id,
+      jobId: row.job_id,
+      actorId: row.actor_id,
+      occurredAt: row.occurred_at,
+      fromState: row.from_state,
+      toState: row.to_state,
+      note: row.note,
+      reference: row.reference,
+      detail: row.detail,
+      sortValue: row.sort_value,
+    }));
   }
 
   /**

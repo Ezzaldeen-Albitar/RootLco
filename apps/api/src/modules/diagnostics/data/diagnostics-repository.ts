@@ -13,6 +13,12 @@
 import { Repository } from '@/server/db/repository';
 import type { DbHandle } from '@/server/db/transaction';
 import { buildPage, keysetFragment, type Page, type PageRequest } from '@/server/db/pagination';
+import { cursorTimestamp } from '@/server/db/pagination';
+import {
+  timelineWindowSql,
+  type TimelineSourceRow,
+  type TimelineWindow,
+} from '@/server/db/timeline';
 import type { OutstandingItem, ResponseType } from '../domain/diagnostics';
 
 export interface TemplateVersionRow {
@@ -503,6 +509,68 @@ export class DiagnosticsRepository extends Repository {
       [context.principal.tenantId, jobId]
     );
     return result.rows.map(toReportRow);
+  }
+
+  /**
+   * This module's events for the unified work-order timeline (P1-29 `W6`,
+   * `INT-043`) — a PORT for the work-order module.
+   *
+   * `dia.diagnostic_reports` carries `work_order_id` itself, so the ledger is
+   * joined to the order without reading `wo.` (ADR-001). `reference` is the
+   * report id, so a screen can open the report the event belongs to.
+   */
+  async timelineEventsForWorkOrder(
+    db: DbHandle,
+    workOrderId: string,
+    window: TimelineWindow
+  ): Promise<readonly TimelineSourceRow[]> {
+    const context = this.assertContext(db);
+    const values: unknown[] = [context.principal.tenantId, workOrderId];
+    const w = timelineWindowSql(window, 't.occurred_at', 't.kind', 't.id', values.length + 1);
+    const result = await this.run<{
+      kind: string;
+      id: string;
+      job_id: string | null;
+      actor_id: string | null;
+      occurred_at: string;
+      from_state: string | null;
+      to_state: string | null;
+      note: string | null;
+      reference: string | null;
+      detail: string | null;
+      sort_value: string;
+    }>(
+      db,
+      `SELECT t.kind, t.id, t.job_id, t.actor_id, t.occurred_at::text AS occurred_at,
+              t.from_state, t.to_state, t.note, t.reference, t.detail,
+              ${cursorTimestamp('t.occurred_at')} AS sort_value
+         FROM (
+           SELECT h.id, r.job_id, h.actor_id, h.occurred_at, h.from_state, h.to_state,
+                  h.reason AS note, r.id::text AS reference, NULL::text AS detail, 'diagnostic_status' AS kind
+             FROM dia.diagnostic_report_status_history h
+             JOIN dia.diagnostic_reports r
+               ON r.tenant_id = h.tenant_id AND r.company_id = h.company_id
+              AND r.branch_id = h.branch_id AND r.id = h.diagnostic_report_id
+            WHERE h.tenant_id = $1 AND r.work_order_id = $2 AND r.deleted_at IS NULL
+         ) t
+        WHERE TRUE ${w.predicate}
+        ${w.order}
+        ${w.limitClause}`,
+      [...values, ...w.values]
+    );
+    return result.rows.map((row) => ({
+      kind: row.kind as TimelineSourceRow['kind'],
+      id: row.id,
+      jobId: row.job_id,
+      actorId: row.actor_id,
+      occurredAt: row.occurred_at,
+      fromState: row.from_state,
+      toState: row.to_state,
+      note: row.note,
+      reference: row.reference,
+      detail: row.detail,
+      sortValue: row.sort_value,
+    }));
   }
 
   /** One keyset page of a report's append-only status ledger, newest first. */

@@ -1,9 +1,9 @@
 {
   "generatedBy": "scripts/p1-24-operation-register.mjs",
   "totals": {
-    "operations": 346,
-    "openapiPaths": 279,
-    "openapiOperations": 346,
+    "operations": 350,
+    "openapiPaths": 282,
+    "openapiOperations": 350,
     "openapiSchemas": 3,
     "events": 50,
     "eventsProduced": 47,
@@ -11,10 +11,10 @@
     "outboxForeignWriters": 0,
     "errorCodes": 28,
     "permissionCodes": 118,
-    "auditActions": 208
+    "auditActions": 210
   },
   "counts": {
-    "Covered": 346
+    "Covered": 350
   },
   "operations": [
     {
@@ -12688,6 +12688,131 @@
       "file": "apps/api/src/app/api/v1/jobs/[jobId]/assignments/route.ts"
     },
     {
+      "id": "wo.job-blocker-list",
+      "domain": "work-order",
+      "method": "GET",
+      "route": "/api/v1/jobs/{jobId}/blockers",
+      "permissions": ["wo.work_order.read"],
+      "public": false,
+      "scope": "branch",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/jobs/{jobId}/blockers",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "isolation",
+        "denial"
+      ],
+      "providedEvidence": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/p1-29-w6-history-and-blockers.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/jobs/[jobId]/blockers/route.ts"
+    },
+    {
+      "id": "wo.job-blocker-raise",
+      "domain": "work-order",
+      "method": "POST",
+      "route": "/api/v1/jobs/{jobId}/blockers",
+      "permissions": ["tech.labor.record"],
+      "public": false,
+      "scope": "branch",
+      "transaction": "transactional write",
+      "auditClass": "privileged",
+      "auditAction": "wo.job.blocker_raised",
+      "idempotent": true,
+      "versionGuarded": false,
+      "openapi": "POST /api/v1/jobs/{jobId}/blockers",
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "isolation",
+        "denial"
+      ],
+      "providedEvidence": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": [
+        "tests/backend/p1-29-w6-history-and-blockers.test.ts",
+        "tests/ci/p1-29-payload-parity.test.ts"
+      ],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/jobs/[jobId]/blockers/route.ts"
+    },
+    {
+      "id": "wo.job-blocker-resolve",
+      "domain": "work-order",
+      "method": "POST",
+      "route": "/api/v1/blockers/{blockerId}/resolution",
+      "permissions": ["tech.labor.record"],
+      "public": false,
+      "scope": "branch",
+      "transaction": "transactional write",
+      "auditClass": "privileged",
+      "auditAction": "wo.job.blocker_resolved",
+      "idempotent": true,
+      "versionGuarded": false,
+      "openapi": "POST /api/v1/blockers/{blockerId}/resolution",
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "isolation",
+        "denial"
+      ],
+      "providedEvidence": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/p1-29-w6-history-and-blockers.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/blockers/[blockerId]/resolution/route.ts"
+    },
+    {
       "id": "wo.job-create",
       "domain": "work-order",
       "method": "POST",
@@ -13572,6 +13697,44 @@
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/work-orders/route.ts"
+    },
+    {
+      "id": "wo.work-order-timeline",
+      "domain": "work-order",
+      "method": "GET",
+      "route": "/api/v1/work-orders/{workOrderId}/timeline",
+      "permissions": ["wo.work_order.read"],
+      "public": false,
+      "scope": "branch",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/work-orders/{workOrderId}/timeline",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "isolation",
+        "denial"
+      ],
+      "providedEvidence": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/p1-29-w6-history-and-blockers.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/work-orders/[workOrderId]/timeline/route.ts"
     },
     {
       "id": "wo.work-order-transition",

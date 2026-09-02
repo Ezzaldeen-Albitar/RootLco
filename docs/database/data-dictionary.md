@@ -3462,6 +3462,10 @@ its columns. Restricted columns (gated by `iam.sensitive.view`): `certificate_nu
 
 `id`, `tenant_id`, `company_id`, `branch_id`, `job_id`, `technician_profile_id`, `assignment_role`, `valid_from`, `valid_to`, `reason`, `record_version`, `created_at`, `created_by`, `updated_at`, `updated_by`, `deleted_at`, `deleted_by`
 
+### wo.job_blocker_events
+
+`id`, `tenant_id`, `company_id`, `branch_id`, `job_id`, `event`, `resolves_event_id`, `note`, `occurred_at`, `created_by`
+
 ### wo.job_evidence
 
 `id`, `tenant_id`, `company_id`, `branch_id`, `job_id`, `document_version_id`, `evidence_type`, `note`, `created_at`, `created_by`

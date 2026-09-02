@@ -453,6 +453,10 @@ export async function deleteTenantCascade(admin: Pool, tenantIds: string[]): Pro
   // in this domain, so the log must go before the job it describes — otherwise
   // teardown fails with a foreign-key violation and takes EVERY suite that uses
   // these fixtures down with it, not just the one that wrote a log.
+  // P1-29 W6. `fk_job_blocker_events_job` is ON DELETE RESTRICT too, and a
+  // resolution references its raise within the same table — the order inside
+  // the table is the ledger's own business; deleting by tenant removes both.
+  await deleteFrom('wo.job_blocker_events');
   await deleteFrom('wo.job_work_logs');
   // BR-07. Same RESTRICT rule as the work log: the evidence goes before the job.
   await deleteFrom('wo.job_evidence');

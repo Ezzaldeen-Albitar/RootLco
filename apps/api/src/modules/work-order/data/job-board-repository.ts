@@ -52,6 +52,21 @@ import {
   type Page,
   type PageRequest,
 } from '@/server/db/pagination';
+import {
+  timelineWindowSql,
+  type TimelineSourceRow,
+  type TimelineWindow,
+} from '@/server/db/timeline';
+
+/**
+ * Ordering contract for the unified work-order timeline (P1-29 `W6`). Newest
+ * first; the tie-break is the kind-qualified id, because one assignment row is
+ * two events. See `server/db/timeline.ts`.
+ */
+export const TIMELINE_ORDER: OrderingContract = Object.freeze({
+  key: 'wo.work_orders:timeline_occurred_at_desc',
+  direction: 'desc',
+});
 
 /** Newest first, matching every other operational board in the platform. */
 export const JOB_BOARD_ORDER: OrderingContract = Object.freeze({
@@ -104,6 +119,21 @@ export interface WorkOrderEvidenceRow extends JobEvidenceRow {
   readonly jobTitle: string;
 }
 
+/**
+ * One blocker EVENT (P1-29 `W6`): a raise, or a resolution referencing a raise.
+ * `occurredAt` and `createdAt` coincide — the server clock at insert — so only
+ * one is carried. Rendered as text, never as a JS Date (`P1-27-INT-006`).
+ */
+export interface BlockerEventRow {
+  readonly id: string;
+  readonly jobId: string;
+  readonly event: 'raised' | 'resolved';
+  readonly resolvesEventId: string | null;
+  readonly note: string;
+  readonly occurredAt: string;
+  readonly createdBy: string;
+}
+
 export interface WorkLogEntryRow {
   readonly id: string;
   readonly jobId: string;
@@ -142,6 +172,24 @@ const toJobBoardRow = (row: JobBoardColumns): JobBoardRow => ({
   pendingRequiredAdditionalWork: row.pending_required_additional_work,
   openAssignmentCount: Number(row.open_assignment_count),
   hasOpenLaborSession: row.has_open_labor_session,
+});
+
+const toBlockerEvent = (row: {
+  id: string;
+  job_id: string;
+  event: 'raised' | 'resolved';
+  resolves_event_id: string | null;
+  note: string;
+  occurred_at: string;
+  created_by: string;
+}): BlockerEventRow => ({
+  id: row.id,
+  jobId: row.job_id,
+  event: row.event,
+  resolvesEventId: row.resolves_event_id,
+  note: row.note,
+  occurredAt: row.occurred_at,
+  createdBy: row.created_by,
 });
 
 export class JobBoardRepository extends Repository {
@@ -436,6 +484,215 @@ export class JobBoardRepository extends Repository {
     return buildPage(rows, page, WORK_LOG_ORDER, (row) => ({
       sortValue: row.cursor,
       id: row.id,
+    }));
+  }
+
+  // ---- Blockers (P1-29 W6) ---------------------------------------------
+
+  /** Appends one blocker event. The guard and the constraints decide legality. */
+  async insertBlockerEvent(
+    db: DbHandle,
+    input: {
+      readonly jobId: string;
+      readonly companyId: string;
+      readonly branchId: string;
+      readonly event: 'raised' | 'resolved';
+      readonly resolvesEventId: string | null;
+      readonly note: string;
+    }
+  ): Promise<BlockerEventRow> {
+    const context = this.assertContext(db);
+    const result = await this.run<{
+      id: string;
+      job_id: string;
+      event: 'raised' | 'resolved';
+      resolves_event_id: string | null;
+      note: string;
+      occurred_at: string;
+      created_by: string;
+    }>(
+      db,
+      `INSERT INTO wo.job_blocker_events
+         (tenant_id, company_id, branch_id, job_id, event, resolves_event_id, note, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING id, job_id, event, resolves_event_id, note,
+                 occurred_at::text AS occurred_at, created_by`,
+      [
+        context.principal.tenantId,
+        input.companyId,
+        input.branchId,
+        input.jobId,
+        input.event,
+        input.resolvesEventId,
+        input.note,
+        context.principal.userId,
+      ]
+    );
+    const row = result.rows[0];
+    if (row === undefined) throw new Error('INSERT returned no row');
+    return toBlockerEvent(row);
+  }
+
+  /** One blocker event with its scope, RLS-visible or null. */
+  async blockerEvent(
+    db: DbHandle,
+    id: string
+  ): Promise<(BlockerEventRow & { readonly companyId: string; readonly branchId: string }) | null> {
+    const context = this.assertContext(db);
+    const result = await this.run<{
+      id: string;
+      company_id: string;
+      branch_id: string;
+      job_id: string;
+      event: 'raised' | 'resolved';
+      resolves_event_id: string | null;
+      note: string;
+      occurred_at: string;
+      created_by: string;
+    }>(
+      db,
+      `SELECT id, company_id, branch_id, job_id, event, resolves_event_id, note,
+              occurred_at::text AS occurred_at, created_by
+         FROM wo.job_blocker_events
+        WHERE tenant_id = $1 AND id = $2`,
+      [context.principal.tenantId, id]
+    );
+    const row = result.rows[0];
+    if (row === undefined) return null;
+    return { ...toBlockerEvent(row), companyId: row.company_id, branchId: row.branch_id };
+  }
+
+  /** Every blocker event of one job, oldest first. Unpaged: bounded by the job. */
+  async blockerEventsForJob(db: DbHandle, jobId: string): Promise<readonly BlockerEventRow[]> {
+    const context = this.assertContext(db);
+    const result = await this.run<{
+      id: string;
+      job_id: string;
+      event: 'raised' | 'resolved';
+      resolves_event_id: string | null;
+      note: string;
+      occurred_at: string;
+      created_by: string;
+    }>(
+      db,
+      `SELECT id, job_id, event, resolves_event_id, note,
+              occurred_at::text AS occurred_at, created_by
+         FROM wo.job_blocker_events
+        WHERE tenant_id = $1 AND job_id = $2
+        ORDER BY occurred_at ASC, id ASC`,
+      [context.principal.tenantId, jobId]
+    );
+    return result.rows.map(toBlockerEvent);
+  }
+
+  // ---- Unified timeline (P1-29 W6, INT-043) ----------------------------
+
+  /** The live job ids of one work order, for the ports that cannot read `wo.jobs`. */
+  async jobIdsOf(db: DbHandle, workOrderId: string): Promise<readonly string[]> {
+    const context = this.assertContext(db);
+    const result = await this.run<{ id: string }>(
+      db,
+      `SELECT id FROM wo.jobs WHERE tenant_id = $1 AND work_order_id = $2 AND deleted_at IS NULL`,
+      [context.principal.tenantId, workOrderId]
+    );
+    return result.rows.map((row) => row.id);
+  }
+
+  /**
+   * This module's OWN events for one work order, in one window.
+   *
+   * A `UNION ALL` over `wo.` tables only — the status ledgers, assignments, the
+   * work log, evidence and blockers. The other three modules answer the same
+   * question over their own schemas and the service merges the windows
+   * (`server/db/timeline.ts`). `includeStaff` drops the two assignment kinds
+   * when the caller lacks `tech.technician.read`, because an assignment names a
+   * member of staff (`T-05`).
+   */
+  async timelineEvents(
+    db: DbHandle,
+    workOrderId: string,
+    window: TimelineWindow,
+    options: { readonly includeStaff: boolean }
+  ): Promise<readonly TimelineSourceRow[]> {
+    const context = this.assertContext(db);
+    const values: unknown[] = [context.principal.tenantId, workOrderId];
+    const w = timelineWindowSql(window, 't.occurred_at', 't.kind', 't.id', values.length + 1);
+
+    const jobJoin = `JOIN wo.jobs j
+             ON j.tenant_id = x.tenant_id AND j.company_id = x.company_id
+            AND j.branch_id = x.branch_id AND j.id = x.job_id
+          WHERE x.tenant_id = $1 AND j.work_order_id = $2 AND j.deleted_at IS NULL`;
+    const branches = [
+      `SELECT 'work_order_status' AS kind, x.id, NULL::uuid AS job_id, x.actor_id,
+              x.occurred_at, x.from_state, x.to_state, x.reason AS note,
+              NULL::text AS reference, NULL::text AS detail
+         FROM wo.work_order_status_history x
+        WHERE x.tenant_id = $1 AND x.work_order_id = $2`,
+      `SELECT 'job_status', x.id, x.job_id, x.actor_id, x.occurred_at, x.from_state, x.to_state,
+              x.reason, NULL::text, NULL::text
+         FROM wo.job_status_history x ${jobJoin}`,
+      `SELECT 'work_log', x.id, x.job_id, x.created_by, x.logged_at, NULL::text, NULL::text,
+              x.entry, NULL::text, NULL::text
+         FROM wo.job_work_logs x ${jobJoin}`,
+      `SELECT 'evidence', x.id, x.job_id, x.created_by, x.created_at, NULL::text, NULL::text,
+              x.note, x.document_version_id::text, x.evidence_type
+         FROM wo.job_evidence x ${jobJoin}`,
+      `SELECT 'blocker_raised', x.id, x.job_id, x.created_by, x.occurred_at, NULL::text, NULL::text,
+              x.note, NULL::text, x.event
+         FROM wo.job_blocker_events x ${jobJoin} AND x.event = 'raised'`,
+      `SELECT 'blocker_resolved', x.id, x.job_id, x.created_by, x.occurred_at, NULL::text, NULL::text,
+              x.note, x.resolves_event_id::text, x.event
+         FROM wo.job_blocker_events x ${jobJoin} AND x.event = 'resolved'`,
+    ];
+    if (options.includeStaff) {
+      branches.push(
+        `SELECT 'assignment', x.id, x.job_id, x.created_by, x.valid_from, NULL::text, NULL::text,
+                NULL::text, x.technician_profile_id::text, x.assignment_role
+           FROM wo.job_assignments x ${jobJoin} AND x.deleted_at IS NULL`,
+        `SELECT 'assignment_ended', x.id, x.job_id, x.updated_by, x.valid_to, NULL::text, NULL::text,
+                x.reason, x.technician_profile_id::text, x.assignment_role
+           FROM wo.job_assignments x ${jobJoin} AND x.deleted_at IS NULL AND x.valid_to IS NOT NULL`
+      );
+    }
+
+    const result = await this.run<{
+      kind: TimelineSourceRow['kind'];
+      id: string;
+      job_id: string | null;
+      actor_id: string | null;
+      occurred_at: string;
+      from_state: string | null;
+      to_state: string | null;
+      note: string | null;
+      reference: string | null;
+      detail: string | null;
+      sort_value: string;
+    }>(
+      db,
+      `SELECT t.kind, t.id, t.job_id, t.actor_id, t.occurred_at::text AS occurred_at,
+              t.from_state, t.to_state, t.note, t.reference, t.detail,
+              ${cursorTimestamp('t.occurred_at')} AS sort_value
+         FROM (
+           SELECT u.*
+             FROM (${branches.join('\n  UNION ALL\n')}) u
+         ) t
+        WHERE TRUE ${w.predicate}
+        ${w.order}
+        ${w.limitClause}`,
+      [...values, ...w.values]
+    );
+    return result.rows.map((row) => ({
+      kind: row.kind,
+      id: row.id,
+      jobId: row.job_id,
+      actorId: row.actor_id,
+      occurredAt: row.occurred_at,
+      fromState: row.from_state,
+      toState: row.to_state,
+      note: row.note,
+      reference: row.reference,
+      detail: row.detail,
+      sortValue: row.sort_value,
     }));
   }
 

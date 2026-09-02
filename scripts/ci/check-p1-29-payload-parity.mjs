@@ -123,6 +123,27 @@ export const DISPOSITION_STATES = Object.freeze(['PENDING', 'DELIBERATELY_ABSENT
  */
 export const DISPOSITIONS = Object.freeze({});
 
+/**
+ * Operations whose request-body mirror does not exist yet, keyed by operation id,
+ * each with a `PENDING: ` reason. The operation-level counterpart of a PENDING
+ * field disposition, and it exists for the same reason that one did: a Backend
+ * slice can add an operation and cannot add its mirror interface, because
+ * `work-order-contract.ts` is classified `web` and the phase-ownership gate
+ * refuses a Backend branch that edits it. Left undeclared, the two gates would
+ * disagree; declared DELIBERATELY_ABSENT, an operation the web lane is expected
+ * to call would read as renounced. So the only state this map admits is PENDING.
+ *
+ * An entry cannot outlive its reason: once the mirror declares the interface the
+ * entry is STALE and fails the gate, so the web slice that writes the mirror
+ * must delete the entry in the same change. An entry without a reason fails too.
+ */
+export const PENDING_MIRRORS = Object.freeze({
+  'wo.job-blocker-raise':
+    'PENDING: added by P1-29 W6 (Backend); the mirror is owed by the first web slice that raises a blocker',
+  'wo.job-blocker-resolve':
+    'PENDING: added by P1-29 W6 (Backend); the mirror is owed by the first web slice that resolves a blocker',
+});
+
 const problems = [];
 const note = (message) => problems.push(message);
 
@@ -143,11 +164,29 @@ const note = (message) => problems.push(message);
  * Separating the policy DATA from the comparison LOGIC removes the need for a
  * copy at all, which is the fix rather than a workaround.
  */
-export function compareOperation({ operationId, schema, interfaces, dispositions = {} }) {
+export function compareOperation({
+  operationId,
+  schema,
+  interfaces,
+  dispositions = {},
+  pendingMirrors = {},
+}) {
   const found = [];
   const ctx = { note: (m) => found.push(m), dispositions };
   const typeName = typeNameFor(operationId);
   const iface = interfaces.get(typeName);
+  if (Object.hasOwn(pendingMirrors, operationId)) {
+    const reason = pendingMirrors[operationId];
+    if (typeof reason !== 'string' || !/^PENDING: \S/.test(reason)) {
+      return [`${operationId}: PENDING_MIRRORS entry carries no PENDING reason`];
+    }
+    if (iface) {
+      return [
+        `${operationId}: PENDING_MIRRORS entry is STALE — the mirror now declares \`${typeName}\`; delete the entry`,
+      ];
+    }
+    return [];
+  }
   if (!iface) return [`${operationId}: the mirror declares no \`${typeName}\``];
   compareShape(ctx, operationId, '', schema, iface, interfaces);
   return found;
@@ -632,6 +671,7 @@ function main() {
       schema,
       interfaces,
       dispositions: DISPOSITIONS,
+      pendingMirrors: PENDING_MIRRORS,
     })) {
       note(problem);
     }
@@ -643,7 +683,9 @@ function main() {
   );
   console.log(
     `  mirror: ${MIRROR_FILES.length} frozen file(s), ${interfaces.size} exported interface(s); ` +
-      `${Object.keys(DISPOSITIONS).length} declared field disposition(s).`
+      `${Object.keys(DISPOSITIONS).length} declared field disposition(s); ` +
+      `${Object.keys(PENDING_MIRRORS).length} operation(s) whose mirror is declared PENDING` +
+      (Object.keys(PENDING_MIRRORS).length ? ` (${Object.keys(PENDING_MIRRORS).join(', ')}).` : '.')
   );
   console.log(
     '  REQUESTS only. Responses are NOT statically gated — no machine-readable response source ' +

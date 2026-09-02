@@ -250,8 +250,34 @@ as `wo.work-order-catalogue`. Approved vocabulary content is an Owner input; the
 answers an empty set until it exists, which `tests/backend/p1-29-w5-diagnostic-type-list.test.ts`
 holds alongside the shadowing, the statuses, the refusals and the per-tenant isolation.
 
-**W6** — Backend: the two Owner requirements with no owning prerequisite. A unified work-order
-history read (`INT-043`, requirement row 16) and a blocker record (requirement row 13).
+**W6 — DELIVERED.** Backend: the two Owner requirements with no owning prerequisite.
+
+The unified history (`INT-043`, requirement row 16) is `wo.work-order-timeline`,
+`GET /work-orders/{workOrderId}/timeline` on `wo.work_order.read`: one keyset page, newest first,
+over every ledger the order's history lives in — its own and its jobs' status ledgers, assignments,
+labour sessions, the work log, evidence, blockers, report status and QC status. It stays a VIEW, as
+the Owner's own rule demands ("these must not become three independently mutable copies"): no table
+is added and nothing is written. The four owning modules answer the same windowed question over
+their own schemas and the work-order module merges the windows with keyset semantics
+(`apps/api/src/server/db/timeline.ts`), because ADR-001 forbids the cross-schema `UNION` that would
+have been the shorter code. Kinds the caller may not see — staff kinds without
+`tech.technician.read`, report status without `dia.diagnostic.read`, QC status without
+`qms.quality_control.read` — are **omitted and named** in `omittedKinds`, never emptied.
+
+The blocker record (requirement row 13) is `wo.job_blocker_events`, one migration: an append-only
+EVENT ledger — `wo.job-blocker-raise`, `wo.job-blocker-resolve`, `wo.job-blocker-list` — under the
+work-log precedent (`tech.labor.record` to write, `wo.work_order.read` to read). It reconciles
+`VHM-16`: a blocker was "expressed as `awaiting_parts` or `awaiting_customer` with a mandatory
+reason", which is a work-order STATE and cannot say that one job of three is waiting. The record
+can, and it moves no state — those states stay exactly what they are. A blocker's status is derived
+(open while no resolution references the raise); one resolution per raise is a partial unique index
+and a second is a conflict. No new permission code.
+
+Proved on the real database in `tests/backend/p1-29-w6-history-and-blockers.test.ts`: ten kinds
+from four modules driven through their real routes and returned as one descending chronology; pages
+at `limit=3` concatenating to the unpaged set with nothing skipped and nothing twice; the withheld
+kinds named for a work-order reader; raise, resolve, the folded status, the conflict, and the job's
+state unchanged by any of it; no-permission, cross-branch and cross-tenant refusals.
 
 **W7** — the diagnostics experience, on the 22 operations above. **Closure depends on it (§3).**
 

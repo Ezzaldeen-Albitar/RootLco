@@ -44,21 +44,39 @@ import { ApplicationService } from '@/server/layering';
 import { AppFailure } from '@/server/errors/app-failure';
 import type { DbHandle } from '@/server/db/transaction';
 import type { ScopeAuthorizer } from '@/server/auth/authorization';
+import { callerHoldsPermission } from '@/server/auth/authorization';
 import { appendAudit } from '@/server/audit/audit';
 import { isSqlState, SQLSTATE } from '@/server/db/repository';
-import { pageRequest, type Page } from '@/server/db/pagination';
+import { buildPage, pageRequest, type Page } from '@/server/db/pagination';
+import {
+  decodeTimelinePosition,
+  encodeTimelinePosition,
+  mergeTimelineWindows,
+  type TimelineKind,
+  type TimelineSourceRow,
+  type TimelineWindow,
+} from '@/server/db/timeline';
 // BR-06. `hasOpenLaborSession` is technician data, so it is resolved through the
 // technician module's PORT rather than by reading `tech.` from a work-order
 // repository — the module-boundary gate refuses that, and its allow-list is
 // capped at the two closure predicates the database guard itself joins across.
 import { technicianModule } from '@/modules/technician';
+// P1-29 W6. The unified timeline merges FOUR modules' ledgers through their
+// ports — the module-boundary gate refuses a cross-schema UNION, and its
+// allow-list is capped at the two closure predicates the database guard itself
+// joins across. Each module answers the same windowed question over its own
+// tables; `server/db/timeline.ts` carries the merge and why it is correct.
+import { diagnosticsModule } from '@/modules/diagnostics';
+import { qualityModule } from '@/modules/quality';
 // BR-07. The refused-state rule and the version's scan state both belong to
 // shared-services — `shared.document_versions` is its table. Imported, never
 // re-declared: the constant already existed in three places before this slice.
 import { EVIDENCE_REFUSED_STATES, sharedServicesModule } from '@/modules/shared-services';
 import {
   JOB_BOARD_ORDER,
+  TIMELINE_ORDER,
   WORK_LOG_ORDER,
+  type BlockerEventRow,
   type JobBoardRepository,
   type JobBoardRow,
   type JobEvidenceRow,
@@ -95,6 +113,69 @@ export const MAX_WORK_LOG_ENTRY = 4000;
  * on every evidence table, so a second constant would be a second copy.
  */
 export const MAX_JOB_EVIDENCE_NOTE = 1000;
+
+/**
+ * The longest blocker note (P1-29 `W6`). The same ceiling as an evidence note:
+ * a blocker is a statement about the work, not a narrative.
+ */
+export const MAX_BLOCKER_NOTE = 1000;
+
+/** The resolution folded into a blocker, when it has one. */
+export interface JobBlockerResolutionView {
+  readonly id: string;
+  readonly note: string;
+  readonly resolvedAt: string;
+  readonly resolvedBy: string;
+}
+
+/**
+ * One blocker as a screen reads it: the raise, and its resolution if any.
+ *
+ * `status` is DERIVED — `open` while no resolution references the raise — and
+ * never stored, which is the whole reason the record is an event ledger.
+ */
+export interface JobBlockerView {
+  readonly id: string;
+  readonly jobId: string;
+  readonly note: string;
+  readonly raisedAt: string;
+  readonly raisedBy: string;
+  readonly status: 'raised' | 'resolved';
+  readonly resolution: JobBlockerResolutionView | null;
+}
+
+/** One event of the unified timeline — `TimelineSourceRow` without its cursor pair. */
+export interface WorkOrderTimelineEntry {
+  readonly kind: TimelineKind;
+  readonly id: string;
+  readonly jobId: string | null;
+  readonly actorId: string | null;
+  readonly occurredAt: string;
+  readonly fromState: string | null;
+  readonly toState: string | null;
+  readonly note: string | null;
+  readonly reference: string | null;
+  readonly detail: string | null;
+}
+
+/** A kind the caller was not shown, and the code that would show it. */
+export interface OmittedTimelineKind {
+  readonly kind: TimelineKind;
+  readonly requires: string;
+}
+
+/**
+ * The unified history page (`INT-043`). `omittedKinds` is never empty by
+ * accident: a caller who may see everything gets `[]`, and a caller who may
+ * not is told which kinds are missing rather than shown a history with holes.
+ */
+export interface WorkOrderTimelinePage {
+  readonly workOrderId: string;
+  readonly items: readonly WorkOrderTimelineEntry[];
+  readonly nextCursor: string | null;
+  readonly hasMore: boolean;
+  readonly omittedKinds: readonly OmittedTimelineKind[];
+}
 
 /**
  * The RECOMMENDED evidence vocabulary — a convention, not an invariant.
@@ -531,5 +612,269 @@ export class JobBoardService extends ApplicationService {
       await authorizeScope({ companyId: scope.companyId, branchId: scope.branchId });
     }
     return this.board.evidenceForWorkOrder(db, workOrderId);
+  }
+
+  // ---- Blockers (P1-29 W6) ---------------------------------------------
+
+  /**
+   * Raises a blocker on a job: the worker's statement that work cannot proceed.
+   *
+   * No state compatibility check, deliberately. A blocker may be raised in any
+   * non-deleted job — the composite FK refuses a job outside the caller's scope
+   * — and it MOVES NO STATE: `awaiting_parts` and `awaiting_customer` remain
+   * work-order states with their own transition rules (`VHM-16`).
+   */
+  async raiseBlocker(
+    db: DbHandle,
+    jobId: string,
+    input: { readonly note: string },
+    authorizeScope?: ScopeAuthorizer
+  ): Promise<BlockerEventRow> {
+    const scope = await this.board.jobScope(db, jobId);
+    if (scope === null) {
+      throw new AppFailure('ERR-RES-001', { message: 'Job was not found' });
+    }
+    if (authorizeScope !== undefined) {
+      await authorizeScope({ companyId: scope.companyId, branchId: scope.branchId });
+    }
+    let raised: BlockerEventRow;
+    try {
+      raised = await this.board.insertBlockerEvent(db, {
+        jobId,
+        companyId: scope.companyId,
+        branchId: scope.branchId,
+        event: 'raised',
+        resolvesEventId: null,
+        note: input.note,
+      });
+    } catch (error) {
+      throw this.mapBlockerFailure(error);
+    }
+    await appendAudit(db, {
+      action: 'wo.job.blocker_raised',
+      entityType: 'wo.job',
+      entityId: jobId,
+      companyId: scope.companyId,
+      branchId: scope.branchId,
+      details: [
+        { field: 'blocker_event_id', classification: 'internal', value: raised.id },
+        { field: 'note_length', classification: 'internal', value: String(input.note.length) },
+      ],
+    });
+    return raised;
+  }
+
+  /**
+   * Resolves a raised blocker by appending the event that references it.
+   *
+   * Addressed by the RAISE's id, which is what a screen holds. A resolution's
+   * id is refused as not found rather than as a validation error: from the
+   * caller's side it is simply not a blocker. One resolution per raise is the
+   * partial unique index's promise, mapped to a conflict.
+   */
+  async resolveBlocker(
+    db: DbHandle,
+    blockerId: string,
+    input: { readonly note: string },
+    authorizeScope?: ScopeAuthorizer
+  ): Promise<BlockerEventRow> {
+    const raise = await this.board.blockerEvent(db, blockerId);
+    if (raise === null || raise.event !== 'raised') {
+      throw new AppFailure('ERR-RES-001', { message: 'Blocker was not found' });
+    }
+    if (authorizeScope !== undefined) {
+      await authorizeScope({ companyId: raise.companyId, branchId: raise.branchId });
+    }
+    let resolved: BlockerEventRow;
+    try {
+      resolved = await this.board.insertBlockerEvent(db, {
+        jobId: raise.jobId,
+        companyId: raise.companyId,
+        branchId: raise.branchId,
+        event: 'resolved',
+        resolvesEventId: raise.id,
+        note: input.note,
+      });
+    } catch (error) {
+      if (isSqlState(error, SQLSTATE.uniqueViolation)) {
+        throw new AppFailure('ERR-CON-001', {
+          message: `Blocker ${blockerId} is already resolved`,
+          cause: error,
+        });
+      }
+      throw this.mapBlockerFailure(error);
+    }
+    await appendAudit(db, {
+      action: 'wo.job.blocker_resolved',
+      entityType: 'wo.job',
+      entityId: raise.jobId,
+      companyId: raise.companyId,
+      branchId: raise.branchId,
+      details: [
+        { field: 'blocker_event_id', classification: 'internal', value: raise.id },
+        { field: 'resolution_event_id', classification: 'internal', value: resolved.id },
+        { field: 'note_length', classification: 'internal', value: String(input.note.length) },
+      ],
+    });
+    return resolved;
+  }
+
+  /** The blockers of one job, each raise folded with its resolution, oldest first. */
+  async listBlockers(
+    db: DbHandle,
+    jobId: string,
+    authorizeScope?: ScopeAuthorizer
+  ): Promise<readonly JobBlockerView[]> {
+    const scope = await this.board.jobScope(db, jobId);
+    if (scope === null) {
+      throw new AppFailure('ERR-RES-001', { message: 'Job was not found' });
+    }
+    if (authorizeScope !== undefined) {
+      await authorizeScope({ companyId: scope.companyId, branchId: scope.branchId });
+    }
+    const events = await this.board.blockerEventsForJob(db, jobId);
+    const resolutions = new Map<string, BlockerEventRow>();
+    for (const event of events) {
+      if (event.event === 'resolved' && event.resolvesEventId !== null) {
+        resolutions.set(event.resolvesEventId, event);
+      }
+    }
+    return events
+      .filter((event) => event.event === 'raised')
+      .map((raise) => {
+        const resolution = resolutions.get(raise.id) ?? null;
+        return {
+          id: raise.id,
+          jobId: raise.jobId,
+          note: raise.note,
+          raisedAt: raise.occurredAt,
+          raisedBy: raise.createdBy,
+          status: resolution === null ? 'raised' : 'resolved',
+          resolution:
+            resolution === null
+              ? null
+              : {
+                  id: resolution.id,
+                  note: resolution.note,
+                  resolvedAt: resolution.occurredAt,
+                  resolvedBy: resolution.createdBy,
+                },
+        };
+      });
+  }
+
+  private mapBlockerFailure(error: unknown): AppFailure | unknown {
+    if (isSqlState(error, SQLSTATE.insufficientPrivilege)) {
+      return new AppFailure('ERR-IAM-001', {
+        message: 'This job is outside the scope your access grants',
+      });
+    }
+    if (isSqlState(error, SQLSTATE.foreignKeyViolation)) {
+      return new AppFailure('ERR-RES-001', { message: 'Job was not found' });
+    }
+    if (isSqlState(error, SQLSTATE.checkViolation)) {
+      return new AppFailure('ERR-VAL-001', {
+        message: 'The blocker event was refused by the guard',
+        safeDetails: { violations: [{ path: 'body.note', rule: 'refused' }] },
+      });
+    }
+    return error;
+  }
+
+  // ---- Unified timeline (P1-29 W6, INT-043) ----------------------------
+
+  /**
+   * One page of the work order's history across every ledger, newest first.
+   *
+   * Four sources, one question each — "your events for this order, older than
+   * this point, at most N + 1" — merged with the keyset semantics
+   * `server/db/timeline.ts` proves. Kinds the caller may not see are OMITTED
+   * and named in `omittedKinds`, with the code that would show them: the
+   * `wo.job-detail` posture toward `assignments`, made explicit for a history.
+   */
+  async workOrderTimeline(
+    db: DbHandle,
+    workOrderId: string,
+    page: PageInput,
+    authorizeScope?: ScopeAuthorizer
+  ): Promise<WorkOrderTimelinePage> {
+    const scope = await this.board.workOrderScope(db, workOrderId);
+    if (scope === null) {
+      throw new AppFailure('ERR-RES-001', { message: 'Work order was not found' });
+    }
+    if (authorizeScope !== undefined) {
+      await authorizeScope({ companyId: scope.companyId, branchId: scope.branchId });
+    }
+
+    const request = pageRequest(TIMELINE_ORDER, page);
+    const position = request.cursor ? decodeTimelinePosition(request.cursor.v) : null;
+    if (request.cursor && position === null) {
+      throw new AppFailure('ERR-PAG-001', {
+        message: 'Cursor position is not a timeline position',
+      });
+    }
+    const window: TimelineWindow = {
+      before:
+        request.cursor && position
+          ? { occurredAt: position.occurredAt, kind: position.kind, id: request.cursor.i }
+          : null,
+      limit: request.limit,
+    };
+
+    const includeStaff = await callerHoldsPermission(db, 'tech.technician.read', scope);
+    const includeDiagnostics = await callerHoldsPermission(db, 'dia.diagnostic.read', scope);
+    const includeQuality = await callerHoldsPermission(db, 'qms.quality_control.read', scope);
+
+    const omittedKinds: OmittedTimelineKind[] = [];
+    const sources: (readonly TimelineSourceRow[])[] = [
+      await this.board.timelineEvents(db, workOrderId, window, { includeStaff }),
+    ];
+    if (includeStaff) {
+      const jobIds = await this.board.jobIdsOf(db, workOrderId);
+      sources.push(
+        await technicianModule().laborSessions.timelineEventsForJobs(db, jobIds, window)
+      );
+    } else {
+      omittedKinds.push(
+        { kind: 'assignment', requires: 'tech.technician.read' },
+        { kind: 'assignment_ended', requires: 'tech.technician.read' },
+        { kind: 'labor_session', requires: 'tech.technician.read' },
+        { kind: 'labor_session_ended', requires: 'tech.technician.read' }
+      );
+    }
+    if (includeDiagnostics) {
+      sources.push(await diagnosticsModule().reports.timelineEvents(db, workOrderId, window));
+    } else {
+      omittedKinds.push({ kind: 'diagnostic_status', requires: 'dia.diagnostic.read' });
+    }
+    if (includeQuality) {
+      sources.push(await qualityModule().qualityControl.timelineEvents(db, workOrderId, window));
+    } else {
+      omittedKinds.push({ kind: 'qc_status', requires: 'qms.quality_control.read' });
+    }
+
+    const merged = mergeTimelineWindows(sources, request.limit);
+    const paged = buildPage(merged, request, TIMELINE_ORDER, (row) => ({
+      sortValue: encodeTimelinePosition(row.sortValue, row.kind),
+      id: row.id,
+    }));
+    return {
+      workOrderId,
+      items: paged.items.map((row) => ({
+        kind: row.kind,
+        id: row.id,
+        jobId: row.jobId,
+        actorId: row.actorId,
+        occurredAt: row.occurredAt,
+        fromState: row.fromState,
+        toState: row.toState,
+        note: row.note,
+        reference: row.reference,
+        detail: row.detail,
+      })),
+      nextCursor: paged.nextCursor,
+      hasMore: paged.hasMore,
+      omittedKinds,
+    };
   }
 }

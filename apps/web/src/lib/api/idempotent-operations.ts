@@ -10,7 +10,7 @@
  * The backend requires an `Idempotency-Key` header on every operation it
  * registers as idempotent, and answers `400 ERR-INT-002` without one — before
  * authorization is evaluated. That set is NOT "the POST operations": it is
- * currently 156 operations (PATCH 3, POST 147, PUT 6).
+ * currently 158 operations (PATCH 3, POST 149, PUT 6).
  *
  * The client used to infer the answer from the HTTP method, which was wrong for
  * every non-POST member of that set. This table is the contract instead of a
@@ -24,7 +24,7 @@
  * thirteen of them stating which class a write declares, none of them checkable
  * — because the Web tier held no data from which one could be derived.
  *
- * Currently approval 13, export 1, financial 13, none 139, privileged 167, security 13.
+ * Currently approval 13, export 1, financial 13, none 141, privileged 169, security 13.
  *
  * `(absent)` above would mean an operation the document publishes with NO audit
  * class. It is emitted as the empty string rather than defaulted to `none`,
@@ -49,7 +49,7 @@ export interface PublishedOperation {
   readonly auditClass: string;
 }
 
-/** Every operation the contract publishes. 346 of them. */
+/** Every operation the contract publishes. 350 of them. */
 export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze([
   {
     template: '/additional-work/{requestId}/approval',
@@ -365,6 +365,13 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     operationId: 'iam.auth-session',
     idempotent: false,
     auditClass: 'none',
+  },
+  {
+    template: '/blockers/{blockerId}/resolution',
+    method: 'POST',
+    operationId: 'wo.job-blocker-resolve',
+    idempotent: true,
+    auditClass: 'privileged',
   },
   {
     template: '/credit-notes/{creditNoteId}/approval',
@@ -1056,6 +1063,20 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     template: '/jobs/{jobId}/assignments',
     method: 'POST',
     operationId: 'wo.job-assignment-create',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/jobs/{jobId}/blockers',
+    method: 'GET',
+    operationId: 'wo.job-blocker-list',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/jobs/{jobId}/blockers',
+    method: 'POST',
+    operationId: 'wo.job-blocker-raise',
     idempotent: true,
     auditClass: 'privileged',
   },
@@ -2465,6 +2486,13 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     operationId: 'wo.service-line-record',
     idempotent: true,
     auditClass: 'privileged',
+  },
+  {
+    template: '/work-orders/{workOrderId}/timeline',
+    method: 'GET',
+    operationId: 'wo.work-order-timeline',
+    idempotent: false,
+    auditClass: 'none',
   },
   {
     template: '/work-orders/{workOrderId}/transition',

@@ -39,6 +39,7 @@ import type { DbHandle } from '@/server/db/transaction';
 import type { ScopeAuthorizer } from '@/server/auth/authorization';
 import { SQLSTATE, isSqlState } from '@/server/db/repository';
 import { pageRequest, type Page } from '@/server/db/pagination';
+import type { TimelineSourceRow, TimelineWindow } from '@/server/db/timeline';
 import { appendAudit } from '@/server/audit/audit';
 import { publishEvent } from '@/server/events/publisher';
 import { workOrderModule } from '@/modules/work-order';
@@ -86,6 +87,22 @@ export class LaborSessionService extends ApplicationService {
     private readonly profiles: TechnicianCatalogRepository
   ) {
     super();
+  }
+
+  /**
+   * The labour events of these jobs for the unified timeline (P1-29 `W6`).
+   *
+   * A PORT for the work-order module. No authorization here: the timeline read
+   * has already authorised the WORK ORDER's scope and decided, against
+   * `tech.technician.read`, whether staff kinds may be shown at all — which is
+   * why this method is never reached by a caller who may not see them.
+   */
+  async timelineEventsForJobs(
+    db: DbHandle,
+    jobIds: readonly string[],
+    window: TimelineWindow
+  ): Promise<readonly TimelineSourceRow[]> {
+    return this.sessions.timelineEventsForJobs(db, jobIds, window);
   }
 
   /** Starts a session. The clock is the server's. */

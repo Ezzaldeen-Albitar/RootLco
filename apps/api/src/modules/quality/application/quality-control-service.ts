@@ -23,6 +23,7 @@ import { ApplicationService } from '@/server/layering';
 import { AppFailure } from '@/server/errors/app-failure';
 import type { DbHandle } from '@/server/db/transaction';
 import type { ScopeAuthorizer } from '@/server/auth/authorization';
+import type { TimelineSourceRow, TimelineWindow } from '@/server/db/timeline';
 import { appendAudit } from '@/server/audit/audit';
 import { publishEvent } from '@/server/events/publisher';
 import { workOrderModule } from '@/modules/work-order';
@@ -74,6 +75,19 @@ export class QualityControlService extends ApplicationService {
 
   constructor(private readonly repository: QualityRepository) {
     super();
+  }
+
+  /**
+   * The QC status events of one work order for the unified timeline
+   * (P1-29 `W6`). A PORT: the work-order timeline has authorised the order and
+   * checked `qms.quality_control.read` before asking.
+   */
+  async timelineEvents(
+    db: DbHandle,
+    workOrderId: string,
+    window: TimelineWindow
+  ): Promise<readonly TimelineSourceRow[]> {
+    return this.repository.timelineEventsForWorkOrder(db, workOrderId, window);
   }
 
   /**

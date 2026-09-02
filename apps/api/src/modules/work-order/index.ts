@@ -125,20 +125,27 @@ export {
 } from './domain/work-order';
 
 export type {
+  BlockerEventRow,
   JobBoardRow,
   JobEvidenceRow,
   WorkLogEntryRow,
   WorkOrderEvidenceRow,
 } from './data/job-board-repository';
 export {
+  MAX_BLOCKER_NOTE,
   MAX_JOB_EVIDENCE_NOTE,
   MAX_WORK_LOG_ENTRY,
   RECOMMENDED_EVIDENCE_TYPES,
   QC_OVERALL_RESULTS,
   STATE_CODE_PATTERN,
   type JobAssignmentView,
+  type JobBlockerResolutionView,
+  type JobBlockerView,
   type JobDetail,
+  type OmittedTimelineKind,
   type QcOverallResult,
+  type WorkOrderTimelineEntry,
+  type WorkOrderTimelinePage,
 } from './application/job-board-service';
 
 /** Composition root: constructs the module's services once per process. */
