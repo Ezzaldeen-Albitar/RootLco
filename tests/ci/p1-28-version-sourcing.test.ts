@@ -117,6 +117,13 @@ interface Report {
   expected: { id: string }[];
   withheld: { id: string; decisionRef: string }[];
   adapters: { name: string; required: boolean; used: boolean }[];
+  /**
+   * The subset of `adapters` this contract governs — every guarded adapter
+   * except the ones declared in `OUT_OF_SUBJECT_ADAPTERS`. The count equality is
+   * taken over this, not over the whole tree's versioned adapters, since P1-29
+   * `W3` added the first ones outside apt/rec.
+   */
+  accountedFor: string[];
   sites: {
     file: string;
     adapter: string;
@@ -209,7 +216,13 @@ describe('the gate is green on the CURRENT tree', () => {
   });
 
   it('finds one adapter per guarded operation, each demanding a required version', () => {
-    expect(live.adapters).toHaveLength(7);
+    // ACCOUNTED FOR, not every guarded adapter in the tree. The walk is the
+    // whole of `apps/web/src` on purpose, and since P1-29 W3 that tree also
+    // holds versioned adapters for `wo` operations — real, correct, and not
+    // this contract's subject. They are declared by name in
+    // `OUT_OF_SUBJECT_ADAPTERS` and still held to every rule below.
+    expect(live.accountedFor).toHaveLength(7);
+    expect(live.adapters.length).toBeGreaterThanOrEqual(live.accountedFor.length);
     for (const adapter of live.adapters) {
       expect(adapter.required, `${adapter.name} declares an optional ifMatch`).toBe(true);
       expect(adapter.used, `${adapter.name} drops its ifMatch`).toBe(true);

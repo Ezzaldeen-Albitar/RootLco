@@ -117,3 +117,102 @@ export interface WorkOrderListCriteria {
   readonly openedTo?: string;
   readonly customerId?: string;
 }
+
+/* ------------------------------------------------------------------ *
+ * W3 — the work-order detail
+ * ------------------------------------------------------------------ */
+
+/**
+ * The permissions the detail screen consults.
+ *
+ * Five codes, and they are deliberately not one. Reading the work order,
+ * moving it, editing a job, seeing who is assigned and assigning somebody are
+ * five different authorities in the platform, and a screen that collapsed them
+ * would either hide a panel an operator may see or offer an action the backend
+ * will refuse. `read` gates the page; the rest gate individual affordances.
+ */
+export const WORK_ORDER_DETAIL_PERMISSIONS = {
+  read: 'wo.work_order.read',
+  transition: 'wo.work_order.transition',
+  jobManage: 'wo.job.manage',
+  technicianRead: 'tech.technician.read',
+  assignmentManage: 'tech.assignment.manage',
+  departmentRead: 'org.department.read',
+} as const;
+
+/**
+ * One job of the work order — the published `JobView`.
+ *
+ * `departmentId` is the routing BR-02 added. It is nullable and the null case
+ * is ordinary: a job that has not been routed yet.
+ */
+export interface WorkOrderJob {
+  readonly id: string;
+  readonly workOrderId: string;
+  readonly title: string;
+  readonly jobType: string | null;
+  readonly departmentId: string | null;
+  readonly state: string;
+  readonly requiresDiagnostic: boolean;
+  readonly recordVersion: number;
+}
+
+/**
+ * A state the work order may move to next, as the tenant's own graph allows.
+ *
+ * The graph is DATA, not a TypeScript union: the screen offers exactly what the
+ * backend returned and nothing else. `requiresReason` decides whether the
+ * transition form demands a reason — asking the operator for one the graph does
+ * not want, or omitting one it does, are both refusals the backend would have
+ * to explain after the fact.
+ */
+export interface WorkOrderReachableState {
+  readonly code: string;
+  readonly requiresReason: boolean;
+  readonly isTerminal: boolean;
+  readonly isCancellation: boolean;
+}
+
+/** `wo.work-order-detail` — the work order, its jobs, and where it may go. */
+export interface WorkOrderDetail {
+  readonly workOrder: WorkOrderListEntry;
+  readonly jobs: readonly WorkOrderJob[];
+  readonly nextStates: readonly WorkOrderReachableState[];
+}
+
+/**
+ * One technician assignment on a job — the published `AssignmentView`.
+ *
+ * `validTo === null` is the OPEN assignment: the technician currently holds the
+ * job. A closed one is history and is rendered as such.
+ */
+export interface JobAssignment {
+  readonly id: string;
+  readonly jobId: string;
+  readonly technicianProfileId: string;
+  readonly assignmentRole: string;
+  readonly validFrom: string;
+  readonly validTo: string | null;
+  readonly reason: string | null;
+  readonly recordVersion: number;
+}
+
+/**
+ * One department a job may be routed to — the published `DepartmentView`.
+ *
+ * Read through `org.department-list`, which Wave C published, rather than
+ * through anything this feature invents. `dependencies.md` `DEP-B1` forbade a
+ * department picker on an operational screen while its stated basis held —
+ * "no operational table references a department" — and BR-02 retired that basis
+ * by adding `wo.jobs.department_id`. The picker is the consumer that work was
+ * done for; it is not a second source of departments.
+ */
+export interface DepartmentOption {
+  readonly id: string;
+  readonly companyId: string;
+  readonly branchId: string;
+  readonly departmentCode: string;
+  readonly name: string;
+  readonly status: string;
+  readonly recordVersion: number;
+}

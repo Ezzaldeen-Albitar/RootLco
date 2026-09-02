@@ -5047,7 +5047,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/pre-p1-29-wave-c-company-rbac.test.ts"],
+      "tests": [
+        "tests/backend/p1-29-w3-work-order-detail.test.ts",
+        "tests/backend/pre-p1-29-wave-c-company-rbac.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/org/departments/route.ts"
     },
@@ -13004,7 +13007,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-19-work-order-jobs.test.ts"],
+      "tests": [
+        "tests/backend/p1-19-work-order-jobs.test.ts",
+        "tests/backend/p1-29-w3-work-order-detail.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/jobs/[jobId]/route.ts"
     },
@@ -13398,7 +13404,8 @@
       "missingEvidence": [],
       "tests": [
         "tests/backend/br-05-work-order-customer-context.test.ts",
-        "tests/backend/p1-19-work-order-reads.test.ts"
+        "tests/backend/p1-19-work-order-reads.test.ts",
+        "tests/backend/p1-29-w3-work-order-detail.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/work-orders/[workOrderId]/route.ts"

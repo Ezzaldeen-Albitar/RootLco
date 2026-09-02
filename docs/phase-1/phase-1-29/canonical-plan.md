@@ -168,10 +168,28 @@ travel on a Backend branch.
 Zero new operations, permissions or migrations. Proves the whole chain — contract mirror →
 adapter → gated page → real response — on the smallest surface.
 
-**W3** — `wo.work-order-detail`, `wo.work-order-history`, `wo.work-order-transition`,
-`wo.job-list` / `-detail` / `-create` / `-update` / `-transition`, `wo.job-assignment-create` /
-`-end` / `-list`, `wo.job-reassignment`. Department routing reads `org.department-list`; it does
-not grow a second department picker.
+**W3 — DELIVERED.** `/work-orders/{workOrderId}`, on `wo.work-order-detail`,
+`wo.work-order-transition`, `wo.job-update`, `wo.job-assignment-create` /
+`wo.job-assignment-list` and `org.department-list`. Zero new backend. Department routing reads
+`org.department-list` and did not grow a second picker.
+
+Its four load-bearing paths are proved on real responses in
+`tests/backend/p1-29-w3-work-order-detail.test.ts` — the detail with the web mirror held against
+the row that came back, the job graph, a persisted department routing re-read to prove it
+changed, and a persisted technician assignment. Concurrency is proved in both directions
+(a fresh version writes, a stale one is refused and changes nothing), and the request the screen
+actually builds — the `If-Match`, the three-way `departmentId`, the assignment window — is
+proved in `apps/web/tests/work-orders-detail-api.test.ts`, which a backend test cannot cover.
+
+It also closed the one thing PRE-P1-29 left owing to this lane: the
+`wo.job-update.departmentId` mirror field. BR-02 added it to the API and could not add it to
+`apps/web`; the gap was carried as a `PENDING` disposition. W3 is its first caller, so the mirror
+carries the field and `check-p1-29-payload-parity` now declares **zero** dispositions.
+
+Still open in this item, deliberately and not silently: `wo.work-order-history`,
+`wo.job-create`, `wo.job-transition`, `wo.job-assignment-end` and `wo.job-reassignment` are
+published and unconsumed. The unified history is W6; the rest are the write surface a later
+slice adds to this screen.
 
 **W4** — `tech.technician-me-queue`, `tech.labor-session-start` / `-stop` / `-correct` /
 `-list`, `wo.job-work-log-record` / `-list`, `wo.job-evidence-record` / `-list`.
