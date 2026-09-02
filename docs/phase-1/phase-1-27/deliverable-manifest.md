@@ -978,8 +978,8 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
 <!-- derived: files supabase/migrations = 134 -->
 <!-- derived: files tests/db = 143 -->
 <!-- derived: files tests/db:all = 147 -->
-<!-- derived: files tests/backend = 104 -->
-<!-- derived: files tests/backend:all = 112 -->
+<!-- derived: files tests/backend = 105 -->
+<!-- derived: files tests/backend:all = 113 -->
 <!-- derived: files apps/web/src/features/crm = 20 -->
 <!-- derived: files apps/web/src/features/vehicles = 23 -->
 <!-- derived: files p1-27-frontend-gate = 129 -->

@@ -9,10 +9,10 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 
 | Measure                  | Value |
 | ------------------------ | ----- |
-| Public operations        | 345   |
+| Public operations        | 346   |
 | Domains (modules)        | 20    |
-| OpenAPI paths            | 278   |
-| OpenAPI operations       | 345   |
+| OpenAPI paths            | 279   |
+| OpenAPI operations       | 346   |
 | OpenAPI schemas          | 3     |
 | OpenAPI security schemes | 1     |
 | Permission codes seeded  | 118   |
@@ -24,7 +24,7 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 
 | Classification    | Operations |
 | ----------------- | ---------- |
-| Covered           | 345        |
+| Covered           | 346        |
 | Partially covered | 0          |
 | Uncovered         | 0          |
 | Not applicable    | 0          |
@@ -37,7 +37,7 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 | billing         | 8          | 8       | 5      | 5       | 5          | 2               |
 | crm             | 29         | 29      | 15     | 15      | 15         | 0               |
 | delivery        | 6          | 6       | 5      | 5       | 5          | 1               |
-| diagnostics     | 21         | 21      | 15     | 15      | 14         | 4               |
+| diagnostics     | 22         | 22      | 15     | 15      | 14         | 4               |
 | iam             | 46         | 46      | 29     | 27      | 12         | 9               |
 | inventory       | 14         | 14      | 10     | 11      | 8          | 0               |
 | meta            | 1          | 1       | 0      | 0       | 0          | 0               |
@@ -122,6 +122,7 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 | `dia.diagnostic-recommendation-record`              | POST   | `/api/v1/inspections/{inspectionId}/recommendations`                                | branch  | `dia.diagnostic.record`                                              | dia.diagnostic.entry_recorded                | yes  | —   | audit authorization cross-tenant denial idempotency isolation route service success                                           | Covered |
 | `dia.diagnostic-review`                             | POST   | `/api/v1/inspections/{inspectionId}/reviews`                                        | branch  | `dia.diagnostic.review`                                              | dia.diagnostic.reviewed                      | yes  | —   | audit authorization cross-tenant denial idempotency isolation route service success                                           | Covered |
 | `dia.diagnostic-transition`                         | POST   | `/api/v1/inspections/{inspectionId}/transition`                                     | branch  | `dia.diagnostic.record`                                              | dia.diagnostic.state_changed                 | yes  | yes | audit authorization cross-tenant denial idempotency isolation route service stale-version success                             | Covered |
+| `dia.diagnostic-type-list`                          | GET    | `/api/v1/diagnostic-types`                                                          | tenant  | `dia.diagnostic.read`                                                | —                                            | —    | —   | authorization cross-tenant denial isolation route service success                                                             | Covered |
 | `dia.template-create`                               | POST   | `/api/v1/inspection-templates`                                                      | tenant  | `dia.catalogue.manage`                                               | dia.inspection_template.created              | yes  | —   | audit authorization cross-tenant denial idempotency isolation route service success                                           | Covered |
 | `dia.template-detail`                               | GET    | `/api/v1/inspection-templates/{templateId}`                                         | tenant  | `dia.diagnostic.read`                                                | —                                            | —    | —   | authorization cross-tenant denial isolation route service success                                                             | Covered |
 | `dia.template-item-create`                          | POST   | `/api/v1/template-versions/{versionId}/items`                                       | tenant  | `dia.catalogue.manage`                                               | dia.template_item.created                    | yes  | —   | audit authorization cross-tenant denial idempotency isolation route service success                                           | Covered |

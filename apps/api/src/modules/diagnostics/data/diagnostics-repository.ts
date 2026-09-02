@@ -37,6 +37,22 @@ export interface TemplateItemRow {
   readonly sequence: number;
 }
 
+/**
+ * One diagnostic type as the caller tenant resolves it (P1-29 `W5`).
+ *
+ * `scope` says whether the row is the platform's or the tenant's own override;
+ * `status` is carried rather than filtered, because the list publishes the
+ * set and the write path decides whether a code may be used.
+ */
+export interface DiagnosticTypeRow {
+  readonly id: string;
+  readonly scope: 'platform' | 'tenant';
+  readonly code: string;
+  readonly name: string;
+  readonly status: 'active' | 'inactive';
+  readonly recordVersion: number;
+}
+
 export interface DiagnosticReportRow {
   readonly id: string;
   readonly companyId: string;
@@ -1226,6 +1242,47 @@ export class DiagnosticsRepository extends Repository {
       [context.principal.tenantId, code]
     );
     return result.rows[0]?.id ?? null;
+  }
+
+  /**
+   * Every diagnostic type the caller tenant sees, tenant rows shadowing
+   * platform, ordered by code (P1-29 `W5`).
+   *
+   * The SAME resolution as `diagnosticTypeByCode` above — the `DISTINCT ON`
+   * over `(scope = 'platform' OR tenant_id = $1)` with the tenant row first —
+   * minus that method's `status = 'active'` filter. The list publishes the set
+   * with each row's status; the by-code read decides whether a code may be
+   * USED, and only an active one may. Two questions, one predicate.
+   */
+  async listDiagnosticTypes(db: DbHandle): Promise<readonly DiagnosticTypeRow[]> {
+    const context = this.assertContext(db);
+    const result = await this.run<{
+      id: string;
+      scope: 'platform' | 'tenant';
+      code: string;
+      name: string;
+      status: 'active' | 'inactive';
+      record_version: number;
+    }>(
+      db,
+      `SELECT * FROM (
+                SELECT DISTINCT ON (code) id, scope, code, name, status, record_version
+                  FROM dia.diagnostic_types
+                 WHERE (scope = 'platform' OR tenant_id = $1)
+                   AND deleted_at IS NULL
+                 ORDER BY code, (scope = 'tenant') DESC
+              ) resolved
+        ORDER BY code`,
+      [context.principal.tenantId]
+    );
+    return result.rows.map((row) => ({
+      id: row.id,
+      scope: row.scope,
+      code: row.code,
+      name: row.name,
+      status: row.status,
+      recordVersion: row.record_version,
+    }));
   }
 
   /**

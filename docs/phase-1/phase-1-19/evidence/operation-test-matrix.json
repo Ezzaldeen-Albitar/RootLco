@@ -1,9 +1,9 @@
 {
   "generatedFrom": "scripts/check-operation-test-coverage.mjs",
   "counts": {
-    "registered": 87,
-    "publicApi": 87,
-    "operationDepth": 87,
+    "registered": 88,
+    "publicApi": 88,
+    "operationDepth": 88,
     "invocationOnly": 0,
     "pending": 0,
     "unitOnly": 0,
@@ -579,6 +579,30 @@
         "route",
         "service",
         "stale-version",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "dia.diagnostic-type-list",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/diagnostic-types",
+      "public": false,
+      "files": ["tests/backend/p1-29-w5-diagnostic-type-list.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization"],
+      "declared": ["success", "denial", "cross-tenant"],
+      "required": ["route", "service", "success", "authorization", "denial", "cross-tenant"],
+      "provided": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
         "success"
       ],
       "missing": [],

@@ -1,9 +1,9 @@
 {
   "generatedBy": "scripts/p1-24-operation-register.mjs",
   "totals": {
-    "operations": 345,
-    "openapiPaths": 278,
-    "openapiOperations": 345,
+    "operations": 346,
+    "openapiPaths": 279,
+    "openapiOperations": 346,
     "openapiSchemas": 3,
     "events": 50,
     "eventsProduced": 47,
@@ -14,7 +14,7 @@
     "auditActions": 208
   },
   "counts": {
-    "Covered": 345
+    "Covered": 346
   },
   "operations": [
     {
@@ -2512,6 +2512,43 @@
       "tests": ["tests/backend/p1-19-diagnostics.test.ts"],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/inspections/[inspectionId]/transition/route.ts"
+    },
+    {
+      "id": "dia.diagnostic-type-list",
+      "domain": "diagnostics",
+      "method": "GET",
+      "route": "/api/v1/diagnostic-types",
+      "permissions": ["dia.diagnostic.read"],
+      "public": false,
+      "scope": "tenant",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/diagnostic-types",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "denial",
+        "cross-tenant"
+      ],
+      "providedEvidence": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/p1-29-w5-diagnostic-type-list.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/diagnostic-types/route.ts"
     },
     {
       "id": "dia.template-create",
