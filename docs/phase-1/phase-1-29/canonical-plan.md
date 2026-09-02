@@ -299,6 +299,17 @@ the 23 operations.
 results, the `B1..B6` closure-gate blocker state, rework links, the append-only reopen-attempt
 log, additional-work request and submit-for-QA.
 
+**W8's Backend seam — DELIVERED.** Measuring W8 against the routes found that no operation
+published the QC **check vocabulary**: `qms.qc-record-detail` returns the record's RESULTS and
+`unresolvedMandatory` — the mandatory checks still open — so a screen could address a mandatory
+check by id only while it was unanswered, and an optional check never; the module resolved
+`qms.qc_checks` internally (tenant shadowing platform by code) to decide the gate and handed it
+out to nobody. `qms.qc-check-list`, `GET /qc-checks` on the existing `qms.quality_control.read`,
+is that one read: unpaged, `.strict()`, by code, both statuses with each row saying which, so a
+record written against a retired check can still name it; whether a check may be answered stays
+the write path's decision. **No new permission code, no migration.** The absence and the read are
+proved on real responses in `tests/backend/p1-29-w8-qc-check-list.test.ts`.
+
 **W9** — Owner acceptance on a production build. **Known executable dependency:** `iam.roles`
 holds zero rows, so no human actor carries any domain permission code and every operation
 refuses a hand-driven journey. The smallest legitimate provisioning path must be derived from

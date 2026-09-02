@@ -1281,6 +1281,11 @@ export const MANIFEST = {
     required: ['success', 'denial', 'cross-tenant'],
     note: 'P1-29 W7 (Backend seam) — the items of one template version in checklist order, on dia.diagnostic.read and not gated by version status; the suite first proves on real responses that neither dia.template-detail nor dia.diagnostic-detail carries them, which is why the read exists',
   },
+  'qms.qc-check-list': {
+    files: ['tests/backend/p1-29-w8-qc-check-list.test.ts'],
+    required: ['success', 'denial', 'cross-tenant'],
+    note: 'P1-29 W8 (Backend seam) — the QC check vocabulary the caller tenant resolves, tenant shadowing platform by code as the gate resolves it, both statuses published each row saying which; the suite first proves on the real record detail that only unresolved mandatory checks are ever named, which is why the read exists',
+  },
   'dia.diagnostic-type-list': {
     files: ['tests/backend/p1-29-w5-diagnostic-type-list.test.ts'],
     required: ['success', 'denial', 'cross-tenant'],
