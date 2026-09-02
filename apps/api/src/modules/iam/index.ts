@@ -75,10 +75,7 @@ export { USER_ORDERING } from './data/identity-repository';
 export { ROLE_ORDERING } from './data/authorization-repository';
 export { AUDIT_ORDERING } from './data/audit-repository';
 export type { LoginResult, SessionSummary } from './application/authentication-service';
-export type {
-  FirstOwnerBootstrap,
-  FirstOwnerInput,
-} from './application/tenant-bootstrap-service';
+export type { FirstOwnerBootstrap, FirstOwnerInput } from './application/tenant-bootstrap-service';
 export {
   FIRST_OWNER_ROLE,
   TENANT_ADMINISTRATOR_ROLE,

@@ -132,7 +132,11 @@ export class OrganizationService {
             value: String(tenant.display_name ?? ''),
           },
           { field: 'owner_account_id', classification: 'internal', value: owner.ownerAccountId },
-          { field: 'first_owner_role_id', classification: 'internal', value: owner.firstOwnerRoleId },
+          {
+            field: 'first_owner_role_id',
+            classification: 'internal',
+            value: owner.firstOwnerRoleId,
+          },
           {
             field: 'tenant_administrator_role_id',
             classification: 'internal',

@@ -97,7 +97,14 @@ export class TenantBootstrapRepository extends Repository {
       db,
       `INSERT INTO iam.roles (id, tenant_id, role_code, name, description, is_system, created_by)
        VALUES ($1, $2, $3, $4, $5, false, $6)`,
-      [id, db.targetTenantId, input.roleCode, input.name, input.description, db.context.principal.userId]
+      [
+        id,
+        db.targetTenantId,
+        input.roleCode,
+        input.name,
+        input.description,
+        db.context.principal.userId,
+      ]
     );
     return id;
   }
