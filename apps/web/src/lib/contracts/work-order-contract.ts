@@ -146,6 +146,20 @@ export interface JobAssignmentEndBody {
  * is not a `toState`: there is none on `JobUpdateBody`, so once the job exists
  * its state moves only through `wo.job-transition`.
  */
+/**
+ * `wo.job-blocker-raise` (P1-29 W6, consumed by W8). A blocker is the worker's
+ * own statement of why the job cannot proceed; there is deliberately no
+ * category, because no vocabulary of blocker kinds exists in the platform.
+ */
+export interface JobBlockerRaiseBody {
+  readonly note: string;
+}
+
+/** `wo.job-blocker-resolve` (P1-29 W6, consumed by W8). One resolution per raise. */
+export interface JobBlockerResolveBody {
+  readonly note: string;
+}
+
 export interface JobCreateBody {
   readonly title: string;
   readonly jobType?: string;

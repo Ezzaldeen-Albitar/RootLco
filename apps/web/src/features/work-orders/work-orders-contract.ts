@@ -140,6 +140,8 @@ export const WORK_ORDER_DETAIL_PERMISSIONS = {
   departmentRead: 'org.department.read',
   /** P1-29 W7: shows the per-job link into the diagnostics screen. */
   diagnosticRead: 'dia.diagnostic.read',
+  /** P1-29 W8: raising and resolving a job's blockers, the work-log precedent. */
+  laborRecord: 'tech.labor.record',
 } as const;
 
 /**

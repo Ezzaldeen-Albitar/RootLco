@@ -136,13 +136,12 @@ export const DISPOSITIONS = Object.freeze({});
  * An entry cannot outlive its reason: once the mirror declares the interface the
  * entry is STALE and fails the gate, so the web slice that writes the mirror
  * must delete the entry in the same change. An entry without a reason fails too.
+ *
+ * EMPTY since P1-29 W8, which wrote `JobBlockerRaiseBody` and `JobBlockerResolveBody`
+ * into the mirror as the first web slice to raise and resolve a blocker; the two
+ * entries W6 declared were deleted in that same change, as the rule requires.
  */
-export const PENDING_MIRRORS = Object.freeze({
-  'wo.job-blocker-raise':
-    'PENDING: added by P1-29 W6 (Backend); the mirror is owed by the first web slice that raises a blocker',
-  'wo.job-blocker-resolve':
-    'PENDING: added by P1-29 W6 (Backend); the mirror is owed by the first web slice that resolves a blocker',
-});
+export const PENDING_MIRRORS = Object.freeze({});
 
 const problems = [];
 const note = (message) => problems.push(message);

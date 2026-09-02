@@ -96,6 +96,8 @@ describe('the navigation model', () => {
       'work-orders',
       // P1-29 W7: the inspection-template catalogue at `/work-orders/diagnostics`.
       'work-orders.diagnostics',
+      // P1-29 W8: the branch QC queue at `/work-orders/quality`.
+      'work-orders.quality',
       // The board child names the same route as its parent, so the expanded
       // sidebar has a link to mark as the current page. See navigation.ts.
       'work-orders.queue',
@@ -117,9 +119,8 @@ describe('the navigation model', () => {
       'notifications',
       'reports',
       // `technicians` left this list in P1-29 W4, when the workspace was built.
-      // `work-orders` left this list in P1-29 W1 and `work-orders.diagnostics`
-      // in W7. The quality screen is W8 and does not exist yet.
-      'work-orders.quality',
+      // `work-orders` left this list in P1-29 W1, `work-orders.diagnostics` in
+      // W7 and `work-orders.quality` in W8.
     ]);
   });
 

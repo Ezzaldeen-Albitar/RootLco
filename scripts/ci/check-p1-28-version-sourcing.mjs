@@ -333,6 +333,10 @@ export const OUT_OF_SUBJECT_ADAPTERS = Object.freeze({
   transitionReport: 'dia.diagnostic-transition — P1-29 W7, not an apt/rec operation',
   completeReport: 'dia.diagnostic-complete — P1-29 W7, not an apt/rec operation',
   setVersionStatus: 'dia.template-version-status-set — P1-29 W7, not an apt/rec operation',
+  finalizeQcRecord: 'qms.qc-record-finalize — P1-29 W8, not an apt/rec operation',
+  signOffRework: 'qms.rework-sign-off — P1-29 W8, not an apt/rec operation',
+  recordAdditionalWorkApproval: 'wo.additional-work-approval — P1-29 W8, not an apt/rec operation',
+  closeWorkOrder: 'wo.work-order-closure — P1-29 W8, not an apt/rec operation',
 });
 
 export function expectedAdapterOperations(guarded, manifest, decisions) {

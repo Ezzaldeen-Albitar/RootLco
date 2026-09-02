@@ -16,6 +16,8 @@ import type {
   WorkOrderJob,
   WorkOrderReachableState,
 } from '../work-orders-contract';
+import { JobBlockersPanel } from '@/features/quality/components/JobBlockersPanel';
+import { WorkOrderHistorySection } from '@/features/quality/components/WorkOrderHistorySection';
 import { JobPanel } from './JobPanel';
 
 /**
@@ -56,6 +58,7 @@ export function WorkOrderDetailScreen({
   canAssign,
   canReadDepartments,
   canReadDiagnostics,
+  canRecordLabor,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
@@ -68,10 +71,18 @@ export function WorkOrderDetailScreen({
   readonly canReadDepartments: boolean;
   /** P1-29 W7: the per-job link into the diagnostics screen. */
   readonly canReadDiagnostics: boolean;
+  /** P1-29 W8: raising and resolving a job's blockers (the work-log precedent). */
+  readonly canRecordLabor: boolean;
 }) {
   const [detail, setDetail] = useState<WorkOrderDetail>(initial);
   const [reloadError, setReloadError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  /*
+   * P1-29 W8: the history section re-reads whenever the detail does. Every
+   * command on this screen hands its outcome to `refresh`, so one epoch that
+   * moves with each successful re-read is the signal the history needs.
+   */
+  const [historyEpoch, setHistoryEpoch] = useState(0);
 
   const workOrder = detail.workOrder;
 
@@ -81,6 +92,7 @@ export function WorkOrderDetailScreen({
     if (next.status === 'ok') {
       setDetail(next.data);
       setReloadError(null);
+      setHistoryEpoch((n) => n + 1);
       return;
     }
     // A failed refresh leaves the LAST KNOWN state on screen and says so. Wiping
@@ -105,6 +117,15 @@ export function WorkOrderDetailScreen({
         </p>
       )}
 
+      <p className="text-body">
+        <Link
+          href={`/${locale}/work-orders/${workOrder.id}/closure`}
+          className="text-primary underline-offset-2 hover:underline"
+        >
+          {translate(messages, 'workOrders.detail.closureLink')}
+        </Link>
+      </p>
+
       <LifecyclePanel
         messages={messages}
         workOrderId={workOrder.id}
@@ -127,7 +148,15 @@ export function WorkOrderDetailScreen({
         canAssign={canAssign}
         canReadDepartments={canReadDepartments}
         canReadDiagnostics={canReadDiagnostics}
+        canRecordLabor={canRecordLabor}
         onDone={() => startTransition(() => void refresh())}
+      />
+
+      <WorkOrderHistorySection
+        locale={locale}
+        messages={messages}
+        workOrderId={workOrder.id}
+        reloadCount={historyEpoch}
       />
     </div>
   );
@@ -411,6 +440,7 @@ function JobsSection({
   canAssign,
   canReadDepartments,
   canReadDiagnostics,
+  canRecordLabor,
   onDone,
 }: {
   readonly locale: Locale;
@@ -423,6 +453,7 @@ function JobsSection({
   readonly canAssign: boolean;
   readonly canReadDepartments: boolean;
   readonly canReadDiagnostics: boolean;
+  readonly canRecordLabor: boolean;
   readonly onDone: () => void;
 }) {
   const [openJobId, setOpenJobId] = useState<string | null>(null);
@@ -525,6 +556,15 @@ function JobsSection({
                   canReadTechnicians={canReadTechnicians}
                   canAssign={canAssign}
                   onDone={onDone}
+                />
+              ) : null}
+              {openJob !== null && openJob.id === job.id ? (
+                <JobBlockersPanel
+                  locale={locale}
+                  messages={messages}
+                  jobId={job.id}
+                  canRecord={canRecordLabor}
+                  onChanged={onDone}
                 />
               ) : null}
             </li>
