@@ -1276,6 +1276,11 @@ export const MANIFEST = {
     required: ['success', 'denial', 'cross-tenant', 'isolation'],
     note: 'P1-29 W6 — INT-043: the unified history as a keyset page merged from four modules through their ports; kinds the caller may not see are omitted and named',
   },
+  'dia.template-version-item-list': {
+    files: ['tests/backend/p1-29-w7-template-version-item-list.test.ts'],
+    required: ['success', 'denial', 'cross-tenant'],
+    note: 'P1-29 W7 (Backend seam) — the items of one template version in checklist order, on dia.diagnostic.read and not gated by version status; the suite first proves on real responses that neither dia.template-detail nor dia.diagnostic-detail carries them, which is why the read exists',
+  },
   'qms.qc-check-list': {
     files: ['tests/backend/p1-29-w8-qc-check-list.test.ts'],
     required: ['success', 'denial', 'cross-tenant'],

@@ -1,9 +1,9 @@
 {
   "generatedFrom": "scripts/check-operation-test-coverage.mjs",
   "counts": {
-    "registered": 93,
-    "publicApi": 93,
-    "operationDepth": 93,
+    "registered": 94,
+    "publicApi": 94,
+    "operationDepth": 94,
     "invocationOnly": 0,
     "pending": 0,
     "unitOnly": 0,
@@ -816,6 +816,30 @@
         "cross-tenant",
         "denial",
         "idempotency",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "dia.template-version-item-list",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/template-versions/{versionId}/items",
+      "public": false,
+      "files": ["tests/backend/p1-29-w7-template-version-item-list.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "cross-tenant"],
+      "declared": ["success", "denial", "cross-tenant"],
+      "required": ["route", "service", "success", "authorization", "cross-tenant", "denial"],
+      "provided": [
+        "authorization",
+        "cross-tenant",
+        "denial",
         "isolation",
         "route",
         "service",

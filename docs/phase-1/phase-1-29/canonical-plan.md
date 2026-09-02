@@ -131,7 +131,7 @@ the PHASE may not close before it does.
 **One precondition has changed and the record must say so.** The preparation text blocked the
 diagnostics slice on `INS-09` — "there is no HTTP authoring surface and no permission
 vocabulary for the diagnostic template lifecycle". That reason is retired: `develop` `2a0285ec`
-carries **22 `dia.*` operations**, including the full template lifecycle (`dia.template-create`,
+carries **23 `dia.*` operations**, including the full template lifecycle (`dia.template-create`,
 `dia.template-item-create`, `dia.template-version-create`,
 `dia.template-version-list-publishable`, `dia.template-version-status-set`) and the execution
 and review surface (`dia.diagnostic-create`, `-item-result`, `-finding-record`,
@@ -279,7 +279,21 @@ at `limit=3` concatenating to the unpaged set with nothing skipped and nothing t
 kinds named for a work-order reader; raise, resolve, the folded status, the conflict, and the job's
 state unchanged by any of it; no-permission, cross-branch and cross-tenant refusals.
 
-**W7** — the diagnostics experience, on the 22 operations above. **Closure depends on it (§3).**
+**W7** — the diagnostics experience, on the 23 operations above. **Closure depends on it (§3).**
+
+**W7's Backend seam — DELIVERED.** Measuring W7 against the routes found that no operation
+published a template version's **items**: `dia.template-detail` returns the template and its
+versions, each with an `itemCount` and nothing else, and `dia.diagnostic-detail` returns the
+report's RESULTS — a fresh report's `items` is empty, and `outstandingMandatory` names only the
+mandatory items still open, by code and prompt, with no id to answer them by. A screen that
+executes an inspection could not show what each item asks or address a result to it; a screen
+that authors one could not show what was authored. `dia.template-version-item-list`,
+`GET /template-versions/{versionId}/items` on the existing `dia.diagnostic.read`, is that one
+read: unpaged, `.strict()`, in checklist order, not gated by version status (a draft's items are
+what authoring renders; a retired version's are what an old report still names). **No new
+permission code, no migration.** Both absences and the read are proved on real responses in
+`tests/backend/p1-29-w7-template-version-item-list.test.ts`. The Frontend W7 slice follows on
+the 23 operations.
 
 **W8** — `wo.work-order-closure`, `wo.work-order-closure-eligibility`, QC records and per-check
 results, the `B1..B6` closure-gate blocker state, rework links, the append-only reopen-attempt

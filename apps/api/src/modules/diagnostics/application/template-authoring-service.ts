@@ -179,6 +179,22 @@ export class TemplateAuthoringService extends ApplicationService {
    * authored one without a second read — which is exactly the distinction that
    * decides whether publishing will be refused.
    */
+  /**
+   * The items of one version, in checklist order (P1-29-W7).
+   *
+   * Resolved through a plain read, not `lockVersion`: nothing is written, and a
+   * `FOR UPDATE` on a GET would let readers serialise authors. A version another
+   * tenant owns, or one that was deleted, is `ERR-RES-001` — the same answer
+   * `createItem` gives, so the two verbs do not disagree about what exists.
+   */
+  async versionItems(db: DbHandle, versionId: string): Promise<readonly TemplateItemRow[]> {
+    const version = await this.templates.versionById(db, versionId);
+    if (version === null) {
+      throw new AppFailure('ERR-RES-001', { message: 'Template version was not found' });
+    }
+    return this.templates.itemsOf(db, versionId);
+  }
+
   async templateDetail(db: DbHandle, templateId: string): Promise<InspectionTemplateDetail> {
     const template = await this.requireTemplate(db, templateId);
     return { template, versions: await this.templates.versionsOf(db, templateId) };

@@ -1,9 +1,9 @@
 {
   "generatedBy": "scripts/p1-24-operation-register.mjs",
   "totals": {
-    "operations": 351,
+    "operations": 352,
     "openapiPaths": 283,
-    "openapiOperations": 351,
+    "openapiOperations": 352,
     "openapiSchemas": 3,
     "events": 50,
     "eventsProduced": 47,
@@ -14,7 +14,7 @@
     "auditActions": 210
   },
   "counts": {
-    "Covered": 351
+    "Covered": 352
   },
   "operations": [
     {
@@ -2095,7 +2095,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-19-diagnostics.test.ts"],
+      "tests": [
+        "tests/backend/p1-19-diagnostics.test.ts",
+        "tests/backend/p1-29-w7-template-version-item-list.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/inspections/[inspectionId]/route.ts"
     },
@@ -2301,7 +2304,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-19-diagnostics.test.ts"],
+      "tests": [
+        "tests/backend/p1-19-diagnostics.test.ts",
+        "tests/backend/p1-29-w7-template-version-item-list.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/inspections/[inspectionId]/items/[templateItemId]/route.ts"
     },
@@ -2625,7 +2631,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/br-04-template-authoring.test.ts"],
+      "tests": [
+        "tests/backend/br-04-template-authoring.test.ts",
+        "tests/backend/p1-29-w7-template-version-item-list.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/inspection-templates/[templateId]/route.ts"
     },
@@ -2667,7 +2676,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/br-04-template-authoring.test.ts"],
+      "tests": [
+        "tests/backend/br-04-template-authoring.test.ts",
+        "tests/backend/p1-29-w7-template-version-item-list.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/template-versions/[versionId]/items/route.ts"
     },
@@ -2791,6 +2803,43 @@
       "tests": ["tests/backend/br-04-template-authoring.test.ts"],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/inspection-templates/[templateId]/versions/route.ts"
+    },
+    {
+      "id": "dia.template-version-item-list",
+      "domain": "diagnostics",
+      "method": "GET",
+      "route": "/api/v1/template-versions/{versionId}/items",
+      "permissions": ["dia.diagnostic.read"],
+      "public": false,
+      "scope": "tenant",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/template-versions/{versionId}/items",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "denial"
+      ],
+      "providedEvidence": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/p1-29-w7-template-version-item-list.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/template-versions/[versionId]/items/route.ts"
     },
     {
       "id": "dia.template-version-list-publishable",
