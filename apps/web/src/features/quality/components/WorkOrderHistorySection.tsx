@@ -36,7 +36,6 @@ export function WorkOrderHistorySection({
 
   useEffect(() => {
     let cancelled = false;
-    setPages([]);
     void readWorkOrderTimeline(workOrderId, null).then((next) => {
       if (cancelled) return;
       setFirst(next);

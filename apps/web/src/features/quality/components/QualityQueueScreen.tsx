@@ -59,8 +59,6 @@ export function QualityQueueScreen({
   useEffect(() => {
     if (target === null) return;
     let cancelled = false;
-    setState(null);
-    setPages([]);
     void listQcQueue(target, overallResult ? { overallResult } : {}, null).then((next) => {
       if (cancelled) return;
       setState(next);
@@ -83,6 +81,8 @@ export function QualityQueueScreen({
 
   const submitTarget = () => {
     if (draft.companyId.length === 0 || draft.branchId.length === 0) return;
+    setState(null);
+    setPages([]);
     setTarget({ companyId: draft.companyId, branchId: draft.branchId });
   };
 
@@ -133,7 +133,11 @@ export function QualityQueueScreen({
               name="overallResult"
               label={translate(messages, 'quality.queue.filterResult')}
               value={overallResult}
-              onChange={(event) => setOverallResult(event.target.value)}
+              onChange={(event) => {
+                setOverallResult(event.target.value);
+                setState(null);
+                setPages([]);
+              }}
               options={OVERALL_RESULTS.map((value) => ({
                 value,
                 label: translate(messages, `quality.result.${value}` as keyof Messages),
