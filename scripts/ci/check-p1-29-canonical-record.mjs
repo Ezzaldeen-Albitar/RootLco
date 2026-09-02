@@ -75,7 +75,12 @@ for (const r of routes) {
 // Names the record introduces as NOT YET BUILT. Verified ABSENT, not present: a
 // planned name that already existed would mean the item is already done, and a
 // record that cannot tell those two apart is the ambiguity W2 exists to remove.
-const PLANNED = new Set(['dia.diagnostic-type-list']);
+//
+// EMPTY since P1-29 W5 landed `dia.diagnostic-type-list` — the one name the
+// record had planned. The set stays, because the next planned name (W6's
+// unified history and blocker record) goes here the day the record names it,
+// and an empty set is a true statement about today rather than a removed rule.
+const PLANNED = new Set([]);
 const cited = [...text.matchAll(/`([a-z]+\.[a-z0-9]+(?:-[a-z0-9]+)+)`/g)].map((m) => m[1]);
 for (const id of new Set(cited)) {
   if (PLANNED.has(id)) {

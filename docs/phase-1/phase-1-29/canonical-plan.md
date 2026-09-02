@@ -131,7 +131,7 @@ the PHASE may not close before it does.
 **One precondition has changed and the record must say so.** The preparation text blocked the
 diagnostics slice on `INS-09` — "there is no HTTP authoring surface and no permission
 vocabulary for the diagnostic template lifecycle". That reason is retired: `develop` `2a0285ec`
-carries **21 `dia.*` operations**, including the full template lifecycle (`dia.template-create`,
+carries **22 `dia.*` operations**, including the full template lifecycle (`dia.template-create`,
 `dia.template-item-create`, `dia.template-version-create`,
 `dia.template-version-list-publishable`, `dia.template-version-status-set`) and the execution
 and review surface (`dia.diagnostic-create`, `-item-result`, `-finding-record`,
@@ -240,15 +240,20 @@ Still open in this item, deliberately: `wo.job-transition` is not consumed here 
 has no pause operation, stopping the clock is `tech.labor-session-stop`, and moving the job is a
 separate authority a later slice adds beside the W3 screen.
 
-**W5** — Backend, small: publish a diagnostic-type read operation — PLANNED name
-`dia.diagnostic-type-list`, which **does not exist today** — on the existing
-`dia.diagnostic.read`. **No new permission code.** Approved vocabulary content is an Owner
-input; the operation may ship before content exists, and returns an empty set until it does.
+**W5 — DELIVERED.** `dia.diagnostic-type-list`, `GET /diagnostic-types`, on the existing
+`dia.diagnostic.read`. **No new permission code, no migration, no seed.** The read publishes the
+set `dia.diagnostic_types` resolves for the caller tenant — a tenant row shadowing the platform
+row of the same code, the predicate `diagnosticTypeByCode` has applied since P1-19 — with each
+row's `status`, so a report typed against a retired type can still name it; whether a code may
+be USED for a new template stays the write path's decision. Unpaged, empty `.strict()` query,
+as `wo.work-order-catalogue`. Approved vocabulary content is an Owner input; the operation
+answers an empty set until it exists, which `tests/backend/p1-29-w5-diagnostic-type-list.test.ts`
+holds alongside the shadowing, the statuses, the refusals and the per-tenant isolation.
 
 **W6** — Backend: the two Owner requirements with no owning prerequisite. A unified work-order
 history read (`INT-043`, requirement row 16) and a blocker record (requirement row 13).
 
-**W7** — the diagnostics experience, on the 21 operations above. **Closure depends on it (§3).**
+**W7** — the diagnostics experience, on the 22 operations above. **Closure depends on it (§3).**
 
 **W8** — `wo.work-order-closure`, `wo.work-order-closure-eligibility`, QC records and per-check
 results, the `B1..B6` closure-gate blocker state, rework links, the append-only reopen-attempt

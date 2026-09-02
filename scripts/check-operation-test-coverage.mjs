@@ -1256,6 +1256,11 @@ export const MANIFEST = {
     files: ['tests/backend/br-06-work-execution-controls.test.ts'],
     required: ['success', 'denial'],
   },
+  'dia.diagnostic-type-list': {
+    files: ['tests/backend/p1-29-w5-diagnostic-type-list.test.ts'],
+    required: ['success', 'denial', 'cross-tenant'],
+    note: 'P1-29 W5 — the diagnostic-type vocabulary the caller tenant resolves, tenant shadowing platform by code with the predicate diagnosticTypeByCode has used since P1-19; both statuses published, each row saying which; the empty set is the truthful answer while no vocabulary is seeded',
+  },
   'wo.job-list': {
     files: ['tests/backend/br-06-work-execution-controls.test.ts'],
     required: ['success', 'denial', 'isolation'],

@@ -26,13 +26,17 @@ import { composeModule } from '@/server/layering';
 import { DiagnosticsRepository } from './data/diagnostics-repository';
 import { TemplateAuthoringRepository } from './data/template-authoring-repository';
 import { DiagnosticsCompletionService } from './application/diagnostics-completion-service';
+import { DiagnosticCatalogService } from './application/diagnostic-catalog-service';
 import { DiagnosticReportService } from './application/diagnostic-report-service';
 import { TemplateAuthoringService } from './application/template-authoring-service';
+
+export type { DiagnosticTypeView } from './application/diagnostic-catalog-service';
 
 export type {
   DiagnosticEvidenceRow,
   DiagnosticReportRow,
   DiagnosticReviewRow,
+  DiagnosticTypeRow,
   DtcRow,
   FindingOrigin,
   FindingRow,
@@ -139,6 +143,9 @@ export const diagnosticsModule = composeModule({
   create: () => {
     const repository = new DiagnosticsRepository();
     return {
+      // P1-29 W5: the vocabulary read. Its own service, as `workOrderCatalog`
+      // is to the work-order module — a catalogue is not a report.
+      catalogue: new DiagnosticCatalogService(repository),
       completion: new DiagnosticsCompletionService(repository),
       reports: new DiagnosticReportService(repository),
       templates: new TemplateAuthoringService(new TemplateAuthoringRepository()),
