@@ -2278,7 +2278,7 @@
   "quality.closure.signedOff": "مُعتمد",
   "quality.closure.notSignedOff": "غير معتمد",
   "quality.closure.signOffBy": "اعتمده",
-  "quality.closure.signOffByHint": "مرجع مستخدم المراجع المستقل. ترفض المنصة الشخص الذي قاد إعادة العمل.",
+  "quality.closure.signOffByHint": "الملف الفني للمراجع المستقل من سجل هذه الورشة. ترفض المنصة الشخص الذي قاد إعادة العمل.",
   "quality.closure.signOff": "اعتماد",
   "quality.closure.cost": "تكلفة إعادة العمل",
   "quality.closure.currency": "العملة",

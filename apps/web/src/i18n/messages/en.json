@@ -2278,7 +2278,7 @@
   "quality.closure.signedOff": "Signed off",
   "quality.closure.notSignedOff": "Not signed off",
   "quality.closure.signOffBy": "Signed off by",
-  "quality.closure.signOffByHint": "The independent reviewer's user reference. The platform refuses the person who led the rework.",
+  "quality.closure.signOffByHint": "The independent reviewer's technician profile, from this workshop's roster. The platform refuses the person who led the rework.",
   "quality.closure.signOff": "Sign off",
   "quality.closure.cost": "Rework cost",
   "quality.closure.currency": "Currency",
