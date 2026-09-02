@@ -25,14 +25,17 @@
  *
  * ## One measured fact this file pins WITHOUT endorsing
  *
- * `W4-5e` records that a caller holding `tech.labor.record` in a branch may
- * start a session for ANY active technician profile in that branch — the
- * backend's authority for labour is scope-level, as `p1-19` designed it for a
- * timekeeper recording on a technician's behalf. The workspace adapter refuses
- * to build such a request (`apps/web/tests/technicians-workspace-api.test.ts`),
- * but an adapter is not a boundary. The case is a TRIPWIRE: the day the backend
- * refuses it, this test fails loudly and the finding in
- * `docs/phase-1/phase-1-29/canonical-plan.md` closes.
+ * `W4-5e` was a TRIPWIRE: it recorded that a caller holding `tech.labor.record`
+ * in a branch could start a session for ANY active technician profile there —
+ * the backend's authority for labour being scope-level, as `p1-19` designed it
+ * for a timekeeper recording on a technician's behalf — while only the
+ * workspace adapter declined to build such a request
+ * (`apps/web/tests/technicians-workspace-api.test.ts`). An adapter is not a
+ * boundary. The tripwire fired on 2026-09-02 (P1-29 W9, finding `W4-F1`
+ * closed): the backend now refuses a caller who holds a live profile in the
+ * target scope naming any profile but their own, and keeps the timekeeper path
+ * for a caller who holds none. `W4-5e` records the refusal; `W4-5f` records the
+ * timekeeper path it leaves open.
  */
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -117,6 +120,8 @@ interface WorkspacePrincipal {
   readonly companyId: string;
   readonly branchId: string;
   readonly codes: readonly string[];
+  /** False for a recorder who holds the codes but no technician profile (a timekeeper). */
+  readonly hasProfile?: false;
 }
 
 const TECHNICIAN_CODES = ['tech.technician.read', 'tech.labor.record', 'wo.work_order.read'];
@@ -174,7 +179,19 @@ const TECH_READ_ONLY: WorkspacePrincipal = {
   codes: ['tech.technician.read', 'wo.work_order.read'],
 };
 
-const LOCAL_PRINCIPALS = [TECH_ONE, TECH_TWO, TECH_B, TECH_READ_ONLY] as const;
+/** Holds `tech.labor.record` in BRANCH_A1 and NO profile anywhere: the timekeeper P1-19 designed the authority for. */
+const TIMEKEEPER: WorkspacePrincipal = {
+  roleId: '29400000-0000-4000-8000-000000000009',
+  userId: '29400000-0000-4000-8000-00000000000a',
+  profileId: '29400000-0000-4000-8000-000000000014',
+  subject: 'fx_p1_29_w4_timekeeper',
+  tenantId: TENANT_A,
+  companyId: COMPANY_A1,
+  branchId: BRANCH_A1,
+  codes: TECHNICIAN_CODES,
+  hasProfile: false,
+};
+const LOCAL_PRINCIPALS = [TECH_ONE, TECH_TWO, TECH_B, TECH_READ_ONLY, TIMEKEEPER] as const;
 
 let admin: Pool;
 let runtime: Pool;
@@ -344,6 +361,7 @@ async function seedPrincipal(principal: WorkspacePrincipal): Promise<void> {
   // The profile and its availability, inside one transaction with the GUCs
   // set: `set_config(..., true)` is transaction-local, and the profile guard
   // reads the actor from it.
+  if (principal.hasProfile === false) return;
   const client = await admin.connect();
   try {
     await client.query('BEGIN');
@@ -756,27 +774,43 @@ describe('P1-29 W4 — cross-technician and cross-tenant execution', () => {
     expect((await stop(session.id, session.recordVersion)).status).toBe(200);
   });
 
-  it('W4-5e TRIPWIRE — the backend does NOT refuse a same-branch technician naming another’s profile', async () => {
+  it('W4-5e the backend REFUSES a same-branch technician naming another technician’s profile (W4-F1 closed)', async () => {
     /*
-     * MEASURED, not endorsed. `tech.labor.record` is a branch-scoped recording
-     * authority (`p1-19`), so TECH_TWO — a technician, not a timekeeper — can
-     * clock TECH_ONE onto a job through the API. The workspace adapter refuses
-     * to build this request, and that refusal is proved in
-     * `apps/web/tests/technicians-workspace-api.test.ts`; but an adapter is not
-     * a boundary, and this case says so in the only place it cannot be
-     * overlooked. When the backend closes it, this assertion fails and the
-     * finding recorded in the canonical plan is closed with it.
+     * TECH_TWO holds `tech.labor.record` in the branch AND a live profile
+     * there: a technician, not a timekeeper. Naming TECH_ONE's profile is
+     * refused at the boundary — 403, the body field named — and nothing is
+     * opened. The adapter's own refusal
+     * (`apps/web/tests/technicians-workspace-api.test.ts`) is now the second
+     * line, not the only one.
      */
     const seeded = await seedAssignedJob([{ profileId: TECH_ONE.profileId }]);
     authAsSubject(TECH_TWO.subject);
     const response = await start(seeded.jobId, { technicianProfileId: TECH_ONE.profileId });
     const text = await response.clone().text();
-    expect(response.status, text).toBe(201);
+    expect(response.status, text).toBe(403);
+    const problem = await json<{ code: string; violations?: { path: string; rule: string }[] }>(
+      response
+    );
+    expect(problem.code).toBe('ERR-IAM-001');
+    expect(problem.violations).toEqual([
+      { path: 'body.technicianProfileId', rule: 'not-own-profile' },
+    ]);
+    const open = await admin.query(
+      'SELECT 1 FROM tech.labor_sessions WHERE job_id = $1 AND ended_at IS NULL',
+      [seeded.jobId]
+    );
+    expect(open.rowCount).toBe(0);
+  });
 
-    // Leave nothing open for TECH_ONE.
+  it('W4-5f the timekeeper path stays open: a recorder with no profile in the scope starts a session for a technician', async () => {
+    const seeded = await seedAssignedJob([{ profileId: TECH_ONE.profileId }]);
+    authAsSubject(TIMEKEEPER.subject);
+    const response = await start(seeded.jobId, { technicianProfileId: TECH_ONE.profileId });
+    const text = await response.clone().text();
+    expect(response.status, text).toBe(201);
     const session = await json<SessionRow>(response);
     expect(session.technicianProfileId).toBe(TECH_ONE.profileId);
-    authAsSubject(TECH_TWO.subject);
+    authAsSubject(TIMEKEEPER.subject);
     expect((await stop(session.id, session.recordVersion)).status).toBe(200);
   });
 });
