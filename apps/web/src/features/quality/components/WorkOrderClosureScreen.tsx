@@ -235,6 +235,7 @@ export function WorkOrderClosureScreen({
           messages={messages}
           workOrderId={workOrderId}
           capabilities={capabilities}
+          terminal={eligibility?.status === 'ok' ? eligibility.data.alreadyTerminal : null}
           onChanged={reload}
         />
       ) : null}
@@ -329,6 +330,18 @@ function GatePanel({
               <bdi>{eligibility.data.deferred.reason}</bdi> ({eligibility.data.deferred.owner})
             </p>
           )}
+          {eligibility.data.inventoryCommitments.blocking ? (
+            <p className="text-body text-text-primary">
+              {translate(messages, 'quality.closure.inventoryBlocking')}
+              <span className="text-caption text-text-muted">
+                {' '}
+                · {translate(messages, 'quality.closure.activeReservations')}{' '}
+                <span dir="ltr">{eligibility.data.inventoryCommitments.activeReservations}</span> ·{' '}
+                {translate(messages, 'quality.closure.openIssues')}{' '}
+                <span dir="ltr">{eligibility.data.inventoryCommitments.openIssues}</span>
+              </span>
+            </p>
+          ) : null}
         </div>
       )}
     </Panel>
@@ -716,12 +729,15 @@ function ReworkPanel({
   messages,
   workOrderId,
   capabilities,
+  terminal,
   onChanged,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly workOrderId: string;
   readonly capabilities: ClosureCapabilities;
+  /** The gate's `alreadyTerminal`; rework corrects a closed order, so the form waits for it. `null` while unknown. */
+  readonly terminal: boolean | null;
   readonly onChanged: () => void;
 }) {
   const [links, setLinks] = useState<ReadState<ItemsOnly<ReworkLink>> | null>(null);
@@ -748,7 +764,12 @@ function ReworkPanel({
 
   return (
     <Panel id="rework-heading" titleKey="quality.closure.reworkHeading" messages={messages}>
-      {capabilities.canManageRework ? (
+      {capabilities.canManageRework && terminal === false ? (
+        <p className="mb-3 text-caption text-text-muted">
+          {translate(messages, 'quality.closure.reworkNeedsClosed')}
+        </p>
+      ) : null}
+      {capabilities.canManageRework && terminal === true ? (
         <form
           action={async () => {
             if (rootCause.trim().length === 0 || correctiveAction.trim().length === 0) return;

@@ -153,6 +153,7 @@ const eligibility = {
     conditions: ['B5', 'B6'],
     reason: 'Stock reservation is not represented yet.',
   },
+  inventoryCommitments: { activeReservations: 0, openIssues: 0, blocking: false },
 };
 const workOrderDetail = {
   workOrder: {
@@ -284,6 +285,52 @@ describe('the closure view', () => {
     ).toBeInTheDocument();
     expect(screen.getByText('wo.guard_closure')).toBeInTheDocument();
     expect(screen.getByText('B5, B6', { exact: false })).toBeInTheDocument();
+    expect(screen.queryByText(t('quality.closure.inventoryBlocking'))).not.toBeInTheDocument();
+    // Rework corrects a closed order: on an open one the form is withheld and the reason stated.
+    expect(screen.getByText(t('quality.closure.reworkNeedsClosed'))).toBeInTheDocument();
+    expect(screen.queryByText(t('quality.closure.openRework'))).not.toBeInTheDocument();
+  });
+
+  it('offers the rework form once the gate reports the order terminal', async () => {
+    readClosureEligibility.mockResolvedValue(
+      ok({ ...eligibility, eligible: false, blockers: [], alreadyTerminal: true })
+    );
+    renderLtr(
+      <WorkOrderClosureScreen
+        locale="en"
+        messages={en}
+        workOrderId={WORK_ORDER}
+        capabilities={everything}
+      />
+    );
+    expect(await screen.findByText(t('quality.closure.alreadyTerminal'))).toBeInTheDocument();
+    expect(await screen.findByText(t('quality.closure.openRework'))).toBeInTheDocument();
+    expect(screen.queryByText(t('quality.closure.reworkNeedsClosed'))).not.toBeInTheDocument();
+  });
+
+  it('names held stock as the reason when no guard blocker stands and the order is still not eligible', async () => {
+    readClosureEligibility.mockResolvedValue(
+      ok({
+        ...eligibility,
+        blockers: [],
+        inventoryCommitments: { activeReservations: 2, openIssues: 1, blocking: true },
+      })
+    );
+    renderLtr(
+      <WorkOrderClosureScreen
+        locale="en"
+        messages={en}
+        workOrderId={WORK_ORDER}
+        capabilities={everything}
+      />
+    );
+    expect(await screen.findByText(t('quality.closure.notEligible'))).toBeInTheDocument();
+    expect(
+      screen.getByText(t('quality.closure.inventoryBlocking'), { exact: false })
+    ).toBeInTheDocument();
+    expect(screen.getByText('2')).toBeInTheDocument();
+    expect(screen.getByText('1')).toBeInTheDocument();
+    expect(screen.queryByText('wo.guard_closure')).not.toBeInTheDocument();
   });
 
   it('joins the vocabulary to the record: the answered check shows its result, the mandatory one is unanswered', async () => {

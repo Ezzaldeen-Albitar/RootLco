@@ -62,12 +62,15 @@ import {
   READER,
   REVIEWER,
   SENSITIVE,
+  TECH_A1_ALT,
   TENANT_B_FULL,
+  advance,
   authAs,
   authAsSubject,
   createOpenWorkOrder,
   establishP1_19Fixtures,
   establishQualityFixtures,
+  establishTechnicianFixtures,
 } from './p1-19-helpers';
 import { mirrorFields } from './p1-29-helpers';
 import { __setPrimaryPoolForTests } from '@/server/db/pool';
@@ -195,6 +198,7 @@ beforeAll(async () => {
   await cleanBackendFixtures(admin);
   await ensureBackendFixtures(admin);
   await establishP1_19Fixtures(admin);
+  await establishTechnicianFixtures();
   runtime = runtimeAppPool(4);
   __setPrimaryPoolForTests(runtime);
   mandatoryCheckId = (await establishQualityFixtures()).mandatoryId;
@@ -230,6 +234,12 @@ describe('W8 — the closure view, the journey it drives on real responses', () 
     expect(eligibility.blockers.length).toBeGreaterThan(0);
     for (const blocker of eligibility.blockers) matchesMirror(blocker, 'ClosureBlocker');
     expect(eligibility.blockers.map((b) => b['code'])).toContain('B1');
+    // A fresh order holds no stock: the evaluated deferred conditions say so, by number.
+    expect(eligibility['inventoryCommitments']).toEqual({
+      activeReservations: 0,
+      openIssues: 0,
+      blocking: false,
+    });
 
     // Open QC, read the vocabulary, answer the mandatory check by its id.
     authAs(FULL);
@@ -278,14 +288,19 @@ describe('W8 — the closure view, the journey it drives on real responses', () 
     expect(detail.results).toHaveLength(1);
     expect(detail.unresolvedMandatory).toEqual([]);
 
-    // A stale version is a conflict; the renewed one finalizes.
+    // A version the record does not carry is a conflict (the guard refuses any
+    // mismatch with zero rows, 409 — the screen's "changed since you opened it"),
+    // not a malformed header; the version the detail reports finalizes. Answering a
+    // check touches only `qc_check_results`, so the record's version is unchanged
+    // since it was opened, and no older version exists to send.
+    expect(detail.record.recordVersion).toBe(record.recordVersion);
     authAs(FULL);
     const stale = await send(
       FINALIZE_QC as Handler,
       `/api/v1/quality-controls/${record.id}/finalization`,
       { recordId: record.id },
       { overallResult: 'passed' },
-      { version: 0 }
+      { version: detail.record.recordVersion + 1 }
     );
     expect(stale.status).toBe(409);
     authAs(FULL);
@@ -322,45 +337,16 @@ describe('W8 — the closure view, the journey it drives on real responses', () 
     expect(queued).toBeDefined();
     matchesMirror(queued, 'QcRecord', ['cursor']);
 
-    // Rework: opened by the manager, signed off by a separate actor with the link's version.
+    // Rework corrects a CLOSED order: on an open one it is refused by name, and the
+    // view withholds the form until the gate reports the order terminal.
     authAs(FULL);
-    const rework = await send(
+    const premature = await send(
       CREATE_REWORK as Handler,
       `/api/v1/work-orders/${workOrderId}/rework`,
       { workOrderId },
       { rootCause: 'Pads fitted on the wrong axle', correctiveAction: 'Refit and retest' }
     );
-    expect(rework.status).toBe(201);
-    const created = await json<{
-      reworkWorkOrderId: string;
-      link: Record<string, unknown> & Created;
-    }>(rework);
-    matchesMirror(created.link, 'ReworkLink');
-    authAs(FULL);
-    const links = await json<{ items: Record<string, unknown>[] }>(
-      await read(LIST_REWORK as Handler, `/api/v1/work-orders/${workOrderId}/rework`, {
-        workOrderId,
-      })
-    );
-    expect(links.items.map((l) => l['id'])).toContain(created.link.id);
-    authAs(REVIEWER);
-    const signed = await send(
-      SIGN_OFF as Handler,
-      `/api/v1/rework-links/${created.link.id}/sign-off`,
-      { reworkLinkId: created.link.id },
-      { signOffBy: REVIEWER.userId },
-      { version: created.link.recordVersion }
-    );
-    expect(signed.status).toBe(200);
-    // The cost is a restricted narrative: withheld without iam.sensitive.view.
-    authAs(FULL);
-    expect(
-      (
-        await read(READ_COST as Handler, `/api/v1/rework-links/${created.link.id}/cost`, {
-          reworkLinkId: created.link.id,
-        })
-      ).status
-    ).toBe(403);
+    expect(premature.status).toBe(409);
 
     // Reopen attempts: the log is empty, and an attempt on an OPEN order is refused, not recorded as accepted.
     authAs(FULL);
@@ -505,6 +491,151 @@ describe('W8 — the closure view, the journey it drives on real responses', () 
     );
     expect(after.eligible).toBe(false);
     expect(after.blockers.map((b) => b.code)).toContain('B1');
+
+    // The closure the view drives, on an order that can take it: QC passed with the
+    // mandatory check answered, the path walked, the gate eligible with no blocker,
+    // closed with the order's version — and only then rework, which corrects a
+    // closed order; then a reopen attempt, kept and refused.
+    const done = await createOpenWorkOrder();
+    authAs(FULL);
+    const doneQc = await json<Created>(
+      await send(
+        OPEN_QC as Handler,
+        `/api/v1/work-orders/${done.workOrderId}/quality-controls`,
+        { workOrderId: done.workOrderId },
+        {}
+      )
+    );
+    authAs(FULL);
+    expect(
+      (
+        await send(
+          WRITE_CHECK as Handler,
+          `/api/v1/quality-controls/${doneQc.id}/checks/${mandatoryCheckId}`,
+          { recordId: doneQc.id, qcCheckId: mandatoryCheckId },
+          { result: 'pass' },
+          { method: 'PUT' }
+        )
+      ).status
+    ).toBe(200);
+    authAs(FULL);
+    expect(
+      (
+        await send(
+          FINALIZE_QC as Handler,
+          `/api/v1/quality-controls/${doneQc.id}/finalization`,
+          { recordId: doneQc.id },
+          { overallResult: 'passed' },
+          { version: doneQc.recordVersion }
+        )
+      ).status
+    ).toBe(200);
+    const readyVersion = await advance(done.workOrderId, [
+      { toState: 'in_progress' },
+      { toState: 'qc_pending' },
+      { toState: 'ready_to_close' },
+    ]);
+    authAs(FULL);
+    const readyGate = await json<{
+      eligible: boolean;
+      blockers: unknown[];
+      inventoryCommitments: { blocking: boolean };
+    }>(
+      await read(
+        ELIGIBILITY as Handler,
+        `/api/v1/work-orders/${done.workOrderId}/closure-eligibility`,
+        { workOrderId: done.workOrderId }
+      )
+    );
+    expect(readyGate.blockers).toEqual([]);
+    expect(readyGate.inventoryCommitments.blocking).toBe(false);
+    expect(readyGate.eligible).toBe(true);
+    authAs(FULL);
+    const closed = await send(
+      CLOSE as Handler,
+      `/api/v1/work-orders/${done.workOrderId}/closure`,
+      { workOrderId: done.workOrderId },
+      { toState: 'closed' },
+      { version: readyVersion }
+    );
+    expect(closed.status).toBe(200);
+    authAs(FULL);
+    const closedGate = await json<{ eligible: boolean; alreadyTerminal: boolean }>(
+      await read(
+        ELIGIBILITY as Handler,
+        `/api/v1/work-orders/${done.workOrderId}/closure-eligibility`,
+        { workOrderId: done.workOrderId }
+      )
+    );
+    expect(closedGate.alreadyTerminal).toBe(true);
+    expect(closedGate.eligible).toBe(false);
+
+    // Rework: opened by the manager, signed off by a separate actor with the link's version.
+    authAs(FULL);
+    const rework = await send(
+      CREATE_REWORK as Handler,
+      `/api/v1/work-orders/${done.workOrderId}/rework`,
+      { workOrderId: done.workOrderId },
+      { rootCause: 'Pads fitted on the wrong axle', correctiveAction: 'Refit and retest' }
+    );
+    expect(rework.status).toBe(201);
+    const created = await json<{
+      reworkWorkOrderId: string;
+      link: Record<string, unknown> & Created;
+    }>(rework);
+    matchesMirror(created.link, 'ReworkLink');
+    authAs(FULL);
+    const links = await json<{ items: Record<string, unknown>[] }>(
+      await read(LIST_REWORK as Handler, `/api/v1/work-orders/${done.workOrderId}/rework`, {
+        workOrderId: done.workOrderId,
+      })
+    );
+    expect(links.items.map((l) => l['id'])).toContain(created.link.id);
+    authAs(REVIEWER);
+    const signed = await send(
+      SIGN_OFF as Handler,
+      `/api/v1/rework-links/${created.link.id}/sign-off`,
+      { reworkLinkId: created.link.id },
+      // The signature names a technician PROFILE in the workshop's own roster, not a login.
+      { signOffBy: TECH_A1_ALT },
+      { version: created.link.recordVersion }
+    );
+    expect(signed.status).toBe(200);
+    // The cost is a restricted narrative: withheld without iam.sensitive.view.
+    authAs(FULL);
+    expect(
+      (
+        await read(READ_COST as Handler, `/api/v1/rework-links/${created.link.id}/cost`, {
+          reworkLinkId: created.link.id,
+        })
+      ).status
+    ).toBe(403);
+
+    // Reopen: the attempt on the closed order is kept, and its outcome is refusal.
+    authAs(FULL);
+    const reopen = await send(
+      REOPEN as Handler,
+      `/api/v1/work-orders/${done.workOrderId}/reopen-attempts`,
+      { workOrderId: done.workOrderId },
+      { reason: 'Customer returned' }
+    );
+    expect(reopen.status).toBe(201);
+    const kept = await json<{ attempt: Record<string, unknown> & Created; refusal: string }>(
+      reopen
+    );
+    matchesMirror(kept, 'ReopenAttemptResult');
+    matchesMirror(kept.attempt, 'ReopenAttempt');
+    expect(kept.attempt['outcome']).toBe('rejected');
+    expect(kept.refusal.length).toBeGreaterThan(0);
+    authAs(FULL);
+    const log = await json<{ items: Record<string, unknown>[] }>(
+      await read(
+        LIST_REOPEN as Handler,
+        `/api/v1/work-orders/${done.workOrderId}/reopen-attempts`,
+        { workOrderId: done.workOrderId }
+      )
+    );
+    expect(log.items.map((a) => a['id'])).toContain(kept.attempt.id);
   });
 });
 

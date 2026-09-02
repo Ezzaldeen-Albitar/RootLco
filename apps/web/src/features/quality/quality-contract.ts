@@ -28,7 +28,8 @@
  * Typed from the views the routes return — `QcRecordRow`, `QcCheckRow`,
  * `QcCheckVocabularyRow`, `QcCheckResultRow`, `QcRecordDetail` (quality module),
  * `ClosureEligibility` / `ClosureBlocker` (work-order service), `ReworkLinkView`,
- * `ReopenAttemptView` (rework service), `AdditionalWorkRequestView`,
+ * `ReopenAttemptView` and the `ReopenAttemptResult` envelope its POST answers with
+ * (rework service), `AdditionalWorkRequestView`,
  * `AdditionalWorkDetailView`, `CustomerApprovalView` (additional-work service),
  * `WorkOrderTimelinePage` and `JobBlockerView` (job-board service, W6). Every
  * interface is held field-for-field against the row that came back in
@@ -127,6 +128,15 @@ export interface ClosureEligibility {
     readonly conditions: readonly string[];
     readonly reason: string;
   };
+  /**
+   * The two deferred conditions, evaluated: stock this work order still holds.
+   * `blocking` is folded into `eligible`, and `close` refuses for the same reason.
+   */
+  readonly inventoryCommitments: {
+    readonly activeReservations: number;
+    readonly openIssues: number;
+    readonly blocking: boolean;
+  };
 }
 
 /** `ReworkLinkView`. */
@@ -152,6 +162,18 @@ export interface ReopenAttempt {
   readonly outcome: string;
   readonly requestedBy: string;
   readonly requestedAt: string;
+}
+
+/**
+ * `ReopenAttemptResult` — what `qms.reopen-attempt` answers: the attempt it kept,
+ * paired with the refusal that is DATA rather than an error. The refusal is
+ * server prose, and an action outcome carries translation keys only, so the
+ * view renders the translated outcome from the reloaded log and the note that
+ * names the alternative; the envelope is mirrored so the pairing is not lost.
+ */
+export interface ReopenAttemptResult {
+  readonly attempt: ReopenAttempt;
+  readonly refusal: string;
 }
 
 /** `AdditionalWorkRequestView`. */
