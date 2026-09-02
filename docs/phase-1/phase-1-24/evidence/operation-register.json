@@ -2012,10 +2012,7 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": [
-        "tests/backend/p1-19-diagnostics.test.ts",
-        "tests/backend/p1-29-w7-diagnostics-experience.test.ts"
-      ],
+      "tests": ["tests/backend/p1-19-diagnostics.test.ts"],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/inspections/[inspectionId]/completion/route.ts"
     },
@@ -2059,8 +2056,7 @@
       "missingEvidence": [],
       "tests": [
         "tests/backend/p1-19-concurrency.test.ts",
-        "tests/backend/p1-19-diagnostics.test.ts",
-        "tests/backend/p1-29-w7-diagnostics-experience.test.ts"
+        "tests/backend/p1-19-diagnostics.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/jobs/[jobId]/inspections/route.ts"
@@ -2101,7 +2097,6 @@
       "missingEvidence": [],
       "tests": [
         "tests/backend/p1-19-diagnostics.test.ts",
-        "tests/backend/p1-29-w7-diagnostics-experience.test.ts",
         "tests/backend/p1-29-w7-template-version-item-list.test.ts"
       ],
       "classification": "Covered",
@@ -2145,10 +2140,7 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": [
-        "tests/backend/p1-19-diagnostics.test.ts",
-        "tests/backend/p1-29-w7-diagnostics-experience.test.ts"
-      ],
+      "tests": ["tests/backend/p1-19-diagnostics.test.ts"],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/inspections/[inspectionId]/dtcs/route.ts"
     },
@@ -2232,10 +2224,7 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": [
-        "tests/backend/p1-19-diagnostics.test.ts",
-        "tests/backend/p1-29-w7-diagnostics-experience.test.ts"
-      ],
+      "tests": ["tests/backend/p1-19-diagnostics.test.ts"],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/inspections/[inspectionId]/findings/route.ts"
     },
@@ -2273,10 +2262,7 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": [
-        "tests/backend/p1-19-diagnostics.test.ts",
-        "tests/backend/p1-29-w7-diagnostics-experience.test.ts"
-      ],
+      "tests": ["tests/backend/p1-19-diagnostics.test.ts"],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/inspections/[inspectionId]/history/route.ts"
     },
@@ -2320,7 +2306,6 @@
       "missingEvidence": [],
       "tests": [
         "tests/backend/p1-19-diagnostics.test.ts",
-        "tests/backend/p1-29-w7-diagnostics-experience.test.ts",
         "tests/backend/p1-29-w7-template-version-item-list.test.ts"
       ],
       "classification": "Covered",
@@ -2360,10 +2345,7 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": [
-        "tests/backend/p1-19-diagnostics.test.ts",
-        "tests/backend/p1-29-w7-diagnostics-experience.test.ts"
-      ],
+      "tests": ["tests/backend/p1-19-diagnostics.test.ts"],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/jobs/[jobId]/inspections/route.ts"
     },
@@ -2405,10 +2387,7 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": [
-        "tests/backend/p1-19-diagnostics.test.ts",
-        "tests/backend/p1-29-w7-diagnostics-experience.test.ts"
-      ],
+      "tests": ["tests/backend/p1-19-diagnostics.test.ts"],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/inspections/[inspectionId]/measurements/route.ts"
     },
@@ -2450,10 +2429,7 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": [
-        "tests/backend/p1-19-diagnostics.test.ts",
-        "tests/backend/p1-29-w7-diagnostics-experience.test.ts"
-      ],
+      "tests": ["tests/backend/p1-19-diagnostics.test.ts"],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/inspections/[inspectionId]/recommendations/route.ts"
     },
@@ -2495,10 +2471,7 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": [
-        "tests/backend/p1-19-diagnostics.test.ts",
-        "tests/backend/p1-29-w7-diagnostics-experience.test.ts"
-      ],
+      "tests": ["tests/backend/p1-19-diagnostics.test.ts"],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/inspections/[inspectionId]/reviews/route.ts"
     },
@@ -2542,10 +2515,7 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": [
-        "tests/backend/p1-19-diagnostics.test.ts",
-        "tests/backend/p1-29-w7-diagnostics-experience.test.ts"
-      ],
+      "tests": ["tests/backend/p1-19-diagnostics.test.ts"],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/inspections/[inspectionId]/transition/route.ts"
     },
@@ -2582,10 +2552,7 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": [
-        "tests/backend/p1-29-w5-diagnostic-type-list.test.ts",
-        "tests/backend/p1-29-w7-diagnostics-experience.test.ts"
-      ],
+      "tests": ["tests/backend/p1-29-w5-diagnostic-type-list.test.ts"],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/diagnostic-types/route.ts"
     },
@@ -2627,10 +2594,7 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": [
-        "tests/backend/br-04-template-authoring.test.ts",
-        "tests/backend/p1-29-w7-diagnostics-experience.test.ts"
-      ],
+      "tests": ["tests/backend/br-04-template-authoring.test.ts"],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/inspection-templates/route.ts"
     },
@@ -2669,7 +2633,6 @@
       "missingEvidence": [],
       "tests": [
         "tests/backend/br-04-template-authoring.test.ts",
-        "tests/backend/p1-29-w7-diagnostics-experience.test.ts",
         "tests/backend/p1-29-w7-template-version-item-list.test.ts"
       ],
       "classification": "Covered",
@@ -2715,7 +2678,6 @@
       "missingEvidence": [],
       "tests": [
         "tests/backend/br-04-template-authoring.test.ts",
-        "tests/backend/p1-29-w7-diagnostics-experience.test.ts",
         "tests/backend/p1-29-w7-template-version-item-list.test.ts"
       ],
       "classification": "Covered",
@@ -2754,10 +2716,7 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": [
-        "tests/backend/br-04-template-authoring.test.ts",
-        "tests/backend/p1-29-w7-diagnostics-experience.test.ts"
-      ],
+      "tests": ["tests/backend/br-04-template-authoring.test.ts"],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/inspection-templates/route.ts"
     },
@@ -2841,10 +2800,7 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": [
-        "tests/backend/br-04-template-authoring.test.ts",
-        "tests/backend/p1-29-w7-diagnostics-experience.test.ts"
-      ],
+      "tests": ["tests/backend/br-04-template-authoring.test.ts"],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/inspection-templates/[templateId]/versions/route.ts"
     },
@@ -2881,10 +2837,7 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": [
-        "tests/backend/p1-29-w7-diagnostics-experience.test.ts",
-        "tests/backend/p1-29-w7-template-version-item-list.test.ts"
-      ],
+      "tests": ["tests/backend/p1-29-w7-template-version-item-list.test.ts"],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/template-versions/[versionId]/items/route.ts"
     },
@@ -2922,10 +2875,7 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": [
-        "tests/backend/br-04-template-authoring.test.ts",
-        "tests/backend/p1-29-w7-diagnostics-experience.test.ts"
-      ],
+      "tests": ["tests/backend/br-04-template-authoring.test.ts"],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/jobs/[jobId]/inspection-templates/route.ts"
     },
@@ -2969,10 +2919,7 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": [
-        "tests/backend/br-04-template-authoring.test.ts",
-        "tests/backend/p1-29-w7-diagnostics-experience.test.ts"
-      ],
+      "tests": ["tests/backend/br-04-template-authoring.test.ts"],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/template-versions/[versionId]/status/route.ts"
     },
