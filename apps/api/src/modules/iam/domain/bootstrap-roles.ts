@@ -56,7 +56,13 @@
  * those two codes; and scoping anyone else's grant (`iam.grant-scope-add`)
  * takes a company and branch identifier nobody can learn without them. An
  * administrator who cannot name a branch cannot scope a grant, and cannot
- * delegate a code it does not hold. Both are held.
+ * delegate a code it does not hold. Both are held, and so is `org.tenant.read`
+ * — the same screen's Workspace card (`iam.tenant-settings-read`), which the
+ * production build refused to the first administrator of its own organization.
+ * The settings WRITES (`org.settings.manage`, `org.company.manage`,
+ * `org.branch.manage`) stay out: no walked route on the journey declares them,
+ * and the card renders read-only without them (residual W9-R2, Owner
+ * disposition requested in the derivation record).
  *
  * Excluded on purpose, each with its reason in the W9 derivation record:
  * `platform.*` (never a tenant code), `iam.approval.manage` and
@@ -96,6 +102,7 @@ export const TENANT_ADMINISTRATOR_ROLE: BootstrapRoleDefinition = Object.freeze(
     'iam.grant.manage',
     'iam.session.view_all',
     // Organisation prerequisites the journey's screens and personas need (direct).
+    'org.tenant.read',
     'org.company.read',
     'org.branch.read',
     'org.department.read',

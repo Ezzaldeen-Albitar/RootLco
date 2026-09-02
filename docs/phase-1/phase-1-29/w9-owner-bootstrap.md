@@ -46,6 +46,7 @@ are absent by construction.
 | `iam.role.manage`              | `iam.role-create`, `iam.role-permission-add`                                                                               | IAM administration | direct   |
 | `iam.grant.manage`             | `iam.grant-issue`, `iam.grant-revoke`                                                                                      | IAM administration | direct   |
 | `iam.session.view_all`         | `iam.user-status-change` (AND with `iam.user.manage`)                                                                      | IAM administration | direct   |
+| `org.tenant.read`              | `iam.tenant-settings-read` — the Administration › Organization screen’s Workspace card                                     | org prerequisite   | direct   |
 | `org.company.read`             | `org.company-list`; the Administration › Organization screen; the company a grant scope names                              | org prerequisite   | both     |
 | `org.branch.read`              | `org.branch-list`; the Administration › Organization screen; the branch a grant scope names                                | org prerequisite   | both     |
 | `org.department.read`          | `org.department-list` (W3 routing)                                                                                         | org prerequisite   | both     |
@@ -87,10 +88,10 @@ its target from the session's own scope) and admitted by the acceptance run on t
 Organization screen shows the company and branch only to a holder of the two codes; and scoping any
 other grant (`iam.grant-scope-add`) takes a company and branch identifier nobody can learn without
 them. An administrator who cannot name a branch cannot scope a grant, and cannot delegate a code it
-does not hold. The set is 46 codes.
+does not hold. `org.tenant.read` joined for the same screen’s Workspace card, which the production build refused to the first administrator of its own organization. The set is 47 codes.
 
 Excluded, with the reason: `iam.approval.manage` and `iam.login.view_all` (no walked route on the
-journey declares them), `wo.job.transition` (no W1–W8 adapter calls it), every reception, CRM and
+journey declares them), the organisation settings writes `org.settings.manage`, `org.company.manage` and `org.branch.manage` (no walked route declares them; the Organization screen renders read-only without them — residual W9-R2, Owner disposition requested: hold them from provisioning, or leave settings to a later administrative grant), `wo.job.transition` (no W1–W8 adapter calls it), every reception, CRM and
 vehicle code beyond the creation path below (W3's customer context is resolved server-side through
 the reception port).
 
@@ -185,7 +186,7 @@ shipped `activate-account` page — and found three more defects, each fixed on 
 - **Derivation gap, closed (bundle):** the administrator's session on the production build carried
   an empty company and branch scope (its grants are unrestricted), the Administration › Organization
   screen would show it neither, and scoping a persona's grant needs a branch identifier it had no
-  route to read. `org.company.read` and `org.branch.read` join the set (44 → 46); the derivation
+  route to read. `org.company.read`, `org.branch.read` and `org.tenant.read` join the set (44 → 47); the derivation
   record in §3 states the refuted theory and the rule that replaces it.
 - **Environment, not product:** the local identity provider's redirect allow-list holds only the
   API origin, so the invitation mail's link lands on the API instead of the web app; the token in
