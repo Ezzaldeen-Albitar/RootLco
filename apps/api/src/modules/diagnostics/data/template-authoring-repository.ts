@@ -346,6 +346,41 @@ export class TemplateAuthoringRepository extends Repository {
     }));
   }
 
+  /** `lockVersion` without the lock: the read side's existence check (P1-29-W7). */
+  async versionById(db: DbHandle, versionId: string): Promise<TemplateVersionRow | null> {
+    const context = this.assertContext(db);
+    const result = await this.run<{
+      id: string;
+      template_id: string;
+      version_number: number;
+      status: string;
+      published_at: string | null;
+      item_count: string;
+      record_version: number;
+    }>(
+      db,
+      `SELECT v.id, v.template_id, v.version_number, v.status,
+              v.published_at::text AS published_at, v.record_version,
+              (SELECT count(*) FROM dia.template_items ti
+                WHERE ti.tenant_id = v.tenant_id AND ti.template_version_id = v.id
+                  AND ti.deleted_at IS NULL) AS item_count
+         FROM dia.template_versions v
+        WHERE v.tenant_id = $1 AND v.id = $2 AND v.deleted_at IS NULL`,
+      [context.principal.tenantId, versionId]
+    );
+    const row = result.rows[0];
+    if (row === undefined) return null;
+    return {
+      id: row.id,
+      templateId: row.template_id,
+      versionNumber: row.version_number,
+      status: row.status,
+      publishedAt: row.published_at,
+      itemCount: Number(row.item_count),
+      recordVersion: row.record_version,
+    };
+  }
+
   async lockVersion(db: DbHandle, versionId: string): Promise<TemplateVersionRow | null> {
     const context = this.assertContext(db);
     const result = await this.run<{
