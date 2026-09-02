@@ -577,7 +577,7 @@ and returns `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
      an earlier revision put them in a label column and broke two other gates
      whose regexes read the label and the number as adjacent cells. -->
 
-<!-- derived: files p1-27-frontend-gate = 129 -->
+<!-- derived: files p1-27-frontend-gate = 132 -->
 <!-- derived: files p1-27-frontend-gate:trees = 5 -->
 <!-- derived: files tests/backend = 108 -->
 <!-- derived: files tests/backend:all = 116 -->

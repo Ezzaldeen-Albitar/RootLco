@@ -699,7 +699,13 @@ describe('the route set is DERIVED, not a hand-written list of segments', () => 
     expect(routes.some((route: string) => route.endsWith('/appointments/new/page.tsx'))).toBe(true);
     expect(routes.some((route: string) => route.includes('/acknowledgement/'))).toBe(true);
     expect(routes.some((route: string) => route.endsWith('/technicians/me/page.tsx'))).toBe(true);
-    expect(segmentsOnce()).toEqual(['appointments', 'reception', 'receptions', 'technicians']);
+    expect(segmentsOnce()).toEqual([
+      'appointments',
+      'reception',
+      'receptions',
+      'technicians',
+      'work-orders',
+    ]);
   });
 
   it('is a strict subset of the dashboard tree, so the derivation discriminates', () => {
