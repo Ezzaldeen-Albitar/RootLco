@@ -1,5 +1,5 @@
 /**
- * GET /api/v1/diagnostic-types (P1-29 `W5`).
+ * GET /api/v1/diagnostic-types (P1-29-W5).
  *
  * The diagnostic-type vocabulary the caller tenant is configured with —
  * platform rows and the tenant's own, a tenant row shadowing the platform row

@@ -175,7 +175,14 @@ function annotations(source) {
  */
 function successorOwners(source) {
   return [
-    ...new Set([...source.matchAll(/PRE-P1-29-BR-(\d{2})/g)].map((m) => `PRE-P1-29-BR-${m[1]}`)),
+    ...new Set([
+      ...[...source.matchAll(/PRE-P1-29-BR-(\d{2})/g)].map((m) => `PRE-P1-29-BR-${m[1]}`),
+      // P1-29's own Backend items (W5, W6 …) — the second successor vocabulary.
+      // Each work item names itself in the route header as `P1-29-W<n>`, which is
+      // the same deliberate, reviewable act a BR contract performs. P1-29 W5 is
+      // the first: `dia.diagnostic-type-list`, a read P1-19 never published.
+      ...[...source.matchAll(/P1-29-W(\d)\b/g)].map((m) => `P1-29-W${m[1]}`),
+    ]),
   ].sort();
 }
 

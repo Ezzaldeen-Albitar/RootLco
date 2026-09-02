@@ -5,12 +5,13 @@ registry. Do not hand-edit.** Every column is read out of the
 `defineOperation` literal that guards the route, so this table cannot
 describe a surface the code does not expose, and cannot omit one it does.
 
-Operations in the registry: **345**. In the four P1-19 schemas: **87**. Delivered by P1-19: **58**.
+Operations in the registry: **346**. In the four P1-19 schemas: **88**. Delivered by P1-19: **58**.
 
-**29** operation(s) in these schemas were delivered by a LATER contract and are deliberately absent from the tables below — this document describes P1-19's surface, not the schemas'. They are named here so their absence is a stated fact rather than a gap, and every correctness reconciliation this script performs (seeded permission, catalogued audit action, non-inert branch scope) is applied to them exactly as it is to P1-19’s own.
+**30** operation(s) in these schemas were delivered by a LATER contract and are deliberately absent from the tables below — this document describes P1-19's surface, not the schemas'. They are named here so their absence is a stated fact rather than a gap, and every correctness reconciliation this script performs (seeded permission, catalogued audit action, non-inert branch scope) is applied to them exactly as it is to P1-19’s own.
 
 | Operation                                     | Owner           | Route                                                                                                        |
 | --------------------------------------------- | --------------- | ------------------------------------------------------------------------------------------------------------ |
+| `dia.diagnostic-type-list`                    | P1-29-W5        | `apps/api/src/app/api/v1/diagnostic-types/route.ts`                                                          |
 | `dia.template-create`                         | PRE-P1-29-BR-04 | `apps/api/src/app/api/v1/inspection-templates/route.ts`                                                      |
 | `dia.template-detail`                         | PRE-P1-29-BR-04 | `apps/api/src/app/api/v1/inspection-templates/[templateId]/route.ts`                                         |
 | `dia.template-item-create`                    | PRE-P1-29-BR-04 | `apps/api/src/app/api/v1/template-versions/[versionId]/items/route.ts`                                       |
