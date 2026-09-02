@@ -1276,6 +1276,11 @@ export const MANIFEST = {
     required: ['success', 'denial', 'cross-tenant', 'isolation'],
     note: 'P1-29 W6 — INT-043: the unified history as a keyset page merged from four modules through their ports; kinds the caller may not see are omitted and named',
   },
+  'qms.qc-check-list': {
+    files: ['tests/backend/p1-29-w8-qc-check-list.test.ts'],
+    required: ['success', 'denial', 'cross-tenant'],
+    note: 'P1-29 W8 (Backend seam) — the QC check vocabulary the caller tenant resolves, tenant shadowing platform by code as the gate resolves it, both statuses published each row saying which; the suite first proves on the real record detail that only unresolved mandatory checks are ever named, which is why the read exists',
+  },
   'dia.diagnostic-type-list': {
     files: ['tests/backend/p1-29-w5-diagnostic-type-list.test.ts'],
     required: ['success', 'denial', 'cross-tenant'],

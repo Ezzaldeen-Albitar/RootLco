@@ -24,7 +24,7 @@
  * thirteen of them stating which class a write declares, none of them checkable
  * — because the Web tier held no data from which one could be derived.
  *
- * Currently approval 13, export 1, financial 13, none 141, privileged 169, security 13.
+ * Currently approval 13, export 1, financial 13, none 142, privileged 169, security 13.
  *
  * `(absent)` above would mean an operation the document publishes with NO audit
  * class. It is emitted as the empty string rather than defaulted to `none`,
@@ -49,7 +49,7 @@ export interface PublishedOperation {
   readonly auditClass: string;
 }
 
-/** Every operation the contract publishes. 350 of them. */
+/** Every operation the contract publishes. 351 of them. */
 export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze([
   {
     template: '/additional-work/{requestId}/approval',
@@ -1462,6 +1462,13 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     template: '/prices',
     method: 'GET',
     operationId: 'svc.price-resolve',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/qc-checks',
+    method: 'GET',
+    operationId: 'qms.qc-check-list',
     idempotent: false,
     auditClass: 'none',
   },
