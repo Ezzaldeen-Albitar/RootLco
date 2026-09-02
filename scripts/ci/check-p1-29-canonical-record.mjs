@@ -251,13 +251,37 @@ if (fromBranch === null) {
 if (!text.includes(RULE)) fail.push('the recovered rule is not in this document');
 else ok.push('rule carried verbatim into the record');
 
-if (showIfPresent('develop:docs/phase-1/phase-1-28/canonical-plan.md') === null) {
-  ok.push('develop is absent from this checkout — the absence claim is not verifiable here');
+/*
+ * THIS RECORD IS THE RULE'S ONLY HOME.
+ *
+ * The first version of this check asked whether the rule was absent from
+ * `develop` — which was the right question while W2 was unmerged and became a
+ * false one the moment it landed, because `develop` then carried the rule in
+ * this very file. A check that must fail the instant its subject succeeds is
+ * measuring the wrong thing.
+ *
+ * The durable invariant is that there is exactly ONE copy. A second document
+ * restating a closure condition is how two slightly different versions of it
+ * come to exist, and the weaker one is always the one somebody quotes.
+ */
+/**
+ * This file holds the needle, so it always matches its own search.
+ *
+ * Excluded by exact path rather than by a pattern: a pattern such as
+ * "anything under scripts/" would let a future gate quietly carry its own
+ * paraphrase of the closure condition, which is the second copy this check
+ * exists to prevent.
+ */
+const SEARCHER = 'scripts/ci/check-p1-29-canonical-record.mjs';
+
+const elsewhere = grep(['-l', '--untracked', RULE])
+  .split('\n')
+  .map((line) => line.trim().replace(/\\/g, '/'))
+  .filter((line) => line !== '' && line !== DOC && line !== SEARCHER);
+if (elsewhere.length > 0) {
+  fail.push(`the closure rule is restated outside the canonical record: ${elsewhere.join(', ')}`);
 } else {
-  const onDevelopBefore = grep(['-l', RULE, 'develop', '--', 'docs']);
-  if (onDevelopBefore)
-    fail.push(`the rule was already on develop at ${onDevelopBefore} — recovery claim is false`);
-  else ok.push('rule was genuinely absent from develop');
+  ok.push('the closure rule has exactly one home in this repository');
 }
 
 // Discoverable by repository search, which is the whole point of recovering it.
@@ -307,8 +331,27 @@ const namedBase = text.match(/\*\*Base:\*\* protected `develop` `([0-9a-f]{8})`/
 if (namedBase === null) {
   fail.push('the record no longer names the protected base commit it was written against');
 } else if (base !== null) {
-  if (namedBase !== base) fail.push(`the record names base ${namedBase}; develop is at ${base}`);
-  else ok.push(`base commit ${base} named and current`);
+  /*
+   * The base is the commit this record was WRITTEN AGAINST, not the tip.
+   *
+   * Requiring it to equal `develop` made the gate fail on the next merge —
+   * including the merge that landed the record itself. That would force a
+   * canonical document to chase every commit, and a number rewritten on every
+   * merge stops being evidence of anything.
+   *
+   * What is checked instead is that the base is real and REACHABLE from the
+   * protected branch: the record describes a state develop actually passed
+   * through, so a fabricated or abandoned commit is still refused.
+   */
+  try {
+    execFileSync('git', ['merge-base', '--is-ancestor', namedBase, 'develop'], {
+      cwd: ROOT,
+      stdio: ['ignore', 'ignore', 'ignore'],
+    });
+    ok.push(`base ${namedBase} is reachable from develop (now at ${base})`);
+  } catch {
+    fail.push(`the record names base ${namedBase}, which is not an ancestor of develop (${base})`);
+  }
 } else {
   /*
    * `develop` is absent, so the base cannot be compared to it — but it can still

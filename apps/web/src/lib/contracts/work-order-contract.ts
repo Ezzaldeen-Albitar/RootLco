@@ -199,13 +199,26 @@ export interface JobTransitionBody {
 }
 
 /**
- * Editing a job in place. `jobType` is the one nullable field in this domain:
- * omitting it leaves the current value alone, sending `null` CLEARS it. Nothing
- * else here can be cleared, and the job's state cannot be changed at all.
+ * Editing a job in place. `jobType` and `departmentId` are the two nullable
+ * fields in this domain: omitting one leaves the current value alone, sending
+ * `null` CLEARS it. Nothing else here can be cleared, and the job's state cannot
+ * be changed at all.
+ *
+ * `departmentId` arrives with P1-29 `W3`, which is the slice that owes it. BR-02
+ * added the field to the API body and could not add it here — the PRE-P1-29
+ * Backend lane may not change `apps/web` — so the gap was carried as the
+ * `wo.job-update.departmentId` PENDING disposition rather than dropped. The
+ * work-order detail is its first caller, so the disposition is closed in the
+ * same change that consumes the field.
+ *
+ * It is the ROUTING of a job to a department, and the backend re-checks the id
+ * against the job's own company and branch before writing. A mirror row is not
+ * an authorization.
  */
 export interface JobUpdateBody {
   readonly title: string;
   readonly jobType?: string | null;
+  readonly departmentId?: string | null;
   readonly requiresDiagnostic?: boolean;
 }
 
