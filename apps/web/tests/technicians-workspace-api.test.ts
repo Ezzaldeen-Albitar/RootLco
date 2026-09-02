@@ -260,7 +260,7 @@ describe('a work-log entry is the text typed, on a job in the caller’s own que
     send.mockResolvedValue(ok({}));
 
     await recordWorkLog(TARGET, JOB_ID, MY_ASSIGNMENT, { entry: 'Bled the rear circuit.' });
-    let [method, path, body] = send.mock.calls[0] ?? [];
+    const [method, path, body] = send.mock.calls[0] ?? [];
     expect(method).toBe('POST');
     expect(String(path)).toBe(`/api/v1/jobs/${JOB_ID}/work-logs`);
     expect(body).toEqual({ entry: 'Bled the rear circuit.' });
@@ -272,8 +272,8 @@ describe('a work-log entry is the text typed, on a job in the caller’s own que
       entry: 'Road test done.',
       loggedAt: '2026-07-26T10:00:00.000Z',
     });
-    [method, path, body] = send.mock.calls[0] ?? [];
-    expect(body).toEqual({ entry: 'Road test done.', loggedAt: '2026-07-26T10:00:00.000Z' });
+    const [, , dated] = send.mock.calls[0] ?? [];
+    expect(dated).toEqual({ entry: 'Road test done.', loggedAt: '2026-07-26T10:00:00.000Z' });
   });
 
   it('refuses a job that is not in the caller’s queue before any write', async () => {
