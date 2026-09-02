@@ -1,6 +1,10 @@
 -- ============================================================================
 -- P1-29 W9 — the two privileges the First-Owner bootstrap (B7, §6.3) still owed.
 --
+-- Rollback classification: NON-DESTRUCTIVE. One policy, one column-scoped GRANT
+-- and one EXECUTE grant; no object is created or destroyed and no row is touched.
+-- Revoking the three returns app_platform to what 20260831093000 left it.
+--
 -- The bootstrap policies shipped in 20260831093000 admit the whole two-role
 -- bootstrap as they stand: measured live as the platform login, every one of
 -- iam.user_accounts, iam.user_status_history, iam.roles, iam.role_permissions

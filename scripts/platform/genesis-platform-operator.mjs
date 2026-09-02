@@ -394,8 +394,9 @@ function writeEvidence(input, identity, result) {
       email: input.operator.email,
       displayName: input.operator.displayName,
       identityProvider: input.operator.provider,
-      providerSubject: identity.subject,
-      identityCreatedByThisRun: identity.created,
+      // The provider subject is recorded on the account row, not here: the
+      // evidence file carries nothing that came back from the provider's API.
+      identityCreatedByThisRun: identity.created === true,
     },
     result,
     secrets: 'none — no password, key or token is recorded here',

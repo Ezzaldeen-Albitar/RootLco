@@ -72,11 +72,17 @@ import {
   ORGANIZATION_PROVISION_OPERATION,
   POST as organizationProvisionRoute,
 } from '@/app/api/v1/platform/organizations/route';
-import { POST as loginRoute } from '@/app/api/v1/auth/login/route';
-import { GET as sessionRoute } from '@/app/api/v1/auth/session/route';
-import { POST as roleCreateRoute } from '@/app/api/v1/iam/roles/route';
-import { POST as rolePermissionAddRoute } from '@/app/api/v1/iam/roles/[roleId]/permissions/route';
-import { POST as invitationCreateRoute } from '@/app/api/v1/iam/invitations/route';
+import { LOGIN_OPERATION, POST as loginRoute } from '@/app/api/v1/auth/login/route';
+import { SESSION_OPERATION, GET as sessionRoute } from '@/app/api/v1/auth/session/route';
+import { ROLE_CREATE_OPERATION, POST as roleCreateRoute } from '@/app/api/v1/iam/roles/route';
+import {
+  ROLE_PERMISSION_ADD_OPERATION,
+  POST as rolePermissionAddRoute,
+} from '@/app/api/v1/iam/roles/[roleId]/permissions/route';
+import {
+  INVITE_OPERATION,
+  POST as invitationCreateRoute,
+} from '@/app/api/v1/iam/invitations/route';
 
 const IDENTITY_PROVIDER = 'test_harness';
 const SUBJECT_HOLDER = 'fx_w9_platform_holder';
@@ -283,6 +289,13 @@ describe('W9 — the bootstrap the provisioning operation now carries', () => {
     ]);
     expect(ORGANIZATION_PROVISION_OPERATION.auditAction).toBe('org.tenant.provisioned');
     expect(ORGANIZATION_PROVISION_OPERATION.idempotent).toBe(true);
+    // The five shipped operations the created human drives below, by id: the
+    // login, the session, and the three IAM writes the personas are built with.
+    expect(LOGIN_OPERATION.id).toBe('iam.auth-login');
+    expect(SESSION_OPERATION.id).toBe('iam.auth-session');
+    expect(ROLE_CREATE_OPERATION.id).toBe('iam.role-create');
+    expect(ROLE_PERMISSION_ADD_OPERATION.id).toBe('iam.role-permission-add');
+    expect(INVITE_OPERATION.id).toBe('iam.invitation-create');
   });
 
   it('W9-B1 creates tenant, company, branch, owner account, both roles, exact mappings and exact grants — once', async () => {
