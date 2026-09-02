@@ -12,6 +12,7 @@
  *   G3  an application role cannot perform the genesis writes
  *   G4  the result is auditable: an audit record and secret-free evidence
  *   G5  no long-lived bypass is left behind: the privilege graph is unchanged
+ *   G6  a partially established operator (grants gone, account and tenant kept) is completed, not re-created
  *
  * The suite starts from a clean platform (no active grant anywhere) and ends
  * by removing what it created; it never runs alongside another backend suite.
@@ -225,6 +226,73 @@ describe('W9 — platform operator genesis', () => {
     expect(
       await admin.query('SELECT 1 FROM iam.platform_grants WHERE revoked_at IS NULL')
     ).toMatchObject({ rowCount: 3 });
+  });
+
+  it('G6 a partially established operator is completed, not re-created, and never for another address', async () => {
+    // What an environment reset leaves: the home tenant and the account
+    // survive, the grants and the provisioning function's replay memory do
+    // not. Measured on the local acceptance stack (P1-29 W9), where this very
+    // suite's cleanup produced that state for the real operator.
+    await admin.query('DELETE FROM iam.platform_grants WHERE account_id = $1', [
+      established.operatorAccountId,
+    ]);
+    await admin.query(
+      "DELETE FROM shared.idempotency_keys WHERE operation = 'org_provisioning' AND idempotency_key = $1",
+      [`platform-genesis:${EMAIL}`]
+    );
+    const auditBefore = await admin.query(
+      "SELECT count(*)::int AS n FROM iam.audit_records WHERE action = 'platform.operator.genesis' AND entity_id = $1",
+      [established.operatorAccountId]
+    );
+    const client = await admin.connect();
+    try {
+      const completed = await runGenesis(client, input(), {
+        subject: `sub_${RUN}`,
+        created: false,
+      });
+      expect(completed).toMatchObject({
+        outcome: 'completed',
+        operatorAccountId: established.operatorAccountId,
+        homeTenantId: established.homeTenantId,
+      });
+      expect([...completed.completedGrants].sort()).toEqual([...completed.grants].sort());
+      // Idempotent again, and the same tenant — no second home tenant.
+      const again = await runGenesis(client, input(), { subject: `sub_${RUN}`, created: false });
+      expect(again).toMatchObject({
+        outcome: 'already-established',
+        operatorAccountId: established.operatorAccountId,
+        homeTenantId: established.homeTenantId,
+      });
+      // Still one-time for anyone else.
+      await expect(
+        runGenesis(
+          client,
+          input({
+            GENESIS_OPERATOR_EMAIL: `third_${RUN}@fixture.test`,
+            GENESIS_HOME_TENANT_CODE: `${HOME}c`,
+          }),
+          { subject: `sub3_${RUN}`, created: false }
+        )
+      ).rejects.toMatchObject({ exitCode: 4 });
+    } finally {
+      client.release();
+    }
+    expect(
+      await admin.query(
+        'SELECT 1 FROM iam.platform_grants WHERE revoked_at IS NULL AND account_id = $1',
+        [established.operatorAccountId]
+      )
+    ).toMatchObject({ rowCount: 3 });
+    expect(
+      await admin.query('SELECT count(*)::int AS n FROM org.tenants WHERE tenant_code LIKE $1', [
+        `${HOME}%`,
+      ])
+    ).toMatchObject({ rows: [{ n: 1 }] });
+    const auditAfter = await admin.query(
+      "SELECT count(*)::int AS n FROM iam.audit_records WHERE action = 'platform.operator.genesis' AND entity_id = $1",
+      [established.operatorAccountId]
+    );
+    expect(auditAfter.rows[0].n).toBe(auditBefore.rows[0].n + 1);
   });
 
   it('G3 neither the runtime nor the platform application role can perform the genesis writes', async () => {

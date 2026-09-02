@@ -207,30 +207,98 @@ export async function runGenesis(client, input, identity) {
         4
       );
     }
+    // The operator's own account, if the genesis ever ran here: the address in
+    // the home tenant named by code. Holding every grant is the no-op; holding
+    // fewer — a grant revoked by hand, or an environment reset that emptied
+    // iam.platform_grants together with the provisioning function's replay
+    // memory — is COMPLETED, not re-created: the same account, the same home
+    // tenant, the missing grants only, in one transaction with its own audit
+    // record. Measured on the local acceptance stack (P1-29 W9): attempted as
+    // a fresh genesis, the completion collided with the home tenant's code and
+    // established nothing.
+    const existing = await client.query(
+      `SELECT a.id, a.tenant_id
+         FROM iam.user_accounts a
+         JOIN org.tenants t ON t.id = a.tenant_id
+        WHERE lower(a.email) = $1 AND t.tenant_code = $2 AND a.deleted_at IS NULL`,
+      [input.operator.email, input.homeTenantCode]
+    );
     const self = holders.rows.find((r) => String(r.email).toLowerCase() === input.operator.email);
-    if (self) {
+    if (self && existing.rowCount === 0) {
+      fail(
+        `Refused: the operator account ${self.id} holds platform grants outside the home tenant "${input.homeTenantCode}"; repair by hand on a privileged connection`,
+        4
+      );
+    }
+    if (existing.rowCount > 0) {
+      const account = existing.rows[0];
       const codes = await client.query(
         `SELECT permission_code FROM iam.platform_grants WHERE account_id = $1 AND revoked_at IS NULL`,
-        [self.id]
+        [account.id]
       );
-      const held = new Set(codes.rows.map((r) => r.permission_code));
-      const missing = PLATFORM_CODES.filter((c) => !held.has(c));
+      const held = [...new Set(codes.rows.map((r) => r.permission_code))].sort();
+      const missing = PLATFORM_CODES.filter((c) => !held.includes(c));
       if (missing.length === 0) {
-        const home = await client.query('SELECT tenant_id FROM iam.user_accounts WHERE id = $1', [
-          self.id,
-        ]);
         await client.query('ROLLBACK');
         return {
           outcome: 'already-established',
-          operatorAccountId: self.id,
-          homeTenantId: home.rows[0]?.tenant_id ?? null,
-          grants: [...held].sort(),
+          operatorAccountId: account.id,
+          homeTenantId: account.tenant_id,
+          grants: held,
         };
       }
-      fail(
-        `Refused: the operator account ${self.id} exists but lacks ${missing.join(', ')}; repair by hand on a privileged connection`,
-        4
+      await client.query("SELECT set_config('app.user_id', $1, true)", [account.id]);
+      await client.query("SELECT set_config('app.tenant_id', $1, true)", [account.tenant_id]);
+      for (const code of missing) {
+        await client.query(
+          `INSERT INTO iam.platform_grants (account_id, permission_code, granted_by, created_by)
+           VALUES ($1, $2, $3, $3)`,
+          [account.id, code, GENESIS_ACTOR]
+        );
+      }
+      const completion = await client.query(
+        `SELECT iam.audit_append(
+            p_tenant => $1, p_actor => $2, p_actor_kind => 'system',
+            p_action => 'platform.operator.genesis', p_entity_type => 'iam.user_account',
+            p_entity_id => $2, p_details => $3::jsonb
+         ) AS id`,
+        [
+          account.tenant_id,
+          account.id,
+          JSON.stringify([
+            {
+              field: 'platform_grants',
+              old: held.join(','),
+              new: PLATFORM_CODES.join(','),
+              class: 'public',
+            },
+            { field: 'home_tenant_id', old: null, new: account.tenant_id, class: 'internal' },
+            { field: 'environment', old: null, new: input.environment, class: 'public' },
+          ]),
+        ]
       );
+      if (input.dryRun) {
+        await client.query('ROLLBACK');
+        return {
+          outcome: 'dry-run',
+          operatorAccountId: account.id,
+          homeTenantId: account.tenant_id,
+          grants: [...PLATFORM_CODES],
+          completedGrants: missing,
+          auditRecordId: completion.rows[0].id,
+          loginCreated: false,
+        };
+      }
+      await client.query('COMMIT');
+      return {
+        outcome: 'completed',
+        operatorAccountId: account.id,
+        homeTenantId: account.tenant_id,
+        grants: [...PLATFORM_CODES],
+        completedGrants: missing,
+        auditRecordId: completion.rows[0].id,
+        loginCreated: false,
+      };
     }
 
     const operatorAccountId = randomUUID();

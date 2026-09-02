@@ -10,9 +10,12 @@ route. One transaction on a privileged connection establishes a home tenant rese
 (`org.provision_organization`, activated only after the operator exists), the operator's account, the
 three `platform.*` grants, and a `platform.operator.genesis` audit record; optionally the
 `app_platform` LOGIN role for `PLATFORM_DATABASE_URL`. It refuses when any other account already
-holds a platform grant, is a no-op for the same address that already holds every grant, fails closed
-as a whole, writes rows and never privileges, and records evidence without a secret in it. Proofs
-G1–G5: `tests/backend/p1-29-w9-platform-genesis.test.ts`.
+holds a platform grant, is a no-op for the same address that already holds every grant, completes
+the same address in its home tenant when it holds fewer (what an environment reset leaves behind —
+account and tenant survive, grants and the provisioning function's replay memory do not; measured
+on the local acceptance stack), fails closed as a whole, writes rows and never privileges, and
+records evidence without a secret in it. Proofs G1–G6:
+`tests/backend/p1-29-w9-platform-genesis.test.ts`.
 
 ## 2. `first_owner` is preserved exactly
 
