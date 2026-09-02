@@ -64,10 +64,19 @@
  * and the card renders read-only without them (residual W9-R2, Owner
  * disposition requested in the derivation record).
  *
+ * `wo.job.transition` was excluded because no W1–W8 adapter calls it — and
+ * that is exactly why it must be held: a job accepts labour, diagnostics and
+ * quality work only from the states `wo.job-transition` puts it in
+ * (`tech.guard_labor_session`; every W4–W8 proof moves the job to `assigned`,
+ * `in_progress`, `qc_pending` … through that route), and no screen offers
+ * the move. On the production build the technician's clock answered 409 on
+ * a `planned` job and nobody in the organization could change that. The
+ * code is held and delegable; the missing control is a Frontend residual
+ * (W9-R3) recorded in the derivation record.
+ *
  * Excluded on purpose, each with its reason in the W9 derivation record:
  * `platform.*` (never a tenant code), `iam.approval.manage` and
  * `iam.login.view_all` (no walked route on the journey declares them),
- * `wo.job.transition` (no W1–W8 adapter calls it),
  * and the reception, CRM and vehicle codes beyond the creation path above
  * (W3's customer context is resolved server-side through the reception port
  * under scope-only policies, and no W1–W8 screen writes them).
@@ -113,6 +122,7 @@ export const TENANT_ADMINISTRATOR_ROLE: BootstrapRoleDefinition = Object.freeze(
     'wo.work_order.transition',
     'wo.work_order.close',
     'wo.job.manage',
+    'wo.job.transition',
     'wo.additional_work.request',
     'wo.additional_work.approve',
     'tech.technician.read',

@@ -38,43 +38,44 @@ every walked declaration; minimality and legality against the catalogue). Every 
 at least one operation on the journey. `platform.*`, wildcards and codes no walked operation declares
 are absent by construction.
 
-| Code                           | Declared by (one of)                                                                                                       | Source             | Exercise |
-| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------- | ------------------ | -------- |
-| `iam.user.read`                | `iam.auth-session`, `iam.user-list`                                                                                        | session            | direct   |
-| `iam.user.manage`              | `iam.invitation-create`, `-activate`, `iam.user-*`                                                                         | IAM administration | direct   |
-| `iam.role.read`                | `iam.role-list`, `iam.role-permission-list`                                                                                | IAM administration | direct   |
-| `iam.role.manage`              | `iam.role-create`, `iam.role-permission-add`                                                                               | IAM administration | direct   |
-| `iam.grant.manage`             | `iam.grant-issue`, `iam.grant-revoke`                                                                                      | IAM administration | direct   |
-| `iam.session.view_all`         | `iam.user-status-change` (AND with `iam.user.manage`)                                                                      | IAM administration | direct   |
-| `org.tenant.read`              | `iam.tenant-settings-read` — the Administration › Organization screen’s Workspace card                                     | org prerequisite   | direct   |
-| `org.company.read`             | `org.company-list`; the Administration › Organization screen; the company a grant scope names                              | org prerequisite   | both     |
-| `org.branch.read`              | `org.branch-list`; the Administration › Organization screen; the branch a grant scope names                                | org prerequisite   | both     |
-| `org.department.read`          | `org.department-list` (W3 routing)                                                                                         | org prerequisite   | both     |
-| `org.department.manage`        | `org.department-create` — the only writer of a department; W3 routing needs one                                            | org prerequisite   | direct   |
-| `tech.technician.manage`       | `tech.technician-create`, `-availability-record` — the only writer of a profile; W3 assignment and every W4 write need one | org prerequisite   | direct   |
-| `wo.work_order.read`           | `wo.work-order-list`, `wo.work-order-detail` (W1–W8)                                                                       | journey            | both     |
-| `wo.work_order.transition`     | `wo.work-order-transition` (W3 submit for QA)                                                                              | journey            | both     |
-| `wo.work_order.close`          | `wo.work-order-closure` (W8)                                                                                               | journey            | both     |
-| `wo.job.manage`                | `wo.job-update` (W3 job edit and routing)                                                                                  | journey            | both     |
-| `wo.additional_work.request`   | `wo.additional-work-request` (W8)                                                                                          | journey            | both     |
-| `wo.additional_work.approve`   | `wo.additional-work-approval` (W8)                                                                                         | journey            | both     |
-| `tech.technician.read`         | `tech.technician-me-queue` (W4), `wo.job-assignment-list`                                                                  | journey            | both     |
-| `tech.assignment.manage`       | `wo.job-assignment-create` (W3)                                                                                            | journey            | both     |
-| `tech.labor.record`            | `tech.labor-session-start` (W4), blockers (W8)                                                                             | journey            | both     |
-| `tech.labor.correct`           | `tech.labor-session-correct` (W4)                                                                                          | journey / persona  | both     |
-| `dia.diagnostic.read`          | `dia.diagnostic-type-list`, templates (W5/W7)                                                                              | journey            | both     |
-| `dia.catalogue.manage`         | `dia.template-create` … (W7 catalogue)                                                                                     | journey            | both     |
-| `dia.diagnostic.record`        | `dia.template-version-list-publishable`, report (W7)                                                                       | journey            | both     |
-| `dia.diagnostic.complete`      | `dia.diagnostic-complete` (W7)                                                                                             | journey            | both     |
-| `dia.diagnostic.review`        | `dia.diagnostic-review` (W7, separate actor)                                                                               | persona            | both     |
-| `qms.quality_control.read`     | `qms.qc-record-branch-list`, `qms.qc-check-list` (W8)                                                                      | journey            | both     |
-| `qms.quality_control.record`   | `qms.qc-record-open`, `qms.qc-check-result` (W8)                                                                           | journey            | both     |
-| `qms.quality_control.finalize` | `qms.qc-record-finalize` (W8)                                                                                              | journey            | both     |
-| `qms.rework.manage`            | `qms.rework-create` (W8)                                                                                                   | journey            | both     |
-| `qms.rework.sign_off`          | `qms.rework-sign-off` (W8, separate actor)                                                                                 | persona            | both     |
-| `iam.sensitive.view`           | `wo.additional-work-detail-read`, rework cost (W8)                                                                         | persona            | both     |
-| `shared.document.read`         | `shared.document-category-list`, evidence reads (W6)                                                                       | journey            | both     |
-| `shared.document.manage`       | `shared.attachment-upload-authorize`, evidence (W6)                                                                        | journey            | both     |
+| Code                           | Declared by (one of)                                                                                                        | Source             | Exercise |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------- | ------------------ | -------- |
+| `iam.user.read`                | `iam.auth-session`, `iam.user-list`                                                                                         | session            | direct   |
+| `iam.user.manage`              | `iam.invitation-create`, `-activate`, `iam.user-*`                                                                          | IAM administration | direct   |
+| `iam.role.read`                | `iam.role-list`, `iam.role-permission-list`                                                                                 | IAM administration | direct   |
+| `iam.role.manage`              | `iam.role-create`, `iam.role-permission-add`                                                                                | IAM administration | direct   |
+| `iam.grant.manage`             | `iam.grant-issue`, `iam.grant-revoke`                                                                                       | IAM administration | direct   |
+| `iam.session.view_all`         | `iam.user-status-change` (AND with `iam.user.manage`)                                                                       | IAM administration | direct   |
+| `org.tenant.read`              | `iam.tenant-settings-read` — the Administration › Organization screen’s Workspace card                                      | org prerequisite   | direct   |
+| `org.company.read`             | `org.company-list`; the Administration › Organization screen; the company a grant scope names                               | org prerequisite   | both     |
+| `org.branch.read`              | `org.branch-list`; the Administration › Organization screen; the branch a grant scope names                                 | org prerequisite   | both     |
+| `org.department.read`          | `org.department-list` (W3 routing)                                                                                          | org prerequisite   | both     |
+| `org.department.manage`        | `org.department-create` — the only writer of a department; W3 routing needs one                                             | org prerequisite   | direct   |
+| `tech.technician.manage`       | `tech.technician-create`, `-availability-record` — the only writer of a profile; W3 assignment and every W4 write need one  | org prerequisite   | direct   |
+| `wo.work_order.read`           | `wo.work-order-list`, `wo.work-order-detail` (W1–W8)                                                                        | journey            | both     |
+| `wo.work_order.transition`     | `wo.work-order-transition` (W3 submit for QA)                                                                               | journey            | both     |
+| `wo.work_order.close`          | `wo.work-order-closure` (W8)                                                                                                | journey            | both     |
+| `wo.job.manage`                | `wo.job-update` (W3 job edit and routing)                                                                                   | journey            | both     |
+| `wo.job.transition`            | `wo.job-transition` — the only route that moves a job into the states that accept labour, diagnostics and QC (W4–W8 proofs) | journey            | both     |
+| `wo.additional_work.request`   | `wo.additional-work-request` (W8)                                                                                           | journey            | both     |
+| `wo.additional_work.approve`   | `wo.additional-work-approval` (W8)                                                                                          | journey            | both     |
+| `tech.technician.read`         | `tech.technician-me-queue` (W4), `wo.job-assignment-list`                                                                   | journey            | both     |
+| `tech.assignment.manage`       | `wo.job-assignment-create` (W3)                                                                                             | journey            | both     |
+| `tech.labor.record`            | `tech.labor-session-start` (W4), blockers (W8)                                                                              | journey            | both     |
+| `tech.labor.correct`           | `tech.labor-session-correct` (W4)                                                                                           | journey / persona  | both     |
+| `dia.diagnostic.read`          | `dia.diagnostic-type-list`, templates (W5/W7)                                                                               | journey            | both     |
+| `dia.catalogue.manage`         | `dia.template-create` … (W7 catalogue)                                                                                      | journey            | both     |
+| `dia.diagnostic.record`        | `dia.template-version-list-publishable`, report (W7)                                                                        | journey            | both     |
+| `dia.diagnostic.complete`      | `dia.diagnostic-complete` (W7)                                                                                              | journey            | both     |
+| `dia.diagnostic.review`        | `dia.diagnostic-review` (W7, separate actor)                                                                                | persona            | both     |
+| `qms.quality_control.read`     | `qms.qc-record-branch-list`, `qms.qc-check-list` (W8)                                                                       | journey            | both     |
+| `qms.quality_control.record`   | `qms.qc-record-open`, `qms.qc-check-result` (W8)                                                                            | journey            | both     |
+| `qms.quality_control.finalize` | `qms.qc-record-finalize` (W8)                                                                                               | journey            | both     |
+| `qms.rework.manage`            | `qms.rework-create` (W8)                                                                                                    | journey            | both     |
+| `qms.rework.sign_off`          | `qms.rework-sign-off` (W8, separate actor)                                                                                  | persona            | both     |
+| `iam.sensitive.view`           | `wo.additional-work-detail-read`, rework cost (W8)                                                                          | persona            | both     |
+| `shared.document.read`         | `shared.document-category-list`, evidence reads (W6)                                                                        | journey            | both     |
+| `shared.document.manage`       | `shared.attachment-upload-authorize`, evidence (W6)                                                                         | journey            | both     |
 
 "Both" means the administrator exercises the code directly on the acceptance journey and must also
 hold it to delegate it: `ins_role_permissions_delegable` and `ins_role_grants_delegable`
@@ -88,10 +89,10 @@ its target from the session's own scope) and admitted by the acceptance run on t
 Organization screen shows the company and branch only to a holder of the two codes; and scoping any
 other grant (`iam.grant-scope-add`) takes a company and branch identifier nobody can learn without
 them. An administrator who cannot name a branch cannot scope a grant, and cannot delegate a code it
-does not hold. `org.tenant.read` joined for the same screen’s Workspace card, which the production build refused to the first administrator of its own organization. The set is 47 codes.
+does not hold. `org.tenant.read` joined for the same screen’s Workspace card, which the production build refused to the first administrator of its own organization. `wo.job.transition` joined last: a job accepts labour, diagnostics and quality work only from the states `wo.job-transition` puts it in, every W4–W8 proof moves the job through that route, and no screen offers the move — on the production build the technician’s clock answered 409 on a `planned` job and nobody in the organization could change that. The set is 48 codes.
 
 Excluded, with the reason: `iam.approval.manage` and `iam.login.view_all` (no walked route on the
-journey declares them), the organisation settings writes `org.settings.manage`, `org.company.manage` and `org.branch.manage` (no walked route declares them; the Organization screen renders read-only without them — residual W9-R2, Owner disposition requested: hold them from provisioning, or leave settings to a later administrative grant), `wo.job.transition` (no W1–W8 adapter calls it), every reception, CRM and
+journey declares them), the organisation settings writes `org.settings.manage`, `org.company.manage` and `org.branch.manage` (no walked route declares them; the Organization screen renders read-only without them — residual W9-R2, Owner disposition requested: hold them from provisioning, or leave settings to a later administrative grant), every reception, CRM and
 vehicle code beyond the creation path below (W3's customer context is resolved server-side through
 the reception port).
 
@@ -186,8 +187,9 @@ shipped `activate-account` page — and found three more defects, each fixed on 
 - **Derivation gap, closed (bundle):** the administrator's session on the production build carried
   an empty company and branch scope (its grants are unrestricted), the Administration › Organization
   screen would show it neither, and scoping a persona's grant needs a branch identifier it had no
-  route to read. `org.company.read`, `org.branch.read` and `org.tenant.read` join the set (44 → 47); the derivation
+  route to read. `org.company.read`, `org.branch.read`, `org.tenant.read` and `wo.job.transition` join the set (44 → 48); the derivation
   record in §3 states the refuted theory and the rule that replaces it.
+- **Derivation gap, closed (job transition) + Frontend residual W9-R3:** on the production build the technician’s clock answered `409 ERR-TRN-001` on a `planned` job (corr `7f29570a-2fc7-4106-b58c-0e05f63a0212`); a job accepts labour only from the states `wo.job-transition` puts it in, the code was excluded because no screen calls it, and therefore no human could ever start work. `wo.job.transition` joins the set (47 → 48). The W3 job panel offers routing and assignment but no job-state move — the transition is reachable through the shipped route only (Frontend residual W9-R3, P1-30 candidate). The workspace also reports every 409 as “This record changed since you loaded it” (W9-O4).
 - **Environment, not product:** the local identity provider's redirect allow-list holds only the
   API origin, so the invitation mail's link lands on the API instead of the web app; the token in
   that link opened the activation page directly, which is the page's documented contract. And a
