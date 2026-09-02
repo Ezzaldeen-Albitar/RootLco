@@ -43,6 +43,8 @@ are absent by construction.
 | `iam.role.manage`              | `iam.role-create`, `iam.role-permission-add`                                                                               | IAM administration | direct   |
 | `iam.grant.manage`             | `iam.grant-issue`, `iam.grant-revoke`                                                                                      | IAM administration | direct   |
 | `iam.session.view_all`         | `iam.user-status-change` (AND with `iam.user.manage`)                                                                      | IAM administration | direct   |
+| `org.company.read`             | `org.company-list`; the Administration › Organization screen; the company a grant scope names                              | org prerequisite   | both     |
+| `org.branch.read`              | `org.branch-list`; the Administration › Organization screen; the branch a grant scope names                                | org prerequisite   | both     |
 | `org.department.read`          | `org.department-list` (W3 routing)                                                                                         | org prerequisite   | both     |
 | `org.department.manage`        | `org.department-create` — the only writer of a department; W3 routing needs one                                            | org prerequisite   | direct   |
 | `tech.technician.manage`       | `tech.technician-create`, `-availability-record` — the only writer of a profile; W3 assignment and every W4 write need one | org prerequisite   | direct   |
@@ -76,10 +78,18 @@ hold it to delegate it: `ins_role_permissions_delegable` and `ins_role_grants_de
 administrator holds. The two separation-of-duty codes are held to be delegable; the database still
 refuses their direct exercise on the holder's own work.
 
+`org.company.read` and `org.branch.read` were excluded by the first derivation (every screen takes
+its target from the session's own scope) and admitted by the acceptance run on the production build
+(2026-09-02): this role's grants are unrestricted, so its session scope is empty; the Administration ›
+Organization screen shows the company and branch only to a holder of the two codes; and scoping any
+other grant (`iam.grant-scope-add`) takes a company and branch identifier nobody can learn without
+them. An administrator who cannot name a branch cannot scope a grant, and cannot delegate a code it
+does not hold. The set is 46 codes.
+
 Excluded, with the reason: `iam.approval.manage` and `iam.login.view_all` (no walked route on the
-journey declares them), `org.company.read` / `org.branch.read` (every screen takes its target from the
-session's own scope), `wo.job.transition` (no W1–W8 adapter calls it), every reception, CRM and
-vehicle code (W3's customer context is resolved server-side through the reception port).
+journey declares them), `wo.job.transition` (no W1–W8 adapter calls it), every reception, CRM and
+vehicle code beyond the creation path below (W3's customer context is resolved server-side through
+the reception port).
 
 ## 4. How the bootstrap runs
 
@@ -169,6 +179,11 @@ shipped `activate-account` page — and found three more defects, each fixed on 
   tenant was re-provisioned for an address whose earlier binding survived. The bootstrap now
   refuses an address bound to a different organization with `409 ERR-RES-002`, and the
   provisioning transaction unwinds the tenant with it (`W9-B12`).
+- **Derivation gap, closed (bundle):** the administrator's session on the production build carried
+  an empty company and branch scope (its grants are unrestricted), the Administration › Organization
+  screen would show it neither, and scoping a persona's grant needs a branch identifier it had no
+  route to read. `org.company.read` and `org.branch.read` join the set (44 → 46); the derivation
+  record in §3 states the refuted theory and the rule that replaces it.
 - **Environment, not product:** the local identity provider's redirect allow-list holds only the
   API origin, so the invitation mail's link lands on the API instead of the web app; the token in
   that link opened the activation page directly, which is the page's documented contract. And a

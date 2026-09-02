@@ -421,7 +421,7 @@ describe('W9 — the bootstrap the provisioning operation now carries', () => {
     const result = await provision('b3');
     expect(result.status).toBe(201);
     const expected = [...TENANT_ADMINISTRATOR_ROLE.permissionCodes].sort();
-    expect(expected).toHaveLength(44);
+    expect(expected).toHaveLength(46);
     expect(expected.some((c) => c.includes('*'))).toBe(false);
     expect(expected.some((c) => c.startsWith('platform.'))).toBe(false);
     expect(new Set(expected).size).toBe(expected.length);
@@ -568,7 +568,7 @@ describe('W9 — the bootstrap the provisioning operation now carries', () => {
         [result.body.ownerAccountId, 'active']
       )
     ).toBe(2);
-    expect(await codesOfRole(result.body.tenantAdministratorRoleId)).toHaveLength(44);
+    expect(await codesOfRole(result.body.tenantAdministratorRoleId)).toHaveLength(46);
   });
 
   it('W9-B9 an active tenant cannot reopen the bootstrap write window', async () => {
@@ -618,7 +618,7 @@ describe('W9 — the bootstrap the provisioning operation now carries', () => {
       ])) ?? -1,
     ];
     const before = await counts();
-    expect(before).toEqual([1, 1, 2, 47, 2]);
+    expect(before).toEqual([1, 1, 2, 49, 2]);
 
     asHolder();
     const replay = await provision('b10', {}, key);

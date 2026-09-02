@@ -48,11 +48,20 @@
  * rows FE-006, FE-007, FE-009, FE-018, FE-020 and FE-022, each declared by the
  * route named there.
  *
+ * `org.company.read` and `org.branch.read` were first excluded on the theory
+ * that every screen takes its target from the session's own scope. The
+ * acceptance run on the production build refuted that for THIS role: its
+ * grants are unrestricted, so its session scope is empty; the Administration
+ * › Organization screen shows the company and branch only to a holder of
+ * those two codes; and scoping anyone else's grant (`iam.grant-scope-add`)
+ * takes a company and branch identifier nobody can learn without them. An
+ * administrator who cannot name a branch cannot scope a grant, and cannot
+ * delegate a code it does not hold. Both are held.
+ *
  * Excluded on purpose, each with its reason in the W9 derivation record:
  * `platform.*` (never a tenant code), `iam.approval.manage` and
  * `iam.login.view_all` (no walked route on the journey declares them),
- * `org.company.read` / `org.branch.read` (every screen takes its target from
- * the session's own scope), `wo.job.transition` (no W1–W8 adapter calls it),
+ * `wo.job.transition` (no W1–W8 adapter calls it),
  * and the reception, CRM and vehicle codes beyond the creation path above
  * (W3's customer context is resolved server-side through the reception port
  * under scope-only policies, and no W1–W8 screen writes them).
@@ -87,6 +96,8 @@ export const TENANT_ADMINISTRATOR_ROLE: BootstrapRoleDefinition = Object.freeze(
     'iam.grant.manage',
     'iam.session.view_all',
     // Organisation prerequisites the journey's screens and personas need (direct).
+    'org.company.read',
+    'org.branch.read',
     'org.department.read',
     'org.department.manage',
     'tech.technician.manage',
