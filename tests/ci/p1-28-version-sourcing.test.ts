@@ -117,6 +117,13 @@ interface Report {
   expected: { id: string }[];
   withheld: { id: string; decisionRef: string }[];
   adapters: { name: string; required: boolean; used: boolean }[];
+  /**
+   * The subset of `adapters` this contract governs — every guarded adapter
+   * except the ones declared in `OUT_OF_SUBJECT_ADAPTERS`. The count equality is
+   * taken over this, not over the whole tree's versioned adapters, since P1-29
+   * `W3` added the first ones outside apt/rec.
+   */
+  accountedFor: string[];
   sites: {
     file: string;
     adapter: string;
