@@ -2293,7 +2293,7 @@
   "quality.closure.noDescription": "لم يُسجل وصف.",
   "quality.closure.recordDescription": "تسجيل الوصف",
   "quality.closure.approval": "موافقة العميل",
-  "quality.closure.noApproval": "لم يُقرر بعد.",
+  "quality.closure.noApproval": "لم تُسجل موافقة من العميل بعد.",
   "quality.closure.decision": "القرار",
   "quality.closure.chooseDecision": "اختر قرارًا",
   "quality.closure.channel": "كيف تم القرار",

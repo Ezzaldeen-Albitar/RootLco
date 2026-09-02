@@ -2293,7 +2293,7 @@
   "quality.closure.noDescription": "No description recorded.",
   "quality.closure.recordDescription": "Record the description",
   "quality.closure.approval": "Customer approval",
-  "quality.closure.noApproval": "Not yet decided.",
+  "quality.closure.noApproval": "No customer approval has been recorded.",
   "quality.closure.decision": "Decision",
   "quality.closure.chooseDecision": "Choose a decision",
   "quality.closure.channel": "How it was decided",
