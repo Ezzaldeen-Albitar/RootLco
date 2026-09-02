@@ -1,5 +1,5 @@
 /**
- * POST /api/v1/template-versions/{versionId}/items (PRE-P1-29-BR-04).
+ * POST / GET /api/v1/template-versions/{versionId}/items (PRE-P1-29-BR-04).
  *
  * Authors one item on a DRAFT version.
  *
@@ -36,7 +36,12 @@
 import { z } from 'zod';
 import { defineOperation } from '@/server/auth/operation-registry';
 import { handleOperation } from '@/server/http/route-handler';
-import { parseJsonBody, parseOrFail, schemas } from '@/server/http/validation';
+import {
+  parseJsonBody,
+  parseOrFail,
+  schemas,
+  searchParamsToObject,
+} from '@/server/http/validation';
 import {
   diagnosticsModule,
   MAX_ITEM_PROMPT,
@@ -104,5 +109,73 @@ export async function POST(
       return { status: 201, body: created, recordVersion: created.recordVersion };
     },
     { params: raw, body }
+  );
+}
+
+/**
+ * GET — the items of one template version, in the order an inspection asks them
+ * (P1-29-W7).
+ *
+ * ## Why this read exists
+ *
+ * Until W7 no operation published a version's items. `dia.template-detail`
+ * returns the template and its versions, each with an `itemCount` and nothing
+ * else; `dia.diagnostic-detail` returns the report's RESULTS, each naming a
+ * `templateItemId` and an `itemCode` but never the prompt, the response type,
+ * the unit or whether the item is mandatory — the module read those internally
+ * to decide completion and handed them out to nobody. A screen that executes an
+ * inspection must show what each item asks, and a screen that authors one must
+ * show what has been authored. `tests/backend/p1-29-w7-template-version-item-list`
+ * asserts both absences on the real responses before proving this read.
+ *
+ * ## On `dia.diagnostic.read`, and not gated by version status
+ *
+ * The caller who may read a report may read the questions it answers, whatever
+ * the version's status: a draft version's items are what the authoring screen
+ * renders (on the permission the template list already costs), and a retired
+ * version's items are what an old report still needs to name. The WRITE above
+ * stays on `dia.catalogue.manage` and stays draft-only; nothing here changes it.
+ *
+ * ## Deliberately unpaged and `.strict()`
+ *
+ * A version's items are bounded by authoring and ordered by `sequence`; the
+ * order IS the checklist, so a page boundary would cut a checklist in half. An
+ * unknown parameter is a client defect worth naming rather than ignoring.
+ */
+export const TemplateVersionItemListQuery = z.object({}).strict();
+
+export const TEMPLATE_VERSION_ITEM_LIST_OPERATION = defineOperation({
+  id: 'dia.template-version-item-list',
+  module: 'diagnostics',
+  method: 'GET',
+  path: '/template-versions/{versionId}/items',
+  summary: 'Read the items of one inspection template version, in checklist order.',
+  permissions: ['dia.diagnostic.read'],
+  scope: 'tenant',
+  auditClass: 'none',
+  rateLimitPolicy: 'low-risk-metadata',
+  cacheCategory: 'never',
+});
+
+export async function GET(
+  request: Request,
+  route: { params: Promise<{ versionId: string }> }
+): Promise<Response> {
+  const raw = await route.params;
+  return handleOperation(
+    TEMPLATE_VERSION_ITEM_LIST_OPERATION,
+    request,
+    async ({ db, request: req }) => {
+      const params = parseOrFail(Params, raw, 'path');
+      parseOrFail(
+        TemplateVersionItemListQuery,
+        searchParamsToObject(new URL(req.url).searchParams),
+        'query'
+      );
+      return {
+        body: { items: await diagnosticsModule().templates.versionItems(db, params.versionId) },
+      };
+    },
+    { params: raw }
   );
 }
