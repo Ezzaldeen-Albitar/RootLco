@@ -55,6 +55,8 @@ import {
   type IdentityProvider,
 } from './provider/identity-provider';
 import { SupabaseIdentityProvider } from './provider/supabase-provider';
+import { TenantBootstrapRepository } from './data/tenant-bootstrap-repository';
+import { TenantBootstrapService } from './application/tenant-bootstrap-service';
 import { BearerSessionAuthenticator } from './auth/bearer-authenticator';
 
 export type {
@@ -73,6 +75,12 @@ export { USER_ORDERING } from './data/identity-repository';
 export { ROLE_ORDERING } from './data/authorization-repository';
 export { AUDIT_ORDERING } from './data/audit-repository';
 export type { LoginResult, SessionSummary } from './application/authentication-service';
+export type { FirstOwnerBootstrap, FirstOwnerInput } from './application/tenant-bootstrap-service';
+export {
+  FIRST_OWNER_ROLE,
+  TENANT_ADMINISTRATOR_ROLE,
+  type BootstrapRoleDefinition,
+} from './domain/bootstrap-roles';
 export type { UserView, UserDetailView } from './application/user-administration-service';
 /**
  * The identity projection a ledger needs to name an actor (`P1-27-INT-026`).
@@ -246,6 +254,14 @@ export const iamModule = composeModule({
       organization: new OrganizationSettingsService(organization, authorization, delegationPolicy),
       organizationAdministration: new OrganizationAdministrationService(organizationAdministration),
       auditView: new AuditViewService(audit, authorization),
+      // The First-Owner bootstrap (P1-29 W9): the second half of
+      // platform.organization-provision, called by the platform module inside
+      // its provisioning transaction's platform-on-target window.
+      tenantBootstrap: new TenantBootstrapService(
+        new TenantBootstrapRepository(),
+        provider,
+        credentialPolicy
+      ),
     };
   },
 });

@@ -3158,6 +3158,7 @@
       "tests": [
         "tests/backend/iam-auth-provider.test.ts",
         "tests/backend/p1-24-iam-route-depth.test.ts",
+        "tests/backend/p1-29-w9-owner-bootstrap.test.ts",
         "tests/foundation/p1-14-authentication-units.test.ts",
         "tests/foundation/p1-15-public-policy-resolution.test.ts",
         "tests/foundation/p1-15-public-throttle-fallback.test.ts"
@@ -3298,6 +3299,7 @@
       "tests": [
         "tests/backend/iam-auth-provider.test.ts",
         "tests/backend/p1-24-iam-route-depth.test.ts",
+        "tests/backend/p1-29-w9-owner-bootstrap.test.ts",
         "tests/foundation/p1-14-authentication-units.test.ts"
       ],
       "classification": "Covered",
@@ -3783,7 +3785,8 @@
       "tests": [
         "tests/backend/iam-auth-provider.test.ts",
         "tests/backend/p1-14-idempotency-replay.test.ts",
-        "tests/backend/p1-24-iam-route-depth.test.ts"
+        "tests/backend/p1-24-iam-route-depth.test.ts",
+        "tests/backend/p1-29-w9-owner-bootstrap.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/iam/invitations/route.ts"
@@ -3834,7 +3837,8 @@
       "tests": [
         "tests/backend/iam-operations.test.ts",
         "tests/backend/p1-14-idempotency-replay.test.ts",
-        "tests/backend/p1-24-iam-route-depth.test.ts"
+        "tests/backend/p1-24-iam-route-depth.test.ts",
+        "tests/backend/p1-29-w9-owner-bootstrap.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/iam/roles/route.ts"
@@ -3904,7 +3908,8 @@
       "tests": [
         "tests/backend/iam-admin-writes.test.ts",
         "tests/backend/p1-14-idempotency-replay.test.ts",
-        "tests/backend/p1-24-iam-route-depth.test.ts"
+        "tests/backend/p1-24-iam-route-depth.test.ts",
+        "tests/backend/p1-29-w9-owner-bootstrap.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/iam/roles/[roleId]/permissions/route.ts"
@@ -5307,7 +5312,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/pre-p1-29-platform-control-plane.test.ts"],
+      "tests": [
+        "tests/backend/p1-29-w9-owner-bootstrap.test.ts",
+        "tests/backend/pre-p1-29-platform-control-plane.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/platform/organizations/route.ts"
     },

@@ -21,11 +21,22 @@ until an independent execution occurs.
 Provisioning creates one complete organization — tenant, initial status history,
 draft subscription, legal company, pilot branch, optional settings/overrides, and
 number-sequence configuration — in **one database transaction** through
-`org.provision_organization(spec jsonb, idempotency_key text)`. There is **no
-backend API**: execution is a platform operation on a BYPASSRLS/admin connection
-(local: the `postgres` connection; production paths do not exist yet). Application
-roles cannot execute it and cannot touch `shared.idempotency_keys` — both proven
+`org.provision_organization(spec jsonb, idempotency_key text)`. When this runbook was
+written there was **no backend API**: execution was a platform operation on a
+BYPASSRLS/admin connection (local: the `postgres` connection). Application roles cannot
+execute the function directly and cannot touch `shared.idempotency_keys` — both proven
 by tests.
+
+> **Since P1-29 W9 (2026-09-02):** the sanctioned production path is the backend
+> operation `platform.organization-provision`, run by a platform operator holding
+> `platform.organization.provision`. It calls the same function AND performs the
+> First-Owner bootstrap in the same transaction (account, `first_owner`,
+> `tenant_administrator`, grants), and activates the tenant only after that — see
+> `docs/phase-1/phase-1-29/w9-owner-bootstrap.md`. The package-driven CLI below remains a
+> privileged local-pilot mechanism only. Its `tenant.activate: true` activates INSIDE the
+> function, before any administrator exists, which the product flow never does; a tenant
+> created that way holds no usable administrator and the bootstrap window is already closed.
+> The first platform operator is established by `scripts/platform/genesis-platform-operator.mjs`.
 
 ## Prerequisites
 

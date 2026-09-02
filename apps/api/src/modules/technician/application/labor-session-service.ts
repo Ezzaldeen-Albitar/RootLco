@@ -49,6 +49,7 @@ import {
   type LaborSessionRow,
 } from '../data/labor-session-repository';
 import type { TechnicianCatalogRepository } from '../data/technician-catalog-repository';
+import type { TechnicianRosterRepository } from '../data/technician-roster-repository';
 import { assertLaborWindow } from '../domain/technician';
 
 export interface LaborSessionView {
@@ -84,7 +85,8 @@ export class LaborSessionService extends ApplicationService {
 
   constructor(
     private readonly sessions: LaborSessionRepository,
-    private readonly profiles: TechnicianCatalogRepository
+    private readonly profiles: TechnicianCatalogRepository,
+    private readonly roster: TechnicianRosterRepository
   ) {
     super();
   }
@@ -125,6 +127,27 @@ export class LaborSessionService extends ApplicationService {
         message: `Technician ${input.technicianProfileId} is not active`,
         safeDetails: {
           violations: [{ path: 'body.technicianProfileId', rule: 'profile-inactive' }],
+        },
+      });
+    }
+    // W4-F1 (P1-29, disposition of 2026-09-02). `tech.labor.record` is a
+    // branch-scoped recording authority, designed in P1-19 for a timekeeper who
+    // clocks technicians in on their behalf. A caller who IS a technician in the
+    // target scope — who holds a live profile there — is not a timekeeper for
+    // their colleagues: the session they may start is their own. A caller with
+    // no profile in the scope keeps the timekeeper path. The rule lives here,
+    // at the boundary, not in the workspace adapter that declines to build the
+    // request; an adapter is not a boundary.
+    const own = await this.roster.ownLiveProfileIdInScope(db, {
+      companyId: profile.companyId,
+      branchId: profile.branchId,
+    });
+    if (own !== null && own !== input.technicianProfileId) {
+      throw new AppFailure('ERR-IAM-001', {
+        message:
+          'A technician may start a labour session only for their own profile; recording on behalf of another technician is the timekeeper path',
+        safeDetails: {
+          violations: [{ path: 'body.technicianProfileId', rule: 'not-own-profile' }],
         },
       });
     }

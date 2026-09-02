@@ -90,14 +90,15 @@ export const technicianModule = composeModule({
   module: 'technician',
   create: () => {
     const profiles = new TechnicianCatalogRepository();
+    const roster = new TechnicianRosterRepository();
     return {
       eligibility: new TechnicianEligibilityService(profiles),
-      laborSessions: new LaborSessionService(new LaborSessionRepository(), profiles),
+      laborSessions: new LaborSessionService(new LaborSessionRepository(), profiles, roster),
       // BR-03. The roster WRITES, kept beside the reads they maintain: the
       // eligibility service consumes exactly the rows this service produces, and
       // splitting them across modules would have put `tech` writes outside the
       // module that owns the schema.
-      roster: new TechnicianRosterService(new TechnicianRosterRepository(), profiles),
+      roster: new TechnicianRosterService(roster, profiles),
       // BR-06. The open-session PORT, exposed as a repository rather than wrapped
       // in a service because it carries no rule: it is a read the owning module
       // performs on behalf of the work-order board, which is exactly the shape of

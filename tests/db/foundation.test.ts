@@ -1636,6 +1636,7 @@ describe('database foundation', () => {
       'sel_payment_allocations_gated',
       'sel_payment_methods_scope',
       'sel_permissions_all',
+      'sel_permissions_platform_bootstrap',
       'sel_plate_history_tenant',
       'sel_platform_grants_own',
       'sel_powertrain_types_visible',

@@ -227,14 +227,18 @@ Three measured facts the screen renders truthfully rather than papering over:
 
 **One finding, recorded and not endorsed — `W4-F1`.** `tech.labor.record` is a branch-scoped
 recording authority, as P1-19 designed it for a timekeeper: a caller holding it may start a
-session for ANY active technician profile in the branch, and the backend does not refuse a
+session for ANY active technician profile in the branch, and the backend did not refuse a
 same-branch technician naming another technician's profile (`W4-5e`, measured `201`). The
-workspace adapter refuses to build that request, but an adapter is not a boundary. This is not
-a W4 blocker — the composition introduces no ambiguity and the frontend asserts no identity —
-and it is not this lane's to change. The smallest Backend delta, when the Owner wants it: have
-`tech.labor-session-start` refuse a body naming a profile other than the caller's own whenever
-the caller HOLDS a live profile in the target scope, leaving the timekeeper path open to callers
-who do not. `W4-5e` is a tripwire that fails the day that lands.
+workspace adapter refused to build that request, but an adapter is not a boundary. It was not a
+W4 blocker and not that lane's to change; the smallest Backend delta was named here.
+
+**`W4-F1` — CLOSED in the W9 Backend slice (2026-09-02), by that delta.**
+`tech.labor-session-start` now refuses, at the boundary, a caller who holds a live technician
+profile in the target scope and names any profile but their own (`403`, `ERR-IAM-001`,
+`body.technicianProfileId: not-own-profile`), and keeps the timekeeper path for a caller who
+holds no profile there. The tripwire fired and became the proof: `W4-5e` records the refusal and
+`W4-5f` the timekeeper path, in `tests/backend/p1-29-w4-technician-workspace.test.ts`. The
+server-side rule stands whether or not any adapter declines to build the request.
 
 Still open in this item, deliberately: `wo.job-transition` is not consumed here — the platform
 has no pause operation, stopping the clock is `tech.labor-session-stop`, and moving the job is a
@@ -371,6 +375,22 @@ proved on real responses in `tests/backend/p1-29-w8-qc-check-list.test.ts`.
 holds zero rows, so no human actor carries any domain permission code and every operation
 refuses a hand-driven journey. The smallest legitimate provisioning path must be derived from
 the existing IAM architecture and executed; a privileged test shortcut is not acceptance.
+
+**W9 provisioning path — DELIVERED (Backend, Owner decisions of 2026-09-02).** The path is
+`platform.organization-provision` carrying the First-Owner bootstrap as its second half: the
+operator's request names the Owner by identity and profile only, and the operation writes, in one
+transaction while the tenant is still `provisioning`, the Owner's account, `first_owner` (exactly
+`iam.user.manage`, `iam.role.manage`, `iam.grant.manage`) and `tenant_administrator` (the explicit
+finite set derived from the executable W1–W8 surface) with an unrestricted grant of each — then,
+only if asked, activation. The first platform operator is a sanctioned one-time genesis act,
+`scripts/platform/genesis-platform-operator.mjs`, outside the application. One migration
+(`supabase/migrations/20260902130000_iam_platform_bootstrap_catalogue_and_backstop.sql`) adds the
+column-scoped catalogue read and the backstop EXECUTE the shipped B7 policies were missing; the
+policies themselves are untouched. The derivation and the order are in
+`docs/phase-1/phase-1-29/w9-owner-bootstrap.md`; the proofs W9-B1…B10, the real login and the
+role-administration proof in `tests/backend/p1-29-w9-owner-bootstrap.test.ts`, the genesis G1–G5
+in `tests/backend/p1-29-w9-platform-genesis.test.ts`. The acceptance verdict itself (§5 item 7)
+is taken after this path is on protected `develop`.
 
 ---
 

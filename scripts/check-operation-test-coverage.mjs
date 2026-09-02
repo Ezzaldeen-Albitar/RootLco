@@ -1815,6 +1815,7 @@ export const MANIFEST = {
       'tests/backend/iam-operations.test.ts',
       'tests/backend/p1-14-idempotency-replay.test.ts',
       'tests/backend/p1-24-iam-route-depth.test.ts',
+      'tests/backend/p1-29-w9-owner-bootstrap.test.ts',
     ],
     required: [],
     note: 'created and found in the list',
@@ -1837,6 +1838,7 @@ export const MANIFEST = {
       'tests/backend/iam-admin-writes.test.ts',
       'tests/backend/p1-14-idempotency-replay.test.ts',
       'tests/backend/p1-24-iam-route-depth.test.ts',
+      'tests/backend/p1-29-w9-owner-bootstrap.test.ts',
     ],
     required: ['success', 'denial', 'audit'],
     note: 'delegable allow added; permission-denied under RLS',
@@ -1967,6 +1969,7 @@ export const MANIFEST = {
       'tests/backend/iam-auth-provider.test.ts',
       'tests/backend/p1-14-idempotency-replay.test.ts',
       'tests/backend/p1-24-iam-route-depth.test.ts',
+      'tests/backend/p1-29-w9-owner-bootstrap.test.ts',
     ],
     required: ['success', 'denial', 'cross-tenant', 'audit', 'outbox'],
     note: 'invited account + audit + event; duplicate conflict; unprivileged refused; tenant-bound',
@@ -1993,6 +1996,7 @@ export const MANIFEST = {
     files: [
       'tests/backend/iam-auth-provider.test.ts',
       'tests/backend/p1-24-iam-route-depth.test.ts',
+      'tests/backend/p1-29-w9-owner-bootstrap.test.ts',
     ],
     required: ['success', 'denial', 'audit'],
     note: 'token + session + success audit; every failure generic; failure audited',
@@ -2009,6 +2013,7 @@ export const MANIFEST = {
     files: [
       'tests/backend/iam-auth-provider.test.ts',
       'tests/backend/p1-24-iam-route-depth.test.ts',
+      'tests/backend/p1-29-w9-owner-bootstrap.test.ts',
     ],
     required: ['success'],
     note: 'describeSession resolves identity, scope, permissions',
@@ -2657,7 +2662,10 @@ export const MANIFEST = {
     note: 'one operation serves the collection and a single tenant via an optional query parameter, the inv.stock-availability-read shape; reads the tenant root and nothing beneath it, bounded by sel_tenants_platform rather than by a tenant predicate',
   },
   'platform.organization-provision': {
-    files: ['tests/backend/pre-p1-29-platform-control-plane.test.ts'],
+    files: [
+      'tests/backend/pre-p1-29-platform-control-plane.test.ts',
+      'tests/backend/p1-29-w9-owner-bootstrap.test.ts',
+    ],
     required: ['denial'],
     note: 'the sanctioned path to org.provision_organization; tenant.activate is never forwarded, because that branch would close the §6.3 bootstrap window inside the transaction that depends on it',
   },

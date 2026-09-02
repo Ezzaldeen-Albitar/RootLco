@@ -9,7 +9,9 @@
  * rule that no caller value ever becomes an authorization principal.
  */
 import { appendAudit } from '@/server/audit/audit';
-import type { DbHandle } from '@/server/db/transaction';
+import { AppFailure } from '@/server/errors/app-failure';
+import { type DbHandle, withPlatformTarget } from '@/server/db/transaction';
+import { type FirstOwnerInput, iamModule } from '@/modules/iam';
 import type { OrganizationRow, PlatformRepository } from '../data/platform-repository';
 
 export interface OrganizationView {
@@ -34,6 +36,21 @@ export interface OrganizationView {
  */
 export interface ProvisionedOrganization {
   readonly tenantId: string;
+  /** The first human principal of the tenant (P1-29 W9). */
+  readonly ownerAccountId: string;
+  /** `first_owner` — the narrow bootstrap IAM authority (frozen B7). */
+  readonly firstOwnerRoleId: string;
+  /** `tenant_administrator` — the tenant's ordinary administration role. */
+  readonly tenantAdministratorRoleId: string;
+  /** True when the request asked for activation and the tenant is now `active`. */
+  readonly activated: boolean;
+}
+
+/** What provisioning takes beyond the organisation spec: the Owner, and whether to activate. */
+export interface ProvisionCommand {
+  readonly spec: Readonly<Record<string, unknown>>;
+  readonly owner: FirstOwnerInput;
+  readonly activate: boolean;
 }
 
 export class OrganizationService {
@@ -48,36 +65,119 @@ export class OrganizationService {
     return rows.map(toView);
   }
 
-  /** §6.2 — the sanctioned provisioning path, with activation deliberately unset. */
+  /**
+   * §6.2 + §6.3 — the sanctioned provisioning path, both halves in ONE
+   * transaction (P1-29 W9):
+   *
+   *  1. the organisation: `org.provision_organization` writes tenant, history,
+   *     subscription, company, branch, settings, overrides, sequences and the
+   *     replay record — with `tenant.activate` NEVER forwarded, so the tenant
+   *     is `provisioning` and the §6.3 window is open;
+   *  2. the platform-on-target window, derived from what step 1 returned and
+   *     never from the request: the First-Owner bootstrap writes the account,
+   *     `first_owner`, `tenant_administrator`, their mappings and grants;
+   *  3. the audit record, inside the same window, so the new tenant's own
+   *     trail carries its genesis with the identifiers the bootstrap produced;
+   *  4. only then, and only when asked, activation through the same function
+   *     the lifecycle operation uses — AFTER a usable administrator exists.
+   *
+   * Any refusal at any step throws, and the transaction the route opened rolls
+   * back all four. The committed states are therefore exactly two: nothing, or
+   * a tenant with its administrator (active if requested).
+   *
+   * Activation needs the lifecycle authority as well as the provisioning one,
+   * because `upd_tenants_platform` is predicated on it. That is checked BEFORE
+   * the first write, so a caller who cannot activate is refused with nothing
+   * created rather than after a rolled-back tenant.
+   */
   async provision(
     db: DbHandle,
-    spec: Readonly<Record<string, unknown>>,
+    command: ProvisionCommand,
     idempotencyKey: string
   ): Promise<ProvisionedOrganization> {
-    const result = await this.repository.provisionOrganization(db, spec, idempotencyKey);
+    if (command.activate) {
+      await this.requireLifecycleAuthority(db);
+    }
 
-    // Both control-plane writes declare auditClass: 'privileged' with a named
-    // action, and NEITHER is written by the pipeline: route-handler validates
-    // the declaration against the controlled catalogue and stops there, so an
-    // operation can declare a privileged class, pass every structural gate, and
-    // append nothing for the life of the product. Measured on this very pair —
-    // both wrote zero rows until these two calls existed.
-    const tenant = (spec.tenant ?? {}) as Record<string, unknown>;
-    await appendAudit(db, {
-      action: 'org.tenant.provisioned',
-      entityType: 'org.tenant',
-      entityId: result.tenantId,
-      details: [
-        { field: 'tenant_code', classification: 'public', value: String(tenant.code ?? '') },
-        {
-          field: 'display_name',
-          classification: 'public',
-          value: String(tenant.display_name ?? ''),
-        },
-      ],
+    // The Owner's identity and profile ride inside the spec so the function's
+    // own replay fingerprint (md5 of the whole document) covers them: the same
+    // key with a different Owner is a different request at BOTH layers.
+    const spec = {
+      ...command.spec,
+      owner: { email: command.owner.email, display_name: command.owner.displayName },
+    };
+    const created = await this.repository.provisionOrganization(db, spec, idempotencyKey);
+
+    const tenant = (command.spec.tenant ?? {}) as Record<string, unknown>;
+    const bootstrap = await withPlatformTarget(db, created.tenantId, async (target) => {
+      const owner = await iamModule().tenantBootstrap.bootstrapFirstOwner(target, command.owner);
+
+      // Both control-plane writes declare auditClass: 'privileged' with a named
+      // action, and NEITHER is written by the pipeline: route-handler validates
+      // the declaration against the controlled catalogue and stops there, so an
+      // operation can declare a privileged class, pass every structural gate,
+      // and append nothing for the life of the product. Measured on this very
+      // pair — both wrote zero rows until these calls existed. The record is
+      // written in the TARGET tenant's context: it is that tenant's genesis.
+      // Identifiers only — no credential, token or secret ever reaches it.
+      await appendAudit(target, {
+        action: 'org.tenant.provisioned',
+        entityType: 'org.tenant',
+        entityId: created.tenantId,
+        details: [
+          { field: 'tenant_code', classification: 'public', value: String(tenant.code ?? '') },
+          {
+            field: 'display_name',
+            classification: 'public',
+            value: String(tenant.display_name ?? ''),
+          },
+          { field: 'owner_account_id', classification: 'internal', value: owner.ownerAccountId },
+          {
+            field: 'first_owner_role_id',
+            classification: 'internal',
+            value: owner.firstOwnerRoleId,
+          },
+          {
+            field: 'tenant_administrator_role_id',
+            classification: 'internal',
+            value: owner.tenantAdministratorRoleId,
+          },
+          { field: 'activated', classification: 'public', value: String(command.activate) },
+        ],
+      });
+      return owner;
     });
 
-    return result;
+    if (command.activate) {
+      await this.repository.changeStatus(db, {
+        tenantId: created.tenantId,
+        toState: 'active',
+        reason: 'activated at provisioning, after the first-owner bootstrap',
+        correlationId: db.context.correlationId,
+      });
+    }
+
+    return {
+      tenantId: created.tenantId,
+      ownerAccountId: bootstrap.ownerAccountId,
+      firstOwnerRoleId: bootstrap.firstOwnerRoleId,
+      tenantAdministratorRoleId: bootstrap.tenantAdministratorRoleId,
+      activated: command.activate,
+    };
+  }
+
+  /** The lifecycle predicate, asked of the database before anything is written. */
+  private async requireLifecycleAuthority(db: DbHandle): Promise<void> {
+    const held = await this.repository.holdsPlatformAuthority(
+      db,
+      'platform.organization.lifecycle'
+    );
+    if (!held) {
+      throw new AppFailure('ERR-IAM-001', {
+        message:
+          'Activation at provisioning requires platform.organization.lifecycle; provision without `activate` or activate later',
+      });
+    }
   }
 
   /**
