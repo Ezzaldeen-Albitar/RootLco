@@ -86,6 +86,12 @@ describe('the navigation model', () => {
       // /reception/walk-in, gated on the permission its first operation
       // (customer search) requires.
       'walk-in',
+      // The work-order board landed with P1-29 W1 at /work-orders, gated on
+      // `wo.work_order.read` — the permission its only operation requires.
+      'work-orders',
+      // The board child names the same route as its parent, so the expanded
+      // sidebar has a link to mark as the current page. See navigation.ts.
+      'work-orders.queue',
     ]);
   });
 
@@ -104,7 +110,8 @@ describe('the navigation model', () => {
       'notifications',
       'reports',
       'technicians',
-      'work-orders',
+      // `work-orders` left this list in P1-29 W1. Its two CHILDREN stay: the
+      // diagnostics and quality screens are W7 and W8 and do not exist yet.
       'work-orders.diagnostics',
       'work-orders.quality',
     ]);
@@ -230,7 +237,13 @@ describe('permission filtering — unknown means denied', () => {
       .flatMap((group) => group.items)
       .find((entry) => entry.key === 'work-orders');
     expect(parent).toBeDefined();
-    expect(parent?.children?.map((child) => child.key)).toEqual(['work-orders.diagnostics']);
+    // `work-orders.queue` rides on the same code as its parent; `.diagnostics`
+    // on its own; `.quality` on a code these capabilities do not hold, and is
+    // therefore absent — which is what makes this independent filtering.
+    expect(parent?.children?.map((child) => child.key)).toEqual([
+      'work-orders.queue',
+      'work-orders.diagnostics',
+    ]);
   });
 
   it('widens as capabilities widen, and never further', () => {

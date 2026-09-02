@@ -267,11 +267,32 @@ describe('the four holes an adversarial review found in the first version', () =
 
 describe('the empty set is reported, never passed off as proof', () => {
   it('says out loud that a zero-page run proves nothing', () => {
-    const { code, out } = run(join(ROOT, 'apps', 'web', 'src', 'app'));
+    // An app tree with no P1-29 page in it. This USED to point at the real
+    // `apps/web/src/app`, which held none — until W1 landed the work-order
+    // board. Repointing it at an empty tree keeps the behaviour it exists to
+    // pin (a run that examined nothing must announce its own vacuity) instead
+    // of deleting the case because the repository moved past its fixture.
+    const empty = join(scratch, 'no-p1-29-pages', '[locale]', '(dashboard)', 'receptions');
+    mkdirSync(empty, { recursive: true });
+    writeFileSync(join(empty, 'page.tsx'), 'export default async function Page() {}');
+
+    const { code, out } = run(join(scratch, 'no-p1-29-pages'));
     expect(code).toBe(0);
     expect(out).toMatch(/0 route page\(s\) examined/);
     expect(out).toMatch(/ZERO pages exist yet — this run proves nothing about any screen/);
     expect(out).toMatch(/ARMED/);
+  });
+
+  it('the REAL tree is no longer one of those runs', () => {
+    // The other half, and the stronger statement: this gate now has something
+    // to judge. If a future change removed every P1-29 page, the case above
+    // would still pass on its fixture while the repository quietly lost its
+    // only screen — so the live tree is asserted non-vacuous here, by name.
+    const { code, out } = run(join(ROOT, 'apps', 'web', 'src', 'app'));
+    expect(code).toBe(0);
+    expect(out).not.toMatch(/0 route page\(s\) examined/);
+    expect(out).toMatch(/[1-9]\d* route page\(s\) examined/);
+    expect(out).not.toMatch(/ZERO pages exist yet/);
   });
 
   it('an empty segment derivation is itself a violation', async () => {
