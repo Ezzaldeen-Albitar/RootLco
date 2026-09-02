@@ -138,6 +138,8 @@ export const WORK_ORDER_DETAIL_PERMISSIONS = {
   technicianRead: 'tech.technician.read',
   assignmentManage: 'tech.assignment.manage',
   departmentRead: 'org.department.read',
+  /** P1-29 W7: shows the per-job link into the diagnostics screen. */
+  diagnosticRead: 'dia.diagnostic.read',
 } as const;
 
 /**

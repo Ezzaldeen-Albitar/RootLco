@@ -213,7 +213,8 @@ export const NAVIGATION: readonly NavigationGroup[] = Object.freeze([
             icon: 'work-orders',
             href: '/work-orders/diagnostics',
             permission: 'dia.diagnostic.read',
-            status: 'planned',
+            // P1-29 W7: the inspection-template catalogue exists at this route.
+            status: 'available',
             scope: 'branch',
           },
           {
