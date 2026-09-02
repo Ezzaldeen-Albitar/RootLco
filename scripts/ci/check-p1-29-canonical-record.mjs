@@ -279,12 +279,58 @@ for (let n = 1; n <= 9; n += 1) {
 }
 if (matrixIds.length) ok.push(`matrix names W1-W9`);
 
-const base = execFileSync('git', ['rev-parse', '--short=8', 'develop'], {
-  cwd: ROOT,
-  encoding: 'utf8',
-}).trim();
-if (!text.includes(base)) fail.push(`document does not name its base commit ${base}`);
-else ok.push(`base commit ${base} named`);
+/*
+ * The base commit, when this checkout can name one.
+ *
+ * The third ref-dependent read in this file, and it was found the same way as
+ * the first two: by a clean-room run dying on it. `develop` is not a ref in a
+ * single-commit checkout, so `git rev-parse develop` exits 128. Fixing the two
+ * that threw and leaving this one was the actual mistake — the audit should have
+ * been of every git invocation here, which is what it now is: this file makes
+ * exactly four, and every one of them tolerates a ref that is not present.
+ *
+ * What is still checked everywhere: the record must name A base commit in the
+ * 8-hex form, so it cannot simply drop the claim.
+ */
+const base = (() => {
+  try {
+    return execFileSync('git', ['rev-parse', '--short=8', 'develop'], {
+      cwd: ROOT,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    }).trim();
+  } catch {
+    return null;
+  }
+})();
+const namedBase = text.match(/\*\*Base:\*\* protected `develop` `([0-9a-f]{8})`/)?.[1] ?? null;
+if (namedBase === null) {
+  fail.push('the record no longer names the protected base commit it was written against');
+} else if (base !== null) {
+  if (namedBase !== base) fail.push(`the record names base ${namedBase}; develop is at ${base}`);
+  else ok.push(`base commit ${base} named and current`);
+} else {
+  /*
+   * `develop` is absent, so the base cannot be compared to it — but it can still
+   * be required to NAME A COMMIT THIS REPOSITORY HOLDS, which needs no ref.
+   *
+   * This check exists because falsifying the gate inside a reproduction of the
+   * clean room found the hole: with `develop` missing, rewriting the base to
+   * `deadbeef` was ACCEPTED. A well-formed hex string that names no commit is
+   * the same defect this repository already refuses elsewhere as
+   * `HOSTED_VALUE_HEAD_NOT_A_COMMIT`, and "the ref I would have compared it to
+   * is missing" is not a reason to stop asking whether it is real at all.
+   */
+  try {
+    execFileSync('git', ['cat-file', '-e', `${namedBase}^{commit}`], {
+      cwd: ROOT,
+      stdio: ['ignore', 'ignore', 'ignore'],
+    });
+    ok.push(`develop is absent here; base ${namedBase} resolves to a commit this repository holds`);
+  } catch {
+    fail.push(`the record names base ${namedBase}, which is not a commit this repository holds`);
+  }
+}
 
 // ---- report ---------------------------------------------------------------
 console.log(`W2 canonical record: ${ok.length} reference(s) resolved, ${fail.length} problem(s).`);
