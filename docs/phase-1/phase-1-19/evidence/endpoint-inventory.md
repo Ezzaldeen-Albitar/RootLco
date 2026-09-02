@@ -5,9 +5,9 @@ registry. Do not hand-edit.** Every column is read out of the
 `defineOperation` literal that guards the route, so this table cannot
 describe a surface the code does not expose, and cannot omit one it does.
 
-Operations in the registry: **351**. In the four P1-19 schemas: **93**. Delivered by P1-19: **58**.
+Operations in the registry: **352**. In the four P1-19 schemas: **94**. Delivered by P1-19: **58**.
 
-**35** operation(s) in these schemas were delivered by a LATER contract and are deliberately absent from the tables below — this document describes P1-19's surface, not the schemas'. They are named here so their absence is a stated fact rather than a gap, and every correctness reconciliation this script performs (seeded permission, catalogued audit action, non-inert branch scope) is applied to them exactly as it is to P1-19’s own.
+**36** operation(s) in these schemas were delivered by a LATER contract and are deliberately absent from the tables below — this document describes P1-19's surface, not the schemas'. They are named here so their absence is a stated fact rather than a gap, and every correctness reconciliation this script performs (seeded permission, catalogued audit action, non-inert branch scope) is applied to them exactly as it is to P1-19’s own.
 
 | Operation                                     | Owner           | Route                                                                                                        |
 | --------------------------------------------- | --------------- | ------------------------------------------------------------------------------------------------------------ |
@@ -21,6 +21,7 @@ Operations in the registry: **351**. In the four P1-19 schemas: **93**. Delivere
 | `dia.template-version-item-list`              | P1-29-W7        | `apps/api/src/app/api/v1/template-versions/[versionId]/items/route.ts`                                       |
 | `dia.template-version-list-publishable`       | PRE-P1-29-BR-04 | `apps/api/src/app/api/v1/jobs/[jobId]/inspection-templates/route.ts`                                         |
 | `dia.template-version-status-set`             | PRE-P1-29-BR-04 | `apps/api/src/app/api/v1/template-versions/[versionId]/status/route.ts`                                      |
+| `qms.qc-check-list`                           | P1-29-W8        | `apps/api/src/app/api/v1/qc-checks/route.ts`                                                                 |
 | `qms.qc-record-branch-list`                   | PRE-P1-29-BR-06 | `apps/api/src/app/api/v1/quality-controls/route.ts`                                                          |
 | `tech.technician-availability-record`         | PRE-P1-29-BR-03 | `apps/api/src/app/api/v1/technicians/[technicianProfileId]/availability/route.ts`                            |
 | `tech.technician-availability-withdraw`       | PRE-P1-29-BR-03 | `apps/api/src/app/api/v1/technicians/[technicianProfileId]/availability/[availabilityId]/route.ts`           |
