@@ -22,8 +22,8 @@
       "class": "DERIVABLE_LOCAL",
       "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
-      "locator": "The live web suite holds **105 web test files**",
-      "value": "105",
+      "locator": "The live web suite holds **107 web test files**",
+      "value": "107",
       "binding": {
         "kind": "derived",
         "table": "counts",
@@ -64,8 +64,8 @@
       "class": "DERIVABLE_LOCAL",
       "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
-      "locator": "| Web test files under `apps/web/tests`       | 105    | a walk of the tree                                                 |",
-      "value": "105",
+      "locator": "| Web test files under `apps/web/tests`       | 107    | a walk of the tree                                                 |",
+      "value": "107",
       "binding": {
         "kind": "derived",
         "table": "counts",
@@ -90,8 +90,8 @@
       "class": "DERIVABLE_LOCAL",
       "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
-      "locator": "| Web tier — files the run reported           | 105    | the same report, cross-checked against the walk above              |",
-      "value": "105",
+      "locator": "| Web tier — files the run reported           | 107    | the same report, cross-checked against the walk above              |",
+      "value": "107",
       "binding": {
         "kind": "run",
         "tier": "web",
