@@ -554,6 +554,62 @@ export const PROFILES = {
       supabase: 'a Frontend phase must not change the database',
     },
   },
+  'p1-30-frontend': {
+    why:
+      'the Frontend lane of P1-30: the service catalogue and pricing, quotation and approval, ' +
+      "inventory and parts, invoice and payment screens — rendering the server's figures, never " +
+      'computing them (P1-30 RENDERS SERVER ARITHMETIC ONLY)',
+    allowed: ['web', 'docs', 'tooling', 'tests', 'rootConfig'],
+    forbidden: {
+      apiSource:
+        'a Frontend phase must not change API source — route it through the Backend lane. The same ' +
+        'boundary p1-29-frontend holds, declared under its own name because a profile borrowed from ' +
+        'another phase declares nothing about this one',
+      apiConfig: 'a Frontend phase must not change API workspace configuration',
+      webGenerated:
+        'the idempotent-operations manifest is GENERATED from the Backend register — a screen that ' +
+        'hand-edits it desynchronises the two, and the register is not on this side of the lane',
+      webContract:
+        'that allow-list holds six frozen P1-28 files. A P1-30 mirror is new source under apps/web ' +
+        'and travels as web',
+      migrations: 'a screen must not carry a migration',
+      dbSeeds:
+        'a screen must not seed a permission — the Backend lane that publishes the operation does',
+      supabase: 'a Frontend phase must not change the database',
+    },
+  },
+  'p1-30-backend': {
+    why:
+      'the Backend prerequisite lane of P1-30: the read seams the A0 preflight proved missing ' +
+      '(docs/phase-1/phase-1-30/a0-read-surface-matrix.md), one branch per seam, with the ' +
+      'permission seeds and generated manifest they need',
+    allowed: [
+      'apiSource',
+      'migrations',
+      // A seam that needs a least-privilege READ code mints it in the only
+      // shipping insert into iam.permissions, supabase/seeds/04_iam_permission_catalog.sql.
+      'dbSeeds',
+      // The idempotent-operations manifest is GENERATED from the Backend
+      // register; a slice that publishes an operation must regenerate it.
+      'webGenerated',
+      'docs',
+      'tooling',
+      'tests',
+      'rootConfig',
+    ],
+    forbidden: {
+      web:
+        'the P1-30 Backend lane is Backend-only — the screens are a separate change under ' +
+        'p1-30-frontend, so no screen ships against a contract nobody reviewed',
+      webContract:
+        'the contract-mirror allow-list names P1-28 files. A P1-30 operation has no row in it, so a ' +
+        "Backend slice reaching for one is reaching for another phase's sealed artefact",
+      apiConfig: 'P1-30 must not change API workspace configuration',
+      supabase:
+        'P1-30 must not change the database HARNESS — the migrations and the permission catalogue ' +
+        'it does need travel under their own buckets',
+    },
+  },
   'p1-09-database-seed': {
     why:
       'a missed P1-09 DATABASE seed obligation, repaired after the fact: one declared seed file ' +

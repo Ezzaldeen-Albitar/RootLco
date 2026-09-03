@@ -140,6 +140,16 @@
       "why": "The Frontend lane of P1-29. Distinct from feature/pre-p1-29- above and not a prefix of it in either direction — pre-p1-29 branches diverge at the fourth character — so the initiative lanes and the phase lanes cannot reach one another."
     },
     {
+      "branchPrefix": "remediation/p1-30-backend-",
+      "profile": "p1-30-backend",
+      "why": "The Backend prerequisite lane of P1-30 — one branch per read seam or contract the A0 preflight proved missing (docs/phase-1/phase-1-30/a0-read-surface-matrix.md). Listed BEFORE the Frontend lane and before any broader remediation/p1-30- rule that may later be added: first match wins. There is deliberately NO broad remediation/p1-30- rule, so a branch nobody mapped is refused rather than absorbed."
+    },
+    {
+      "branchPrefix": "feature/p1-30-",
+      "profile": "p1-30-frontend",
+      "why": "The Frontend lane of P1-30 (services, quotations, inventory, billing and payments screens). Not a prefix of feature/p1-29- in either direction, so the two phases cannot reach one another. The A0 preflight itself travels on this lane: it adds these profiles (tooling, tests) and the read-surface matrix (docs), and no screen."
+    },
+    {
       "branchPrefix": "planning/",
       "profile": "p1-29-planning",
       "why": "Every planning branch in this repository is documentation-only by construction, so one bare-prefix rule is honest where a rule per phase would be the same declaration copied. It resolves the two live planning branches, which matched NO rule before this and could not have opened a pull request. If a future planning branch ever needs to be judged differently, a longer prefix listed ABOVE this one is the mechanism — never a widening of this profile."
