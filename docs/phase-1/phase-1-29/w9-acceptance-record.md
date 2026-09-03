@@ -170,3 +170,39 @@ canonical closure condition (§3 of the plan) is satisfied by a real experience,
 Verdict for W7: **PASSED**. STEP 7 of the decision: no default template is seeded — the current
 repository requires none, the historical P1-09 wording asked for Benzene-valued tenant examples the seed
 standard forbids, and the real experience creates its templates through the shipped operations.
+
+### Re-run after the merge (STEP 15 of the decision), on a second fresh organization
+
+After PR #303 merged (develop `c3c62398`, protected reproof 19/19), the same journey was run again
+from nothing on `rootlco_w7b` (`985028aa-af8c-42d4-abf3-81eae03d131e`, provisioned 201 corr `eed5573f-4f51-4f7d-8f18-1b9f12a44c27`)
+against a fresh `next build` + `next start` of that develop head — no state, id or credential carried
+over from the first tenant, no SQL, no fixture:
+
+- Owner credential through the shipped invitation path (200), eight personas invited by the Owner
+  and completed through the same path (all 200), sessions holding 16/13/9/9/4/4/9/4 permissions;
+  intake as the receptionist (customer 201, vehicle 201, link 201 corr `983ca55d…`, reception 201,
+  authorization 201, approve 200, convert 200 → work order `41cb810f…`); the coordinator opened it
+  (200), created the job (201), assigned the technician (201) and moved it to `assigned` (200).
+- `dia.diagnostic-type-list` as the Owner: 200 corr `a96c0f14-ebe4-4105-a7c1-cb5f719d69bc`, the
+  ten seeded platform types. Template on **Brakes** 201 corr `750c34cb…`, version 201, three items
+  201, publish without `If-Match` → 428 ERR-CON-002, publish → 200 corr `0d675cef…`, an item on the
+  published version → 409 ERR-TRN-001.
+- Technician: publishable set for the job (one version, corr `5f00d80b…`); report 201 corr
+  `9dcedd63-64d6-4376-b70f-e1b19f17ca46`; outstanding mandatory `pad_depth, pad_condition`;
+  `in_progress` 200; **completion with mandatory items unanswered → 409 ERR-DIA-001** (corr
+  `0b716bdc-6135-445e-889f-b565cef27243`); `"shiny"` → 422 `not_an_option`; `"abc"` → 422
+  `not_a_decimal`; answers 200; measurement in `inch` → 422 `unit_mismatch` (corr `01aac8b6…`);
+  3.5 mm 201 `withinRange: true`; 1.2 mm 201 `withinRange: false`; finding, DTC P0300,
+  recommendation 201; DTC `ABC` → 422; stale version → 409 ERR-CON-001; completion → 200 corr
+  `101d01b7-df9e-41aa-809c-c8a14b0a845b`; a DTC after completion → 409.
+- Review: the technician → 403 (`dia.diagnostic.review` not held); the reviewer → 201 corr
+  `bce7f034-cde0-4614-862c-ab48374cb189`; final detail completed, 3 results, 2 measurements,
+  1 finding, 1 DTC, 1 recommendation, 1 review, 0 outstanding.
+
+Two artefacts of the run, recorded rather than hidden: the customer was created twice on this
+tenant (the acceptance script read the customer id under the wrong key on its first pass and the
+second pass created a second record before the link was made by lookup; both are real rows of a
+test organization, and the journey used the first), and the job carries no department (the
+organization step did not store the department ids; routing is not part of the diagnostics
+experience). The second run was driven through the shipped routes only; the screens were exercised
+by hand on the first tenant, above.
