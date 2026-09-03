@@ -26,11 +26,12 @@
  * `wo` catalogue read use. A list that showed both would offer a choice the
  * write path does not honour.
  *
- * ## No content is seeded, and this service does not pretend otherwise
+ * ## The vocabulary is seeded, and this service reads it as it is
  *
- * The platform seed holds no diagnostic type. Approved vocabulary is an Owner
- * input; until it exists this read answers an empty set, which is the truth
- * and not a defect.
+ * The platform vocabulary is seeded by 20260903090000 (ten tenant-neutral
+ * diagnostic types, the Owner-approved list of 2026-09-03 — the P1-09 seed
+ * obligation completed under P1-29 W9-R4). Before it, this read answered an
+ * empty set for every fresh tenant, which was the truth and not a defect.
  */
 import { ApplicationService } from '@/server/layering';
 import type { DbHandle } from '@/server/db/transaction';
