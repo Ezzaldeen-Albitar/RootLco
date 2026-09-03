@@ -121,7 +121,7 @@ the permission is the barrier; 405 and 404 prove the shape of the absence.
 
 ## 3. The read matrix
 
-The eleven published commercial reads, with what a screen actually receives.
+The fourteen published commercial reads, with what a screen actually receives.
 
 | operation                           | route                                   | permission                                | scope                                                          | paging                                           | a screen receives                                                                                                                                                                                                               |
 | ----------------------------------- | --------------------------------------- | ----------------------------------------- | -------------------------------------------------------------- | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -212,30 +212,105 @@ route; `C` = a new read model or write path is required.
 | S-05 | `inv.item_master` + `inv.item_categories` + `inv.stock_locations` writers | C     | the inventory half of the phase has no items, no categories and no places. Every FE-008…FE-013 screen renders an empty product without them                                                                                                                                                                                                       |
 | S-06 | `org.tax_classes` / `org.tax_rates` writers                               | C     | FE-006 displays a real rate only when one can exist                                                                                                                                                                                                                                                                                               |
 
-S-01 is an Owner decision, not an engineering choice; S-02…S-06 are Backend work owned by P1-20,
-P1-21 and P1-11 respectively, entering P1-30 as prerequisites on the `remediation/p1-30-backend-`
-lane.
+S-02…S-06 are ordinary Backend work owned by P1-20, P1-21 and P1-11, entering P1-30 as prerequisites
+on the `remediation/p1-30-backend-` lane. S-01 is different in kind and is set out below.
+
+#### S-01, derived
+
+The method is not new. P1-29 derived its administrator set "by walking every route the W1–W8
+experiences call" (`bootstrap-roles.ts`), and widened it once — 44 codes to 48 — when the acceptance
+proved four were missing. Walking the routes the twenty-one P1-30 tasks call yields **24 commercial
+codes**, every one already in the catalogue:
+
+`svc.service.read` · `svc.service.manage` · `svc.price.read` · `svc.price.manage` ·
+`svc.price.publish` · `quo.quotation.read` · `quo.quotation.manage` · `quo.decision.record` ·
+`inv.item.read` · `inv.stock.read` · `inv.stock.operate` · `inv.adjustment.approve` ·
+`inv.custody.manage` · `inv.external_purchase.record` · `inv.audit.read` · `sal.invoice.manage` ·
+`sal.invoice.issue` · `sal.finance.view` · `sal.payment.record` · `sal.payment.allocate` ·
+`sal.credit.manage` · `sal.delivery.manage` · `sal.delivery.view` · `sal.delivery.complete`
+
+Three catalogue codes are **not** reachable by the walk and are therefore not proposed:
+`inv.cost.view` (a field-level gate on cost and margin, risk **high** — the P1-10 contract says those
+fields render only with it, so holding it by default would defeat the split the contract asks for),
+`inv.item.manage` (declared by no route — the item master has no writer, which is F-02), and
+`sal.reversal.approve` (no reversal route exists; P1-22-L-05 records the absence).
+
+Two questions the derivation cannot answer, and which are the Owner's:
+
+1. **Should one role hold all 24?** They span selling, stock operations, invoicing and cash. The
+   P1-29 set already mixes duties on the same reasoning — an administrator must hold a code to
+   delegate it — but `sal.finance.view` and `inv.audit.read` are the codes P1-11 and P1-21 designed
+   the amount-hiding and audit splits around.
+2. **What happens to organizations provisioned before the change?** The bundle is written once, at
+   provisioning; nothing re-applies it. A fresh organization gets the new set; an existing one does
+   not, and no route can widen it. That is a separate remediation whether or not question 1 is
+   answered generously.
 
 ### 6.2 Read seams
 
-| #    | seam                                  | class | operation                                                                                                                                                                               |
-| ---- | ------------------------------------- | ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| S-07 | quotations by work order              | B     | `quo.quotation-list`, `GET /work-orders/{workOrderId}/quotations`, `quo.quotation.read`, branch, keyset                                                                                 |
-| S-08 | revision history and revision by id   | **A** | `quo.quotation-revision-list` `GET /quotations/{id}/revisions` and `quo.quotation-revision-detail` `GET /quotation-revisions/{id}` — `listRevisions` and `findRevision` exist, unrouted |
-| S-09 | per-line decisions and evidence       | C     | `quo.quotation-revision-decisions-read`, `GET /quotation-revisions/{id}/decisions`, bounded                                                                                             |
-| S-10 | the invoice a work order has          | **A** | `sal.work-order-invoice-read`, `GET /work-orders/{workOrderId}/invoice` — `liveInvoiceForWorkOrder` exists, unrouted; at most one row by unique index                                   |
-| S-11 | receipts by scope, partner or invoice | B     | `sal.receipt-list`, `GET /payments`, `sal.finance.view`, keyset                                                                                                                         |
-| S-12 | service by id                         | **A** | `svc.service-detail`, `GET /services/{serviceId}` — `ServiceCatalogService.detail` exists, unrouted                                                                                     |
-| S-13 | price-list detail, versions and rules | C     | `svc.price-list-detail` and `svc.price-rule-list`, `svc.price.read`                                                                                                                     |
-| S-14 | reservations                          | B     | `inv.stock-reservation-list`, `GET /stock-reservations`, `inv.stock.read`                                                                                                               |
-| S-15 | part issues with returned-so-far      | B     | `inv.stock-issue-list`, `GET /stock-issues`, `inv.stock.read` — `readPartIssue` already computes the returned sum in SQL                                                                |
-| S-16 | stock locations                       | B     | `inv.stock-location-list`, `GET /stock-locations`, `inv.stock.read`                                                                                                                     |
+| #    | seam                                  | class | operation                                                                                                                                                                                                                                                                                                                                                                                      |
+| ---- | ------------------------------------- | ----- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| S-07 | quotations by work order              | B     | `quo.quotation-list`, `GET /work-orders/{workOrderId}/quotations`, `quo.quotation.read`, branch, keyset                                                                                                                                                                                                                                                                                        |
+| S-08 | revision history and revision by id   | B     | `quo.quotation-revision-list` `GET /quotations/{id}/revisions` (headers only) and `quo.quotation-revision-detail` `GET /quotation-revisions/{id}` (the lines-bearing drill-down). **Corrected by §6.3:** `listRevisions` and `findRevision` are NOT unrouted — `quo.quotation-detail` reaches both — so this is class B, and the real gap is that the detail returns only the CURRENT revision |
+| S-09 | per-line decisions and evidence       | C     | `quo.quotation-revision-decisions-read`, `GET /quotation-revisions/{id}/decisions`, bounded                                                                                                                                                                                                                                                                                                    |
+| S-10 | the invoice a work order has          | **A** | `sal.work-order-invoice-read`, `GET /work-orders/{workOrderId}/invoice` — `liveInvoiceForWorkOrder` exists, unrouted; at most one row by unique index                                                                                                                                                                                                                                          |
+| S-11 | receipts by scope, partner or invoice | B     | `sal.receipt-list`, `GET /payments`, `sal.finance.view`, keyset                                                                                                                                                                                                                                                                                                                                |
+| S-12 | service by id                         | **A** | `svc.service-detail`, `GET /services/{serviceId}` — `ServiceCatalogService.detail` exists, unrouted                                                                                                                                                                                                                                                                                            |
+| S-13 | price-list detail, versions and rules | C     | `svc.price-list-detail` and `svc.price-rule-list`, `svc.price.read`                                                                                                                                                                                                                                                                                                                            |
+| S-14 | reservations                          | B     | `inv.stock-reservation-list`, `GET /stock-reservations`, `inv.stock.read`                                                                                                                                                                                                                                                                                                                      |
+| S-15 | part issues with returned-so-far      | B     | `inv.work-order-part-issue-list`, `GET /work-orders/{workOrderId}/part-issues`, `inv.stock.read` — `readPartIssue` already computes the returned sum in SQL. **Corrected by §6.3:** the collection shape `GET /stock-issues` filtered only by `workOrderId` would be scope-INERT (P1-18-A-01); the per-parent path pins the scope from the row                                                 |
+| S-16 | stock locations                       | B     | `inv.stock-location-list`, `GET /stock-locations`, `inv.stock.read`                                                                                                                                                                                                                                                                                                                            |
 
-Three of the ten read seams are class **A**: the read already exists and is only unpublished.
+Two of the ten read seams are class **A** — `sal.work-order-invoice-read` (S-10) and
+`svc.service-detail` (S-12): the read already exists as a service method and is only unpublished.
+S-08 was classified A and corrected to B by the adversarial pass (§6.3).
 
 ### 6.3 Adversarial review
 
-{{REFUTATION}}
+The refutation pass re-read every seam against the code rather than against this document. It
+produced two corrections, both applied to §6.2 above:
+
+- **S-08 was class A and is class B.** `listRevisions` and `findRevision` are not unrouted —
+  `quo.quotation-detail` reaches both. The real gap is narrower and different in kind: the detail
+  returns only the current revision, so history needs a route, not a read model.
+- **S-15's collection shape was scope-inert.** `GET /stock-issues` filtered only by `workOrderId`
+  repeats P1-18-A-01: the filter is caller-controlled and the scope is not pinned by the row. The
+  per-parent path `GET /work-orders/{workOrderId}/part-issues` pins it.
+
+**The attack phase of that pass did not execute.** Both of its agents terminated at zero tokens and
+zero tool calls; only the classification and refutation phases ran. The two lanes lost were
+`attack:administrator-bundle` and `attack:completeness` — precisely the checks that would have tested
+whether F-01 was correctly bounded. This section is written knowing that, and the bundle attack was
+re-run by hand afterwards.
+
+#### The re-run bundle attack — F-01 is wider than §1 states
+
+Cross-referencing `TENANT_ADMINISTRATOR_ROLE.permissionCodes` (48) in
+`apps/api/src/modules/iam/domain/bootstrap-roles.ts` against the 23 permission gates in
+`apps/web/src/config/navigation.ts` and the 118-code catalogue in
+`supabase/seeds/04_iam_permission_catalog.sql`: **12 of the 23 gates are not held.**
+
+| disposition                                  | codes                                                                                                                   |
+| -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| deliberate (named in the bootstrap docblock) | `iam.approval.manage`, `crm.customer.duplicate.review`, `veh.vehicle.duplicate.review`                                  |
+| recorded elsewhere                           | `org.settings.manage` (W9-R2), `sal.invoice.read` and `sal.delivery.read` (RES-05 — absent from the catalogue entirely) |
+| commercial — F-01's own                      | `inv.item.read`, `svc.service.read`                                                                                     |
+| **undocumented and unrecorded**              | `apt.appointment.read`, `iam.audit.view`, `rpt.report.read`, `shared.notification.read`                                 |
+
+The last four gate surfaces of phases the Owner has already accepted — appointments (P1-28), the
+audit log (P1-26), reporting and notifications (P1-23). The bundle holds **zero** `apt.*` codes while
+four exist in the catalogue.
+
+The cause is the derivation method, not the codes: the 48 were derived by walking the routes the
+P1-29 W1–W8 experiences call, and a walk of one phase's journey cannot see another phase's
+navigation. **§6.1's S-01 derivation uses the same method and inherits the same blind spot** — it
+walks the twenty-one P1-30 tasks. A bundle derived against `navigation.ts`, which is the actual
+reachability surface, would not.
+
+This does not change A1's scope. It changes what S-01 must decide: not "which commercial codes does
+an administrator need", but "which codes does an administrator need, and how does an organization
+already provisioned receive them" — a question that now has four non-commercial codes in it, and one
+that outlives P1-30.
 
 ## 7. Least-privilege review
 
