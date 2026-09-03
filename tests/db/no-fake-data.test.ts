@@ -38,7 +38,7 @@ const STRUCTURAL_REFERENCE = new Set([
   // P1-09-DB-020 platform diagnostic-type vocabulary — structurally mandatory on
   // the same argument: `dia.inspection_templates.diagnostic_type_id` is NOT NULL,
   // so no template and therefore no report can exist without a type. Seeded by
-  // `supabase/seeds/09_dia_diagnostic_types.sql` on the Owner's decision of
+  // `supabase/seeds/09_dia_diagnostic_types.sql` on the Owner decision of
   // 2026-09-03 (P1-29 W9-R4). Platform scope only; the tenant half is asserted
   // empty below like the other dual-scope catalog.
   'dia.diagnostic_types',

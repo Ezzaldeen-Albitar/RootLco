@@ -238,6 +238,10 @@ export const STRUCTURAL_REFERENCE = Object.freeze([
   // separately that the tenant-scoped half of this dual-scope table stays empty,
   // which is the half an allow-list stops watching.
   'shared.document_categories',
+  // P1-09-DB-020 platform diagnostic-type vocabulary (`supabase/seeds/09_dia_diagnostic_types.sql`,
+  // Owner decision of 2026-09-03, P1-29 W9-R4): the same structural argument as the state graph —
+  // no template and therefore no report can exist without a type. Platform scope only.
+  'dia.diagnostic_types',
 ]);
 
 /** The schemas that test sweeps. Wider than the tenant-scoped scan by design. */
