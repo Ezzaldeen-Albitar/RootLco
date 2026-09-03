@@ -26,10 +26,24 @@ import { buildOpenApiDocument } from '@/server/openapi/document';
 // it the same way — so a route missing here is missing from the published
 // contract AND the test still passes, because both sides agree on the same
 // incomplete registry. That is exactly how all twelve Phase 1-18 operations came
-// to be absent from `docs/api/openapi.v1.json` while every gate read green. The
-// arithmetic that catches it is external: `check-authorization-coverage.mjs`
-// counts registered operations, `check-openapi.mjs` counts published ones, and
-// the two numbers must be equal. Adding a route means adding a line here.
+// to be absent from `docs/api/openapi.v1.json` while every gate read green.
+//
+// WHAT ACTUALLY CLOSES IT: `scripts/ci/check-route-registry-parity.mjs` (CSA-14).
+// It compares this import list against the FILESYSTEM — every `route.ts` under
+// `apps/api/src/app/api/v1` — and exits 1 on any drift in either direction, so a
+// route added without a line here goes red automatically. It runs in hosted CI
+// (`_reusable-node-quality.yml`, the static-quality task) and in the clean room
+// (`_reusable-clean-room.yml`), and its own falsifiability proof is
+// `tests/ci/policy-and-linters.test.ts` -> "route <-> registry parity", which
+// feeds `compare()` a synthetic route set rather than editing the registry the
+// generator reads. It has already earned it: the twenty invoice and payment
+// imports below were named by that gate before they were added (see line ~323).
+//
+// This header previously said the catch was external arithmetic between
+// `check-authorization-coverage.mjs` and `check-openapi.mjs`. That was written
+// before CSA-14 existed and is not how the protection works; no gate compares
+// those two counts. Adding a route still means adding a line here — the gate
+// tells you when you forgot, it does not add it for you.
 import '@/app/api/v1/meta/ping/route';
 import '@/app/api/v1/auth/login/route';
 import '@/app/api/v1/auth/logout/route';
