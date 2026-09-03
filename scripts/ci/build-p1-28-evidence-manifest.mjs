@@ -691,6 +691,53 @@ function headAt(git, rev, candidateSha, baseSha, hopsLeft, unwrapped = false) {
          */
         branchSide = treeCarrier;
         baseSide = parents.find((p) => p !== branchSide) ?? null;
+      } else if (unwrapped) {
+        /*
+         * A BRANCH THAT ABSORBED ITS BASE, reached through the merge that landed it.
+         *
+         * The governance forbids force-pushes, so a branch that falls behind
+         * catches up the only way left: `git merge develop` on the branch, then
+         * the pull request lands. The landing merge adds nothing to the branch
+         * head and unwraps to it — and that head is a merge with BOTH parents
+         * carrying the candidate, a tree that matches neither (it carries the
+         * branch's work AND the base's), and a base ref that names neither
+         * (the ref points at the landing merge above). Measured on the first
+         * documentation-only branch cut after the P1-29 promotion: the world
+         * went UNKNOWN on protected `develop` itself, with the branch's plan and
+         * the base's own fix on opposite sides of the same merge.
+         *
+         * The tree cannot answer here, but the base branch's own first-parent
+         * line can. Landing a pull request on a protected branch puts that
+         * branch's previous tip first, so every tip the base ever had lies on
+         * its first-parent line — and a branch's work never does, because it
+         * arrives as a second parent. The parent that lies on that line is the
+         * base as it stood; the other is this branch. Exactly one must, or the
+         * question stays open and the refusal below stands.
+         *
+         * INSIDE AN UNWRAP ONLY, on the same footing as the tree above: the
+         * level above already established what this commit is. The two
+         * real-checkout refusals in the seal's own suite are top-level and are
+         * untouched — a two-parent merge somebody actually checked out, whose
+         * parents both carry the candidate and whose base ref names neither,
+         * still refuses.
+         */
+        const onBaseLine = parents.map((p) => firstParentLineContains(git, p, baseSha));
+        if (onBaseLine.some((answer) => answer === null)) {
+          return {
+            ...plain,
+            topologyUnknown: `Git could not decide which parent of merge ${checkout.slice(0, 8)} lies on the first-parent line of the resolved base ${baseSha.slice(0, 8)}`,
+          };
+        }
+        const baseParents = parents.filter((_, index) => onBaseLine[index] === true);
+        if (baseParents.length !== 1) {
+          return {
+            ...plain,
+            topologyUnknown:
+              'both merge parents contain the candidate and the resolved base does not uniquely identify either parent',
+          };
+        }
+        baseSide = baseParents[0];
+        branchSide = parents.find((p) => p !== baseSide) ?? null;
       } else {
         return {
           ...plain,
