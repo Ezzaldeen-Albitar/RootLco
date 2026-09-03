@@ -160,6 +160,7 @@ assigned through the shipped routes — with no SQL and no fixture in the journe
   P0300 201, DTC "ABC" → 422; recommendation high 201; completion with a stale version → 409 ERR-CON-001;
   completion → 200 `completed` (corr `c6ad6bdc-7ab4-46c2-9ce9-22799fe61c54`); a DTC after completion → 409.
 - The technician’s job diagnostics screen (`/work-orders/{workOrderId}/jobs/{jobId}/diagnostics`) renders the report on the production build: checklist with answers (3.5 · worn · true), measurements with their range verdicts (3.5 mm within range, 1.2 mm out of range), fault code P0300, the finding, the recommendation, status `completed` with the summary, the approval with its reviewer, and the history `draft → in_progress → completed`; the "Start a diagnostic" form offers the published template.
+- A SECOND report driven entirely from that screen by the technician: "Start a diagnostic" from the published template (Report 2, draft), the checklist answered item by item through the form (4.2 mm · good · Yes, each "Record"), a finding recorded (Low · Monitor), "Move to in_progress", summary and "Complete the report" → status `completed`, history `draft → in_progress → completed`. The screen path and the route path agree.
 - Review: the technician who created the report → 403 (`dia.diagnostic.review` not held — the persona
   boundary); the reviewer → 201 corr `fb82fe77-4494-4ffa-8d92-8848bd620054`; final detail: completed, 3
   item results, 2 measurements, 1 finding, 1 DTC, 1 recommendation, 1 review, 0 outstanding.
