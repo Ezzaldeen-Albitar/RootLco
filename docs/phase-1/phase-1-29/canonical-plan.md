@@ -1,6 +1,6 @@
 # Phase 1-29 — Work Order, Diagnostics and Technicians — canonical plan
 
-**Status:** ACTIVE · **Base:** protected `develop` `2a0285ec` · **Lane:** Frontend
+**Status:** CLOSED 2026-09-03 — `docs/phase-1/phase-1-29/closure-record.md` · **Base:** protected `develop` `2a0285ec` · **Lane:** Frontend
 (`feature/p1-29-` → ownership profile `p1-29-frontend`)
 
 ---
