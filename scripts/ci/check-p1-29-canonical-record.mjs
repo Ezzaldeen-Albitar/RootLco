@@ -200,8 +200,7 @@ if (claimedDia !== null) {
 // decision of that day completed the P1-09 seed obligation with ONE migration, so the
 // document must now say the vocabulary is seeded, and exactly that migration must be
 // the only place a platform row is written.
-const VOCABULARY_SEED =
-  'supabase/migrations/20260903090000_dia_diagnostic_types_platform_vocabulary.sql';
+const VOCABULARY_SEED = 'supabase/seeds/09_dia_diagnostic_types.sql';
 const seededBy = grep(['-l', 'INSERT INTO dia.diagnostic_types', '--', 'supabase'])
   .split(/\r?\n/)
   .map((line) => line.trim().replaceAll(String.fromCharCode(92), '/'))
@@ -210,7 +209,7 @@ if (seededBy.length !== 1 || seededBy[0] !== VOCABULARY_SEED) {
   fail.push(
     `the platform diagnostic-type vocabulary must be seeded by exactly ${VOCABULARY_SEED}; found: ${seededBy.join(', ') || 'none'}`
   );
-} else if (!text.includes('20260903090000_dia_diagnostic_types_platform_vocabulary')) {
+} else if (!text.includes('supabase/seeds/09_dia_diagnostic_types.sql')) {
   fail.push(
     'the seed exists but the document does not name it — the "empty vocabulary" claim is stale'
   );

@@ -348,10 +348,10 @@ describe('P1-15 / global security posture', () => {
     // drop M1 out and quietly falsify the paragraph above: the assertion would
     // no longer touch the first of the four while the comment still claimed it
     // pinned their order.
-    expect(files).toHaveLength(137);
-    expect(files.at(-8)).toBe('20260831091000_org_tenant_status_transition_guard.sql');
-    expect(files.at(-7)).toBe('20260831092000_org_tenant_status_history_emission.sql');
-    expect(files.at(-6)).toBe('20260831093000_iam_platform_privilege_graph.sql');
+    expect(files).toHaveLength(136);
+    expect(files.at(-7)).toBe('20260831091000_org_tenant_status_transition_guard.sql');
+    expect(files.at(-6)).toBe('20260831092000_org_tenant_status_history_emission.sql');
+    expect(files.at(-5)).toBe('20260831093000_iam_platform_privilege_graph.sql');
     // The tail GROWS by contributing branch rather than sliding, so that any one
     // migration vanishing in a merge — and taking its grants with it — fails here
     // rather than somewhere confusing.
@@ -363,22 +363,21 @@ describe('P1-15 / global security posture', () => {
     // approval-at-selection-time declaratively, and — deliberately — WITHOUT
     // re-reading mutable status, so a version retired after publication does not
     // retroactively invalidate an event already emitted.
-    expect(files.at(-5)).toBe('20260901090000_org_company_status_lifecycle.sql');
+    expect(files.at(-4)).toBe('20260901090000_org_company_status_lifecycle.sql');
     // PRE-P1-29 Wave C: the legal-company status lifecycle. One migration for one
     // coherent subsystem — the history table, its stamp and coherence guards, the
     // emitter that makes a raw UPDATE record itself, and the transition function.
-    expect(files.at(-4)).toBe('20260901100000_wo_jobs_department_routing.sql');
+    expect(files.at(-3)).toBe('20260901100000_wo_jobs_department_routing.sql');
     // PRE-P1-29 BR-02: the job/department routing relationship. One column, one
     // composite FK, one index — the smallest migration in the tail, and the only
     // one that moves schemaHash while leaving every structural total alone.
-    expect(files.at(-3)).toBe('20260902120000_wo_job_blocker_events.sql');
+    expect(files.at(-2)).toBe('20260902120000_wo_job_blocker_events.sql');
     // 136 is P1-29 W9, the First-Owner bootstrap's two owed privileges: one
     // authority-predicated SELECT policy on iam.permissions (column-scoped to
     // id and permission_code) and EXECUTE on the delegation backstop for
     // app_platform. No object, no role, no permission code; the policy is
     // asserted by name in foundation.test.ts and the count is pinned here.
-    expect(files.at(-2)).toBe('20260902130000_iam_platform_bootstrap_catalogue_and_backstop.sql');
-    expect(files.at(-1)).toBe('20260903090000_dia_diagnostic_types_platform_vocabulary.sql');
+    expect(files.at(-1)).toBe('20260902130000_iam_platform_bootstrap_catalogue_and_backstop.sql');
   });
 
   it('migration 121 changes the shared surface DELIBERATELY, and the change is bounded', () => {

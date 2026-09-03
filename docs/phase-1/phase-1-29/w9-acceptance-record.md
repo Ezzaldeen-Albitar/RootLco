@@ -132,7 +132,7 @@ Every line is a shipped route or screen; correlation ids are the API's own. No s
 ## W9-R4 — RESOLVED: the platform diagnostic vocabulary, seeded and exercised on a real tenant (2026-09-03)
 
 Owner decision of 2026-09-03: the missing vocabulary was a missed P1-09 seed deliverable, repaired by one
-additive idempotent migration (`supabase/migrations/20260903090000_dia_diagnostic_types_platform_vocabulary.sql`,
+additive idempotent declared seed (`supabase/seeds/09_dia_diagnostic_types.sql`,
 ten tenant-neutral platform rows, no OBD type, no template, no tenant). Database proofs D1–D8 are in
 `tests/db/p1-29-w9-r4-diagnostic-type-vocabulary.test.ts` and the W5 list suite. The real W7 experience
 was then run on a FRESH organization provisioned through the product — `rootlco_w7`

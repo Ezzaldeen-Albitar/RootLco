@@ -473,6 +473,18 @@ describe('PRE-P1-29 ownership — an initiative that spans the product, in lanes
     ['pre-p1-29-initiative', 'supabase/seed.sql', false],
     ['pre-p1-29-initiative', 'some/unknown/place/thing.bin', false],
 
+    ['p1-09-database-seed', 'supabase/seeds/09_dia_diagnostic_types.sql', true],
+    ['p1-09-database-seed', 'supabase/config.toml', true],
+    ['p1-09-database-seed', 'scripts/db/validate-seed-state.mjs', true],
+    ['p1-09-database-seed', 'tests/db/p1-29-w9-r4-diagnostic-type-vocabulary.test.ts', true],
+    ['p1-09-database-seed', 'docs/phase-1/phase-1-29/canonical-plan.md', true],
+    ['p1-09-database-seed', 'supabase/migrations/20260903090000_anything.sql', false],
+    [
+      'p1-09-database-seed',
+      'apps/api/src/modules/diagnostics/application/diagnostic-catalog-service.ts',
+      false,
+    ],
+    ['p1-09-database-seed', 'apps/web/src/app/page.tsx', false],
     ['pre-p1-29-backend', 'apps/api/src/routes/platform/companies.ts', true],
     ['pre-p1-29-backend', 'supabase/migrations/20260822090000_platform_admin.sql', true],
     ['pre-p1-29-backend', 'apps/web/src/lib/api/idempotent-operations.ts', true],

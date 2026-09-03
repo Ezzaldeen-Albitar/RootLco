@@ -1,19 +1,19 @@
 /**
  * P1-29 W9-R4 — the platform diagnostic-type vocabulary, proved on real PostgreSQL.
  *
- * `supabase/migrations/20260903090000_dia_diagnostic_types_platform_vocabulary.sql`
+ * `supabase/seeds/09_dia_diagnostic_types.sql`
  * completes the P1-09 seed obligation the catalogue shipped without (Owner
  * decision of 2026-09-03): ten tenant-neutral PLATFORM rows in
  * `dia.diagnostic_types`. Every property the decision named is asserted here
  * against the migrated database, not described:
  *
- *   D1  clean replay — after every migration the ten platform types exist exactly once
- *   D2  idempotent — applying the migration's SQL again changes nothing
+ *   D1  clean replay — after every migration and the declared seeds the ten platform types exist exactly once
+ *   D2  idempotent — applying the seed's SQL again changes nothing
  *   D3  exact vocabulary — the ten codes and names are the Owner-approved list, no OBD
  *   D4  active — every row is in the catalogue's usable state
  *   D5  tenant isolation — a tenant cannot read or mutate another tenant's override,
  *       and cannot write a platform row
- *   D8  no Benzene — the migration file names no tenant
+ *   D8  no Benzene — the seed file names no tenant
  *
  * D6/D7 (a tenant row shadows the platform row of the same code through the
  * shipped list operation, and shadowing one code hides nothing else) are
@@ -35,12 +35,7 @@ import {
   withRolledBackTx,
 } from './helpers';
 
-const MIGRATION = join(
-  process.cwd(),
-  'supabase',
-  'migrations',
-  '20260903090000_dia_diagnostic_types_platform_vocabulary.sql'
-);
+const SEED = join(process.cwd(), 'supabase', 'seeds', '09_dia_diagnostic_types.sql');
 
 /** The Owner-approved vocabulary of 2026-09-03, in the catalogue's own code format. */
 const APPROVED: ReadonlyArray<readonly [string, string]> = [
@@ -78,7 +73,7 @@ afterAll(async () => {
 });
 
 describe('W9-R4 — the platform diagnostic-type vocabulary', () => {
-  it('D1 — after the migration series the ten platform types exist exactly once each', async () => {
+  it('D1 — after the migration series and the declared seeds the ten platform types exist exactly once each', async () => {
     const { rows } = await admin.query<{ code: string; n: number }>(
       `SELECT code, count(*)::int AS n
          FROM dia.diagnostic_types
@@ -97,8 +92,8 @@ describe('W9-R4 — the platform diagnostic-type vocabulary', () => {
     expect(scoped.rows[0]?.n).toBe(0);
   });
 
-  it('D2 — applying the migration again inserts nothing and changes nothing', async () => {
-    const sql = readFileSync(MIGRATION, 'utf8');
+  it('D2 — applying the seed again inserts nothing and changes nothing', async () => {
+    const sql = readFileSync(SEED, 'utf8');
     const before = await admin.query(PLATFORM_ROWS, [CODES]);
     const client = await admin.connect();
     try {
@@ -176,14 +171,14 @@ describe('W9-R4 — the platform diagnostic-type vocabulary', () => {
     });
   });
 
-  it('D8 — the migration names no tenant: no Benzene, no Zoom, no tenant identifier', () => {
-    const sql = readFileSync(MIGRATION, 'utf8');
+  it('D8 — the seed names no tenant: no Benzene, no Zoom, no tenant identifier', () => {
+    const sql = readFileSync(SEED, 'utf8');
     expect(sql).not.toMatch(/benzene/i);
     expect(sql).not.toMatch(/\bzoom\b/i);
     // Every VALUES row is a platform row with a NULL tenant.
     const rows = sql.match(/\('platform',\s*NULL,/g) ?? [];
     expect(rows).toHaveLength(10);
     expect(sql).not.toMatch(/\('tenant'/);
-    expect(sql).toMatch(/Rollback classification/i);
+    expect(sql).toMatch(/WHY THIS IS STRUCTURAL, NOT BUSINESS DATA/i);
   });
 });

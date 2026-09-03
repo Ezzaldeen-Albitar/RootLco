@@ -77,8 +77,8 @@ const json = <T>(response: Response): Promise<T> => response.json() as Promise<T
 /** Every row this file seeds carries this prefix, so the cleanup is by name. */
 const PREFIX = 'w5_';
 
-/** The platform vocabulary 20260903090000 seeds (Owner decision of 2026-09-03). */
-const APPROVED_CODES = [
+/** The platform vocabulary the declared seed supabase/seeds/09_dia_diagnostic_types.sql holds (Owner decision of 2026-09-03). */
+const APPROVED_CODES: readonly string[] = [
   'general_diagnostic',
   'engine_powertrain',
   'transmission_drivetrain',
@@ -89,7 +89,7 @@ const APPROVED_CODES = [
   'battery_starting_charging',
   'hybrid_ev_high_voltage',
   'safety_restraint',
-] as const;
+];
 
 /** A catalogue row, seeded as admin: operator configuration with no write route. */
 async function seedType(input: {
@@ -170,7 +170,7 @@ describe('dia.diagnostic-type-list — the vocabulary, published at last', () =>
     // Nothing this suite seeds is there yet …
     expect(body.items.filter((row) => row.code.startsWith(PREFIX))).toEqual([]);
     // … and the platform vocabulary is (P1-09 seed obligation, completed by
-    // 20260903090000 on the Owner's decision of 2026-09-03 — P1-29 W9-R4).
+    // supabase/seeds/09_dia_diagnostic_types.sql on the Owner's decision of 2026-09-03 — P1-29 W9-R4).
     // Until that migration a fresh tenant answered the empty set, which was
     // the truth and was recorded as such.
     const platform = body.items.filter((row) => APPROVED_CODES.includes(row.code));

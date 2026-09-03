@@ -975,7 +975,7 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
 <!-- derived: files tests/ci = 60 -->
 <!-- derived: files scripts/ci = 60 -->
 <!-- derived: files apps/web/scripts = 4 -->
-<!-- derived: files supabase/migrations = 137 -->
+<!-- derived: files supabase/migrations = 136 -->
 <!-- derived: files tests/db = 144 -->
 <!-- derived: files tests/db:all = 148 -->
 <!-- derived: files tests/backend = 112 -->

@@ -554,6 +554,34 @@ export const PROFILES = {
       supabase: 'a Frontend phase must not change the database',
     },
   },
+  'p1-09-database-seed': {
+    why:
+      'a missed P1-09 DATABASE seed obligation, repaired after the fact: one declared seed file ' +
+      'of platform reference rows, its [db.seed] declaration, the classification the seed-state ' +
+      'and replay checks need, and the tests and records that prove it (first use: the platform ' +
+      'diagnostic-type vocabulary, Owner decision of 2026-09-03, P1-29 W9-R4)',
+    allowed: [
+      'dbSeeds',
+      // The seed is applied only if supabase/config.toml declares it under
+      // [db.seed].sql_paths; the harness file is the one place that list lives.
+      'supabase',
+      // The seed-state validator and the replay baseline classify structural
+      // catalogs by name; a new one must be classified or it is a finding.
+      'tooling',
+      'tests',
+      'docs',
+      'rootConfig',
+    ],
+    forbidden: [
+      // A seed repair that needed application code would not be a seed repair.
+      'apiSource',
+      'apiConfig',
+      'web',
+      'webContract',
+      'webGenerated',
+      'migrations',
+    ],
+  },
   'backend-login-contract': {
     why: 'the login-identity Backend remediation P1-26 is blocked on',
     allowed: ['apiSource', 'apiConfig', 'docs', 'tooling', 'tests', 'rootConfig'],

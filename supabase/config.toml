@@ -76,6 +76,7 @@ sql_paths = [
   "./seeds/06_wo_job_state_graph.sql",
   "./seeds/07_inv_units_of_measure.sql",
   "./seeds/08_sal_payment_methods.sql",
+  "./seeds/09_dia_diagnostic_types.sql",
 ]
 
 [db.network_restrictions]
