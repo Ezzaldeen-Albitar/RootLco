@@ -589,6 +589,51 @@ describe('a merge that adds nothing is the parent it adds nothing to', () => {
     agreesWith('the landed sync', bindingIn(landed, landed), bindingIn(develop, develop));
   }, 180_000);
 
+  it('reads a branch that ABSORBED its base and then landed: the parent on the base line is the base', () => {
+    /*
+     * The shape the first documentation-only branch after the P1-29 promotion
+     * produced, and the one that took protected `develop` to UNKNOWN.
+     *
+     * No force-push is allowed, so a branch that falls behind merges `develop`
+     * into itself and then lands. The landing merge unwraps to the branch head:
+     * a merge whose parents BOTH carry the candidate, whose tree matches neither
+     * parent (it carries the branch's work and the base's), and whose base ref
+     * names neither (the ref points at the landing merge). The tree cannot
+     * decide; the base branch's own first-parent line can, because a landed
+     * pull request always puts the base's previous tip first and a branch's
+     * work only ever arrives second.
+     */
+    const develop = rev('origin/develop');
+    // The branch's own work: a child of the base with an older tree, so it
+    // carries the candidate and differs from the base by content.
+    const work = commit(treeOf(`${CANDIDATE_SHA}^`), [develop], 'the branch, behind');
+    // The branch absorbs the base: a merge with a tree that matches neither
+    // parent, the branch first, the base second — what `git merge develop` writes.
+    const absorbed = commit(
+      treeOf(CANDIDATE_SHA),
+      [work, develop],
+      'merge develop into the branch'
+    );
+    expect(treeOf(absorbed)).not.toBe(treeOf(work));
+    expect(treeOf(absorbed)).not.toBe(treeOf(develop));
+    // The pull request lands: the base's previous tip first, the branch second,
+    // carrying the branch head's tree byte for byte.
+    const landed = commit(treeOf(absorbed), [develop, absorbed], 'Merge pull request');
+
+    const read = bindingIn(landed, landed);
+    expect(read.topologyUnknown, 'the landed absorption became unknown').toBeNull();
+    expect(read.declinedUnwrap, 'the unwrap was declined').toBeNull();
+    expect(read.mergeRefBaseSide, 'the base side is not the base as it stood').toBe(develop);
+
+    // A real checkout of the same merge, with the same ref, still refuses: the
+    // rule lives inside the unwrap and nowhere else.
+    const checkedOut = bindingIn(absorbed, landed);
+    expect(
+      checkedOut.topologyUnknown,
+      'a checked-out absorption was resolved by guesswork'
+    ).toContain('both merge parents contain the candidate');
+  }, 180_000);
+
   it('names the parent it read, so a reader can see the merge was unwrapped', () => {
     const develop = rev('origin/develop');
     const promotion = commit(treeOf(develop), [protectedLine(), develop], 'promotion preview');
