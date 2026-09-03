@@ -195,10 +195,26 @@ if (claimedDia !== null) {
   else ok.push(`${diaOps.length} dia.* operations, as the record says`);
 }
 
-// The empty-vocabulary claim, checked rather than asserted.
-const seeded = grep(['-l', 'INSERT INTO dia.diagnostic_types', '--', 'supabase']);
-if (seeded) fail.push(`document says the vocabulary is empty, but a seed exists: ${seeded}`);
-else ok.push('dia.diagnostic_types carries no seeded row');
+// The vocabulary claim, checked rather than asserted. Until 2026-09-03 the document
+// said the vocabulary was EMPTY and this gate proved no seed existed; the Owner's
+// decision of that day completed the P1-09 seed obligation with ONE migration, so the
+// document must now say the vocabulary is seeded, and exactly that migration must be
+// the only place a platform row is written.
+const VOCABULARY_SEED =
+  'supabase/migrations/20260903090000_dia_diagnostic_types_platform_vocabulary.sql';
+const seededBy = grep(['-l', 'INSERT INTO dia.diagnostic_types', '--', 'supabase'])
+  .split(/\r?\n/)
+  .map((line) => line.trim().replaceAll(String.fromCharCode(92), '/'))
+  .filter((line) => line !== '');
+if (seededBy.length !== 1 || seededBy[0] !== VOCABULARY_SEED) {
+  fail.push(
+    `the platform diagnostic-type vocabulary must be seeded by exactly ${VOCABULARY_SEED}; found: ${seededBy.join(', ') || 'none'}`
+  );
+} else if (!text.includes('20260903090000_dia_diagnostic_types_platform_vocabulary')) {
+  fail.push(
+    'the seed exists but the document does not name it — the "empty vocabulary" claim is stale'
+  );
+} else ok.push(`dia.diagnostic_types is seeded by ${VOCABULARY_SEED}, and the document says so`);
 
 // ---- 5. the P1-28 boundary quote is verbatim ------------------------------
 const p128 = readFileSync(join(ROOT, 'docs/phase-1/phase-1-28/canonical-plan.md'), 'utf8');

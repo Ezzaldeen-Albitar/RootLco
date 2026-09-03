@@ -140,10 +140,17 @@ and review surface (`dia.diagnostic-create`, `-item-result`, `-finding-record`,
 `dia.diagnostic.read`, `dia.diagnostic.record`, `dia.diagnostic.review` and
 `dia.diagnostic.complete`.
 
-**What remains is narrower and precise:** the `dia.diagnostic_types` vocabulary is EMPTY — the
-table exists (`supabase/migrations/20260722093000_dia_qms_catalogs.sql`) and no row is seeded,
-and no read operation publishes it. That is W5, and it is a real dependency of W7, not a reason
-to defer diagnostics.
+**What remained was narrower and precise, and is now closed:** the `dia.diagnostic_types` vocabulary
+shipped EMPTY — the table existed (`supabase/migrations/20260722093000_dia_qms_catalogs.sql`), no row
+was seeded, and until W5 no read published it. W5 published the read (`dia.diagnostic-type-list`); the
+rows arrived with the Owner’s decision of 2026-09-03 — a missed P1-09 seed deliverable, completed by
+ONE additive idempotent migration, `supabase/migrations/20260903090000_dia_diagnostic_types_platform_vocabulary.sql`:
+ten tenant-neutral PLATFORM diagnostic types (`general_diagnostic`, `engine_powertrain`,
+`transmission_drivetrain`, `electrical_electronic`, `brakes`, `steering_suspension`, `hvac_climate`,
+`battery_starting_charging`, `hybrid_ev_high_voltage`, `safety_restraint`), status `active`, no OBD type
+(OBD is a method, recorded in the report’s DTC structures), no tenant, no template. A tenant row of the
+same code still shadows the platform row (proved on the shipped list, W5 suite D6/D7). Proofs D1–D8:
+`tests/db/p1-29-w9-r4-diagnostic-type-vocabulary.test.ts` and the W5 list suite.
 
 ---
 
