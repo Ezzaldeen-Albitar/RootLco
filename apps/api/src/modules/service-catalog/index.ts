@@ -40,13 +40,16 @@ export type {
 
 export type {
   LaborTimeView,
+  ServiceCategoryView,
   ServiceVersionView,
   ServiceView,
 } from './application/service-catalog-service';
 
 export type {
   BranchAvailabilityView,
+  CreateCategoryInput,
   CreateServiceInput,
+  CreateVersionInput,
   PublishedVersionView,
   SetAvailabilityInput,
   UpdateServiceInput,

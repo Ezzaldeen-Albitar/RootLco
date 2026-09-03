@@ -9,14 +9,14 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 
 | Measure                  | Value |
 | ------------------------ | ----- |
-| Public operations        | 352   |
+| Public operations        | 356   |
 | Domains (modules)        | 20    |
-| OpenAPI paths            | 283   |
-| OpenAPI operations       | 352   |
+| OpenAPI paths            | 286   |
+| OpenAPI operations       | 356   |
 | OpenAPI schemas          | 3     |
 | OpenAPI security schemes | 1     |
 | Permission codes seeded  | 118   |
-| Audit actions catalogued | 210   |
+| Audit actions catalogued | 213   |
 | Domain events catalogued | 50    |
 | Structured error codes   | 28    |
 
@@ -24,7 +24,7 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 
 | Classification    | Operations |
 | ----------------- | ---------- |
-| Covered           | 352        |
+| Covered           | 356        |
 | Partially covered | 0          |
 | Uncovered         | 0          |
 | Not applicable    | 0          |
@@ -43,12 +43,12 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 | meta            | 1          | 1       | 0      | 0       | 0          | 0               |
 | payments        | 4          | 4       | 2      | 2       | 2          | 0               |
 | platform        | 3          | 3       | 2      | 2       | 1          | 0               |
-| pricing         | 6          | 6       | 4      | 4       | 4          | 2               |
+| pricing         | 7          | 7       | 5      | 5       | 5          | 2               |
 | quality         | 15         | 15      | 7      | 8       | 7          | 2               |
 | quotation       | 6          | 6       | 5      | 5       | 5          | 2               |
 | reception       | 71         | 71      | 43     | 43      | 36         | 22              |
 | reporting       | 2          | 2       | 0      | 0       | 0          | 0               |
-| service-catalog | 5          | 5       | 4      | 4       | 4          | 2               |
+| service-catalog | 8          | 8       | 6      | 6       | 6          | 2               |
 | shared-services | 28         | 28      | 18     | 18      | 6          | 6               |
 | technician      | 18         | 18      | 12     | 12      | 4          | 5               |
 | vehicle         | 27         | 27      | 12     | 12      | 12         | 0               |
@@ -316,15 +316,19 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 | `shared.template-version-retire`                    | POST   | `/api/v1/template-versions/{versionId}/retirement`                                  | tenant  | `org.settings.manage`                                                | shared.template.version_retired              | —    | yes | audit authorization cross-tenant denial outbox route service stale-version success                                            | Covered |
 | `shared.template-version-revise`                    | PATCH  | `/api/v1/template-versions/{versionId}`                                             | tenant  | `org.settings.manage`                                                | shared.template.version_created              | —    | yes | audit authorization cross-tenant denial route service stale-version success                                                   | Covered |
 | `svc.branch-availability-set`                       | POST   | `/api/v1/services/{serviceId}/branch-availability`                                  | branch  | `svc.service.manage`                                                 | svc.branch_availability.changed              | yes  | —   | audit authorization cross-tenant denial idempotency isolation route service success                                           | Covered |
+| `svc.price-list-assignment-create`                  | POST   | `/api/v1/price-list-assignments`                                                    | branch  | `svc.price.manage`                                                   | svc.price_list_assignment.created            | yes  | —   | audit authorization cross-tenant denial idempotency isolation route service success                                           | Covered |
 | `svc.price-list-create`                             | POST   | `/api/v1/price-lists`                                                               | tenant  | `svc.price.manage`                                                   | svc.price_list.created                       | yes  | —   | audit authorization cross-tenant denial idempotency route service success                                                     | Covered |
 | `svc.price-list-list`                               | GET    | `/api/v1/price-lists`                                                               | tenant  | `svc.price.read`                                                     | —                                            | —    | —   | authorization cross-tenant denial route service success                                                                       | Covered |
 | `svc.price-list-version-create`                     | POST   | `/api/v1/price-lists/{priceListId}/versions`                                        | tenant  | `svc.price.manage`                                                   | svc.price_list_version.created               | yes  | yes | audit authorization cross-tenant denial idempotency route service stale-version success                                       | Covered |
 | `svc.price-list-version-publish`                    | POST   | `/api/v1/price-lists/{priceListId}/versions/{versionId}/publication`                | tenant  | `svc.price.publish`                                                  | svc.price_list_version.published             | yes  | yes | audit authorization concurrency cross-tenant denial idempotency outbox route service stale-version success                    | Covered |
 | `svc.price-resolve`                                 | GET    | `/api/v1/prices`                                                                    | branch  | `svc.price.read`                                                     | —                                            | —    | —   | authorization cross-tenant denial isolation route service success                                                             | Covered |
 | `svc.price-rule-record`                             | POST   | `/api/v1/price-lists/{priceListId}/versions/{versionId}/rules`                      | branch  | `svc.price.manage`                                                   | svc.price_rule.recorded                      | yes  | —   | audit authorization cross-tenant denial idempotency isolation route service success                                           | Covered |
+| `svc.service-category-create`                       | POST   | `/api/v1/service-categories`                                                        | tenant  | `svc.service.manage`                                                 | svc.service_category.updated                 | yes  | —   | audit authorization cross-tenant denial idempotency route service success                                                     | Covered |
+| `svc.service-category-list`                         | GET    | `/api/v1/service-categories`                                                        | tenant  | `svc.service.read`                                                   | —                                            | —    | —   | authorization cross-tenant denial route service success                                                                       | Covered |
 | `svc.service-create`                                | POST   | `/api/v1/services`                                                                  | tenant  | `svc.service.manage`                                                 | svc.service.updated                          | yes  | —   | audit authorization cross-tenant denial idempotency route service success                                                     | Covered |
 | `svc.service-list`                                  | GET    | `/api/v1/services`                                                                  | tenant  | `svc.service.read`                                                   | —                                            | —    | —   | authorization cross-tenant denial isolation route service success                                                             | Covered |
 | `svc.service-update`                                | PATCH  | `/api/v1/services/{serviceId}`                                                      | tenant  | `svc.service.manage`                                                 | svc.service.updated                          | yes  | yes | audit authorization cross-tenant denial idempotency route service stale-version success                                       | Covered |
+| `svc.service-version-create`                        | POST   | `/api/v1/services/{serviceId}/versions`                                             | tenant  | `svc.service.manage`                                                 | svc.service_version.drafted                  | yes  | —   | audit authorization cross-tenant denial idempotency route service success                                                     | Covered |
 | `svc.service-version-publish`                       | POST   | `/api/v1/services/{serviceId}/versions/{versionId}/publication`                     | tenant  | `svc.service.manage`                                                 | svc.service_version.published                | yes  | yes | audit authorization cross-tenant denial idempotency outbox route service stale-version success                                | Covered |
 | `tech.labor-session-correct`                        | POST   | `/api/v1/labor-sessions/{sessionId}/corrections`                                    | branch  | `tech.labor.correct`                                                 | tech.labor.session_corrected                 | —    | yes | audit authorization cross-tenant denial isolation outbox route service stale-version success                                  | Covered |
 | `tech.labor-session-list`                           | GET    | `/api/v1/jobs/{jobId}/labor-sessions`                                               | branch  | `tech.technician.read`                                               | —                                            | —    | —   | authorization cross-tenant denial isolation route service success                                                             | Covered |

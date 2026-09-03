@@ -47,6 +47,19 @@ export interface PriceListRow {
   readonly recordVersion: number;
 }
 
+export interface PriceListAssignmentRow {
+  readonly id: string;
+  readonly priceListId: string;
+  readonly companyId: string | null;
+  readonly branchId: string | null;
+  readonly customerClass: string | null;
+  readonly priority: number;
+  readonly effectiveFrom: string;
+  readonly effectiveTo: string | null;
+  readonly status: string;
+  readonly recordVersion: number;
+}
+
 export interface PriceListVersionRow {
   readonly id: string;
   readonly priceListId: string;
@@ -577,6 +590,78 @@ export class PricingRepository extends Repository {
       name: row.name,
       currencyCode: row.currency_code,
       description: row.description,
+      status: row.status,
+      recordVersion: row.record_version,
+    };
+  }
+
+  /**
+   * Inserts a price-list assignment.
+   *
+   * Nothing wrote this table before Phase 1-30 A1, which is why
+   * `svc.resolve_price` answered `ERR-VAL-001` "no price configured" for every
+   * input on every tenant created through the product: its third layer requires
+   * an ACTIVE assignment row covering the context (A0 F-02, seam S-04).
+   *
+   * `status` is not a parameter — the column defaults to `active`, and an
+   * assignment created `inactive` would resolve nothing, which is the one thing
+   * this operation exists to prevent.
+   */
+  public async insertPriceListAssignment(
+    db: DbHandle,
+    input: {
+      priceListId: string;
+      companyId: string | null;
+      branchId: string | null;
+      customerClass: string | null;
+      priority: number;
+      effectiveFrom: string;
+      effectiveTo: string | null;
+    }
+  ): Promise<PriceListAssignmentRow> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<{
+      id: string;
+      price_list_id: string;
+      company_id: string | null;
+      branch_id: string | null;
+      customer_class: string | null;
+      priority: number;
+      effective_from: string;
+      effective_to: string | null;
+      status: string;
+      record_version: number;
+    }>(
+      db,
+      `INSERT INTO svc.price_list_assignments
+         (tenant_id, price_list_id, company_id, branch_id, customer_class,
+          priority, effective_from, effective_to, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7::date,$8::date,$9)
+       RETURNING id, price_list_id, company_id, branch_id, customer_class, priority,
+                 effective_from::text AS effective_from, effective_to::text AS effective_to,
+                 status, record_version`,
+      [
+        context.principal.tenantId,
+        input.priceListId,
+        input.companyId,
+        input.branchId,
+        input.customerClass,
+        input.priority,
+        input.effectiveFrom,
+        input.effectiveTo,
+        context.principal.userId,
+      ]
+    );
+    if (row === null) throw new Error('pricing: price-list assignment insert returned no row');
+    return {
+      id: row.id,
+      priceListId: row.price_list_id,
+      companyId: row.company_id,
+      branchId: row.branch_id,
+      customerClass: row.customer_class,
+      priority: row.priority,
+      effectiveFrom: row.effective_from,
+      effectiveTo: row.effective_to,
       status: row.status,
       recordVersion: row.record_version,
     };

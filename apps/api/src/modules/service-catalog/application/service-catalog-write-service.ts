@@ -50,11 +50,16 @@ import { SQLSTATE, isSqlState } from '@/server/db/repository';
 import type {
   BranchAvailabilityRow,
   ServiceCatalogRepository,
+  ServiceCategoryRow,
   ServiceRow,
   ServiceVersionRow,
 } from '../data/service-catalog-repository';
 import type { ActivationState, ServiceLifecycleState } from '../domain/service-catalog';
-import type { ServiceView } from './service-catalog-service';
+import type {
+  ServiceCategoryView,
+  ServiceVersionView,
+  ServiceView,
+} from './service-catalog-service';
 
 /** A branch availability row as the API renders it. */
 export interface BranchAvailabilityView {
@@ -76,6 +81,20 @@ export interface PublishedVersionView {
   readonly effectiveTo: string | null;
   readonly status: string;
   readonly recordVersion: number;
+}
+
+export interface CreateVersionInput {
+  readonly effectiveFrom: string;
+  readonly effectiveTo?: string | undefined;
+  readonly notes?: string | undefined;
+}
+
+export interface CreateCategoryInput {
+  readonly code: string;
+  readonly name: string;
+  readonly description?: string | undefined;
+  readonly parentCategoryId?: string | undefined;
+  readonly sortOrder?: number | undefined;
 }
 
 export interface CreateServiceInput {
@@ -147,6 +166,171 @@ export class ServiceCatalogWriteService extends ApplicationService {
    * the row disappears between the two statements — that race is the database's to
    * settle, and it is mapped rather than surfaced as a 500.
    */
+  /**
+   * Creates a service category.
+   *
+   * This exists because `svc.service-create` cannot be called without one and
+   * nothing in the shipped product could write the table: on a tenant created
+   * through the API the taxonomy was empty and permanently so, which made the
+   * whole commercial chain unreachable (A0 F-02, seam S-02).
+   *
+   * The parent is checked before the insert for the same reason `create` checks
+   * the category — `fk_service_categories_parent` cannot say WHICH reference was
+   * wrong, and an unknown parent is ordinary bad input rather than a server
+   * fault. An INACTIVE parent is refused too: filing a live category under a
+   * retired branch of the taxonomy produces a subtree nothing can be sold from.
+   *
+   * Cycles are NOT re-checked here. `tg_service_categories_no_cycle` holds a
+   * per-tenant advisory lock and is the only correct place for that test — a
+   * check in application code would race with a concurrent re-parent and could
+   * only ever be advisory.
+   */
+  public async createCategory(
+    db: DbHandle,
+    input: CreateCategoryInput
+  ): Promise<ServiceCategoryView> {
+    if (input.parentCategoryId !== undefined) {
+      const parent = await this.repository.findCategory(db, input.parentCategoryId);
+      if (parent === null) {
+        throw new AppFailure('ERR-VAL-001', {
+          message: `Service category ${input.parentCategoryId} is not visible`,
+          safeDetails: {
+            violations: [{ path: 'body.parentCategoryId', rule: 'unknown_category' }],
+          },
+        });
+      }
+      if (parent.status !== 'active') {
+        throw new AppFailure('ERR-VAL-001', {
+          message: `Service category ${parent.code} is ${parent.status}`,
+          safeDetails: {
+            violations: [{ path: 'body.parentCategoryId', rule: 'inactive_category' }],
+          },
+        });
+      }
+    }
+
+    let created: ServiceCategoryRow;
+    try {
+      created = await this.repository.insertCategory(db, {
+        parentCategoryId: input.parentCategoryId ?? null,
+        code: input.code,
+        name: input.name,
+        description: input.description ?? null,
+        sortOrder: input.sortOrder ?? null,
+      });
+    } catch (cause) {
+      if (isSqlState(cause, SQLSTATE.uniqueViolation)) {
+        // `uq_service_categories_code` is `(tenant_id, code) WHERE deleted_at IS NULL`,
+        // and `tg_service_categories_immutable` freezes `code` afterwards — so a
+        // duplicate is not something a later edit can repair, exactly as for a service.
+        throw new AppFailure('ERR-CON-001', {
+          message: `A service category with code "${input.code}" already exists`,
+          safeDetails: { violations: [{ path: 'body.code', rule: 'duplicate_code' }] },
+        });
+      }
+      if (isSqlState(cause, SQLSTATE.foreignKeyViolation)) {
+        throw new AppFailure('ERR-VAL-001', {
+          message: `Service category ${String(input.parentCategoryId)} is not visible`,
+          safeDetails: {
+            violations: [{ path: 'body.parentCategoryId', rule: 'unknown_category' }],
+          },
+        });
+      }
+      throw cause;
+    }
+
+    await appendAudit(db, {
+      action: 'svc.service_category.updated',
+      entityType: 'svc.service_category',
+      entityId: created.id,
+      details: [
+        { field: 'change', classification: 'public', value: 'created' },
+        { field: 'code', classification: 'internal', value: created.code },
+        { field: 'name', classification: 'internal', value: created.name },
+        { field: 'status', classification: 'public', value: created.status },
+      ],
+    });
+
+    return {
+      id: created.id,
+      code: created.code,
+      name: created.name,
+      description: created.description,
+      parentCategoryId: created.parentCategoryId,
+      sortOrder: created.sortOrder,
+      status: created.status,
+      recordVersion: created.recordVersion,
+    };
+  }
+
+  /**
+   * Creates a DRAFT version for a service.
+   *
+   * `svc.service-version-publish` requires a draft, and nothing in the shipped
+   * product could create one: the A0 preflight found every `INSERT INTO
+   * svc.service_versions` in the tree to be a test fixture writing through an
+   * RLS-bypassing admin pool. So no service created through the API could ever
+   * become sellable, and `isSellableAt` answered false for all of them — which
+   * is why every quotation line was refused (A0 F-02, seam S-03).
+   *
+   * The service is LOCKED rather than merely read. `version_no` is unique per
+   * `(tenant, service)`, so two concurrent creates must not both compute the
+   * same next number; the lock serialises them and the repository's sub-select
+   * makes the computation atomic regardless.
+   *
+   * The archived refusal is the same one `requireLockedService` states, but this
+   * operation is not version-guarded so it cannot use that helper: there is no
+   * `expectedVersion` to compare. Creating a draft does not mutate the service
+   * row, so there is no lost-update to guard against — the succession decision
+   * happens at publication, which IS guarded.
+   */
+  public async createVersion(
+    db: DbHandle,
+    serviceId: string,
+    input: CreateVersionInput
+  ): Promise<ServiceVersionView> {
+    const service = await this.repository.lockService(db, serviceId);
+    if (service === null) {
+      throw new AppFailure('ERR-RES-001', { message: `Service ${serviceId} is not visible` });
+    }
+    if (service.lifecycleStatus === 'archived') {
+      throw new AppFailure('ERR-TRN-001', {
+        message:
+          `Service ${service.serviceCode} is archived. Archiving is terminal: an archived ` +
+          'service cannot be edited, reactivated, or given a new version.',
+      });
+    }
+
+    const created = await this.repository.insertServiceVersion(db, {
+      serviceId,
+      effectiveFrom: input.effectiveFrom,
+      effectiveTo: input.effectiveTo ?? null,
+      notes: input.notes ?? null,
+    });
+
+    await appendAudit(db, {
+      action: 'svc.service_version.drafted',
+      entityType: 'svc.service_version',
+      entityId: created.id,
+      details: [
+        { field: 'serviceId', classification: 'internal', value: serviceId },
+        { field: 'versionNo', classification: 'public', value: String(created.versionNo) },
+        { field: 'effectiveFrom', classification: 'internal', value: created.effectiveFrom },
+        { field: 'status', classification: 'public', value: created.status },
+      ],
+    });
+
+    return {
+      id: created.id,
+      serviceId: created.serviceId,
+      versionNo: created.versionNo,
+      effectiveFrom: created.effectiveFrom,
+      effectiveTo: created.effectiveTo,
+      status: created.status,
+      laborTimes: [],
+    };
+  }
+
   public async create(db: DbHandle, input: CreateServiceInput): Promise<ServiceView> {
     const category = await this.repository.findCategory(db, input.serviceCategoryId);
     if (category === null) {
