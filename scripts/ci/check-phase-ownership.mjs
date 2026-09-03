@@ -572,15 +572,18 @@ export const PROFILES = {
       'docs',
       'rootConfig',
     ],
-    forbidden: [
-      // A seed repair that needed application code would not be a seed repair.
-      'apiSource',
-      'apiConfig',
-      'web',
-      'webContract',
-      'webGenerated',
-      'migrations',
-    ],
+    forbidden: {
+      apiSource:
+        'a seed repair that needed application code would not be a seed repair — route code ' +
+        'through the lane of the phase that owns it',
+      apiConfig: 'a seed repair does not change API workspace configuration',
+      web: 'a seed repair ships no screen',
+      webContract: 'a seed repair has no operation and therefore no contract mirror to touch',
+      webGenerated: 'a seed repair publishes no operation, so the generated manifest cannot move',
+      migrations:
+        'the rows are reference data and belong in a declared seed; the no-fake-data migration ' +
+        'gate refuses a top-level INSERT into a module schema, and this lane must not go around it',
+    },
   },
   'backend-login-contract': {
     why: 'the login-identity Backend remediation P1-26 is blocked on',

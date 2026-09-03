@@ -13,7 +13,7 @@
  *   D4  active — every row is in the catalogue's usable state
  *   D5  tenant isolation — a tenant cannot read or mutate another tenant's override,
  *       and cannot write a platform row
- *   D8  no Benzene — the seed file names no tenant
+ *   D8  no tenant — the seed file names no tenant, only the platform actor
  *
  * D6/D7 (a tenant row shadows the platform row of the same code through the
  * shipped list operation, and shadowing one code hides nothing else) are
@@ -36,6 +36,8 @@ import {
 } from './helpers';
 
 const SEED = join(process.cwd(), 'supabase', 'seeds', '09_dia_diagnostic_types.sql');
+/** The reserved platform actor every seed writes as created_by (seed standard §3.1); not a real user. */
+const PLATFORM_ACTOR = '00000000-0000-4000-8000-000000000001';
 
 /** The Owner-approved vocabulary of 2026-09-03, in the catalogue's own code format. */
 const APPROVED: ReadonlyArray<readonly [string, string]> = [
@@ -133,7 +135,7 @@ describe('W9-R4 — the platform diagnostic-type vocabulary', () => {
     );
     expect(rows).toHaveLength(10);
     expect(rows.every((r) => r.status === 'active')).toBe(true);
-    expect(rows.every((r) => r.created_by === '00000000-0000-4000-8000-000000000001')).toBe(true);
+    expect(rows.every((r) => r.created_by === PLATFORM_ACTOR)).toBe(true);
     expect(rows.every((r) => /^[a-z][a-z0-9_]{1,62}$/.test(r.code))).toBe(true);
   });
 
@@ -171,14 +173,24 @@ describe('W9-R4 — the platform diagnostic-type vocabulary', () => {
     });
   });
 
-  it('D8 — the seed names no tenant: no Benzene, no Zoom, no tenant identifier', () => {
+  it('D8 — the seed names no tenant: platform rows only, one platform actor, no tenant identifier', () => {
+    /*
+     * The pilot-tenant and excluded-scope names themselves are held out of this
+     * file on purpose: the repository guard (`npm run security:scope-exclusions`)
+     * scans every tracked file, the seed included, and a test that spelled them
+     * would be the guard's only hit. What this case proves is the structure the
+     * guard cannot see: every VALUES row is a platform row with a NULL tenant,
+     * the only UUID literal in the file is the reserved platform actor, and the
+     * file carries the seed standard's structural-reference justification.
+     */
     const sql = readFileSync(SEED, 'utf8');
-    expect(sql).not.toMatch(/benzene/i);
-    expect(sql).not.toMatch(/\bzoom\b/i);
-    // Every VALUES row is a platform row with a NULL tenant.
     const rows = sql.match(/\('platform',\s*NULL,/g) ?? [];
     expect(rows).toHaveLength(10);
     expect(sql).not.toMatch(/\('tenant'/);
-    expect(sql).toMatch(/WHY THIS IS STRUCTURAL, NOT BUSINESS DATA/i);
+    const uuids = new Set(
+      sql.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi) ?? []
+    );
+    expect([...uuids]).toEqual([PLATFORM_ACTOR]);
+    expect(sql).toMatch(/WHY THIS IS STRUCTURAL, NOT BUSINESS DATA/);
   });
 });
