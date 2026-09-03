@@ -554,6 +554,37 @@ export const PROFILES = {
       supabase: 'a Frontend phase must not change the database',
     },
   },
+  'p1-09-database-seed': {
+    why:
+      'a missed P1-09 DATABASE seed obligation, repaired after the fact: one declared seed file ' +
+      'of platform reference rows, its [db.seed] declaration, the classification the seed-state ' +
+      'and replay checks need, and the tests and records that prove it (first use: the platform ' +
+      'diagnostic-type vocabulary, Owner decision of 2026-09-03, P1-29 W9-R4)',
+    allowed: [
+      'dbSeeds',
+      // The seed is applied only if supabase/config.toml declares it under
+      // [db.seed].sql_paths; the harness file is the one place that list lives.
+      'supabase',
+      // The seed-state validator and the replay baseline classify structural
+      // catalogs by name; a new one must be classified or it is a finding.
+      'tooling',
+      'tests',
+      'docs',
+      'rootConfig',
+    ],
+    forbidden: {
+      apiSource:
+        'a seed repair that needed application code would not be a seed repair — route code ' +
+        'through the lane of the phase that owns it',
+      apiConfig: 'a seed repair does not change API workspace configuration',
+      web: 'a seed repair ships no screen',
+      webContract: 'a seed repair has no operation and therefore no contract mirror to touch',
+      webGenerated: 'a seed repair publishes no operation, so the generated manifest cannot move',
+      migrations:
+        'the rows are reference data and belong in a declared seed; the no-fake-data migration ' +
+        'gate refuses a top-level INSERT into a module schema, and this lane must not go around it',
+    },
+  },
   'backend-login-contract': {
     why: 'the login-identity Backend remediation P1-26 is blocked on',
     allowed: ['apiSource', 'apiConfig', 'docs', 'tooling', 'tests', 'rootConfig'],

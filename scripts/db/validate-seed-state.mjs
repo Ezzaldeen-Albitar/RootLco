@@ -53,6 +53,12 @@ const STRUCTURAL_REFERENCE = new Set([
   // `no-fake-data.test.ts` separately holds that the tenant-scoped half of this
   // dual-scope table stays empty, which is what the allow-list stops watching.
   'shared.document_categories',
+  // P1-09-DB-020 platform diagnostic-type vocabulary (structurally mandatory:
+  // dia.inspection_templates.diagnostic_type_id is NOT NULL, so no template and
+  // therefore no report can exist without a type). Seeded 2026-09-03 on the
+  // Owner's P1-29 W9-R4 decision. Platform scope only — the tenant-scoped half
+  // of this dual-scope table stays empty on a fresh database.
+  'dia.diagnostic_types',
 ]);
 const PLATFORM_ACTOR = '00000000-0000-4000-8000-000000000001';
 const EXPECTED_RETENTION = [

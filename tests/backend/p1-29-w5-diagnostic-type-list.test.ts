@@ -77,6 +77,20 @@ const json = <T>(response: Response): Promise<T> => response.json() as Promise<T
 /** Every row this file seeds carries this prefix, so the cleanup is by name. */
 const PREFIX = 'w5_';
 
+/** The platform vocabulary the declared seed supabase/seeds/09_dia_diagnostic_types.sql holds (Owner decision of 2026-09-03). */
+const APPROVED_CODES: readonly string[] = [
+  'general_diagnostic',
+  'engine_powertrain',
+  'transmission_drivetrain',
+  'electrical_electronic',
+  'brakes',
+  'steering_suspension',
+  'hvac_climate',
+  'battery_starting_charging',
+  'hybrid_ev_high_voltage',
+  'safety_restraint',
+];
+
 /** A catalogue row, seeded as admin: operator configuration with no write route. */
 async function seedType(input: {
   readonly scope: 'platform' | 'tenant';
@@ -115,6 +129,10 @@ async function seedType(input: {
 
 async function removeSeededTypes(): Promise<void> {
   await admin.query(`DELETE FROM dia.diagnostic_types WHERE code LIKE $1`, [`${PREFIX}%`]);
+  await admin.query(
+    `DELETE FROM dia.diagnostic_types WHERE scope = 'tenant' AND tenant_id = ANY($1::uuid[]) AND code = ANY($2::text[])`,
+    [[TENANT_A, TENANT_B], APPROVED_CODES]
+  );
 }
 
 beforeAll(async () => {
@@ -144,15 +162,36 @@ afterAll(async () => {
 });
 
 describe('dia.diagnostic-type-list — the vocabulary, published at last', () => {
-  it('P1 — a tenant with no configured type answers the EMPTY set, not an invention', async () => {
+  it('P1 — a tenant with no configured type answers the PLATFORM vocabulary, and nothing invented', async () => {
     authAs(FULL);
     const response = await list();
     expect(response.status).toBe(200);
     const body = await json<Items & Record<string, unknown>>(response);
-    // No platform seed exists: the truthful answer for a fresh tenant is nothing.
+    // Nothing this suite seeds is there yet …
     expect(body.items.filter((row) => row.code.startsWith(PREFIX))).toEqual([]);
+    // … and the platform vocabulary is (P1-09 seed obligation, completed by
+    // supabase/seeds/09_dia_diagnostic_types.sql on the Owner's decision of 2026-09-03 — P1-29 W9-R4).
+    // Until that migration a fresh tenant answered the empty set, which was
+    // the truth and was recorded as such.
+    const platform = body.items.filter((row) => APPROVED_CODES.includes(row.code));
+    expect(platform.map((row) => row.code)).toEqual([...APPROVED_CODES].sort());
+    expect(platform.every((row) => row.scope === 'platform' && row.status === 'active')).toBe(true);
     // `{ items }` and nothing else — no cursor, because the read is unpaged.
     expect(Object.keys(body)).toEqual(['items']);
+  });
+
+  it('D6/D7 — a tenant row SHADOWS the platform row of an approved code through the list, and hides nothing else', async () => {
+    await seedType({ scope: 'tenant', code: 'brakes', name: 'Brakes (tenant A)' });
+    authAs(FULL);
+    const rows = (await json<Items>(await list())).items;
+    const brakes = rows.filter((row) => row.code === 'brakes');
+    expect(brakes).toHaveLength(1);
+    expect(brakes[0]).toMatchObject({ scope: 'tenant', name: 'Brakes (tenant A)' });
+    const others = rows.filter((row) => APPROVED_CODES.includes(row.code) && row.code !== 'brakes');
+    expect(others.map((row) => row.code)).toEqual(
+      APPROVED_CODES.filter((c) => c !== 'brakes').sort()
+    );
+    expect(others.every((row) => row.scope === 'platform')).toBe(true);
   });
 
   it('P2 — a tenant row SHADOWS the platform row it overrides, and the shape is named', async () => {

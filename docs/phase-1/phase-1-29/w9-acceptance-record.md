@@ -11,8 +11,9 @@ appears here.
 
 ## Verdict
 
-**PASSED for W1, W2, W3, W4, W6 and W8 on the production build with real persona boundaries; W7
-present but NOT exercisable by a real organization.** The diagnostics experience is shipped and
+**PASSED for W1, W2, W3, W4, W6, W7 and W8 on the production build with real persona boundaries.** (W7
+was present but not exercisable by a real organization when this record was first taken — see the
+W9-R4 section at the end: resolved on 2026-09-03 and exercised on a fresh tenant.) The diagnostics experience is shipped and
 mechanically proved on real responses (W7's own suites), and every job carries its Diagnostics link
 — but a fresh organization holds **no `dia.diagnostic_types` vocabulary** (no seed ships, no route
 creates one; recorded OPEN since BR-04 and named as W5's residual in the canonical plan §3), so no
@@ -127,3 +128,45 @@ Every line is a shipped route or screen; correlation ids are the API's own. No s
 - **W9-O4** — the technician workspace reports every 409 as "This record changed since you loaded it. Reload and try again." — including ERR-TRN-001 (the job does not accept labour yet).
 - **W9-O5** — the QC record row on the closure screen renders the raw key `quality.result.pending` before finalization.
 - **W9-O6** — the QC check vocabulary (`qms.qc-check-list`) is also unseeded on a fresh tenant; finalization works with zero mandatory checks, which is honest but empty.
+
+## W9-R4 — RESOLVED: the platform diagnostic vocabulary, seeded and exercised on a real tenant (2026-09-03)
+
+Owner decision of 2026-09-03: the missing vocabulary was a missed P1-09 seed deliverable, repaired by one
+additive idempotent declared seed (`supabase/seeds/09_dia_diagnostic_types.sql`,
+ten tenant-neutral platform rows, no OBD type, no template, no tenant). Database proofs D1–D8 are in
+`tests/db/p1-29-w9-r4-diagnostic-type-vocabulary.test.ts` and the W5 list suite. The real W7 experience
+was then run on a FRESH organization provisioned through the product — `rootlco_w7`
+(`ee2e53cf-6022-48af-ba27-3a5061c5a8d4`, provisioned 201 corr `1868ac65-3925-487f-93ac-decb99e4b509`),
+its Owner and eight personas through the shipped credential paths, the P1-28 creation path and a job
+assigned through the shipped routes — with no SQL and no fixture in the journey:
+
+- `dia.diagnostic-type-list` as the Owner: 200 corr `00e86877-dbc6-4f7e-9982-b1b3cb68867a`, ten platform
+  types; the Diagnostics screen (`/work-orders/diagnostics`) offers all ten in its "Diagnostic type"
+  select on the production build, and a second template ("General inspection" on General Diagnostic)
+  was created by hand on that screen.
+- Authoring (Owner, `dia.catalogue.manage`): template `brake_inspection` on **Brakes** (201 corr
+  `f3906589-02f2-4d9c-aacf-99e5bd4ac104`), version (201 corr `6317698d-2532-48d9-9256-dd5308b14298`),
+  items `pad_depth` (numeric, mm, mandatory, 2..12), `pad_condition` (select good/worn/replace,
+  mandatory), `road_test` (boolean, optional); publish without `If-Match` → 428 ERR-CON-002; publish → 200
+  corr `35f843b5-2d51-4cdc-991c-4dc6b14eb3d6`; an item on the published version → 409 ERR-TRN-001.
+- Execution (technician, `dia.diagnostic.record` and `.complete`): publishable set for the assigned job
+  (200 corr `2f89008d-0f39-4209-8c19-c9ba0d2b7434`, one version); report created (201 corr
+  `356094be-ef73-4b91-821f-ebab8edd2d3f`), detail lists outstanding mandatory `pad_depth, pad_condition`;
+  `draft → in_progress` (200); **completion with mandatory items unanswered → 409 ERR-DIA-001** naming the
+  items (corr `272d1d6a-cc7d-41c4-9e55-a5331f101fc7`); `pad_condition = "shiny"` → 422 `not_an_option`;
+  `pad_depth = "abc"` → 422 `not_a_decimal`; answers 3.5 / worn / true → 200; measurement in "inch" →
+  422 `unit_mismatch` (corr `0eb3c524-3b3c-43e6-87b2-014c59ff5129`); 3.5 mm → 201 `withinRange: true`;
+  1.2 mm → 201 `withinRange: false` (recorded, not refused); finding high / repair_required 201; DTC
+  P0300 201, DTC "ABC" → 422; recommendation high 201; completion with a stale version → 409 ERR-CON-001;
+  completion → 200 `completed` (corr `c6ad6bdc-7ab4-46c2-9ce9-22799fe61c54`); a DTC after completion → 409.
+- The technician’s job diagnostics screen (`/work-orders/{workOrderId}/jobs/{jobId}/diagnostics`) renders the report on the production build: checklist with answers (3.5 · worn · true), measurements with their range verdicts (3.5 mm within range, 1.2 mm out of range), fault code P0300, the finding, the recommendation, status `completed` with the summary, the approval with its reviewer, and the history `draft → in_progress → completed`; the "Start a diagnostic" form offers the published template.
+- A SECOND report driven entirely from that screen by the technician: "Start a diagnostic" from the published template (Report 2, draft), the checklist answered item by item through the form (4.2 mm · good · Yes, each "Record"), a finding recorded (Low · Monitor), "Move to in_progress", summary and "Complete the report" → status `completed`, history `draft → in_progress → completed`. The screen path and the route path agree.
+- Review: the technician who created the report → 403 (`dia.diagnostic.review` not held — the persona
+  boundary); the reviewer → 201 corr `fb82fe77-4494-4ffa-8d92-8848bd620054`; final detail: completed, 3
+  item results, 2 measurements, 1 finding, 1 DTC, 1 recommendation, 1 review, 0 outstanding.
+
+**W9-R4 — RESOLVED: initial platform diagnostic vocabulary seeded and exercised on a real tenant.** The
+canonical closure condition (§3 of the plan) is satisfied by a real experience, not by a suite alone.
+Verdict for W7: **PASSED**. STEP 7 of the decision: no default template is seeded — the current
+repository requires none, the historical P1-09 wording asked for Benzene-valued tenant examples the seed
+standard forbids, and the real experience creates its templates through the shipped operations.

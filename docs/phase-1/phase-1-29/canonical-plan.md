@@ -140,10 +140,17 @@ and review surface (`dia.diagnostic-create`, `-item-result`, `-finding-record`,
 `dia.diagnostic.read`, `dia.diagnostic.record`, `dia.diagnostic.review` and
 `dia.diagnostic.complete`.
 
-**What remains is narrower and precise:** the `dia.diagnostic_types` vocabulary is EMPTY — the
-table exists (`supabase/migrations/20260722093000_dia_qms_catalogs.sql`) and no row is seeded,
-and no read operation publishes it. That is W5, and it is a real dependency of W7, not a reason
-to defer diagnostics.
+**What remained was narrower and precise, and is now closed:** the `dia.diagnostic_types` vocabulary
+shipped EMPTY — the table existed (`supabase/migrations/20260722093000_dia_qms_catalogs.sql`), no row
+was seeded, and until W5 no read published it. W5 published the read (`dia.diagnostic-type-list`); the
+rows arrived with the Owner’s decision of 2026-09-03 — a missed P1-09 seed deliverable, completed by
+ONE additive idempotent declared seed, `supabase/seeds/09_dia_diagnostic_types.sql`:
+ten tenant-neutral PLATFORM diagnostic types (`general_diagnostic`, `engine_powertrain`,
+`transmission_drivetrain`, `electrical_electronic`, `brakes`, `steering_suspension`, `hvac_climate`,
+`battery_starting_charging`, `hybrid_ev_high_voltage`, `safety_restraint`), status `active`, no OBD type
+(OBD is a method, recorded in the report’s DTC structures), no tenant, no template. A tenant row of the
+same code still shadows the platform row (proved on the shipped list, W5 suite D6/D7). Proofs D1–D8:
+`tests/db/p1-29-w9-r4-diagnostic-type-vocabulary.test.ts` and the W5 list suite.
 
 ---
 
@@ -392,7 +399,7 @@ role-administration proof in `tests/backend/p1-29-w9-owner-bootstrap.test.ts`, t
 in `tests/backend/p1-29-w9-platform-genesis.test.ts`. The acceptance verdict itself (§5 item 7)
 is taken after this path is on protected `develop`.
 
-**W9 acceptance — TAKEN on 2026-09-02/03, recorded in `docs/phase-1/phase-1-29/w9-acceptance-record.md`.** Verdict: **PASSED for W1–W4, W6 and W8** on the production build with real persona boundaries (operator genesis, organization provisioned through the product, eight humans invited and signed in through the shipped credential paths, the P1-28 creation path and the W1–W8 journey walked in the browser; `W4-F1` answers 403 on the server). **W7 is present but not exercisable by a real organization:** a fresh tenant holds no `dia.diagnostic_types` row, no seed ships and no route creates one, so no template, report or review can exist for a real workshop (residual **W9-R4**). Under §3 that blocks the phase gate until the Owner supplies the vocabulary — content the no-fake-data policy forbids inventing. The run fixed seven defects on `remediation/p1-29-backend-w9-acceptance-findings` and moved the administrator’s set 44 → 48; residuals W9-R1…R4 and observations O1–O6 are in the record.
+**W9 acceptance — TAKEN on 2026-09-02/03, recorded in `docs/phase-1/phase-1-29/w9-acceptance-record.md`.** Verdict: **PASSED for W1–W4, W6 and W8** on the production build with real persona boundaries (operator genesis, organization provisioned through the product, eight humans invited and signed in through the shipped credential paths, the P1-28 creation path and the W1–W8 journey walked in the browser; `W4-F1` answers 403 on the server). **W7 is present but not exercisable by a real organization:** a fresh tenant holds no `dia.diagnostic_types` row, no seed ships and no route creates one, so no template, report or review can exist for a real workshop (residual **W9-R4**). Under §3 that blocked the phase gate until the Owner supplied the vocabulary — content the no-fake-data policy forbids inventing. **Resolved 2026-09-03:** the vocabulary is seeded (`supabase/seeds/09_dia_diagnostic_types.sql`) and the real W7 experience passed on the fresh tenant `rootlco_w7` (template authored from the seeded type on the Diagnostics screen and through the routes, report instantiated on an assigned job, mandatory-item refusal, unit refusal, completion, separate review) — `docs/phase-1/phase-1-29/w9-acceptance-record.md`, section W9-R4. The run fixed seven defects on `remediation/p1-29-backend-w9-acceptance-findings` and moved the administrator’s set 44 → 48; residuals W9-R1…R4 and observations O1–O6 are in the record.
 
 ---
 
@@ -412,7 +419,7 @@ P1-29 is complete when **all** of the following hold. Any one failing means the 
 5. The Frontend/Backend boundary holds: no API source changed by a P1-29 Frontend branch.
 6. `scripts/ci/check-p1-29-access.mjs` and `scripts/ci/check-p1-29-payload-parity.mjs` pass **non-vacuously** — with
    route pages actually examined, not zero.
-7. Owner acceptance is recorded as an explicit verdict on a production build (W9). **Recorded 2026-09-03: PASSED for W1–W4, W6, W8; W7 blocked by the empty diagnostic-type vocabulary (W9-R4) — item 2 therefore still fails for a real organization until the Owner supplies the vocabulary.**
+7. Owner acceptance is recorded as an explicit verdict on a production build (W9). **Recorded 2026-09-03: PASSED for W1–W4, W6, W8, and — after the vocabulary seed of the same day — W7 on a fresh real tenant (W9-R4 RESOLVED); item 2 holds for a real organization.**
 
 ---
 

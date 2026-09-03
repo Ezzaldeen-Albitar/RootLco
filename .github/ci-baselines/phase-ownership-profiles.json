@@ -130,6 +130,11 @@
       "why": "The Backend prerequisite lane of P1-29 — one branch per BR contract. Listed BEFORE any broader remediation/p1-29- rule that may later be added: first match wins, so a general rule placed above this one would hand a Backend slice whichever profile the general rule names. There is deliberately NO broad remediation/p1-29- rule today, so a branch nobody mapped is refused rather than absorbed."
     },
     {
+      "branchPrefix": "remediation/p1-09-",
+      "profile": "p1-09-database-seed",
+      "why": "A missed P1-09 DATABASE seed obligation repaired after the fact (first: the platform diagnostic-type vocabulary, Owner decision of 2026-09-03 closing P1-29 W9-R4). The lane may add ONE declared seed file, its [db.seed] declaration in supabase/config.toml, the classification the seed-state and replay checks need, and the tests and records that prove it. It may not touch application source, web, contracts or migrations: a seed repair that needed code would not be a seed repair. Placed after the P1-29 Backend rule; the prefixes do not overlap, so the order is documentary."
+    },
+    {
       "branchPrefix": "feature/p1-29-",
       "profile": "p1-29-frontend",
       "why": "The Frontend lane of P1-29. Distinct from feature/pre-p1-29- above and not a prefix of it in either direction — pre-p1-29 branches diverge at the fourth character — so the initiative lanes and the phase lanes cannot reach one another."
