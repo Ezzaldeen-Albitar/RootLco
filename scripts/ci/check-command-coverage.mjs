@@ -390,6 +390,30 @@ export const REGISTER = Object.freeze([
     why: 'every P1-29 route page denies and returns on a permission before its first awaited read',
   },
   {
+    name: 'validate:p1-30-server-arithmetic',
+    owner: ROOT,
+    tier: 'required',
+    // `P1-30 RENDERS SERVER ARITHMETIC ONLY` — the closure condition of P1-30
+    // (docs/phase-1/phase-1-30/canonical-plan.md §3), made mechanical at A0
+    // before any P1-30 screen exists, for the reason the gate above shipped
+    // over an empty set: a gate written after the screens land ratifies them.
+    //
+    // It PARSES — `parseModule` from scripts/lib/typescript-source.mjs — and
+    // states its rules over the AST, so a docblock quoting `subtotal + tax` is
+    // not a violation and a file the parser refuses is one. Inside the twelve
+    // P1-30 areas it refuses `Number()`, `parseFloat`, `Math.*`, `toFixed`,
+    // a unary sign and every arithmetic operator over a money-named value, and
+    // any `Intl.NumberFormat` or `toLocaleString` at all — formatting happens
+    // once, in apps/web/src/lib/money.ts, outside the areas. `+` beside a
+    // string literal is display and passes.
+    //
+    // Zero files today, said out loud on every run; `--min-files` turns that
+    // vacuity into a red once the screens exist, and the phase's completion
+    // condition raises it. Mutation-proved by
+    // tests/ci/p1-30-server-arithmetic.test.ts.
+    why: "no P1-30 web code computes money — every figure rendered is the server's, formatted only through lib/money",
+  },
+  {
     name: 'validate:p1-28-access',
     owner: ROOT,
     tier: 'required',
