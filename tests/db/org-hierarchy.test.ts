@@ -404,3 +404,292 @@ describe('org.legal_companies — creation attribution is immutable (adversarial
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// PRE-P1-29 Wave C — the legal-company status lifecycle.
+//
+// Every case runs inside withRolledBackTx, so residue is zero by construction
+// rather than by a cleanup step that can be forgotten.
+//
+// The company subsystem differs from the branch precedent directly above in one
+// respect, and these proofs are mostly about that one: history is emitted by a
+// trigger on org.legal_companies rather than written by the transition function,
+// so a RAW UPDATE cannot bypass the record. C7 and C8 are that difference.
+// ---------------------------------------------------------------------------
+describe('org.change_company_status — two-state lifecycle, emitter-owned history', () => {
+  const companyHistory = async (
+    c: { query: Pool['query'] },
+    companyId: string
+  ): Promise<{ rows: Record<string, unknown>[] }> =>
+    c.query(
+      `SELECT from_state, to_state, reason, actor_id, occurred_at, correlation_id
+         FROM org.company_status_history WHERE company_id = $1 ORDER BY occurred_at`,
+      [companyId]
+    );
+
+  /**
+   * Indexing a typed array yields `T | undefined` under noUncheckedIndexedAccess,
+   * so reading a property off `h.rows[0]` does not compile. This throws instead of
+   * asserting non-null: if the row is genuinely absent the failure names that,
+   * rather than surfacing as an unrelated property error three lines later.
+   */
+  const historyRow = (
+    h: { rows: Record<string, unknown>[] },
+    index: number
+  ): Record<string, unknown> => {
+    const row = h.rows[index];
+    if (row === undefined) throw new Error(`no company history row at index ${index}`);
+    return row;
+  };
+
+  it('C1 deactivates a company, emitting EXACTLY one server-attributed history row', async () => {
+    await withRolledBackTx(runtime, { tenantId: TENANT_A, userId: USER_A }, async (c) => {
+      await c.query(`SELECT org.change_company_status($1, 'inactive', 'ceased trading')`, [
+        COMPANY_A1,
+      ]);
+      const company = await c.query('SELECT status FROM org.legal_companies WHERE id = $1', [
+        COMPANY_A1,
+      ]);
+      expect(company.rows[0].status).toBe('inactive');
+
+      const h = await companyHistory(c, COMPANY_A1);
+      // EXACTLY one. Not "at least one": the emitter is the only writer, and a
+      // second row would mean the function had started inserting as well —
+      // precisely the duplication this arrangement exists to make impossible.
+      expect(h.rows).toHaveLength(1);
+      expect(h.rows[0]).toMatchObject({
+        from_state: 'active',
+        to_state: 'inactive',
+        reason: 'ceased trading',
+        // Server-derived by shared.stamp_status_history() from the SESSION, never
+        // from an argument — org.change_company_status has no actor parameter at all.
+        actor_id: USER_A,
+      });
+      expect(historyRow(h, 0).correlation_id).toBeNull();
+    });
+
+    // Zero residue: the rollback reverted the status AND the history row.
+    const after = await admin.query(
+      `SELECT status, (SELECT count(*)::int FROM org.company_status_history WHERE company_id = $1) AS h
+         FROM org.legal_companies WHERE id = $1`,
+      [COMPANY_A1]
+    );
+    expect(after.rows[0].status).toBe('active');
+    expect(after.rows[0].h).toBe(0);
+  });
+
+  it('C2 reactivates: the reverse edge is legal, because two states have no illegal edge', async () => {
+    await withRolledBackTx(runtime, { tenantId: TENANT_A, userId: USER_A }, async (c) => {
+      await c.query(`SELECT org.change_company_status($1, 'inactive', 'first')`, [COMPANY_A1]);
+      await c.query(`SELECT org.change_company_status($1, 'active', 'reopened')`, [COMPANY_A1]);
+
+      const company = await c.query('SELECT status FROM org.legal_companies WHERE id = $1', [
+        COMPANY_A1,
+      ]);
+      expect(company.rows[0].status).toBe('active');
+
+      const h = await companyHistory(c, COMPANY_A1);
+      expect(h.rows).toHaveLength(2);
+      expect(h.rows.map((r) => `${r.from_state}->${r.to_state}`)).toEqual([
+        'active->inactive',
+        'inactive->active',
+      ]);
+      // The second reason did not inherit the first: change_company_status clears
+      // app.status_reason after its UPDATE, so a later transition in the SAME
+      // transaction cannot silently reuse it.
+      expect(historyRow(h, 1).reason).toBe('reopened');
+    });
+  });
+
+  it('C3 refuses a blank reason (23514)', async () => {
+    await withRolledBackTx(runtime, { tenantId: TENANT_A, userId: USER_A }, async (c) => {
+      await expectSqlState(
+        c.query(`SELECT org.change_company_status($1, 'inactive', '   ')`, [COMPANY_A1]),
+        '23514'
+      );
+    });
+  });
+
+  it('C4 refuses a no-op transition (23514)', async () => {
+    await withRolledBackTx(runtime, { tenantId: TENANT_A, userId: USER_A }, async (c) => {
+      await expectSqlState(
+        c.query(`SELECT org.change_company_status($1, 'active', 'already there')`, [COMPANY_A1]),
+        '23514'
+      );
+    });
+  });
+
+  it('C5 refuses a destination outside the two-state vocabulary (23514)', async () => {
+    await withRolledBackTx(runtime, { tenantId: TENANT_A, userId: USER_A }, async (c) => {
+      // 'suspended' is a TENANT state. Companies must not acquire the tenant graph
+      // by accident, and this is the case that would go red if they did.
+      await expectSqlState(
+        c.query(`SELECT org.change_company_status($1, 'suspended', 'wrong graph')`, [COMPANY_A1]),
+        '23514'
+      );
+    });
+  });
+
+  it('C6 refuses another tenant, and leaves no trace (RLS: P0002 + zero delta)', async () => {
+    await withRolledBackTx(runtime, { tenantId: TENANT_B, userId: USER_B }, async (c) => {
+      await expectSqlState(
+        c.query(`SELECT org.change_company_status($1, 'inactive', 'hostile')`, [COMPANY_A1]),
+        'P0002'
+      );
+    });
+    // Asserting the error alone would pass even if the refusal happened AFTER a
+    // partial write, so the side effect is measured independently.
+    const after = await admin.query(
+      `SELECT status, (SELECT count(*)::int FROM org.company_status_history WHERE company_id = $1) AS h
+         FROM org.legal_companies WHERE id = $1`,
+      [COMPANY_A1]
+    );
+    expect(after.rows[0].status).toBe('active');
+    expect(after.rows[0].h).toBe(0);
+  });
+
+  it('C7 refuses a RAW UPDATE that publishes no reason — the branch precedent does not', async () => {
+    await withRolledBackTx(runtime, { tenantId: TENANT_A, userId: USER_A }, async (c) => {
+      // This is the whole reason history is emitted rather than written by the
+      // function. Run against org.branches, the equivalent statement SUCCEEDS and
+      // silently records nothing; here the emitter raises.
+      await expectSqlState(
+        c.query(`UPDATE org.legal_companies SET status = 'inactive' WHERE id = $1`, [COMPANY_A1]),
+        '23514'
+      );
+    });
+  });
+
+  it('C8 records a RAW UPDATE that DOES publish a reason — bypass is impossible, not merely discouraged', async () => {
+    await withRolledBackTx(runtime, { tenantId: TENANT_A, userId: USER_A }, async (c) => {
+      await c.query(`SELECT set_config('app.status_reason', 'raw but accounted for', true)`);
+      const updated = await c.query(
+        `UPDATE org.legal_companies SET status = 'inactive' WHERE id = $1`,
+        [COMPANY_A1]
+      );
+      // Assert the UPDATE actually landed before concluding anything about
+      // history: a refused UPDATE would otherwise read as "no bypass" for the
+      // wrong reason.
+      expect(updated.rowCount).toBe(1);
+
+      const h = await companyHistory(c, COMPANY_A1);
+      expect(h.rows).toHaveLength(1);
+      expect(h.rows[0]).toMatchObject({
+        from_state: 'active',
+        to_state: 'inactive',
+        reason: 'raw but accounted for',
+        actor_id: USER_A,
+      });
+    });
+  });
+
+  it('C9 is append-only: no UPDATE or DELETE grant exists, and neither verb is reachable', async () => {
+    // The GRANT BITS, not just the refusal. FORCE RLS with no UPDATE policy would
+    // refuse the write even if the grant were later added, so a refusal-only test
+    // would keep passing after the control was removed.
+    const bits = await admin.query(
+      `SELECT
+         has_table_privilege('app_runtime',  'org.company_status_history', 'SELECT') AS r_sel,
+         has_table_privilege('app_runtime',  'org.company_status_history', 'INSERT') AS r_ins,
+         has_table_privilege('app_runtime',  'org.company_status_history', 'UPDATE') AS r_upd,
+         has_table_privilege('app_runtime',  'org.company_status_history', 'DELETE') AS r_del,
+         has_table_privilege('app_readonly', 'org.company_status_history', 'SELECT') AS o_sel,
+         has_table_privilege('app_readonly', 'org.company_status_history', 'INSERT') AS o_ins,
+         has_table_privilege('app_platform', 'org.company_status_history', 'SELECT') AS p_sel,
+         has_table_privilege('app_platform', 'org.company_status_history', 'INSERT') AS p_ins`
+    );
+    expect(bits.rows[0]).toEqual({
+      r_sel: true,
+      r_ins: true,
+      r_upd: false,
+      r_del: false,
+      o_sel: true,
+      o_ins: false,
+      // The control plane provisions a company; running its lifecycle is a
+      // tenant-scoped act, so app_platform holds nothing here.
+      p_sel: false,
+      p_ins: false,
+    });
+
+    // One refusal per transaction. The first error ABORTS the transaction, so a
+    // second statement in the same one returns 25P02 ("current transaction is
+    // aborted") rather than its own SQLSTATE — which would have made this case
+    // assert 42501 and measure the abort instead.
+    await withRolledBackTx(runtime, { tenantId: TENANT_A, userId: USER_A }, async (c) => {
+      await expectSqlState(
+        c.query(`UPDATE org.company_status_history SET reason = 'rewritten'`),
+        '42501'
+      );
+    });
+    await withRolledBackTx(runtime, { tenantId: TENANT_A, userId: USER_A }, async (c) => {
+      await expectSqlState(c.query('DELETE FROM org.company_status_history'), '42501');
+    });
+  });
+
+  it('C10 refuses a forged history row that disagrees with the company (23514)', async () => {
+    await withRolledBackTx(runtime, { tenantId: TENANT_A, userId: USER_A }, async (c) => {
+      // The company is 'active'. Exactly ONE input is varied away from a row the
+      // guard would admit — to_state — so the refusal can only be the coherence
+      // guard. A blank reason, an equal from/to pair or another tenant’s company
+      // would each be refused by something else and prove nothing about it.
+      await expectSqlState(
+        c.query(
+          `INSERT INTO org.company_status_history
+             (tenant_id, company_id, from_state, to_state, reason, actor_id)
+           VALUES ($1, $2, 'active', 'inactive', 'claiming a transition that never happened', $3)`,
+          [TENANT_A, COMPANY_A1, USER_A]
+        ),
+        '23514'
+      );
+    });
+  });
+
+  it('C11 overwrites a caller-supplied actor and occurred_at rather than trusting them', async () => {
+    await withRolledBackTx(runtime, { tenantId: TENANT_A, userId: USER_A }, async (c) => {
+      // Coherent by construction: the company IS 'active', so to_state 'active'
+      // satisfies the guard, and from_state 'inactive' satisfies the state-change
+      // CHECK. The insert must SUCCEED — the assertion is on the STORED ROW,
+      // because a refusal here would prove nothing about the stamp.
+      await c.query(
+        `INSERT INTO org.company_status_history
+           (tenant_id, company_id, from_state, to_state, reason, actor_id, occurred_at)
+         VALUES ($1, $2, 'inactive', 'active', 'forged', $3, '2020-01-01T00:00:00Z')`,
+        [TENANT_A, COMPANY_A1, USER_B]
+      );
+      const h = await companyHistory(c, COMPANY_A1);
+      expect(h.rows).toHaveLength(1);
+      // USER_B was supplied; USER_A is the session. The session wins.
+      expect(historyRow(h, 0).actor_id).toBe(USER_A);
+      expect(new Date(historyRow(h, 0).occurred_at as string).getUTCFullYear()).toBeGreaterThan(
+        2020
+      );
+    });
+  });
+
+  it('C12 pins the residual: deactivation gates nothing, so a branch may still be created', async () => {
+    await withRolledBackTx(runtime, { tenantId: TENANT_A, userId: USER_A }, async (c) => {
+      await c.query(`SELECT org.change_company_status($1, 'inactive', 'pinning the residual')`, [
+        COMPANY_A1,
+      ]);
+      // Confirm the precondition in the same transaction, or the insert below
+      // succeeds for the wrong reason.
+      const company = await c.query('SELECT status FROM org.legal_companies WHERE id = $1', [
+        COMPANY_A1,
+      ]);
+      expect(company.rows[0].status).toBe('inactive');
+
+      // org.guard_parent_company_live() reads deleted_at and archived_at and
+      // never reads status — measured, the word does not occur in its body. So
+      // an inactive company still receives new branches. This test exists to PIN
+      // that, not to bless it: if the guard is ever made status-aware, this case
+      // goes red and forces the change to be deliberate rather than incidental.
+      const branch = await c.query(
+        `INSERT INTO org.branches (tenant_id, company_id, branch_code, name, timezone_name, created_by)
+         VALUES ($1, $2, 'wc_residual', 'Branch under an inactive company', 'UTC', $3)
+         RETURNING id`,
+        [TENANT_A, COMPANY_A1, USER_A]
+      );
+      expect(branch.rows).toHaveLength(1);
+    });
+  });
+});

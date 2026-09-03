@@ -93,7 +93,7 @@ export async function GET(request: Request): Promise<Response> {
  * generates the normalised value and decides active-VIN uniqueness on it. Lifecycle
  * is not settable here; creation always lands a `draft`.
  */
-const CreateBody = z
+export const CreateBody = z
   .object({
     vin: z.string().min(1).max(MAX_VIN_INPUT).nullable().optional(),
     makeId: schemas.uuid.nullable().optional(),
@@ -110,6 +110,7 @@ const CreateBody = z
 
 export const VEHICLE_CREATE_OPERATION = defineOperation({
   id: 'veh.vehicle-create',
+  successStatus: 201,
   module: 'vehicle',
   method: 'POST',
   path: '/vehicles',

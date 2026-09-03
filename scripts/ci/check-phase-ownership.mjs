@@ -104,6 +104,16 @@ export const CLASSIFIERS = [
   { bucket: 'apiSource', test: (p) => p.startsWith('apps/api/src/') },
   { bucket: 'apiConfig', test: (p) => p.startsWith('apps/api/') },
   { bucket: 'migrations', test: (p) => p.startsWith('supabase/migrations/') },
+  // Before the catch-all below, for the same reason `migrations` is: a seed is
+  // not the local database harness. `supabase/seeds/04_iam_permission_catalog.sql`
+  // IS the canonical permission catalogue — 113 rows at the time of writing,
+  // pinned by `permissionCount` in `.github/ci-baselines/schema-baseline.json`
+  // rather than by this sentence — the only shipping insert into
+  // `iam.permissions`, and zero migrations write to that table. A change
+  // that adds a permission has to land there, so a profile has to be able to say
+  // whether it may. Rolled into `supabase` it could only be granted alongside
+  // `config.toml`, which is a different question with a different answer.
+  { bucket: 'dbSeeds', test: (p) => p.startsWith('supabase/seeds/') },
   { bucket: 'supabase', test: (p) => p.startsWith('supabase/') },
   { bucket: 'docs', test: (p) => p.startsWith('docs/') || /^[A-Z]+\.md$/.test(p) },
   { bucket: 'tooling', test: (p) => p.startsWith('scripts/') || p.startsWith('.github/') },
@@ -118,7 +128,22 @@ export const CLASSIFIERS = [
   },
 ];
 
-/** What each profile permits. Anything not listed is forbidden. */
+/**
+ * What each profile permits. A bucket not in `allowed` is FORBIDDEN.
+ *
+ * The `forbidden` map does not decide anything — it supplies the REASON a
+ * reader is given when a refusal happens, in the profile author`s own words.
+ * Deciding was once its job, and that was a fail-open: a bucket named in
+ * neither list passed every rule silently, so six profiles permitted
+ * `webGenerated` while declaring nothing about it, and adding a TWELFTH bucket
+ * would have widened every profile in the file at once without a single line
+ * changing. A gate whose declarations only ever narrow it by accident is not a
+ * declaration.
+ *
+ * So `allowed` is the declaration and `forbidden` is the prose. A profile that
+ * refuses a bucket it never mentions still refuses it, and says which profile
+ * refused it and that the profile never claimed it.
+ */
 export const PROFILES = {
   'p1-26-frontend': {
     why: 'P1-26 is a Frontend phase',
@@ -158,6 +183,7 @@ export const PROFILES = {
       'tests',
       'rootConfig',
       'migrations',
+      'dbSeeds',
       'supabase',
       'webGenerated',
       // This profile is the reason the bucket exists. Every read it publishes is
@@ -186,6 +212,7 @@ export const PROFILES = {
       'tests',
       'rootConfig',
       'migrations',
+      'dbSeeds',
       'supabase',
       // `apps/web/src/lib/api/idempotent-operations.ts`. A first draft of this
       // profile FORBADE it, reasoning that two new READ operations cannot move
@@ -315,6 +342,247 @@ export const PROFILES = {
     forbidden: {
       migrations: 'the boundary remediation must not change a migration',
       supabase: 'the boundary remediation must not change the database',
+    },
+  },
+  /* ---- PRE-P1-29: multi-tenant administration, RBAC and operational workflow ----
+   *
+   * An initiative, not a phase, and it spans both halves of the product on
+   * purpose: platform and company administration need API routes, migrations
+   * that seed permissions, and the screens that operate them.
+   *
+   * THREE profiles rather than one, because a single profile spanning
+   * everything forbids nothing and therefore declares nothing. The lanes below
+   * keep each pull request answerable to one review boundary — a Backend change
+   * cannot carry the screens that consume it, and a Web change cannot carry the
+   * contract it renders. The initiative profile exists for the long-lived
+   * integration branch that receives both.
+   *
+   * What all three refuse, and why each refusal is real rather than a formality:
+   *
+   *   supabase   `supabase/config.toml`, `seed.sql` and `seeds/` are the local
+   *              database HARNESS, not this initiative`s business. Permissions
+   *              and roles are seeded by MIGRATIONS, which are allowed, and the
+   *              Owner acceptance fixtures live under
+   *              `scripts/dev/owner-acceptance/`, which is tooling. Nothing this
+   *              initiative must do needs the bucket. Same call as
+   *              `p1-28-backend-owner-qa`.
+   *   apiConfig  `apps/api/package.json` and `tsconfig.json`. Adding a dependency
+   *              or moving a compiler setting is a workspace decision with its
+   *              own review, and an administration feature is not the place to
+   *              smuggle one.
+   */
+  'pre-p1-29-initiative': {
+    why:
+      'the PRE-P1-29 initiative integration branch — multi-tenant administration, RBAC and ' +
+      'operational workflow, spanning API, migrations and Web',
+    allowed: [
+      'apiSource',
+      'migrations',
+      'dbSeeds',
+      'web',
+      'webGenerated',
+      'webContract',
+      'docs',
+      'tooling',
+      'tests',
+      'rootConfig',
+    ],
+    forbidden: {
+      apiConfig:
+        'PRE-P1-29 must not change API workspace configuration — a dependency or compiler change ' +
+        'is its own review, not a rider on an administration feature',
+      supabase:
+        'PRE-P1-29 must not change the database HARNESS — config.toml and the local bootstrap. ' +
+        'The permission catalogue it does need is supabase/seeds, which travels under its own ' +
+        'dbSeeds bucket, and the Owner acceptance fixtures live under scripts/dev/owner-acceptance',
+    },
+  },
+  'pre-p1-29-backend': {
+    why:
+      'the Backend lane of PRE-P1-29 — platform and company administration contracts, RBAC ' +
+      'authorization, tenant resolution and workflow commands, with the migrations that seed them',
+    allowed: [
+      'apiSource',
+      'migrations',
+      'dbSeeds',
+      'webGenerated',
+      'webContract',
+      'docs',
+      'tooling',
+      'tests',
+      'rootConfig',
+    ],
+    forbidden: {
+      // Forbidden ON PURPOSE, on the `p1-18-read-surface` precedent: a Backend
+      // lane that also permitted the handwritten Frontend would let both halves
+      // of an administration contract land in one unreviewed commit. The
+      // generated manifest travels under `webGenerated`, and a published
+      // `rec.*`/`apt.*` operation may correct its mirror row under `webContract`
+      // — neither opens a screen, a route or an adapter.
+      web:
+        'the PRE-P1-29 Backend lane is Backend-only — the screens are a separate change under ' +
+        'pre-p1-29-web',
+      apiConfig: 'PRE-P1-29 must not change API workspace configuration',
+      supabase:
+        'PRE-P1-29 must not change the database HARNESS — the permission catalogue it does need ' +
+        'is supabase/seeds, which travels under its own dbSeeds bucket',
+    },
+  },
+  'pre-p1-29-web': {
+    why:
+      'the Web lane of PRE-P1-29 — the Superadmin and company administration screens, the role ' +
+      'editor, the capability-driven navigation and the human company/branch selectors',
+    allowed: ['web', 'webContract', 'docs', 'tooling', 'tests', 'rootConfig'],
+    forbidden: {
+      apiSource:
+        'the PRE-P1-29 Web lane must not change API source — route it through the Backend lane, ' +
+        'so no screen ships against a contract nobody reviewed',
+      apiConfig: 'PRE-P1-29 must not change API workspace configuration',
+      webGenerated:
+        'the idempotent-operations manifest is GENERATED from the Backend register — a screen that ' +
+        'hand-edits it desynchronises the two, and the register is not on this side of the lane',
+      migrations:
+        'a screen must not carry a migration — a permission the UI offers is seeded by the ' +
+        'Backend lane that publishes the operation behind it',
+      dbSeeds:
+        'a screen must not seed a permission — the code a role editor offers is seeded by the ' +
+        'Backend lane that publishes the operation it guards',
+      supabase: 'PRE-P1-29 must not change the database harness',
+    },
+  },
+  /*
+   * P1-29 is a MIXED phase — Backend prerequisites first, then the screens that
+   * consume them — so it gets THREE profiles rather than one permissive profile
+   * spanning both halves. The precedent is P1-28's: four of its five prefixes
+   * map to `p1-27-frontend`, and the exception `remediation/p1-28-owner-qa-backend`
+   * carries its own narrower profile, listed FIRST so the general rule cannot
+   * reach it. A profile that permits both halves forbids nothing across the one
+   * boundary that matters, and so declares nothing.
+   *
+   * `BR-08a` — the slice that adds these — is deliberately NOT one of them. It
+   * changes a gate, its suite and the baseline it reads, which is
+   * `repository-tooling`'s subject and already has a rule (`chore/pre-p1-29-`).
+   * A slice that legislated its own compliance would be declaring nothing about
+   * itself, which is the same fail-open in a different costume.
+   */
+  'p1-29-planning': {
+    why:
+      'a P1-29 preparation or planning branch: documentation only. Preparation decides what will ' +
+      'be built and may not build any of it, and this profile is what makes that a mechanical ' +
+      'fact rather than an intention',
+    allowed: ['docs'],
+    forbidden: {
+      // The whole content of this declaration. Preparation slices in this
+      // repository have twice been the place where an "obviously safe" script
+      // or test edit rode along with the documents, and a docs-only claim that
+      // only the author checks is not a claim.
+      tooling:
+        'a preparation slice must not change CI behaviour — that is what makes its own docs-only ' +
+        'claim checkable by something other than its author',
+      tests: 'nor a test: a preparation slice proves nothing by running anything',
+      web: 'preparation authorises no screen',
+      webGenerated: 'nor regenerates a manifest',
+      webContract: 'nor edits a contract mirror',
+      apiSource: 'preparation authorises no route, service or handler',
+      apiConfig: 'nor API workspace configuration',
+      migrations: 'preparation designs a migration; it does not write one',
+      dbSeeds: 'nor seeds a permission — the slice that publishes the operation seeds its code',
+      supabase: 'preparation must not change the database',
+      rootConfig:
+        'a documents-only branch needs no root configuration, and a lockfile or script change ' +
+        'hidden beside a plan is exactly what this profile exists to refuse',
+    },
+  },
+  'p1-29-backend': {
+    why:
+      'the Backend prerequisite lane of P1-29 (slice A0, contracts BR-01 … BR-09): the work-order, ' +
+      'diagnostics, technician and quality contracts the frontend cannot be built without, with ' +
+      'the migrations and permission seeds they need',
+    allowed: [
+      'apiSource',
+      'migrations',
+      // Two of the prerequisites mint a permission code — `tech.technician.manage`
+      // and `dia.catalogue.manage` — and the only shipping insert into
+      // `iam.permissions` is `supabase/seeds/04_iam_permission_catalog.sql`.
+      // A Backend lane that could not open its own catalogue could not deliver
+      // them, which is the reason `dbSeeds` is a bucket of its own.
+      'dbSeeds',
+      // The idempotent-operations manifest is GENERATED from the Backend
+      // register. A slice that publishes an operation must be able to regenerate
+      // it or `validate:generated-artifacts` goes red on its own change.
+      'webGenerated',
+      'docs',
+      'tooling',
+      'tests',
+      'rootConfig',
+    ],
+    forbidden: {
+      web:
+        'the P1-29 Backend lane is Backend-only — the screens are a separate change under ' +
+        'p1-29-frontend, so no screen ships against a contract nobody reviewed',
+      webContract:
+        'the contract-mirror allow-list names P1-28 appointment and reception files. A P1-29 ' +
+        'operation has no row in it, so a Backend slice reaching for one is reaching for another ' +
+        "phase's sealed artefact",
+      apiConfig: 'P1-29 must not change API workspace configuration',
+      supabase:
+        'P1-29 must not change the database HARNESS — the migrations and the permission catalogue ' +
+        'it does need travel under their own buckets',
+    },
+  },
+  'p1-29-frontend': {
+    why:
+      'the Frontend lane of P1-29: the work-order board and detail, the technician workspace, the ' +
+      'diagnostics experience, and the contract mirror that lets them consume the Backend without ' +
+      'importing it',
+    allowed: ['web', 'docs', 'tooling', 'tests', 'rootConfig'],
+    forbidden: {
+      apiSource:
+        'a Frontend phase must not change API source — route it through the Backend lane. This is ' +
+        'the same boundary p1-26-frontend and p1-27-frontend hold, declared under its own name ' +
+        'because a profile borrowed from another phase declares nothing about this one',
+      apiConfig: 'a Frontend phase must not change API workspace configuration',
+      webGenerated:
+        'the idempotent-operations manifest is GENERATED from the Backend register — a screen that ' +
+        'hand-edits it desynchronises the two, and the register is not on this side of the lane',
+      webContract:
+        'that allow-list holds six frozen P1-28 files. The P1-29 mirror is new source under ' +
+        'apps/web and travels as web',
+      migrations: 'a screen must not carry a migration',
+      dbSeeds:
+        'a screen must not seed a permission — the Backend lane that publishes the operation does',
+      supabase: 'a Frontend phase must not change the database',
+    },
+  },
+  'p1-09-database-seed': {
+    why:
+      'a missed P1-09 DATABASE seed obligation, repaired after the fact: one declared seed file ' +
+      'of platform reference rows, its [db.seed] declaration, the classification the seed-state ' +
+      'and replay checks need, and the tests and records that prove it (first use: the platform ' +
+      'diagnostic-type vocabulary, Owner decision of 2026-09-03, P1-29 W9-R4)',
+    allowed: [
+      'dbSeeds',
+      // The seed is applied only if supabase/config.toml declares it under
+      // [db.seed].sql_paths; the harness file is the one place that list lives.
+      'supabase',
+      // The seed-state validator and the replay baseline classify structural
+      // catalogs by name; a new one must be classified or it is a finding.
+      'tooling',
+      'tests',
+      'docs',
+      'rootConfig',
+    ],
+    forbidden: {
+      apiSource:
+        'a seed repair that needed application code would not be a seed repair — route code ' +
+        'through the lane of the phase that owns it',
+      apiConfig: 'a seed repair does not change API workspace configuration',
+      web: 'a seed repair ships no screen',
+      webContract: 'a seed repair has no operation and therefore no contract mirror to touch',
+      webGenerated: 'a seed repair publishes no operation, so the generated manifest cannot move',
+      migrations:
+        'the rows are reference data and belong in a declared seed; the no-fake-data migration ' +
+        'gate refuses a top-level INSERT into a module schema, and this lane must not go around it',
     },
   },
   'backend-login-contract': {
@@ -677,8 +945,16 @@ export function evaluate(changed, profileName, emptyDiffIsTruthful = null) {
       failures.push(`unclassified changed file: ${path} — decide where it belongs`);
       continue;
     }
-    const forbidden = profile.forbidden[bucket];
-    if (forbidden) failures.push(`${bucket}: ${path} — ${forbidden}`);
+    /*
+     * ALLOWED decides. A bucket this profile does not claim is refused whether
+     * or not anybody wrote a sentence about it — which is the whole difference
+     * between a declaration and a list of afterthoughts.
+     */
+    if (profile.allowed.includes(bucket)) continue;
+    const reason =
+      profile.forbidden[bucket] ??
+      `the ${profileName} profile does not claim the ${bucket} bucket, so it may not change one`;
+    failures.push(`${bucket}: ${path} — ${reason}`);
   }
 
   return { failures, counts };

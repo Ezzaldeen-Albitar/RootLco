@@ -51,7 +51,7 @@ const Query = z
  * absent by design: both come from the resolved principal, and accepting either
  * from the client is how a tenant writes another tenant's row.
  */
-const CreateBody = z
+export const CreateBody = z
   .object({
     code: z.string().regex(CATALOGUE_CODE_PATTERN),
     name: z.string().trim().min(1).max(MAX_CATALOGUE_NAME),
@@ -73,6 +73,7 @@ export const APPOINTMENT_TYPE_LIST_OPERATION = defineOperation({
 
 export const APPOINTMENT_TYPE_CREATE_OPERATION = defineOperation({
   id: 'apt.catalogue-appointment-type-create',
+  successStatus: 201,
   module: 'reception',
   method: 'POST',
   path: '/appointment-catalogue/appointment-types',

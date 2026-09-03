@@ -65,7 +65,7 @@ const UnitCost = z
   })
   .strict();
 
-const CreateBody = z
+export const CreateBody = z
   .object({
     workOrderId: schemas.uuid,
     description: z.string().min(1).max(MAX_DESCRIPTION),
@@ -81,6 +81,7 @@ const CreateBody = z
 
 export const EXTERNAL_PURCHASE_PART_CREATE_OPERATION = defineOperation({
   id: 'inv.external-purchase-part-create',
+  successStatus: 201,
   module: 'inventory',
   method: 'POST',
   path: '/external-purchase-parts',

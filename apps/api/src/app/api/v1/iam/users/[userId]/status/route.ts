@@ -36,7 +36,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const Params = z.object({ userId: schemas.uuid });
-const StatusBody = z
+export const StatusBody = z
   .object({
     status: z.enum(['active', 'locked', 'archived']),
     reason: z.string().min(1).max(500),

@@ -48,6 +48,19 @@ export interface EligibilityVerdict {
   readonly findings: readonly EligibilityFinding[];
 }
 
+/**
+ * The wire shape of `tech.technician-available` (PRE-P1-29-BR-08b).
+ *
+ * `truncatedAt` is part of the contract rather than an implementation detail: the
+ * candidate set is capped, and a silently truncated list is a wrong answer that
+ * looks like a complete one. Naming the envelope keeps that field visible to any
+ * consumer generated from this type.
+ */
+export interface TechnicianCandidateResult {
+  readonly items: readonly (EligibilityVerdict & { readonly technicianProfileId: string })[];
+  readonly truncatedAt: number | null;
+}
+
 export class TechnicianEligibilityService extends ApplicationService {
   protected readonly module = 'technician';
 
@@ -182,10 +195,7 @@ export class TechnicianEligibilityService extends ApplicationService {
     requirement: EligibilityRequirement,
     at: Date,
     limit: number
-  ): Promise<{
-    readonly items: readonly (EligibilityVerdict & { readonly technicianProfileId: string })[];
-    readonly truncatedAt: number | null;
-  }> {
+  ): Promise<TechnicianCandidateResult> {
     const profiles = await this.repository.activeProfilesInBranch(
       db,
       requirement.companyId,

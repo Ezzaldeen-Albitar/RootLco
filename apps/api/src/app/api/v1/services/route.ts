@@ -127,7 +127,7 @@ export async function GET(request: Request): Promise<Response> {
  * does — and refuses every price-shaped field, because a service carries no price at
  * all: `svc.price_rules` does, under `svc.price.manage`, in a different module.
  */
-const CreateBody = z
+export const CreateBody = z
   .object({
     serviceCategoryId: schemas.uuid,
     // `ck_services_code_format` — mixed case is permitted for this external-facing
@@ -140,6 +140,7 @@ const CreateBody = z
 
 export const SERVICE_CREATE_OPERATION = defineOperation({
   id: 'svc.service-create',
+  successStatus: 201,
   module: 'service-catalog',
   method: 'POST',
   path: '/services',

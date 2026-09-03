@@ -18,6 +18,10 @@ import { publishEvent } from '@/server/events/publisher';
 import { pageRequest, type Page } from '@/server/db/pagination';
 import { qualityModule } from '@/modules/quality';
 import { inventoryModule, type OpenInventoryCommitments } from '@/modules/inventory';
+// BR-05: the customer of a work order is reception's data, reached through
+// reception's port. The same shape as the inventory import above, and for the
+// same reason — the owning module answers for its own tables.
+import { receptionModule } from '@/modules/reception';
 import {
   JOB_HISTORY_ORDER,
   WORK_ORDER_HISTORY_ORDER,
@@ -99,6 +103,55 @@ export interface WorkOrderSummary {
   readonly displayNumber: string | null;
   readonly openedAt: string;
   readonly recordVersion: number;
+  /**
+   * The party who brought the car for THIS work order, as at its `opened_at`
+   * (BR-05).
+   *
+   * **Nullable, and the null case is real.** `rec.reception_party_roles` requires
+   * at least one `service_requester` before a visit is ACTIVATED, as a deferred
+   * contract — so a visit can legitimately exist without one and a consumer must
+   * render the absence rather than crash on it.
+   *
+   * The block carries `relationshipRole`, not just the party: `vehicle_owner` is
+   * a different question and may be a different person, so a name rendered
+   * without the role is a claim the data does not support.
+   *
+   * **A closed work order reports the customer of that visit, not the vehicle's
+   * current owner.** That is the intended behaviour and it will look like a bug
+   * to someone who expects otherwise — it is what makes work-order history
+   * transactional and independent, and it is precisely what a denormalised
+   * `customer_id` would have destroyed.
+   */
+  readonly customer: WorkOrderCustomer | null;
+  /**
+   * The vehicle, rendered rather than referenced.
+   *
+   * `workshopStatus` is deliberately absent: nothing in `wo`/`dia`/`tech`/`qms`
+   * maintains it (`INS-39`), so publishing it here would display a field this
+   * domain never updates beside a lifecycle it does.
+   */
+  readonly vehicle: WorkOrderVehicle;
+}
+
+/** The dated customer projection. See `WorkOrderSummary.customer`. */
+export interface WorkOrderCustomer {
+  readonly partnerId: string;
+  readonly displayName: string;
+  readonly relationshipRole: string;
+  /**
+   * More than one party held the reported role at the reference instant.
+   *
+   * The projection returns the earliest deterministically rather than an
+   * arbitrary one of two, and says so here.
+   */
+  readonly hasAdditionalParties: boolean;
+}
+
+/** The vehicle projection. See `WorkOrderSummary.vehicle`. */
+export interface WorkOrderVehicle {
+  readonly vehicleId: string;
+  readonly registrationPlate: string | null;
+  readonly makeModel: string | null;
 }
 
 /**
@@ -114,6 +167,13 @@ export interface JobView {
   readonly workOrderId: string;
   readonly title: string;
   readonly jobType: string | null;
+  /**
+   * The organisational unit working this job, or null when it is unrouted.
+   * PRE-P1-29 BR-02 — Owner requirement 3, "multiple departments may work on
+   * one vehicle": one work order with two jobs in two departments is the only
+   * shape this schema offers for it.
+   */
+  readonly departmentId: string | null;
   readonly state: string;
   readonly requiresDiagnostic: boolean;
   readonly recordVersion: number;
@@ -139,8 +199,20 @@ export interface TransitionInput {
   readonly expectedVersion: number;
 }
 
-/** What a state-change command returns. */
-export interface TransitionResult {
+/**
+ * What a WORK-ORDER state-change command returns.
+ *
+ * Named for its aggregate, and that is BR-08b's `B4`. Two interfaces called
+ * `TransitionResult` shipped — this one and shared-services'
+ * `{aggregate, id, from, to, recordVersion, nextStates}` — so a contract gate keyed
+ * on the type NAME would bind to whichever it happened to find first and compare
+ * the wrong shape.
+ *
+ * The generic one keeps the generic name; the narrow one takes the specific name.
+ * Renaming the other way round would have made the cross-aggregate helper sound
+ * like a work-order type.
+ */
+export interface WorkOrderTransitionResult {
   readonly state: string;
   readonly recordVersion: number;
 }
@@ -211,7 +283,13 @@ export interface JobHistoryView {
   readonly transitions: Page<WorkOrderHistoryEntry>;
 }
 
-const toSummary = (row: WorkOrderRow): WorkOrderSummary => ({
+const toSummary = (
+  row: WorkOrderRow,
+  context?: {
+    readonly customer: WorkOrderCustomer | null;
+    readonly vehicle: WorkOrderVehicle;
+  }
+): WorkOrderSummary => ({
   id: row.id,
   companyId: row.companyId,
   branchId: row.branchId,
@@ -223,13 +301,75 @@ const toSummary = (row: WorkOrderRow): WorkOrderSummary => ({
   displayNumber: row.displayNumber,
   openedAt: row.openedAt.toISOString(),
   recordVersion: row.recordVersion,
+  customer: context?.customer ?? null,
+  // The id is always known — it is a NOT NULL column on the work order — so the
+  // vehicle block is never absent, only unlabelled when the catalogue rows or the
+  // plate history have nothing to say.
+  vehicle: context?.vehicle ?? {
+    vehicleId: row.vehicleId,
+    registrationPlate: null,
+    makeModel: null,
+  },
 });
+
+/**
+ * Attaches the BR-05 party and vehicle context to a set of work orders.
+ *
+ * **Two statements for the whole page, never one pair per row.** The board
+ * renders a page with a customer column, and a per-row lookup would make that
+ * page an N+1 — which is the specific defect the rejected client-side option was
+ * rejected for. Both reads are batched, so a page of one and a page of fifty cost
+ * the same two round trips.
+ *
+ * Resolved through the RECEPTION module's port rather than by writing `rec`/`crm`
+ * SQL in the work-order repository, on the `OpenInventoryCommitments` precedent.
+ */
+async function withPartyContext(
+  db: DbHandle,
+  rows: readonly WorkOrderRow[]
+): Promise<readonly WorkOrderSummary[]> {
+  if (rows.length === 0) return [];
+  const keys = rows.map((row) => ({
+    id: row.id,
+    receptionVisitId: row.receptionVisitId,
+    vehicleId: row.vehicleId,
+    openedAt: row.openedAt,
+  }));
+  const port = receptionModule().partyContext;
+  const [parties, vehicles] = await Promise.all([
+    port.partiesForWorkOrders(db, keys),
+    port.vehiclesForWorkOrders(db, keys),
+  ]);
+  const byParty = new Map(parties.map((entry) => [entry.workOrderId, entry]));
+  const byVehicle = new Map(vehicles.map((entry) => [entry.workOrderId, entry]));
+  return rows.map((row) => {
+    const party = byParty.get(row.id);
+    const vehicle = byVehicle.get(row.id);
+    return toSummary(row, {
+      customer:
+        party === undefined
+          ? null
+          : {
+              partnerId: party.partnerId,
+              displayName: party.displayName,
+              relationshipRole: party.relationshipRole,
+              hasAdditionalParties: party.hasAdditionalParties,
+            },
+      vehicle: {
+        vehicleId: row.vehicleId,
+        registrationPlate: vehicle?.registrationPlate ?? null,
+        makeModel: vehicle?.makeModel ?? null,
+      },
+    });
+  });
+}
 
 const toJobView = (row: JobRow): JobView => ({
   id: row.id,
   workOrderId: row.workOrderId,
   title: row.title,
   jobType: row.jobType,
+  departmentId: row.departmentId,
   state: row.state,
   requiresDiagnostic: row.requiresDiagnostic,
   recordVersion: row.recordVersion,
@@ -477,7 +617,9 @@ export class WorkOrderService extends ApplicationService {
       filter,
       pageRequest(WORK_ORDER_LIST_ORDER, page)
     );
-    return { ...rows, items: rows.items.map(toSummary) };
+    // The page is already the FILTERED, complete page — `customerId` was applied
+    // in SQL before the keyset window, so enriching here cannot shorten it.
+    return { ...rows, items: await withPartyContext(db, rows.items) };
   }
 
   /** The work order, its live jobs, and the edges it can currently take. */
@@ -516,7 +658,12 @@ export class WorkOrderService extends ApplicationService {
                 },
               ];
             });
-    return { workOrder: toSummary(workOrder), jobs: jobs.map(toJobView), nextStates };
+    const [enriched] = await withPartyContext(db, [workOrder]);
+    return {
+      workOrder: enriched ?? toSummary(workOrder),
+      jobs: jobs.map(toJobView),
+      nextStates,
+    };
   }
 
   /** Append-only transition history, paginated, with the genesis block. */
@@ -661,6 +808,13 @@ export class WorkOrderService extends ApplicationService {
     input: {
       readonly title: string;
       readonly jobType?: string | undefined;
+      /**
+       * Three-way, and deliberately unlike `jobType`: undefined leaves the
+       * routing alone, null clears it, a uuid sets it. jobType's contract is a
+       * full replacement, and applying that here would unroute every job whose
+       * caller only meant to rename it.
+       */
+      readonly departmentId?: string | null | undefined;
       readonly requiresDiagnostic?: boolean | undefined;
       readonly expectedVersion: number;
     },
@@ -725,9 +879,32 @@ export class WorkOrderService extends ApplicationService {
       });
     }
 
+    // Routing is validated against the JOB'S OWN scope, never against anything
+    // the request named — the caller sends a department id and nothing else, so
+    // there is no company or branch of theirs to trust. Clearing (null) is
+    // always allowed; only setting has a target to check.
+    //
+    // The check runs BEFORE the write so the caller gets ERR-VAL-001 on the
+    // field. fk_jobs_department would refuse the same row, but as SQLSTATE
+    // 23503 — which route-handler renders as a 5xx and sends to the exception
+    // monitor, making a caller's mistake look like a server fault.
+    if (typeof input.departmentId === 'string') {
+      const routable = await this.repository.routableDepartment(
+        db,
+        { companyId: locked.companyId, branchId: locked.branchId },
+        input.departmentId
+      );
+      if (!routable) {
+        throw new AppFailure('ERR-VAL-001', {
+          message: 'The department is not available for routing in this branch',
+        });
+      }
+    }
+
     const applied = await this.repository.updateJob(db, jobId, {
       title: input.title,
       jobType: input.jobType ?? null,
+      departmentId: input.departmentId,
       requiresDiagnostic: input.requiresDiagnostic ?? locked.requiresDiagnostic,
       expectedVersion: input.expectedVersion,
     });
@@ -740,6 +917,7 @@ export class WorkOrderService extends ApplicationService {
       ...locked,
       title: input.title,
       jobType: input.jobType ?? null,
+      departmentId: input.departmentId === undefined ? locked.departmentId : input.departmentId,
       requiresDiagnostic: input.requiresDiagnostic ?? locked.requiresDiagnostic,
       recordVersion: input.expectedVersion + 1,
     };
@@ -756,6 +934,19 @@ export class WorkOrderService extends ApplicationService {
               classification: 'internal' as const,
               previousValue: locked.title,
               value: updated.title,
+            },
+          ]),
+      ...(updated.departmentId === locked.departmentId
+        ? []
+        : [
+            {
+              // PRE-P1-29 BR-02. Routing is recorded here and nowhere else:
+              // wo.job_status_history tracks STATE, not the unit doing the work,
+              // so without this entry a re-route leaves no trace at all.
+              field: 'department_id',
+              classification: 'internal' as const,
+              previousValue: locked.departmentId,
+              value: updated.departmentId,
             },
           ]),
       ...(updated.jobType === locked.jobType
@@ -810,7 +1001,7 @@ export class WorkOrderService extends ApplicationService {
     jobId: string,
     input: TransitionInput,
     authorizeScope?: ScopeAuthorizer
-  ): Promise<TransitionResult> {
+  ): Promise<WorkOrderTransitionResult> {
     const locked = await this.repository.lockJob(db, jobId);
     if (locked === null) {
       throw new AppFailure('ERR-RES-001', { message: `Job ${jobId} is not visible` });
@@ -1240,7 +1431,7 @@ export class WorkOrderService extends ApplicationService {
     workOrderId: string,
     input: TransitionInput,
     authorizeScope?: ScopeAuthorizer
-  ): Promise<TransitionResult> {
+  ): Promise<WorkOrderTransitionResult> {
     return this.move(db, workOrderId, input, 'transition', authorizeScope);
   }
 
@@ -1266,7 +1457,7 @@ export class WorkOrderService extends ApplicationService {
     workOrderId: string,
     input: TransitionInput,
     authorizeScope?: ScopeAuthorizer
-  ): Promise<TransitionResult> {
+  ): Promise<WorkOrderTransitionResult> {
     return this.move(db, workOrderId, input, 'closure', authorizeScope);
   }
 
@@ -1289,7 +1480,7 @@ export class WorkOrderService extends ApplicationService {
     input: TransitionInput,
     via: 'transition' | 'closure',
     authorizeScope?: ScopeAuthorizer
-  ): Promise<TransitionResult> {
+  ): Promise<WorkOrderTransitionResult> {
     const locked = await this.repository.lockWorkOrder(db, workOrderId);
     if (locked === null) {
       throw new AppFailure('ERR-RES-001', { message: `Work order ${workOrderId} is not visible` });

@@ -52,7 +52,7 @@ const Params = z.object({ priceListId: schemas.uuid, versionId: schemas.uuid });
  * on a given day. The caller states it; the database validates it is after the
  * current published version's start.
  */
-const Body = z
+export const Body = z
   .object({
     effectiveFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'must be an ISO date (YYYY-MM-DD)'),
   })

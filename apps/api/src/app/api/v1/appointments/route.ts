@@ -39,7 +39,7 @@ export const dynamic = 'force-dynamic';
  */
 const Instant = z.string().min(1).max(64);
 
-const Body = z
+export const Body = z
   .object({
     companyId: schemas.uuid,
     branchId: schemas.uuid,
@@ -54,6 +54,7 @@ const Body = z
 
 export const APPOINTMENT_CREATE_OPERATION = defineOperation({
   id: 'apt.appointment-create',
+  successStatus: 201,
   module: 'reception',
   method: 'POST',
   path: '/appointments',

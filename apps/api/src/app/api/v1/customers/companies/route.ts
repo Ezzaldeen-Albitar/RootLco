@@ -16,7 +16,7 @@ import { crmModule, CREATABLE_LIFECYCLE_STATUSES, MAX_COMPANY_NAME } from '@/mod
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const Body = z
+export const Body = z
   .object({
     legalName: z.string().min(1).max(MAX_COMPANY_NAME),
     /** Brand the company trades under. Stored, but never the search identity. */
@@ -27,6 +27,7 @@ const Body = z
 
 export const COMPANY_CREATE_OPERATION = defineOperation({
   id: 'crm.company-create',
+  successStatus: 201,
   module: 'crm',
   method: 'POST',
   path: '/customers/companies',

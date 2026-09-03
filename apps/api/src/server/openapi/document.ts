@@ -214,7 +214,11 @@ function operationObject(operation: RegisteredOperation): JsonObject {
     parameters,
     security: operation.public ? [] : [{ bearerAuth: [] }],
     responses: {
-      '200': {
+      // The status the operation ACTUALLY returns, not a fixed 200. Publishing a
+      // single hard-coded success code told every generated client the wrong
+      // thing for 99 of 334 operations; `check-openapi-success-status.mjs` holds
+      // this value to the literal the handler returns.
+      [String(operation.successStatus ?? 200)]: {
         description: 'Success.',
         headers: { [CORRELATION_HEADER]: { $ref: '#/components/headers/CorrelationId' } },
         content: { 'application/json': { schema: { type: 'object' } } },

@@ -39,7 +39,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const Params = z.object({ templateId: schemas.uuid });
-const Body = z.object({ status: z.enum(DAMAGE_MAP_TEMPLATE_STATUSES) }).strict();
+export const Body = z.object({ status: z.enum(DAMAGE_MAP_TEMPLATE_STATUSES) }).strict();
 
 export const DAMAGE_MAP_TEMPLATE_STATUS_OPERATION = defineOperation({
   id: 'rec.catalogue-damage-map-template-status-set',

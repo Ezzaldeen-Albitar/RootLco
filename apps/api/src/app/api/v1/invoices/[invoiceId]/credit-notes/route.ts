@@ -57,7 +57,7 @@ const MoneyAmount = z
     'must be an unsigned decimal string of at most 14 integer digits and 4 decimal places'
   );
 
-const RequestBody = z
+export const RequestBody = z
   .object({
     amount: MoneyAmount,
     reason: z.string().min(1).max(MAX_REASON),
@@ -73,6 +73,7 @@ const RequestBody = z
 
 export const CREDIT_NOTE_CREATE_OPERATION = defineOperation({
   id: 'sal.credit-note-create',
+  successStatus: 201,
   module: 'billing',
   method: 'POST',
   path: '/invoices/{invoiceId}/credit-notes',

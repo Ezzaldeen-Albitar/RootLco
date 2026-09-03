@@ -21,7 +21,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const Params = z.object({ receptionId: schemas.uuid });
-const Body = z
+export const Body = z
   .object({
     refusalType: z.enum(REFUSAL_TYPES),
     refusalReasonId: schemas.uuid.nullable().optional(),
@@ -38,6 +38,7 @@ const Body = z
 
 export const RECEPTION_REFUSAL_OPERATION = defineOperation({
   id: 'rec.reception-refusal',
+  successStatus: 201,
   module: 'reception',
   method: 'POST',
   path: '/receptions/{receptionId}/refusals',

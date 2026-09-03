@@ -23,7 +23,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const Params = z.object({ versionId: schemas.uuid });
-const Body = z
+export const Body = z
   .object({
     subject: z.string().min(1).max(500).nullable().optional(),
     body: z.string().min(1).max(100_000),

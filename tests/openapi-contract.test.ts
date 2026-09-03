@@ -70,6 +70,7 @@ import '@/app/api/v1/attachments/documents/[documentId]/retention-evaluations/ro
 import '@/app/api/v1/attachments/documents/[documentId]/download-authorizations/route';
 import '@/app/api/v1/attachments/documents/[documentId]/links/route';
 import '@/app/api/v1/attachments/links/[linkId]/route';
+import '@/app/api/v1/qc-checks/route';
 import '@/app/api/v1/reports/route';
 import '@/app/api/v1/reports/[reportCode]/route';
 import '@/app/api/v1/notifications/route';
@@ -216,7 +217,13 @@ import '@/app/api/v1/work-orders/[workOrderId]/closure-eligibility/route';
 import '@/app/api/v1/work-orders/[workOrderId]/transition/route';
 import '@/app/api/v1/work-orders/[workOrderId]/closure/route';
 import '@/app/api/v1/work-orders/[workOrderId]/jobs/route';
+import '@/app/api/v1/jobs/route';
 import '@/app/api/v1/jobs/[jobId]/route';
+import '@/app/api/v1/jobs/[jobId]/work-logs/route';
+import '@/app/api/v1/jobs/[jobId]/evidence/route';
+import '@/app/api/v1/work-orders/[workOrderId]/evidence/route';
+import '@/app/api/v1/work-order-catalogue/route';
+import '@/app/api/v1/quality-controls/route';
 import '@/app/api/v1/jobs/[jobId]/transition/route';
 import '@/app/api/v1/jobs/[jobId]/history/route';
 import '@/app/api/v1/jobs/[jobId]/assignments/route';
@@ -224,6 +231,22 @@ import '@/app/api/v1/jobs/[jobId]/reassignments/route';
 import '@/app/api/v1/assignments/[assignmentId]/end/route';
 import '@/app/api/v1/technicians/[technicianProfileId]/queue/route';
 import '@/app/api/v1/technicians/available/route';
+// BR-01. This list is hand-maintained and is its own documented trap: a route
+// missing here is missing from the published contract AND the test still passes,
+// because both sides agree on the same incomplete registry.
+import '@/app/api/v1/technicians/me/queue/route';
+// Technician roster administration (BR-03). This list is hand-maintained, which
+// is exactly how P1-27-INT-113 shipped six operations that answered 500 to every
+// request: an operation absent from here is absent from every registry-walking
+// suite, and nothing else notices.
+import '@/app/api/v1/technicians/route';
+import '@/app/api/v1/technicians/[technicianProfileId]/route';
+import '@/app/api/v1/technicians/[technicianProfileId]/skills/[skillId]/route';
+import '@/app/api/v1/technicians/[technicianProfileId]/certifications/route';
+import '@/app/api/v1/technicians/[technicianProfileId]/certifications/[certificationId]/route';
+import '@/app/api/v1/technicians/[technicianProfileId]/certifications/[certificationId]/detail/route';
+import '@/app/api/v1/technicians/[technicianProfileId]/availability/route';
+import '@/app/api/v1/technicians/[technicianProfileId]/availability/[availabilityId]/route';
 import '@/app/api/v1/jobs/[jobId]/labor-sessions/route';
 import '@/app/api/v1/labor-sessions/[sessionId]/stop/route';
 import '@/app/api/v1/labor-sessions/[sessionId]/corrections/route';
@@ -320,6 +343,43 @@ import '@/app/api/v1/deliveries/[deliveryId]/completion/route';
 import '@/app/api/v1/deliveries/[deliveryId]/warranties/route';
 import '@/app/api/v1/warranties/[warrantyId]/route';
 
+// --- PRE-P1-29-BR-04 inspection-template authoring -------------------------
+// The authoring surface for `dia.inspection_templates`, `dia.template_versions`
+// and `dia.template_items`, which held zero rows and had no write path at all.
+// `/jobs/{jobId}/inspection-templates` is the technician's read and is the only
+// one of the eight that is branch-scoped — it is reached THROUGH a job, whereas
+// the library itself carries no company or branch column.
+import '@/app/api/v1/inspection-templates/route';
+import '@/app/api/v1/inspection-templates/[templateId]/route';
+import '@/app/api/v1/inspection-templates/[templateId]/versions/route';
+import '@/app/api/v1/template-versions/[versionId]/status/route';
+import '@/app/api/v1/template-versions/[versionId]/items/route';
+import '@/app/api/v1/jobs/[jobId]/inspection-templates/route';
+import '@/app/api/v1/diagnostic-types/route';
+import '@/app/api/v1/jobs/[jobId]/blockers/route';
+import '@/app/api/v1/blockers/[blockerId]/resolution/route';
+import '@/app/api/v1/work-orders/[workOrderId]/timeline/route';
+
+// PRE-P1-29 Wave B — the control plane. These two modules are the only ones in
+// the document whose operations are not inside a tenant; they are imported here
+// for the same reason as every line above, which is that the registry is
+// populated by import side effect and an unimported route is simply absent from
+// the generated document rather than reported as missing.
+// PRE-P1-29 Wave C — the Company RBAC Backend. Imported for the same reason as
+// every line above: the registry is populated by import side effect, so an
+// unimported route is simply ABSENT from the generated document rather than
+// reported as missing.
+import '@/app/api/v1/org/companies/route';
+import '@/app/api/v1/org/companies/[companyId]/route';
+import '@/app/api/v1/org/companies/[companyId]/status/route';
+import '@/app/api/v1/org/branches/route';
+import '@/app/api/v1/org/branches/[branchId]/route';
+import '@/app/api/v1/org/departments/route';
+import '@/app/api/v1/org/departments/[departmentId]/route';
+
+import '@/app/api/v1/platform/organizations/route';
+import '@/app/api/v1/platform/organizations/[tenantId]/status/route';
+
 const DOCUMENT_PATH = join(process.cwd(), 'docs', 'api', 'openapi.v1.json');
 
 describe('OpenAPI contract', () => {
@@ -366,7 +426,12 @@ describe('OpenAPI contract', () => {
     // `shared` joined the list with DBCR-P1-15-001, which seeded
     // `shared.document.manage` and `shared.notification.send`. `crm` joins with
     // Phase 1-16 (crm.customer.read, crm.customer.note.write, …), and `apt` and
-    // `rec` with Phase 1-18's nine appointment and reception codes. Omitting a
+    // `rec` with Phase 1-18's nine appointment and reception codes. `platform`
+    // joins with PRE-P1-29 Wave B, which seeds the three control-plane codes —
+    // the first domain whose permissions are resolved by
+    // `iam.has_platform_authority` rather than `iam.has_permission`, and so the
+    // first whose absence here would have reproduced PC-1 rather than merely
+    // resembled it. Omitting a
     // domain does not make this assertion stricter, it makes it vacuous: an
     // operation whose route is missing from the import list above declares
     // nothing, so the loop never sees the code the missing domain would have
@@ -378,6 +443,7 @@ describe('OpenAPI contract', () => {
       'iam',
       'inv',
       'org',
+      'platform',
       'qms',
       'quo',
       'rec',

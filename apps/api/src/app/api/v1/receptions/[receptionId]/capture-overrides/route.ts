@@ -38,7 +38,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const Params = z.object({ receptionId: schemas.uuid });
-const Body = z
+export const Body = z
   .object({
     requirementCode: z.enum(CAPTURE_REQUIREMENTS),
     reason: z.string().min(1).max(MAX_CAPTURE_OVERRIDE_REASON),
@@ -47,6 +47,7 @@ const Body = z
 
 export const RECEPTION_CAPTURE_OVERRIDE_OPERATION = defineOperation({
   id: 'rec.reception-capture-override',
+  successStatus: 201,
   module: 'reception',
   method: 'POST',
   path: '/receptions/{receptionId}/capture-overrides',

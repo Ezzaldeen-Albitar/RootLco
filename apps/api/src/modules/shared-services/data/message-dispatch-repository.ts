@@ -12,9 +12,18 @@
  *
  * | Relation                     | `app_worker` may                          |
  * | ---------------------------- | ----------------------------------------- |
- * | `shared.outbound_messages`   | SELECT · UPDATE(status, failure_class)    |
+ * | `shared.outbound_messages`   | SELECT · UPDATE(status, failure_class) · INSERT(13 cols, NOT `status`) |
  * | `shared.delivery_attempts`   | SELECT · INSERT(…)                        |
+ * | `shared.message_templates`   | **nothing at all**                        |
  * | `shared.template_versions`   | **nothing at all**                        |
+ *
+ * The INSERT is new (migration `20260827090000`) and is narrower than it looks:
+ * it is a COLUMN-level grant that excludes `status`, so `'pending'` — the column
+ * default — is the only state this role can produce, and the RESTRICTIVE policy
+ * `wkr_outbound_messages_enqueue_scope` pins that a second time along with a
+ * non-null tenant, author and dedupe key. It exists so an event consumer can
+ * enqueue; it does not let the worker author a message of its own devising,
+ * because every fact it writes must be carried to it.
  *
  * That last row is not an oversight to work around — it is the design, and it
  * settles how content flows. The worker **cannot read a template body**, and
@@ -220,6 +229,123 @@ export class MessageDispatchRepository {
       [tenantId, messageId]
     );
     return result.rows;
+  }
+
+  /**
+   * Enqueues an already-resolved notification, as the worker.
+   *
+   * Every scoping value is a PARAMETER, not a session GUC: this role drains a
+   * cross-tenant queue and has no `iam.current_tenant_id()` to read, so the
+   * tenant of the row comes from the event that caused it.
+   *
+   * `status` is not named, and could not be: it is outside the column grant, so
+   * the default `'pending'` is the only state this statement can produce. Naming
+   * it — even as `'pending'` — would be refused at the privilege layer with
+   * `permission denied for table`, which is asserted in the backend suite.
+   *
+   * `ON CONFLICT (tenant_id, dedupe_key) DO NOTHING` is the platform's EXISTING
+   * conflict target, reused rather than reinvented. A redelivered event therefore
+   * produces no second message even before `shared.processed_events` is consulted,
+   * so the two idempotency mechanisms agree instead of competing.
+   *
+   * Returns the inserted row, or `null` when the key was already present — the
+   * caller then reads the existing id and reports a DEDUPLICATED enqueue.
+   *
+   * ## `template_version_id` is NOT written, and a declarative fix was tried
+   *
+   * The BEFORE INSERT guard `shared.guard_outbound_message_scope()` is SECURITY
+   * INVOKER and reads `shared.template_versions` whenever the column is set, so a
+   * role with no SELECT there cannot name a template version. Measured:
+   * `permission denied for table template_versions`.
+   *
+   * A tenant-qualified composite foreign key — the shape this table's company,
+   * branch and recipient keys already use — was built and measured against the
+   * live database, because referential-integrity checks run with the CONSTRAINT's
+   * rights rather than the caller's and would therefore need no grant. It was
+   * withdrawn, for two reasons that are worth recording so it is not retried
+   * blindly:
+   *
+   *  1. It does not remove the read. The guard draws THREE conclusions from one
+   *     lookup, and only two of them — existence and tenancy — are expressible as
+   *     a key. The third is `status = 'approved'`, and `status` is MUTABLE: a
+   *     partial unique index cannot be a foreign-key target, and folding the
+   *     status into the referenced key would make the FK refuse the UPDATE that
+   *     retires any version a message was ever sent from. After the migration was
+   *     applied, all four worker cases still failed with the same permission
+   *     error.
+   *  2. `template_versions.tenant_id` is NULLABLE — that is how a PLATFORM version
+   *     is represented — so the key has to be built on a folded
+   *     `COALESCE(tenant_id, sentinel)`, and the referencing row must then DECLARE
+   *     which owner it means. That makes a new column mandatory on every writer of
+   *     `template_version_id`: applying it failed all 62 cases of
+   *     `tests/db/p1-15-notifications.test.ts` on the pairing CHECK alone.
+   *
+   * So the column stays NULL on worker-enqueued rows. The remaining escapes are
+   * closed by standing decisions — a worker SELECT on the template tables is what
+   * payload-carries-the-facts forbids, and a SECURITY DEFINER guard is prohibited
+   * by two CI gates — which leaves ONE open question for the Owner: whether the
+   * `approved` check may move to the publisher, which already enforces it through
+   * `assertTemplateUsable`. That is a security-posture decision, not an
+   * implementation detail, and it is not taken here.
+   */
+  async enqueuePrepared(
+    db: WorkerDb,
+    input: {
+      readonly id: string;
+      readonly tenantId: string;
+      readonly companyId: string | null;
+      readonly branchId: string | null;
+      readonly templateVersionId: string;
+      readonly approvalWitnessId: string;
+      readonly templateOwnerTenantId: string;
+      readonly channel: string;
+      readonly purpose: string;
+      readonly recipientUserId: string;
+      readonly bodySha256: Buffer;
+      readonly dedupeKey: string;
+      readonly consentRef: string | null;
+      readonly createdBy: string;
+    }
+  ): Promise<{ id: string } | null> {
+    const result = await db.query<{ id: string }>(
+      `INSERT INTO shared.outbound_messages
+         (id, tenant_id, company_id, branch_id, template_version_id,
+          approval_witness_id, template_owner_tenant_id, channel, purpose,
+          recipient_user_id, body_sha256, dedupe_key, consent_ref, created_by)
+       VALUES ($1, $2, $3::uuid, $4::uuid, $5, $6, $7, $8, $9, $10::uuid, $11, $12, $13, $14)
+       ON CONFLICT (tenant_id, dedupe_key) DO NOTHING
+       RETURNING id`,
+      [
+        input.id,
+        input.tenantId,
+        input.companyId,
+        input.branchId,
+        input.templateVersionId,
+        input.approvalWitnessId,
+        input.templateOwnerTenantId,
+        input.channel,
+        input.purpose,
+        input.recipientUserId,
+        input.bodySha256,
+        input.dedupeKey,
+        input.consentRef,
+        input.createdBy,
+      ]
+    );
+    return result.rows[0] ?? null;
+  }
+
+  /** The id an existing dedupe key already holds, so a replay can name the row. */
+  async findIdByDedupeKey(
+    db: WorkerDb,
+    tenantId: string,
+    dedupeKey: string
+  ): Promise<string | null> {
+    const result = await db.query<{ id: string }>(
+      `SELECT id FROM shared.outbound_messages WHERE tenant_id = $1 AND dedupe_key = $2`,
+      [tenantId, dedupeKey]
+    );
+    return result.rows[0]?.id ?? null;
   }
 }
 

@@ -48,7 +48,7 @@ const Query = z
  * absent by design: both come from the resolved principal, and accepting either
  * from the client is how a tenant writes another tenant's row.
  */
-const CreateBody = z
+export const CreateBody = z
   .object({
     code: z.string().regex(CATALOGUE_CODE_PATTERN),
     name: z.string().trim().min(1).max(MAX_CATALOGUE_NAME),
@@ -79,6 +79,7 @@ export async function GET(request: Request): Promise<Response> {
 
 export const VISIT_REASON_CREATE_OPERATION = defineOperation({
   id: 'rec.catalogue-visit-reason-create',
+  successStatus: 201,
   module: 'reception',
   method: 'POST',
   path: '/reception-catalogue/visit-reasons',

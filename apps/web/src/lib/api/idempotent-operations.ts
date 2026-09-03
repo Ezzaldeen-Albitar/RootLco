@@ -10,7 +10,7 @@
  * The backend requires an `Idempotency-Key` header on every operation it
  * registers as idempotent, and answers `400 ERR-INT-002` without one — before
  * authorization is evaluated. That set is NOT "the POST operations": it is
- * currently 144 operations (PATCH 3, POST 135, PUT 6).
+ * currently 158 operations (PATCH 3, POST 149, PUT 6).
  *
  * The client used to infer the answer from the HTTP method, which was wrong for
  * every non-POST member of that set. This table is the contract instead of a
@@ -24,7 +24,7 @@
  * thirteen of them stating which class a write declares, none of them checkable
  * — because the Web tier held no data from which one could be derived.
  *
- * Currently approval 13, export 1, financial 13, none 121, privileged 144, security 13.
+ * Currently approval 13, export 1, financial 13, none 143, privileged 169, security 13.
  *
  * `(absent)` above would mean an operation the document publishes with NO audit
  * class. It is emitted as the empty string rather than defaulted to `none`,
@@ -49,7 +49,7 @@ export interface PublishedOperation {
   readonly auditClass: string;
 }
 
-/** Every operation the contract publishes. 305 of them. */
+/** Every operation the contract publishes. 352 of them. */
 export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze([
   {
     template: '/additional-work/{requestId}/approval',
@@ -367,6 +367,13 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     auditClass: 'none',
   },
   {
+    template: '/blockers/{blockerId}/resolution',
+    method: 'POST',
+    operationId: 'wo.job-blocker-resolve',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
     template: '/credit-notes/{creditNoteId}/approval',
     method: 'POST',
     operationId: 'sal.credit-note-approve',
@@ -640,6 +647,13 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     auditClass: 'privileged',
   },
   {
+    template: '/diagnostic-types',
+    method: 'GET',
+    operationId: 'dia.diagnostic-type-list',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
     template: '/exports/authorizations',
     method: 'POST',
     operationId: 'shared.export-authorize',
@@ -850,6 +864,41 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     auditClass: 'security',
   },
   {
+    template: '/inspection-templates',
+    method: 'GET',
+    operationId: 'dia.template-list',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/inspection-templates',
+    method: 'POST',
+    operationId: 'dia.template-create',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/inspection-templates/{templateId}',
+    method: 'GET',
+    operationId: 'dia.template-detail',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/inspection-templates/{templateId}',
+    method: 'PATCH',
+    operationId: 'dia.template-update',
+    idempotent: false,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/inspection-templates/{templateId}/versions',
+    method: 'POST',
+    operationId: 'dia.template-version-create',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
     template: '/inspections/{inspectionId}',
     method: 'GET',
     operationId: 'dia.diagnostic-detail',
@@ -983,6 +1032,20 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     auditClass: 'none',
   },
   {
+    template: '/jobs',
+    method: 'GET',
+    operationId: 'wo.job-list',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/jobs/{jobId}',
+    method: 'GET',
+    operationId: 'wo.job-detail',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
     template: '/jobs/{jobId}',
     method: 'PATCH',
     operationId: 'wo.job-update',
@@ -1004,9 +1067,44 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     auditClass: 'privileged',
   },
   {
+    template: '/jobs/{jobId}/blockers',
+    method: 'GET',
+    operationId: 'wo.job-blocker-list',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/jobs/{jobId}/blockers',
+    method: 'POST',
+    operationId: 'wo.job-blocker-raise',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/jobs/{jobId}/evidence',
+    method: 'GET',
+    operationId: 'wo.job-evidence-list',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/jobs/{jobId}/evidence',
+    method: 'POST',
+    operationId: 'wo.job-evidence-record',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
     template: '/jobs/{jobId}/history',
     method: 'GET',
     operationId: 'wo.job-history',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/jobs/{jobId}/inspection-templates',
+    method: 'GET',
+    operationId: 'dia.template-version-list-publishable',
     idempotent: false,
     auditClass: 'none',
   },
@@ -1049,6 +1147,20 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     template: '/jobs/{jobId}/transition',
     method: 'POST',
     operationId: 'wo.job-transition',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/jobs/{jobId}/work-logs',
+    method: 'GET',
+    operationId: 'wo.job-work-log-list',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/jobs/{jobId}/work-logs',
+    method: 'POST',
+    operationId: 'wo.job-work-log-record',
     idempotent: true,
     auditClass: 'privileged',
   },
@@ -1151,6 +1263,20 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     auditClass: 'none',
   },
   {
+    template: '/org/branches',
+    method: 'GET',
+    operationId: 'org.branch-list',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/org/branches/{branchId}',
+    method: 'PATCH',
+    operationId: 'org.branch-update',
+    idempotent: false,
+    auditClass: 'privileged',
+  },
+  {
     template: '/org/branches/{branchId}/settings',
     method: 'GET',
     operationId: 'iam.branch-settings-read',
@@ -1165,6 +1291,20 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     auditClass: 'privileged',
   },
   {
+    template: '/org/companies',
+    method: 'GET',
+    operationId: 'org.company-list',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/org/companies/{companyId}',
+    method: 'PATCH',
+    operationId: 'org.company-update',
+    idempotent: false,
+    auditClass: 'privileged',
+  },
+  {
     template: '/org/companies/{companyId}/settings',
     method: 'GET',
     operationId: 'iam.company-settings-read',
@@ -1176,6 +1316,34 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     method: 'POST',
     operationId: 'iam.company-settings-write',
     idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/org/companies/{companyId}/status',
+    method: 'POST',
+    operationId: 'org.company-status-set',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/org/departments',
+    method: 'GET',
+    operationId: 'org.department-list',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/org/departments',
+    method: 'POST',
+    operationId: 'org.department-create',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/org/departments/{departmentId}',
+    method: 'PATCH',
+    operationId: 'org.department-update',
+    idempotent: false,
     auditClass: 'privileged',
   },
   {
@@ -1235,6 +1403,27 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     auditClass: 'financial',
   },
   {
+    template: '/platform/organizations',
+    method: 'GET',
+    operationId: 'platform.organization-read',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/platform/organizations',
+    method: 'POST',
+    operationId: 'platform.organization-provision',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/platform/organizations/{tenantId}/status',
+    method: 'POST',
+    operationId: 'platform.organization-lifecycle',
+    idempotent: false,
+    auditClass: 'privileged',
+  },
+  {
     template: '/price-lists',
     method: 'GET',
     operationId: 'svc.price-list-list',
@@ -1273,6 +1462,20 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     template: '/prices',
     method: 'GET',
     operationId: 'svc.price-resolve',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/qc-checks',
+    method: 'GET',
+    operationId: 'qms.qc-check-list',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/quality-controls',
+    method: 'GET',
+    operationId: 'qms.qc-record-branch-list',
     idempotent: false,
     auditClass: 'none',
   },
@@ -1809,6 +2012,69 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     auditClass: 'privileged',
   },
   {
+    template: '/technicians',
+    method: 'GET',
+    operationId: 'tech.technician-list',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/technicians',
+    method: 'POST',
+    operationId: 'tech.technician-create',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/technicians/{technicianProfileId}',
+    method: 'GET',
+    operationId: 'tech.technician-detail',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/technicians/{technicianProfileId}',
+    method: 'PATCH',
+    operationId: 'tech.technician-update',
+    idempotent: false,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/technicians/{technicianProfileId}/availability',
+    method: 'POST',
+    operationId: 'tech.technician-availability-record',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/technicians/{technicianProfileId}/availability/{availabilityId}',
+    method: 'DELETE',
+    operationId: 'tech.technician-availability-withdraw',
+    idempotent: false,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/technicians/{technicianProfileId}/certifications',
+    method: 'POST',
+    operationId: 'tech.technician-certification-record',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/technicians/{technicianProfileId}/certifications/{certificationId}',
+    method: 'PATCH',
+    operationId: 'tech.technician-certification-update',
+    idempotent: false,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/technicians/{technicianProfileId}/certifications/{certificationId}/detail',
+    method: 'PUT',
+    operationId: 'tech.technician-certification-detail-record',
+    idempotent: false,
+    auditClass: 'privileged',
+  },
+  {
     template: '/technicians/{technicianProfileId}/queue',
     method: 'GET',
     operationId: 'tech.technician-queue',
@@ -1816,9 +2082,30 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     auditClass: 'none',
   },
   {
+    template: '/technicians/{technicianProfileId}/skills/{skillId}',
+    method: 'DELETE',
+    operationId: 'tech.technician-skill-withdraw',
+    idempotent: false,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/technicians/{technicianProfileId}/skills/{skillId}',
+    method: 'PUT',
+    operationId: 'tech.technician-skill-set',
+    idempotent: false,
+    auditClass: 'privileged',
+  },
+  {
     template: '/technicians/available',
     method: 'GET',
     operationId: 'tech.technician-available',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/technicians/me/queue',
+    method: 'GET',
+    operationId: 'tech.technician-me-queue',
     idempotent: false,
     auditClass: 'none',
   },
@@ -1837,6 +2124,20 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     auditClass: 'approval',
   },
   {
+    template: '/template-versions/{versionId}/items',
+    method: 'GET',
+    operationId: 'dia.template-version-item-list',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/template-versions/{versionId}/items',
+    method: 'POST',
+    operationId: 'dia.template-item-create',
+    idempotent: true,
+    auditClass: 'privileged',
+  },
+  {
     template: '/template-versions/{versionId}/preview',
     method: 'POST',
     operationId: 'shared.template-version-preview',
@@ -1848,6 +2149,13 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     method: 'POST',
     operationId: 'shared.template-version-retire',
     idempotent: false,
+    auditClass: 'privileged',
+  },
+  {
+    template: '/template-versions/{versionId}/status',
+    method: 'POST',
+    operationId: 'dia.template-version-status-set',
+    idempotent: true,
     auditClass: 'privileged',
   },
   {
@@ -2047,6 +2355,13 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     auditClass: 'none',
   },
   {
+    template: '/work-order-catalogue',
+    method: 'GET',
+    operationId: 'wo.work-order-catalogue',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
     template: '/work-orders',
     method: 'GET',
     operationId: 'wo.work-order-list',
@@ -2085,6 +2400,13 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     template: '/work-orders/{workOrderId}/closure-eligibility',
     method: 'GET',
     operationId: 'wo.work-order-closure-eligibility',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/work-orders/{workOrderId}/evidence',
+    method: 'GET',
+    operationId: 'wo.work-order-evidence-list',
     idempotent: false,
     auditClass: 'none',
   },
@@ -2178,6 +2500,13 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     operationId: 'wo.service-line-record',
     idempotent: true,
     auditClass: 'privileged',
+  },
+  {
+    template: '/work-orders/{workOrderId}/timeline',
+    method: 'GET',
+    operationId: 'wo.work-order-timeline',
+    idempotent: false,
+    auditClass: 'none',
   },
   {
     template: '/work-orders/{workOrderId}/transition',

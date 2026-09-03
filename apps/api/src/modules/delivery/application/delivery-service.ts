@@ -51,7 +51,7 @@ import { publishEvent } from '@/server/events/publisher';
 import { isSqlState, sqlState, SQLSTATE } from '@/server/db/repository';
 import type { DbHandle } from '@/server/db/transaction';
 import { callerHoldsPermission, type ScopeAuthorizer } from '@/server/auth/authorization';
-import { sharedServicesModule } from '@/modules/shared-services';
+import { EVIDENCE_REFUSED_STATES, sharedServicesModule } from '@/modules/shared-services';
 import { workOrderModule } from '@/modules/work-order';
 import {
   DeliveryRuleError,
@@ -197,9 +197,6 @@ export interface CompleteDeliveryInput {
    */
   readonly expectedVersion?: number | undefined;
 }
-
-/** Version states this module accepts as a real, registered document version. */
-const REFUSED_VERSION_STATES: readonly string[] = Object.freeze(['rejected', 'quarantined']);
 
 /**
  * Translates the protected schema's refusals into the controlled error catalog.
@@ -1219,7 +1216,7 @@ export class DeliveryService {
         safeDetails: { violations: [{ path, rule: 'custom' }] },
       });
     }
-    if (REFUSED_VERSION_STATES.includes(version.status)) {
+    if (EVIDENCE_REFUSED_STATES.includes(version.status)) {
       throw new AppFailure('ERR-DOC-001', {
         message: 'The document version was refused by review or quarantine and cannot be bound.',
       });

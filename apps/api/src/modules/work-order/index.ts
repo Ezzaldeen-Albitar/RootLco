@@ -40,7 +40,7 @@ export type {
   PageInput,
   ReachableState,
   TransitionInput,
-  TransitionResult,
+  WorkOrderTransitionResult,
   WorkOrderDetail,
   WorkOrderHistoryEntry,
   WorkOrderHistoryView,
@@ -51,10 +51,19 @@ import { WorkOrderCatalogService } from './application/work-order-catalog-servic
 import { WorkOrderService } from './application/work-order-service';
 import { JobAssignmentService } from './application/job-assignment-service';
 import { AdditionalWorkService } from './application/additional-work-service';
+import { JobBoardService } from './application/job-board-service';
+import { JobBoardRepository } from './data/job-board-repository';
 
-export type { AssignInput, AssignmentView, QueueEntry } from './application/job-assignment-service';
+export type {
+  AssignInput,
+  AssignmentView,
+  JobReassignmentResult,
+  QueueEntry,
+  TechnicianQueueResult,
+} from './application/job-assignment-service';
 export type { AssignmentRow, LineRow, TechnicianQueueRow } from './data/work-order-repository';
 export type {
+  AdditionalWorkDecisionResult,
   AdditionalWorkDetailView,
   AdditionalWorkRequestView,
   ApprovalEvidenceInput,
@@ -115,6 +124,30 @@ export {
   type WorkOrderKind,
 } from './domain/work-order';
 
+export type {
+  BlockerEventRow,
+  JobBoardRow,
+  JobEvidenceRow,
+  WorkLogEntryRow,
+  WorkOrderEvidenceRow,
+} from './data/job-board-repository';
+export {
+  MAX_BLOCKER_NOTE,
+  MAX_JOB_EVIDENCE_NOTE,
+  MAX_WORK_LOG_ENTRY,
+  RECOMMENDED_EVIDENCE_TYPES,
+  QC_OVERALL_RESULTS,
+  STATE_CODE_PATTERN,
+  type JobAssignmentView,
+  type JobBlockerResolutionView,
+  type JobBlockerView,
+  type JobDetail,
+  type OmittedTimelineKind,
+  type QcOverallResult,
+  type WorkOrderTimelineEntry,
+  type WorkOrderTimelinePage,
+} from './application/job-board-service';
+
 /** Composition root: constructs the module's services once per process. */
 export const workOrderModule = composeModule({
   module: 'work-order',
@@ -126,6 +159,11 @@ export const workOrderModule = composeModule({
       workOrders: new WorkOrderService(repository, catalog),
       jobAssignments: new JobAssignmentService(repository, catalog),
       additionalWork: new AdditionalWorkService(repository, catalog),
+      // BR-06. Shares the catalogue service rather than constructing a second
+      // one: `wo.job-detail` computes its reachable edges from the SAME tenant
+      // graph `wo.work-order-detail` does, and two instances would be two caches
+      // of one tenant's configuration.
+      jobBoard: new JobBoardService(new JobBoardRepository(), catalog),
     };
   },
 });

@@ -11,7 +11,12 @@
  */
 import { ApplicationService } from '@/server/layering';
 import type { DbHandle } from '@/server/db/transaction';
-import type { QcCheckRow, QualityRepository, ReworkLinkRow } from '../data/quality-repository';
+import type {
+  QcCheckRow,
+  QcCheckVocabularyRow,
+  QualityRepository,
+  ReworkLinkRow,
+} from '../data/quality-repository';
 
 export interface QualityGateStatus {
   /** B5a: a failed record exists and no passing record supersedes it. */
@@ -27,6 +32,11 @@ export class QualityGateService extends ApplicationService {
 
   constructor(private readonly repository: QualityRepository) {
     super();
+  }
+
+  /** The check vocabulary the caller's tenant resolves, both statuses (P1-29-W8). */
+  async vocabulary(db: DbHandle): Promise<readonly QcCheckVocabularyRow[]> {
+    return this.repository.qcCheckVocabulary(db);
   }
 
   /** Active QC checks for the caller's tenant. */

@@ -59,6 +59,13 @@ export interface TransitionResult {
   readonly nextStates: readonly string[];
 }
 
+/** Where a record stands now, and where it may legally go next. */
+export interface StatusDescription {
+  readonly state: string;
+  readonly recordVersion: number;
+  readonly nextStates: readonly string[];
+}
+
 export class StatusTransitionService extends ApplicationService {
   protected readonly module = 'shared-services';
 
@@ -206,11 +213,7 @@ export class StatusTransitionService extends ApplicationService {
   }
 
   /** Reads current state and options without changing anything. */
-  async describe(
-    db: DbHandle,
-    aggregate: string,
-    id: string
-  ): Promise<{ state: string; recordVersion: number; nextStates: readonly string[] }> {
+  async describe(db: DbHandle, aggregate: string, id: string): Promise<StatusDescription> {
     if (!findAggregate(aggregate)) {
       throw new AppFailure('ERR-VAL-001', {
         message: 'Aggregate is not registered with the transition engine',

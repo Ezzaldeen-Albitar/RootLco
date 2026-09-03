@@ -68,6 +68,18 @@ export function templateContentHash(subject: string | null, body: string): Buffe
     .digest();
 }
 
+/** A template version rendered against sample variables, for preview only. */
+export interface RenderedPreview {
+  readonly subject: string | null;
+  readonly body: string;
+  readonly variables: readonly string[];
+}
+
+/** The identifier of a newly created message template. */
+export interface TemplateCreated {
+  readonly templateId: string;
+}
+
 export class TemplateService extends ApplicationService {
   protected readonly module = 'shared-services';
 
@@ -75,7 +87,7 @@ export class TemplateService extends ApplicationService {
     super();
   }
 
-  async createTemplate(db: DbHandle, input: CreateTemplateInput): Promise<{ templateId: string }> {
+  async createTemplate(db: DbHandle, input: CreateTemplateInput): Promise<TemplateCreated> {
     if (!RENDERABLE_CHANNELS.includes(input.channel)) {
       throw new AppFailure('ERR-VAL-001', {
         message: 'Channel is not supported by the platform',
@@ -351,7 +363,7 @@ export class TemplateService extends ApplicationService {
     db: DbHandle,
     versionId: string,
     variables: Readonly<Record<string, string>>
-  ): Promise<{ subject: string | null; body: string; variables: readonly string[] }> {
+  ): Promise<RenderedPreview> {
     const version = await this.requireVisibleVersion(db, versionId);
     const config = backendConfig();
     try {

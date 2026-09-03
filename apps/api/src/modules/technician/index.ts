@@ -29,6 +29,8 @@ import { TechnicianCatalogRepository } from './data/technician-catalog-repositor
 import { TechnicianEligibilityService } from './application/technician-eligibility-service';
 import { LaborSessionRepository } from './data/labor-session-repository';
 import { LaborSessionService } from './application/labor-session-service';
+import { TechnicianRosterRepository } from './data/technician-roster-repository';
+import { TechnicianRosterService } from './application/technician-roster-service';
 
 export type {
   AvailabilityRow,
@@ -42,8 +44,17 @@ export type {
 export type {
   EligibilityRequirement,
   EligibilityVerdict,
+  TechnicianCandidateResult,
 } from './application/technician-eligibility-service';
 export type { LaborSessionView, SessionPageInput } from './application/labor-session-service';
+export type {
+  AvailabilityWindowView,
+  CertificateNumberView,
+  HeldCertificationView,
+  HeldSkillView,
+  TechnicianProfileDetail,
+  TechnicianProfileView,
+} from './application/technician-roster-service';
 export type { LaborSessionRow } from './data/labor-session-repository';
 
 export {
@@ -52,6 +63,9 @@ export {
   CERTIFICATION_STATUSES,
   INELIGIBILITY_REASONS,
   LABOR_SOURCES,
+  MAX_CERTIFICATE_NUMBER,
+  MAX_EMPLOYMENT_REF,
+  MAX_TRADE,
   MAX_UNAVAILABILITY_REASON,
   TechnicianRuleError,
   assertEligible,
@@ -76,9 +90,20 @@ export const technicianModule = composeModule({
   module: 'technician',
   create: () => {
     const profiles = new TechnicianCatalogRepository();
+    const roster = new TechnicianRosterRepository();
     return {
       eligibility: new TechnicianEligibilityService(profiles),
-      laborSessions: new LaborSessionService(new LaborSessionRepository(), profiles),
+      laborSessions: new LaborSessionService(new LaborSessionRepository(), profiles, roster),
+      // BR-03. The roster WRITES, kept beside the reads they maintain: the
+      // eligibility service consumes exactly the rows this service produces, and
+      // splitting them across modules would have put `tech` writes outside the
+      // module that owns the schema.
+      roster: new TechnicianRosterService(roster, profiles),
+      // BR-06. The open-session PORT, exposed as a repository rather than wrapped
+      // in a service because it carries no rule: it is a read the owning module
+      // performs on behalf of the work-order board, which is exactly the shape of
+      // the OpenInventoryCommitments precedent.
+      laborSessionPort: new LaborSessionRepository(),
     };
   },
 });

@@ -27,7 +27,7 @@ export const dynamic = 'force-dynamic';
 
 const Params = z.object({ jobId: schemas.uuid });
 
-const Body = z
+export const Body = z
   .object({
     technicianProfileId: schemas.uuid,
     reason: z.string().trim().min(1).max(MAX_REASON),
@@ -54,6 +54,7 @@ const Body = z
 
 export const JOB_REASSIGNMENT_OPERATION = defineOperation({
   id: 'wo.job-reassignment',
+  successStatus: 201,
   module: 'work-order',
   method: 'POST',
   path: '/jobs/{jobId}/reassignments',

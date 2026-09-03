@@ -38,6 +38,22 @@ const schema = z.object({
    */
   WORKER_DATABASE_URL: z.string().min(1).optional(),
 
+  /**
+   * The control-plane connection (PRE-P1-29 Wave B, §6.8.3).
+   *
+   * Its login role holds membership of `app_platform` AND of no other
+   * application archetype. That exclusivity is the containment: PostgreSQL
+   * enforces membership at the login role, so a role holding both `app_platform`
+   * and `app_runtime` would carry both authorities by inheritance on one
+   * connection, and the `SET ROLE` prohibition would buy nothing.
+   *
+   * Deliberately does NOT follow `WORKER_DATABASE_URL`'s `?? DATABASE_URL`
+   * fallback. Falling back would put platform authority on the request path's
+   * role — the exact state §6.8.3 exists to forbid — and it would do so
+   * silently. Absent, the platform path fails closed instead.
+   */
+  PLATFORM_DATABASE_URL: z.string().min(1).optional(),
+
   /** Bounded connection pool. A web instance must never exhaust the server. */
   DB_POOL_MAX: bounded(1, 50, 10),
   DB_POOL_IDLE_TIMEOUT_MS: bounded(1_000, 300_000, 30_000),

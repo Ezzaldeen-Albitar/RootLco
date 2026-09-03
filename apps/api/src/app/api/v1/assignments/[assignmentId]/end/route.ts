@@ -26,7 +26,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const Params = z.object({ assignmentId: schemas.uuid });
-const Body = z.object({ reason: z.string().trim().min(1).max(MAX_REASON) }).strict();
+export const Body = z.object({ reason: z.string().trim().min(1).max(MAX_REASON) }).strict();
 
 export const JOB_ASSIGNMENT_END_OPERATION = defineOperation({
   id: 'wo.job-assignment-end',

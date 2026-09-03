@@ -60,7 +60,7 @@ const Origin = z.discriminatedUnion('kind', [
     .strict(),
 ]);
 
-const Body = z
+export const Body = z
   .object({
     companyId: schemas.uuid,
     branchId: schemas.uuid,
@@ -83,6 +83,7 @@ const Body = z
 
 export const RECEPTION_CREATE_OPERATION = defineOperation({
   id: 'rec.reception-create',
+  successStatus: 201,
   module: 'reception',
   method: 'POST',
   path: '/receptions',

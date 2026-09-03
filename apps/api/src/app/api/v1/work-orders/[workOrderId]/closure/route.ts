@@ -43,7 +43,7 @@ const Params = z.object({ workOrderId: schemas.uuid });
  * one terminal non-cancellation state; defaulting would silently pick the platform
  * one and close an order into a state the caller did not choose.
  */
-const Body = z
+export const Body = z
   .object({
     toState: z.string().regex(/^[a-z][a-z0-9_]{1,62}$/, 'must be a lower-snake state code'),
     reason: z.string().min(1).max(MAX_REASON).optional(),

@@ -171,7 +171,35 @@ describe('the API application lives in the workspace', () => {
     // 249 with the nine P1-18 evidence-contract modules: the evidence-binding trio,
     // the capture override, the signature event and list, and the capture-policy
     // and damage-map-template catalogues.
-    expect(routeFiles.length).toBe(249);
+    //
+    // 257 with the eight PRE-P1-29-BR-03 technician roster modules: the roster
+    // collection, the profile, the held skill, the certification collection, the
+    // held certification and its restricted detail sidecar, and the availability
+    // collection and window.
+    //
+    // 258 with PRE-P1-29-BR-01's `technicians/me/queue`: one module, one
+    // operation — the two counts move together here because the route publishes a
+    // single verb, unlike the BR-03 modules above it.
+    //
+    // 270 with the six PRE-P1-29-BR-04 inspection-template modules:
+    // `inspection-templates`, `inspection-templates/[templateId]`,
+    // `inspection-templates/[templateId]/versions`,
+    // `template-versions/[versionId]/items`,
+    // `template-versions/[versionId]/status` and
+    // `jobs/[jobId]/inspection-templates`.
+    //
+    // Six modules carry EIGHT operations, because the collection and the
+    // id-addressed template each co-locate two verbs on one path — the same
+    // reason BR-03's eight modules carried eleven, and the whole reason both
+    // this number and the operation count below are asserted rather than one.
+    //
+    // This is deliberately NOT the 263 that `validate:authorization-coverage`
+    // and the OpenAPI document report. Those count PATHS; this walk counts every
+    // `route.ts` under the API root, and the two differ by one — measured at 258
+    // files against 257 paths before this slice, and 270 against 263 after, so
+    // the gap is pre-existing and unchanged. Reconciling them by editing
+    // whichever number looked wrong is how a real gap would get hidden.
+    expect(routeFiles.length).toBe(284);
 
     // Non-vacuity. A discovery assertion that only checks a count would pass
     // against a set with one route swapped for another, so the comparison that
@@ -192,7 +220,7 @@ describe('the API application lives in the workspace', () => {
     }
   });
 
-  it('discovers the same 261 operations from the root, apps/api and apps/web', () => {
+  it('discovers the same 352 operations from the root, apps/api and apps/web', () => {
     // The decisive cwd proof, run against a REAL validator rather than the
     // helper alone: `check-authorization-coverage.mjs` derived the repository
     // from `process.cwd()` until this migration, so its answer used to depend on
@@ -218,12 +246,23 @@ describe('the API application lives in the workspace', () => {
     // moves both counts by one per new module, for the same reason.
     // 305: the same nine modules publish thirteen operations, because the catalogue
     // modules co-locate a read and a write on one path.
-    expect(report.operations).toHaveLength(305);
+    // 316 with BR-03: eleven operations over eight modules, because the roster
+    // collection, the profile and the held skill each co-locate two verbs on one
+    // path — eight and eleven again moving by different amounts, which is the
+    // whole reason both numbers are asserted rather than one.
+    // 317 with BR-01: one operation over one module.
+    // 325 with BR-04: eight operations over six modules — the inspection-template
+    // collection and the id-addressed template each co-locate two verbs on one
+    // path, so the module count moves by six while this one moves by eight.
+    expect(report.operations).toHaveLength(352);
 
-    // ~1 s per process by construction, not by slowness. The budget is stated
-    // here rather than raised globally, so it cannot quietly cover a different
-    // test that has genuinely regressed.
-  }, 30_000);
+    // Three node processes, each loading the whole route surface, so the cost
+    // grows with the surface. The budget was 30 s and began timing out inside the
+    // full tier as PRE-P1-29 took the registry past 300 operations — a timeout,
+    // not an assertion failure, and green on the hosted Linux runner throughout.
+    // Raised to 120 s and still stated HERE rather than in `vitest.config.ts`, so
+    // it cannot quietly cover a different test that has genuinely regressed.
+  }, 120_000);
 
   it('refuses to answer for a tree that is not there', () => {
     // A path helper that silently returns a directory which does not exist is

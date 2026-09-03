@@ -39,7 +39,7 @@ export const dynamic = 'force-dynamic';
 
 const Params = z.object({ workOrderId: schemas.uuid });
 
-const Body = z
+export const Body = z
   .object({
     originatingJobId: schemas.uuid.optional(),
     originatingFindingId: schemas.uuid.optional(),
@@ -55,6 +55,7 @@ const Body = z
 
 export const ADDITIONAL_WORK_REQUEST_OPERATION = defineOperation({
   id: 'wo.additional-work-request',
+  successStatus: 201,
   module: 'work-order',
   method: 'POST',
   path: '/work-orders/{workOrderId}/additional-work',

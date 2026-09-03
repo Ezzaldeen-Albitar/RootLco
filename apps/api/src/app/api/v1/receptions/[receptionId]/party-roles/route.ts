@@ -34,7 +34,7 @@ export const dynamic = 'force-dynamic';
 const MAX_ASSIGNMENT_SOURCE = 120;
 
 const Params = z.object({ receptionId: schemas.uuid });
-const Body = z
+export const Body = z
   .object({
     partnerId: schemas.uuid,
     relationshipRole: z.enum(RECEPTION_PARTY_ROLES),
@@ -45,6 +45,7 @@ const Body = z
 
 export const RECEPTION_PARTY_ROLE_OPERATION = defineOperation({
   id: 'rec.reception-party-role',
+  successStatus: 201,
   module: 'reception',
   method: 'POST',
   path: '/receptions/{receptionId}/party-roles',

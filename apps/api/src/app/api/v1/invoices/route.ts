@@ -41,7 +41,7 @@ import { billingModule } from '@/modules/billing';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const CreateBody = z
+export const CreateBody = z
   .object({
     workOrderId: schemas.uuid,
     /**
@@ -57,6 +57,7 @@ const CreateBody = z
 
 export const INVOICE_CREATE_OPERATION = defineOperation({
   id: 'sal.invoice-create',
+  successStatus: 201,
   module: 'billing',
   method: 'POST',
   path: '/invoices',

@@ -43,7 +43,7 @@ export const dynamic = 'force-dynamic';
 
 const Params = z.object({ deliveryId: schemas.uuid }).strict();
 
-const SignBody = z
+export const SignBody = z
   .object({
     signerRole: z.enum(SIGNER_ROLES),
     // The ONLY signature field. `.strict()` above is what makes that true rather than
@@ -54,6 +54,7 @@ const SignBody = z
 
 export const DELIVERY_SIGNATURE_ATTACH_OPERATION = defineOperation({
   id: 'sal.delivery-signature-attach',
+  successStatus: 201,
   module: 'delivery',
   method: 'POST',
   path: '/deliveries/{deliveryId}/signatures',

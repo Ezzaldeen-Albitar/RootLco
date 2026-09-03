@@ -63,7 +63,7 @@ const Line = z
   })
   .strict();
 
-const Body = z
+export const Body = z
   .object({
     workOrderId: schemas.uuid,
     payerPartnerRef: schemas.uuid.optional(),
@@ -78,6 +78,7 @@ const Body = z
 
 export const QUOTATION_CREATE_OPERATION = defineOperation({
   id: 'quo.quotation-create',
+  successStatus: 201,
   module: 'quotation',
   method: 'POST',
   path: '/quotations',

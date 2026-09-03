@@ -37,8 +37,9 @@ import { SQLSTATE, isSqlState } from '@/server/db/repository';
 import { appendAudit } from '@/server/audit/audit';
 import { publishEvent } from '@/server/events/publisher';
 import { pageRequest, type Page } from '@/server/db/pagination';
+import type { TimelineSourceRow, TimelineWindow } from '@/server/db/timeline';
 import { workOrderModule } from '@/modules/work-order';
-import { sharedServicesModule } from '@/modules/shared-services';
+import { EVIDENCE_REFUSED_STATES, sharedServicesModule } from '@/modules/shared-services';
 import {
   REPORT_HISTORY_ORDER,
   type DiagnosticEvidenceRow,
@@ -149,9 +150,6 @@ export interface ReportHistoryView {
   readonly transitions: Page<ReportHistoryEntry>;
 }
 
-/** Version states a document may be in and still be bound as diagnostic evidence. */
-const EVIDENCE_REFUSED_STATES: readonly string[] = Object.freeze(['rejected', 'quarantined']);
-
 const toReportView = (row: DiagnosticReportRow): DiagnosticReportView => ({
   id: row.id,
   workOrderId: row.workOrderId,
@@ -195,6 +193,19 @@ export class DiagnosticReportService extends ApplicationService {
 
   constructor(private readonly repository: DiagnosticsRepository) {
     super();
+  }
+
+  /**
+   * The report status events of one work order for the unified timeline
+   * (P1-29 `W6`). A PORT: the work-order timeline has authorised the order and
+   * checked `dia.diagnostic.read` before asking.
+   */
+  async timelineEvents(
+    db: DbHandle,
+    workOrderId: string,
+    window: TimelineWindow
+  ): Promise<readonly TimelineSourceRow[]> {
+    return this.repository.timelineEventsForWorkOrder(db, workOrderId, window);
   }
 
   /**

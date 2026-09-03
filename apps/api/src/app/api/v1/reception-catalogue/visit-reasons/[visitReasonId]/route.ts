@@ -30,7 +30,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const Params = z.object({ visitReasonId: schemas.uuid });
-const Body = z.object({ name: z.string().trim().min(1).max(MAX_CATALOGUE_NAME) }).strict();
+export const Body = z.object({ name: z.string().trim().min(1).max(MAX_CATALOGUE_NAME) }).strict();
 
 export const VISIT_REASON_UPDATE_OPERATION = defineOperation({
   id: 'rec.catalogue-visit-reason-update',

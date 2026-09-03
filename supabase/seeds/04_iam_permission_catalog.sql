@@ -18,6 +18,7 @@ INSERT INTO iam.permissions (permission_code, domain, description, risk_level, c
   ('org.company.manage',       'org', 'Create and update companies',      'medium', '00000000-0000-4000-8000-000000000001'),
   ('org.branch.read',          'org', 'Read branches',                    'low',    '00000000-0000-4000-8000-000000000001'),
   ('org.branch.manage',        'org', 'Create and update branches',       'medium', '00000000-0000-4000-8000-000000000001'),
+  ('org.department.read',      'org', 'Read the department list',         'low',    '00000000-0000-4000-8000-000000000001'),
   ('org.department.manage',    'org', 'Manage departments/structure',     'medium', '00000000-0000-4000-8000-000000000001'),
   ('org.settings.manage',      'org', 'Manage company/branch settings',   'high',   '00000000-0000-4000-8000-000000000001'),
   ('org.tax.manage',           'org', 'Manage tax classes and rates',     'high',   '00000000-0000-4000-8000-000000000001'),
@@ -228,6 +229,12 @@ INSERT INTO iam.permissions (permission_code, domain, description, risk_level, c
   -- Reading technician skills, certifications and availability. Employment-derived
   -- data, so it is its own code rather than part of a general read.
   ('tech.technician.read',     'tech','Read technician profiles, eligibility and queues','low',   '00000000-0000-4000-8000-000000000001'),
+  -- BR-03. The WRITE counterpart of the read above, minted rather than folded into
+  -- tech.assignment.manage: assignment decides who touches a vehicle today, whereas a
+  -- roster write creates the SUBJECT of every labor record and the entity certifications
+  -- hang off. Reusing the assignment code would have silently widened every existing
+  -- assignment grant into roster administration.
+  ('tech.technician.manage',   'tech','Administer technician profiles, skills, certifications and availability','medium','00000000-0000-4000-8000-000000000001'),
   -- Phase 1-19 (dia) - Diagnostics. Recording findings is distinct from completing a
   -- report, and completing is distinct from reviewing it.
   ('dia.diagnostic.record',    'dia', 'Create diagnostic reports and record their entries','medium','00000000-0000-4000-8000-000000000001'),
@@ -236,6 +243,13 @@ INSERT INTO iam.permissions (permission_code, domain, description, risk_level, c
   -- reviewer-separation policy has something to enforce against.
   ('dia.diagnostic.review',    'dia', 'Review a completed diagnostic report',           'high',   '00000000-0000-4000-8000-000000000001'),
   ('dia.diagnostic.read',      'dia', 'Read diagnostic reports and their evidence',     'low',    '00000000-0000-4000-8000-000000000001'),
+  -- PRE-P1-29-BR-04. Authoring the inspection-template library is a different
+  -- authority from recording against one: a technician who may fill in an
+  -- inspection must not thereby be able to change what the inspection ASKS, which
+  -- would silently re-shape every future report. Risk `high` for the same reason
+  -- `apt.catalogue.manage` and `rec.catalogue.manage` are: a catalogue defines
+  -- what the operational surface can express at all.
+  ('dia.catalogue.manage',     'dia', 'Author inspection templates, versions and items', 'high',   '00000000-0000-4000-8000-000000000001'),
   -- Phase 1-19 (qms) - Quality. Recording individual check results is separated from
   -- finalizing the record, for the same reason transition is separated from close and
   -- request from approve above: finalizing as passed is the act that clears closure
@@ -328,7 +342,29 @@ INSERT INTO iam.permissions (permission_code, domain, description, risk_level, c
   -- mappings are tenant provisioning, so on a freshly replayed database this
   -- code exists and is held by nobody, and cross-branch selection is refused for
   -- every actor until a tenant deliberately grants it.
-  ('rec.reception.receiving_employee.assign_any', 'rec', 'Name a receiving employee who is not eligible for the visit branch', 'high', '00000000-0000-4000-8000-000000000001')
+  ('rec.reception.receiving_employee.assign_any', 'rec', 'Name a receiving employee who is not eligible for the visit branch', 'high', '00000000-0000-4000-8000-000000000001'),
+
+  -- ------------------------------------------------------------------------
+  -- PRE-P1-29 Wave B — the control plane. Three codes, one new domain.
+  --
+  -- These are the only permissions in the product that are NOT inside a tenant.
+  -- iam.has_permission cannot answer them: it returns false unless the acting
+  -- principal holds an ACTIVE ACCOUNT IN THE CURRENT TENANT, which a platform
+  -- operator creating that tenant does not have. They are resolved instead by
+  -- iam.has_platform_authority against iam.platform_grants, and the routes that
+  -- declare them take the platform-authority branch in authorization.ts. A route
+  -- that declared one WITHOUT that branch would answer 403 to every caller,
+  -- permanently — the platform.meta.ping / PC-1 defect this repository has
+  -- already shipped once.
+  --
+  -- Seeded here because this file is the only shipping insert into
+  -- iam.permissions and zero migrations write that table. Mapped to NO role: a
+  -- platform grant is an out-of-band operator act with its own record, and no
+  -- application role holds INSERT on iam.platform_grants.
+  -- ------------------------------------------------------------------------
+  ('platform.organization.read',      'platform', 'Read any organization from the control plane', 'medium', '00000000-0000-4000-8000-000000000001'),
+  ('platform.organization.provision', 'platform', 'Create a tenant and its first Owner',          'high',   '00000000-0000-4000-8000-000000000001'),
+  ('platform.organization.lifecycle', 'platform', 'Transition a tenant lifecycle status',         'high',   '00000000-0000-4000-8000-000000000001')
 ON CONFLICT (permission_code) DO NOTHING;
 
 DO $$

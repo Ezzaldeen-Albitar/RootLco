@@ -58,7 +58,7 @@ const Evidence = z
   })
   .strict();
 
-const Body = z
+export const Body = z
   .object({
     decision: z.enum(DECISIONS),
     channel: z.enum(DECISION_CHANNELS),
@@ -78,6 +78,7 @@ const Body = z
 
 export const QUOTATION_REVISION_DECIDE_OPERATION = defineOperation({
   id: 'quo.quotation-revision-decide',
+  successStatus: 201,
   module: 'quotation',
   method: 'POST',
   path: '/quotation-revisions/{revisionId}/decisions',

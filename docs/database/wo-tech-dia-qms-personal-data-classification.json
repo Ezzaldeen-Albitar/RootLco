@@ -2,7 +2,7 @@
   "$schema": "./classification.schema.json",
   "description": "P1-09-SEC-003 — Work Order (wo) + Technician (tech) + Diagnostics (dia) + Quality (qms) personal-data / sensitivity classification registry. Every live column in the four Phase 1-9 module schemas is classified. Restricted columns live in gated 1:1 tables (iam.sensitive.view); none is searchable.",
   "allowedClassifications": ["public", "internal", "restricted", "secret"],
-  "columnCount": 657,
+  "columnCount": 687,
   "columns": {
     "dia.diagnostic_evidence.id": {
       "classification": "internal",
@@ -2744,6 +2744,11 @@
       "searchable": false,
       "dataType": "text"
     },
+    "wo.jobs.department_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
     "wo.jobs.state": {
       "classification": "internal",
       "searchable": false,
@@ -3285,6 +3290,151 @@
       "dataType": "timestamp with time zone"
     },
     "wo.work_orders.deleted_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.job_work_logs.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.job_work_logs.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.job_work_logs.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.job_work_logs.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.job_work_logs.job_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.job_work_logs.entry": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "wo.job_work_logs.logged_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "wo.job_work_logs.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "wo.job_work_logs.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.job_evidence.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.job_evidence.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.job_evidence.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.job_evidence.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.job_evidence.job_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.job_evidence.document_version_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.job_evidence.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.job_evidence.evidence_type": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "wo.job_evidence.note": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "wo.job_evidence.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "wo.job_blocker_events.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.job_blocker_events.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.job_blocker_events.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.job_blocker_events.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.job_blocker_events.job_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.job_blocker_events.event": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "wo.job_blocker_events.resolves_event_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "wo.job_blocker_events.note": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "wo.job_blocker_events.occurred_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "wo.job_blocker_events.created_by": {
       "classification": "internal",
       "searchable": false,
       "dataType": "uuid"

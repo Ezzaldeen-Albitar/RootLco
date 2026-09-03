@@ -29,6 +29,7 @@ import { ReceptionEvidenceRepository } from './data/reception-evidence-repositor
 import { ReceptionConversionRepository } from './data/reception-conversion-repository';
 import { ReceptionReadRepository } from './data/reception-read-repository';
 import { ReceptionCaptureRepository } from './data/reception-capture-repository';
+import { PartyContextRepository } from './data/party-context-repository';
 import { AppointmentService } from './application/appointment-service';
 import { AppointmentReadService } from './application/appointment-read-service';
 import { IntakeCatalogueService } from './application/intake-catalogue-service';
@@ -230,6 +231,9 @@ export {
  * three times, because all three lock the same visit row and there is exactly one
  * way to do that correctly.
  */
+export type { WorkOrderPartyRow, WorkOrderVehicleRow } from './data/party-context-repository';
+export { SERVICE_REQUESTER } from './data/party-context-repository';
+
 export const receptionModule = composeModule({
   module: 'reception',
   create: () => {
@@ -255,6 +259,11 @@ export const receptionModule = composeModule({
       // capture commands lock the same visit row, and there is exactly one way
       // to do that correctly.
       receptionCapture: new ReceptionCaptureService(new ReceptionCaptureRepository(), receptions),
+      // BR-05: the dated party/vehicle projection the WORK-ORDER surface reads.
+      // Exposed as a repository rather than wrapped in a service because it
+      // carries no rule — it is a read the owning module performs on behalf of
+      // another, which is exactly what the OpenInventoryCommitments port is.
+      partyContext: new PartyContextRepository(),
     };
   },
 });

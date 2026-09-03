@@ -204,6 +204,41 @@ export const P1_23_PREFIXES = ['rpt.'];
  * `derivedRequirements` returning `[]` gave it away.
  */
 export const P1_24_PREFIXES = ['iam.', 'meta.'];
+
+/**
+ * PRE-P1-29 Wave B — the control plane.
+ *
+ * Both hooks, as the P1-23 note insists: the prefix is listed HERE and in the
+ * `parseProvidedFlags` alternation below. Extending one without the other is
+ * exactly how the P1-24 gap stayed invisible — declarations PARSED fine, so a
+ * reader checking the alternation would conclude the namespace was covered,
+ * and only `derivedRequirements` returning `[]` gave it away.
+ *
+ * `platform.` operations are not inside a tenant, so their derived floor is
+ * not the tenant-isolation one every other namespace gets; what they owe is
+ * proof that the platform-authority branch is load-bearing, which is a
+ * FUNCTIONAL obligation their COVERAGE-EVIDENCE blocks carry.
+ */
+export const PRE_P1_29_PREFIXES = ['platform.', 'org.'];
+
+/*
+ * `org.` joins in Wave C (the Company RBAC Backend), and it is the FIRST
+ * namespace to have been missing from BOTH hooks at once. That combination is
+ * worse than the P1-24 asymmetry the note above describes, and it fails silently
+ * in a different way:
+ *
+ *   not in the alternation  -> a COVERAGE-EVIDENCE line for the namespace does
+ *                              not parse, so PROVIDED evidence is empty;
+ *   not in DERIVED_PREFIXES -> `derivedRequirements` returns [], so REQUIRED
+ *                              evidence is empty too.
+ *
+ * Empty required against empty provided is a PASS. So an `org.` operation could
+ * have shipped owing nothing and proving nothing, and neither hook read on its
+ * own would have shown it — the P1-24 tell (`derivedRequirements` returning [])
+ * is only a tell when the alternation parses. Both move here, in one commit,
+ * and `tests/foundation/operation-coverage-gate.test.ts` asserts both halves
+ * behaviourally rather than by reading this list.
+ */
 const DERIVED_PREFIXES = [
   DERIVED_PREFIX,
   P1_16_PREFIX,
@@ -215,6 +250,7 @@ const DERIVED_PREFIXES = [
   ...P1_22_PREFIXES,
   ...P1_23_PREFIXES,
   ...P1_24_PREFIXES,
+  ...PRE_P1_29_PREFIXES,
 ];
 /** True when an operation id belongs to a derived-evidence namespace. */
 export const isDerivedId = (id) =>
@@ -1078,10 +1114,75 @@ export const MANIFEST = {
     required: ['denial', 'isolation'],
     note: 'reports EVERY active candidate with its verdict, not only the eligible ones — an assigner facing an empty list learns nothing — with eligible first; the inactive profile is excluded at the QUERY rather than evaluated and discarded, and another branch’s technician is never a candidate; company and branch are required because they ARE the authorization target, so the scoped principal is refused BRANCH_A1 and served BRANCH_A2 (isolation) rather than handed an empty roster; the candidate cap is REPORTED as truncatedAt, because a silently truncated roster that looked complete would make an assigner conclude nobody is free; no cross-tenant case, because the operation names no resource id — a foreign branch simply fails the scoped permission check',
   },
+  'tech.technician-me-queue': {
+    files: ['tests/backend/br-01-technician-identity.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation'],
+    note: 'PRE-P1-29-BR-01, closing INS-04 (CRITICAL) and T-11. The subject is the SESSION: the schema has no field naming a technician, so there is nothing to forge, and .strict() REFUSES a client-supplied technicianProfileId rather than ignoring it — a caller who believes they selected a subject must be told they did not, never quietly served their own queue. The response is asserted as the KEY SET {items} and proved not to contain the resolved id anywhere, because the existing path carries it only since the caller supplied it. Three "no" answers — no profile, an inactive or soft-deleted profile, and a profile in a branch the caller did not name — are proved BYTE-IDENTICAL 200 {items:[]}, since a 404 or a distinct code would tell a prober that somebody else IS a technician: the same oracle moved rather than closed. The scope pair is proved EVALUATED and not merely accepted, by a principal holding the read in A2 and an unrelated grant in A1 so that A1 sits inside its permission-blind allowed-branch union (P1-18-A-01) — without that grant RLS would have hidden the row and the assertion would pass against a scope-blind implementation. Equivalence with the supervisor path is asserted row-for-row and order-for-order, so this slice is proved to add a safe path rather than a second answer',
+  },
   'tech.technician-queue': {
     files: ['tests/backend/p1-19-job-assignments.test.ts'],
     required: ['denial', 'cross-tenant'],
     note: 'the profile is resolved through the technician module BEFORE any wo row is read, so the queue cannot enumerate work by guessing profile ids (cross-tenant: a tenant-B caller gets 404); one query joins job and work order so the queue is not an N+1; the projection is asserted to disclose NO employee-derived detail — no trade, no employment reference, no user id, nothing from the restricted certification details',
+  },
+  // ========================================================================
+  // BR-03 (PRE-P1-29 backend remediation) — technician roster and capability
+  // administration. Same derived-evidence model as the rest of `tech.`: the
+  // floor comes from the registration, and `required` below only adds to it.
+  // ========================================================================
+  'tech.technician-list': {
+    files: ['tests/backend/br-03-technician-roster.test.ts'],
+    required: ['success', 'denial', 'isolation'],
+    note: 'keyset page of ONE branch roster, newest first; company and branch are required because they ARE the authorization target, so the A2-scoped principal is refused A1 and served A2 (isolation) rather than handed an empty list — an empty roster and a forbidden one read the same to a screen. No cross-tenant flag: the operation names no resource id, and the measured behaviour for a tenant-B caller naming a tenant-A pair is 200-and-EMPTY rather than 403, because iam.has_permission_in_scope returns true for any pair on an unrestricted grant and the tenant boundary is the query predicate with RLS behind it. The page walk uses eight rows created back to back, which is the P1-27-INT-006 condition a millisecond-truncating cursor silently drops',
+  },
+  'tech.technician-create': {
+    files: ['tests/backend/br-03-technician-roster.test.ts'],
+    required: ['success', 'denial', 'audit', 'idempotency', 'isolation'],
+    note: 'the ONLY roster operation whose authorization target comes from the body, because there is no row yet to resolve one from — scopeTargetOption narrows the pre-handler check and the service re-decides the same pair before the insert. isActive is deliberately absent from the schema and .strict() makes sending it a 422 rather than a silent drop, which is the exact shape a mass assignment would take. A user account in ANOTHER tenant is refused by naming a real foreign account, not a random uuid, so the check is proved tenant-scoped rather than existence-scoped. Replay is counted as DELTAS on the roster and on the audit trail (CSA-22), and no key at all is ERR-INT-002',
+  },
+  'tech.technician-detail': {
+    files: ['tests/backend/br-03-technician-roster.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation'],
+    note: 'the aggregate read that closes INS-24 — an assignment names a technicianProfileId and until this slice nothing resolved it. Asserts the projection as a KEY SET in both directions, because NFR-PRV-001 forbids personal data here and a field-by-field assertion cannot catch an ADDITION; the certificate number is proved absent even for the principal holding iam.sensitive.view. A tenant-B caller gets 404; an out-of-scope caller whose grant union CONTAINS the branch gets 403 rather than a second 404, which is the shipped bil.invoice-read shape and is recorded in the test as measured rather than assumed',
+  },
+  'tech.technician-update': {
+    files: ['tests/backend/br-03-technician-roster.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'stale-version'],
+    note: 'branch_id and user_id are named by tg_technician_profiles_immutable, so the schema has no word for either and sending one is a 422 — never a silent drop, because a caller who believed a branch transfer happened would act on a roster that never changed, and the test asserts the STORED branch is unchanged. The documented transfer path is driven end to end: the create in the target branch is refused while the first profile is live, retiring frees the uq_technician_profiles_active_user slot, and both halves survive. Retirement is a soft delete and deactivation is not retirement',
+  },
+  'tech.technician-skill-set': {
+    files: ['tests/backend/br-03-technician-capabilities.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit'],
+    note: 'PUT because uq_technician_skills_profile_skill permits one live level per skill and skill_id is immutable, so re-sending MOVES the existing row rather than adding one — asserted on the row id, not on the response. The catalogue check is the one the foreign keys cannot make: fk_technician_skills_skill is single-column because a platform row carries tenant_id IS NULL, so all three answers are proved — a platform row accepted, another tenant’s refused, and an INACTIVE one refused, the last because a retired skill would record an eligibility requirement nobody can satisfy',
+  },
+  'tech.technician-skill-withdraw': {
+    files: ['tests/backend/br-03-technician-capabilities.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit'],
+    note: 'soft delete, asserted on BOTH counts: the live row is gone and the row itself survives, because an assignment made while the skill stood keeps its evidence. Withdrawing frees the partial unique index so the skill can be recorded again at a different level, and the test proves the second row is a NEW one rather than a resurrection',
+  },
+  'tech.technician-certification-record': {
+    files: ['tests/backend/br-03-technician-capabilities.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
+    note: 'calendar dates, not instants: certificationIsValidOn compares YYYY-MM-DD, and ck_technician_certifications_expiry is INCLUSIVE (expires_on >= issued_on) so a credential issued and expiring on the same day is accepted — the API uses the database’s rule rather than a stricter one invented at the boundary, and refuses the inverted case here so the caller gets a violation path instead of a transaction-aborting 23514. certStatus is absent from the body because a recorded credential is active. A repeated key replays; a DIFFERENT key with the same content is a real second attempt and uq_technician_certifications_active refuses it',
+  },
+  'tech.technician-certification-update': {
+    files: ['tests/backend/br-03-technician-capabilities.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'stale-version'],
+    note: 'NOT in the original BR-03 contract and added on proof: technician-eligibility-service refuses a revoked credential outright and certificationIsValidOn refuses any non-active status, so without this path two of the three states are unreachable and that refusal could never fire in production. The test moves a credential to revoked and back. certification_id and issued_on are named by the immutability guard and are absent from the schema, so re-pointing or back-dating is a 422',
+  },
+  'tech.technician-certification-detail-record': {
+    files: ['tests/backend/br-03-technician-capabilities.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit'],
+    note: 'the only BR-03 operation that touches restricted data, and the only place in this domain with real defence in depth for a permission: the declaration is tech.technician.manage AND iam.sensitive.view, and every policy on tech.technician_certification_details requires the second independently. Proved in both directions one permission apart — ROSTER_ADMIN is refused, ROSTER_SENSITIVE is served — and the number is asserted ABSENT from the aggregate read and from iam.audit_record_details, because the audit trail is not gated by iam.sensitive.view and copying it there would defeat the policy protecting the column',
+  },
+  'tech.technician-availability-record': {
+    files: ['tests/backend/br-03-technician-capabilities.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
+    note: 'the rows GET /technicians/available already read and assertEligible already consumes, which until this slice could only arrive by seed or by hand. Overlap is ex_technician_availability_overlap translated rather than predicted, because a read-then-check would still lose to a concurrent insert; two TOUCHING windows are accepted, which is what makes a split shift expressible at all. The kind is required and has no default because available and unavailable mean opposite things to eligibility, and { offset: true } is mandatory because a zoneless instant would be read in the server’s zone and shift the shift',
+  },
+  'tech.technician-availability-withdraw': {
+    files: ['tests/backend/br-03-technician-capabilities.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'stale-version'],
+    note: 'required rather than convenient: the EXCLUDE constraint has no notion of “the wrong window”, so without this a mistyped interval would block that technician for its whole span permanently — the test withdraws one and then records a replacement over the same interval to prove it. The window is addressed UNDER a technician, so naming another technician’s window is a 404 rather than a deletion of a row the caller did not name',
   },
   // --- Wave 6: additional work, customer approvals, the execution gate. ----
   'wo.additional-work-request': {
@@ -1150,6 +1251,77 @@ export const MANIFEST = {
     files: ['tests/backend/p1-19-customer-approvals.test.ts'],
     required: ['denial', 'cross-tenant', 'isolation'],
     note: 'the decision plus its evidence, which is the only way an append-only wo.customer_approval_evidence row is readable at all; an undecided request is a 404 rather than an empty decision, because "no decision" and "a decision with no content" are different facts',
+  },
+  'wo.work-order-catalogue': {
+    files: ['tests/backend/br-06-work-execution-controls.test.ts'],
+    required: ['success', 'denial'],
+  },
+  'wo.job-blocker-raise': {
+    files: ['tests/backend/p1-29-w6-history-and-blockers.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'idempotency'],
+    note: 'P1-29 W6 — the blocker record (Owner requirement 13, VHM-16): an append-only raise event under tech.labor.record that moves no state',
+  },
+  'wo.job-blocker-resolve': {
+    files: ['tests/backend/p1-29-w6-history-and-blockers.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'idempotency'],
+    note: 'P1-29 W6 — a resolution event referencing the raise; a second resolution is a conflict from the partial unique index, and the raise is never edited',
+  },
+  'wo.job-blocker-list': {
+    files: ['tests/backend/p1-29-w6-history-and-blockers.test.ts'],
+    required: ['success', 'denial', 'cross-tenant'],
+    note: 'P1-29 W6 — raises folded with their resolution and a DERIVED status, under wo.work_order.read',
+  },
+  'wo.work-order-timeline': {
+    files: ['tests/backend/p1-29-w6-history-and-blockers.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation'],
+    note: 'P1-29 W6 — INT-043: the unified history as a keyset page merged from four modules through their ports; kinds the caller may not see are omitted and named',
+  },
+  'dia.template-version-item-list': {
+    files: ['tests/backend/p1-29-w7-template-version-item-list.test.ts'],
+    required: ['success', 'denial', 'cross-tenant'],
+    note: 'P1-29 W7 (Backend seam) — the items of one template version in checklist order, on dia.diagnostic.read and not gated by version status; the suite first proves on real responses that neither dia.template-detail nor dia.diagnostic-detail carries them, which is why the read exists',
+  },
+  'qms.qc-check-list': {
+    files: ['tests/backend/p1-29-w8-qc-check-list.test.ts'],
+    required: ['success', 'denial', 'cross-tenant'],
+    note: 'P1-29 W8 (Backend seam) — the QC check vocabulary the caller tenant resolves, tenant shadowing platform by code as the gate resolves it, both statuses published each row saying which; the suite first proves on the real record detail that only unresolved mandatory checks are ever named, which is why the read exists',
+  },
+  'dia.diagnostic-type-list': {
+    files: ['tests/backend/p1-29-w5-diagnostic-type-list.test.ts'],
+    required: ['success', 'denial', 'cross-tenant'],
+    note: 'P1-29 W5 — the diagnostic-type vocabulary the caller tenant resolves, tenant shadowing platform by code with the predicate diagnosticTypeByCode has used since P1-19; both statuses published, each row saying which; the empty set is the truthful answer while no vocabulary is seeded',
+  },
+  'wo.job-list': {
+    files: ['tests/backend/br-06-work-execution-controls.test.ts'],
+    required: ['success', 'denial', 'isolation'],
+  },
+  'wo.job-detail': {
+    files: ['tests/backend/br-06-work-execution-controls.test.ts'],
+    required: ['success', 'denial', 'isolation'],
+  },
+  'qms.qc-record-branch-list': {
+    files: ['tests/backend/br-06-work-execution-controls.test.ts'],
+    required: ['success', 'denial'],
+  },
+  'wo.job-work-log-record': {
+    files: ['tests/backend/br-06-work-execution-controls.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
+  },
+  'wo.job-work-log-list': {
+    files: ['tests/backend/br-06-work-execution-controls.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation'],
+  },
+  'wo.job-evidence-record': {
+    files: ['tests/backend/br-07-work-and-diagnostic-evidence.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
+  },
+  'wo.job-evidence-list': {
+    files: ['tests/backend/br-07-work-and-diagnostic-evidence.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation'],
+  },
+  'wo.work-order-evidence-list': {
+    files: ['tests/backend/br-07-work-and-diagnostic-evidence.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation'],
   },
   'wo.job-transition': {
     files: [
@@ -1257,6 +1429,63 @@ export const MANIFEST = {
     files: ['tests/backend/p1-19-diagnostics.test.ts'],
     required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
     note: 'reviewer separation is proved in BOTH directions by two principals one permission apart — FULL creates reports and does NOT hold dia.diagnostic.review, REVIEWER holds it and did not create the report — so a service that refused every review could not pass; attribution is the database’s (dia.stamp_review overwrites reviewer_id from the session on every insert) and the test asserts the stamped id rather than a requested one; only a completed report may be reviewed, which the schema does not enforce; the table is append-only so two reviews both survive, which is what makes needs_rework usable',
+  },
+  // ========================================================================
+  // PRE-P1-29-BR-04 (dia.) — inspection-template authoring. The write layer the
+  // three dia template tables never had: they held ZERO rows, no INSERT existed
+  // anywhere in apps/api, and POST /jobs/{jobId}/inspections required a
+  // templateVersionId nothing could produce. Enforcement is route-layer ONLY —
+  // the three tables carry no company_id/branch_id, so a scoped RLS predicate is
+  // impossible and the declaration is the whole control. That is exactly why
+  // every entry here owes `denial` and `cross-tenant`.
+  // ========================================================================
+  'dia.template-create': {
+    files: ['tests/backend/br-04-template-authoring.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
+    note: 'the first INSERT into dia.inspection_templates that has ever existed. The diagnostic-type check is the one the foreign key cannot make: fk_inspection_templates_diagnostic_type is single-column because a platform row carries tenant_id IS NULL, so all three answers are proved — a PLATFORM row accepted, another tenant’s refused, and an INACTIVE one refused. Creating a template creates NO version, and the list renders that intermediate state. code is 422 on the same regex the CHECK uses, so the caller gets a violation path instead of a 23514',
+  },
+  'dia.template-list': {
+    files: ['tests/backend/br-04-template-authoring.test.ts'],
+    required: ['denial', 'cross-tenant'],
+    note: 'keyset-paged because a tenant’s template library is unbounded. The paging test reads two pages and reconciles the union against the whole set, which is what catches a cursor that drops or repeats a row at the boundary — the P1-16 customer-search defect in a new place. Costs dia.diagnostic.read rather than dia.catalogue.manage: reading the library is not administering it, and a service advisor needs the former',
+  },
+  'dia.template-detail': {
+    files: ['tests/backend/br-04-template-authoring.test.ts'],
+    required: ['denial', 'cross-tenant'],
+    note: 'versions are NOT paged — a template has few — and each carries itemCount so a caller can tell an empty draft from an authored one without a second read, which is the fact that decides whether publishing will be refused. A template the caller cannot see and one that does not exist are the same 404, so the endpoint is not an existence oracle for another tenant’s library',
+  },
+  'dia.template-update': {
+    files: ['tests/backend/br-04-template-authoring.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'stale-version'],
+    note: 'code is absent from the schema and sending one is a 422, because a template code is an identifier tenants build on and changing it after versions exist would silently re-label published history. An empty body is 422 rather than a no-op. The active/inactive status is ORTHOGONAL to the version graph (C-05) and the test proves it: deactivating a template withdraws its published versions from the technician read while the versions themselves stay published and every report against them stays readable',
+  },
+  'dia.template-version-create': {
+    files: ['tests/backend/br-04-template-authoring.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
+    note: 'version_number is SERVER-assigned as max+1; ck_template_versions_number guards the value and says nothing about the sequence, so a client-supplied one is refused by .strict(). copyFromVersionId exists because the item freeze covers INSERT (C-06), so superseding a published version means re-authoring it — and re-typing forty items to change one is what makes people edit in place instead. The copy must name a version of the SAME template or 422, and the test proves the copy is independently editable while the source stays frozen',
+  },
+  'dia.template-version-status-set': {
+    files: ['tests/backend/br-04-template-authoring.test.ts'],
+    required: [
+      'success',
+      'denial',
+      'cross-tenant',
+      'isolation',
+      'audit',
+      'stale-version',
+      'idempotency',
+    ],
+    note: 'one command for publish and retire because dia.guard_template_version_publish is one BEFORE UPDATE OF status trigger; two verbs for one guarded transition would let the two drift. toStatus is a CLOSED enum, unlike wo.work-order-transition’s toState whose vocabulary is a live tenant catalogue — getting either backwards is the defect execution-decision.md §5 binding 4 names. published_at is asserted to be the GUARD’s stamp and never the service’s. ERR-TRN-001 and ERR-CON-001 are proved DISTINCT and in the contract’s order: a stale caller is told to re-read first, and only then that the move is impossible. The empty-version refusal is the one rule with no database counterpart, so it is tested directly',
+  },
+  'dia.template-item-create': {
+    files: ['tests/backend/br-04-template-authoring.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
+    note: 'draft-only, and the authority is tg_template_items_frozen rather than the service — it is BEFORE INSERT OR UPDATE, so a published version cannot even be APPENDED to. Proved TWICE: the service refuses with a named ERR-TRN-001, and the same write made directly as app_runtime is refused by the trigger with the service out of the path entirely. The direct UPDATE cases set the tenant GUCs first, because without them RLS narrows to nothing and a zero-row no-op would RESOLVE — an assertion that passed while the trigger never ran. unit is required for a numeric item, mirroring ck_template_items_unit so the caller gets body.unit instead of a SQLSTATE',
+  },
+  'dia.template-version-list-publishable': {
+    files: ['tests/backend/br-04-template-authoring.test.ts'],
+    required: ['denial', 'cross-tenant'],
+    note: 'the operation that makes the technician’s screen possible: it returns exactly the set POST /jobs/{jobId}/inspections accepts, and without it a technician must be handed a templateVersionId from somewhere — INS-04 in a different costume. Costs dia.diagnostic.record rather than dia.diagnostic.read because its only consumer is the act of opening an inspection. The ONLY branch-scoped operation of the eight, because it is reached THROUGH a job while the library itself carries no branch column; authorized against the job’s own branch exactly as dia.diagnostic-create is',
   },
   // --- Wave 8: quality control, reopen refusal and rework. -------------------
   'qms.qc-record-open': {
@@ -1586,6 +1815,7 @@ export const MANIFEST = {
       'tests/backend/iam-operations.test.ts',
       'tests/backend/p1-14-idempotency-replay.test.ts',
       'tests/backend/p1-24-iam-route-depth.test.ts',
+      'tests/backend/p1-29-w9-owner-bootstrap.test.ts',
     ],
     required: [],
     note: 'created and found in the list',
@@ -1608,6 +1838,7 @@ export const MANIFEST = {
       'tests/backend/iam-admin-writes.test.ts',
       'tests/backend/p1-14-idempotency-replay.test.ts',
       'tests/backend/p1-24-iam-route-depth.test.ts',
+      'tests/backend/p1-29-w9-owner-bootstrap.test.ts',
     ],
     required: ['success', 'denial', 'audit'],
     note: 'delegable allow added; permission-denied under RLS',
@@ -1738,6 +1969,7 @@ export const MANIFEST = {
       'tests/backend/iam-auth-provider.test.ts',
       'tests/backend/p1-14-idempotency-replay.test.ts',
       'tests/backend/p1-24-iam-route-depth.test.ts',
+      'tests/backend/p1-29-w9-owner-bootstrap.test.ts',
     ],
     required: ['success', 'denial', 'cross-tenant', 'audit', 'outbox'],
     note: 'invited account + audit + event; duplicate conflict; unprivileged refused; tenant-bound',
@@ -1764,6 +1996,7 @@ export const MANIFEST = {
     files: [
       'tests/backend/iam-auth-provider.test.ts',
       'tests/backend/p1-24-iam-route-depth.test.ts',
+      'tests/backend/p1-29-w9-owner-bootstrap.test.ts',
     ],
     required: ['success', 'denial', 'audit'],
     note: 'token + session + success audit; every failure generic; failure audited',
@@ -1780,6 +2013,7 @@ export const MANIFEST = {
     files: [
       'tests/backend/iam-auth-provider.test.ts',
       'tests/backend/p1-24-iam-route-depth.test.ts',
+      'tests/backend/p1-29-w9-owner-bootstrap.test.ts',
     ],
     required: ['success'],
     note: 'describeSession resolves identity, scope, permissions',
@@ -2358,6 +2592,88 @@ export const MANIFEST = {
     required: ['denial'],
     note: 'reuses wty.warranty.issue because the permission catalogue contains no wty.warranty.read — inventing one needs a seed change outside this phase’s authority, and borrowing wty.policy.manage would be worse, handing coverage administration to a caller who only needs to read a record; carries NO monetary field, and that is not an omission to fill in later: wty has 80 columns and not one is an amount, a currency or a cap in any unit of account, so a covered value here would be a fabricated business fact and the test asserts the response has no key matching /amount|currency|price|cost|value/i; carries no claim history because there is none to carry — status may legally READ claimed_against since it is in ck_warranty_records_status, and nothing in this phase can ever WRITE it (P1-22-L-01), which the test pins structurally so a future edit cannot quietly add a claim route',
   },
+  // ========================================================================
+  // PRE-P1-29 Wave B (platform.) — the control plane. The only operations in
+  // the product that are not inside a tenant, so the derived floor's
+  // cross-tenant obligation means something different here: not "one tenant
+  // cannot read another's rows", but "a tenant-bound principal cannot reach the
+  // control plane at all". Each entry adds `denial` because the 403 path IS the
+  // control — a platform route that answered 403 to everyone would satisfy every
+  // structural gate, which is PC-1.
+  // ========================================================================
+  // ========================================================================
+  // PRE-P1-29 Wave C — the Company RBAC Backend (canonical G-4, G-6, P-1/G-5).
+  //
+  // Every entry adds `denial`, and for these eight it is not ceremony. Three of
+  // the permissions involved (org.company.manage, org.branch.manage,
+  // org.department.manage) were seeded with ZERO references anywhere in the
+  // product before this slice, so nothing had ever exercised the path where they
+  // are false. A denial case is the only thing that distinguishes "the
+  // permission is now enforced" from "the permission is still inert".
+  //
+  // `org.department-list` additionally carries the split that org.department.read
+  // exists for: an actor holding only org.department.manage must be REFUSED the
+  // list. Without that case, collapsing the two codes back into one would go
+  // unnoticed.
+  // ========================================================================
+  'org.company-list': {
+    files: ['tests/backend/pre-p1-29-wave-c-company-rbac.test.ts'],
+    required: ['denial'],
+    note: 'half of P-1: the companies an actor MAY REACH, by name; the reach rule is sel_legal_companies_tenant and is deliberately not restated in TypeScript, where the unrestricted case (empty allowed-ids meaning everything) is easy to invert',
+  },
+  'org.branch-list': {
+    files: ['tests/backend/pre-p1-29-wave-c-company-rbac.test.ts'],
+    required: ['denial'],
+    note: 'the other half of P-1; a separate operation from the company list because evaluatePermissions requires EVERY declared code, so one combined read would refuse a branch-only reader',
+  },
+  'org.company-update': {
+    files: ['tests/backend/pre-p1-29-wave-c-company-rbac.test.ts'],
+    required: ['denial', 'audit'],
+    note: 'G-4: org.company.manage guarded nothing before this; status is absent from the body because org.company-status-set owns transitions and this route must not become a second path with no reason and no history',
+  },
+  'org.company-status-set': {
+    files: ['tests/backend/pre-p1-29-wave-c-company-rbac.test.ts'],
+    required: ['denial', 'audit'],
+    note: 'the first caller org.change_company_status has ever had; migration 133 shipped it granted and unreachable, which is the declared-but-never-wired class that dominated P1-27',
+  },
+  'org.branch-update': {
+    files: ['tests/backend/pre-p1-29-wave-c-company-rbac.test.ts'],
+    required: ['denial', 'audit'],
+    note: 'G-4: org.branch.manage guarded nothing; company and branch code are frozen by tg_branches_immutable and status belongs to shared.branch-status-change, so the body carries none of the three',
+  },
+  'org.department-create': {
+    files: ['tests/backend/pre-p1-29-wave-c-company-rbac.test.ts'],
+    required: ['denial', 'audit', 'idempotency'],
+    note: 'G-6: the FIRST insert into org.departments in the product; a grant could be scoped to a department that no path could create',
+  },
+  'org.department-list': {
+    files: ['tests/backend/pre-p1-29-wave-c-company-rbac.test.ts'],
+    required: ['denial'],
+    note: 'G-6, on the NEW least-privilege org.department.read; the suite proves the split by refusing an actor who holds only org.department.manage, so collapsing the two codes goes red',
+  },
+  'org.department-update': {
+    files: ['tests/backend/pre-p1-29-wave-c-company-rbac.test.ts'],
+    required: ['denial', 'audit'],
+    note: 'G-6: rename, retire and reinstate; no archive verb, because archiving frees the code via uq_departments_branch_code_live and no shipped operation has precedent for the un-archive collision',
+  },
+  'platform.organization-read': {
+    files: ['tests/backend/pre-p1-29-platform-control-plane.test.ts'],
+    required: ['denial'],
+    note: 'one operation serves the collection and a single tenant via an optional query parameter, the inv.stock-availability-read shape; reads the tenant root and nothing beneath it, bounded by sel_tenants_platform rather than by a tenant predicate',
+  },
+  'platform.organization-provision': {
+    files: [
+      'tests/backend/pre-p1-29-platform-control-plane.test.ts',
+      'tests/backend/p1-29-w9-owner-bootstrap.test.ts',
+    ],
+    required: ['denial'],
+    note: 'the sanctioned path to org.provision_organization; tenant.activate is never forwarded, because that branch would close the §6.3 bootstrap window inside the transaction that depends on it',
+  },
+  'platform.organization-lifecycle': {
+    files: ['tests/backend/pre-p1-29-platform-control-plane.test.ts'],
+    required: ['denial', 'audit'],
+    note: 'the operation that makes the bootstrap window self-closing rather than permanent; the graph is M4s and the history row is M3s, so the route duplicates neither',
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -2524,7 +2840,7 @@ export function parseProvidedFlags(source) {
     // namespace here makes EVERY declaration for it invisible, so a new phase must
     // extend this alternation in the same commit that registers its operations.
     const m =
-      /^\s*\*?\s*((?:iam|meta|shared|crm|veh|apt|rec|wo|tech|dia|qms|svc|quo|inv|sal|wty|rpt)\.[a-z0-9-]+)\s*:\s*([a-z0-9 \-]+?)\s*$/.exec(
+      /^\s*\*?\s*((?:iam|meta|shared|crm|veh|apt|rec|wo|tech|dia|qms|svc|quo|inv|sal|wty|rpt|platform|org)\.[a-z0-9-]+)\s*:\s*([a-z0-9 \-]+?)\s*$/.exec(
         line
       );
     if (m) {

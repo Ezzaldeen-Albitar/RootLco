@@ -28,10 +28,13 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const Params = z.object({ workOrderId: schemas.uuid });
-const Body = z.object({ notes: z.string().trim().min(1).max(MAX_QC_NOTE).optional() }).strict();
+export const Body = z
+  .object({ notes: z.string().trim().min(1).max(MAX_QC_NOTE).optional() })
+  .strict();
 
 export const QC_RECORD_OPEN_OPERATION = defineOperation({
   id: 'qms.qc-record-open',
+  successStatus: 201,
   module: 'quality',
   method: 'POST',
   path: '/work-orders/{workOrderId}/quality-controls',

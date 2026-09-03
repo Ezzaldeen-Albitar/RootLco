@@ -322,9 +322,20 @@ describe('P1-19 module foundation', () => {
       // phase brief's EVT-WO-001 and EVT-TECH-001 could not be used verbatim.
       expect(entry.code).toMatch(/^EVT-(WOR|TEC|DIA|QMS)-\d{3}$/);
       // Version lives in schemaVersion, not in the wire name. Every one of the
-      // twenty pre-existing entries is unsuffixed and these match.
+      // twenty pre-existing entries is unsuffixed and these match — and that
+      // still holds for `job.assigned` at v2, which is the point: bumping a
+      // payload must not mint a second wire name.
       expect(entry.eventType).not.toMatch(/\.v\d+$/);
-      expect(entry.schemaVersion).toBe(1);
+      // Pinned PER EVENT rather than as a blanket `toBe(1)`.
+      //
+      // `job.assigned` is at schemaVersion 2 (PRE-P1-29, payload-carries-the-facts):
+      // its v1 payload left every notification fact to a consumer running on
+      // `app_worker`, which has USAGE on neither `wo` nor `tech` and no read on
+      // `shared.message_templates` — so those facts were unreachable by design.
+      // A blanket assertion would have to be deleted or loosened to accommodate
+      // that; naming the exception keeps the other ten pinned at 1 and makes the
+      // next bump a visible edit here rather than a silent one.
+      expect(entry.schemaVersion).toBe(entry.eventType === 'job.assigned' ? 2 : 1);
       // Reserved is not implemented, and the reverse holds too: an entry claims a
       // phase ONLY once a wave publishes it. Wave 4 publishes
       // `work-order.state-changed` and `work-order.closed`; Wave 5 publishes

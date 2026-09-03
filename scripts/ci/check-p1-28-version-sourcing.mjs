@@ -28,11 +28,20 @@
  *     parameters include `#/components/parameters/IfMatch`.
  *   - The GUARDED ADAPTERS come from the tree: every function exported by a
  *     `'use server'` module of every DERIVED feature root whose parameter list
- *     declares `ifMatch`. Their count must EQUAL the number of guarded
- *     operations this application is expected to reach — an operation the
- *     contract guards with no adapter demanding a version, or an adapter
- *     demanding one for an operation that is not guarded, is a disagreement
- *     worth failing on.
+ *     declares `ifMatch`. Every one of them is held to the rules below —
+ *     `ifMatch` required, `ifMatch` used, the argument traceable, the version
+ *     renewed afterwards.
+ *
+ *     Their count must equal the number of guarded operations this application
+ *     is expected to reach, and that equality is taken over the adapters this
+ *     contract can ACCOUNT FOR. The walk is the whole web tree, deliberately,
+ *     and since P1-29 `W3` that tree also holds versioned adapters for `wo`
+ *     operations — real, correct, and outside an apt/rec contract's subject.
+ *     They are declared by name in `OUT_OF_SUBJECT_ADAPTERS`, never by a path
+ *     rule that would admit the next one silently. Within the subject, an
+ *     operation the contract guards with no adapter demanding a version, or an
+ *     adapter demanding one for an operation that is not guarded, is still a
+ *     disagreement worth failing on.
  *   - The EXPECTED set is the guarded set minus any operation recorded
  *     `DELIBERATELY_ABSENT` in `docs/phase-1/phase-1-28/write-reachability.json`
  *     against a `decisionRef` the canonical plan §7 records. That is the whole
@@ -302,6 +311,34 @@ export function guardedOperations(document) {
  * exist to refuse. A classification with an unresolvable reference is reported
  * as a violation instead of an exclusion.
  */
+/**
+ * Guarded adapters that exist, are correct, and are NOT this gate's business.
+ *
+ * Keyed by exported adapter name, each with the operation it serves. Every one
+ * is still held to the rules that apply to any guarded adapter — `ifMatch` must
+ * be required and must be used — and is excluded only from the count equality,
+ * which is a statement about the apt/rec contract's own coverage.
+ *
+ * Named rather than derived from a path on purpose. A rule such as "ignore
+ * anything under features/work-orders" would admit every future versioned
+ * adapter without a word; a name has to be added deliberately, and the rot check
+ * at the call site removes it the moment its adapter stops existing.
+ */
+export const OUT_OF_SUBJECT_ADAPTERS = Object.freeze({
+  transitionWorkOrder: 'wo.work-order-transition — P1-29 W3, not an apt/rec operation',
+  updateJob: 'wo.job-update — P1-29 W3, not an apt/rec operation',
+  stopLaborSession: 'tech.labor-session-stop — P1-29 W4, not an apt/rec operation',
+  correctLaborSession: 'tech.labor-session-correct — P1-29 W4, not an apt/rec operation',
+  updateTemplate: 'dia.template-update — P1-29 W7, not an apt/rec operation',
+  transitionReport: 'dia.diagnostic-transition — P1-29 W7, not an apt/rec operation',
+  completeReport: 'dia.diagnostic-complete — P1-29 W7, not an apt/rec operation',
+  setVersionStatus: 'dia.template-version-status-set — P1-29 W7, not an apt/rec operation',
+  finalizeQcRecord: 'qms.qc-record-finalize — P1-29 W8, not an apt/rec operation',
+  signOffRework: 'qms.rework-sign-off — P1-29 W8, not an apt/rec operation',
+  recordAdditionalWorkApproval: 'wo.additional-work-approval — P1-29 W8, not an apt/rec operation',
+  closeWorkOrder: 'wo.work-order-closure — P1-29 W8, not an apt/rec operation',
+});
+
 export function expectedAdapterOperations(guarded, manifest, decisions) {
   const classified = manifest?.operations ?? {};
   const expected = [];
@@ -967,13 +1004,47 @@ export function run(injected = {}) {
         'command is unreachable, or this gate stopped seeing call sites — both are failures.'
     );
   }
-  if (adapters.size !== subject.expected.length) {
+  /*
+   * The count equality is over the adapters this gate's contract can ACCOUNT FOR.
+   *
+   * Its subject is the version-guarded apt/rec surface, and the adapter walk is
+   * deliberately the whole of `apps/web/src` — fail-closed, because a narrower
+   * walk has twice been silently wrong. Those two facts were compatible for
+   * exactly as long as every versioned adapter in the tree belonged to apt/rec.
+   *
+   * P1-29 `W3` ended that: `transitionWorkOrder` and `updateJob` demand a version
+   * for `wo.work-order-transition` and `wo.job-update`, which ARE version-guarded
+   * operations — just not ones this contract governs. Counting them here reported
+   * "an adapter demanding a version for an unguarded operation", which is the
+   * opposite of what they are.
+   *
+   * They are therefore DECLARED rather than absorbed. A path rule would have let
+   * every future versioned adapter in silently; a named list cannot, and the rot
+   * check below refuses a name that no longer exists — so this cannot outlive its
+   * reason the way a satisfied exception does.
+   */
+  const accountedFor = [...adapters.keys()].filter((name) => !(name in OUT_OF_SUBJECT_ADAPTERS));
+  // The rot check is about the REAL tree. A synthetic tree built by a test holds
+  // none of these adapters by design, and reporting them missing there would
+  // make every fixture fail for a fact about a repository it is not describing.
+  if (injected.sources === undefined) {
+    for (const name of Object.keys(OUT_OF_SUBJECT_ADAPTERS)) {
+      if (!adapters.has(name)) {
+        violations.push(
+          `${name} is declared out of this gate's subject but no such guarded adapter exists. A ` +
+            'declaration that outlives its subject is how an exclusion becomes a hole.'
+        );
+      }
+    }
+  }
+  if (accountedFor.length !== subject.expected.length) {
     violations.push(
       `the contract guards ${guarded.length} apt/rec operations, ${subject.withheld.length} of ` +
         `them recorded as deliberately absent, leaving ${subject.expected.length} this ` +
-        `application must reach — and the tree exports ${adapters.size} adapters that demand a ` +
-        'version. A guarded operation with no adapter cannot be invoked safely, and an adapter ' +
-        'demanding a version for an unguarded operation sends a header nothing reads.'
+        `application must reach — and the tree exports ${accountedFor.length} adapters that ` +
+        'demand a version and belong to this subject. A guarded operation with no adapter cannot ' +
+        'be invoked safely, and an adapter demanding a version for an unguarded operation sends ' +
+        'a header nothing reads.'
     );
   }
 
@@ -982,6 +1053,7 @@ export function run(injected = {}) {
     expected: subject.expected,
     withheld: subject.withheld,
     adapters: [...adapters.values()],
+    accountedFor,
     sites,
     violations,
   };

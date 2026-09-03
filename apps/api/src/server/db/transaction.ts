@@ -24,7 +24,7 @@
 import type { PoolClient, QueryResult, QueryResultRow } from 'pg';
 import { type RequestContext, contextLogFields } from '../context/request-context';
 import { AppFailure } from '../errors/app-failure';
-import { acquirePrimaryClient } from './pool';
+import { acquirePlatformClient, acquirePrimaryClient } from './pool';
 import { backendConfig } from '../config/backend-config';
 import { log } from '../observability/logger';
 
@@ -37,6 +37,12 @@ export interface DbHandle {
   readonly context: RequestContext;
   /** Savepoint depth. 0 is the outermost transaction. */
   readonly depth: number;
+  /**
+   * Which pool the transaction runs on, and therefore which database role it
+   * acts as. Absent on handles built outside `withTransaction`; treated as the
+   * primary. Read by the capability preflight, which is per role.
+   */
+  readonly connection?: 'primary' | 'platform';
   query<R extends QueryResultRow = QueryResultRow>(
     text: string,
     values?: readonly unknown[]
@@ -44,6 +50,12 @@ export interface DbHandle {
 }
 
 export interface TransactionOptions {
+  /**
+   * Which connection to run on. `platform` selects the control-plane pool
+   * (PRE-P1-29 Wave B, §6.8.3); anything else uses the primary. Defaulting to
+   * the primary keeps every existing caller unchanged.
+   */
+  readonly connection?: 'primary' | 'platform';
   /**
    * Statement timeout for this transaction. Defaults to the configured value.
    * Long analytical work must opt in explicitly rather than inherit silently.
@@ -61,7 +73,9 @@ class TransactionHandle implements DbHandle {
   constructor(
     private readonly client: PoolClient,
     public readonly context: RequestContext,
-    public readonly depth: number
+    public readonly depth: number,
+    /** Which pool the client came from. Read by withPlatformTarget, which refuses the primary. */
+    public readonly connection: 'primary' | 'platform' = 'primary'
   ) {}
 
   async query<R extends QueryResultRow = QueryResultRow>(
@@ -78,7 +92,12 @@ class TransactionHandle implements DbHandle {
 
   /** Derives a handle at the next savepoint depth on the same client. */
   nested(depth: number): TransactionHandle {
-    return new TransactionHandle(this.client, this.context, depth);
+    return new TransactionHandle(this.client, this.context, depth, this.connection);
+  }
+
+  /** Derives a handle on the same client and depth whose context names another tenant. */
+  retargeted(context: RequestContext): TransactionHandle {
+    return new TransactionHandle(this.client, context, this.depth, this.connection);
   }
 }
 
@@ -121,7 +140,14 @@ export async function withTransaction<T>(
   const timeout = options.statementTimeoutMs ?? config.DB_STATEMENT_TIMEOUT_MS;
   const access = options.access ?? 'read write';
 
-  const client = await acquirePrimaryClient();
+  // The control plane runs on its own connection, as `app_platform`. Every
+  // platform policy is written TO that role, so serving a platform operation
+  // from the primary pool would be refused by all of them while every
+  // structural gate stayed green — the PC-1 shape.
+  const client =
+    options.connection === 'platform'
+      ? await acquirePlatformClient()
+      : await acquirePrimaryClient();
   let rolledBackCleanly = true;
   try {
     await client.query(`BEGIN ${access === 'read only' ? 'READ ONLY' : 'READ WRITE'}`);
@@ -138,7 +164,12 @@ export async function withTransaction<T>(
     ]);
     await applyContext(client, context);
 
-    const handle = new TransactionHandle(client, context, 0);
+    const handle = new TransactionHandle(
+      client,
+      context,
+      0,
+      options.connection === 'platform' ? 'platform' : 'primary'
+    );
     const result = await fn(handle);
     await client.query('COMMIT');
     return result;
@@ -156,6 +187,93 @@ export async function withTransaction<T>(
     throw error;
   } finally {
     client.release(rolledBackCleanly ? undefined : true);
+  }
+}
+
+/**
+ * A handle scoped to a tenant the acting principal does not belong to — the
+ * platform-on-target context of the control-plane design (PRE-P1-29 Wave B
+ * §6.3, P1-29 W9). Only `withPlatformTarget` constructs one.
+ */
+export interface PlatformTargetHandle extends DbHandle {
+  /** The tenant every write inside the window is bound to. */
+  readonly targetTenantId: string;
+}
+
+const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+/**
+ * Runs `fn` with the transaction's tenant context moved to `targetTenantId`
+ * for exactly its duration, then moves it back — the platform-on-target
+ * context the First-Owner bootstrap needs (§6.3): the operator's session
+ * resolves to their HOME tenant, but the rows the bootstrap writes belong to
+ * the tenant the same transaction has just created, and every §6.3 policy
+ * binds the written row to `iam.current_tenant_id()`.
+ *
+ * Three refusals keep this narrow rather than general:
+ *
+ *  - Only a control-plane transaction may retarget. The primary connection
+ *    runs as `app_runtime`, whose policies are written against the session's
+ *    own tenant; retargeting it would be a cross-tenant write path, so the
+ *    call throws before touching the session.
+ *  - The target must be a tenant this very transaction created and that is
+ *    still `provisioning`: `created_at = now()` holds only for rows written
+ *    by the current transaction (now() is the transaction start), and
+ *    `created_by` must be the acting principal. A caller cannot aim the
+ *    window at a tenant that merely happens to be provisioning.
+ *  - The context handed to `fn` is a copy whose principal names the target
+ *    tenant, so repositories that stamp `tenant_id` from the context write
+ *    the target — and the actor (`userId`) is unchanged, so attribution still
+ *    names the operator. Nothing from the request participates.
+ *
+ * The GUC is restored in `finally`. After a failed statement the transaction
+ * is aborted and the restore itself fails; that failure is swallowed so the
+ * ORIGINAL error propagates — the whole transaction rolls back anyway, which
+ * is what discards the half-written bootstrap.
+ */
+export async function withPlatformTarget<T>(
+  db: DbHandle,
+  targetTenantId: string,
+  fn: (target: PlatformTargetHandle) => Promise<T>
+): Promise<T> {
+  const handle = db as TransactionHandle;
+  if (handle.connection !== 'platform') {
+    throw new AppFailure('ERR-CTX-001', {
+      message: 'A platform-on-target context is only available on the control-plane connection',
+    });
+  }
+  if (!UUID_SHAPE.test(targetTenantId)) {
+    throw new AppFailure('ERR-VAL-001', { message: 'The target tenant is not a well-formed id' });
+  }
+  const created = await db.query<{ id: string }>(
+    `SELECT id
+       FROM org.tenants
+      WHERE id = $1
+        AND status = 'provisioning'
+        AND created_by = $2
+        AND created_at = now()`,
+    [targetTenantId, db.context.principal.userId]
+  );
+  if (created.rows.length !== 1) {
+    throw new AppFailure('ERR-CTX-001', {
+      message: 'The target tenant was not created by this transaction or is no longer provisioning',
+    });
+  }
+  const homeTenantId = db.context.principal.tenantId;
+  const retargeted = handle.retargeted({
+    ...db.context,
+    principal: { ...db.context.principal, tenantId: targetTenantId },
+  });
+  const target: PlatformTargetHandle = Object.assign(retargeted, { targetTenantId });
+  await db.query('SELECT set_config($1, $2, true)', ['app.tenant_id', targetTenantId]);
+  try {
+    return await fn(target);
+  } finally {
+    try {
+      await db.query('SELECT set_config($1, $2, true)', ['app.tenant_id', homeTenantId]);
+    } catch {
+      // The transaction is already aborted; the rollback discards the window.
+    }
   }
 }
 

@@ -15,7 +15,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const Params = z.object({ documentId: z.string().uuid() });
-const Body = z
+export const Body = z
   .object({
     entityType: z.string().regex(/^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$/),
     entityId: z.string().uuid(),
@@ -25,6 +25,7 @@ const Body = z
 
 export const ATTACHMENT_LINK_CREATE_OPERATION = defineOperation({
   id: 'shared.attachment-link-create',
+  successStatus: 201,
   module: 'shared-services',
   method: 'POST',
   path: '/attachments/documents/{documentId}/links',

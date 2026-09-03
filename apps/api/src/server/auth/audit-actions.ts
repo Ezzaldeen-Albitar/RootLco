@@ -226,11 +226,69 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
 
   // ---- Organization status (P1-15 transition engine) ----------------------
   {
+    code: 'org.tenant.provisioned',
+    class: 'privileged',
+    entityType: 'org.tenant',
+    description:
+      'A tenant was created from the control plane with its first company and branch, through the sanctioned org.provision_organization path.',
+  },
+  {
+    code: 'org.tenant.status_changed',
+    class: 'privileged',
+    entityType: 'org.tenant',
+    description:
+      'A tenant moved along the lifecycle graph through the control plane, with the reason recorded in org.tenant_status_history and the actor server-stamped.',
+  },
+  {
     code: 'org.branch.status_changed',
     class: 'privileged',
     entityType: 'org.branch',
     description:
       'A branch moved between active and inactive through the status-transition engine, with the reason recorded in org.branch_status_history.',
+  },
+
+  // ---- Organization administration (PRE-P1-29 Wave C) ---------------------
+  //
+  // Five codes for the operations that close G-4 and G-6. Every one of them is
+  // written by an explicit appendAudit call in
+  // organization-administration-service.ts, NOT by the request pipeline:
+  // route-handler.ts writes no audit record at all, and Wave B shipped two
+  // operations declaring `privileged` that appended nothing for exactly that
+  // reason. A declared class with no append call is a silent no-op.
+  {
+    code: 'org.company.updated',
+    class: 'privileged',
+    entityType: 'org.legal_company',
+    description:
+      "A legal company's name, base currency or registration identifiers were changed. Status is NOT changed here — that is org.company.status_changed.",
+  },
+  {
+    code: 'org.company.status_changed',
+    class: 'privileged',
+    entityType: 'org.legal_company',
+    description:
+      'A legal company moved between active and inactive through org.change_company_status, with the reason recorded in org.company_status_history and the actor server-stamped.',
+  },
+  {
+    code: 'org.branch.updated',
+    class: 'privileged',
+    entityType: 'org.branch',
+    description:
+      "A branch's name, timezone or address was changed. Company and branch code are immutable, and status moves through org.branch.status_changed.",
+  },
+  {
+    code: 'org.department.created',
+    class: 'privileged',
+    entityType: 'org.department',
+    description:
+      'A department was created inside a branch. Before PRE-P1-29 Wave C no path in the product could insert one, so a grant could be scoped to a department that could not exist.',
+  },
+  {
+    code: 'org.department.updated',
+    class: 'privileged',
+    entityType: 'org.department',
+    description:
+      'A department was renamed, retired or reinstated. Its company, branch and code are immutable, so this never moves a department between branches.',
   },
 
   // ---- Attachments (P1-15) ------------------------------------------------
@@ -985,6 +1043,41 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
       'A completed diagnostic report was reviewed as approved, rejected or needs_rework. Records the reviewer as the DATABASE stamped it: dia.stamp_review() overwrites reviewer_id with iam.current_user_id() on every insert and raises without an actor, so attribution cannot be forged and the two can never differ. Reviewer SEPARATION is an application rule against dia.diagnostic_reports.created_by, because no constraint references it — and it catches the report’s creator, not everyone who recorded an entry, since the schema records no per-entry authorship a review could be checked against.',
   },
   {
+    code: 'dia.inspection_template.created',
+    class: 'privileged',
+    entityType: 'dia.inspection_template',
+    description:
+      'An inspection template was created in a tenant library (PRE-P1-29-BR-04). Filed as privileged because a template is the container every future version of a set of inspection questions hangs from, and because the three dia template tables held ZERO rows before this slice — no INSERT existed anywhere in apps/api, so no diagnostic report could be created at all and closure blocker B4 had an unsatisfiable subject. The diagnostic type is recorded as internal rather than public: it names a catalogue row that may be tenant-scoped, and dia.diagnostic_types is dual-scope so the id alone does not say whose it is. Creating a template creates NO version; a template with no version is a legitimate intermediate state.',
+  },
+  {
+    code: 'dia.inspection_template.updated',
+    class: 'privileged',
+    entityType: 'dia.inspection_template',
+    description:
+      'An inspection template was renamed or moved between active and inactive (PRE-P1-29-BR-04). `code` is NOT updatable and never appears here: a template code is an identifier tenants build on, and changing it after versions exist would silently re-label published history. The rename IS recorded with its previous value, which is the only history a rename gets — dia.inspection_templates has no history table, so a renamed template does silently re-label its own published versions in every future read. That is a known limitation recorded in the slice evidence, and this audit detail is what makes it reconstructible. The active/inactive status is orthogonal to a VERSION status: it withdraws the template from new inspections while every report already recorded against it stays readable.',
+  },
+  {
+    code: 'dia.template_version.created',
+    class: 'privileged',
+    entityType: 'dia.template_version',
+    description:
+      'A draft version of an inspection template was created (PRE-P1-29-BR-04). version_number is SERVER-assigned as max+1 and is recorded here because ck_template_versions_number guards only the VALUE (> 0) and says nothing about the sequence, so the assigned number is a fact the audit record has to carry rather than one a reader could re-derive. When copyFromVersionId was supplied, the source and the copied item count are both recorded: a copy is how a published version is legitimately superseded (its item set is frozen against appends as well as edits), so which version a new one descends from is the lineage of the questions themselves.',
+  },
+  {
+    code: 'dia.template_version.status_changed',
+    class: 'privileged',
+    entityType: 'dia.template_version',
+    description:
+      'An inspection template version moved through draft → published → retired (PRE-P1-29-BR-04). The graph is owned by dia.guard_template_version_publish, which also stamps published_at — so the timestamp is the DATABASE’s and never the service’s, and the two can never disagree. Publishing is the moment a version’s item set becomes the immutable structure of every inspection recorded against it, which is why this is privileged and why the authority is dia.catalogue.manage rather than dia.diagnostic.record. Retirement stops NEW reports only: a report already citing a retired version keeps resolving to the questions it was actually asked. Unlike wo.work_order.transition this vocabulary is a CHECK constraint and a plpgsql guard, not a tenant-extensible catalogue.',
+  },
+  {
+    code: 'dia.template_item.created',
+    class: 'privileged',
+    entityType: 'dia.template_version',
+    description:
+      'One item was authored on a DRAFT inspection template version (PRE-P1-29-BR-04). Filed under the VERSION rather than the item row, for the same reason dia.diagnostic.entry_recorded is filed under the report: "what questions does this version ask" should be one audit query and not one per item. Draft-only is the database’s rule, not the service’s — tg_template_items_frozen is BEFORE INSERT OR UPDATE, so a published version cannot even be APPENDED to, and "add one more check to the published inspection" is deliberately not a supported operation. response_type and is_mandatory are recorded because together they decide whether a report can ever be completed: a mandatory item with no result blocks completion through dia.guard_diagnostic_report_transition.',
+  },
+  {
     code: 'wo.additional_work.requested',
     class: 'privileged',
     entityType: 'wo.additional_work_request',
@@ -1025,6 +1118,77 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
     entityType: 'wo.customer_approval',
     description:
       'A customer decision on additional work was recorded — the immutable row wo.guard_additional_work_state requires to exist BEFORE the request may be marked approved, which is the forgery-resistance control. Records the decision, the channel, the deciding reception party role and the evidence count; the presented scope is recorded as a fact rather than reproduced, because it is what a customer was told about their own vehicle. tg_customer_approvals_immutable freezes the decision and no application role holds DELETE, so the row can be neither edited nor erased.',
+  },
+  // ---- Technician roster administration (BR-03) ---------------------------
+  {
+    code: 'tech.technician.profile_created',
+    class: 'privileged',
+    entityType: 'tech.technician_profile',
+    description:
+      'A user was established as a technician in one branch. The profile is the operational half of an identity that already exists in iam.user_accounts — it holds no name, contact, payroll or government id, because tech.technician_profiles deliberately refuses to duplicate them and employment_ref is an opaque non-PII link. uq_technician_profiles_active_user makes one live profile per user per tenant the database’s invariant, so this action is also the record of which branch a technician belongs to.',
+  },
+  {
+    code: 'tech.technician.profile_updated',
+    class: 'privileged',
+    entityType: 'tech.technician_profile',
+    description:
+      'A technician’s trade, employment reference or active state changed. Never their branch or their user: tg_technician_profiles_immutable freezes tenant_id, company_id, branch_id, user_id and created_at, so a transfer is a retirement followed by a new profile in the target branch and both halves are recorded. Deactivating is distinct from retiring — an inactive technician is still on the roster and still holds their slot.',
+  },
+  {
+    code: 'tech.technician.profile_retired',
+    class: 'privileged',
+    entityType: 'tech.technician_profile',
+    description:
+      'A technician profile was retired. Soft delete: deleted_at is set and the row stays readable, because assignments, labour sessions and eligibility decisions were all made against it and cascading them away would erase why work was legal at the time. Retirement frees the one-live-profile-per-user slot, which is what makes a branch transfer possible at all.',
+  },
+  {
+    code: 'tech.technician.skill_set',
+    class: 'privileged',
+    entityType: 'tech.technician_skill',
+    description:
+      'A technician’s proficiency level in one skill was recorded or replaced. uq_technician_skills_profile_skill makes the relation one live level per skill, and tg_technician_skills_immutable freezes skill_id, so a change moves the LEVEL of the existing row rather than adding a second. The level is what assertEligible compares against a job’s requirement, so this action directly changes who may be assigned.',
+  },
+  {
+    code: 'tech.technician.skill_withdrawn',
+    class: 'privileged',
+    entityType: 'tech.technician_skill',
+    description:
+      'A technician’s skill was withdrawn. Soft delete, for the same reason retirement is: assignments already decided against the skill keep their evidence. Withdrawal narrows eligibility immediately for future assignments and changes nothing about existing ones.',
+  },
+  {
+    code: 'tech.technician.certification_recorded',
+    class: 'privileged',
+    entityType: 'tech.technician_certification',
+    description:
+      'A credential a technician holds was recorded, with the calendar dates it was issued and expires on. Dates, not instants: certificationIsValidOn compares YYYY-MM-DD, and ck_technician_certifications_expiry allows expires_on = issued_on because a credential valid for a single day is legal. The certificate NUMBER is not part of this record — it is restricted and lives in a separate 1:1 table behind iam.sensitive.view.',
+  },
+  {
+    code: 'tech.technician.certification_updated',
+    class: 'privileged',
+    entityType: 'tech.technician_certification',
+    description:
+      'A credential was revoked, marked expired, restored to active, or re-dated. The status is not derived from the expiry date: an issuing body revokes a credential on a day the printed expiry does not know, and the eligibility service refuses a revoked credential outright. Neither certification_id nor issued_on can change here — tg_technician_certifications_immutable freezes both, so the history every past assignment was decided under stays intact.',
+  },
+  {
+    code: 'tech.technician.certificate_number_recorded',
+    class: 'privileged',
+    entityType: 'tech.technician_certification',
+    description:
+      'The RESTRICTED certificate number for a credential was recorded or replaced. The number itself is never copied into this record — iam.audit_records is not gated by iam.sensitive.view, so publishing it here would defeat the very policy that protects the column. The record states that a restricted value was set, and the value stays in tech.technician_certification_details where every SELECT, INSERT and UPDATE policy demands the sensitive permission.',
+  },
+  {
+    code: 'tech.technician.availability_recorded',
+    class: 'privileged',
+    entityType: 'tech.technician_availability',
+    description:
+      'An availability or unavailability window was recorded for a technician. Both kinds share one table and one overlap constraint and mean opposite things to eligibility, which is why the kind is recorded rather than inferred. ex_technician_availability_overlap — a gist EXCLUDE over tstzrange(available_from, available_to) per live technician — owns the no-double-booking invariant, so it holds against concurrent writers where a read-then-check would not.',
+  },
+  {
+    code: 'tech.technician.availability_withdrawn',
+    class: 'privileged',
+    entityType: 'tech.technician_availability',
+    description:
+      'An availability window was withdrawn, freeing the interval it held. The withdrawal path is required rather than convenient: the EXCLUDE constraint has no notion of “the wrong window”, so without it a mistyped interval would block that technician for its entire span, permanently. Soft delete, so assignments decided while the window stood keep their evidence.',
   },
   {
     code: 'tech.labor.session_corrected',
@@ -1074,6 +1238,34 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
     entityType: 'wo.job',
     description:
       'A job moved between states in the graph held by wo.job_transitions. Separate from wo.job.updated because that action deliberately never records a state change: the update path cannot write the state column, and this is the only action a job movement is recorded under. The assignment precondition is the database’s — wo.guard_job_transition refuses an assignment_required target with no active wo.job_assignments row.',
+  },
+  {
+    code: 'wo.job.work_log_recorded',
+    class: 'privileged',
+    entityType: 'wo.job',
+    description:
+      'A progress entry was appended to a job work log (PRE-P1-29-BR-06). Written under tech.labor.record rather than wo.job.manage, because the log is the technician’s narration of the labour they are already recording — requiring a management code would mean a technician cannot describe their own work. wo.job_work_logs is append-only at the GRANT layer (SELECT + INSERT to app_runtime and nothing else), so there is no corresponding updated or deleted action and there cannot be one: a correction is a new entry. The audit row records the entry’s length rather than its text, because the entry is the technician’s own words about the vehicle in front of them and is already stored, attributed, in the log itself.',
+  },
+  {
+    code: 'wo.job.blocker_raised',
+    class: 'privileged',
+    entityType: 'wo.job',
+    description:
+      'A blocker was raised on a job (P1-29-W6, Owner requirement 13, VHM-16): the worker’s statement that work cannot proceed, and why. Written under tech.labor.record for the reason the work log is — a blocker is the technician’s own account of the work in front of them, and requiring wo.job.manage would mean a technician cannot say why they have stopped. It moves NO state: awaiting_parts and awaiting_customer remain work-order states with their own transition rules. wo.job_blocker_events is append-only at the GRANT layer, so there is no corresponding updated or deleted action; a blocker is closed by a resolution event that references the raise. The audit row records the note’s length rather than its text, which the ledger already holds, attributed.',
+  },
+  {
+    code: 'wo.job.blocker_resolved',
+    class: 'privileged',
+    entityType: 'wo.job',
+    description:
+      'A raised blocker was resolved (P1-29-W6): a second append-only event referencing the raise, stating how the work was freed. The raise is never edited. One resolution per raise is enforced by a partial unique index, and a second is refused as a conflict rather than as invalid input, because the blocker WAS open when the caller looked. Written under tech.labor.record, as the raise. The audit row names both event ids and the note’s length.',
+  },
+  {
+    code: 'wo.job.evidence_recorded',
+    class: 'privileged',
+    entityType: 'wo.job',
+    description:
+      'A captured document version was bound to a job as work evidence (PRE-P1-29-BR-07, Owner requirement 12). Written under tech.labor.record rather than shared.document.manage: that code governs the DOCUMENT — uploading, versioning, linking — while binding an existing version to a job is a work-order act about a work-order subject, exactly as dia.diagnostic-evidence-record carries dia.diagnostic.record. wo.job_evidence is append-only at the GRANT layer, so there is no corresponding updated or deleted action and there cannot be one: evidence cannot be unbound. The audit row records the document VERSION id and never a storage key or a signed URL, because the attachments contract keeps deciding who may open it.',
   },
   {
     code: 'wo.job.updated',

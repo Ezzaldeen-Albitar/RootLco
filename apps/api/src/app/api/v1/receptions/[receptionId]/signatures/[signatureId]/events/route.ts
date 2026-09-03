@@ -46,7 +46,7 @@ const Params = z.object({ receptionId: schemas.uuid, signatureId: schemas.uuid }
  * repudiation, refused for a finalization. The module decides, because
  * `ck_signature_event_reason` states the same pairing and one owner is enough.
  */
-const Body = z
+export const Body = z
   .object({
     eventType: z.enum(SIGNATURE_EVENT_TYPES),
     reason: z.string().min(1).max(MAX_REPUDIATION_REASON).nullable().optional(),
@@ -55,6 +55,7 @@ const Body = z
 
 export const RECEPTION_SIGNATURE_EVENT_OPERATION = defineOperation({
   id: 'rec.reception-signature-event',
+  successStatus: 201,
   module: 'reception',
   method: 'POST',
   path: '/receptions/{receptionId}/signatures/{signatureId}/events',

@@ -26,7 +26,7 @@ const Query = z.object({
   limit: schemas.limit.optional(),
 });
 
-const CreateBody = z
+export const CreateBody = z
   .object({
     /** Matches `ck_roles_code_format`; checked here so a bad code is a 422, not a 23514. */
     roleCode: z.string().regex(/^[a-z][a-z0-9_]{1,62}$/),
@@ -50,6 +50,7 @@ export const ROLE_LIST_OPERATION = defineOperation({
 
 export const ROLE_CREATE_OPERATION = defineOperation({
   id: 'iam.role-create',
+  successStatus: 201,
   module: 'iam',
   method: 'POST',
   path: '/iam/roles',

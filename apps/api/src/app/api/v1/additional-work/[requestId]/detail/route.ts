@@ -43,7 +43,7 @@ export const dynamic = 'force-dynamic';
 
 const Params = z.object({ requestId: schemas.uuid });
 
-const Body = z
+export const Body = z
   .object({ description: z.string().trim().min(1).max(MAX_RESTRICTED_DESCRIPTION) })
   .strict();
 

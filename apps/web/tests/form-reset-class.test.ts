@@ -125,6 +125,12 @@ const ROOTS = [
   // so its tree joins the inventory rather than repeating the five-round
   // history that built it.
   join(SRC, 'features', 'receptions'),
+  // P1-29 W7: the diagnostics catalogue, template detail and job workbench are
+  // `<form action={…}>` owners with selects and checkboxes of this class.
+  join(SRC, 'features', 'diagnostics'),
+  // P1-29 W8: the QC queue and the quality-and-closure view own `<form action={…}>`
+  // forms with selects of this class.
+  join(SRC, 'features', 'quality'),
   // P1-28, round six: appointment booking, the appointment detail lifecycle
   // commands, and the company/branch authorization target all own or feed a
   // `<form action={…}>` and none of them had ever been opened by this scan.
@@ -136,6 +142,10 @@ const ROOTS = [
   // menu. Text and password boxes today, which is exactly the state in which a
   // tree gets left out and then grows a select.
   join(SRC, 'features', 'authentication'),
+  // P1-29 W4: the technician workspace binds work evidence through a
+  // `<form action={…}>` — a category select, two text boxes and the file input —
+  // so its tree joins the inventory the round-six check demands.
+  join(SRC, 'features', 'technicians'),
   join(SRC, 'components', 'forms'),
   join(SRC, 'components', 'party'),
   join(SRC, 'components', 'duplicates'),
@@ -347,6 +357,36 @@ const OUTSIDE_A_FORM: readonly { file: string; match: string; why: string }[] = 
     file: 'features/receptions/components/CaptureFileField.tsx',
     match: '<input type="file"',
     why: 'A file input CANNOT carry a default. Browsers refuse a programmatic write to `input[type=file].value` — that is the guard against a page selecting a file the operator never chose — so `defaultValue` is not a shape this control can take. What a reset costs here is the file selection, which the operator re-makes deliberately; there is no typed text to strand.',
+  },
+  {
+    file: 'features/technicians/components/TechnicianWorkspaceScreen.tsx',
+    match: "<SelectField label={translate(messages, 'technicians.workspace.company')}",
+    why: 'The branch-target company picker (P1-29 W4). It sits in a `<form onSubmit={…}>` that prevents its own default and sets state — never a Server Action, so React never resets it. The only `<form action={…}>` in this tree is the evidence capture in `JobWorkPanel.tsx`, which this screen renders as a SIBLING of the target form, not inside it — read off the element nesting.',
+  },
+  {
+    file: 'features/technicians/components/TechnicianWorkspaceScreen.tsx',
+    match: "<SelectField label={translate(messages, 'technicians.workspace.branch')}",
+    why: 'The branch-target branch picker, the other half of the same pair, in the same `onSubmit` form for the same reason.',
+  },
+  {
+    file: 'features/diagnostics/components/TemplateCatalogueScreen.tsx',
+    match: `<SelectField name="status" label={translate(messages, 'diagnostics.catalogue.filterStatus')}`,
+    why: 'The catalogue status FILTER (P1-29 W7). It sits in the list section, outside every `<form action={…}>` on the screen, and re-reads the list on change; nothing submits it, so no Server Action ever resets it — read off the element nesting.',
+  },
+  {
+    file: 'features/quality/components/QualityQueueScreen.tsx',
+    match: "<SelectField label={translate(messages, 'quality.queue.company')}",
+    why: 'The branch-target company picker (P1-29 W8), the W4 shape: a `<form onSubmit={…}>` that prevents its own default and sets state — never a Server Action, so React never resets it.',
+  },
+  {
+    file: 'features/quality/components/QualityQueueScreen.tsx',
+    match: "<SelectField label={translate(messages, 'quality.queue.branch')}",
+    why: 'The branch-target branch picker, the other half of the same pair, in the same `onSubmit` form for the same reason.',
+  },
+  {
+    file: 'features/quality/components/QualityQueueScreen.tsx',
+    match: `<SelectField name="overallResult" label={translate(messages, 'quality.queue.filterResult')}`,
+    why: 'The queue result FILTER (P1-29 W8). It sits in the list section outside every `<form action={…}>` and re-reads on change; nothing submits it.',
   },
   {
     file: 'features/vehicles/components/VehicleDuplicateReviewScreen.tsx',

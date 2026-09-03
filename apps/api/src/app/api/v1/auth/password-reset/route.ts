@@ -24,7 +24,7 @@ import { iamModule } from '@/modules/iam';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const ResetBody = z.object({
+export const ResetBody = z.object({
   email: z.string().min(3).max(320),
   /** Must be an allow-listed absolute destination. Omit to use the default. */
   redirectTo: z.string().url().max(2048).optional(),
@@ -32,6 +32,7 @@ const ResetBody = z.object({
 
 export const PASSWORD_RESET_OPERATION = defineOperation({
   id: 'iam.auth-password-reset',
+  successStatus: 202,
   module: 'iam',
   method: 'POST',
   path: '/auth/password-reset',

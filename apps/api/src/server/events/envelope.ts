@@ -328,7 +328,23 @@ export const EVENT_CATALOG: readonly EventCatalogEntry[] = Object.freeze([
     // owner, so 'tech' here would have made Wave 5's own write path throw.
     code: 'EVT-TEC-001',
     eventType: 'job.assigned',
-    schemaVersion: 1,
+    // VERSION 2 (PRE-P1-29, payload-carries-the-facts).
+    //
+    // v1 carried `{jobId, assignmentId, assignmentRole}` and nothing else, which
+    // left every notification fact to be resolved by the consumer. The consumer
+    // runs on `app_worker`, which has USAGE on neither `wo` nor `tech` and no read
+    // on `shared.message_templates` — so those facts were not merely inconvenient
+    // to resolve there, they were unreachable BY DESIGN, and widening the worker
+    // to reach them is the privilege the Owner's decision forbids.
+    //
+    // v2 therefore carries the resolved facts, computed by the publisher under
+    // `app_runtime` inside the tenant's own context. This is an INCOMPATIBLE
+    // payload change, which is exactly what `schemaVersion` above is for: v1
+    // semantics are untouched, and a consumer declares which versions it
+    // understands. There are no registered consumers of v1 — `consumersFor` has
+    // never returned one for this type — so nothing in the tree reads the old
+    // shape and no compatibility shim is invented to pretend otherwise.
+    schemaVersion: 2,
     aggregateType: 'wo.job',
     owner: 'wo',
     implementedIn: 'P1-19',

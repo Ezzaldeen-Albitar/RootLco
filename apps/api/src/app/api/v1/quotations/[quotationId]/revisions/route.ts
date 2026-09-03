@@ -58,7 +58,7 @@ const Line = z
   })
   .strict();
 
-const Body = z
+export const Body = z
   .object({
     lines: z.array(Line).min(1).max(MAX_ITEMS_PER_REVISION),
     customerClass: z.string().regex(INTERNAL_CODE, 'must be a lower-snake class code').optional(),
@@ -68,6 +68,7 @@ const Body = z
 
 export const QUOTATION_REVISION_CREATE_OPERATION = defineOperation({
   id: 'quo.quotation-revision-create',
+  successStatus: 201,
   module: 'quotation',
   method: 'POST',
   path: '/quotations/{quotationId}/revisions',

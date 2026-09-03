@@ -21,7 +21,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const Params = z.object({ versionId: schemas.uuid });
-const Body = z.object({ variables: z.record(z.string(), z.string()).default({}) }).strict();
+export const Body = z.object({ variables: z.record(z.string(), z.string()).default({}) }).strict();
 
 export const TEMPLATE_VERSION_PREVIEW_OPERATION = defineOperation({
   id: 'shared.template-version-preview',

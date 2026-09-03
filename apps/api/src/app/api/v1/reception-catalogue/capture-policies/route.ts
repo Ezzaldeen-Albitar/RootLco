@@ -43,7 +43,7 @@ export const dynamic = 'force-dynamic';
 
 const Query = z.object({}).strict();
 
-const SetBody = z
+export const SetBody = z
   .object({
     requirementCode: z.enum(CAPTURE_POLICY_REQUIREMENTS),
     refusalType: z.enum(CAPTURE_POLICY_REFUSAL_TYPES).nullable().optional(),
@@ -77,6 +77,7 @@ export async function GET(request: Request): Promise<Response> {
 
 export const CAPTURE_POLICY_SET_OPERATION = defineOperation({
   id: 'rec.catalogue-capture-policy-set',
+  successStatus: 201,
   module: 'reception',
   method: 'POST',
   path: '/reception-catalogue/capture-policies',

@@ -18,7 +18,7 @@ import { sharedServicesModule } from '@/modules/shared-services';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const Body = z
+export const Body = z
   .object({
     /** `shared.document_categories.category_code`, `^[a-z][a-z0-9_]{1,62}$`. */
     categoryCode: z.string().regex(/^[a-z][a-z0-9_]{1,62}$/),
@@ -34,6 +34,7 @@ const Body = z
 
 export const ATTACHMENT_UPLOAD_AUTHORIZE_OPERATION = defineOperation({
   id: 'shared.attachment-upload-authorize',
+  successStatus: 201,
   module: 'shared-services',
   method: 'POST',
   path: '/attachments/upload-authorizations',

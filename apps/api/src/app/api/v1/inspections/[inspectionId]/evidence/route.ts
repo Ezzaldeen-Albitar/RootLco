@@ -31,7 +31,7 @@ export const dynamic = 'force-dynamic';
 
 const Params = z.object({ inspectionId: schemas.uuid });
 
-const Body = z
+export const Body = z
   .object({
     documentVersionId: schemas.uuid,
     evidenceType: z.string().trim().min(1).max(MAX_EVIDENCE_TYPE),
@@ -41,6 +41,7 @@ const Body = z
 
 export const DIAGNOSTIC_EVIDENCE_OPERATION = defineOperation({
   id: 'dia.diagnostic-evidence-record',
+  successStatus: 201,
   module: 'diagnostics',
   method: 'POST',
   path: '/inspections/{inspectionId}/evidence',

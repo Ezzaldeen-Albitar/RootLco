@@ -32,7 +32,7 @@ const Params = z.object({ vehicleId: schemas.uuid });
 const Query = z
   .object({ cursor: schemas.cursor.optional(), limit: schemas.limit.optional() })
   .strict();
-const Body = z
+export const Body = z
   .object({
     value: z.number().min(0).max(MAX_ODOMETER_VALUE),
     unit: z.enum(ODOMETER_UNITS),
@@ -58,6 +58,7 @@ export const VEHICLE_ODOMETER_LIST_OPERATION = defineOperation({
 
 export const VEHICLE_ODOMETER_RECORD_OPERATION = defineOperation({
   id: 'veh.vehicle-odometer-record',
+  successStatus: 201,
   module: 'vehicle',
   method: 'POST',
   path: '/vehicles/{vehicleId}/odometer-readings',

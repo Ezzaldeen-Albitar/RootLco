@@ -31,7 +31,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const Params = z.object({ requestId: schemas.uuid });
-const Body = z.object({ reason: z.string().trim().min(1).max(MAX_REASON) }).strict();
+export const Body = z.object({ reason: z.string().trim().min(1).max(MAX_REASON) }).strict();
 
 export const ADDITIONAL_WORK_WITHDRAW_OPERATION = defineOperation({
   id: 'wo.additional-work-withdraw',

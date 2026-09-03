@@ -51,7 +51,7 @@ const MoneyAmount = z
     'must be an unsigned decimal string of at most 14 integer digits and 4 decimal places'
   );
 
-const CreateBody = z
+export const CreateBody = z
   .object({
     companyId: schemas.uuid,
     branchId: schemas.uuid,
@@ -66,6 +66,7 @@ const CreateBody = z
 
 export const PAYMENT_RECORD_OPERATION = defineOperation({
   id: 'sal.payment-record',
+  successStatus: 201,
   module: 'payments',
   method: 'POST',
   path: '/payments',

@@ -28,7 +28,7 @@ export const dynamic = 'force-dynamic';
 
 const Params = z.object({ deliveryId: schemas.uuid }).strict();
 
-const RecordBody = z
+export const RecordBody = z
   .object({
     templateItemId: schemas.uuid,
     // Borrowed from the domain so the schema and the CHECK constraint cannot drift.
@@ -39,6 +39,7 @@ const RecordBody = z
 
 export const DELIVERY_CHECKLIST_RECORD_OPERATION = defineOperation({
   id: 'sal.delivery-checklist-record',
+  successStatus: 201,
   module: 'delivery',
   method: 'POST',
   path: '/deliveries/{deliveryId}/checklist-results',

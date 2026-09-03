@@ -23,6 +23,7 @@ import { log } from '../observability/logger';
 export type ConsistencyRole = 'primary' | 'replica';
 
 let primary: Pool | undefined;
+let platform: Pool | undefined;
 let replicaWarningEmitted = false;
 
 function createPool(connectionString: string): Pool {
@@ -98,15 +99,63 @@ export async function acquirePrimaryClient(): Promise<PoolClient> {
   return primaryPool().connect();
 }
 
+export class PlatformDatabaseNotConfiguredError extends Error {
+  public override readonly name = 'PlatformDatabaseNotConfiguredError';
+  constructor() {
+    super(
+      'PLATFORM_DATABASE_URL is not configured. The control plane requires its own ' +
+        'connection whose login role is a member of app_platform and of NO other ' +
+        'application archetype. It deliberately does not fall back to DATABASE_URL: ' +
+        'falling back would put platform authority on the request path role.'
+    );
+  }
+}
+
+/**
+ * The control-plane pool (PRE-P1-29 Wave B, §6.8.3).
+ *
+ * Separate from the primary pool, and the separation is the containment rather
+ * than a performance choice. Every `platform.*` policy is written `TO
+ * app_platform`, so a platform operation served from the primary pool would be
+ * refused by all of them — and every structural gate would stay green while it
+ * happened, which is the `PC-1` shape.
+ *
+ * Throws rather than falling back. `workerDbPool()` resolves
+ * `WORKER_DATABASE_URL ?? DATABASE_URL`; this deliberately does not, because the
+ * fallback there costs a worker its own identity, while the same fallback here
+ * would hand platform authority to the request path.
+ */
+export function platformPool(): Pool {
+  if (!platform) {
+    const { PLATFORM_DATABASE_URL } = backendConfig();
+    if (!PLATFORM_DATABASE_URL) throw new PlatformDatabaseNotConfiguredError();
+    platform = createPool(PLATFORM_DATABASE_URL);
+  }
+  return platform;
+}
+
+/** Acquires a client from the control-plane pool. Callers must always release it. */
+export async function acquirePlatformClient(): Promise<PoolClient> {
+  return platformPool().connect();
+}
+
 /** Closes pools. Called by graceful shutdown and by test teardown. */
 export async function closePools(): Promise<void> {
   const existing = primary;
+  const existingPlatform = platform;
   primary = undefined;
+  platform = undefined;
   replicaWarningEmitted = false;
   if (existing) await existing.end();
+  if (existingPlatform) await existingPlatform.end();
 }
 
 /** Test seam: installs a pre-built pool (e.g. one bound to a test login role). */
 export function __setPrimaryPoolForTests(pool: Pool | undefined): void {
   primary = pool;
+}
+
+/** Test seam: installs a pre-built control-plane pool bound to a platform login. */
+export function __setPlatformPoolForTests(pool: Pool | undefined): void {
+  platform = pool;
 }

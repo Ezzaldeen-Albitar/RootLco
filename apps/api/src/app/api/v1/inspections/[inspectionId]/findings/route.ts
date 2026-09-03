@@ -42,7 +42,7 @@ export const dynamic = 'force-dynamic';
 
 const Params = z.object({ inspectionId: schemas.uuid });
 
-const Body = z
+export const Body = z
   .object({
     templateItemId: schemas.uuid.optional(),
     severity: z.enum(FINDING_SEVERITIES),
@@ -53,6 +53,7 @@ const Body = z
 
 export const DIAGNOSTIC_FINDING_OPERATION = defineOperation({
   id: 'dia.diagnostic-finding-record',
+  successStatus: 201,
   module: 'diagnostics',
   method: 'POST',
   path: '/inspections/{inspectionId}/findings',

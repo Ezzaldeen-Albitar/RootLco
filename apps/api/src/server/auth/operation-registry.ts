@@ -81,6 +81,20 @@ export interface OperationDeclaration {
   readonly rateLimitPolicy?: RateLimitPolicyName;
   /** Whether responses may be cached, and under which eligibility category. */
   readonly cacheCategory?: string;
+  /**
+   * The success status this operation actually returns. Defaults to 200.
+   *
+   * It exists because the published contract used to advertise `200` for all 334
+   * operations while 98 returned `201` and one returned `202` — so a third of the
+   * surface told every generated client and the frontend mirror the wrong success
+   * code, and no field existed that was CAPABLE of disagreeing with the handler.
+   *
+   * Declaring it is not enough on its own: a declaration can drift from the
+   * handler as easily as a hard-coded literal could. `check-openapi-success-status.mjs`
+   * derives the real status from each `handleOperation(...)` call and fails when
+   * the two disagree, so this field is checked rather than trusted.
+   */
+  readonly successStatus?: 200 | 201 | 202 | 204;
 }
 
 export interface RegisteredOperation extends OperationDeclaration {

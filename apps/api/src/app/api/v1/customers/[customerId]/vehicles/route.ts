@@ -30,7 +30,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const Params = z.object({ customerId: schemas.uuid });
-const Body = z
+export const Body = z
   .object({
     vehicleId: schemas.uuid,
     relationshipRole: z.enum(VEHICLE_RELATIONSHIP_ROLES),
@@ -39,6 +39,7 @@ const Body = z
 
 export const VEHICLE_LINK_OPERATION = defineOperation({
   id: 'crm.vehicle-link',
+  successStatus: 201,
   module: 'crm',
   method: 'POST',
   path: '/customers/{customerId}/vehicles',

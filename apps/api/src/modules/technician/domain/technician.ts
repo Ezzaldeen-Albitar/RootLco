@@ -32,6 +32,16 @@ export type LaborSource = (typeof LABOR_SOURCES)[number];
 
 export const MAX_UNAVAILABILITY_REASON = 500;
 
+/**
+ * Roster field bounds (BR-03). Each mirrors a CHECK on tech.technician_profiles:
+ * the columns are text with a not-blank constraint and no length limit in the
+ * schema, so the API is the narrower authority and says so here rather than in a
+ * route, where two routes would drift.
+ */
+export const MAX_TRADE = 64;
+export const MAX_EMPLOYMENT_REF = 64;
+export const MAX_CERTIFICATE_NUMBER = 128;
+
 /** Why a technician was refused. One code per independent reason. */
 export const INELIGIBILITY_REASONS = [
   'profile-inactive',

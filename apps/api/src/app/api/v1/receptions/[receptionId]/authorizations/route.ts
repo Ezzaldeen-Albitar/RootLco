@@ -33,7 +33,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const Params = z.object({ receptionId: schemas.uuid });
-const Body = z
+export const Body = z
   .object({
     authorizingRole: z.enum(AUTHORIZING_ROLES),
     partnerId: schemas.uuid,
@@ -47,6 +47,7 @@ const Body = z
 
 export const RECEPTION_AUTHORIZATION_OPERATION = defineOperation({
   id: 'rec.reception-authorization',
+  successStatus: 201,
   module: 'reception',
   method: 'POST',
   path: '/receptions/{receptionId}/authorizations',

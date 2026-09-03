@@ -59,7 +59,7 @@ export const dynamic = 'force-dynamic';
 const MAX_SIGNATURE_HASH_INPUT = 256;
 
 const Params = z.object({ receptionId: schemas.uuid });
-const Body = z
+export const Body = z
   .object({
     signerRole: z.enum(SIGNER_ROLES),
     signerPartnerId: schemas.uuid.nullable().optional(),
@@ -109,6 +109,7 @@ export async function GET(
 
 export const RECEPTION_SIGNATURE_OPERATION = defineOperation({
   id: 'rec.reception-signature',
+  successStatus: 201,
   module: 'reception',
   method: 'POST',
   path: '/receptions/{receptionId}/signatures',

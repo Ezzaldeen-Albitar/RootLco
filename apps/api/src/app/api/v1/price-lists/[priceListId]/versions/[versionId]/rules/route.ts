@@ -37,7 +37,7 @@ export const dynamic = 'force-dynamic';
 
 const Params = z.object({ priceListId: schemas.uuid, versionId: schemas.uuid });
 
-const Body = z
+export const Body = z
   .object({
     serviceId: schemas.uuid,
     // A plain decimal literal only. Exponential notation is rejected by `Decimal`
@@ -58,6 +58,7 @@ const Body = z
 
 export const PRICE_RULE_RECORD_OPERATION = defineOperation({
   id: 'svc.price-rule-record',
+  successStatus: 201,
   module: 'pricing',
   method: 'POST',
   path: '/price-lists/{priceListId}/versions/{versionId}/rules',

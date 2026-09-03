@@ -52,10 +52,11 @@ const Params = z.object({ deliveryId: schemas.uuid }).strict();
  * operator configures, and accepting any of them from a client would let the caller
  * write its own warranty.
  */
-const GenerateBody = z.object({ policyId: schemas.uuid.optional() }).strict();
+export const GenerateBody = z.object({ policyId: schemas.uuid.optional() }).strict();
 
 export const WARRANTY_GENERATE_OPERATION = defineOperation({
   id: 'wty.warranty-generate',
+  successStatus: 201,
   module: 'warranty',
   method: 'POST',
   path: '/deliveries/{deliveryId}/warranties',

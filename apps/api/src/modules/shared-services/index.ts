@@ -172,6 +172,7 @@ export {
   DOWNLOADABLE_STATES,
   decodeUploadToken,
   encodeUploadToken,
+  EVIDENCE_REFUSED_STATES,
   isLinkableEntityType,
   isLinkPurpose,
   LINK_PURPOSES,
@@ -303,7 +304,7 @@ export const sharedServicesModule = composeModule({
     const documentReadsRepo = new DocumentReadRepository();
 
     const attachments = new AttachmentService(documents);
-    const notifications = new SharedNotificationService(messages, templates);
+    const notifications = new SharedNotificationService(messages, templates, dispatch);
 
     // The frozen P1-13 seams. After this, `fileService()` and
     // `notificationService()` return real implementations instead of the

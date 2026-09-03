@@ -39,10 +39,11 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const Params = z.object({ jobId: schemas.uuid });
-const Body = z.object({ templateVersionId: schemas.uuid }).strict();
+export const Body = z.object({ templateVersionId: schemas.uuid }).strict();
 
 export const DIAGNOSTIC_CREATE_OPERATION = defineOperation({
   id: 'dia.diagnostic-create',
+  successStatus: 201,
   module: 'diagnostics',
   method: 'POST',
   path: '/jobs/{jobId}/inspections',

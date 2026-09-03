@@ -34,7 +34,7 @@ export const dynamic = 'force-dynamic';
  * colleague and approve it themselves — satisfying the CHECK while defeating the
  * separation it exists to create. The counter is the authenticated caller, full stop.
  */
-const CreateBody = z
+export const CreateBody = z
   .object({
     companyId: schemas.uuid,
     branchId: schemas.uuid,
@@ -49,6 +49,7 @@ const CreateBody = z
 
 export const OPENING_BATCH_CREATE_OPERATION = defineOperation({
   id: 'inv.opening-batch-create',
+  successStatus: 201,
   module: 'inventory',
   method: 'POST',
   path: '/opening-inventory-batches',

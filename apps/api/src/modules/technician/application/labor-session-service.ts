@@ -39,6 +39,7 @@ import type { DbHandle } from '@/server/db/transaction';
 import type { ScopeAuthorizer } from '@/server/auth/authorization';
 import { SQLSTATE, isSqlState } from '@/server/db/repository';
 import { pageRequest, type Page } from '@/server/db/pagination';
+import type { TimelineSourceRow, TimelineWindow } from '@/server/db/timeline';
 import { appendAudit } from '@/server/audit/audit';
 import { publishEvent } from '@/server/events/publisher';
 import { workOrderModule } from '@/modules/work-order';
@@ -48,6 +49,7 @@ import {
   type LaborSessionRow,
 } from '../data/labor-session-repository';
 import type { TechnicianCatalogRepository } from '../data/technician-catalog-repository';
+import type { TechnicianRosterRepository } from '../data/technician-roster-repository';
 import { assertLaborWindow } from '../domain/technician';
 
 export interface LaborSessionView {
@@ -83,9 +85,26 @@ export class LaborSessionService extends ApplicationService {
 
   constructor(
     private readonly sessions: LaborSessionRepository,
-    private readonly profiles: TechnicianCatalogRepository
+    private readonly profiles: TechnicianCatalogRepository,
+    private readonly roster: TechnicianRosterRepository
   ) {
     super();
+  }
+
+  /**
+   * The labour events of these jobs for the unified timeline (P1-29 `W6`).
+   *
+   * A PORT for the work-order module. No authorization here: the timeline read
+   * has already authorised the WORK ORDER's scope and decided, against
+   * `tech.technician.read`, whether staff kinds may be shown at all — which is
+   * why this method is never reached by a caller who may not see them.
+   */
+  async timelineEventsForJobs(
+    db: DbHandle,
+    jobIds: readonly string[],
+    window: TimelineWindow
+  ): Promise<readonly TimelineSourceRow[]> {
+    return this.sessions.timelineEventsForJobs(db, jobIds, window);
   }
 
   /** Starts a session. The clock is the server's. */
@@ -108,6 +127,27 @@ export class LaborSessionService extends ApplicationService {
         message: `Technician ${input.technicianProfileId} is not active`,
         safeDetails: {
           violations: [{ path: 'body.technicianProfileId', rule: 'profile-inactive' }],
+        },
+      });
+    }
+    // W4-F1 (P1-29, disposition of 2026-09-02). `tech.labor.record` is a
+    // branch-scoped recording authority, designed in P1-19 for a timekeeper who
+    // clocks technicians in on their behalf. A caller who IS a technician in the
+    // target scope — who holds a live profile there — is not a timekeeper for
+    // their colleagues: the session they may start is their own. A caller with
+    // no profile in the scope keeps the timekeeper path. The rule lives here,
+    // at the boundary, not in the workspace adapter that declines to build the
+    // request; an adapter is not a boundary.
+    const own = await this.roster.ownLiveProfileIdInScope(db, {
+      companyId: profile.companyId,
+      branchId: profile.branchId,
+    });
+    if (own !== null && own !== input.technicianProfileId) {
+      throw new AppFailure('ERR-IAM-001', {
+        message:
+          'A technician may start a labour session only for their own profile; recording on behalf of another technician is the timekeeper path',
+        safeDetails: {
+          violations: [{ path: 'body.technicianProfileId', rule: 'not-own-profile' }],
         },
       });
     }

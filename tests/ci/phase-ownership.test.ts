@@ -273,6 +273,457 @@ describe('p1-26-frontend profile', () => {
   });
 });
 
+describe('a profile refuses a bucket it never claimed', () => {
+  /*
+   * The declaration used to be advisory in one direction. `allowed` narrowed
+   * nothing on its own: only a bucket written into `forbidden` was refused, so a
+   * bucket named in NEITHER list passed every rule — while the file said, in a
+   * docblock directly above it, that anything not listed is forbidden.
+   *
+   * Six profiles permitted `webGenerated` that way. Worse than the six: adding a
+   * twelfth bucket to the classifier would have widened every profile in the file
+   * at once, silently, with no line of any profile changing.
+   */
+  it('refuses an undeclared bucket, and says which profile did not claim it', () => {
+    const generated = ['apps/web/src/lib/api/idempotent-operations.ts'];
+    for (const profile of ['p1-26-frontend', 'p1-27-frontend', 'backend-login-contract']) {
+      const { failures } = evaluate(generated, profile);
+      expect(
+        failures.length,
+        `${profile} silently permitted a bucket it never claimed`
+      ).toBeGreaterThan(0);
+      expect(failures[0], `${profile} refused without naming itself`).toContain(profile);
+      expect(failures[0]).toContain('does not claim');
+    }
+  });
+
+  it('still prefers the profile author own words when there are any', () => {
+    // `forbidden` stopped deciding; it did not stop explaining. A declared
+    // refusal must still read in the words whoever wrote the profile chose.
+    const { failures } = evaluate(['supabase/migrations/0001_x.sql'], 'p1-26-frontend');
+    expect(failures[0], 'a declared reason was replaced by the generic one').toContain(
+      'a Frontend phase must not change a migration'
+    );
+  });
+
+  it('leaves an allowed bucket allowed', () => {
+    expect(
+      evaluate(['apps/web/src/app/page.tsx'], 'p1-26-frontend').failures,
+      'closing the hole started refusing a bucket the profile does claim'
+    ).toEqual([]);
+  });
+});
+
+describe('the permission catalogue is a bucket of its own', () => {
+  /*
+   * `supabase/seeds/04_iam_permission_catalog.sql` IS the canonical permission
+   * catalogue: 113 rows at the time of writing — pinned by `permissionCount` in
+   * `.github/ci-baselines/schema-baseline.json` rather than by this sentence — the
+   * only shipping insert into `iam.permissions`, and ZERO migrations write to that
+   * table. Any change that adds a permission has to
+   * land there.
+   *
+   * Rolled into the `supabase` bucket it could only ever be granted alongside
+   * `config.toml` and the local bootstrap — a different question with a different
+   * answer. So it is separated, and each profile answers the two questions apart.
+   *
+   * This bucket is also the case the `allowed`-decides rule was written for. It is
+   * the twelfth bucket, and it landed REFUSED by every profile that had not
+   * claimed it. Under the rule it replaced, adding it would have silently widened
+   * all twelve profiles at once.
+   */
+  const CATALOGUE = 'supabase/seeds/04_iam_permission_catalog.sql';
+
+  it('classifies the catalogue apart from the harness, and after migrations', () => {
+    expect(classify(CATALOGUE), 'the catalogue fell into the harness bucket').toBe('dbSeeds');
+    expect(classify('supabase/config.toml'), 'the harness moved').toBe('supabase');
+    expect(classify('supabase/migrations/0001_x.sql'), 'a migration moved').toBe('migrations');
+
+    // Order matters: a catch-all `supabase/` rule declared first would swallow
+    // both of the buckets above.
+    const order = CLASSIFIERS.map((c) => c.bucket);
+    expect(
+      order.indexOf('dbSeeds'),
+      'dbSeeds is declared after the supabase catch-all'
+    ).toBeLessThan(order.indexOf('supabase'));
+    expect(
+      order.indexOf('migrations'),
+      'migrations is declared after the supabase catch-all'
+    ).toBeLessThan(order.indexOf('supabase'));
+  });
+
+  it('lets the PRE-P1-29 Backend lane seed a permission without opening the harness', () => {
+    for (const profile of ['pre-p1-29-backend', 'pre-p1-29-initiative']) {
+      expect(
+        evaluate([CATALOGUE], profile).failures,
+        `${profile} cannot add a permission, which is the one database change it needs`
+      ).toEqual([]);
+      expect(
+        evaluate(['supabase/config.toml'], profile).failures.length,
+        `${profile} was handed the database harness`
+      ).toBeGreaterThan(0);
+    }
+  });
+
+  it('keeps a screen out of the catalogue', () => {
+    const { failures } = evaluate([CATALOGUE], 'pre-p1-29-web');
+    expect(failures.length, 'the Web lane may seed a permission').toBeGreaterThan(0);
+    expect(failures[0]).toContain('must not seed a permission');
+  });
+
+  it('does not quietly take seed authority from the profiles that already had it', () => {
+    /*
+     * Both of these held the catalogue through the wider `supabase` bucket.
+     * Splitting a bucket must not narrow a profile that never asked to be
+     * narrowed — that would be a behaviour change smuggled in as a refactor.
+     */
+    for (const profile of ['p1-18-read-surface', 'p1-15-evidence-foundation']) {
+      expect(
+        evaluate([CATALOGUE], profile).failures,
+        `${profile} lost seed authority when the bucket was split`
+      ).toEqual([]);
+      expect(
+        evaluate(['supabase/config.toml'], profile).failures,
+        `${profile} lost harness authority when the bucket was split`
+      ).toEqual([]);
+    }
+  });
+
+  it('refuses the new bucket everywhere it was never claimed', () => {
+    for (const profile of ['p1-26-frontend', 'p1-27-frontend', 'repository-tooling']) {
+      expect(
+        evaluate([CATALOGUE], profile).failures.length,
+        `${profile} silently gained the permission catalogue when the bucket was added`
+      ).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe('PRE-P1-29 ownership — an initiative that spans the product, in lanes that do not', () => {
+  /*
+   * PRE-P1-29 is an initiative rather than a phase, and it legitimately needs API
+   * routes, migrations that seed permissions, and the screens that operate them.
+   * One profile spanning all of that would forbid nothing and so declare nothing,
+   * which is why there are three: two lanes that each hold one review boundary,
+   * and an integration profile for the branch that receives both.
+   */
+  const INITIATIVE_RULES = JSON.parse(readFileSync(PROFILE_MAP_PATH, 'utf8')).rules as {
+    branchPrefix?: string;
+    profile?: string;
+  }[];
+  const resolve = (headBranch: string) =>
+    decideOwnershipRun({
+      headBranch,
+      baseRef: 'develop',
+      eventName: 'pull_request',
+      rules: INITIATIVE_RULES,
+    }) as { action: string; profile: string | null };
+
+  it('resolves the initiative branch and each lane to its own profile', () => {
+    expect(
+      resolve('feature/pre-p1-29-multi-tenant-administration-rbac-workflow').profile,
+      'the initiative branch does not resolve to its own profile'
+    ).toBe('pre-p1-29-initiative');
+    expect(resolve('feature/pre-p1-29-backend-platform-admin').profile).toBe('pre-p1-29-backend');
+    expect(resolve('feature/pre-p1-29-web-superadmin').profile).toBe('pre-p1-29-web');
+    expect(resolve('chore/pre-p1-29-admin-rbac-ownership').profile).toBe('repository-tooling');
+  });
+
+  it('maps the initiative by its FULL name, so it cannot swallow the lanes', () => {
+    /*
+     * First match wins. A rule keyed on `feature/pre-p1-29-` would match both lane
+     * branches too and — being listed for the widest profile — would hand the Web
+     * lane the API and the Backend lane the screens. The narrower rules are listed
+     * first AND the initiative rule is the whole branch name, so an unmapped
+     * sibling is refused rather than absorbed.
+     */
+    const stray = resolve('feature/pre-p1-29-something-nobody-mapped');
+    expect(stray.action, 'an unmapped PRE-P1-29 branch was absorbed by the initiative rule').toBe(
+      'refuse'
+    );
+    expect(stray.profile).toBeNull();
+
+    const order = INITIATIVE_RULES.map((r) => r.branchPrefix ?? '');
+    const backend = order.indexOf('feature/pre-p1-29-backend-');
+    const web = order.indexOf('feature/pre-p1-29-web-');
+    const initiative = order.indexOf('feature/pre-p1-29-multi-tenant-administration-rbac-workflow');
+    expect(backend, 'the Backend lane rule is missing').toBeGreaterThanOrEqual(0);
+    expect(web, 'the Web lane rule is missing').toBeGreaterThanOrEqual(0);
+    expect(initiative, 'the initiative rule is missing').toBeGreaterThanOrEqual(0);
+    expect(backend, 'the initiative rule precedes the Backend lane').toBeLessThan(initiative);
+    expect(web, 'the initiative rule precedes the Web lane').toBeLessThan(initiative);
+  });
+
+  it('still refuses a branch nobody mapped at all', () => {
+    expect(resolve('nobody/mapped-this').action).toBe('refuse');
+  });
+
+  /*
+   * The matrix. Each row is a path this initiative might plausibly touch, under
+   * one profile — asserted per row so a failure names the lane that stopped
+   * meaning what it meant.
+   */
+  const MATRIX: [string, string, boolean][] = [
+    ['pre-p1-29-initiative', 'apps/api/src/routes/platform/companies.ts', true],
+    ['pre-p1-29-initiative', 'supabase/migrations/20260822090000_platform_admin.sql', true],
+    ['pre-p1-29-initiative', 'apps/web/src/app/superadmin/companies/page.tsx', true],
+    ['pre-p1-29-initiative', 'tests/backend/platform-companies.test.ts', true],
+    ['pre-p1-29-initiative', 'docs/phase-1/pre-p1-29/scope.md', true],
+    ['pre-p1-29-initiative', 'apps/api/package.json', false],
+    ['pre-p1-29-initiative', 'supabase/seed.sql', false],
+    ['pre-p1-29-initiative', 'some/unknown/place/thing.bin', false],
+
+    ['p1-09-database-seed', 'supabase/seeds/09_dia_diagnostic_types.sql', true],
+    ['p1-09-database-seed', 'supabase/config.toml', true],
+    ['p1-09-database-seed', 'scripts/db/validate-seed-state.mjs', true],
+    ['p1-09-database-seed', 'tests/db/p1-29-w9-r4-diagnostic-type-vocabulary.test.ts', true],
+    ['p1-09-database-seed', 'docs/phase-1/phase-1-29/canonical-plan.md', true],
+    ['p1-09-database-seed', 'supabase/migrations/20260903090000_anything.sql', false],
+    [
+      'p1-09-database-seed',
+      'apps/api/src/modules/diagnostics/application/diagnostic-catalog-service.ts',
+      false,
+    ],
+    ['p1-09-database-seed', 'apps/web/src/app/page.tsx', false],
+    ['pre-p1-29-backend', 'apps/api/src/routes/platform/companies.ts', true],
+    ['pre-p1-29-backend', 'supabase/migrations/20260822090000_platform_admin.sql', true],
+    ['pre-p1-29-backend', 'apps/web/src/lib/api/idempotent-operations.ts', true],
+    ['pre-p1-29-backend', 'apps/web/src/app/superadmin/companies/page.tsx', false],
+    ['pre-p1-29-backend', 'apps/api/package.json', false],
+    ['pre-p1-29-backend', 'supabase/seed.sql', false],
+    ['pre-p1-29-backend', 'some/unknown/place/thing.bin', false],
+
+    ['pre-p1-29-web', 'apps/web/src/app/superadmin/companies/page.tsx', true],
+    ['pre-p1-29-web', 'tests/web/role-editor.test.ts', true],
+    ['pre-p1-29-web', 'apps/api/src/routes/platform/companies.ts', false],
+    ['pre-p1-29-web', 'supabase/migrations/20260822090000_platform_admin.sql', false],
+    ['pre-p1-29-web', 'apps/web/src/lib/api/idempotent-operations.ts', false],
+    ['pre-p1-29-web', 'apps/api/package.json', false],
+    ['pre-p1-29-web', 'supabase/seed.sql', false],
+    ['pre-p1-29-web', 'some/unknown/place/thing.bin', false],
+  ];
+
+  it.each(MATRIX)('%s: %s', (profile, path, allowed) => {
+    const { failures } = evaluate([path], profile);
+    if (allowed) {
+      expect(failures, `${profile} refused a path it is supposed to own`).toEqual([]);
+    } else {
+      expect(failures.length, `${profile} permitted ${path}`).toBeGreaterThan(0);
+      expect(failures[0], 'the refusal explains nothing').toContain(path);
+    }
+  });
+
+  it('keeps the two lanes disjoint where it matters', () => {
+    /*
+     * The property the lanes exist for, stated once rather than inferred from the
+     * rows above: neither lane can land both halves of a contract change.
+     */
+    const screen = 'apps/web/src/app/superadmin/companies/page.tsx';
+    const route = 'apps/api/src/routes/platform/companies.ts';
+    expect(
+      evaluate([route, screen], 'pre-p1-29-backend').failures.length,
+      'the Backend lane accepted a screen'
+    ).toBeGreaterThan(0);
+    expect(
+      evaluate([route, screen], 'pre-p1-29-web').failures.length,
+      'the Web lane accepted an API route'
+    ).toBeGreaterThan(0);
+  });
+});
+
+describe('P1-29 ownership — a MIXED phase, in lanes that are not mixed', () => {
+  /*
+   * P1-29 is Backend prerequisites first and screens second, so it gets three
+   * profiles rather than one. Before BR-08a added them, `remediation/p1-29-*`,
+   * `feature/p1-29-*` and BOTH live `planning/*` branches matched no rule at
+   * all — `unmappedPolicy` is FAIL, so none of them could have opened a pull
+   * request. That is what these rules fix, and what these tests hold.
+   */
+  const RULES = JSON.parse(readFileSync(PROFILE_MAP_PATH, 'utf8')).rules as {
+    branchPrefix?: string;
+    profile?: string;
+  }[];
+  const resolveWith = (rules: typeof RULES, headBranch: string) =>
+    decideOwnershipRun({
+      headBranch,
+      baseRef: 'develop',
+      eventName: 'pull_request',
+      rules,
+    }) as { action: string; profile: string | null };
+  const resolve = (headBranch: string) => resolveWith(RULES, headBranch);
+
+  it('resolves each P1-29 lane to its own profile', () => {
+    expect(resolve('remediation/p1-29-backend-br-01-technician-identity').profile).toBe(
+      'p1-29-backend'
+    );
+    expect(resolve('feature/p1-29-work-orders').profile).toBe('p1-29-frontend');
+    expect(resolve('planning/p1-29-work-order-diagnostics-technician-preparation').profile).toBe(
+      'p1-29-planning'
+    );
+    expect(resolve('planning/pre-p1-29-remaining-waves-and-p1-29-a0').profile).toBe(
+      'p1-29-planning'
+    );
+  });
+
+  it('leaves BR-08a itself under repository-tooling, so no slice legislates its own compliance', () => {
+    /*
+     * BR-08a adds these rules. It is deliberately not one of them: it changes a
+     * gate, its suite and the baseline it reads, which is `repository-tooling`'s
+     * declared subject and already had a rule. A branch that added the rule it
+     * was then judged by would be declaring nothing about itself.
+     */
+    expect(resolve('chore/pre-p1-29-br-08a-permission-parity-foundation').profile).toBe(
+      'repository-tooling'
+    );
+  });
+
+  it('refuses a P1-29 branch nobody mapped rather than absorbing it', () => {
+    // There is deliberately no broad `remediation/p1-29-` rule.
+    expect(resolve('remediation/p1-29-frontend-something').action).toBe('refuse');
+    expect(resolve('p1-29/anything').action).toBe('refuse');
+  });
+
+  it('lists the Backend lane before any broader rule could reach it', () => {
+    const order = RULES.map((r) => r.branchPrefix ?? '');
+    const backend = order.indexOf('remediation/p1-29-backend-');
+    expect(backend, 'the P1-29 Backend lane rule is missing').toBeGreaterThanOrEqual(0);
+    const broader = order.findIndex(
+      (p) => p !== 'remediation/p1-29-backend-' && 'remediation/p1-29-backend-'.startsWith(p)
+    );
+    if (broader !== -1) {
+      expect(
+        broader,
+        `rule '${order[broader]}' precedes the P1-29 Backend lane and shadows it`
+      ).toBeGreaterThan(backend);
+    }
+  });
+
+  it('MUTATION: a broader rule placed first shadows the Backend lane', () => {
+    /*
+     * The ordering invariant, proved by breaking it rather than by asserting an
+     * index. First match wins, so a general `remediation/p1-29-` rule listed
+     * above the lane hands every Backend slice the wrong profile — silently,
+     * because both answers are a valid profile name.
+     */
+    const shadowed = [{ branchPrefix: 'remediation/p1-29-', profile: 'p1-29-planning' }, ...RULES];
+    expect(
+      resolveWith(shadowed, 'remediation/p1-29-backend-br-01').profile,
+      'a broader rule placed first did NOT shadow the lane — the ordering invariant is not real'
+    ).toBe('p1-29-planning');
+    // And the same rule placed after the lane cannot reach it.
+    const ordered = [...RULES, { branchPrefix: 'remediation/p1-29-', profile: 'p1-29-planning' }];
+    expect(resolveWith(ordered, 'remediation/p1-29-backend-br-01').profile).toBe('p1-29-backend');
+  });
+
+  it('MUTATION: removing a P1-29 rule returns that branch to refusal', () => {
+    for (const prefix of ['remediation/p1-29-backend-', 'feature/p1-29-', 'planning/']) {
+      const without = RULES.filter((r) => r.branchPrefix !== prefix);
+      const branch = prefix === 'planning/' ? 'planning/p1-29-preparation' : `${prefix}something`;
+      expect(
+        resolveWith(without, branch).action,
+        `removing '${prefix}' left ${branch} resolving to something`
+      ).toBe('refuse');
+    }
+  });
+
+  const MATRIX: [string, string, boolean][] = [
+    // The Backend lane owns the contract and everything that seeds it.
+    ['p1-29-backend', 'apps/api/src/app/api/v1/technicians/me/queue/route.ts', true],
+    ['p1-29-backend', 'apps/api/src/modules/technician/application/roster-service.ts', true],
+    ['p1-29-backend', 'supabase/migrations/20260901090000_wo_job_work_logs.sql', true],
+    ['p1-29-backend', 'supabase/seeds/04_iam_permission_catalog.sql', true],
+    ['p1-29-backend', 'apps/web/src/lib/api/idempotent-operations.ts', true],
+    ['p1-29-backend', 'tests/backend/p1-29-technician-roster.test.ts', true],
+    ['p1-29-backend', 'docs/phase-1/pre-p1-29-backend-remediation/br-03.md', true],
+    ['p1-29-backend', 'apps/web/src/features/work-orders/board.tsx', false],
+    ['p1-29-backend', 'apps/web/src/features/appointments/appointments-contract.ts', false],
+    ['p1-29-backend', 'apps/api/package.json', false],
+    ['p1-29-backend', 'supabase/config.toml', false],
+    ['p1-29-backend', 'some/unknown/place/thing.bin', false],
+
+    // The Frontend lane owns the screens and nothing that defines a contract.
+    ['p1-29-frontend', 'apps/web/src/features/work-orders/board.tsx', true],
+    ['p1-29-frontend', 'apps/web/src/features/work-orders/work-orders-contract.ts', true],
+    ['p1-29-frontend', 'tests/ci/p1-29-adapter-reachability.test.ts', true],
+    ['p1-29-frontend', 'docs/phase-1/phase-1-29/canonical-plan.md', true],
+    ['p1-29-frontend', 'apps/api/src/app/api/v1/jobs/route.ts', false],
+    ['p1-29-frontend', 'supabase/migrations/20260901090000_wo_job_work_logs.sql', false],
+    ['p1-29-frontend', 'supabase/seeds/04_iam_permission_catalog.sql', false],
+    ['p1-29-frontend', 'apps/web/src/lib/api/idempotent-operations.ts', false],
+    ['p1-29-frontend', 'apps/web/tests/p1-28-qa.test.ts', false],
+    ['p1-29-frontend', 'apps/api/package.json', false],
+
+    // Planning owns documents and nothing else at all.
+    ['p1-29-planning', 'docs/phase-1/pre-p1-29-backend-remediation/README.md', true],
+    ['p1-29-planning', 'scripts/ci/check-permission-parity.mjs', false],
+    ['p1-29-planning', 'tests/ci/permission-parity.test.ts', false],
+    ['p1-29-planning', '.github/workflows/pr-ci.yml', false],
+    ['p1-29-planning', 'package.json', false],
+    ['p1-29-planning', 'apps/api/src/app/api/v1/jobs/route.ts', false],
+    ['p1-29-planning', 'apps/web/src/features/work-orders/board.tsx', false],
+    ['p1-29-planning', 'supabase/migrations/20260901090000_wo_job_work_logs.sql', false],
+  ];
+
+  it.each(MATRIX)('%s: %s', (profile, path, allowed) => {
+    const { failures } = evaluate([path], profile);
+    if (allowed) {
+      expect(failures, `${profile} refused a path it is supposed to own`).toEqual([]);
+    } else {
+      expect(failures.length, `${profile} permitted ${path}`).toBeGreaterThan(0);
+      expect(failures[0], 'the refusal explains nothing').toContain(path);
+    }
+  });
+
+  it('keeps the P1-29 lanes disjoint across the boundary that matters', () => {
+    const screen = 'apps/web/src/features/work-orders/board.tsx';
+    const route = 'apps/api/src/app/api/v1/jobs/route.ts';
+    expect(
+      evaluate([route, screen], 'p1-29-backend').failures.length,
+      'the P1-29 Backend lane accepted a screen'
+    ).toBeGreaterThan(0);
+    expect(
+      evaluate([route, screen], 'p1-29-frontend').failures.length,
+      'the P1-29 Frontend lane accepted an API route'
+    ).toBeGreaterThan(0);
+  });
+
+  it('permits no P1-29 profile to change API workspace configuration or the database harness', () => {
+    for (const profile of ['p1-29-backend', 'p1-29-frontend', 'p1-29-planning']) {
+      for (const path of ['apps/api/package.json', 'supabase/config.toml']) {
+        expect(
+          evaluate([path], profile).failures.length,
+          `${profile} permitted ${path}`
+        ).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it('leaves every pre-existing rule resolving exactly as it did', () => {
+    /*
+     * The regression that matters most: three rules were appended, and appending
+     * to a first-match-wins list can only change an answer by matching something
+     * an earlier rule already matched. Asserted rather than reasoned.
+     */
+    const unchanged: [string, string][] = [
+      ['feature/p1-26-authentication', 'p1-26-frontend'],
+      ['feature/p1-27-crm-vehicle', 'p1-27-frontend'],
+      ['feature/p1-28-appointment', 'p1-27-frontend'],
+      ['remediation/p1-28-owner-qa-backend', 'p1-28-backend-owner-qa'],
+      ['remediation/p1-28-something-else', 'p1-27-frontend'],
+      ['remediation/p1-27-partner-identity', 'p1-27-backend-partner-identity'],
+      ['remediation/p1-15-evidence', 'p1-15-evidence-foundation'],
+      ['chore/pre-p1-29-admin-rbac-ownership', 'repository-tooling'],
+      ['feature/pre-p1-29-backend-platform-admin', 'pre-p1-29-backend'],
+      ['feature/pre-p1-29-web-superadmin', 'pre-p1-29-web'],
+      ['tooling/no-fake-data-comments', 'repository-tooling'],
+    ];
+    for (const [branch, profile] of unchanged) {
+      expect(resolve(branch).profile, `${branch} no longer resolves to ${profile}`).toBe(profile);
+    }
+    expect(resolve('nobody/mapped-this').action).toBe('refuse');
+  });
+});
+
 describe('api-boundary profile', () => {
   it('permits the remediation to change API source and tooling', () => {
     const { failures } = evaluate(

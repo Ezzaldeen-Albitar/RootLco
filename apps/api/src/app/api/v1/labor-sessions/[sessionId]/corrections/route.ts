@@ -27,7 +27,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const Params = z.object({ sessionId: schemas.uuid });
-const Body = z
+export const Body = z
   .object({
     startedAt: z.string().datetime({ offset: true }),
     endedAt: z.string().datetime({ offset: true }),
@@ -37,6 +37,7 @@ const Body = z
 
 export const LABOR_SESSION_CORRECT_OPERATION = defineOperation({
   id: 'tech.labor-session-correct',
+  successStatus: 201,
   module: 'technician',
   method: 'POST',
   path: '/labor-sessions/{sessionId}/corrections',

@@ -28,7 +28,7 @@ const Params = z.object({ appointmentId: schemas.uuid });
  * a caller who tries to smuggle a status or a version alongside it gets a 422
  * rather than the quiet impression that it was applied.
  */
-const Body = z.object({}).strict().nullable();
+export const Body = z.object({}).strict().nullable();
 
 export const APPOINTMENT_NO_SHOW_OPERATION = defineOperation({
   id: 'apt.appointment-no-show',

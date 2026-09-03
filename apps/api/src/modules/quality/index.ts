@@ -24,6 +24,7 @@ import { QualityRepository } from './data/quality-repository';
 import { QualityGateService } from './application/quality-gate-service';
 import { QualityControlService } from './application/quality-control-service';
 import { ReworkService } from './application/rework-service';
+import { QcQueueService } from './application/qc-queue-service';
 
 export type {
   QcCheckResultRow,
@@ -37,7 +38,9 @@ export type { QualityGateStatus } from './application/quality-gate-service';
 export type { QcRecordDetail, QcRecordView } from './application/quality-control-service';
 export type {
   CreateReworkInput,
+  ReopenAttemptResult,
   ReopenAttemptView,
+  ReworkCreationResult,
   ReworkLinkView,
 } from './application/rework-service';
 
@@ -60,6 +63,8 @@ export {
 } from './domain/quality';
 
 /** Composition root: constructs the module's services once per process. */
+export type { QcCheckVocabularyRow, QcRecordRow } from './data/quality-repository';
+
 export const qualityModule = composeModule({
   module: 'quality',
   create: () => {
@@ -68,6 +73,10 @@ export const qualityModule = composeModule({
       gate: new QualityGateService(repository),
       qualityControl: new QualityControlService(repository),
       rework: new ReworkService(repository),
+      // BR-06. The branch QC QUEUE, exposed as the owning module's read because
+      // `qms` is this module's schema. The operation is declared
+      // `module: 'quality'` for the same reason.
+      qcQueue: new QcQueueService(repository),
     };
   },
 });

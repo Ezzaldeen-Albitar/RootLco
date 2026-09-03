@@ -179,16 +179,42 @@ export const NAVIGATION: readonly NavigationGroup[] = Object.freeze([
         icon: 'work-orders',
         href: '/work-orders',
         permission: 'wo.work_order.read',
-        status: 'planned',
+        status: 'available',
         scope: 'branch',
         children: [
+          {
+            /*
+             * The board itself, naming the SAME route as its parent.
+             *
+             * A parent with children renders as a disclosure BUTTON when the
+             * sidebar is expanded, and a button carries no `aria-current` — so a
+             * navigable parent needs a child that names its route, or the page it
+             * points at can never be marked as the current one. `settings` and
+             * `settings.organization` are the same pair for the same reason.
+             *
+             * Without this, `/work-orders` marked NOTHING as current: both other
+             * children are `planned`, so the expanded sidebar had no link to mark
+             * at all. `shell.dom.test.tsx` caught it, because it asserts exactly
+             * one marker on every built route rather than at most one — "at most
+             * one" is satisfied by marking nothing, which is a different
+             * accessibility defect wearing the same green tick.
+             */
+            key: 'work-orders.queue',
+            labelKey: 'nav.workOrdersQueue',
+            icon: 'work-orders',
+            href: '/work-orders',
+            permission: 'wo.work_order.read',
+            status: 'available',
+            scope: 'branch',
+          },
           {
             key: 'work-orders.diagnostics',
             labelKey: 'nav.diagnostics',
             icon: 'work-orders',
             href: '/work-orders/diagnostics',
             permission: 'dia.diagnostic.read',
-            status: 'planned',
+            // P1-29 W7: the inspection-template catalogue exists at this route.
+            status: 'available',
             scope: 'branch',
           },
           {
@@ -197,19 +223,42 @@ export const NAVIGATION: readonly NavigationGroup[] = Object.freeze([
             icon: 'work-orders',
             href: '/work-orders/quality',
             permission: 'qms.quality_control.read',
-            status: 'planned',
+            // P1-29 W8: the branch QC queue exists at this route.
+            status: 'available',
             scope: 'branch',
           },
         ],
       },
       {
+        /*
+         * P1-29 W4: the technician's own workspace. The parent names
+         * `/technicians/me` rather than `/technicians` because that is the
+         * screen that exists — the roster (BR-03's administration surface) has
+         * no page yet, and a rail link to it would 404. When the roster lands,
+         * the parent moves to `/technicians` and gains a `technicians.roster`
+         * child; this entry does not change.
+         */
         key: 'technicians',
         labelKey: 'nav.technicians',
         icon: 'technicians',
-        href: '/technicians',
+        href: '/technicians/me',
         permission: 'tech.technician.read',
-        status: 'planned',
+        status: 'available',
         scope: 'branch',
+        children: [
+          {
+            // The workspace itself, naming the SAME route as its parent — the
+            // `work-orders.queue` pattern, for the same reason: a disclosure
+            // button carries no `aria-current`, so the page needs a child link.
+            key: 'technicians.me',
+            labelKey: 'nav.technicianWorkspace',
+            icon: 'technicians',
+            href: '/technicians/me',
+            permission: 'tech.technician.read',
+            status: 'available',
+            scope: 'branch',
+          },
+        ],
       },
     ],
   },

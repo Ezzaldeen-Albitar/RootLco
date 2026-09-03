@@ -44,10 +44,11 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const Params = z.object({ workOrderId: schemas.uuid });
-const Body = z.object({ reason: z.string().trim().min(1).max(MAX_REOPEN_REASON) }).strict();
+export const Body = z.object({ reason: z.string().trim().min(1).max(MAX_REOPEN_REASON) }).strict();
 
 export const REOPEN_ATTEMPT_OPERATION = defineOperation({
   id: 'qms.reopen-attempt',
+  successStatus: 201,
   module: 'quality',
   method: 'POST',
   path: '/work-orders/{workOrderId}/reopen-attempts',

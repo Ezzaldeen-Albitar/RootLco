@@ -13,6 +13,12 @@
 import { Repository } from '@/server/db/repository';
 import type { DbHandle } from '@/server/db/transaction';
 import { buildPage, keysetFragment, type Page, type PageRequest } from '@/server/db/pagination';
+import { cursorTimestamp } from '@/server/db/pagination';
+import {
+  timelineWindowSql,
+  type TimelineSourceRow,
+  type TimelineWindow,
+} from '@/server/db/timeline';
 import type { OutstandingItem, ResponseType } from '../domain/diagnostics';
 
 export interface TemplateVersionRow {
@@ -35,6 +41,22 @@ export interface TemplateItemRow {
   /** `jsonb`. pg-types parses OID 3802 with JSON.parse, so this is never a string. */
   readonly validationRule: unknown;
   readonly sequence: number;
+}
+
+/**
+ * One diagnostic type as the caller tenant resolves it (P1-29 `W5`).
+ *
+ * `scope` says whether the row is the platform's or the tenant's own override;
+ * `status` is carried rather than filtered, because the list publishes the
+ * set and the write path decides whether a code may be used.
+ */
+export interface DiagnosticTypeRow {
+  readonly id: string;
+  readonly scope: 'platform' | 'tenant';
+  readonly code: string;
+  readonly name: string;
+  readonly status: 'active' | 'inactive';
+  readonly recordVersion: number;
 }
 
 export interface DiagnosticReportRow {
@@ -487,6 +509,68 @@ export class DiagnosticsRepository extends Repository {
       [context.principal.tenantId, jobId]
     );
     return result.rows.map(toReportRow);
+  }
+
+  /**
+   * This module's events for the unified work-order timeline (P1-29 `W6`,
+   * `INT-043`) — a PORT for the work-order module.
+   *
+   * `dia.diagnostic_reports` carries `work_order_id` itself, so the ledger is
+   * joined to the order without reading `wo.` (ADR-001). `reference` is the
+   * report id, so a screen can open the report the event belongs to.
+   */
+  async timelineEventsForWorkOrder(
+    db: DbHandle,
+    workOrderId: string,
+    window: TimelineWindow
+  ): Promise<readonly TimelineSourceRow[]> {
+    const context = this.assertContext(db);
+    const values: unknown[] = [context.principal.tenantId, workOrderId];
+    const w = timelineWindowSql(window, 't.occurred_at', 't.kind', 't.id', values.length + 1);
+    const result = await this.run<{
+      kind: string;
+      id: string;
+      job_id: string | null;
+      actor_id: string | null;
+      occurred_at: string;
+      from_state: string | null;
+      to_state: string | null;
+      note: string | null;
+      reference: string | null;
+      detail: string | null;
+      sort_value: string;
+    }>(
+      db,
+      `SELECT t.kind, t.id, t.job_id, t.actor_id, t.occurred_at::text AS occurred_at,
+              t.from_state, t.to_state, t.note, t.reference, t.detail,
+              ${cursorTimestamp('t.occurred_at')} AS sort_value
+         FROM (
+           SELECT h.id, r.job_id, h.actor_id, h.occurred_at, h.from_state, h.to_state,
+                  h.reason AS note, r.id::text AS reference, NULL::text AS detail, 'diagnostic_status' AS kind
+             FROM dia.diagnostic_report_status_history h
+             JOIN dia.diagnostic_reports r
+               ON r.tenant_id = h.tenant_id AND r.company_id = h.company_id
+              AND r.branch_id = h.branch_id AND r.id = h.diagnostic_report_id
+            WHERE h.tenant_id = $1 AND r.work_order_id = $2 AND r.deleted_at IS NULL
+         ) t
+        WHERE TRUE ${w.predicate}
+        ${w.order}
+        ${w.limitClause}`,
+      [...values, ...w.values]
+    );
+    return result.rows.map((row) => ({
+      kind: row.kind as TimelineSourceRow['kind'],
+      id: row.id,
+      jobId: row.job_id,
+      actorId: row.actor_id,
+      occurredAt: row.occurred_at,
+      fromState: row.from_state,
+      toState: row.to_state,
+      note: row.note,
+      reference: row.reference,
+      detail: row.detail,
+      sortValue: row.sort_value,
+    }));
   }
 
   /** One keyset page of a report's append-only status ledger, newest first. */
@@ -1226,6 +1310,47 @@ export class DiagnosticsRepository extends Repository {
       [context.principal.tenantId, code]
     );
     return result.rows[0]?.id ?? null;
+  }
+
+  /**
+   * Every diagnostic type the caller tenant sees, tenant rows shadowing
+   * platform, ordered by code (P1-29 `W5`).
+   *
+   * The SAME resolution as `diagnosticTypeByCode` above — the `DISTINCT ON`
+   * over `(scope = 'platform' OR tenant_id = $1)` with the tenant row first —
+   * minus that method's `status = 'active'` filter. The list publishes the set
+   * with each row's status; the by-code read decides whether a code may be
+   * USED, and only an active one may. Two questions, one predicate.
+   */
+  async listDiagnosticTypes(db: DbHandle): Promise<readonly DiagnosticTypeRow[]> {
+    const context = this.assertContext(db);
+    const result = await this.run<{
+      id: string;
+      scope: 'platform' | 'tenant';
+      code: string;
+      name: string;
+      status: 'active' | 'inactive';
+      record_version: number;
+    }>(
+      db,
+      `SELECT * FROM (
+                SELECT DISTINCT ON (code) id, scope, code, name, status, record_version
+                  FROM dia.diagnostic_types
+                 WHERE (scope = 'platform' OR tenant_id = $1)
+                   AND deleted_at IS NULL
+                 ORDER BY code, (scope = 'tenant') DESC
+              ) resolved
+        ORDER BY code`,
+      [context.principal.tenantId]
+    );
+    return result.rows.map((row) => ({
+      id: row.id,
+      scope: row.scope,
+      code: row.code,
+      name: row.name,
+      status: row.status,
+      recordVersion: row.record_version,
+    }));
   }
 
   /**

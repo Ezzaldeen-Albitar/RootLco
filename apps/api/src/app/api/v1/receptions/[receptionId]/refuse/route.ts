@@ -27,7 +27,7 @@ export const dynamic = 'force-dynamic';
 
 const Params = z.object({ receptionId: schemas.uuid });
 
-const Body = z.object({ reason: z.string().trim().min(1).max(MAX_CLOSURE_REASON) }).strict();
+export const Body = z.object({ reason: z.string().trim().min(1).max(MAX_CLOSURE_REASON) }).strict();
 
 export const RECEPTION_REFUSE_OPERATION = defineOperation({
   id: 'rec.reception-refuse',

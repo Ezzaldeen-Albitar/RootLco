@@ -217,6 +217,16 @@ async function decodeOrFail(
   }
 }
 
+/** A document version after rejection. The status is fixed by the operation. */
+export interface VersionRejected {
+  readonly versionId: string;
+  readonly status: 'rejected';
+}
+
+/** The link between a document and a business entity, created or withdrawn. */
+export interface DocumentLinkRef {
+  readonly linkId: string;
+}
 export class AttachmentService extends ApplicationService implements FileService {
   protected readonly module = 'shared-services';
 
@@ -756,11 +766,7 @@ export class AttachmentService extends ApplicationService implements FileService
   // -------------------------------------------------------------------------
 
   /** Rejects a pending version. The only version transition the runtime holds. */
-  async rejectVersion(
-    db: DbHandle,
-    versionId: string,
-    reason: string
-  ): Promise<{ versionId: string; status: 'rejected' }> {
+  async rejectVersion(db: DbHandle, versionId: string, reason: string): Promise<VersionRejected> {
     const version = await this.documents.findVersion(db, versionId);
     if (!version) {
       throw new AppFailure('ERR-RES-001', { message: 'Version not found in the caller scope' });
@@ -788,7 +794,7 @@ export class AttachmentService extends ApplicationService implements FileService
   }
 
   /** Links a document to a business entity, establishing reachability. */
-  async link(db: DbHandle, input: LinkDocumentInput): Promise<{ linkId: string }> {
+  async link(db: DbHandle, input: LinkDocumentInput): Promise<DocumentLinkRef> {
     if (!isLinkableEntityType(input.entityType)) {
       throw new AppFailure('ERR-VAL-001', {
         message: 'Entity type is not linkable',
@@ -847,7 +853,7 @@ export class AttachmentService extends ApplicationService implements FileService
   }
 
   /** Withdraws a link. Reachability through that entity ends. */
-  async unlink(db: DbHandle, linkId: string): Promise<{ linkId: string }> {
+  async unlink(db: DbHandle, linkId: string): Promise<DocumentLinkRef> {
     const link = await this.documents.findLink(db, linkId);
     if (!link || link.deleted_at !== null) {
       throw new AppFailure('ERR-RES-001', { message: 'Link not found in the caller scope' });

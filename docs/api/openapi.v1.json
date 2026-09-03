@@ -3,7 +3,7 @@
   "info": {
     "title": "Commercial Multi-Tenant Automotive CRM and ERP Platform — API",
     "version": "0.1.0",
-    "summary": "305 operations across 19 backend modules (billing, crm, delivery, diagnostics, iam, inventory, meta, payments, pricing, quality, quotation, reception, reporting, service-catalog, shared-services, technician, vehicle, warranty, work-order).",
+    "summary": "352 operations across 20 backend modules (billing, crm, delivery, diagnostics, iam, inventory, meta, payments, platform, pricing, quality, quotation, reception, reporting, service-catalog, shared-services, technician, vehicle, warranty, work-order).",
     "description": "Shared components and conventions every backend module composes, and the operations built on them. Sessions are bearer tokens issued by the authentication provider recorded in ADR-019; authorization is evaluated in the database on every request and is never carried in a token. Money is an exact decimal string with an ISO-4217 code, never a JSON number. Pages are opaque-cursor; offset paging is not offered. Every failure is an RFC 9457 problem document carrying a stable catalog code. The product name is deliberately absent: it is pending owner approval (ADR-011).",
     "contact": {
       "name": "RootLco — Root Link Company"
@@ -38,7 +38,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -397,7 +397,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -638,7 +638,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -1041,7 +1041,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -1282,7 +1282,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -1871,7 +1871,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -2039,7 +2039,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -2099,7 +2099,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -2456,7 +2456,7 @@
         ],
         "security": [],
         "responses": {
-          "200": {
+          "202": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -2583,6 +2583,66 @@
         "x-scope": "tenant",
         "x-audit-class": "none",
         "x-rate-limit-policy": "low-risk-metadata",
+        "x-cache-category": "never"
+      }
+    },
+    "/api/v1/blockers/{blockerId}/resolution": {
+      "post": {
+        "operationId": "wo.job-blocker-resolve",
+        "summary": "Resolve a raised blocker — record that the work can continue, and how.",
+        "tags": ["work-order"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["tech.labor.record"],
+        "x-scope": "branch",
+        "x-audit-class": "privileged",
+        "x-rate-limit-policy": "standard-command",
         "x-cache-category": "never"
       }
     },
@@ -2779,7 +2839,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -2947,7 +3007,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -3111,7 +3171,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -3223,7 +3283,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -3283,7 +3343,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -3569,7 +3629,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -3793,7 +3853,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -4183,7 +4243,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -4243,7 +4303,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -4303,7 +4363,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -4363,7 +4423,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -4423,7 +4483,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -4483,7 +4543,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -4543,7 +4603,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -4727,7 +4787,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -4787,7 +4847,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -4825,6 +4885,60 @@
         "x-scope": "branch",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
+        "x-cache-category": "never"
+      }
+    },
+    "/api/v1/diagnostic-types": {
+      "get": {
+        "operationId": "dia.diagnostic-type-list",
+        "summary": "Read the diagnostic-type vocabulary the caller tenant is configured with.",
+        "tags": ["diagnostics"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["dia.diagnostic.read"],
+        "x-scope": "tenant",
+        "x-audit-class": "none",
+        "x-rate-limit-policy": "low-risk-metadata",
         "x-cache-category": "never"
       }
     },
@@ -4955,7 +5069,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -5103,7 +5217,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -5278,7 +5392,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -5401,7 +5515,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -5567,7 +5681,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -5795,7 +5909,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -5970,7 +6084,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -6513,6 +6627,293 @@
         "x-cache-category": "never"
       }
     },
+    "/api/v1/inspection-templates": {
+      "post": {
+        "operationId": "dia.template-create",
+        "summary": "Create an inspection template in the caller tenant library.",
+        "tags": ["diagnostics"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["dia.catalogue.manage"],
+        "x-scope": "tenant",
+        "x-audit-class": "privileged",
+        "x-rate-limit-policy": "standard-command",
+        "x-cache-category": "never"
+      },
+      "get": {
+        "operationId": "dia.template-list",
+        "summary": "List the inspection templates of the caller tenant, newest first.",
+        "tags": ["diagnostics"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["dia.diagnostic.read"],
+        "x-scope": "tenant",
+        "x-audit-class": "none",
+        "x-rate-limit-policy": "expensive-read",
+        "x-cache-category": "never"
+      }
+    },
+    "/api/v1/inspection-templates/{templateId}": {
+      "get": {
+        "operationId": "dia.template-detail",
+        "summary": "Read one inspection template with every version it owns.",
+        "tags": ["diagnostics"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["dia.diagnostic.read"],
+        "x-scope": "tenant",
+        "x-audit-class": "none",
+        "x-rate-limit-policy": "low-risk-metadata",
+        "x-cache-category": "never"
+      },
+      "patch": {
+        "operationId": "dia.template-update",
+        "summary": "Rename an inspection template or move it between active and inactive.",
+        "tags": ["diagnostics"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          },
+          {
+            "$ref": "#/components/parameters/IfMatch"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "428": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["dia.catalogue.manage"],
+        "x-scope": "tenant",
+        "x-audit-class": "privileged",
+        "x-rate-limit-policy": "standard-command",
+        "x-cache-category": "never"
+      }
+    },
+    "/api/v1/inspection-templates/{templateId}/versions": {
+      "post": {
+        "operationId": "dia.template-version-create",
+        "summary": "Create the next draft version of an inspection template.",
+        "tags": ["diagnostics"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["dia.catalogue.manage"],
+        "x-scope": "tenant",
+        "x-audit-class": "privileged",
+        "x-rate-limit-policy": "standard-command",
+        "x-cache-category": "never"
+      }
+    },
     "/api/v1/inspections/{inspectionId}": {
       "get": {
         "operationId": "dia.diagnostic-detail",
@@ -6652,7 +7053,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -6712,7 +7113,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -6772,7 +7173,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -6946,7 +7347,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -7006,7 +7407,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -7066,7 +7467,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -7246,7 +7647,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -7426,7 +7827,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -7641,7 +8042,113 @@
         "x-cache-category": "never"
       }
     },
+    "/api/v1/jobs": {
+      "get": {
+        "operationId": "wo.job-list",
+        "summary": "List the jobs of one branch, newest first, with their board context.",
+        "tags": ["work-order"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["wo.work_order.read"],
+        "x-scope": "branch",
+        "x-audit-class": "none",
+        "x-rate-limit-policy": "expensive-read",
+        "x-cache-category": "never"
+      }
+    },
     "/api/v1/jobs/{jobId}": {
+      "get": {
+        "operationId": "wo.job-detail",
+        "summary": "Read one job with its board context and the edges it can currently take.",
+        "tags": ["work-order"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["wo.work_order.read"],
+        "x-scope": "branch",
+        "x-audit-class": "none",
+        "x-rate-limit-policy": "low-risk-metadata",
+        "x-cache-category": "never"
+      },
       "patch": {
         "operationId": "wo.job-update",
         "summary": "Update a job's descriptive fields.",
@@ -7723,7 +8230,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -7816,6 +8323,230 @@
         "x-cache-category": "never"
       }
     },
+    "/api/v1/jobs/{jobId}/blockers": {
+      "get": {
+        "operationId": "wo.job-blocker-list",
+        "summary": "List the blockers of one job, oldest first, each with its derived status.",
+        "tags": ["work-order"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["wo.work_order.read"],
+        "x-scope": "branch",
+        "x-audit-class": "none",
+        "x-rate-limit-policy": "low-risk-metadata",
+        "x-cache-category": "never"
+      },
+      "post": {
+        "operationId": "wo.job-blocker-raise",
+        "summary": "Raise a blocker on a job — record that work cannot proceed, and why.",
+        "tags": ["work-order"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["tech.labor.record"],
+        "x-scope": "branch",
+        "x-audit-class": "privileged",
+        "x-rate-limit-policy": "standard-command",
+        "x-cache-category": "never"
+      }
+    },
+    "/api/v1/jobs/{jobId}/evidence": {
+      "get": {
+        "operationId": "wo.job-evidence-list",
+        "summary": "List the work evidence bound to one job, oldest first.",
+        "tags": ["work-order"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["wo.work_order.read"],
+        "x-scope": "branch",
+        "x-audit-class": "none",
+        "x-rate-limit-policy": "low-risk-metadata",
+        "x-cache-category": "never"
+      },
+      "post": {
+        "operationId": "wo.job-evidence-record",
+        "summary": "Bind a captured document version to a job as work evidence.",
+        "tags": ["work-order"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["tech.labor.record"],
+        "x-scope": "branch",
+        "x-audit-class": "privileged",
+        "x-rate-limit-policy": "standard-command",
+        "x-cache-category": "never"
+      }
+    },
     "/api/v1/jobs/{jobId}/history": {
       "get": {
         "operationId": "wo.job-history",
@@ -7870,6 +8601,60 @@
         "x-cache-category": "never"
       }
     },
+    "/api/v1/jobs/{jobId}/inspection-templates": {
+      "get": {
+        "operationId": "dia.template-version-list-publishable",
+        "summary": "List the published template versions a job may open an inspection against.",
+        "tags": ["diagnostics"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["dia.diagnostic.record"],
+        "x-scope": "branch",
+        "x-audit-class": "none",
+        "x-rate-limit-policy": "low-risk-metadata",
+        "x-cache-category": "never"
+      }
+    },
     "/api/v1/jobs/{jobId}/inspections": {
       "post": {
         "operationId": "dia.diagnostic-create",
@@ -7889,7 +8674,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -8053,7 +8838,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -8113,7 +8898,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -8220,6 +9005,118 @@
         "x-cache-category": "never"
       }
     },
+    "/api/v1/jobs/{jobId}/work-logs": {
+      "get": {
+        "operationId": "wo.job-work-log-list",
+        "summary": "Read one job work log, newest entry first.",
+        "tags": ["work-order"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["wo.work_order.read"],
+        "x-scope": "branch",
+        "x-audit-class": "none",
+        "x-rate-limit-policy": "low-risk-metadata",
+        "x-cache-category": "never"
+      },
+      "post": {
+        "operationId": "wo.job-work-log-record",
+        "summary": "Append one progress entry to a job work log.",
+        "tags": ["work-order"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["tech.labor.record"],
+        "x-scope": "branch",
+        "x-audit-class": "privileged",
+        "x-rate-limit-policy": "standard-command",
+        "x-cache-category": "never"
+      }
+    },
     "/api/v1/labor-sessions/{sessionId}/corrections": {
       "post": {
         "operationId": "tech.labor-session-correct",
@@ -8239,7 +9136,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -8365,7 +9262,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -8551,7 +9448,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -8885,7 +9782,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -9002,7 +9899,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -9036,6 +9933,123 @@
         "x-required-permissions": ["inv.stock.operate"],
         "x-scope": "branch",
         "x-audit-class": "none",
+        "x-rate-limit-policy": "standard-command",
+        "x-cache-category": "never"
+      }
+    },
+    "/api/v1/org/branches": {
+      "get": {
+        "operationId": "org.branch-list",
+        "summary": "List the branches the acting user may reach, by name.",
+        "tags": ["iam"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["org.branch.read"],
+        "x-scope": "tenant",
+        "x-audit-class": "none",
+        "x-rate-limit-policy": "low-risk-metadata",
+        "x-cache-category": "never"
+      }
+    },
+    "/api/v1/org/branches/{branchId}": {
+      "patch": {
+        "operationId": "org.branch-update",
+        "summary": "Update a branch.",
+        "tags": ["iam"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          },
+          {
+            "$ref": "#/components/parameters/IfMatch"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "428": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["org.branch.manage"],
+        "x-scope": "branch",
+        "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
         "x-cache-category": "never"
       }
@@ -9111,7 +10125,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -9147,6 +10161,123 @@
         },
         "x-required-permissions": ["org.settings.manage"],
         "x-scope": "branch",
+        "x-audit-class": "privileged",
+        "x-rate-limit-policy": "standard-command",
+        "x-cache-category": "never"
+      }
+    },
+    "/api/v1/org/companies": {
+      "get": {
+        "operationId": "org.company-list",
+        "summary": "List the legal companies the acting user may reach, by name.",
+        "tags": ["iam"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["org.company.read"],
+        "x-scope": "tenant",
+        "x-audit-class": "none",
+        "x-rate-limit-policy": "low-risk-metadata",
+        "x-cache-category": "never"
+      }
+    },
+    "/api/v1/org/companies/{companyId}": {
+      "patch": {
+        "operationId": "org.company-update",
+        "summary": "Update a legal company.",
+        "tags": ["iam"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          },
+          {
+            "$ref": "#/components/parameters/IfMatch"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "428": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["org.company.manage"],
+        "x-scope": "company",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
         "x-cache-category": "never"
@@ -9223,7 +10354,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -9259,6 +10390,241 @@
         },
         "x-required-permissions": ["org.settings.manage"],
         "x-scope": "company",
+        "x-audit-class": "privileged",
+        "x-rate-limit-policy": "standard-command",
+        "x-cache-category": "never"
+      }
+    },
+    "/api/v1/org/companies/{companyId}/status": {
+      "post": {
+        "operationId": "org.company-status-set",
+        "summary": "Move a legal company along its two-state lifecycle.",
+        "tags": ["iam"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["org.company.manage"],
+        "x-scope": "company",
+        "x-audit-class": "privileged",
+        "x-rate-limit-policy": "standard-command",
+        "x-cache-category": "never"
+      }
+    },
+    "/api/v1/org/departments": {
+      "post": {
+        "operationId": "org.department-create",
+        "summary": "Create a department inside a branch.",
+        "tags": ["iam"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["org.department.manage"],
+        "x-scope": "branch",
+        "x-audit-class": "privileged",
+        "x-rate-limit-policy": "standard-command",
+        "x-cache-category": "never"
+      },
+      "get": {
+        "operationId": "org.department-list",
+        "summary": "List a branch's departments.",
+        "tags": ["iam"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["org.department.read"],
+        "x-scope": "branch",
+        "x-audit-class": "none",
+        "x-rate-limit-policy": "low-risk-metadata",
+        "x-cache-category": "never"
+      }
+    },
+    "/api/v1/org/departments/{departmentId}": {
+      "patch": {
+        "operationId": "org.department-update",
+        "summary": "Rename a department, or retire and reinstate it.",
+        "tags": ["iam"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          },
+          {
+            "$ref": "#/components/parameters/IfMatch"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "428": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["org.department.manage"],
+        "x-scope": "branch",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
         "x-cache-category": "never"
@@ -9567,7 +10933,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -9681,7 +11047,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -9722,6 +11088,172 @@
         "x-cache-category": "never"
       }
     },
+    "/api/v1/platform/organizations": {
+      "post": {
+        "operationId": "platform.organization-provision",
+        "summary": "Create a tenant with its first company, branch and First Owner, optionally activating it.",
+        "tags": ["platform"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["platform.organization.provision"],
+        "x-scope": "tenant",
+        "x-audit-class": "privileged",
+        "x-rate-limit-policy": "expensive-read",
+        "x-cache-category": "never"
+      },
+      "get": {
+        "operationId": "platform.organization-read",
+        "summary": "Read organizations from the control plane, optionally narrowed to one tenant.",
+        "tags": ["platform"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["platform.organization.read"],
+        "x-scope": "tenant",
+        "x-audit-class": "none",
+        "x-rate-limit-policy": "expensive-read",
+        "x-cache-category": "never"
+      }
+    },
+    "/api/v1/platform/organizations/{tenantId}/status": {
+      "post": {
+        "operationId": "platform.organization-lifecycle",
+        "summary": "Transition a tenant lifecycle status from the control plane.",
+        "tags": ["platform"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["platform.organization.lifecycle"],
+        "x-scope": "tenant",
+        "x-audit-class": "privileged",
+        "x-rate-limit-policy": "expensive-read",
+        "x-cache-category": "never"
+      }
+    },
     "/api/v1/price-lists": {
       "post": {
         "operationId": "svc.price-list-create",
@@ -9741,7 +11273,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -9856,7 +11388,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -9985,7 +11517,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -10074,6 +11606,114 @@
           }
         },
         "x-required-permissions": ["svc.price.read"],
+        "x-scope": "branch",
+        "x-audit-class": "none",
+        "x-rate-limit-policy": "expensive-read",
+        "x-cache-category": "never"
+      }
+    },
+    "/api/v1/qc-checks": {
+      "get": {
+        "operationId": "qms.qc-check-list",
+        "summary": "Read the QC check vocabulary the caller tenant is configured with.",
+        "tags": ["quality"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["qms.quality_control.read"],
+        "x-scope": "tenant",
+        "x-audit-class": "none",
+        "x-rate-limit-policy": "low-risk-metadata",
+        "x-cache-category": "never"
+      }
+    },
+    "/api/v1/quality-controls": {
+      "get": {
+        "operationId": "qms.qc-record-branch-list",
+        "summary": "List the quality-control records of one branch, newest first.",
+        "tags": ["quality"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["qms.quality_control.read"],
         "x-scope": "branch",
         "x-audit-class": "none",
         "x-rate-limit-policy": "expensive-read",
@@ -10279,7 +11919,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -10339,7 +11979,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -10399,7 +12039,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -10582,7 +12222,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -10697,7 +12337,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -10757,7 +12397,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -10989,7 +12629,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -11049,7 +12689,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -11560,7 +13200,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -11801,7 +13441,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -12042,7 +13682,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -12283,7 +13923,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -12515,7 +14155,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -12627,7 +14267,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -12753,7 +14393,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -12931,7 +14571,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -13157,7 +14797,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -13269,7 +14909,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -13395,7 +15035,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -13507,7 +15147,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -13907,7 +15547,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -14265,7 +15905,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -14493,7 +16133,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -14528,6 +16168,533 @@
           }
         },
         "x-required-permissions": ["inv.stock.operate"],
+        "x-scope": "branch",
+        "x-audit-class": "privileged",
+        "x-rate-limit-policy": "standard-command",
+        "x-cache-category": "never"
+      }
+    },
+    "/api/v1/technicians": {
+      "post": {
+        "operationId": "tech.technician-create",
+        "summary": "Put a user on a branch's technician roster.",
+        "tags": ["technician"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["tech.technician.manage"],
+        "x-scope": "branch",
+        "x-audit-class": "privileged",
+        "x-rate-limit-policy": "standard-command",
+        "x-cache-category": "never"
+      },
+      "get": {
+        "operationId": "tech.technician-list",
+        "summary": "List a branch's technician roster.",
+        "tags": ["technician"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["tech.technician.read"],
+        "x-scope": "branch",
+        "x-audit-class": "none",
+        "x-rate-limit-policy": "expensive-read",
+        "x-cache-category": "never"
+      }
+    },
+    "/api/v1/technicians/{technicianProfileId}": {
+      "get": {
+        "operationId": "tech.technician-detail",
+        "summary": "Read one technician profile with its skills, certifications and upcoming availability.",
+        "tags": ["technician"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["tech.technician.read"],
+        "x-scope": "branch",
+        "x-audit-class": "none",
+        "x-rate-limit-policy": "expensive-read",
+        "x-cache-category": "never"
+      },
+      "patch": {
+        "operationId": "tech.technician-update",
+        "summary": "Change a technician’s trade, employment reference or active state, or retire them.",
+        "tags": ["technician"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          },
+          {
+            "$ref": "#/components/parameters/IfMatch"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "428": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["tech.technician.manage"],
+        "x-scope": "branch",
+        "x-audit-class": "privileged",
+        "x-rate-limit-policy": "standard-command",
+        "x-cache-category": "never"
+      }
+    },
+    "/api/v1/technicians/{technicianProfileId}/availability": {
+      "post": {
+        "operationId": "tech.technician-availability-record",
+        "summary": "Record one availability or unavailability window for a technician.",
+        "tags": ["technician"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["tech.technician.manage"],
+        "x-scope": "branch",
+        "x-audit-class": "privileged",
+        "x-rate-limit-policy": "standard-command",
+        "x-cache-category": "never"
+      }
+    },
+    "/api/v1/technicians/{technicianProfileId}/availability/{availabilityId}": {
+      "delete": {
+        "operationId": "tech.technician-availability-withdraw",
+        "summary": "Withdraw one availability window, freeing the interval it holds.",
+        "tags": ["technician"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          },
+          {
+            "$ref": "#/components/parameters/IfMatch"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "428": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["tech.technician.manage"],
+        "x-scope": "branch",
+        "x-audit-class": "privileged",
+        "x-rate-limit-policy": "standard-command",
+        "x-cache-category": "never"
+      }
+    },
+    "/api/v1/technicians/{technicianProfileId}/certifications": {
+      "post": {
+        "operationId": "tech.technician-certification-record",
+        "summary": "Record a certification a technician holds.",
+        "tags": ["technician"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["tech.technician.manage"],
+        "x-scope": "branch",
+        "x-audit-class": "privileged",
+        "x-rate-limit-policy": "standard-command",
+        "x-cache-category": "never"
+      }
+    },
+    "/api/v1/technicians/{technicianProfileId}/certifications/{certificationId}": {
+      "patch": {
+        "operationId": "tech.technician-certification-update",
+        "summary": "Revoke, expire or re-date a certification a technician holds.",
+        "tags": ["technician"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          },
+          {
+            "$ref": "#/components/parameters/IfMatch"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "428": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["tech.technician.manage"],
+        "x-scope": "branch",
+        "x-audit-class": "privileged",
+        "x-rate-limit-policy": "standard-command",
+        "x-cache-category": "never"
+      }
+    },
+    "/api/v1/technicians/{technicianProfileId}/certifications/{certificationId}/detail": {
+      "put": {
+        "operationId": "tech.technician-certification-detail-record",
+        "summary": "Record the restricted certificate number for a certification a technician holds.",
+        "tags": ["technician"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["tech.technician.manage", "iam.sensitive.view"],
         "x-scope": "branch",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -14588,10 +16755,170 @@
         "x-cache-category": "never"
       }
     },
+    "/api/v1/technicians/{technicianProfileId}/skills/{skillId}": {
+      "put": {
+        "operationId": "tech.technician-skill-set",
+        "summary": "Record or replace a technician’s proficiency level in one skill.",
+        "tags": ["technician"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["tech.technician.manage"],
+        "x-scope": "branch",
+        "x-audit-class": "privileged",
+        "x-rate-limit-policy": "standard-command",
+        "x-cache-category": "never"
+      },
+      "delete": {
+        "operationId": "tech.technician-skill-withdraw",
+        "summary": "Withdraw a technician’s skill. Soft delete: the eligibility history stays readable.",
+        "tags": ["technician"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["tech.technician.manage"],
+        "x-scope": "branch",
+        "x-audit-class": "privileged",
+        "x-rate-limit-policy": "standard-command",
+        "x-cache-category": "never"
+      }
+    },
     "/api/v1/technicians/available": {
       "get": {
         "operationId": "tech.technician-available",
         "summary": "Rank a branch’s technicians against a skill, certification and time requirement.",
+        "tags": ["technician"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["tech.technician.read"],
+        "x-scope": "branch",
+        "x-audit-class": "none",
+        "x-rate-limit-policy": "expensive-read",
+        "x-cache-category": "never"
+      }
+    },
+    "/api/v1/technicians/me/queue": {
+      "get": {
+        "operationId": "tech.technician-me-queue",
+        "summary": "Read the signed-in caller's own assigned-job queue.",
         "tags": ["technician"],
         "parameters": [
           {
@@ -14768,6 +17095,118 @@
         "x-cache-category": "never"
       }
     },
+    "/api/v1/template-versions/{versionId}/items": {
+      "post": {
+        "operationId": "dia.template-item-create",
+        "summary": "Author one item on a draft inspection template version.",
+        "tags": ["diagnostics"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["dia.catalogue.manage"],
+        "x-scope": "tenant",
+        "x-audit-class": "privileged",
+        "x-rate-limit-policy": "standard-command",
+        "x-cache-category": "never"
+      },
+      "get": {
+        "operationId": "dia.template-version-item-list",
+        "summary": "Read the items of one inspection template version, in checklist order.",
+        "tags": ["diagnostics"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["dia.diagnostic.read"],
+        "x-scope": "tenant",
+        "x-audit-class": "none",
+        "x-rate-limit-policy": "low-risk-metadata",
+        "x-cache-category": "never"
+      }
+    },
     "/api/v1/template-versions/{versionId}/preview": {
       "post": {
         "operationId": "shared.template-version-preview",
@@ -14879,6 +17318,72 @@
           }
         },
         "x-required-permissions": ["org.settings.manage"],
+        "x-scope": "tenant",
+        "x-audit-class": "privileged",
+        "x-rate-limit-policy": "standard-command",
+        "x-cache-category": "never"
+      }
+    },
+    "/api/v1/template-versions/{versionId}/status": {
+      "post": {
+        "operationId": "dia.template-version-status-set",
+        "summary": "Publish or retire an inspection template version.",
+        "tags": ["diagnostics"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          },
+          {
+            "$ref": "#/components/parameters/IfMatch"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "428": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["dia.catalogue.manage"],
         "x-scope": "tenant",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
@@ -15288,7 +17793,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -15512,7 +18017,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -16024,7 +18529,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -16136,7 +18641,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -16196,7 +18701,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -16457,6 +18962,60 @@
         "x-cache-category": "never"
       }
     },
+    "/api/v1/work-order-catalogue": {
+      "get": {
+        "operationId": "wo.work-order-catalogue",
+        "summary": "Read the work-order and job state graphs the caller tenant is configured with.",
+        "tags": ["work-order"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["wo.work_order.read"],
+        "x-scope": "tenant",
+        "x-audit-class": "none",
+        "x-rate-limit-policy": "low-risk-metadata",
+        "x-cache-category": "never"
+      }
+    },
     "/api/v1/work-orders": {
       "get": {
         "operationId": "wo.work-order-list",
@@ -16636,7 +19195,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -16747,6 +19306,60 @@
       "get": {
         "operationId": "wo.work-order-closure-eligibility",
         "summary": "Report every unmet closure condition for a work order.",
+        "tags": ["work-order"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["wo.work_order.read"],
+        "x-scope": "branch",
+        "x-audit-class": "none",
+        "x-rate-limit-policy": "expensive-read",
+        "x-cache-category": "never"
+      }
+    },
+    "/api/v1/work-orders/{workOrderId}/evidence": {
+      "get": {
+        "operationId": "wo.work-order-evidence-list",
+        "summary": "List the work evidence of a work order across all of its jobs.",
         "tags": ["work-order"],
         "parameters": [
           {
@@ -16924,7 +19537,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -17036,7 +19649,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -17096,7 +19709,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -17260,7 +19873,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -17320,7 +19933,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -17484,7 +20097,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success.",
             "headers": {
               "x-correlation-id": {
@@ -17522,6 +20135,60 @@
         "x-scope": "branch",
         "x-audit-class": "privileged",
         "x-rate-limit-policy": "standard-command",
+        "x-cache-category": "never"
+      }
+    },
+    "/api/v1/work-orders/{workOrderId}/timeline": {
+      "get": {
+        "operationId": "wo.work-order-timeline",
+        "summary": "Read the unified history of a work order across every ledger, newest first.",
+        "tags": ["work-order"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CorrelationId"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/CorrelationId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "x-required-permissions": ["wo.work_order.read"],
+        "x-scope": "branch",
+        "x-audit-class": "none",
+        "x-rate-limit-policy": "expensive-read",
         "x-cache-category": "never"
       }
     },

@@ -34,7 +34,7 @@ export const dynamic = 'force-dynamic';
 
 const Params = z.object({ recordId: schemas.uuid, qcCheckId: schemas.uuid });
 
-const Body = z
+export const Body = z
   .object({
     result: z.enum(QC_CHECK_RESULTS),
     note: z.string().trim().min(1).max(MAX_QC_NOTE).optional(),

@@ -40,6 +40,7 @@ import {
   ensureTestLogins,
   expectSqlState,
   readonlyPool,
+  readSeededPermissionCatalog,
   runtimePool,
   TENANT_A,
   TENANT_B,
@@ -269,7 +270,7 @@ beforeEach(async () => {
 // ---------------------------------------------------------------------------
 
 describe('P1-15 / global security posture', () => {
-  it('the repository declares exactly 121 migrations, with 120 and 121 last', () => {
+  it('the repository declares exactly 135 migrations, with the newest six named', () => {
     // Counted from the repository, not from `supabase_migrations.schema_migrations`:
     // that bookkeeping table is created by the Supabase CLI and does not exist in
     // CI, where the database is built by `npm run db:apply-migrations` against a
@@ -296,6 +297,11 @@ describe('P1-15 / global security posture', () => {
     // grant, role or policy — so the grant and policy inventories below are
     // unchanged by it, and the permission count it does move is pinned in
     // .github/ci-baselines/schema-baseline.json rather than here.
+    // 135 is P1-29-W6, the blocker record: one append-only event ledger
+    // (wo.job_blocker_events) with SELECT, INSERT only, one guard function and
+    // two policies. No grant on a shared relation, no role and no permission
+    // code, so the inventories below are unchanged by it and the count is the
+    // only place it shows.
     //
     // The tail is asserted three deep, not two. 121 and 122 arrived on separate
     // branches and met here, and a two-deep tail would have gone on passing with
@@ -324,14 +330,54 @@ describe('P1-15 / global security posture', () => {
     // 123 without 121 therefore fails HERE, on a count, rather than deeper in
     // with a confusing guard error.
     //
-    // The tail is asserted FOUR deep, one per branch that contributed. A shorter
-    // tail would go on passing with any one of them missing — the shape that
-    // lets a migration vanish in a merge and take its grants with it.
-    expect(files).toHaveLength(124);
-    expect(files.at(-4)).toBe('20260815090000_shared_reception_evidence_foundation.sql');
-    expect(files.at(-3)).toBe('20260815093000_rec_receiving_employee_identity.sql');
-    expect(files.at(-2)).toBe('20260815100000_rec_reception_evidence_contracts.sql');
-    expect(files.at(-1)).toBe('20260819090000_rec_damage_map_revision_required.sql');
+    // The tail is asserted one entry per branch that contributed — four when this
+    // paragraph was written, five since Wave C. A shorter tail would go on passing
+    // with any one of them missing — the shape that lets a migration vanish in a
+    // merge and take its grants with it.
+    //
+    // PRE-P1-29 Wave B contributes four of the current five, and for those four
+    // the tail does more than detect a vanished migration: it PINS THE ORDER.
+    // They must replay as M1 -> M4 -> M3 -> M2 — authority, then the graph guard,
+    // then the history emitter, then the privilege graph — because M2 grants
+    // against objects the other three create. Filename order is the only thing
+    // that enforces that, so a rename which broke the tie would replay a grant
+    // against a missing object; this is where it fails.
+    //
+    // The window is WIDENED as each slice lands rather than being allowed to
+    // slide — four, then five with Wave C, six with BR-02, now seven with P1-29 W9. Sliding it would
+    // drop M1 out and quietly falsify the paragraph above: the assertion would
+    // no longer touch the first of the four while the comment still claimed it
+    // pinned their order.
+    expect(files).toHaveLength(136);
+    expect(files.at(-7)).toBe('20260831091000_org_tenant_status_transition_guard.sql');
+    expect(files.at(-6)).toBe('20260831092000_org_tenant_status_history_emission.sql');
+    expect(files.at(-5)).toBe('20260831093000_iam_platform_privilege_graph.sql');
+    // The tail GROWS by contributing branch rather than sliding, so that any one
+    // migration vanishing in a merge — and taking its grants with it — fails here
+    // rather than somewhere confusing.
+    //
+    // The newest is the immutable approval witness. It exists because the worker's
+    // enqueue authority (now -2) was not sufficient on its own: the BEFORE INSERT
+    // guard reads `shared.template_versions`, which `app_worker` may never do, so a
+    // worker could not name a template version at all. The witness lets it prove
+    // approval-at-selection-time declaratively, and — deliberately — WITHOUT
+    // re-reading mutable status, so a version retired after publication does not
+    // retroactively invalidate an event already emitted.
+    expect(files.at(-4)).toBe('20260901090000_org_company_status_lifecycle.sql');
+    // PRE-P1-29 Wave C: the legal-company status lifecycle. One migration for one
+    // coherent subsystem — the history table, its stamp and coherence guards, the
+    // emitter that makes a raw UPDATE record itself, and the transition function.
+    expect(files.at(-3)).toBe('20260901100000_wo_jobs_department_routing.sql');
+    // PRE-P1-29 BR-02: the job/department routing relationship. One column, one
+    // composite FK, one index — the smallest migration in the tail, and the only
+    // one that moves schemaHash while leaving every structural total alone.
+    expect(files.at(-2)).toBe('20260902120000_wo_job_blocker_events.sql');
+    // 136 is P1-29 W9, the First-Owner bootstrap's two owed privileges: one
+    // authority-predicated SELECT policy on iam.permissions (column-scoped to
+    // id and permission_code) and EXECUTE on the delegation backstop for
+    // app_platform. No object, no role, no permission code; the policy is
+    // asserted by name in foundation.test.ts and the count is pinned here.
+    expect(files.at(-1)).toBe('20260902130000_iam_platform_bootstrap_catalogue_and_backstop.sql');
   });
 
   it('migration 121 changes the shared surface DELIBERATELY, and the change is bounded', () => {
@@ -477,9 +523,10 @@ describe('P1-15 / global security posture', () => {
 
   // The title states no number ON PURPOSE. It said "totals 107" while the
   // assertion below read 109 — the exact "prose disagreeing with the assertion
-  // four lines away" defect this repository has a gate for. The number lives in
-  // one place, and that place is the expectation.
-  it('both new permission codes exist exactly once, and the catalog total is pinned', async () => {
+  // four lines away" defect this repository has a gate for. There is no longer a
+  // number for prose to disagree with: the catalogue's shape is read from the
+  // seed that defines it.
+  it('both new permission codes exist exactly once, and the catalog matches the seed', async () => {
     const { rows } = await admin.query<{ permission_code: string; n: string }>(
       `SELECT permission_code, count(*)::text AS n FROM iam.permissions
         WHERE permission_code IN ('shared.document.manage','shared.notification.send')
@@ -489,114 +536,77 @@ describe('P1-15 / global security posture', () => {
       { permission_code: 'shared.document.manage', n: '1' },
       { permission_code: 'shared.notification.send', n: '1' },
     ]);
-    // 45 platform permissions through DBCR-P1-15-001; DBCR-P1-16-001 adds the
-    // first crm code, crm.customer.note.write, taking the catalog to 46. The
-    // P1-16 CRM backend then seeds the remaining nine codes its operations
-    // declare — read, create, profile.write, consent.write, governance.manage,
-    // restriction.manage, duplicate.review, merge, vehicle.manage — taking the
-    // catalog to 55. The P1-17 vehicle backend then seeds veh.vehicle.read,
-    // veh.vehicle.manage, veh.vehicle.merge, veh.vehicle.duplicate.review,
-    // veh.vehicle.relationship.manage, veh.vehicle.odometer.record, and
-    // veh.vehicle.status.manage, taking the catalog to 62. The P1-18 appointment
-    // and reception backend then seeds nine more — apt.appointment.manage and
-    // apt.appointment.lifecycle.manage, then rec.reception.manage,
-    // rec.reception.party.manage, rec.reception.authorization.verify,
-    // rec.reception.evidence.manage, rec.reception.signature.manage,
-    // rec.reception.approve and rec.reception.convert — taking the catalog to 71.
-    // P1-18 registers no read code, because it exposes no read operation and an
-    // unused permission is configuration that cannot be tested. Permissions live
-    // in the seed, not a migration.
+
+    // ## Why the total is read from the seed and no longer written here
+    //
+    // This was a literal, carried by hand through eleven remediations as a
+    // running sum narrated in prose above it — 45 → 46 → 55 → … → 112. The pin
+    // did real work: four P1-23 codes were declared by routes and missing from
+    // the catalog while every denial-based authorization test still passed,
+    // because a permission that does not exist cannot be held by anybody, and
+    // this is what turned that into a caught defect rather than a shipped one.
+    // See tests/backend/p1-23-authorization.test.ts for the positive-direction
+    // assertion that now fails when a code is absent.
+    //
+    // What it also did was go stale. Adding ONE code to
+    // supabase/seeds/04_iam_permission_catalog.sql left both the number and the
+    // sum explaining it describing a catalogue that no longer existed — with
+    // every local gate green, because no local aggregate ran the database tier
+    // and three hosted jobs went red instead. That is the defect
+    // scripts/ci/check-p1-27-doc-counts.mjs was built to end, in its own words:
+    // a number written by hand that nothing recomputes.
+    //
+    // So the number is gone and the seed is asked instead. This is not the
+    // database checking itself: `readSeededPermissionCatalog` parses a FILE and
+    // never opens a connection, so the seed is the authority and the database is
+    // the subject, and a disagreement between them is exactly what fails here.
+    const declared = readSeededPermissionCatalog();
+
+    // The parse must have produced a real catalogue. A FLOOR, not the count —
+    // pinning the number here would reinstate what this case just stopped doing.
+    expect(declared.length).toBeGreaterThan(50);
+
+    // A code repeated in the seed is swallowed by the seed's own
+    // ON CONFLICT (permission_code) DO NOTHING: two declarations, one row. Left
+    // to the totals below it would surface only as a count quietly one short, so
+    // it is named here, where the failure says what is actually wrong.
+    const codes = declared.map((permission) => permission.permissionCode);
+    const duplicates = codes.filter((code, at) => codes.indexOf(code) !== at);
+    expect(duplicates, 'the seed declares these permission codes more than once').toEqual([]);
+
     const total = await admin.query<{ n: string }>(
       `SELECT count(*)::text AS n FROM iam.permissions`
     );
-    // 71 at P1-15; P1-19 added 22 codes across wo/tech/dia/qms; P1-20 added the
-    // three commercial READ codes P1-10 never seeded — svc.service.read,
-    // svc.price.read and quo.quotation.read — taking the catalog to 96. Reads are
-    // separated from writes for the same reason as everywhere else in the catalog:
-    // a service advisor who must see the catalog and a customer's quotation must not
-    // thereby be able to change a price.
-    //
-    // P1-21 adds four and no more, taking the catalog to 100: inv.item.read,
-    // inv.custody.manage, inv.external_purchase.record and inv.audit.read. It adds
-    // no reserve/issue/return code because inv.stock.operate already covers those by
-    // its own catalog description, and no opening-approval code because
-    // inv.adjustment.approve already does — a near-duplicate would make the authority
-    // model less legible, not more precise.
-    //
-    // P1-22 adds none: billing, payment, delivery and warranty declare only codes
-    // P1-11 had already seeded.
-    //
-    // P1-23 adds four, taking the catalog to 104: shared.notification.read,
-    // shared.notification.delivery.read, shared.document.archive and
-    // rpt.report.read. P1-15 seeded only the two shared WRITE capabilities above
-    // because it delivered only writes; this phase delivers the reads, and reading
-    // is a separate authority. Reusing the write codes would have meant that
-    // anyone who may enqueue a notification may also read every recipient's inbox,
-    // and that anyone who may configure a report may read every report.
-    //
-    // The P1-27 read-surface remediation (executed by P1-18) adds three, taking
-    // the catalog to 107: apt.appointment.read and rec.reception.read — the
-    // P1-18 note above ("registers no read code, because it exposes no read
-    // operation") stopped being true the moment the read surface shipped — and
-    // rec.reception.close, because closed_without_work/refused had no route and
-    // an abandoned visit held its vehicle forever (P1-27-INT-014).
-    //
-    // This pin is what turned that into a caught defect rather than a shipped one:
-    // all four codes were declared by routes and missing from the catalog, and
-    // every denial-based authorization test still passed, because a permission
-    // that does not exist cannot be held by anybody. See
-    // tests/backend/p1-23-authorization.test.ts for the positive-direction
-    // assertion that now fails when a code is absent.
-    //
-    // The intake-catalogue management remediation adds two, taking the catalog
-    // to 109: apt.catalogue.manage and rec.catalogue.manage. Seven catalogue
-    // tables shipped with a read route and no writer of any kind, while
-    // `appointmentTypeId` and `cancellationReasonId` are REQUIRED foreign keys —
-    // so no appointment could be booked or cancelled in the product, ever. The
-    // fix is a management contract, never a seed: the no-fake-data policy is
-    // permanent, and both codes are granted to nobody by default.
-    //
-    // THREE codes arrive here from three branches, so the catalog moves
-    // 109 -> 112 — one code each, from three independent remediations.
-    //
-    // P1-OD-025 adds shared.document.read. Every document read on this surface
-    // demanded `shared.document.manage` — the code that CREATES document
-    // metadata, pre-acceptance versions and links. A receptionist who may only
-    // look at reception evidence therefore had to be given the authority to
-    // author it, which is the same read/write conflation
-    // `shared.notification.read` was minted to end in P1-23. It is seeded in
-    // supabase/seeds/04_iam_permission_catalog.sql and NOWHERE ELSE: the row
-    // once lived in migration 20260815090000 too, and the migration-replay gate
-    // refused it — migrations create structure, business rows are the tenant's.
-    //
-    // FE-007 (the Owner's receiving-employee decision, DBCR-P1-18-002) adds
-    // rec.reception.receiving_employee.assign_any.
-    // It is the first code here that NO operation declares, and deliberately so:
-    // there is no cross-branch check-in endpoint to gate, because the decision is
-    // taken inside rec.stamp_receiving_employee_identity() against the ACTOR's
-    // authority in the visit's own scope, where a direct database writer cannot
-    // step around it. Publishing it as a route permission would move the decision
-    // to a layer that is not the authority. Like every code above it is mapped to
-    // no role, so on a replayed database it exists and is held by nobody.
-    //
-    // The reception evidence-contract remediation (migration 123, Owner
-    // decisions FE-012 / FE-018 / FE-019) adds ONE more, taking the catalog to
-    // 112: rec.reception.evidence.override. Waiving a required capture is not
-    // the same authority as taking one — a receptionist who may photograph a
-    // vehicle must not thereby be able to record that no photograph was needed
-    // — and the other three codes those policies gate on already existed
-    // (rec.reception.evidence.manage, rec.reception.signature.manage,
-    // rec.catalogue.manage), so exactly one line is added. Granted to nobody by
-    // default, like every code above it.
-    //
-    // 109 + 1 + 1 + 1 = 112 is a SUM of three independent remediations, and it is
-    // written as a sum on purpose: a checkout carrying only some of the three
-    // migrations fails here at 110 or 111 rather than passing a pin that was
-    // moved once and then reused.
-    //
-    // The pin moves with the seed deliberately: it is what catches an accidental
-    // catalog edit.
-    expect(Number(total.rows[0]?.n)).toBe(112);
+    expect(Number(total.rows[0]?.n)).toBe(declared.length);
+
+    // A total alone is blind to a typo or a swap — that blindness is why
+    // p1-19-catalog-reconciliation.test.ts exists. The seed is parsed rather
+    // than merely counted, so every field it declares is compared: a code
+    // renamed, re-domained, re-described or re-risked in the database without
+    // the seed fails HERE instead of in whichever phase next reads it. The three
+    // compared fields are exactly the ones restoreSeededPermissionCatalog treats
+    // as seed-owned; permission_code/created_at/created_by are guarded immutable
+    // by tg_permissions_immutable.
+    const live = await admin.query<{
+      permission_code: string;
+      domain: string;
+      description: string;
+      risk_level: string;
+    }>(`SELECT permission_code, domain, description, risk_level FROM iam.permissions`);
+    expect(
+      live.rows
+        .map(
+          (row) => `${row.permission_code} | ${row.domain} | ${row.risk_level} | ${row.description}`
+        )
+        .sort()
+    ).toEqual(
+      declared
+        .map(
+          (permission) =>
+            `${permission.permissionCode} | ${permission.domain} | ${permission.riskLevel} | ${permission.description}`
+        )
+        .sort()
+    );
   });
 
   it('the exact write-policy inventory of the whole shared schema is unchanged apart from migrations 117 and 119', async () => {
@@ -618,13 +628,25 @@ describe('P1-15 / global security posture', () => {
       // Append-only: the role holds INSERT and SELECT on file_scan_results and
       // nothing else, so a verdict can be recorded but never edited or withdrawn.
       'ins_file_scan_results_scanner',
+      // --- added by PRE-P1-29 Wave B (the platform control plane) ---
+      // The control plane cannot use replay protection through the tenant
+      // policy beside it: org.provision_organization writes its record with the
+      // tenant column ABSENT, because the tenant does not exist yet. Two records
+      // exist per provisioning call under two operation names, and this policy
+      // admits both, each narrowly, rather than widening the tenant one.
+      'ins_idempotency_keys_platform',
       'ins_idempotency_keys_tenant',
       // --- added by migration 117 ---
       'ins_message_templates_tenant',
       // --- added by migration 119 (DBCR-P1-16-001) ---
       'ins_notes_crm_customer',
+      // --- added by PRE-P1-29 Wave B (the platform control plane) ---
+      // Provisioning allocates the new tenant's first document sequences, which
+      // is a write into shared on behalf of a tenant that is mid-creation.
+      'ins_number_sequences_platform',
       // --- added by migration 117 ---
       'ins_outbound_messages_enqueue',
+      'ins_template_version_approvals_scope',
       'ins_template_versions_tenant',
       'lck_template_versions_reference',
       'upd_document_links_unlink',
@@ -648,6 +670,12 @@ describe('P1-15 / global security posture', () => {
       'wkr_event_outbox_all',
       // --- added by migration 117 ---
       'wkr_outbound_messages_dispatch',
+      // --- added by migration 127 (worker enqueue authority) ---
+      // RESTRICTIVE, so it ANDs with the dispatch policy above rather than
+      // ORing with it: that one is FOR ALL/USING true and the worker's SELECT
+      // depends on it, so it is not narrowed. This one bounds what a worker may
+      // INSERT -- pending only, tenant- and author-bearing, deduplicable.
+      'wkr_outbound_messages_enqueue_scope',
       // --- pre-existing ---
       'wkr_processed_events_all',
       // --- added by migration 117 ---

@@ -8,7 +8,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import type { Pool } from 'pg';
+import type { Pool, QueryResult } from 'pg';
 import {
   adminPool,
   deleteTenantCascade,
@@ -16,6 +16,7 @@ import {
   expectSqlState,
   runtimePool,
   USER_A,
+  setContext,
   withRolledBackTx,
 } from './helpers';
 
@@ -113,11 +114,29 @@ async function orgFootprint(pool: Pool, tenantId: string) {
 }
 
 async function provision(pool: Pool, spec: object, key: string) {
-  const { rows } = await pool.query('SELECT org.provision_organization($1::jsonb, $2) AS result', [
-    JSON.stringify(spec),
-    key,
-  ]);
-  return rows[0].result as ProvisioningResult;
+  // org.provision_organization writes the tenant's GENESIS status-history row
+  // through the M3 emitter, which is stamped by shared.stamp_status_history()
+  // and RAISES without an actor in the session. The frozen slice-01 contract
+  // requires that explicitly: "genesis via org.provision_organization — the
+  // function must be called from a session carrying an actor". set_config is
+  // transaction-local, so the actor and the call must share one connection AND
+  // one transaction; a pool query would draw a different connection.
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await setContext(client, { userId: USER_A });
+    const { rows } = await client.query(
+      'SELECT org.provision_organization($1::jsonb, $2) AS result',
+      [JSON.stringify(spec), key]
+    );
+    await client.query('COMMIT');
+    return rows[0].result as ProvisioningResult;
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 beforeAll(async () => {
@@ -286,6 +305,33 @@ describe('ephemeral pilot-shape provisioning', () => {
   });
 });
 
+/**
+ * The failure-injection cases call the function directly, because they assert
+ * the SQLSTATE it raises rather than the value it returns. They still need the
+ * session actor the M3 genesis emitter requires — without it every one of them
+ * reported 23514 "status history requires an actor", masking the constraint
+ * each was written to prove. A masked assertion is worse than a failing one:
+ * 23503 and 23514 are both refusals, and only the message distinguished them.
+ */
+async function provisionRaw(specJson: string, key: string): Promise<QueryResult> {
+  const client = await admin.connect();
+  try {
+    await client.query('BEGIN');
+    await setContext(client, { userId: USER_A });
+    const result = await client.query(`SELECT org.provision_organization($1::jsonb, $2) AS r`, [
+      specJson,
+      key,
+    ]);
+    await client.query('COMMIT');
+    return result;
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 describe('org.provision_organization — atomicity, idempotency, failure injection', () => {
   const spec = (overrides: Record<string, unknown> = {}) => ({
     actor_id: USER_A,
@@ -309,10 +355,7 @@ describe('org.provision_organization — atomicity, idempotency, failure injecti
   });
 
   it('provisions a full organization and the retry replays WITHOUT creating anything', async () => {
-    const first = await admin.query(
-      `SELECT org.provision_organization($1::jsonb, 'fx-key-1') AS r`,
-      [JSON.stringify(spec())]
-    );
+    const first = await provisionRaw(JSON.stringify(spec()), 'fx-key-1');
     const r1 = first.rows[0].r;
     expect(r1.tenant_id).toBeTruthy();
     expect(r1.company_id).toBeTruthy();
@@ -327,21 +370,19 @@ describe('org.provision_organization — atomicity, idempotency, failure injecti
       sequences: 1,
     });
 
-    const retry = await admin.query(
-      `SELECT org.provision_organization($1::jsonb, 'fx-key-1') AS r`,
-      [JSON.stringify(spec())]
-    );
+    const retry = await provisionRaw(JSON.stringify(spec()), 'fx-key-1');
     expect(retry.rows[0].r).toEqual(r1);
     expect(await orgFootprint(admin, r1.tenant_id)).toEqual(before);
   });
 
   it('the same key with a CONFLICTING request fails (23000)', async () => {
     await expectSqlState(
-      admin.query(`SELECT org.provision_organization($1::jsonb, 'fx-key-1')`, [
+      provisionRaw(
         JSON.stringify(
           spec({ company: { code: 'fx_other', legal_name: 'X', base_currency: 'USD' } })
         ),
-      ]),
+        'fx-key-1'
+      ),
       '23000'
     );
   });
@@ -351,12 +392,7 @@ describe('org.provision_organization — atomicity, idempotency, failure injecti
       tenant: { ...spec().tenant, code: 'fx_prov_fail1' },
       company: { code: 'fx_fail_co', legal_name: 'Fail Co', base_currency: 'ZZZ' },
     });
-    await expectSqlState(
-      admin.query(`SELECT org.provision_organization($1::jsonb, 'fx-key-fail1')`, [
-        JSON.stringify(bad),
-      ]),
-      '23503'
-    );
+    await expectSqlState(provisionRaw(JSON.stringify(bad), 'fx-key-fail1'), '23503');
     const tenant = await admin.query(
       `SELECT count(*)::int AS n FROM org.tenants WHERE tenant_code = 'fx_prov_fail1'`
     );
@@ -372,12 +408,7 @@ describe('org.provision_organization — atomicity, idempotency, failure injecti
       tenant: { ...spec().tenant, code: 'fx_prov_fail2' },
       feature_overrides: [{ flag_code: 'flag_that_does_not_exist', enabled: true, reason: 'boom' }],
     });
-    await expectSqlState(
-      admin.query(`SELECT org.provision_organization($1::jsonb, 'fx-key-fail2')`, [
-        JSON.stringify(bad),
-      ]),
-      '23503'
-    );
+    await expectSqlState(provisionRaw(JSON.stringify(bad), 'fx-key-fail2'), '23503');
     const tenant = await admin.query(
       `SELECT count(*)::int AS n FROM org.tenants WHERE tenant_code = 'fx_prov_fail2'`
     );
@@ -389,12 +420,7 @@ describe('org.provision_organization — atomicity, idempotency, failure injecti
       tenant: { ...spec().tenant, code: 'fx_prov_fail3' },
       sequences: [{ code: 'org_document', pad_width: -1 }],
     });
-    await expectSqlState(
-      admin.query(`SELECT org.provision_organization($1::jsonb, 'fx-key-fail3')`, [
-        JSON.stringify(bad),
-      ]),
-      '23514'
-    );
+    await expectSqlState(provisionRaw(JSON.stringify(bad), 'fx-key-fail3'), '23514');
     const tenant = await admin.query(
       `SELECT count(*)::int AS n FROM org.tenants WHERE tenant_code = 'fx_prov_fail3'`
     );

@@ -48,7 +48,7 @@ const MoneyAmount = z
     'must be an unsigned decimal string of at most 14 integer digits and 4 decimal places'
   );
 
-const AllocateBody = z
+export const AllocateBody = z
   .object({
     invoiceId: schemas.uuid,
     amount: MoneyAmount,
@@ -58,6 +58,7 @@ const AllocateBody = z
 
 export const PAYMENT_ALLOCATE_OPERATION = defineOperation({
   id: 'sal.payment-allocate',
+  successStatus: 201,
   module: 'payments',
   method: 'POST',
   path: '/payments/{paymentId}/allocations',

@@ -187,6 +187,18 @@ export function policyFor(operation: RegisteredOperation): RateLimitPolicy | und
  * Every exit path — success, denial, validation failure, unhandled fault —
  * carries the correlation ID, and every failure is a problem document.
  */
+/**
+ * Whether an operation belongs to the platform control plane.
+ *
+ * Read from the operation's own declared permissions rather than from a
+ * route-side flag, so a control-plane route cannot lose its control-plane
+ * treatment by forgetting to pass something. Two call sites depend on it: the
+ * connection the transaction opens on, and the breach signal below.
+ */
+function isControlPlane(operation: RegisteredOperation): boolean {
+  return operation.permissions.some((code) => code.startsWith('platform.'));
+}
+
 export async function handleOperation<T>(
   operation: RegisteredOperation,
   request: Request,
@@ -312,12 +324,44 @@ export async function handleOperation<T>(
     });
 
     if (postAuthPolicy && config.RATE_LIMIT_ENABLED) {
-      await enforceRateLimit(postAuthPolicy, {
-        operation: operation.id,
-        tenantId: context.principal.tenantId,
-        userId: context.principal.userId,
-        clientIp: client.ip,
-      });
+      try {
+        await enforceRateLimit(postAuthPolicy, {
+          operation: operation.id,
+          tenantId: context.principal.tenantId,
+          userId: context.principal.userId,
+          clientIp: client.ip,
+        });
+      } catch (breach) {
+        // PRE-P1-29 slice B9, obligation 1. A breach on the control plane is a
+        // signal, not a counter, and nothing confers that for free:
+        // `securityRelevant` occurs three times in this file, all inside
+        // `skipUnkeyedPublicThrottle`, which is gated on `operation.public` and
+        // decides only whether to SKIP a throttle. It raises no event on any
+        // path. So the event is arranged here, explicitly.
+        //
+        // The throttle throws before `run()` opens its transaction, so no
+        // DbHandle exists yet — the same situation the IdempotencyRaceError
+        // catch below is in, and the same answer: `withTransaction` needs only
+        // a RequestContext, which is live and already narrowed above. The
+        // connection must match the operation's own, or the insert runs as
+        // app_runtime on a control-plane request.
+        if (isControlPlane(operation)) {
+          await withTransaction(
+            context as RequestContext,
+            async (db) =>
+              recordSecurityEvent(db, {
+                eventType: 'rate-limit.breached',
+                severity: 'warning',
+                // Operation id and policy name only. Both are compile-time
+                // constants of this repository; no caller-supplied text reaches
+                // the row, which is what the SecurityEventInput contract asks.
+                detail: `Control-plane operation ${operation.id} exceeded ${postAuthPolicy.name}`,
+              }),
+            { connection: 'platform' as const }
+          );
+        }
+        throw breach;
+      }
     }
 
     const expectedVersion = parseIfMatch(request.headers, operation.versionGuarded === true);
@@ -338,38 +382,46 @@ export async function handleOperation<T>(
       : null;
 
     const run = async (): Promise<HandlerResult<T>> =>
-      withTransaction(context as RequestContext, async (db) => {
-        await requirePermissions(db, operation, options.authorizationTarget ?? {});
-        if (operation.featureFlag) await requireFeature(db, operation.featureFlag);
+      withTransaction(
+        context as RequestContext,
+        async (db) => {
+          await requirePermissions(db, operation, options.authorizationTarget ?? {});
+          if (operation.featureFlag) await requireFeature(db, operation.featureFlag);
 
-        const execute = () =>
-          handler({
+          const execute = () =>
+            handler({
+              db,
+              context: db.context,
+              request,
+              params: Object.freeze({ ...(options.params ?? {}) }),
+              expectedVersion,
+              correlationId,
+              // `requireScopedPermissions`, not `requirePermissions`: the deferred
+              // check fails closed on an empty target, because reaching it without
+              // the resource's own scope would degrade to a scope-blind evaluation
+              // and reopen P1-18-A-01 through this very API.
+              authorizeScope: (target: AuthorizationTarget) =>
+                requireScopedPermissions(db, operation, target),
+            });
+
+          if (!idempotencyKey || !fingerprint) return execute();
+
+          const outcome = await withIdempotency(
             db,
-            context: db.context,
-            request,
-            params: Object.freeze({ ...(options.params ?? {}) }),
-            expectedVersion,
-            correlationId,
-            // `requireScopedPermissions`, not `requirePermissions`: the deferred
-            // check fails closed on an empty target, because reaching it without
-            // the resource's own scope would degrade to a scope-blind evaluation
-            // and reopen P1-18-A-01 through this very API.
-            authorizeScope: (target: AuthorizationTarget) =>
-              requireScopedPermissions(db, operation, target),
-          });
-
-        if (!idempotencyKey || !fingerprint) return execute();
-
-        const outcome = await withIdempotency(
-          db,
-          { operationId: operation.id, key: idempotencyKey, fingerprint },
-          execute,
-          (value) => value.body
-        );
-        return outcome.replayed
-          ? ({ body: outcome.value as T } as HandlerResult<T>)
-          : (outcome.value as HandlerResult<T>);
-      });
+            { operationId: operation.id, key: idempotencyKey, fingerprint },
+            execute,
+            (value) => value.body
+          );
+          return outcome.replayed
+            ? ({ body: outcome.value as T } as HandlerResult<T>)
+            : (outcome.value as HandlerResult<T>);
+        },
+        // The control plane runs on its own connection. Selected from the
+        // operation's own declaration rather than from a route-side flag, so a
+        // platform operation cannot be served from the request-path pool by
+        // forgetting to pass something.
+        isControlPlane(operation) ? { connection: 'platform' as const } : {}
+      );
 
     let result: HandlerResult<T>;
     try {

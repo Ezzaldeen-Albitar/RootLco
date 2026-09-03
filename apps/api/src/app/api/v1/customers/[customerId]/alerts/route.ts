@@ -35,7 +35,7 @@ const Params = z.object({ customerId: schemas.uuid });
 const Query = z
   .object({ cursor: schemas.cursor.optional(), limit: schemas.limit.optional() })
   .strict();
-const Body = z
+export const Body = z
   .object({
     alertType: z.enum(ALERT_TYPES),
     severity: z.enum(ALERT_SEVERITIES),
@@ -58,6 +58,7 @@ export const ALERT_LIST_OPERATION = defineOperation({
 
 export const ALERT_RAISE_OPERATION = defineOperation({
   id: 'crm.alert-raise',
+  successStatus: 201,
   module: 'crm',
   method: 'POST',
   path: '/customers/{customerId}/alerts',

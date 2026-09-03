@@ -18,7 +18,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const Params = z.object({ vehicleId: schemas.uuid });
-const Body = z
+export const Body = z
   .object({
     partnerId: schemas.uuid,
     allowedActions: z.array(z.enum(AUTHORIZED_ACTIONS)).min(1).max(AUTHORIZED_ACTIONS.length),
@@ -28,6 +28,7 @@ const Body = z
 
 export const VEHICLE_AUTHORIZED_PARTY_ADD_OPERATION = defineOperation({
   id: 'veh.vehicle-authorized-party-add',
+  successStatus: 201,
   module: 'vehicle',
   method: 'POST',
   path: '/vehicles/{vehicleId}/authorized-parties',

@@ -36,7 +36,7 @@ export const dynamic = 'force-dynamic';
 
 const Params = z.object({ deliveryId: schemas.uuid }).strict();
 
-const VerifyBody = z
+export const VerifyBody = z
   .object({
     receiverPartnerId: schemas.uuid,
     identityEvidenceDocumentVersionId: schemas.uuid.optional(),
@@ -45,6 +45,7 @@ const VerifyBody = z
 
 export const DELIVERY_RECEIVER_VERIFY_OPERATION = defineOperation({
   id: 'sal.delivery-receiver-verify',
+  successStatus: 201,
   module: 'delivery',
   method: 'POST',
   path: '/deliveries/{deliveryId}/authorized-receiver',

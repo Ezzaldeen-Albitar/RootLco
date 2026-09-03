@@ -21,7 +21,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const Params = z.object({ appointmentId: schemas.uuid });
-const Body = z.object({ cancellationReasonId: schemas.uuid }).strict();
+export const Body = z.object({ cancellationReasonId: schemas.uuid }).strict();
 
 export const APPOINTMENT_CANCEL_OPERATION = defineOperation({
   id: 'apt.appointment-cancel',

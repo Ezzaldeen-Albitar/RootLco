@@ -35,7 +35,7 @@ export const dynamic = 'force-dynamic';
 
 const Params = z.object({ inspectionId: schemas.uuid });
 
-const Body = z
+export const Body = z
   .object({
     recommendation: z.string().trim().min(1).max(MAX_RECOMMENDATION),
     priority: z.enum(RECOMMENDATION_PRIORITIES).optional(),
@@ -44,6 +44,7 @@ const Body = z
 
 export const DIAGNOSTIC_RECOMMENDATION_OPERATION = defineOperation({
   id: 'dia.diagnostic-recommendation-record',
+  successStatus: 201,
   module: 'diagnostics',
   method: 'POST',
   path: '/inspections/{inspectionId}/recommendations',

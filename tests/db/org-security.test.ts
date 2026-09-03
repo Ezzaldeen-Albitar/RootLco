@@ -25,6 +25,13 @@ const TENANT_COLUMN_EXCEPTIONS = new Set([
   'shared.timezones',
   'shared.languages',
   'iam.permissions', // platform-owned permission catalogue (no tenant scope)
+  // PLATFORM AUTHORITY: a grant here is held by an ACCOUNT against a platform
+  // permission code, and it is deliberately not a tenant's to hold. Giving it a
+  // tenant_id would say the opposite — that some tenant owns the authority to
+  // create and suspend tenants — and would make the authority predicate
+  // tenant-scoped, which is precisely the partition Wave B exists to prevent
+  // (a platform operator holds no account in the tenant they are creating).
+  'iam.platform_grants',
   'shared.retention_classes', // platform retention definitions (no tenant scope)
   'shared.localization_keys', // platform localization-key catalogue
   'shared.localized_texts', // governed platform localization content
@@ -38,6 +45,7 @@ const NULLABLE_TENANT_EXCEPTIONS = new Set([
   'shared.document_categories', // dual-scope: platform default (tenant NULL) OR tenant override
   'shared.message_templates', // dual-scope: platform default (tenant NULL) OR tenant override
   'shared.template_versions', // mirrors its platform/tenant template tenant_id, including NULL
+  'shared.template_version_approvals', // mirrors the version it witnesses, platform included
   'shared.processed_events', // platform consumers process platform-scope work without a tenant
   'shared.error_records', // errors can occur before tenant context is established
   'shared.system_settings', // dual-scope: platform default (tenant NULL) OR tenant override

@@ -80,12 +80,27 @@ describe('the navigation model', () => {
       'settings.organization',
       'settings.systemSettings',
       'settings.taxes',
+      // The technician workspace landed with P1-29 W4 at /technicians/me,
+      // gated on `tech.technician.read` — the permission its queue requires.
+      // The child names the same route as its parent; see navigation.ts.
+      'technicians',
+      'technicians.me',
       'vehicle-duplicates',
       'vehicles',
       // The walk-in intake screen landed with P1-28-FE-006 at
       // /reception/walk-in, gated on the permission its first operation
       // (customer search) requires.
       'walk-in',
+      // The work-order board landed with P1-29 W1 at /work-orders, gated on
+      // `wo.work_order.read` — the permission its only operation requires.
+      'work-orders',
+      // P1-29 W7: the inspection-template catalogue at `/work-orders/diagnostics`.
+      'work-orders.diagnostics',
+      // P1-29 W8: the branch QC queue at `/work-orders/quality`.
+      'work-orders.quality',
+      // The board child names the same route as its parent, so the expanded
+      // sidebar has a link to mark as the current page. See navigation.ts.
+      'work-orders.queue',
     ]);
   });
 
@@ -103,10 +118,9 @@ describe('the navigation model', () => {
       'inventory',
       'notifications',
       'reports',
-      'technicians',
-      'work-orders',
-      'work-orders.diagnostics',
-      'work-orders.quality',
+      // `technicians` left this list in P1-29 W4, when the workspace was built.
+      // `work-orders` left this list in P1-29 W1, `work-orders.diagnostics` in
+      // W7 and `work-orders.quality` in W8.
     ]);
   });
 
@@ -230,7 +244,13 @@ describe('permission filtering — unknown means denied', () => {
       .flatMap((group) => group.items)
       .find((entry) => entry.key === 'work-orders');
     expect(parent).toBeDefined();
-    expect(parent?.children?.map((child) => child.key)).toEqual(['work-orders.diagnostics']);
+    // `work-orders.queue` rides on the same code as its parent; `.diagnostics`
+    // on its own; `.quality` on a code these capabilities do not hold, and is
+    // therefore absent — which is what makes this independent filtering.
+    expect(parent?.children?.map((child) => child.key)).toEqual([
+      'work-orders.queue',
+      'work-orders.diagnostics',
+    ]);
   });
 
   it('widens as capabilities widen, and never further', () => {

@@ -20,7 +20,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const Params = z.object({ branchId: schemas.uuid });
-const SettingBody = z
+export const SettingBody = z
   .object({
     settingKey: z.string().regex(/^[a-z][a-z0-9_.]{1,126}$/),
     settingValue: z.unknown(),
@@ -44,6 +44,7 @@ export const BRANCH_SETTINGS_READ_OPERATION = defineOperation({
 
 export const BRANCH_SETTINGS_WRITE_OPERATION = defineOperation({
   id: 'iam.branch-settings-write',
+  successStatus: 201,
   module: 'iam',
   method: 'POST',
   path: '/org/branches/{branchId}/settings',

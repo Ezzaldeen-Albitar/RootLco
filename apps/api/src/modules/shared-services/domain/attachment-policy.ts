@@ -73,6 +73,36 @@ export function isLinkPurpose(value: string): boolean {
 /** Version states a download may be issued for. Acceptance is the only one. */
 export const DOWNLOADABLE_STATES: readonly string[] = Object.freeze(['accepted']);
 
+/**
+ * Version states a document may NOT be bound as evidence in.
+ *
+ * ## Why it lives here
+ *
+ * The rule is about `shared.document_versions.status`, which is this module's
+ * column, so this module is where the sentence belongs. It sat as an identical
+ * `Object.freeze(['rejected', 'quarantined'])` literal in BOTH
+ * `diagnostics/application/diagnostic-report-service.ts` and
+ * `work-order/application/additional-work-service.ts`, and PRE-P1-29-BR-07 would
+ * have made a third copy. Two copies of a rule can disagree; three reliably do.
+ *
+ * ## It is deliberately NOT the complement of DOWNLOADABLE_STATES
+ *
+ * The two constants sit together so the asymmetry is visible rather than
+ * surprising. `DOWNLOADABLE_STATES` is `['accepted']` — download demands a
+ * finished, clean scan. Binding refuses only `rejected` and `quarantined`, which
+ * means **`pending` may be bound while it may not be downloaded.**
+ *
+ * That gap is intentional and must not be closed. Capture happens at the moment
+ * work is done, and a scan takes as long as it takes; refusing `pending` at bind
+ * time would make evidence capture fail intermittently on scan latency, losing
+ * the photograph rather than delaying it. The protection is preserved where it
+ * matters — the bytes still cannot be fetched until the scan accepts them.
+ */
+export const EVIDENCE_REFUSED_STATES: readonly string[] = Object.freeze([
+  'rejected',
+  'quarantined',
+]);
+
 export interface UploadTokenPayload {
   /** Token format version, so a later change is detectable rather than silent. */
   readonly v: 1;

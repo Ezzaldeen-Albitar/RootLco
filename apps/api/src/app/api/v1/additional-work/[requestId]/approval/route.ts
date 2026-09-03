@@ -90,7 +90,7 @@ const Evidence = z
   })
   .strict();
 
-const Body = z
+export const Body = z
   .object({
     // Both vocabularies are the CHECK constraints' own, read off `pg_constraint`.
     // `ck_customer_approvals_decision` has exactly two values and no `declined`;
@@ -120,6 +120,7 @@ const Body = z
 
 export const ADDITIONAL_WORK_APPROVAL_OPERATION = defineOperation({
   id: 'wo.additional-work-approval',
+  successStatus: 201,
   module: 'work-order',
   method: 'POST',
   path: '/additional-work/{requestId}/approval',

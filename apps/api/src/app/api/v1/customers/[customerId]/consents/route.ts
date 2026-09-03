@@ -43,7 +43,7 @@ const Params = z.object({ customerId: schemas.uuid });
 const Query = z
   .object({ cursor: schemas.cursor.optional(), limit: schemas.limit.optional() })
   .strict();
-const Body = z
+export const Body = z
   .object({
     consentKind: z.enum(CONSENT_KINDS),
     channel: z.enum(CONTACT_CHANNELS),
@@ -71,6 +71,7 @@ export const CONSENT_LIST_OPERATION = defineOperation({
 
 export const CONSENT_RECORD_OPERATION = defineOperation({
   id: 'crm.consent-record',
+  successStatus: 201,
   module: 'crm',
   method: 'POST',
   path: '/customers/{customerId}/consents',

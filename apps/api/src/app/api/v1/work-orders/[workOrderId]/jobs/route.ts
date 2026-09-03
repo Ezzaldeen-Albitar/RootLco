@@ -30,7 +30,7 @@ export const dynamic = 'force-dynamic';
 
 const Params = z.object({ workOrderId: schemas.uuid });
 
-const Body = z
+export const Body = z
   .object({
     // `.trim()` before the length check, so trailing whitespace cannot buy length
     // and a blank-but-not-empty title is refused here rather than by
@@ -47,6 +47,7 @@ const Body = z
 
 export const JOB_CREATE_OPERATION = defineOperation({
   id: 'wo.job-create',
+  successStatus: 201,
   module: 'work-order',
   method: 'POST',
   path: '/work-orders/{workOrderId}/jobs',

@@ -26,7 +26,7 @@ const Params = z.object({ vehicleId: schemas.uuid });
 const Query = z
   .object({ cursor: schemas.cursor.optional(), limit: schemas.limit.optional() })
   .strict();
-const Body = z
+export const Body = z
   .object({
     countryCode: z.string().min(2).max(3),
     plateRaw: z.string().min(1).max(MAX_PLATE_RAW),
@@ -49,6 +49,7 @@ export const VEHICLE_PLATE_LIST_OPERATION = defineOperation({
 
 export const VEHICLE_PLATE_ASSIGN_OPERATION = defineOperation({
   id: 'veh.vehicle-plate-assign',
+  successStatus: 201,
   module: 'vehicle',
   method: 'POST',
   path: '/vehicles/{vehicleId}/plates',

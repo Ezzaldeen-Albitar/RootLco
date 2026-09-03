@@ -31,7 +31,7 @@ export const dynamic = 'force-dynamic';
 
 const Params = z.object({ workOrderId: schemas.uuid });
 
-const Body = z
+export const Body = z
   .object({
     jobId: schemas.uuid.optional(),
     description: z.string().trim().min(1).max(MAX_LINE_DESCRIPTION),
@@ -47,6 +47,7 @@ const Body = z
 
 export const SERVICE_LINE_RECORD_OPERATION = defineOperation({
   id: 'wo.service-line-record',
+  successStatus: 201,
   module: 'work-order',
   method: 'POST',
   path: '/work-orders/{workOrderId}/service-lines',

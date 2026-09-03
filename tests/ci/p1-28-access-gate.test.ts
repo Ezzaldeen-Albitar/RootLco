@@ -52,11 +52,56 @@ import { REPOSITORY_ROOT } from '../../scripts/lib/repository-paths.mjs';
  * below is attributable to the change and to nothing else.
  */
 
+/**
+ * Each of `collectSources()`, `phaseRoutes()` and `routeSegments()` re-walks and
+ * re-reads `apps/web/src` from disk on EVERY call — 243 files, measured at
+ * ~300 ms, ~1.6 s and ~1.85 s respectively on an idle machine — and this file
+ * called them fourteen times. One of those calls sat inside a per-file callback,
+ * so it walked the tree once per file it was asked about.
+ *
+ * That cost is what failed the unit tier at `e92214d3`: `finds the eight pages
+ * by what they LOAD` ran for 36.4 s against the 30 s default and reported
+ * `STACK_TRACE_ERROR` — a blown budget, not an assertion. It is the SECOND case
+ * in this file to do that. `the prefix regex this replaced could not have seen
+ * that read` carries a 120 s budget for exactly the same reason and took 30.7 s
+ * in that same run; the next candidate is already visible at 13.2 s, and the 48
+ * cases here cost 217 s between them.
+ *
+ * Raising a budget each time one blows treats the symptom and leaves the cause
+ * growing with the tree. So the repeats are removed: each walk is taken once per
+ * worker. `webSources()` hands out a COPY because `planted()` mutates what it is
+ * given, and `webRoutes()`'s array is copied for the same reason.
+ *
+ * This belongs in `collectSources` itself, where it would fix the gate's own
+ * cost too. That is a change to a P1-28 gate's behaviour and is not this file's
+ * to make.
+ */
+function once<T>(compute: () => T): () => T {
+  let value: T;
+  let taken = false;
+  return () => {
+    if (!taken) {
+      value = compute();
+      taken = true;
+    }
+    return value;
+  };
+}
+
+const sourcesOnce = once(() => collectSources() as Map<string, string>);
+const routesOnce = once(() => phaseRoutes() as string[]);
+const segmentsOnce = once(() => routeSegments() as string[]);
+
+/** A fresh, mutable copy of the real source map. */
+const webSources = (): Map<string, string> => new Map(sourcesOnce());
+/** A fresh copy of the derived route list. */
+const webRoutes = (): string[] => [...routesOnce()];
+
 const REAL = run();
 
 /** The real tree with one file's content replaced. */
 function planted(relativePath: string, mutate: (source: string) => string) {
-  const sources = collectSources();
+  const sources = webSources();
   const absolute = join(REPOSITORY_ROOT, ...relativePath.split('/'));
   const original = sources.get(absolute);
   expect(original, `${relativePath} is not in the scanned tree`).toBeDefined();
@@ -85,11 +130,30 @@ describe('the gate is clean on the tree it ships with — and really looked', ()
     // Each of these is an anti-vacuity condition the gate enforces on itself.
     // Restated here so a silent collapse fails by name rather than by a clean
     // report over nothing.
-    expect(REAL.routes.length).toBe(8);
+    /*
+     * TEN since P1-29 W7: the job diagnostics workbench under `work-orders` renders
+     * the same capture surface for report evidence and is adopted the same way.
+     *
+     * NINE since P1-29 W4, and the ninth is not a P1-28 screen. The technician
+     * workspace at `/technicians/me` renders P1-28's one approved capture
+     * surface (`features/receptions/components/CaptureFileField.tsx`) for work
+     * evidence, so its import closure reaches a P1-28 feature tree and the
+     * derivation — "every page that LOADS one" — adopts it. That is the
+     * derivation working as designed, and the page is held to every rule here:
+     * it gates before it reads, consults only published codes, requires no
+     * more than its operations require, and asserts no scope in a URL.
+     */
+    expect(REAL.routes.length).toBe(10);
     expect(REAL.treeFiles).toBeGreaterThanOrEqual(40);
     expect(REAL.constants).toBeGreaterThanOrEqual(40);
     expect(REAL.scanned).toBeGreaterThanOrEqual(200);
-    expect(REAL.segments).toEqual(['appointments', 'reception', 'receptions']);
+    expect(REAL.segments).toEqual([
+      'appointments',
+      'reception',
+      'receptions',
+      'technicians',
+      'work-orders',
+    ]);
     // Rule 5's extended root: the files every route loads out of `components/**`
     // and `lib/**`, which no root covered until this wave.
     expect(REAL.closureFiles).toBeGreaterThanOrEqual(100);
@@ -157,7 +221,7 @@ describe('rule 1 — gate-before-read', () => {
     // The mutation above is invisible to `await (read|list|search)[A-Z]`: the
     // awaited callee is `Promise.all`, and the two reads sit inside its array.
     // Stated as a measurement over the shipped source rather than as a claim.
-    const shipped = String(collectSources().get(join(REPOSITORY_ROOT, ...BOOKING_PAGE.split('/'))));
+    const shipped = String(webSources().get(join(REPOSITORY_ROOT, ...BOOKING_PAGE.split('/'))));
     const stripped = stripComments(shipped);
     expect(stripped).toContain('await Promise.all([listAppointmentTypes()');
     expect(stripped.search(/await (?:read|list|search)[A-Z]/)).toBe(-1);
@@ -165,11 +229,21 @@ describe('rule 1 — gate-before-read', () => {
     const callees = importedReadCallees(
       join(REPOSITORY_ROOT, ...BOOKING_PAGE.split('/')),
       shipped,
-      (file: string) => collectSources().get(file) ?? null
+      (file: string) => webSources().get(file) ?? null
     );
     expect([...callees].sort()).toEqual(['listAppointmentTypes', 'listSourceChannels']);
     expect(firstAwaitedRead(stripped, callees)).toBeGreaterThan(-1);
-  });
+
+    // This case costs what the repository is big, not what the assertion is
+    // worth: it asks `webSources()` for a file inside a per-file callback, which
+    // before the memo above walked the whole tree once per file. It began timing
+    // out against the 30 s default inside the full tier as PRE-P1-29 grew the
+    // tree — a timeout, not an assertion failure, and green on the hosted Linux
+    // runner throughout. The budget is KEPT: the memo makes the case cheap, but
+    // a budget removed on the strength of one measurement is a budget removed on
+    // an idle machine. Stated on the case, never as a global `testTimeout`, so
+    // it cannot cover a different test that has genuinely regressed.
+  }, 120_000);
 
   it('fires when the DENY gate follows the read, even with a capability holds() above it', () => {
     /*
@@ -268,7 +342,7 @@ describe('rule 1 — gate-before-read', () => {
     // `import { PERMISSIONS as ADMIN_PERMISSIONS }` is how the check-in screen
     // reaches the `iam.user.read` overload. A gate blind to the alias would be
     // blind to the single most over-broad code on this surface.
-    const constants = permissionConstants([...collectSources().entries()]);
+    const constants = permissionConstants([...webSources().entries()]);
     const { codes, unresolved } = consultedPermissions(
       "import { PERMISSIONS as ADMIN } from '@/features/administration/shared/permissions';\n" +
         'const ok = holds(session.permissions, ADMIN.userRead);',
@@ -529,16 +603,32 @@ describe('rule 5 — no-scope-in-a-url', () => {
   it('does NOT extend the tenant clause outside the trees P1-28 owns', () => {
     /*
      * The judgement, asserted as the fact it rests on rather than left implicit.
-     * `tenantId` is a session CLAIM in `features/authentication/**` and
-     * `lib/api/session-cookie.ts` — the tenant a session belongs to, resolved
-     * server-side — and every P1-28 route loads those files. Extending the
-     * never-name-it clause to the closure would fire on four P1-26/P1-27 files
-     * that are doing nothing wrong, and a rule that must be suppressed to be
-     * usable stops being read.
+     * `tenantId` is a session CLAIM in `features/authentication/**` — the tenant a
+     * session belongs to, resolved server-side — and every P1-28 route loads those
+     * files. Extending the never-name-it clause to the closure would fire on files
+     * that are doing nothing wrong, and a rule that must be suppressed to be usable
+     * stops being read.
+     *
+     * The premise used to be read from `lib/api/session-cookie.ts`, which named
+     * `tenantId` in `writeTenantHint(tenantId: string, …)`. PRE-P1-29 deleted that
+     * helper — it had no caller, and P1-26 had recorded its removal as a follow-up
+     * after taking the Workspace field off sign-in — so the file names no scope at
+     * all now and the premise read false. It is taken from the session TYPE
+     * instead, which is where the claim actually lives and cannot be deleted
+     * without the session losing its tenant.
      */
     const claim = String(
-      collectSources().get(
-        join(REPOSITORY_ROOT, 'apps', 'web', 'src', 'lib', 'api', 'session-cookie.ts')
+      webSources().get(
+        join(
+          REPOSITORY_ROOT,
+          'apps',
+          'web',
+          'src',
+          'features',
+          'authentication',
+          'types',
+          'session.ts'
+        )
       )
     );
     expect(scopeInUrl(claim).some((found: { name: string }) => found.name === 'tenantId')).toBe(
@@ -564,11 +654,11 @@ describe('rule 6 — route-owns-the-gate', () => {
     // `wizard.ts` states "The route is the single place `holds(...)` is called".
     // Nothing checked it, so rules 2 and 4 — which read route pages — were
     // complete only for as long as that sentence stayed true by habit.
-    const wizard = String(collectSources().get(join(REPOSITORY_ROOT, ...WIZARD_MODULE.split('/'))));
+    const wizard = String(webSources().get(join(REPOSITORY_ROOT, ...WIZARD_MODULE.split('/'))));
     expect(wizard).toContain('The route is the single place');
     // And it is true today, measured rather than quoted.
     const trees = ['features/appointments/', 'features/receptions/'];
-    const offenders = [...collectSources().entries()].filter(
+    const offenders = [...webSources().entries()].filter(
       ([file, source]) =>
         trees.some((tree) => posix(file).includes(tree)) &&
         /\bholds\s*\(/.test(stripComments(String(source)))
@@ -600,26 +690,35 @@ describe('the route set is DERIVED, not a hand-written list of segments', () => 
     expect(PLAN).not.toContain('(dashboard)/receptions');
   });
 
-  it('finds the eight pages by what they LOAD, including the singular walk-in', () => {
-    const routes = phaseRoutes().map((file: string) => posix(file));
-    expect(routes).toHaveLength(8);
+  it('finds the ten pages by what they LOAD, including the singular walk-in', () => {
+    const routes = webRoutes().map((file: string) => posix(file));
+    // Eight P1-28 screens, plus the P1-29 technician workspace, which loads the
+    // shared capture field out of `features/receptions` — see the census above.
+    expect(routes).toHaveLength(10);
     expect(routes.some((route: string) => route.includes('/reception/walk-in/'))).toBe(true);
     expect(routes.some((route: string) => route.endsWith('/appointments/new/page.tsx'))).toBe(true);
     expect(routes.some((route: string) => route.includes('/acknowledgement/'))).toBe(true);
-    expect(routeSegments()).toEqual(['appointments', 'reception', 'receptions']);
+    expect(routes.some((route: string) => route.endsWith('/technicians/me/page.tsx'))).toBe(true);
+    expect(segmentsOnce()).toEqual([
+      'appointments',
+      'reception',
+      'receptions',
+      'technicians',
+      'work-orders',
+    ]);
   });
 
   it('is a strict subset of the dashboard tree, so the derivation discriminates', () => {
-    // Thirty pages exist under `(dashboard)`; eight load a P1-28 feature tree.
+    // Thirty-odd pages exist under `(dashboard)`; nine load a P1-28 feature tree.
     // Without this the derivation could be "every page" and still look right.
-    const everyPage = [...collectSources().keys()].filter(
+    const everyPage = [...webSources().keys()].filter(
       (file: string) =>
         posix(file).includes('/app/[locale]/(dashboard)/') && posix(file).endsWith('/page.tsx')
     );
     expect(everyPage.length).toBeGreaterThan(20);
-    expect(phaseRoutes().length).toBeLessThan(everyPage.length);
+    expect(webRoutes().length).toBeLessThan(everyPage.length);
     // The CRM customer list is a dashboard page and is NOT P1-28's.
-    const derived = phaseRoutes().map((file: string) => posix(file));
+    const derived = webRoutes().map((file: string) => posix(file));
     expect(derived.some((route: string) => route.includes('/crm/'))).toBe(false);
   });
 });
@@ -634,7 +733,7 @@ describe('the derivations the rules stand on', () => {
      * every one of them as a read and reported `veh.vehicle.odometer.record` as
      * surplus privilege on the check-in wizard.
      */
-    const wrappers = writeWrappers([...collectSources().entries()]);
+    const wrappers = writeWrappers([...webSources().entries()]);
     expect(wrappers.get('writeVehicle')).toBe('POST');
     expect(wrappers.size).toBeGreaterThan(0);
 

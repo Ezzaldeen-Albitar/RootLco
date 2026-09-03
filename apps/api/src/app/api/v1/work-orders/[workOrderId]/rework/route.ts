@@ -53,7 +53,7 @@ export const dynamic = 'force-dynamic';
 
 const Params = z.object({ workOrderId: schemas.uuid });
 
-const Body = z
+export const Body = z
   .object({
     rootCause: z.string().trim().min(1).max(MAX_ROOT_CAUSE),
     correctiveAction: z.string().trim().min(1).max(MAX_CORRECTIVE_ACTION),
@@ -68,6 +68,7 @@ const Body = z
 
 export const REWORK_CREATE_OPERATION = defineOperation({
   id: 'qms.rework-create',
+  successStatus: 201,
   module: 'quality',
   method: 'POST',
   path: '/work-orders/{workOrderId}/rework',

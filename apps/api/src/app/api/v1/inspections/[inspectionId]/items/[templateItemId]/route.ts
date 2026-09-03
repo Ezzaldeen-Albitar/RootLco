@@ -54,7 +54,7 @@ export const dynamic = 'force-dynamic';
 
 const Params = z.object({ inspectionId: schemas.uuid, templateItemId: schemas.uuid });
 
-const Body = z
+export const Body = z
   .object({
     resultValue: z.string().trim().min(1).max(MAX_RESULT_VALUE).optional(),
     notApplicableReason: z.string().trim().min(1).max(MAX_NOT_APPLICABLE_REASON).optional(),

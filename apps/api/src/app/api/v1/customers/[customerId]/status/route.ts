@@ -20,7 +20,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const Params = z.object({ customerId: schemas.uuid });
-const Body = z
+export const Body = z
   .object({
     lifecycleStatus: z.enum(SETTABLE_LIFECYCLE_STATES),
     reason: z.string().min(MIN_REASON).max(MAX_REASON),

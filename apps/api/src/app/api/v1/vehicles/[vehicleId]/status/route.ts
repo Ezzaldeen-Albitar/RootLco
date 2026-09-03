@@ -20,7 +20,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const Params = z.object({ vehicleId: schemas.uuid });
-const Body = z
+export const Body = z
   .object({
     lifecycleStatus: z.enum(VEHICLE_LIFECYCLE_STATUSES).optional(),
     workshopStatus: z.enum(WORKSHOP_STATUSES).optional(),

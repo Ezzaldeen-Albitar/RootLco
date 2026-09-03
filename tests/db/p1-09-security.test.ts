@@ -62,8 +62,8 @@ afterAll(async () => {
 });
 
 describe('P1-09 security posture (auto-enumerated)', () => {
-  it('discovered the full wo/dia/tech/qms table set (44)', () => {
-    expect(tables.length).toBe(44);
+  it('discovered the full wo/dia/tech/qms table set (47)', () => {
+    expect(tables.length).toBe(47);
   });
 
   it('every table has RLS enabled AND forced', async () => {

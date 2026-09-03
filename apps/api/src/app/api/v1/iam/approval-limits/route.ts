@@ -32,7 +32,7 @@ const Query = z.object({
   userId: schemas.uuid.optional(),
 });
 
-const CreateBody = z
+export const CreateBody = z
   .object({
     companyId: schemas.uuid,
     roleId: schemas.uuid.nullable().optional(),
@@ -66,6 +66,7 @@ export const APPROVAL_LIMIT_LIST_OPERATION = defineOperation({
 
 export const APPROVAL_LIMIT_CREATE_OPERATION = defineOperation({
   id: 'iam.approval-limit-create',
+  successStatus: 201,
   module: 'iam',
   method: 'POST',
   path: '/iam/approval-limits',

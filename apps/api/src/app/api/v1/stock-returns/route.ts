@@ -36,7 +36,7 @@ const QuantityString = z
     `must be a decimal string of at most 3 places (max ${QUANTITY_MAX})`
   );
 
-const CreateBody = z
+export const CreateBody = z
   .object({
     partIssueId: schemas.uuid,
     quantity: QuantityString,
@@ -46,6 +46,7 @@ const CreateBody = z
 
 export const STOCK_RETURN_CREATE_OPERATION = defineOperation({
   id: 'inv.stock-return-create',
+  successStatus: 201,
   module: 'inventory',
   method: 'POST',
   path: '/stock-returns',

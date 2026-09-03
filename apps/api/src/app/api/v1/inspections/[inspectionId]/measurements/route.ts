@@ -48,7 +48,7 @@ export const dynamic = 'force-dynamic';
 
 const Params = z.object({ inspectionId: schemas.uuid });
 
-const Body = z
+export const Body = z
   .object({
     templateItemId: schemas.uuid.optional(),
     label: z.string().trim().min(1).max(MAX_MEASUREMENT_LABEL),
@@ -62,6 +62,7 @@ const Body = z
 
 export const DIAGNOSTIC_MEASUREMENT_OPERATION = defineOperation({
   id: 'dia.diagnostic-measurement-record',
+  successStatus: 201,
   module: 'diagnostics',
   method: 'POST',
   path: '/inspections/{inspectionId}/measurements',

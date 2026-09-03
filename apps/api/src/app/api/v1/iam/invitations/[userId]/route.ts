@@ -19,7 +19,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const Params = z.object({ userId: schemas.uuid });
-const CancelBody = z.object({ reason: z.string().min(1).max(500) });
+export const CancelBody = z.object({ reason: z.string().min(1).max(500) });
 
 export const INVITATION_CANCEL_OPERATION = defineOperation({
   id: 'iam.invitation-cancel',

@@ -56,7 +56,7 @@ const Evidence = z
   })
   .strict();
 
-const Body = z
+export const Body = z
   .object({
     // `rejected`, not `declined` — the real vocabulary from
     // `ck_approval_decisions_decision`.
@@ -70,6 +70,7 @@ const Body = z
 
 export const QUOTATION_ITEM_DECIDE_OPERATION = defineOperation({
   id: 'quo.quotation-item-decide',
+  successStatus: 201,
   module: 'quotation',
   method: 'POST',
   path: '/quotation-items/{quotationItemId}/decisions',

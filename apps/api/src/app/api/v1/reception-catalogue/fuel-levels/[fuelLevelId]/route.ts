@@ -30,7 +30,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const Params = z.object({ fuelLevelId: schemas.uuid });
-const Body = z.object({ name: z.string().trim().min(1).max(MAX_CATALOGUE_NAME) }).strict();
+export const Body = z.object({ name: z.string().trim().min(1).max(MAX_CATALOGUE_NAME) }).strict();
 
 export const FUEL_LEVEL_UPDATE_OPERATION = defineOperation({
   id: 'rec.catalogue-fuel-level-update',

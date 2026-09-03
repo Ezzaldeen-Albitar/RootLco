@@ -16,7 +16,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const Params = z.object({ grantId: schemas.uuid });
-const ScopeBody = z
+export const ScopeBody = z
   .object({
     scopeType: z.enum(['company', 'branch', 'department']),
     companyId: schemas.uuid,
@@ -40,6 +40,7 @@ export const GRANT_SCOPE_LIST_OPERATION = defineOperation({
 
 export const GRANT_SCOPE_ADD_OPERATION = defineOperation({
   id: 'iam.grant-scope-add',
+  successStatus: 201,
   module: 'iam',
   method: 'POST',
   path: '/iam/grants/{grantId}/scopes',

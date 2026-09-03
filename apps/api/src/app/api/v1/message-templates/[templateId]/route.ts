@@ -18,7 +18,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const Params = z.object({ templateId: schemas.uuid });
-const Body = z
+export const Body = z
   .object({
     name: z.string().min(1).max(200).optional(),
     description: z.string().min(1).max(1000).nullable().optional(),

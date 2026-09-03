@@ -364,6 +364,22 @@ NOT claimed implemented here.
 | `occurred_at`    | timestamp with time zone | NO   | now()             | internal       |
 | `correlation_id` | uuid                     | YES  | —                 | internal       |
 
+### `org.company_status_history`
+
+**Scope:** tenant · **Retention class:** evidence-audit · Append-only legal-company lifecycle evidence over the two-state vocabulary (`active`/`inactive`), the same shape as `org.branch_status_history` above. Written by the `org.emit_company_status_history` trigger on `org.legal_companies` rather than by any caller, so a direct `UPDATE` of the column records itself and an `UPDATE` that publishes no `app.status_reason` is refused — the one respect in which this differs from the branch precedent, where the transition function owns the `INSERT` and a raw write leaves no trace. Attribution is server-derived by `shared.stamp_status_history()`. Note that company status gates nothing else in the database: `org.guard_parent_company_live()` reads `deleted_at` and `archived_at` only, so an inactive company still receives new branches.
+
+| Column           | Type                     | Null | Default           | Classification |
+| ---------------- | ------------------------ | ---- | ----------------- | -------------- |
+| `id`             | uuid                     | NO   | gen_random_uuid() | internal       |
+| `tenant_id`      | uuid                     | NO   | —                 | internal       |
+| `company_id`     | uuid                     | NO   | —                 | internal       |
+| `from_state`     | text                     | YES  | —                 | internal       |
+| `to_state`       | text                     | NO   | —                 | internal       |
+| `reason`         | text                     | NO   | —                 | internal       |
+| `actor_id`       | uuid                     | NO   | —                 | internal       |
+| `occurred_at`    | timestamp with time zone | NO   | now()             | internal       |
+| `correlation_id` | uuid                     | YES  | —                 | internal       |
+
 ### `org.departments`
 
 **Scope:** tenant/company/branch · **Retention class:** operational · Branch child; live-code uniqueness (archive frees the code).
@@ -726,6 +742,25 @@ credential authority. Contact fields are classified `restricted`.
 | `created_by`     | uuid                     | NO   | —                 | internal       |
 | `updated_at`     | timestamp with time zone | YES  | —                 | internal       |
 | `updated_by`     | uuid                     | YES  | —                 | internal       |
+
+### `iam.platform_grants`
+
+**Scope:** platform (no tenant) · **Retention class:** evidence-audit · Holds an account's authority over a `platform.*` permission code, outside every tenant. Read by `iam.has_platform_authority`, which is what a `platform.` code resolves through instead of `iam.has_permission`: the tenant-bound resolver requires an active account in the CURRENT tenant, which a platform operator creating a tenant does not have. Deliberately carries NO `tenant_id` — the authority to create and suspend tenants is not a tenant's to hold — which is why it is a documented exception to the tenant-column rule. Append-and-revoke rather than update: `tg_platform_grants_immutable` fixes the account, the code and the granting identity, so withdrawal is a revocation stamped in place and never a rewrite of who was granted what.
+
+| Column            | Type                     | Null | Default           | Classification |
+| ----------------- | ------------------------ | ---- | ----------------- | -------------- |
+| `id`              | uuid                     | NO   | gen_random_uuid() | internal       |
+| `account_id`      | uuid                     | NO   | —                 | internal       |
+| `permission_code` | text                     | NO   | —                 | internal       |
+| `granted_by`      | uuid                     | NO   | —                 | internal       |
+| `granted_at`      | timestamp with time zone | NO   | now()             | internal       |
+| `revoked_by`      | uuid                     | YES  | —                 | internal       |
+| `revoked_at`      | timestamp with time zone | YES  | —                 | internal       |
+| `record_version`  | integer                  | NO   | 1                 | internal       |
+| `created_at`      | timestamp with time zone | NO   | now()             | internal       |
+| `created_by`      | uuid                     | NO   | —                 | internal       |
+| `updated_at`      | timestamp with time zone | YES  | —                 | internal       |
+| `updated_by`      | uuid                     | YES  | —                 | internal       |
 
 ### `iam.grant_scopes`
 
@@ -1097,57 +1132,73 @@ credential authority. Contact fields are classified `restricted`.
 
 **Scope:** platform + tenant (mirrors template) · **Retention class:** evidence-audit · Governed template content with one-way draft → approved → retired lifecycle. Approved content is immutable, and an active version cannot be retired. Runtime SELECT-only.
 
-| Column           | Type                     | Null | Default           | Classification |
-| ---------------- | ------------------------ | ---- | ----------------- | -------------- |
-| `id`             | uuid                     | NO   | gen_random_uuid() | internal       |
-| `tenant_id`      | uuid                     | YES  | —                 | internal       |
-| `template_id`    | uuid                     | NO   | —                 | internal       |
-| `version_number` | integer                  | NO   | —                 | internal       |
-| `subject`        | text                     | YES  | —                 | restricted     |
-| `body`           | text                     | NO   | —                 | restricted     |
-| `content_hash`   | bytea                    | NO   | —                 | internal       |
-| `status`         | text                     | NO   | 'draft'           | internal       |
-| `approved_at`    | timestamp with time zone | YES  | —                 | internal       |
-| `approved_by`    | uuid                     | YES  | —                 | internal       |
-| `retired_at`     | timestamp with time zone | YES  | —                 | internal       |
-| `record_version` | integer                  | NO   | 1                 | internal       |
-| `created_at`     | timestamp with time zone | NO   | now()             | internal       |
-| `created_by`     | uuid                     | NO   | —                 | internal       |
-| `updated_at`     | timestamp with time zone | YES  | —                 | internal       |
-| `updated_by`     | uuid                     | YES  | —                 | internal       |
+| Column            | Type                     | Null | Default           | Classification |
+| ----------------- | ------------------------ | ---- | ----------------- | -------------- |
+| `id`              | uuid                     | NO   | gen_random_uuid() | internal       |
+| `tenant_id`       | uuid                     | YES  | —                 | internal       |
+| `template_id`     | uuid                     | NO   | —                 | internal       |
+| `version_number`  | integer                  | NO   | —                 | internal       |
+| `subject`         | text                     | YES  | —                 | restricted     |
+| `body`            | text                     | NO   | —                 | restricted     |
+| `content_hash`    | bytea                    | NO   | —                 | internal       |
+| `status`          | text                     | NO   | 'draft'           | internal       |
+| `approved_at`     | timestamp with time zone | YES  | —                 | internal       |
+| `approved_by`     | uuid                     | YES  | —                 | internal       |
+| `retired_at`      | timestamp with time zone | YES  | —                 | internal       |
+| `record_version`  | integer                  | NO   | 1                 | internal       |
+| `created_at`      | timestamp with time zone | NO   | now()             | internal       |
+| `created_by`      | uuid                     | NO   | —                 | internal       |
+| `updated_at`      | timestamp with time zone | YES  | —                 | internal       |
+| `updated_by`      | uuid                     | YES  | —                 | internal       |
+| `owner_tenant_id` | uuid                     | NO   | generated         | internal       |
+
+### `shared.template_version_approvals`
+
+**Scope:** platform + tenant (mirrors the version it witnesses) · **Retention class:** evidence-audit · Immutable approval witness: this concrete template version entered an approved state under this owning scope, at this time. Append-only — SELECT+INSERT only, no UPDATE or DELETE grant to any role, and nothing at all for `app_worker`. Exists so an asynchronous consumer can prove approval-at-selection-time without reading template tables, and so a later retirement cannot retroactively invalidate an already-emitted event.
+
+| Column                | Type                     | Null | Default           | Classification |
+| --------------------- | ------------------------ | ---- | ----------------- | -------------- |
+| `id`                  | uuid                     | NO   | gen_random_uuid() | internal       |
+| `tenant_id`           | uuid                     | YES  | —                 | internal       |
+| `owner_tenant_id`     | uuid                     | NO   | —                 | internal       |
+| `template_version_id` | uuid                     | NO   | —                 | internal       |
+| `approved_at`         | timestamp with time zone | NO   | now()             | internal       |
+| `approved_by`         | uuid                     | NO   | —                 | internal       |
 
 ### `shared.outbound_messages`
 
 **Scope:** tenant · **Retention class:** operational · Tenant-scoped outbound-message envelope. Phase 1 channels are exactly `email` and `in_app`; purposes are exactly `transactional`, `marketing`, and `system`. A recipient is represented by a tenant-bound user and/or a 32-byte destination digest—never a plaintext external address. Only the rendered-content integrity digest is stored; rendering and transient content belong to the backend dispatch phase and are not persisted here. Optional template versions are approved and platform-or-same-tenant. Rows start `pending` and follow the guarded delivery lifecycle. Runtime SELECT-only.
 
-| Column                | Type                     | Null | Default           | Classification |
-| --------------------- | ------------------------ | ---- | ----------------- | -------------- |
-| `id`                  | uuid                     | NO   | gen_random_uuid() | internal       |
-| `tenant_id`           | uuid                     | NO   | —                 | internal       |
-| `company_id`          | uuid                     | YES  | —                 | internal       |
-| `branch_id`           | uuid                     | YES  | —                 | internal       |
-| `template_version_id` | uuid                     | YES  | —                 | internal       |
-| `channel`             | text                     | NO   | —                 | internal       |
-| `purpose`             | text                     | NO   | —                 | internal       |
-| `recipient_digest`    | bytea                    | YES  | —                 | restricted     |
-| `recipient_user_id`   | uuid                     | YES  | —                 | restricted     |
-| `body_sha256`         | bytea                    | NO   | —                 | internal       |
-| `dedupe_key`          | text                     | NO   | —                 | internal       |
-| `consent_ref`         | text                     | YES  | —                 | restricted     |
-| `status`              | text                     | NO   | 'pending'         | internal       |
-| `retry_count`         | integer                  | NO   | 0                 | internal       |
-| `failure_class`       | text                     | YES  | —                 | internal       |
-| `queued_at`           | timestamp with time zone | YES  | —                 | internal       |
-| `sending_at`          | timestamp with time zone | YES  | —                 | internal       |
-| `sent_at`             | timestamp with time zone | YES  | —                 | internal       |
-| `delivered_at`        | timestamp with time zone | YES  | —                 | internal       |
-| `failed_at`           | timestamp with time zone | YES  | —                 | internal       |
-| `cancelled_at`        | timestamp with time zone | YES  | —                 | internal       |
-| `record_version`      | integer                  | NO   | 1                 | internal       |
-| `created_at`          | timestamp with time zone | NO   | now()             | internal       |
-| `created_by`          | uuid                     | NO   | —                 | internal       |
-| `updated_at`          | timestamp with time zone | YES  | —                 | internal       |
-| `updated_by`          | uuid                     | YES  | —                 | internal       |
+| Column                     | Type                     | Null | Default           | Classification |
+| -------------------------- | ------------------------ | ---- | ----------------- | -------------- |
+| `id`                       | uuid                     | NO   | gen_random_uuid() | internal       |
+| `tenant_id`                | uuid                     | NO   | —                 | internal       |
+| `company_id`               | uuid                     | YES  | —                 | internal       |
+| `branch_id`                | uuid                     | YES  | —                 | internal       |
+| `template_version_id`      | uuid                     | YES  | —                 | internal       |
+| `channel`                  | text                     | NO   | —                 | internal       |
+| `purpose`                  | text                     | NO   | —                 | internal       |
+| `recipient_digest`         | bytea                    | YES  | —                 | restricted     |
+| `recipient_user_id`        | uuid                     | YES  | —                 | restricted     |
+| `body_sha256`              | bytea                    | NO   | —                 | internal       |
+| `dedupe_key`               | text                     | NO   | —                 | internal       |
+| `consent_ref`              | text                     | YES  | —                 | restricted     |
+| `status`                   | text                     | NO   | 'pending'         | internal       |
+| `retry_count`              | integer                  | NO   | 0                 | internal       |
+| `failure_class`            | text                     | YES  | —                 | internal       |
+| `queued_at`                | timestamp with time zone | YES  | —                 | internal       |
+| `sending_at`               | timestamp with time zone | YES  | —                 | internal       |
+| `sent_at`                  | timestamp with time zone | YES  | —                 | internal       |
+| `delivered_at`             | timestamp with time zone | YES  | —                 | internal       |
+| `failed_at`                | timestamp with time zone | YES  | —                 | internal       |
+| `cancelled_at`             | timestamp with time zone | YES  | —                 | internal       |
+| `record_version`           | integer                  | NO   | 1                 | internal       |
+| `created_at`               | timestamp with time zone | NO   | now()             | internal       |
+| `created_by`               | uuid                     | NO   | —                 | internal       |
+| `updated_at`               | timestamp with time zone | YES  | —                 | internal       |
+| `updated_by`               | uuid                     | YES  | —                 | internal       |
+| `approval_witness_id`      | uuid                     | YES  | —                 | internal       |
+| `template_owner_tenant_id` | uuid                     | YES  | —                 | internal       |
 
 ### `shared.delivery_attempts`
 
@@ -3411,6 +3462,14 @@ its columns. Restricted columns (gated by `iam.sensitive.view`): `certificate_nu
 
 `id`, `tenant_id`, `company_id`, `branch_id`, `job_id`, `technician_profile_id`, `assignment_role`, `valid_from`, `valid_to`, `reason`, `record_version`, `created_at`, `created_by`, `updated_at`, `updated_by`, `deleted_at`, `deleted_by`
 
+### wo.job_blocker_events
+
+`id`, `tenant_id`, `company_id`, `branch_id`, `job_id`, `event`, `resolves_event_id`, `note`, `occurred_at`, `created_by`
+
+### wo.job_evidence
+
+`id`, `tenant_id`, `company_id`, `branch_id`, `job_id`, `document_version_id`, `evidence_type`, `note`, `created_at`, `created_by`
+
 ### wo.job_states
 
 `id`, `scope`, `tenant_id`, `code`, `name`, `is_terminal`, `reason_required`, `assignment_required`, `labor_allowed`, `closure_eligible`, `status`, `record_version`, `created_at`, `created_by`, `updated_at`, `updated_by`, `deleted_at`, `deleted_by`
@@ -3423,9 +3482,13 @@ its columns. Restricted columns (gated by `iam.sensitive.view`): `certificate_nu
 
 `id`, `scope`, `tenant_id`, `from_state`, `to_state`, `requires_reason`, `is_active`, `record_version`, `created_at`, `created_by`, `updated_at`, `updated_by`, `deleted_at`, `deleted_by`
 
+### wo.job_work_logs
+
+`id`, `tenant_id`, `company_id`, `branch_id`, `job_id`, `entry`, `logged_at`, `created_at`, `created_by`
+
 ### wo.jobs
 
-`id`, `tenant_id`, `company_id`, `branch_id`, `work_order_id`, `title`, `job_type`, `state`, `requires_diagnostic`, `record_version`, `created_at`, `created_by`, `updated_at`, `updated_by`, `deleted_at`, `deleted_by`
+`id`, `tenant_id`, `company_id`, `branch_id`, `work_order_id`, `title`, `job_type`, `department_id`, `state`, `requires_diagnostic`, `record_version`, `created_at`, `created_by`, `updated_at`, `updated_by`, `deleted_at`, `deleted_by`
 
 ### wo.required_parts
 

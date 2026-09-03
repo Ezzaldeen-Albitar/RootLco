@@ -36,7 +36,7 @@ const QuantityString = z
     `must be a decimal string of at most 3 places (max ${QUANTITY_MAX})`
   );
 
-const CreateBody = z
+export const CreateBody = z
   .object({
     itemId: schemas.uuid,
     locationId: schemas.uuid,
@@ -46,6 +46,7 @@ const CreateBody = z
 
 export const OPENING_BATCH_LINE_CREATE_OPERATION = defineOperation({
   id: 'inv.opening-batch-line-create',
+  successStatus: 201,
   module: 'inventory',
   method: 'POST',
   path: '/opening-inventory-batches/{batchId}/lines',

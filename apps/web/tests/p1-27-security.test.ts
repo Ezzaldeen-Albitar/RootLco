@@ -433,8 +433,14 @@ describe('P1-27-SEC-001 — permission and resolved scope', () => {
       'lib/api/idempotent-operations.ts',
       // The guard that REFUSES a client-asserted scope.
       'lib/api/read-operation.ts',
-      // A server-side session legitimately holds the resolved tenant.
-      'lib/api/session-cookie.ts',
+      // `session-cookie.ts` was the third, and it has LEFT this list rather than
+      // been removed from it. It matched `client-asserted-scope` on the signature
+      // `writeTenantHint(tenantId: string, …)` — a helper with no caller anywhere,
+      // carried since P1-26 removed the Workspace field from sign-in. PRE-P1-29
+      // deleted it, so the file now names no scope at all and matches no absence
+      // rule. The exclusion is SHORTER than it was, which is the direction this
+      // case exists to notice: it fails on a fourth match, and it failed on a
+      // third disappearing too.
     ]);
 
     // And the sweeps really are the ones the SEC-002 cases run: a rule set that

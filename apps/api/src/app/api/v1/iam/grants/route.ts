@@ -35,7 +35,7 @@ const ScopeInput = z
   })
   .strict();
 
-const GrantBody = z
+export const GrantBody = z
   .object({
     userId: schemas.uuid,
     roleId: schemas.uuid,
@@ -48,6 +48,7 @@ const GrantBody = z
 
 export const GRANT_ISSUE_OPERATION = defineOperation({
   id: 'iam.grant-issue',
+  successStatus: 201,
   module: 'iam',
   method: 'POST',
   path: '/iam/grants',

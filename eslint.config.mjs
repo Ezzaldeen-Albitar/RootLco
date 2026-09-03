@@ -31,8 +31,20 @@ const eslintConfig = defineConfig([
   // The whole directory is ignored rather than the one file: its contents are
   // CLI-version-dependent (`pgdelta`, `start-secrets`, `cli-latest` today), so
   // naming a file would fix this machine and break on the next CLI release.
+  // `.tmp/**` is the SAME defect a THIRD time (PRE-P1-29-BR-06). It is the
+  // repository's git-ignored scratch directory and currently holds the B1 pg_net
+  // investigation's working files — hand-written probe scripts, not application
+  // code. Root ESLint walked them and reported parsing errors and unused-variable
+  // warnings in files no gate is meant to police, failing `lint` for developers
+  // while hosted CI, which checks out a clean tree, never sees the directory at
+  // all.
+  //
+  // Ignoring the directory is the fix rather than deleting its contents: those
+  // files are evidence for an OPEN security blocker, and a lint gate is not a
+  // reason to destroy them.
   globalIgnores([
     '.next/**',
+    '.tmp/**',
     '.next-dev/**',
     '.local/**',
     'out/**',

@@ -5,7 +5,48 @@ registry. Do not hand-edit.** Every column is read out of the
 `defineOperation` literal that guards the route, so this table cannot
 describe a surface the code does not expose, and cannot omit one it does.
 
-Operations in the registry: **305**. Delivered by P1-19: **58**.
+Operations in the registry: **352**. In the four P1-19 schemas: **94**. Delivered by P1-19: **58**.
+
+**36** operation(s) in these schemas were delivered by a LATER contract and are deliberately absent from the tables below — this document describes P1-19's surface, not the schemas'. They are named here so their absence is a stated fact rather than a gap, and every correctness reconciliation this script performs (seeded permission, catalogued audit action, non-inert branch scope) is applied to them exactly as it is to P1-19’s own.
+
+| Operation                                     | Owner           | Route                                                                                                        |
+| --------------------------------------------- | --------------- | ------------------------------------------------------------------------------------------------------------ |
+| `dia.diagnostic-type-list`                    | P1-29-W5        | `apps/api/src/app/api/v1/diagnostic-types/route.ts`                                                          |
+| `dia.template-create`                         | PRE-P1-29-BR-04 | `apps/api/src/app/api/v1/inspection-templates/route.ts`                                                      |
+| `dia.template-detail`                         | PRE-P1-29-BR-04 | `apps/api/src/app/api/v1/inspection-templates/[templateId]/route.ts`                                         |
+| `dia.template-item-create`                    | PRE-P1-29-BR-04 | `apps/api/src/app/api/v1/template-versions/[versionId]/items/route.ts`                                       |
+| `dia.template-list`                           | PRE-P1-29-BR-04 | `apps/api/src/app/api/v1/inspection-templates/route.ts`                                                      |
+| `dia.template-update`                         | PRE-P1-29-BR-04 | `apps/api/src/app/api/v1/inspection-templates/[templateId]/route.ts`                                         |
+| `dia.template-version-create`                 | PRE-P1-29-BR-04 | `apps/api/src/app/api/v1/inspection-templates/[templateId]/versions/route.ts`                                |
+| `dia.template-version-item-list`              | P1-29-W7        | `apps/api/src/app/api/v1/template-versions/[versionId]/items/route.ts`                                       |
+| `dia.template-version-list-publishable`       | PRE-P1-29-BR-04 | `apps/api/src/app/api/v1/jobs/[jobId]/inspection-templates/route.ts`                                         |
+| `dia.template-version-status-set`             | PRE-P1-29-BR-04 | `apps/api/src/app/api/v1/template-versions/[versionId]/status/route.ts`                                      |
+| `qms.qc-check-list`                           | P1-29-W8        | `apps/api/src/app/api/v1/qc-checks/route.ts`                                                                 |
+| `qms.qc-record-branch-list`                   | PRE-P1-29-BR-06 | `apps/api/src/app/api/v1/quality-controls/route.ts`                                                          |
+| `tech.technician-availability-record`         | PRE-P1-29-BR-03 | `apps/api/src/app/api/v1/technicians/[technicianProfileId]/availability/route.ts`                            |
+| `tech.technician-availability-withdraw`       | PRE-P1-29-BR-03 | `apps/api/src/app/api/v1/technicians/[technicianProfileId]/availability/[availabilityId]/route.ts`           |
+| `tech.technician-certification-detail-record` | PRE-P1-29-BR-03 | `apps/api/src/app/api/v1/technicians/[technicianProfileId]/certifications/[certificationId]/detail/route.ts` |
+| `tech.technician-certification-record`        | PRE-P1-29-BR-03 | `apps/api/src/app/api/v1/technicians/[technicianProfileId]/certifications/route.ts`                          |
+| `tech.technician-certification-update`        | PRE-P1-29-BR-03 | `apps/api/src/app/api/v1/technicians/[technicianProfileId]/certifications/[certificationId]/route.ts`        |
+| `tech.technician-create`                      | PRE-P1-29-BR-03 | `apps/api/src/app/api/v1/technicians/route.ts`                                                               |
+| `tech.technician-detail`                      | PRE-P1-29-BR-03 | `apps/api/src/app/api/v1/technicians/[technicianProfileId]/route.ts`                                         |
+| `tech.technician-list`                        | PRE-P1-29-BR-03 | `apps/api/src/app/api/v1/technicians/route.ts`                                                               |
+| `tech.technician-me-queue`                    | PRE-P1-29-BR-01 | `apps/api/src/app/api/v1/technicians/me/queue/route.ts`                                                      |
+| `tech.technician-skill-set`                   | PRE-P1-29-BR-03 | `apps/api/src/app/api/v1/technicians/[technicianProfileId]/skills/[skillId]/route.ts`                        |
+| `tech.technician-skill-withdraw`              | PRE-P1-29-BR-03 | `apps/api/src/app/api/v1/technicians/[technicianProfileId]/skills/[skillId]/route.ts`                        |
+| `tech.technician-update`                      | PRE-P1-29-BR-03 | `apps/api/src/app/api/v1/technicians/[technicianProfileId]/route.ts`                                         |
+| `wo.job-blocker-list`                         | P1-29-W6        | `apps/api/src/app/api/v1/jobs/[jobId]/blockers/route.ts`                                                     |
+| `wo.job-blocker-raise`                        | P1-29-W6        | `apps/api/src/app/api/v1/jobs/[jobId]/blockers/route.ts`                                                     |
+| `wo.job-blocker-resolve`                      | P1-29-W6        | `apps/api/src/app/api/v1/blockers/[blockerId]/resolution/route.ts`                                           |
+| `wo.job-detail`                               | PRE-P1-29-BR-06 | `apps/api/src/app/api/v1/jobs/[jobId]/route.ts`                                                              |
+| `wo.job-evidence-list`                        | PRE-P1-29-BR-07 | `apps/api/src/app/api/v1/jobs/[jobId]/evidence/route.ts`                                                     |
+| `wo.job-evidence-record`                      | PRE-P1-29-BR-07 | `apps/api/src/app/api/v1/jobs/[jobId]/evidence/route.ts`                                                     |
+| `wo.job-list`                                 | PRE-P1-29-BR-06 | `apps/api/src/app/api/v1/jobs/route.ts`                                                                      |
+| `wo.job-work-log-list`                        | PRE-P1-29-BR-06 | `apps/api/src/app/api/v1/jobs/[jobId]/work-logs/route.ts`                                                    |
+| `wo.job-work-log-record`                      | PRE-P1-29-BR-06 | `apps/api/src/app/api/v1/jobs/[jobId]/work-logs/route.ts`                                                    |
+| `wo.work-order-catalogue`                     | PRE-P1-29-BR-06 | `apps/api/src/app/api/v1/work-order-catalogue/route.ts`                                                      |
+| `wo.work-order-evidence-list`                 | PRE-P1-29-BR-07 | `apps/api/src/app/api/v1/work-orders/[workOrderId]/evidence/route.ts`                                        |
+| `wo.work-order-timeline`                      | P1-29-W6        | `apps/api/src/app/api/v1/work-orders/[workOrderId]/timeline/route.ts`                                        |
 
 ## The surface
 

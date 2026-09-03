@@ -112,6 +112,18 @@ export const REGISTER = Object.freeze([
   },
   { name: 'validate:operation-coverage', owner: ROOT, tier: 'required', why: 'operation evidence' },
   { name: 'validate:openapi', owner: ROOT, tier: 'required', why: 'published contract' },
+  {
+    name: 'validate:openapi-success-status',
+    owner: ROOT,
+    tier: 'required',
+    why: 'the published success status is the one the handler returns',
+  },
+  {
+    name: 'validate:named-wire-shapes',
+    owner: ROOT,
+    tier: 'required',
+    why: 'no route serialises an anonymous type to the wire',
+  },
   { name: 'validate:exact-money', owner: ROOT, tier: 'required', why: 'decimal money surface' },
   { name: 'validate:p1-19-inventory', owner: ROOT, tier: 'required', why: 'phase inventory' },
   { name: 'validate:p1-20-inventory', owner: ROOT, tier: 'required', why: 'phase inventory' },
@@ -318,6 +330,66 @@ export const REGISTER = Object.freeze([
     why: 'every published P1-28 apt/rec read is mirrored, and any pending Frontend adapter is a fail-closed, task-owned, still-open debt',
   },
   {
+    name: 'validate:p1-29-payload-parity',
+    owner: ROOT,
+    tier: 'required',
+    // `PRE-P1-29-BR-08c`. A SIBLING of the two P1-28 gates above, never a
+    // generalisation of them: those are what P1-28's seal rests on, and widening
+    // one to reach P1-29 would change a gate a sealed phase depends on.
+    //
+    // It compares the hand-written web contract mirror against the REAL zod
+    // schemas, read as values — which is only possible because `BR-08b` exported
+    // them. The extraction runs under vitest, where `@/` resolves; a `.mjs` gate
+    // cannot import a TypeScript route module, and re-implementing zod semantics
+    // by hand is exactly what the export made unnecessary.
+    //
+    // Two things it deliberately does not do, both stated in its own output
+    // rather than left to be inferred from a green run: it does not check
+    // RESPONSES (no machine-readable response source exists in this repository),
+    // and it does not compare length, pattern or array-cardinality facets,
+    // because a TypeScript interface cannot carry them. That second ceiling is
+    // why the mirror declares one type per operation and shares none.
+    //
+    // It pins no counts. The contract's "34 bodies, one bodyless" was measured at
+    // 305 operations and the tree is at 334; a hard-coded number would fail on
+    // its first run, and relaxing the assertion to fix that would delete the
+    // anti-vacuity protection it exists for. It asserts a relationship instead.
+    // Mutation-proved by tests/ci/p1-29-payload-parity.test.ts, C1-C11.
+    why: 'every P1-29 request body is mirrored in apps/web field-for-field, and every omission is declared with a reason',
+  },
+  {
+    name: 'validate:p1-29-canonical-record',
+    owner: ROOT,
+    tier: 'required',
+    // The P1-29 canonical record states counts ABOUT THE TREE — how many Owner
+    // requirement rows, how many surfaces the read-model contract names, how
+    // many `dia.*` operations exist. Round five of P1-27 found thirteen stale
+    // counts in the phase records and they were one defect: a number written by
+    // hand that nothing recomputes. This reads the numbers out of the record and
+    // recomputes each from the tree, so the record cannot outlive what it says.
+    why: 'every count and reference in the P1-29 canonical record is derivable',
+  },
+  {
+    name: 'validate:p1-29-access',
+    owner: ROOT,
+    tier: 'required',
+    // `gate-before-read` for P1-29, ARMED BEFORE THE SCREENS EXIST. It examines
+    // zero route pages today, and that is deliberate rather than premature: a
+    // gate written after the screens land does not check them, it ratifies them,
+    // because whatever shape they were built in becomes the shape it accepts.
+    //
+    // A pass over an empty set proves nothing, so the gate says so in its own
+    // output and its teeth are proved by planting ungated pages —
+    // tests/ci/p1-29-access-gate.test.ts, seven cases including the P1-28 gate's
+    // recorded defect: a page whose only `holds` computes a control capability
+    // and denies nothing would read as gated to anything keyed on the first
+    // `holds` of any kind.
+    //
+    // A SIBLING of check-p1-28-access.mjs, which stays byte-identical because
+    // P1-28's seal rests on it.
+    why: 'every P1-29 route page denies and returns on a permission before its first awaited read',
+  },
+  {
     name: 'validate:p1-28-access',
     owner: ROOT,
     tier: 'required',
@@ -496,6 +568,39 @@ export const REGISTER = Object.freeze([
     why: 'apps/api is Backend-only — no page, stylesheet, client component or tracked build output',
   },
   {
+    name: 'validate:permission-catalog',
+    owner: ROOT,
+    tier: 'required',
+    // `docs/database/permission-catalog-reference.md` declared itself a
+    // rendering of the IAM seed and said that regenerating it after a seed
+    // change was part of that change — and then nothing regenerated it and
+    // nothing read it. It was reconciled by hand once, against a seed of 43
+    // codes, and stood still through six phases while the seed reached 112,
+    // holding not one `tech.` code. Every tier stayed green throughout, because
+    // the only executable claim over that catalog is a FLOOR in
+    // `tests/db/iam-seeds.test.ts` (at least 19 codes across `org` and `iam`),
+    // and a floor cannot detect growth. This is the missing half: the document
+    // is derived from the seed, the risk vocabulary from the CHECK constraint
+    // that decides it, and the baseline-role table from the fixture that proves
+    // it — so a seed change without a regeneration fails here rather than
+    // ageing quietly into a reference that reads authoritative and is wrong.
+    // Mutation-proved by tests/ci/permission-catalog-reference.test.ts, which
+    // plants one defect at a time — a wildcard code, a domain column that
+    // disagrees with its own code, a duplicate, a reordered INSERT, a row
+    // commented out of the catalog — and asserts this names that one.
+    why: 'the permission catalog reference still renders the seed it claims to render',
+  },
+  {
+    name: 'validate:permission-parity',
+    owner: ROOT,
+    tier: 'required',
+    // `required` rather than `informational` because failing it IS a verdict.
+    // `defineOperation` never checks a code against the catalogue, and no RLS
+    // policy in the work-order domain consults a permission code, so a misspelt
+    // code has no second line of defence anywhere.
+    why: 'every permission an operation or a navigation entry declares exists in the seeded catalogue',
+  },
+  {
     name: 'validate:generated-artifacts',
     owner: ROOT,
     tier: 'required',
@@ -611,6 +716,38 @@ export const REGISTER = Object.freeze([
     owner: ROOT,
     tier: 'environment',
     why: 'domain classification validators — every one needs PostgreSQL (P1-25-F-023)',
+  },
+  {
+    name: 'verify:database',
+    owner: ROOT,
+    tier: 'environment',
+    // The local mirror of the hosted `database` job in `ci.yml`, in that job's own
+    // order: seed state, the six classifications, then the Database tier. It
+    // exists because PR #263 (BR-03) added one row to
+    // `supabase/seeds/04_iam_permission_catalog.sql` and stale-dated two
+    // hand-maintained mirrors in `tests/db/` — a pinned catalogue total and an
+    // exhaustive permission-code list — while every local gate the author ran
+    // stayed green and three hosted jobs went red.
+    //
+    // Deliberately NOT reachable from `verify:workspaces`, and that is the whole
+    // design. The aggregate is the command a developer runs before every commit,
+    // including a docs-only one, and the clean room mirrors it to claim that a
+    // fresh clone passes "exactly what a developer runs"; requiring a live
+    // PostgreSQL would make that claim false for anyone without the stack up and
+    // would train people to skip the aggregate — the precise failure this
+    // register exists to prevent. The clean room also runs `test:db` INSIDE its
+    // schema-hash envelope and runs the aggregate AFTER the closing hash, so a
+    // `test:db` folded into the aggregate would execute a schema-mutating suite
+    // outside the envelope that guards it, and double-run a serial suite.
+    //
+    // `environment` is therefore the honest tier, with the honest cost stated:
+    // nothing enforces this command. It is documented as the pre-push step in
+    // CONTRIBUTING §8 for any change touching `supabase/seeds/**` or
+    // `supabase/migrations/**`. The durable fix for the defect class is to
+    // derive those two `tests/db/` mirrors from the seed file instead of
+    // maintaining them by hand; this aggregate shortens the feedback loop, it
+    // does not close the hole.
+    why: 'the pre-push Database aggregate — seed state, classifications and the Database tier, all needing PostgreSQL (mirrors the hosted `database` job)',
   },
   {
     name: 'validate:use-server-exports',

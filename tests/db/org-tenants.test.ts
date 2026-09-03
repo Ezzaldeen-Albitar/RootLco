@@ -18,6 +18,7 @@ import {
   TENANT_A,
   TENANT_B,
   USER_A,
+  setContext,
   withRolledBackTx,
 } from './helpers';
 
@@ -169,6 +170,15 @@ describe('org.change_tenant_status — atomic transition + append-only history',
     const client = await admin.connect();
     try {
       await client.query('BEGIN');
+      // M3 makes history a trigger emission stamped by
+      // shared.stamp_status_history(), which derives the actor from
+      // iam.current_user_id() and RAISES without one. The frozen slice-01
+      // contract requires exactly that — "the function must be called from a
+      // session carrying an actor" — and org.change_tenant_status deliberately
+      // publishes app.status_reason and app.correlation_id but NEVER app.user_id.
+      // p_actor_id is retained for signature compatibility and is not bound into
+      // the row, so passing it is no longer enough: the SESSION must carry one.
+      await setContext(client, { userId: USER_A });
       await client.query(`SELECT org.change_tenant_status($1, 'suspended', 'fixture: pause', $2)`, [
         TENANT_A,
         USER_A,
@@ -196,31 +206,46 @@ describe('org.change_tenant_status — atomic transition + append-only history',
       );
       expect(hAfter.rows[0].n).toBe(0);
     } finally {
+      // ROLLBACK unconditionally. The explicit one above is inside the try, so a
+      // failing assertion before it released a client with an OPEN transaction
+      // back to the pool, and the next test to draw that connection failed with
+      // 25P02 — one real failure reported as three.
+      await client.query('ROLLBACK').catch(() => undefined);
       client.release();
     }
   });
 
   it('a transition without a reason is rejected (23514)', async () => {
-    await expectSqlState(
-      admin.query(`SELECT org.change_tenant_status($1, 'suspended', '   ', $2)`, [
-        TENANT_A,
-        USER_A,
-      ]),
-      '23514'
-    );
+    await withRolledBackTx(admin, { tenantId: TENANT_A, userId: USER_A }, async (c) => {
+      await expectSqlState(
+        c.query(`SELECT org.change_tenant_status($1, 'suspended', '   ', $2)`, [TENANT_A, USER_A]),
+        '23514'
+      );
+    });
   });
 
   it('a no-op transition is rejected (23514)', async () => {
-    await expectSqlState(
-      admin.query(`SELECT org.change_tenant_status($1, 'active', 'no-op', $2)`, [TENANT_A, USER_A]),
-      '23514'
-    );
+    await withRolledBackTx(admin, { tenantId: TENANT_A, userId: USER_A }, async (c) => {
+      await expectSqlState(
+        c.query(`SELECT org.change_tenant_status($1, 'active', 'no-op', $2)`, [TENANT_A, USER_A]),
+        '23514'
+      );
+    });
   });
 
   it('closed is terminal: no transition may leave it (23514)', async () => {
     const client = await admin.connect();
     try {
       await client.query('BEGIN');
+      // M3 makes history a trigger emission stamped by
+      // shared.stamp_status_history(), which derives the actor from
+      // iam.current_user_id() and RAISES without one. The frozen slice-01
+      // contract requires exactly that — "the function must be called from a
+      // session carrying an actor" — and org.change_tenant_status deliberately
+      // publishes app.status_reason and app.correlation_id but NEVER app.user_id.
+      // p_actor_id is retained for signature compatibility and is not bound into
+      // the row, so passing it is no longer enough: the SESSION must carry one.
+      await setContext(client, { userId: USER_A });
       await client.query(`SELECT org.change_tenant_status($1, 'closed', 'fixture: close', $2)`, [
         TENANT_A,
         USER_A,
@@ -254,14 +279,30 @@ describe('org.change_tenant_status — atomic transition + append-only history',
 describe('org.tenant_status_history — append-only for application roles', () => {
   beforeAll(async () => {
     // A committed history row to read back and to attack.
-    await admin.query(
-      `SELECT org.change_tenant_status($1, 'suspended', 'fixture: attack row', $2)`,
-      [TENANT_B, USER_A]
-    );
-    await admin.query(`SELECT org.change_tenant_status($1, 'active', 'fixture: restore', $2)`, [
-      TENANT_B,
-      USER_A,
-    ]);
+    // Committed on purpose, so a transaction-scoped helper cannot be used: the
+    // rows must survive for the cases below to read and attack. The actor is
+    // set on the same connection, inside the same transaction, because
+    // set_config(..., true) is transaction-local and a pool query would draw a
+    // different connection.
+    const seed = await admin.connect();
+    try {
+      await seed.query('BEGIN');
+      await setContext(seed, { userId: USER_A });
+      await seed.query(
+        `SELECT org.change_tenant_status($1, 'suspended', 'fixture: attack row', $2)`,
+        [TENANT_B, USER_A]
+      );
+      await seed.query(`SELECT org.change_tenant_status($1, 'active', 'fixture: restore', $2)`, [
+        TENANT_B,
+        USER_A,
+      ]);
+      await seed.query('COMMIT');
+    } catch (error) {
+      await seed.query('ROLLBACK').catch(() => undefined);
+      throw error;
+    } finally {
+      seed.release();
+    }
   });
 
   it('a tenant reads only its own history', async () => {
