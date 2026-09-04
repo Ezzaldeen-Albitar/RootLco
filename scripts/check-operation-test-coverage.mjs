@@ -2680,11 +2680,54 @@ export const MANIFEST = {
 // Registry scanning
 // ---------------------------------------------------------------------------
 
-const literalString = (source, key) => {
-  const m = new RegExp(`\\b${key}\\s*:\\s*['"\`]([^'"\`]*)['"\`]`).exec(source);
+/**
+ * Reads one declared field out of a `defineOperation({...})` literal.
+ *
+ * COMMENTS ARE STRIPPED FIRST, and that is the whole point of these two lines.
+ *
+ * A `defineOperation` literal in this codebase routinely explains its choice by
+ * naming the alternative it REJECTED — `scope: 'branch'` would fail closed here,
+ * `auditClass: 'none'` would be wrong because this writes money — in a comment
+ * directly above the real key. The regex takes the FIRST match, so a
+ * comment-blind read returns the rejected value and the operation is measured as
+ * something it never declared.
+ *
+ * `derivedRequirements()` reads exactly these fields to decide what evidence an
+ * operation owes, so the failure is not cosmetic. One direction is harmless — a
+ * commented `scope: 'branch'` above a real `tenant` ADDS an isolation obligation
+ * nothing owes, which is a false FAILURE and gets noticed. The other direction is
+ * a false GREEN: a commented `scope: 'tenant'` above a real `branch` DROPS the
+ * isolation requirement, a commented `auditClass: 'none'` above a real class
+ * drops `audit`, and the gate then reports success over an operation whose
+ * evidence was never demanded. A gate that can be silenced by a sentence of prose
+ * beside the code is not a gate.
+ *
+ * It was live: `svc.service-list` declares `scope: 'tenant'` and explains, four
+ * lines above, that "Declaring `scope: 'branch'` here would be worse than
+ * useless". This gate read `branch` for the whole of P1-20 and every run since.
+ * Only the manifest's own declared `isolation` — additive, and written for an
+ * unrelated reason — kept the effective requirement correct.
+ *
+ * `stripComments` is a lexer, not a `//`-to-end-of-line regex: these literals
+ * carry `path` and `summary` strings with `http://` in them, and truncating there
+ * would delete real declarations. It is a hoisted function declaration, so the
+ * forward reference from here is resolved before either helper can be called.
+ *
+ * Both helpers strip on their own input rather than trusting the caller, because
+ * that is the property `tests/ci/operation-literal-parsing.test.ts` pins: fed a
+ * raw literal whose comment names one value and whose code names another, the
+ * CODE value wins.
+ */
+export const literalString = (source, key) => {
+  const m = new RegExp(`\\b${key}\\s*:\\s*['"\`]([^'"\`]*)['"\`]`).exec(
+    stripComments(source ?? '')
+  );
   return m ? m[1] : null;
 };
-const literalTrue = (source, key) => new RegExp(`\\b${key}\\s*:\\s*true\\b`).test(source);
+
+/** The boolean-flag form of `literalString`, comment-blind for the same reason. */
+export const literalTrue = (source, key) =>
+  new RegExp(`\\b${key}\\s*:\\s*true\\b`).test(stripComments(source ?? ''));
 
 /**
  * Extracts one `defineOperation({...})` literal, starting at its opening brace,
@@ -2732,7 +2775,24 @@ export function scanRegisteredOperations(root = REPOSITORY_ROOT) {
       if (!/\.tsx?$/.test(entry.name)) continue;
       const rel = toPosix(relative(root, full));
       if (rel.endsWith('server/auth/operation-registry.ts')) continue;
-      const source = readFileSync(full, 'utf8');
+      /*
+       * Stripped ONCE, for the brace balancing rather than for the field reads.
+       *
+       * `literalAt` counts `{` and `}` with no idea which are code, so a comment
+       * that mentions `defineOperation()` in prose — six do today, in
+       * `server/audit/audit.ts` and `server/auth/audit-actions.ts` — sends the
+       * scanner hunting the next `{` in the file and slicing a "literal" that
+       * spans whatever follows. Those six survive only because the slice happens
+       * to contain no `id:`, which is luck, not a rule. A comment that spelled a
+       * full literal would register a phantom operation the gate then demands
+       * evidence for; a commented-out OLD registration sitting after the real one
+       * would be worse, because `operations.set` is last-write-wins and the dead
+       * copy's facts would replace the live ones.
+       *
+       * Measured before and after on this tree: identical id sets, identical
+       * facts. This closes the hole rather than repairing damage.
+       */
+      const source = stripComments(readFileSync(full, 'utf8'));
       let index = source.indexOf('defineOperation(');
       while (index >= 0) {
         const braceStart = source.indexOf('{', index);
@@ -2925,6 +2985,13 @@ export function stripCoverageBlock(source) {
  *
  * Regex-versus-division is decided the way a lexer does it: a `/` starts a regex
  * only when the previous significant character cannot end an expression.
+ *
+ * It serves TWO readers, and both need the same lexer. Test files come through
+ * here so prose cannot stand in for a test, as above; API source comes through
+ * `scanRegisteredOperations` and `literalString`/`literalTrue` so a comment
+ * beside a `defineOperation` key cannot be read as the declaration. The second
+ * caller is why the string-awareness is load-bearing twice over — an operation's
+ * `path` and `summary` are string literals that contain `//`.
  */
 export function stripComments(source) {
   let out = '';
