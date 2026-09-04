@@ -126,6 +126,13 @@ import { GET as READ_ELIGIBILITY } from '@/app/api/v1/deliveries/[deliveryId]/el
 import { POST as GENERATE_WARRANTY } from '@/app/api/v1/deliveries/[deliveryId]/warranties/route';
 import { GET as READ_WARRANTY } from '@/app/api/v1/warranties/[warrantyId]/route';
 import { API_ROOT } from '../../scripts/lib/repository-paths.mjs';
+import ts from 'typescript';
+import {
+  callsToNode,
+  describeFunction,
+  enclosingFunctionNode,
+  parseModule,
+} from '../../scripts/lib/typescript-source.mjs';
 
 let admin: Pool;
 
@@ -1023,6 +1030,117 @@ describe('the incoherent company and branch pair (P1-21 H6)', () => {
 // 6. There is no optional scope filter to omit.
 // ===========================================================================
 
+/**
+ * Binds every `defineOperation({ id })` in a route module to the exported handler
+ * that serves it, and reports what that handler's subtree contains.
+ *
+ * ## Why this reads the HANDLER and not the file
+ *
+ * Until P1-30 A2 this section read each route file as text and asserted the
+ * whole file contained no `searchParams` and no `new URL(`. That was a proxy for
+ * the property it protects — "none of these ten operations accepts an optional
+ * company or branch parameter, so omitting one cannot widen anything" — and the
+ * proxy was exact while every file hosted only P1-22 operations. It stopped being
+ * exact when `sal.receipt-list` (P1-30 A2, seam S-11) was published at
+ * `GET /payments`: Next.js puts every verb of one path in one `route.ts`, so the
+ * GET has to sit beside `sal.payment-record`, and the GET MUST read the query
+ * string — `companyId` and `branchId` are its authorization target, not a filter.
+ * A file-level scan then failed on a handler this section was never about, and
+ * the alternatives were worse: moving the read to another path would change a
+ * frozen A0 contract to dodge a test, and asserting nothing would drop the gate.
+ *
+ * So the question is asked of the operation. Each of the ten ids is followed to
+ * its `defineOperation` constant, from there to the `handleOperation(CONST, …)`
+ * call, and from there to the exported function that contains it. The
+ * assertions run over THAT function's subtree — which includes the preamble
+ * before `handleOperation` where a query string would be read — and they are the
+ * same three as before, plus the helper that wraps a query read.
+ *
+ * Parsed, not pattern-matched: comments and string literals are trivia the
+ * parser never offers, and the repository has recorded seven times what a
+ * scanner reading prose as code does.
+ *
+ * ## Fail closed
+ *
+ * A file the parser refuses yields NO bindings, and an operation with no bound
+ * handler is a failure, not a vacuous pass. Both are asserted below.
+ */
+function handlersOf(relative: string): {
+  readonly file: ts.SourceFile;
+  readonly byOperationId: Map<string, ts.Node>;
+  readonly handlers: readonly { readonly name: string | null; readonly node: ts.Node }[];
+} {
+  const source = readFileSync(resolve(API_ROOT, relative), 'utf8');
+  const file = parseModule(source);
+  expect(file, `${relative} did not parse as TypeScript`).not.toBeNull();
+  if (!file) throw new Error('unreachable');
+
+  // `export const X = defineOperation({ id: '…', … })`  ->  X -> id
+  const idByConstant = new Map<string, string>();
+  for (const call of callsToNode(file, 'defineOperation')) {
+    const literal = call.arguments[0];
+    if (!literal || !ts.isObjectLiteralExpression(literal)) continue;
+    const idProperty = literal.properties.find(
+      (property) =>
+        ts.isPropertyAssignment(property) &&
+        property.name.getText(file) === 'id' &&
+        ts.isStringLiteral(property.initializer)
+    ) as ts.PropertyAssignment | undefined;
+    if (!idProperty || !ts.isStringLiteral(idProperty.initializer)) continue;
+    const declaration = call.parent;
+    if (!declaration || !ts.isVariableDeclaration(declaration)) continue;
+    idByConstant.set(declaration.name.getText(file), idProperty.initializer.text);
+  }
+
+  // `handleOperation(X, …)` inside `export async function GET|POST|…`  ->  id -> handler
+  const byOperationId = new Map<string, ts.Node>();
+  const handlers: { name: string | null; node: ts.Node }[] = [];
+  for (const call of callsToNode(file, 'handleOperation')) {
+    const first = call.arguments[0];
+    if (!first || !ts.isIdentifier(first)) continue;
+    const id = idByConstant.get(first.text);
+    const handler = enclosingFunctionNode(call);
+    if (!id || !handler) continue;
+    const described = describeFunction(handler);
+    byOperationId.set(id, handler);
+    handlers.push({ name: described.name, node: handler });
+  }
+  return { file, byOperationId, handlers };
+}
+
+/** What a handler's subtree does with the request — the four things §6 forbids. */
+function queryReadsIn(node: ts.Node, file: ts.SourceFile) {
+  const found = { requestedScope: false, searchParams: false, newUrl: false, helper: false };
+  const visit = (candidate: ts.Node): void => {
+    if (ts.isIdentifier(candidate) && candidate.text === 'requestedScope') {
+      found.requestedScope = true;
+    }
+    if (
+      ts.isPropertyAccessExpression(candidate) &&
+      candidate.name.getText(file) === 'searchParams'
+    ) {
+      found.searchParams = true;
+    }
+    if (
+      ts.isNewExpression(candidate) &&
+      ts.isIdentifier(candidate.expression) &&
+      candidate.expression.text === 'URL'
+    ) {
+      found.newUrl = true;
+    }
+    if (
+      ts.isCallExpression(candidate) &&
+      ts.isIdentifier(candidate.expression) &&
+      candidate.expression.text === 'searchParamsToObject'
+    ) {
+      found.helper = true;
+    }
+    ts.forEachChild(candidate, visit);
+  };
+  visit(node);
+  return found;
+}
+
 describe('no caller-supplied scope narrowing on the ten P1-22 isolation operations', () => {
   const ROUTES = [
     'src/app/api/v1/work-orders/[workOrderId]/invoice-preview/route.ts',
@@ -1057,14 +1175,84 @@ describe('no caller-supplied scope narrowing on the ten P1-22 isolation operatio
     // `requestedScope` — the ONLY channel through which a caller-requested narrowing
     // reaches `resolveRequestContext` — is passed by none of them. Writing a case that
     // omitted a parameter that does not exist would assert nothing; this asserts the
-    // absence itself, so a future edit that adds a filter must add the case with it.
+    // absence itself, per OPERATION, so a future edit that adds a filter to one of the
+    // ten must add the case with it.
+    const bound = new Map<string, { relative: string; handler: ts.Node; file: ts.SourceFile }>();
     for (const relative of ROUTES) {
-      const source = readFileSync(resolve(API_ROOT, relative), 'utf8');
-      // The file really was read, or the three assertions below are vacuous.
-      expect(source, `${relative} is empty`).toContain('defineOperation');
-      expect(source.includes('requestedScope'), `${relative} passes requestedScope`).toBe(false);
-      expect(source.includes('searchParams'), `${relative} reads a query string`).toBe(false);
-      expect(source.includes('new URL('), `${relative} parses a URL`).toBe(false);
+      const { file, byOperationId } = handlersOf(relative);
+      // The file really was read and really binds something, or what follows is vacuous.
+      expect(byOperationId.size, `${relative} binds no operation to a handler`).toBeGreaterThan(0);
+      for (const [id, handler] of byOperationId) bound.set(id, { relative, handler, file });
+    }
+    for (const id of OPERATION_IDS) {
+      const entry = bound.get(id);
+      // Fail closed: an operation this section cannot find is a failure, never a pass.
+      expect(
+        entry,
+        `${id} is not bound to any exported handler in the ten route modules`
+      ).toBeDefined();
+      if (!entry) continue;
+      const reads = queryReadsIn(entry.handler, entry.file);
+      expect(reads.requestedScope, `${id} (${entry.relative}) passes requestedScope`).toBe(false);
+      expect(reads.searchParams, `${id} (${entry.relative}) reads a query string`).toBe(false);
+      expect(reads.newUrl, `${id} (${entry.relative}) parses a URL`).toBe(false);
+      expect(
+        reads.helper,
+        `${id} (${entry.relative}) reads a query string through the helper`
+      ).toBe(false);
+    }
+  });
+
+  it('holds any co-located handler that DOES read a query string to a REQUIRED authorization target', () => {
+    // Stricter than the file-level scan this replaced, in the one dimension that
+    // scan was blind to. A handler sharing one of these files may read the query
+    // string only if the scope it reads is the operation's authorization target —
+    // REQUIRED, so omitting it is a 422 and not a wider page — and only if it hands
+    // that target to the pre-handler check through `scopeTargetOption`. Today that is
+    // exactly `sal.receipt-list` in `payments/route.ts`; the assertion is written for
+    // the shape, so the next co-located read is held to the same rule without anyone
+    // remembering to add it here.
+    for (const relative of ROUTES) {
+      const { file, handlers, byOperationId } = handlersOf(relative);
+      const tenHere = new Set(
+        [...byOperationId.entries()].filter(([id]) => OPERATION_IDS.includes(id)).map(([, n]) => n)
+      );
+      for (const { name, node } of handlers) {
+        if (tenHere.has(node)) continue;
+        const reads = queryReadsIn(node, file);
+        if (!reads.searchParams && !reads.newUrl && !reads.helper) continue;
+
+        // 1. Never `requestedScope` — that channel stays closed for every handler.
+        expect(reads.requestedScope, `${relative} ${name} passes requestedScope`).toBe(false);
+
+        // 2. The pre-handler target is set from the same query, so the scoped
+        //    permission check runs BEFORE the handler and not only inside it.
+        const passesTarget = callsToNode(file, 'scopeTargetOption').some(
+          (call) => enclosingFunctionNode(call) === node
+        );
+        expect(
+          passesTarget,
+          `${relative} ${name} reads a query string but passes no scopeTargetOption`
+        ).toBe(true);
+
+        // 3. `companyId` and `branchId` are REQUIRED wherever the module declares them.
+        //    An optional pair is the exact shape this section exists to keep out: omit
+        //    it and `authorizeScope` is skipped, leaving `app.branch_ids` — the
+        //    permission-blind union of every grant — as the only narrowing.
+        const optionalScope: string[] = [];
+        const visit = (candidate: ts.Node): void => {
+          if (
+            ts.isPropertyAssignment(candidate) &&
+            ['companyId', 'branchId'].includes(candidate.name.getText(file)) &&
+            /\.optional\(\)/.test(candidate.initializer.getText(file))
+          ) {
+            optionalScope.push(candidate.getText(file));
+          }
+          ts.forEachChild(candidate, visit);
+        };
+        visit(file);
+        expect(optionalScope, `${relative} declares an OPTIONAL scope parameter`).toEqual([]);
+      }
     }
   });
 
