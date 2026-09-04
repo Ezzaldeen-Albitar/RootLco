@@ -35,10 +35,7 @@ import { defineOperation } from '@/server/auth/operation-registry';
 import { handleOperation } from '@/server/http/route-handler';
 import { parseOrFail, schemas } from '@/server/http/validation';
 import { AppFailure } from '@/server/errors/app-failure';
-import {
-  callerHoldsPermissionTenantWide,
-  type ScopeAuthorizer,
-} from '@/server/auth/authorization';
+import { callerHoldsPermissionTenantWide, type ScopeAuthorizer } from '@/server/auth/authorization';
 import { pricingModule } from '@/modules/pricing';
 import { INTERNAL_CODE } from '@/modules/service-catalog';
 
@@ -118,7 +115,11 @@ export const PRICE_LIST_ASSIGNMENT_CREATE_OPERATION = defineOperation({
 async function authorizeSelector(
   db: Parameters<typeof callerHoldsPermissionTenantWide>[0],
   authorizeScope: ScopeAuthorizer,
-  selector: { companyId?: string | undefined; branchId?: string | undefined; customerClass?: string | undefined }
+  selector: {
+    companyId?: string | undefined;
+    branchId?: string | undefined;
+    customerClass?: string | undefined;
+  }
 ): Promise<void> {
   if (selector.companyId !== undefined || selector.branchId !== undefined) {
     await authorizeScope({

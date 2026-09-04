@@ -454,10 +454,7 @@ export class PriceListService {
    * response deliberately names no price-list id at all. The message below is
    * server-side only, for the log.
    */
-  public async assign(
-    db: DbHandle,
-    input: AssignPriceListInput
-  ): Promise<PriceListAssignmentView> {
+  public async assign(db: DbHandle, input: AssignPriceListInput): Promise<PriceListAssignmentView> {
     // Lock the list rather than merely read it: an assignment naming a list that
     // is being deactivated in a concurrent transaction must not slip in behind
     // the status check.
