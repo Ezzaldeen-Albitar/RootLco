@@ -1,10 +1,10 @@
 {
   "generatedFrom": "scripts/check-operation-test-coverage.mjs",
   "counts": {
-    "registered": 352,
-    "publicApi": 352,
+    "registered": 356,
+    "publicApi": 356,
     "internal": 0,
-    "withRequiredEvidence": 352,
+    "withRequiredEvidence": 356,
     "invocationOnly": 0,
     "p1_15": {
       "registered": 28,
@@ -57,9 +57,9 @@
       "metadataOnly": 0
     },
     "p1_20": {
-      "registered": 17,
-      "publicApi": 17,
-      "operationDepth": 17,
+      "registered": 21,
+      "publicApi": 21,
+      "operationDepth": 21,
       "invocationOnly": 0,
       "pending": 0,
       "unitOnly": 0,
@@ -9146,6 +9146,50 @@
       "unitOnly": false
     },
     {
+      "id": "svc.price-list-assignment-create",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/price-list-assignments",
+      "public": false,
+      "files": ["tests/backend/p1-30-a1-service-catalogue-head.test.ts"],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "idempotency",
+        "audit",
+        "isolation"
+      ],
+      "declared": ["success", "denial", "cross-tenant", "audit", "isolation"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "idempotency",
+        "audit",
+        "isolation",
+        "denial",
+        "cross-tenant"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
       "id": "svc.price-list-create",
       "surface": "public-api",
       "method": "POST",
@@ -9367,6 +9411,56 @@
       "unitOnly": false
     },
     {
+      "id": "svc.service-category-create",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/service-categories",
+      "public": false,
+      "files": ["tests/backend/p1-30-a1-service-catalogue-head.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "idempotency", "audit"],
+      "declared": ["success", "denial", "cross-tenant", "audit"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "idempotency",
+        "audit",
+        "denial",
+        "cross-tenant"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "svc.service-category-list",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/service-categories",
+      "public": false,
+      "files": ["tests/backend/p1-30-a1-service-catalogue-head.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization"],
+      "declared": ["success", "denial", "cross-tenant"],
+      "required": ["route", "service", "success", "authorization", "denial", "cross-tenant"],
+      "provided": ["authorization", "cross-tenant", "denial", "route", "service", "success"],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
       "id": "svc.service-create",
       "surface": "public-api",
       "method": "POST",
@@ -9471,6 +9565,48 @@
         "route",
         "service",
         "stale-version",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "svc.service-version-create",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/services/{serviceId}/versions",
+      "public": false,
+      "files": ["tests/backend/p1-30-a1-service-catalogue-head.test.ts"],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit"
+      ],
+      "declared": ["success", "denial", "cross-tenant", "audit"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "denial"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "route",
+        "service",
         "success"
       ],
       "missing": [],

@@ -34,6 +34,7 @@ import { Decimal, MONEY } from '../domain/decimal';
 import { assertCurrencyCode } from '../domain/money';
 import { PricingRuleError } from '../domain/pricing';
 import type {
+  PriceListAssignmentRow,
   PriceListRow,
   PriceListVersionRow,
   PricingRepository,
@@ -106,6 +107,36 @@ const toVersionView = (row: PriceListVersionRow): PriceListVersionView => ({
   notes: row.notes,
   recordVersion: row.recordVersion,
 });
+
+/**
+ * An assignment as the API renders it.
+ *
+ * No money. `svc.price_list_assignments` has no `numeric` column - it names a
+ * book and a context, and the amounts live in that book's rules. `priority` is
+ * `integer` and stays a JSON number.
+ */
+export interface PriceListAssignmentView {
+  readonly id: string;
+  readonly priceListId: string;
+  readonly companyId: string | null;
+  readonly branchId: string | null;
+  readonly customerClass: string | null;
+  readonly priority: number;
+  readonly effectiveFrom: string;
+  readonly effectiveTo: string | null;
+  readonly status: string;
+  readonly recordVersion: number;
+}
+
+export interface AssignPriceListInput {
+  readonly priceListId: string;
+  readonly companyId?: string | undefined;
+  readonly branchId?: string | undefined;
+  readonly customerClass?: string | undefined;
+  readonly priority?: number | undefined;
+  readonly effectiveFrom: string;
+  readonly effectiveTo?: string | undefined;
+}
 
 export class PriceListService {
   public constructor(private readonly repository: PricingRepository) {}
@@ -393,6 +424,133 @@ export class PriceListService {
    * Both were genuinely reaching the client as `ERR-SYS-001` before this mapping,
    * which told a caller nothing actionable and marked the failure as monitored.
    */
+  /**
+   * Assigns a price list to a scope context.
+   *
+   * `svc.resolve_price` requires an ACTIVE assignment row covering the context
+   * before it will return anything, and nothing in the product could write one -
+   * so every price resolution on every API-created tenant answered "no price
+   * configured" (A0 F-02, seam S-04).
+   *
+   * ## Why the conflict message names the CONTEXT and not the price list
+   *
+   * `uq_price_list_assignments_signature` is
+   * `(tenant_id, company_id, branch_id, customer_class, priority) NULLS NOT DISTINCT`
+   * where the row is active - and `price_list_id` is deliberately NOT in it.
+   * That is what the table comment means by "exactly one price list" per
+   * context: two books cannot both claim the same context at the same priority,
+   * because `svc.resolve_price` would then have to arbitrate between them.
+   *
+   * The consequence is that a create can be refused by a row belonging to a
+   * DIFFERENT price list - one the caller may not even be looking at. It is why
+   * the route is the top-level `/price-list-assignments` rather than nested
+   * under a price list: the invariant is not scoped to one.
+   *
+   * What the CALLER actually receives is the violation, not this message:
+   * `problemFor` builds the response from the error catalogue plus `safeDetails`,
+   * and an `AppFailure` message never crosses the wire. So the caller-visible
+   * signal is `{path: 'body.priority', rule: 'context_already_assigned'}` - which
+   * says the context is taken rather than that this price list is - and the
+   * response deliberately names no price-list id at all. The message below is
+   * server-side only, for the log.
+   */
+  public async assign(db: DbHandle, input: AssignPriceListInput): Promise<PriceListAssignmentView> {
+    // Lock the list rather than merely read it: an assignment naming a list that
+    // is being deactivated in a concurrent transaction must not slip in behind
+    // the status check.
+    const list = await this.repository.lockPriceList(db, input.priceListId);
+    if (list === null) {
+      throw new AppFailure('ERR-RES-001', {
+        message: `Price list ${input.priceListId} is not visible`,
+      });
+    }
+    if (list.status !== 'active') {
+      throw new AppFailure('ERR-TRN-001', {
+        message: `Price list ${list.priceListCode} is ${list.status} and cannot be assigned`,
+      });
+    }
+
+    // A branch that does not belong to the named company would otherwise be
+    // authorized against whichever half happens to match - `iam.has_permission_in_scope`
+    // is disjunctive across scope rows. The same check `recordRule` makes.
+    if (input.companyId !== undefined && input.branchId !== undefined) {
+      const coherent = await this.repository.branchBelongsToCompany(
+        db,
+        input.companyId,
+        input.branchId
+      );
+      if (!coherent) {
+        throw new AppFailure('ERR-VAL-001', {
+          message: `Branch ${input.branchId} does not belong to company ${input.companyId}`,
+          safeDetails: {
+            violations: [{ path: 'body.branchId', rule: 'branch_company_mismatch' }],
+          },
+        });
+      }
+    }
+
+    const priority = input.priority ?? 0;
+    let created: PriceListAssignmentRow;
+    try {
+      created = await this.repository.insertPriceListAssignment(db, {
+        priceListId: input.priceListId,
+        companyId: input.companyId ?? null,
+        branchId: input.branchId ?? null,
+        customerClass: input.customerClass ?? null,
+        priority,
+        effectiveFrom: input.effectiveFrom,
+        effectiveTo: input.effectiveTo ?? null,
+      });
+    } catch (cause) {
+      if (isSqlState(cause, SQLSTATE.uniqueViolation)) {
+        const context = [
+          input.companyId === undefined ? 'any company' : `company ${input.companyId}`,
+          input.branchId === undefined ? 'any branch' : `branch ${input.branchId}`,
+          input.customerClass === undefined
+            ? 'any customer class'
+            : `customer class ${input.customerClass}`,
+        ].join(', ');
+        throw new AppFailure('ERR-CON-001', {
+          message:
+            `An active price-list assignment already covers ${context} at priority ` +
+            `${priority}. The uniqueness is on the CONTEXT, not on the price list, so the ` +
+            'existing assignment may name a different price list. Use another priority, or ' +
+            'deactivate the existing assignment.',
+          safeDetails: {
+            violations: [{ path: 'body.priority', rule: 'context_already_assigned' }],
+          },
+        });
+      }
+      if (isSqlState(cause, SQLSTATE.foreignKeyViolation)) {
+        throw new AppFailure('ERR-VAL-001', {
+          message: `Price list ${input.priceListId} is not visible`,
+          safeDetails: { violations: [{ path: 'body.priceListId', rule: 'unknown_price_list' }] },
+        });
+      }
+      throw cause;
+    }
+
+    await appendAudit(db, {
+      action: 'svc.price_list_assignment.created',
+      entityType: 'svc.price_list_assignment',
+      entityId: created.id,
+      details: [
+        { field: 'priceListId', classification: 'internal', value: created.priceListId },
+        { field: 'companyId', classification: 'internal', value: created.companyId ?? 'any' },
+        { field: 'branchId', classification: 'internal', value: created.branchId ?? 'any' },
+        {
+          field: 'customerClass',
+          classification: 'internal',
+          value: created.customerClass ?? 'any',
+        },
+        { field: 'priority', classification: 'public', value: String(created.priority) },
+        { field: 'effectiveFrom', classification: 'internal', value: created.effectiveFrom },
+      ],
+    });
+
+    return created;
+  }
+
   private async insertMappingConflicts(
     db: DbHandle,
     input: {

@@ -1,9 +1,9 @@
 {
   "generatedBy": "scripts/p1-24-operation-register.mjs",
   "totals": {
-    "operations": 352,
-    "openapiPaths": 283,
-    "openapiOperations": 352,
+    "operations": 356,
+    "openapiPaths": 286,
+    "openapiOperations": 356,
     "openapiSchemas": 3,
     "events": 50,
     "eventsProduced": 47,
@@ -11,10 +11,10 @@
     "outboxForeignWriters": 0,
     "errorCodes": 28,
     "permissionCodes": 118,
-    "auditActions": 210
+    "auditActions": 213
   },
   "counts": {
-    "Covered": 352
+    "Covered": 356
   },
   "operations": [
     {
@@ -10286,6 +10286,48 @@
       "file": "apps/api/src/app/api/v1/services/[serviceId]/branch-availability/route.ts"
     },
     {
+      "id": "svc.price-list-assignment-create",
+      "domain": "pricing",
+      "method": "POST",
+      "route": "/api/v1/price-list-assignments",
+      "permissions": ["svc.price.manage"],
+      "public": false,
+      "scope": "branch",
+      "transaction": "transactional write",
+      "auditClass": "financial",
+      "auditAction": "svc.price_list_assignment.created",
+      "idempotent": true,
+      "versionGuarded": false,
+      "openapi": "POST /api/v1/price-list-assignments",
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "idempotency",
+        "audit",
+        "isolation",
+        "denial",
+        "cross-tenant"
+      ],
+      "providedEvidence": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/p1-30-a1-service-catalogue-head.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/price-list-assignments/route.ts"
+    },
+    {
       "id": "svc.price-list-create",
       "domain": "pricing",
       "method": "POST",
@@ -10530,6 +10572,82 @@
       "file": "apps/api/src/app/api/v1/price-lists/[priceListId]/versions/[versionId]/rules/route.ts"
     },
     {
+      "id": "svc.service-category-create",
+      "domain": "service-catalog",
+      "method": "POST",
+      "route": "/api/v1/service-categories",
+      "permissions": ["svc.service.manage"],
+      "public": false,
+      "scope": "tenant",
+      "transaction": "transactional write",
+      "auditClass": "privileged",
+      "auditAction": "svc.service_category.updated",
+      "idempotent": true,
+      "versionGuarded": false,
+      "openapi": "POST /api/v1/service-categories",
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "idempotency",
+        "audit",
+        "denial",
+        "cross-tenant"
+      ],
+      "providedEvidence": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/p1-30-a1-service-catalogue-head.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/service-categories/route.ts"
+    },
+    {
+      "id": "svc.service-category-list",
+      "domain": "service-catalog",
+      "method": "GET",
+      "route": "/api/v1/service-categories",
+      "permissions": ["svc.service.read"],
+      "public": false,
+      "scope": "tenant",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/service-categories",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "denial",
+        "cross-tenant"
+      ],
+      "providedEvidence": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/p1-30-a1-service-catalogue-head.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/service-categories/route.ts"
+    },
+    {
       "id": "svc.service-create",
       "domain": "service-catalog",
       "method": "POST",
@@ -10565,7 +10683,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-20-service-catalog.test.ts"],
+      "tests": [
+        "tests/backend/p1-20-service-catalog.test.ts",
+        "tests/backend/p1-30-a1-service-catalogue-head.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/services/route.ts"
     },
@@ -10648,6 +10769,46 @@
       "tests": ["tests/backend/p1-20-service-catalog.test.ts"],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/services/[serviceId]/route.ts"
+    },
+    {
+      "id": "svc.service-version-create",
+      "domain": "service-catalog",
+      "method": "POST",
+      "route": "/api/v1/services/{serviceId}/versions",
+      "permissions": ["svc.service.manage"],
+      "public": false,
+      "scope": "tenant",
+      "transaction": "transactional write",
+      "auditClass": "privileged",
+      "auditAction": "svc.service_version.drafted",
+      "idempotent": true,
+      "versionGuarded": false,
+      "openapi": "POST /api/v1/services/{serviceId}/versions",
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "denial"
+      ],
+      "providedEvidence": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/p1-30-a1-service-catalogue-head.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/services/[serviceId]/versions/route.ts"
     },
     {
       "id": "svc.service-version-publish",
