@@ -141,6 +141,7 @@ import { POST as CREATE_PRICE_VERSION } from '@/app/api/v1/price-lists/[priceLis
 import { POST as RECORD_PRICE_RULE } from '@/app/api/v1/price-lists/[priceListId]/versions/[versionId]/rules/route';
 import { POST as PUBLISH_PRICE_VERSION } from '@/app/api/v1/price-lists/[priceListId]/versions/[versionId]/publication/route';
 import { POST as RECORD_PAYMENT } from '@/app/api/v1/payments/route';
+import { POST as ALLOCATE_PAYMENT } from '@/app/api/v1/payments/[paymentId]/allocations/route';
 
 let admin: Pool;
 let runtime: Pool;
@@ -954,6 +955,53 @@ describe('S-09 quo.quotation-revision-decisions-read', () => {
     expect(raw).not.toContain('displayName');
   });
 
+  it('reports a decision recorded WITHOUT evidence as an empty array, never a null row', async () => {
+    await publishPriceList();
+    const order = await createWorkOrder();
+    const quotation = await seedQuotation(order.workOrderId);
+    const revisionId = quotation.currentRevision?.id ?? '';
+
+    authAsSvc(SVC_FULL);
+    expect(
+      (
+        await ISSUE_REVISION(
+          jsonPost(
+            `http://localhost/api/v1/quotations/${quotation.id}/issue`,
+            { revisionId },
+            quotation.recordVersion
+          ),
+          { params: Promise.resolve({ quotationId: quotation.id }) }
+        )
+      ).status
+    ).toBe(200);
+
+    // No `evidence` on the body at all: quo.approval_evidence is optional, and a
+    // decision taken in person with nothing attached is an ordinary outcome.
+    const decided = await DECIDE_REVISION(
+      jsonPost(`http://localhost/api/v1/quotation-revisions/${revisionId}/decisions`, {
+        decision: 'rejected',
+        channel: 'phone',
+        presentedRevisionId: revisionId,
+        decidingPartyRef: PARTNER_A,
+      }),
+      { params: Promise.resolve({ revisionId }) }
+    );
+    expect(decided.status).toBe(201);
+
+    const body = (await (await revisionDecisions(revisionId)).json()) as {
+      outcome: string | null;
+      decisions: readonly { decision: string; evidence: readonly unknown[] }[];
+    };
+    expect(body.outcome).toBe('rejected');
+    expect(body.decisions[0]?.decision).toBe('rejected');
+    // The empty case, asserted rather than assumed. The aggregate is a correlated
+    // SUBQUERY, so no matching row yields NULL and COALESCE turns it into [] — a
+    // LEFT JOIN with an unfiltered json_agg would have produced [null] here and a
+    // consumer would have read one phantom piece of evidence per undocumented
+    // decision.
+    expect(body.decisions[0]?.evidence).toEqual([]);
+  });
+
   it('derives scope from the REVISION row, and is cross-tenant isolated', async () => {
     await publishPriceList();
     const order = await createWorkOrder();
@@ -1194,6 +1242,41 @@ describe('S-11 sal.receipt-list', () => {
     const unknownParam = await receiptList(`${scopedQuery}&receiptNumber=X`);
     expect(unknownParam.status).toBe(422);
     expect(await codeOf(unknownParam)).toBe('ERR-VAL-001');
+  });
+
+  it('filters by invoiceId — what has actually been paid against one invoice', async () => {
+    const seeded = await seedIssuedInvoice('a2_s11_alloc');
+    const allocated = await recordReceipt('15.0000');
+    const unrelated = await recordReceipt('16.0000');
+
+    authAsSal(SAL_FULL);
+    const allocation = await ALLOCATE_PAYMENT(
+      jsonPost(`http://localhost/api/v1/payments/${allocated}/allocations`, {
+        invoiceId: seeded.invoiceId,
+        amount: '15.0000',
+        currency: seeded.currencyCode,
+      }),
+      { params: Promise.resolve({ paymentId: allocated }) }
+    );
+    expect(allocation.status).toBe(201);
+
+    const body = (await (
+      await receiptList(`${scopedQuery}&invoiceId=${seeded.invoiceId}`)
+    ).json()) as PageBody<{ id: string; unallocated: { amount: string } }>;
+    const ids = body.items.map((row) => row.id);
+    // The third of the three questions the seam names, beside scope and partner.
+    // An EXISTS over sal.payment_allocations rather than a JOIN: a receipt may
+    // allocate to the same invoice more than once, and a join would return it
+    // twice on one page — a duplicate the keyset would then page across.
+    expect(ids).toContain(allocated);
+    expect(ids).not.toContain(unrelated);
+    expect(ids).toHaveLength(1);
+
+    // The remainder moved, and it moved in PostgreSQL: the receipt is now fully
+    // allocated, so sal.receipt_unallocated derives an exact zero string.
+    const seen = body.items.find((row) => row.id === allocated);
+    expect(typeof seen?.unallocated.amount).toBe('string');
+    expect(Number(seen?.unallocated.amount)).toBe(0);
   });
 
   it('refuses a branch the caller has no finance authority in — application check, not RLS', async () => {
