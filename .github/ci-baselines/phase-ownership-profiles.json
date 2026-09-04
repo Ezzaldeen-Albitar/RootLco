@@ -110,6 +110,11 @@
       "why": "PRE-P1-29 governance and tooling branches: the ownership profiles themselves, the gates that read them, and the tests that prove those gates can still fail. Owned by no lane of the initiative."
     },
     {
+      "branchPrefix": "chore/operation-coverage-",
+      "profile": "repository-tooling",
+      "why": "The operation-to-test coverage gate belongs to no phase — it derives the evidence floor for every namespace from P1-14 to P1-30 — so a correction to how it READS a `defineOperation` literal is repository tooling, not a phase change. Carries the gate, its suites and the per-phase operation-test-matrix.json files the gate itself writes, and by that profile no API source: a branch that rewrites the gate must not also carry the product the gate is what reviews. A family prefix rather than one branch name, because the gate's own defect class recurs and the next correction should not need a second rule."
+    },
+    {
       "branchPrefix": "feature/pre-p1-29-backend-",
       "profile": "pre-p1-29-backend",
       "why": "The Backend lane of PRE-P1-29. Listed BEFORE the initiative branch so a lane branch is judged by its lane rather than by the wider integration profile — first match wins, and the narrower rule must be reachable."

@@ -9502,16 +9502,16 @@
       "public": false,
       "files": ["tests/backend/p1-20-service-catalog.test.ts"],
       "referenced": true,
-      "derived": ["route", "service", "success", "authorization", "isolation"],
+      "derived": ["route", "service", "success", "authorization"],
       "declared": ["denial", "cross-tenant", "isolation"],
       "required": [
         "route",
         "service",
         "success",
         "authorization",
-        "isolation",
         "denial",
-        "cross-tenant"
+        "cross-tenant",
+        "isolation"
       ],
       "provided": [
         "authorization",
